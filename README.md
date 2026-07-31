@@ -17,7 +17,9 @@ This document is the map of the system: what each piece does, why it exists, wha
 | `/goal:backfill` | ✅ 12,010 odds rows · 1,194 settlements · coverage report |
 | `/goal:features` | ✅ point-in-time, no-lookahead enforced structurally |
 | `/goal:fairvalue` | ✅ projection + ladder fit (R²=0.999 on live ladders) |
-| `/goal:predictions` → `/goal:executor` | ⬜ next |
+| `/goal:predictions` | ✅ log + resolution (179/179 settlement cross-check) |
+| `/goal:backtest` | ✅ walk-forward, CLV-primary, 3 fill models |
+| `/goal:kelly` → `/goal:executor` | ⬜ next |
 
 **Backtest sample available today:** 1,645 games (2020–2026); **793 with a true closing line** (2024–2026) usable for CLV.
 
