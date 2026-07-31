@@ -18,5 +18,21 @@ services:
       timeout: 5s
       retries: 10
 
+  recorder:
+    build: .
+    container_name: meridian-recorder
+    # The whole point: survives crashes, Docker restarts, and machine reboots.
+    # A recorder that dies unattended is the dominant failure mode, and market
+    # snapshots cannot be backfilled from anywhere.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Container-to-container, so port 5432 (not the 5433 host mapping).
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+    volumes:
+      - ./recorder-logs:/app/logs
+
 volumes:
   meridian_pgdata:
