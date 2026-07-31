@@ -58,9 +58,37 @@ T \sim \mathcal{N}(\hat{T}, \sigma^2)
 P(T > \ell) = 1 - \Phi\!\left(\frac{\ell - \hat{T}}{\sigma}\right)
 $$
 
-**Measured from 2023–2025 WNBA data (769 games): mean 164.0, σ = 17.3.**
-
 σ does enormous work here. Since the model's edge comes from small differences between $\hat T$ and the market's implied mean, an error in σ maps almost directly into mispriced probability. It's computed from data and is the first thing to check when output looks wrong.
+
+### ⚠️ The scoring environment is not stationary
+
+Measured per season from our own data (regular season, deduplicated):
+
+| Season | Games | Mean | σ |
+|---|---|---|---|
+| 2020 | 132 | 166.1 | 16.5 |
+| 2021 | 193 | 161.2 | 16.8 |
+| 2022 | 217 | 164.6 | 17.4 |
+| 2023 | 241 | 165.4 | 17.7 |
+| 2024 | 241 | 163.4 | 17.2 |
+| 2025 | 287 | 163.3 | 17.1 |
+| **2026** | **213** | **174.4** | **21.7** |
+
+2020–2025 is remarkably stable. **2026 is a different game** — 11 points higher and materially more variable.
+
+This is the most dangerous kind of error, because a multi-season σ would project 2026 totals ~10 points low on *every* totals market while looking perfectly healthy in a multi-year backtest. The error averages away across regimes and only shows up in live P&L.
+
+So `estimate_totals_distribution()` uses the **current season**, shrunk toward recent history only while the current-season sample is small:
+
+$$
+w = \frac{n_{\text{season}}}{n_{\text{season}} + 60}
+\qquad
+\hat\sigma = w\,\sigma_{\text{season}} + (1-w)\,\sigma_{\text{history}}
+$$
+
+Point-in-time correct — every query filters `game_date < as_of` — so a backtest of an April game correctly gets a history-weighted estimate, and a July game gets a season-dominated one.
+
+**Open question worth testing:** across live ladders the *market's* implied σ is ~15.7, while realised 2026 σ is 20.8. If that gap is real rather than an artefact of fitting a normal over a narrow ladder, the market is underpricing tail outcomes. Do not trade it on the strength of three observations — but it is the first concrete hypothesis the backtest should check.
 
 ### Why normal is defensible
 
