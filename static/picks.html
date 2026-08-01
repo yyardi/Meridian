@@ -68,7 +68,7 @@
     right more often than not.
   </div>
 
-  <h2>Tonight's pregame picks</h2>
+  <h2>Tonight's pregame picks <span id="hint" class="dimc" style="text-transform:none;letter-spacing:0"></span></h2>
   <div id="picks"></div>
 
   <h2 style="margin-top:24px">Past predictions — what actually happened</h2>
@@ -84,27 +84,52 @@ const tagOf = t => t==="total"?"total":t==="spread"?"spread":"winner";
 
 function shortSlug(s){ return s.replace(/^(tsc|asc|aec)-wnba-/,"").replace(/-\d{4}-\d{2}-\d{2}/,""); }
 
-fetch("/api/picks").then(r=>r.json()).then(d=>{
+function renderPicks(d){
+  const f = d.filtered || {};
+  $("#hint").textContent =
+    ` — next ${d.horizon_hours}h only · ${f.beyond_horizon||0} far-dated and `
+    + `${f.spread_too_wide||0} wide-spread markets hidden`;
+
   if(!d.picks || !d.picks.length){
-    $("#picks").innerHTML = '<div class="empty">No pregame markets right now — '
-      + 'picks appear once tomorrow\'s board is posted and quoted.</div>';
+    $("#picks").innerHTML = '<div class="empty">No tradeable pregame markets right now.<br>'
+      + '<span style="font-size:10.5px">Games further out are excluded on purpose: measured on a live board, '
+      + 'markets 6–24h away had a 20¢ median spread (67% wider than 10¢) versus 1¢ inside 6h. '
+      + 'Those prices are not real quotes yet.</span></div>';
     return;
   }
-  $("#picks").innerHTML = `<table><thead><tr>
-    <th class="l">Market</th><th class="l">Type</th><th>Line</th><th>Bid</th><th>Ask</th>
-    <th>Model</th><th class="l">Side</th><th>Edge</th><th>Tipoff</th><th>Shadow order</th>
-  </tr></thead><tbody>${d.picks.map(p=>`
-    <tr>
-      <td class="l dimc">${shortSlug(p.market_slug)}</td>
-      <td class="l"><span class="tag ${tagOf(p.type)}">${p.type}</span></td>
-      <td>${p.line==null?"—":p.line.toFixed(1)}</td>
-      <td>${num(p.bid)}</td><td>${num(p.ask)}</td><td>${num(p.model)}</td>
-      <td class="l"><span class="side ${["OVER","YES"].includes(p.side)?"sideY":"sideN"}">${p.side}</span></td>
-      <td class="${p.edge>0?"pos":"neg"}">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error">?</span>':""}</td>
-      <td class="dimc">${p.hours_to_tipoff}h</td>
-      <td>${p.shadow?`${p.shadow.would_rest?"REST":"CROSS"} @ ${num(p.shadow.limit_price)} × ${num(p.shadow.quantity,1)}`:'<span class="dimc">below min size</span>'}</td>
-    </tr>`).join("")}</tbody></table>`;
-});
+  // Group by game, ordered by tipoff.
+  const games = [];
+  for(const p of d.picks){
+    let g = games.find(x => x.ev === p.event_slug);
+    if(!g){ g = {ev: p.event_slug, start: p.game_start, hrs: p.hours_to_tipoff, rows: []}; games.push(g); }
+    g.rows.push(p);
+  }
+  $("#picks").innerHTML = games.map(g => {
+    const nm = (g.ev||"").replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
+    const when = new Date(g.start).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"});
+    const soon = g.hrs <= 3;
+    return `<div style="margin-bottom:6px;margin-top:14px;font-size:11px">
+        <b>${nm}</b> <span class="dimc">· ${when} · tips in
+        <span class="${soon?"warnc":"dimc"}">${g.hrs}h</span> · ${g.rows.length} markets</span>
+      </div>
+      <table><thead><tr>
+        <th class="l">Market</th><th class="l">Type</th><th>Line</th><th>Bid</th><th>Ask</th>
+        <th>Spr</th><th>Model</th><th class="l">Side</th><th>Edge</th><th>Shadow order</th>
+      </tr></thead><tbody>${g.rows.map(p=>`
+        <tr>
+          <td class="l dimc">${shortSlug(p.market_slug)}</td>
+          <td class="l"><span class="tag ${tagOf(p.type)}">${p.type}</span></td>
+          <td>${p.line==null?"—":p.line.toFixed(1)}</td>
+          <td>${num(p.bid)}</td><td>${num(p.ask)}</td>
+          <td class="dimc">${(p.spread*100).toFixed(0)}¢</td>
+          <td>${num(p.model)}</td>
+          <td class="l"><span class="side ${["OVER","YES"].includes(p.side)?"sideY":"sideN"}">${p.side}</span></td>
+          <td class="${p.edge>0?"pos":"neg"}">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}</td>
+          <td>${p.shadow?`${p.shadow.would_rest?"REST":"CROSS"} @ ${num(p.shadow.limit_price)} × ${num(p.shadow.quantity,1)}`:'<span class="dimc">below min size</span>'}</td>
+        </tr>`).join("")}</tbody></table>`;
+  }).join("");
+}
+fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 
 fetch("/api/results").then(r=>r.json()).then(d=>{
   const s = d.summary;

@@ -201,9 +201,25 @@ def events() -> dict:
     }
 
 
+#: Markets this far past tipoff-minus-N hours are unformed. Measured on a live
+#: board: 0-6h out the median spread is 1c with 0% wider than 10c; 6-24h out it
+#: is 20c with 67% wide. Prices like 0.99/0.01 appear on far-dated games that
+#: nobody has quoted yet. Default horizon is same-day.
+DEFAULT_PICK_HORIZON_HOURS = 14.0
+#: A quote wider than this is not a tradeable price, whatever the timing.
+MAX_TRADEABLE_SPREAD = 0.06
+
+
 @app.get("/api/picks")
-def picks() -> dict:
-    """Tonight's actionable pregame picks, with the shadow order attached."""
+def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
+          include_illiquid: bool = False) -> dict:
+    """Actionable pregame picks, ordered by tipoff.
+
+    Two filters, both empirical:
+      * `horizon_hours` — far-dated boards are not really quoted yet.
+      * spread width — a 20c market has no usable price regardless of when
+        the game is.
+    """
     with _Session() as s:
         pred_time = s.scalar(select(func.max(Prediction.predicted_at)))
         if pred_time is None:
@@ -221,14 +237,22 @@ def picks() -> dict:
         }
 
     now = dt.datetime.now(UTC)
-    out = []
+    out, filtered_far, filtered_wide = [], 0, 0
     for p in preds:
         start = starts.get(p.market_slug)
         if start is None or start <= now:      # pregame only
             continue
+        hours = (start - now).total_seconds() / 3600
+        if hours > horizon_hours:
+            filtered_far += 1
+            continue
         bid, ask = _f(p.market_bid), _f(p.market_ask)
         model = _f(p.model_probability)
         if bid is None or ask is None or model is None:
+            continue
+        spread = ask - bid
+        if spread > MAX_TRADEABLE_SPREAD and not include_illiquid:
+            filtered_wide += 1
             continue
         edge_yes, edge_no = model - ask, bid - model
         side, edge = ("YES", edge_yes) if edge_yes >= edge_no else ("NO", edge_no)
@@ -246,7 +270,8 @@ def picks() -> dict:
             "model": model,
             "bid": bid, "ask": ask,
             "game_start": start.isoformat(),
-            "hours_to_tipoff": round((start - now).total_seconds() / 3600, 1),
+            "hours_to_tipoff": round(hours, 1),
+            "spread": round(spread, 4),
             "suspect": edge > 0.15,
             "shadow": None if o is None else {
                 "limit_price": _f(o.limit_price),
@@ -254,8 +279,14 @@ def picks() -> dict:
                 "would_rest": o.would_rest,
             },
         })
-    out.sort(key=lambda r: -r["edge"])
-    return {"predicted_at": pred_time.isoformat(), "picks": out}
+    # Ordered by tipoff: the soonest game is the one you can actually act on.
+    out.sort(key=lambda r: (r["game_start"], -r["edge"]))
+    return {
+        "predicted_at": pred_time.isoformat(),
+        "horizon_hours": horizon_hours,
+        "filtered": {"beyond_horizon": filtered_far, "spread_too_wide": filtered_wide},
+        "picks": out,
+    }
 
 
 @app.get("/api/results")
