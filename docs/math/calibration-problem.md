@@ -30,7 +30,50 @@ A calibrated model's 65% predictions win ~65% of the time. Ours win **49%**. The
 
 No monotonic relationship. The bets the model is *most* confident about are the **worst** performers. Overall edge-vs-realised correlation is **+0.001**.
 
-## Diagnosis
+## Update 2026-08-01: the model is not broken — it is *average*
+
+Measured across 677 games (splits off, no edge threshold, so every game is scored):
+
+| | mean projection | mean abs error |
+|---|---|---|
+| **Our model** | 165.2 | **14.3** |
+| **Sportsbook line** | 165.2 | **13.9** |
+| Actual | 166.1 | — |
+
+The model is essentially **unbiased** (−0.9 points, identical to the market's own
+−0.9) and its accuracy is within half a point of the sportsbook line.
+
+That reframes everything. The model is not producing nonsense — it is producing
+roughly *the same answer as the market*, slightly worse. And matching the market
+is worth nothing: you then pay the spread and the fees and lose exactly what the
+backtest shows.
+
+It also explains the flat calibration. Being as accurate as the market means the
+disagreements are **our error**, not our edge — so the big-edge bucket performs
+worst, and confidence carries no information.
+
+**Residual bias is a 2026 problem**: −0.3 in 2024, −0.3 in 2025, but **−2.7 in
+2026**, the season whose scoring environment jumped. Worth fixing, but it is a
+2-3 point effect, not the reason for negative ROI.
+
+### What this implies for strategy
+
+Beating a sportsbook closing line with season-average points-per-game was always
+a long shot — that line already contains injuries, rest, lineups and sharp money.
+The original project hypothesis was different and better:
+
+> compare **Polymarket US** prices against **sportsbook consensus** and trade the
+> gap, because Polymarket's WNBA book is far thinner.
+
+That does not require a model that beats the sportsbook. It requires the
+sportsbook line and a venue that disagrees with it. The current backtest measures
+*model vs sportsbook*, which is the hard game; the cross-market gap is the easy
+one, and it is the signal that was hand-validated in the first place.
+
+**The recorder has been capturing exactly the data needed to test this** — paired
+Polymarket and sportsbook prices — since 2026-07-31.
+
+## Diagnosis (original, superseded in part by the above)
 
 There are two candidate explanations and the data distinguishes them.
 
