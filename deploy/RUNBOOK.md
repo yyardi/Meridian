@@ -75,8 +75,30 @@ Everything is stock Postgres and plain Docker, so moving is a config change:
 1. Provision Postgres (Supabase **Pro** — the free tier pauses after 7 days
    idle and would silently kill the recorder; or any VPS).
 2. Point `DATABASE_URL` at it.
-3. Restore the latest dump.
-4. `docker compose up -d`.
+3. Restore the latest dump, or use `./deploy/migrate_to_remote.sh` which
+   dumps, applies the schema, copies data and verifies row counts per table.
+4. `docker compose build && docker compose up -d --force-recreate`.
+
+**Supabase note.** The direct host `db.<ref>.supabase.co` is **IPv6-only**;
+on an IPv4 network it fails with `failed to resolve host`. Use the **Session
+pooler** (`aws-N-<region>.pooler.supabase.com`, port **5432**). Do not use the
+Transaction pooler on 6543 — it does not support the prepared statements
+Alembic relies on. The URL needs the `+psycopg` driver marker.
+
+## After adding a migration
+
+The recorder and scheduler run from a **built image**. A new Alembic revision
+that exists on disk but not in the image makes the container fail on boot with
+`Can't locate revision identified by <rev>` — the database has moved ahead of
+the code baked into the image.
+
+```bash
+docker compose build recorder scheduler
+docker compose up -d --force-recreate recorder scheduler
+```
+
+Always rebuild after generating a migration. This bit us during the Supabase
+cutover and cost one recorder cycle.
 
 ## Troubleshooting
 
