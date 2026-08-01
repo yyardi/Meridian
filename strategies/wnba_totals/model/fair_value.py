@@ -30,7 +30,7 @@ from strategies.wnba_totals.model.features import MatchupFeatures, TeamFeatures
 #: Bump on any logic change. NOTE: this alone does not protect the prediction
 #: log — it is hand-maintained and will eventually be forgotten. `config_hash`
 #: is derived from the config actually used and cannot be forgotten.
-MODEL_VERSION = "v2"
+MODEL_VERSION = "v3"
 
 STRATEGY = "wnba_totals"
 
@@ -237,8 +237,22 @@ def project(
         home_off, away_off = home.offense_ppg, away.offense_ppg
         home_def, away_def = home.defense_ppg_allowed, away.defense_ppg_allowed
 
-    projected_home = (home_off + away_def) / 2.0
-    projected_away = (away_off + home_def) / 2.0
+    # Combine strengths. The original brief's (x + y)/2 halves every matchup
+    # deviation from league average — measured scale slope 1.53 against a
+    # correct 1.0. Standard additive strengths (x + y − league_mean) measured
+    # 1.13 with a CI containing 1.0, and lifted direction hit rate on real
+    # disagreements from 48.8% to 55.4%. See docs/math/fair-value.md.
+    L2 = features.league_points_per_team
+    mode = getattr(cfg, "totals_projection", "halved")
+    if mode == "strength" and L2 > 0:
+        projected_home = home_off + away_def - L2
+        projected_away = away_off + home_def - L2
+    elif mode == "multiplicative" and L2 > 0:
+        projected_home = home_off * away_def / L2
+        projected_away = away_off * home_def / L2
+    else:  # legacy halved form; also the fallback when league context is absent
+        projected_home = (home_off + away_def) / 2.0
+        projected_away = (away_off + home_def) / 2.0
 
     projected_total = projected_home + projected_away
     baseline_margin = projected_home - projected_away

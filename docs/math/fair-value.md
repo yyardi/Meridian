@@ -28,6 +28,17 @@ The σ step is where a point estimate becomes a tradeable probability — and wh
 
 ## The projection
 
+> **⚠️ v3 correction (2026-08-01).** The formula below — from the original
+> hand-run proof of concept — contains a scale flaw: summing both sides makes
+> the projected total the *average* of the two teams' average game totals,
+> which halves every matchup deviation from the league mean. Measured on 677
+> games: regressing actual on projection gives slope **1.53** (a correct
+> model gives 1.0). The v3 default replaces it with standard additive
+> strengths, `off_A + def_B − league_mean` per side — slope **1.13**, CI
+> containing 1.0 — which lifted direction hit rate on >3-point disagreements
+> from 48.8% (coin flip) to **55.4%** and mean CLV from +0.55 to +0.83.
+> The legacy form remains available as `totals_projection="halved"`.
+
 Each team's expected score blends its own offence with the opponent's defence:
 
 $$

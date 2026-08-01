@@ -27,6 +27,8 @@ This document is the map of the system: what each piece does, why it exists, wha
 
 > ⚠️ **Open problem:** the model is not calibrated — its probabilities are ~50% realised across every confidence bucket, and edge-vs-return correlation is +0.001. See [docs/math/calibration-problem.md](docs/math/calibration-problem.md). Do not size this live until resolved.
 
+**Model v3 (2026-08-01):** the projection now uses additive strengths — the original `(off+def)/2` form halved every matchup deviation (measured scale slope 1.53 vs a correct 1.0). Targets and gates: [docs/math/performance-targets.md](docs/math/performance-targets.md).
+
 **Backtest sample available today:** 1,645 games (2020–2026); **793 with a true closing line** (2024–2026) usable for CLV.
 
 ```bash

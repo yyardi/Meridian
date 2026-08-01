@@ -18,6 +18,8 @@ The modelling, stated precisely enough to argue with.
 | [pythagorean-record.md](math/pythagorean-record.md) | Does win-loss record add anything to point differential? |
 | [point-in-time.md](math/point-in-time.md) | How do we make lookahead bias structurally impossible? |
 | [calibration-problem.md](math/calibration-problem.md) | ⚠️ **Open problem** — why the model's probabilities carry no signal |
+| [research-notes.md](math/research-notes.md) | What the betting-markets literature says, tied to actions here |
+| [performance-targets.md](math/performance-targets.md) | Pre-registered bars for "good", sample sizes, gates before real money |
 
 ## Stack
 
