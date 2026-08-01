@@ -16,3 +16,4 @@ recorder.log
 odds_backfill*.log
 recorder-logs/
 reports/
+backups/
