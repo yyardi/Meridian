@@ -92,6 +92,13 @@
   .sideY{background:#10261c;color:#3fd48f}
   .sideN{background:#2a161a;color:#ff7b80}
   .suspect{color:var(--warn);font-weight:700;cursor:help}
+  .fbtn{display:block;padding:6px 9px;border-radius:4px;margin-bottom:4px;cursor:pointer;
+        border:1px solid var(--line);background:#0e1218;font-size:11px;color:var(--dim);
+        text-decoration:none}
+  .fbtn:hover{background:var(--panel2);color:var(--txt)}
+  .fbtn.on{background:#16243a;border-color:#2c4a7a;color:#cfe2ff;font-weight:600}
+  .fbtn.link{color:var(--accent);border-style:dashed}
+  .cnt{float:right;color:var(--faint);font-weight:400}
   .empty{padding:34px; text-align:center; color:var(--faint)}
   footer{
     padding:6px 14px; font-size:10px; color:var(--faint);
@@ -116,9 +123,10 @@
     <h3>Games</h3>
     <div id="games"></div>
     <h3 style="margin-top:16px">Filter</h3>
-    <div class="game" data-f="all">All markets</div>
-    <div class="game" data-f="edge">Has edge only</div>
-    <div class="game" data-f="shadow">Shadow orders</div>
+    <div class="fbtn on" data-f="all">All markets <span class="cnt" id="c-all"></span></div>
+    <div class="fbtn" data-f="edge">Edge &gt; 2% <span class="cnt" id="c-edge"></span></div>
+    <div class="fbtn" data-f="shadow">Shadow orders <span class="cnt" id="c-shadow"></span></div>
+    <a href="/analytics" class="fbtn link">Model performance →</a>
   </aside>
 
   <section>
@@ -216,6 +224,14 @@ async function loadBoard(){
   };
   rows.sort((a, b2) => liveEdgeOf(b2) - liveEdgeOf(a));
 
+  const all = selectedEvent ? b.markets.filter(r => r.event_slug === selectedEvent) : b.markets;
+  const tradeableEdge = r => (r.bid!==null && r.ask!==null && r.model!==null && !r.is_live)
+    ? Math.max(r.model - r.ask, r.bid - r.model) : null;
+  const cAll = all.length;
+  const cEdge = all.filter(r => (tradeableEdge(r) ?? -1) > 0.02).length;
+  const cShadow = all.filter(r => r.shadow).length;
+  const setc = (id,v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
+  setc("c-all", cAll); setc("c-edge", cEdge); setc("c-shadow", cShadow);
   $("#empty").style.display = rows.length ? "none" : "block";
 
   $("#rows").innerHTML = rows.map(r => {
@@ -276,8 +292,8 @@ async function loadBoard(){
 
 document.querySelectorAll("[data-f]").forEach(el => el.onclick = () => {
   filter = el.dataset.f;
-  document.querySelectorAll("[data-f]").forEach(x => x.classList.remove("sel"));
-  el.classList.add("sel");
+  document.querySelectorAll("[data-f]").forEach(x => x.classList.remove("on"));
+  el.classList.add("on");
   loadBoard();
 });
 
