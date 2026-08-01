@@ -137,6 +137,12 @@ class BacktestConfig:
     #: slope before betting. The statistically correct predictor of
     #: (actual − line) is slope × (proj − line), not the raw gap.
     shrink_to_market: bool = False
+    #: Price probabilities from the SHRUNK projection even when selecting on
+    #: the raw one. Selection on raw diff performs (54.1% hit); probability
+    #: magnitudes from raw diff are overconfident (0.65 bucket realising
+    #: 0.55). E[actual − line | raw_diff] = slope × raw_diff is the correct
+    #: expectation to price from, and it uses no new information.
+    calibrate_probabilities: bool = True
 
 
 @dataclass
@@ -289,17 +295,18 @@ def run_backtest(
         projection = project(features, config=mcfg, sigma=dist.sigma)
 
         raw_diff = projection.projected_total - entry_line
-        shrink = tracker.slope() if cfg.shrink_to_market else 1.0
-        diff = shrink * raw_diff
+        slope = tracker.slope()
+        sel_diff = slope * raw_diff if cfg.shrink_to_market else raw_diff
+        prob_diff = slope * raw_diff if cfg.calibrate_probabilities else sel_diff
         # Update AFTER using the slope, never before — no peeking at this game.
         if actual_total is not None:
             tracker.add(raw_diff, float(actual_total) - entry_line)
-        if abs(diff) < cfg.min_edge_points:
+        if abs(sel_diff) < cfg.min_edge_points:
             continue
 
-        side = "over" if diff > 0 else "under"
+        side = "over" if sel_diff > 0 else "under"
         entry_price = over_price if side == "over" else under_price
-        model_p = prob_over(entry_line + diff, entry_line, dist.sigma)
+        model_p = prob_over(entry_line + prob_diff, entry_line, dist.sigma)
         if side == "under":
             model_p = 1.0 - model_p
         edge = model_p - entry_price
