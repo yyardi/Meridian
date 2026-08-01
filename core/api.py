@@ -201,6 +201,25 @@ def events() -> dict:
     }
 
 
+@app.get("/api/analytics")
+def analytics() -> dict:
+    """Pre-computed model-performance data.
+
+    Built by `python -m core.analytics`, not computed here: a walk-forward run
+    takes ~17s locally and far longer against a remote database.
+    """
+    import json
+    path = Path(__file__).parent.parent / "reports" / "analytics.json"
+    if not path.exists():
+        return {"error": "run `python -m core.analytics` first"}
+    return json.loads(path.read_text())
+
+
+@app.get("/analytics")
+def analytics_page() -> FileResponse:
+    return FileResponse(STATIC / "analytics.html")
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC / "index.html")

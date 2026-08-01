@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian — Model Performance</title>
+<style>
+  :root{
+    --bg:#0a0c10; --panel:#11141b; --line:#1e2430; --txt:#d7dde8;
+    --dim:#7c879b; --faint:#4a5568; --pos:#26d07c; --neg:#ff5c62;
+    --warn:#ffb020; --accent:#4c8dff;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:12px/1.5 var(--mono);font-variant-numeric:tabular-nums}
+  header{display:flex;align-items:center;gap:18px;padding:9px 14px;
+         background:var(--panel);border-bottom:1px solid var(--line)}
+  .brand{font-weight:700;letter-spacing:.14em}
+  .brand span{color:var(--accent)}
+  nav a{color:var(--faint);text-decoration:none;margin-right:14px;font-size:11px;
+        padding:3px 8px;border-radius:3px}
+  nav a.on{color:var(--txt);background:#1a1f2b}
+  nav a:hover{color:var(--txt)}
+  .wrap{padding:14px;max-width:1500px}
+  .banner{border:1px solid #3d2a17;background:#221708;color:var(--warn);
+          padding:9px 12px;border-radius:4px;margin-bottom:14px;font-size:11px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:12px}
+  .card h2{margin:0 0 2px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+           color:var(--txt);font-weight:600}
+  .card .sub{color:var(--faint);font-size:10.5px;margin-bottom:10px;line-height:1.45}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:1px;
+        background:var(--line);border:1px solid var(--line);border-radius:5px;
+        overflow:hidden;margin-bottom:12px}
+  .kpi{background:var(--panel);padding:10px 12px}
+  .kpi .k{color:var(--faint);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase}
+  .kpi .v{font-size:17px;margin-top:3px}
+  .kpi .n{color:var(--faint);font-size:9.5px;margin-top:2px}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--warn)}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th{text-align:right;color:var(--faint);font-size:9.5px;letter-spacing:.08em;
+     text-transform:uppercase;padding:5px 8px;border-bottom:1px solid var(--line)}
+  th.l,td.l{text-align:left}
+  td{text-align:right;padding:4px 8px;border-bottom:1px solid #131720}
+  .note{color:var(--faint);font-size:10.5px;margin-top:9px;line-height:1.5;
+        border-left:2px solid var(--line);padding-left:9px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">MERIDIAN<span>·</span>WNBA</div>
+  <nav><a href="/">Live board</a><a href="/analytics" class="on">Model performance</a></nav>
+</header>
+
+<div class="wrap">
+  <div class="banner" id="scope">loading…</div>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid" id="cards"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const pct = (v,d=1) => v===null||v===undefined ? "—" : (v>0?"+":"")+(v*100).toFixed(d)+"%";
+const num = (v,d=3) => v===null||v===undefined ? "—" : v.toFixed(d);
+const cls = v => v===null||v===undefined ? "dimc" : v>0 ? "pos" : "neg";
+
+const W=430, H=210, P={l:44,r:12,t:10,b:26};
+
+function axes(xs, ys, xlab, ylab){
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  let g=`<line x1="${P.l}" y1="${P.t+ih}" x2="${P.l+iw}" y2="${P.t+ih}" stroke="#2a3242"/>`;
+  g+=`<line x1="${P.l}" y1="${P.t}" x2="${P.l}" y2="${P.t+ih}" stroke="#2a3242"/>`;
+  ys.forEach(t=>{ g+=`<line x1="${P.l}" y1="${t.y}" x2="${P.l+iw}" y2="${t.y}" stroke="#1a2029"/>`
+    +`<text x="${P.l-6}" y="${t.y+3}" fill="#4a5568" font-size="9" text-anchor="end">${t.t}</text>`; });
+  xs.forEach(t=>{ g+=`<text x="${t.x}" y="${P.t+ih+14}" fill="#4a5568" font-size="9" text-anchor="middle">${t.t}</text>`; });
+  if(ylab) g+=`<text x="10" y="${P.t+ih/2}" fill="#4a5568" font-size="9" transform="rotate(-90 10 ${P.t+ih/2})" text-anchor="middle">${ylab}</text>`;
+  if(xlab) g+=`<text x="${P.l+iw/2}" y="${H-3}" fill="#4a5568" font-size="9" text-anchor="middle">${xlab}</text>`;
+  return g;
+}
+
+function calibrationChart(d){
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const X=v=>P.l+v*iw, Y=v=>P.t+(1-v)*ih;
+  let g=axes([0,.25,.5,.75,1].map(v=>({x:X(v),t:v.toFixed(2)})),
+             [0,.25,.5,.75,1].map(v=>({y:Y(v),t:v.toFixed(2)})),
+             "model said","actually happened");
+  // Perfect calibration is the diagonal.
+  g+=`<line x1="${X(0)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(1)}" stroke="#3d4757" stroke-dasharray="3,3"/>`;
+  g+=`<text x="${X(.72)}" y="${Y(.80)}" fill="#4a5568" font-size="9">perfect</text>`;
+  // Coin-flip line: where an uninformative model sits.
+  g+=`<line x1="${X(0)}" y1="${Y(.5)}" x2="${X(1)}" y2="${Y(.5)}" stroke="#ff5c62" stroke-dasharray="2,4" opacity=".55"/>`;
+  g+=`<text x="${X(.03)}" y="${Y(.53)}" fill="#ff5c62" font-size="9" opacity=".8">no signal (50%)</text>`;
+  const pts=d.calibration.filter(b=>b.realised!==null);
+  g+=`<path d="${pts.map((b,i)=>`${i?"L":"M"}${X(b.predicted)},${Y(b.realised)}`).join("")}" fill="none" stroke="#4c8dff" stroke-width="1.6"/>`;
+  pts.forEach(b=>{ const r=Math.max(3,Math.min(9,Math.sqrt(b.n)));
+    g+=`<circle cx="${X(b.predicted)}" cy="${Y(b.realised)}" r="${r}" fill="#4c8dff" fill-opacity=".28" stroke="#4c8dff"/>`
+      +`<title>predicted ${b.predicted} → realised ${b.realised.toFixed(2)} (n=${b.n})</title>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
+}
+
+function equityChart(d){
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const e=d.equity; if(e.length<2) return "<div class='dimc'>no data</div>";
+  const mn=Math.min(...e), mx=Math.max(...e), rg=(mx-mn)||1;
+  const X=i=>P.l+i/(e.length-1)*iw, Y=v=>P.t+(1-(v-mn)/rg)*ih;
+  let g=axes([0,.5,1].map(f=>({x:P.l+f*iw,t:Math.round(f*(e.length-1))})),
+             [0,.5,1].map(f=>({y:P.t+(1-f)*ih,t:(mn+f*rg).toFixed(0)})),
+             "bet number","bankroll");
+  g+=`<line x1="${P.l}" y1="${Y(e[0])}" x2="${P.l+iw}" y2="${Y(e[0])}" stroke="#3d4757" stroke-dasharray="3,3"/>`;
+  g+=`<path d="${e.map((v,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join("")}" fill="none" stroke="#ff5c62" stroke-width="1.3"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
+}
+
+function edgeBucketChart(d){
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const b=d.edge_buckets; if(!b.length) return "";
+  const vals=b.map(x=>x.avg_pnl), mx=Math.max(...vals.map(Math.abs),0.05);
+  const Y=v=>P.t+ih/2-(v/mx)*(ih/2-6);
+  let g=axes(b.map((x,i)=>({x:P.l+(i+.5)*iw/b.length,t:"Q"+x.quintile})),
+             [-mx,0,mx].map(v=>({y:Y(v),t:v.toFixed(2)})),
+             "edge quintile (small → large)","avg P&L per bet");
+  const bw=iw/b.length*0.58;
+  b.forEach((x,i)=>{ const cx=P.l+(i+.5)*iw/b.length, y0=Y(0), y1=Y(x.avg_pnl);
+    g+=`<rect x="${cx-bw/2}" y="${Math.min(y0,y1)}" width="${bw}" height="${Math.abs(y1-y0)}"
+        fill="${x.avg_pnl>0?"#26d07c":"#ff5c62"}" fill-opacity=".75"/>`
+      +`<title>Q${x.quintile}: avg |edge| ${x.avg_edge}, avg P&L ${x.avg_pnl}, hit ${x.hit_rate} (n=${x.n})</title>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
+}
+
+function clvChart(d){
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const h=d.clv_hist; if(!h.length) return "";
+  const mx=Math.max(...h.map(x=>x.n));
+  const X=p=>P.l+((p+8)/16)*iw, Y=n=>P.t+(1-n/mx)*ih;
+  let g=axes([-8,-4,0,4,8].map(p=>({x:X(p),t:p})),
+             [0,mx/2,mx].map(n=>({y:Y(n),t:Math.round(n)})),
+             "CLV (points of line movement)","bets");
+  const bw=iw/17*0.8;
+  h.forEach(x=>{ g+=`<rect x="${X(x.points)-bw/2}" y="${Y(x.n)}" width="${bw}" height="${P.t+ih-Y(x.n)}"
+      fill="${x.points>0?"#26d07c":x.points<0?"#ff5c62":"#4a5568"}" fill-opacity=".75"/>`
+    +`<title>${x.points>0?"+":""}${x.points} pts: ${x.n} bets</title>`; });
+  g+=`<line x1="${X(0)}" y1="${P.t}" x2="${X(0)}" y2="${P.t+ih}" stroke="#3d4757" stroke-dasharray="3,3"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
+}
+
+fetch("/api/analytics").then(r=>r.json()).then(d=>{
+  if(d.error){ $("#scope").textContent = d.error; return; }
+  const s=d.summary;
+
+  $("#scope").innerHTML = `<b>Scope:</b> ${d.scope_warning}<br>`
+    + `<span style="color:var(--faint)">Source: ${d.generated_from}. `
+    + `The live prediction log cannot answer this yet — those games have not finished.</span>`;
+
+  $("#kpis").innerHTML = [
+    ["Mean CLV", `<span class="${cls(s.mean_clv)}">${num(s.mean_clv,3)}</span>`, `± ${num(s.clv_stderr,3)} pts`],
+    ["Beat close", pct(s.pct_beating_close,1), "of bets"],
+    ["Hit rate", num(s.hit_rate,3), `${s.filled} filled`],
+    ["ROI", `<span class="${cls(s.roi)}">${pct(s.roi,2)}</span>`, "realistic fills"],
+    ["Max drawdown", `<span class="neg">${(s.max_drawdown*100).toFixed(1)}%</span>`, "peak to trough"],
+    ["Sharpe", `<span class="${cls(s.sharpe)}">${num(s.sharpe,3)}</span>`, "per bet"],
+    ["Edge → return", `<span class="${Math.abs(s.edge_corr)<0.05?"warnc":cls(s.edge_corr)}">${num(s.edge_corr,3)}</span>`, "correlation"],
+    ["Fees", num(s.total_fees,2), "units"],
+  ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${n}</div></div>`).join("");
+
+  const fm = Object.entries(d.fill_models).map(([k,v])=>
+    `<tr><td class="l">${k}</td><td class="${cls(v.roi)}">${pct(v.roi,2)}</td>
+     <td class="${cls(v.pnl)}">${num(v.pnl,2)}</td><td>${v.filled}</td></tr>`).join("");
+
+  const live = d.live_predictions.map(p=>
+    `<tr><td class="l">${p.type}</td><td>${p.n}</td><td>${num(p.avg_model,3)}</td>
+     <td>${num(p.avg_market,3)}</td><td class="${p.resolved?"":"warnc"}">${p.resolved}</td></tr>`).join("");
+
+  $("#cards").innerHTML = `
+    <div class="card">
+      <h2>Calibration — the headline problem</h2>
+      <div class="sub">If the model were honest, the blue line would sit on the grey diagonal:
+        its 70% calls would win 70% of the time.</div>
+      ${calibrationChart(d)}
+      <div class="note">The blue line hugs the red 50% line instead of the diagonal.
+        The model's confidence carries almost no information about whether it is right.
+        A flat curve means the projection lacks signal — not that σ is mis-set,
+        which would bend the curve rather than flatten it.</div>
+    </div>
+
+    <div class="card">
+      <h2>Equity curve</h2>
+      <div class="sub">Flat-staked, realistic fills, 2024–2026 walk-forward.</div>
+      ${equityChart(d)}
+      <div class="note">A grinding decline, not a crash — consistent with a small
+        negative expectation per bet (spread + fees) rather than a broken model.
+        Max drawdown ${(s.max_drawdown*100).toFixed(1)}%.</div>
+    </div>
+
+    <div class="card">
+      <h2>Does a bigger edge pay more?</h2>
+      <div class="sub">Bets split into five buckets by predicted edge, smallest to largest.</div>
+      ${edgeBucketChart(d)}
+      <div class="note">If the model knew what it was doing, these bars would rise
+        left to right. They do not — the largest-edge bucket is among the worst.
+        This is the same fact as the ${num(s.edge_corr,3)} edge-to-return correlation.</div>
+    </div>
+
+    <div class="card">
+      <h2>Closing line value</h2>
+      <div class="sub">How far the line moved our way after we bet. Positive = we
+        priced it better than the market's final price.</div>
+      ${clvChart(d)}
+      <div class="note">Mean ${num(s.mean_clv,3)} points, and ${pct(s.pct_beating_close,1)}
+        of bets beat the close. The big grey bar at zero is games where the line never moved.
+        This is the one genuinely positive signal — but it is measured against the
+        <i>opening</i> line, and it does not survive spread and fees.</div>
+    </div>
+
+    <div class="card">
+      <h2>Fill model sensitivity</h2>
+      <div class="sub">If a result is only positive under optimistic fills, it is not an edge.</div>
+      <table><thead><tr><th class="l">Model</th><th>ROI</th><th>P&amp;L</th><th>Filled</th></tr></thead>
+      <tbody>${fm}</tbody></table>
+      <div class="note">Negative under all three. Pessimistic is worst, as expected —
+        it crosses the spread and pays the taker fee instead of earning the rebate.</div>
+    </div>
+
+    <div class="card">
+      <h2>Live prediction log</h2>
+      <div class="sub">What the model is producing right now, by market type.</div>
+      <table><thead><tr><th class="l">Type</th><th>Preds</th><th>Avg model</th>
+        <th>Avg market</th><th>Resolved</th></tr></thead><tbody>${live}</tbody></table>
+      <div class="note"><b class="warnc">Spread and moneyline are predicted and
+        shadow-traded but have never been backtested.</b> Every number on this page
+        is totals-only, because totals are the only market with a genuine open→close
+        pair to measure CLV against. Nothing validates the other two.</div>
+    </div>`;
+});
+</script>
+</body>
+</html>
