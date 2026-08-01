@@ -29,8 +29,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # Container-to-container, so port 5432 (not the 5433 host mapping).
-      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      # Substituted from .env at runtime so no credential is committed.
+      # Falls back to the local container if REMOTE_DATABASE_URL is unset.
+      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
     volumes:
       - ./recorder-logs:/app/logs
 
@@ -42,7 +43,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
     # Stats, odds, predictions and resolution every 6h. All of these are
     # backfillable, unlike snapshots, so a missed run costs nothing permanent.
     command: ["sh", "-c", "alembic upgrade head && python -m core.scheduler --interval-hours 6"]
