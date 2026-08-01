@@ -43,13 +43,32 @@ Consequences:
 No tier of ROI overrides a failed calibration check: an uncalibrated model
 that is winning is winning by luck.
 
-## Current standing (walk-forward 2024–2026, realistic fills)
+## Current standing (walk-forward 2024–2026, realistic fills, updated 2026-08-01)
 
-| Market | Hit | ROI | Verdict |
-|---|---|---|---|
-| Totals (v3) | 51.0% | −3.05% | market-mirror |
-| Spread (v3) | 50.8% | −3.35% | market-mirror |
-| Moneyline (v3) | — | −6.13% | miscalibrated (no HCA term; winner's curse) |
+| Market | Hit | ROI | Mean CLV [95% CI] | Verdict |
+|---|---|---|---|---|
+| **Totals, recent-form** | 54.1% | **+3.06%** | **+1.75 [+1.45, +2.06]** | passes the CLV gate; see caveats |
+| Totals, season means | 51.0% | −3.05% | +0.83 | market-mirror |
+| Spread (+HCA) | 51.6% | −1.78% | n/a | market-mirror |
+| Moneyline (+HCA) | 39.0% | −2.42% | n/a | still miscalibrated |
 
-The cross-market gap strategy has **no backtest yet** — its paired
-Polymarket-vs-book data began accruing 2026-07-31.
+**Recent-form caveats, stated before anyone bets it:**
+- Per-season ROI is unstable: +1.5% (2024), +5.8% (2025), **−9.3% (2026)** —
+  while 2026 CLV stayed +1.69 [+1.14, +2.24]. Beating the close while losing
+  money at n=89 is what outcome noise looks like at σ≈21, but it is also what
+  a decaying edge looks like. Only more data distinguishes them.
+- Calibration still fails above 0.65 (predicted 0.65 → realised 0.55).
+- This was the ~5th configuration examined; multiple comparisons inflate the
+  best result even when the hypothesis was stated in advance. The shadow log
+  is the true out-of-sample test.
+- Does not survive pessimistic (taker) fills: −4.0%. Maker-only discipline is
+  load-bearing.
+
+**Shrinkage verdict:** shrinking edges by the walk-forward incremental slope
+leaves only 67 genuine disagreements with the book in three seasons, and they
+hit 50.0%. Against season-mean features there is **no tradeable totals edge vs
+the sportsbook** — the recency features and the venue gap are what remain.
+
+Cross-market gap: first paired observations (n=2 resolved) show sub-point
+gaps on liquid pregame evenings; the 6–8 point gaps that motivated the
+project appear intermittent. The table grows nightly.

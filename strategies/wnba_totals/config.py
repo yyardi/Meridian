@@ -101,6 +101,19 @@ class WNBATotalsConfig:
         default_factory=lambda: os.environ.get("WNBA_TOTALS_PROJECTION", "strength")
     )
 
+    #: Use exponentially-decayed recent form (half-life ~5 games) as the
+    #: scoring base instead of full-season means. Tests the recency
+    #: hypothesis: a team on a 200-total hot streak is better described by
+    #: its last month than its season. Overrides splits when on, since the
+    #: recent series is not venue-split.
+    #: Default ON as of 2026-08-01: passed the pre-registered CLV gate
+    #: (+1.75 pts, 95% CI [+1.45, +2.06], n=308, realistic fills; CI excludes
+    #: zero in every season and every fill model). Calibration above 0.65 and
+    #: per-season ROI remain unproven — hence shadow mode, not money.
+    use_recent_form: bool = field(
+        default_factory=lambda: _env_bool("WNBA_RECENT_FORM", True)
+    )
+
     #: Use home/away split scoring rather than overall means.
     #: A WNBA team plays ~22 home and ~22 away games, so each split is a small
     #: sample and the difference between them is mostly noise. Kept as a flag
