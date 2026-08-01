@@ -225,11 +225,17 @@ def project(
     cfg = config or CONFIG
     home, away = features.home, features.away
 
-    # Home/away splits where available, falling back to overall.
-    home_off = home.offense_ppg_home or home.offense_ppg
-    away_off = away.offense_ppg_away or away.offense_ppg
-    home_def = home.defense_ppg_allowed_home or home.defense_ppg_allowed
-    away_def = away.defense_ppg_allowed_away or away.defense_ppg_allowed
+    # Home/away splits, if they are earning their keep. Each split is ~22
+    # games, so the home-minus-away difference is mostly sampling noise; the
+    # backtest decides via cfg.use_home_away_splits.
+    if cfg.use_home_away_splits:
+        home_off = home.offense_ppg_home or home.offense_ppg
+        away_off = away.offense_ppg_away or away.offense_ppg
+        home_def = home.defense_ppg_allowed_home or home.defense_ppg_allowed
+        away_def = away.defense_ppg_allowed_away or away.defense_ppg_allowed
+    else:
+        home_off, away_off = home.offense_ppg, away.offense_ppg
+        home_def, away_def = home.defense_ppg_allowed, away.defense_ppg_allowed
 
     projected_home = (home_off + away_def) / 2.0
     projected_away = (away_off + home_def) / 2.0

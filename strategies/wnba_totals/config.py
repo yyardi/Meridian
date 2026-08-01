@@ -20,6 +20,13 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, default))
@@ -79,6 +86,14 @@ class WNBATotalsConfig:
     #: Clutch execution has no mechanism for moving a game's *combined* score,
     #: so the record modifier is applied to spread/moneyline only.
     apply_record_to_totals: bool = False
+
+    #: Use home/away split scoring rather than overall means.
+    #: A WNBA team plays ~22 home and ~22 away games, so each split is a small
+    #: sample and the difference between them is mostly noise. Kept as a flag
+    #: so the backtest can settle it rather than assumption.
+    use_home_away_splits: bool = field(
+        default_factory=lambda: _env_bool("WNBA_HOME_AWAY_SPLITS", True)
+    )
 
     # -- Risk / sizing guardrails -----------------------------------------
     #: Kelly fraction. Quarter Kelly by default: full Kelly is growth-optimal
