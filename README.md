@@ -19,7 +19,13 @@ This document is the map of the system: what each piece does, why it exists, wha
 | `/goal:fairvalue` | ✅ projection + ladder fit (R²=0.999 on live ladders) |
 | `/goal:predictions` | ✅ log + resolution (179/179 settlement cross-check) |
 | `/goal:backtest` | ✅ walk-forward, CLV-primary, 3 fill models |
-| `/goal:kelly` → `/goal:executor` | ⬜ next |
+| `/goal:kelly` | ✅ correlation-aware fractional Kelly + guardrails |
+| `/goal:executor` | ✅ SHADOW only — no market-order path exists |
+| `/goal:deploy` | ✅ recorder + scheduler containerised, runbook, backups |
+
+**All 12 units built.** 182 tests passing.
+
+> ⚠️ **Open problem:** the model is not calibrated — its probabilities are ~50% realised across every confidence bucket, and edge-vs-return correlation is +0.001. See [docs/math/calibration-problem.md](docs/math/calibration-problem.md). Do not size this live until resolved.
 
 **Backtest sample available today:** 1,645 games (2020–2026); **793 with a true closing line** (2024–2026) usable for CLV.
 

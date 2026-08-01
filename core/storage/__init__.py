@@ -6,6 +6,7 @@ from core.storage.models import (
     MarketSnapshot,
     Prediction,
     ResolvedOutcome,
+    ShadowOrder,
     SportsbookOdds,
     TeamGameLog,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "MarketSnapshot",
     "Prediction",
     "ResolvedOutcome",
+    "ShadowOrder",
     "SportsbookOdds",
     "TeamGameLog",
     "get_database_url",

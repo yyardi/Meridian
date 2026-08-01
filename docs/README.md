@@ -17,6 +17,7 @@ The modelling, stated precisely enough to argue with.
 | [kelly.md](math/kelly.md) | How much do we bet? |
 | [pythagorean-record.md](math/pythagorean-record.md) | Does win-loss record add anything to point differential? |
 | [point-in-time.md](math/point-in-time.md) | How do we make lookahead bias structurally impossible? |
+| [calibration-problem.md](math/calibration-problem.md) | ⚠️ **Open problem** — why the model's probabilities carry no signal |
 
 ## Stack
 
