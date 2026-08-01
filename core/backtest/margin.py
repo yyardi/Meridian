@@ -34,6 +34,7 @@ from core.storage import SportsbookOdds, TeamGameLog
 from strategies.wnba_totals.config import CONFIG, WNBATotalsConfig
 from strategies.wnba_totals.model.fair_value import (
     MARGIN_SIGMA_RATIO,
+    estimate_home_advantage,
     estimate_totals_distribution,
     prob_home_win,
     project,
@@ -116,6 +117,9 @@ class MarginBacktestConfig:
     fill_model: FillModel = FillModel.REALISTIC
     seed: int = 42
     include_playoffs: bool = True
+    #: Add the walk-forward home-court advantage to the projected margin.
+    #: Off reproduces the (measurably miscalibrated) HCA-free model.
+    use_home_advantage: bool = True
 
 
 @dataclass
@@ -204,7 +208,11 @@ def run_margin_backtest(
             continue
 
         dist = estimate_totals_distribution(as_of=gdate, session=session, season=season)
-        projection = project(features, config=mcfg, sigma=dist.sigma)
+        hca = (
+            estimate_home_advantage(as_of=gdate, session=session, season=season)
+            if cfg.use_home_advantage else 0.0
+        )
+        projection = project(features, config=mcfg, sigma=dist.sigma, home_advantage=hca)
         sigma_margin = dist.sigma * MARGIN_SIGMA_RATIO
         result.assumed_margin_sigma = sigma_margin
         result.realized_margins.append(actual_margin)

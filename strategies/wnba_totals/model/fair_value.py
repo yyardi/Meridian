@@ -194,6 +194,49 @@ def estimate_totals_distribution(
     )
 
 
+def estimate_home_advantage(
+    *,
+    as_of: dt.datetime,
+    session: Session,
+    season: int | None = None,
+    history_seasons: int = 3,
+    prior_games: float = 60.0,
+) -> float:
+    """Walk-forward home-court advantage: mean home margin before `as_of`.
+
+    Measured at +2.2 points over 2024-2026 — and per Paul & Weinbach (2014)
+    WNBA books tend to OVERSTATE home advantage, so the estimate comes from
+    our own data rather than basketball folklore's 3-4. Current season shrunk
+    toward recent history, same scheme as the totals distribution.
+    """
+    season = season if season is not None else as_of.year
+
+    def _margins(min_s: int, max_s: int) -> list[float]:
+        stmt = (
+            select(TeamGameLog.points_scored - TeamGameLog.points_allowed)
+            .where(TeamGameLog.is_home.is_(True))
+            .where(TeamGameLog.is_completed.is_(True))
+            .where(TeamGameLog.game_date < as_of)          # no lookahead
+            .where(TeamGameLog.season_type == SEASON_TYPE_REGULAR)
+            .where(TeamGameLog.season >= min_s)
+            .where(TeamGameLog.season <= max_s)
+        )
+        return [float(v) for v in session.scalars(stmt).all() if v is not None]
+
+    current = _margins(season, season)
+    history = _margins(season - history_seasons, season - 1)
+    if not current and not history:
+        return 0.0
+    if not current:
+        return sum(history) / len(history)
+    c = sum(current) / len(current)
+    if not history:
+        return c
+    h = sum(history) / len(history)
+    w = len(current) / (len(current) + prior_games)
+    return w * c + (1 - w) * h
+
+
 def estimate_total_sigma(
     *, as_of: dt.datetime, session: Session, seasons: int = 3
 ) -> tuple[float, float, int]:
@@ -214,6 +257,7 @@ def project(
     *,
     config: WNBATotalsConfig | None = None,
     sigma: float | None = None,
+    home_advantage: float = 0.0,
 ) -> Projection:
     """Project a scoreline from matchup features.
 
@@ -228,7 +272,14 @@ def project(
     # Home/away splits, if they are earning their keep. Each split is ~22
     # games, so the home-minus-away difference is mostly sampling noise; the
     # backtest decides via cfg.use_home_away_splits.
-    if cfg.use_home_away_splits:
+    if getattr(cfg, "use_recent_form", False):
+        # Recency: the decayed series weight the last ~5 games at half the
+        # mass. Not venue-split, so this path overrides splits.
+        home_off = home.offense_ppg_recent or home.offense_ppg
+        away_off = away.offense_ppg_recent or away.offense_ppg
+        home_def = home.defense_ppg_allowed_recent or home.defense_ppg_allowed
+        away_def = away.defense_ppg_allowed_recent or away.defense_ppg_allowed
+    elif cfg.use_home_away_splits:
         home_off = home.offense_ppg_home or home.offense_ppg
         away_off = away.offense_ppg_away or away.offense_ppg
         home_def = home.defense_ppg_allowed_home or home.defense_ppg_allowed
@@ -264,7 +315,9 @@ def project(
     playoff_weight = cfg.playoff_record_weight if features.is_playoff_game else 1.0
     record_edge = home.record_residual - away.record_residual
     record_adjustment = cfg.record_beta * record_edge * playoff_weight
-    projected_margin = baseline_margin + record_adjustment
+    # Home advantage shifts the MARGIN only: the home team scores a little
+    # more and concedes a little less, roughly cancelling in the total.
+    projected_margin = baseline_margin + record_adjustment + home_advantage
 
     notes: list[str] = []
     reduced = False

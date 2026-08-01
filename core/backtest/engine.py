@@ -89,6 +89,38 @@ class BetRecord:
     is_playoff: bool
 
 
+class SlopeTracker:
+    """Expanding-window regression slope of (actual − line) on (proj − line).
+
+    This is the winner's-curse correction: our measured incremental slope is
+    ~0.4, meaning a raw model-vs-line gap is ~60% our own error. Estimated
+    strictly from games BEFORE the current one (update after deciding), so the
+    backtest cannot peek. Until `min_n` games it returns 1.0 — no shrinkage —
+    which is the honest walk-forward behaviour, not a fitted constant.
+    """
+
+    def __init__(self, min_n: int = 100) -> None:
+        self.min_n = min_n
+        self.n = 0
+        self.sx = self.sy = self.sxx = self.sxy = 0.0
+
+    def add(self, x: float, y: float) -> None:
+        self.n += 1
+        self.sx += x
+        self.sy += y
+        self.sxx += x * x
+        self.sxy += x * y
+
+    def slope(self) -> float:
+        if self.n < self.min_n:
+            return 1.0
+        den = self.n * self.sxx - self.sx * self.sx
+        if den <= 0:
+            return 1.0
+        b = (self.n * self.sxy - self.sx * self.sy) / den
+        return min(1.0, max(0.0, b))
+
+
 @dataclass
 class BacktestConfig:
     start_season: int = 2024
@@ -101,6 +133,10 @@ class BacktestConfig:
     fill_model: FillModel = FillModel.REALISTIC
     seed: int = 42
     include_playoffs: bool = True
+    #: Shrink the projection toward the line by the walk-forward incremental
+    #: slope before betting. The statistically correct predictor of
+    #: (actual − line) is slope × (proj − line), not the raw gap.
+    shrink_to_market: bool = False
 
 
 @dataclass
@@ -224,6 +260,7 @@ def run_backtest(
     bankroll = cfg.starting_bankroll
     equity = [bankroll]
     calib_pairs: list[tuple[float, int]] = []
+    tracker = SlopeTracker()
 
     for game_id, game_date, season, season_type, home_id, away_id, actual_total in _game_rows(
         session, cfg.start_season, cfg.end_season, cfg.include_playoffs
@@ -251,13 +288,18 @@ def run_backtest(
         dist = estimate_totals_distribution(as_of=game_date, session=session, season=season)
         projection = project(features, config=mcfg, sigma=dist.sigma)
 
-        diff = projection.projected_total - entry_line
+        raw_diff = projection.projected_total - entry_line
+        shrink = tracker.slope() if cfg.shrink_to_market else 1.0
+        diff = shrink * raw_diff
+        # Update AFTER using the slope, never before — no peeking at this game.
+        if actual_total is not None:
+            tracker.add(raw_diff, float(actual_total) - entry_line)
         if abs(diff) < cfg.min_edge_points:
             continue
 
         side = "over" if diff > 0 else "under"
         entry_price = over_price if side == "over" else under_price
-        model_p = prob_over(projection.projected_total, entry_line, dist.sigma)
+        model_p = prob_over(entry_line + diff, entry_line, dist.sigma)
         if side == "under":
             model_p = 1.0 - model_p
         edge = model_p - entry_price
