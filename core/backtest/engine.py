@@ -178,7 +178,10 @@ def _game_rows(session: Session, start_season: int, end_season: int, include_pla
         .where(TeamGameLog.season >= start_season)
         .where(TeamGameLog.season <= end_season)
         .where(TeamGameLog.season_type.in_(types))
-        .order_by(TeamGameLog.game_date)
+        # Secondary key: game_date ties are common (simultaneous tip-offs) and
+        # Postgres returns ties in physical order, which changes when rows are
+        # updated. A seeded backtest must not depend on heap layout.
+        .order_by(TeamGameLog.game_date, TeamGameLog.espn_game_id)
     ).all()
 
 

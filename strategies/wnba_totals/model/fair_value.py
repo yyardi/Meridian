@@ -295,7 +295,28 @@ def project(
     # disagreements from 48.8% to 55.4%. See docs/math/fair-value.md.
     L2 = features.league_points_per_team
     mode = getattr(cfg, "totals_projection", "halved")
-    if mode == "strength" and L2 > 0:
+    if (
+        mode == "possession"
+        and features.league_pace > 0
+        and features.league_efficiency > 0
+        and home.pace > 0 and away.pace > 0
+    ):
+        # Dean Oliver's structure with additive strengths per component:
+        # score = possessions x efficiency. This is where fast x fast
+        # compounds — the interaction a points-only model cannot express.
+        if getattr(cfg, "use_recent_form", False):
+            oe_h = home.off_efficiency_recent or home.off_efficiency
+            oe_a = away.off_efficiency_recent or away.off_efficiency
+            de_h = home.def_efficiency_recent or home.def_efficiency
+            de_a = away.def_efficiency_recent or away.def_efficiency
+        else:
+            oe_h, oe_a = home.off_efficiency, away.off_efficiency
+            de_h, de_a = home.def_efficiency, away.def_efficiency
+        poss = home.pace + away.pace - features.league_pace
+        L_eff = features.league_efficiency
+        projected_home = poss * (oe_h + de_a - L_eff)
+        projected_away = poss * (oe_a + de_h - L_eff)
+    elif mode == "strength" and L2 > 0:
         projected_home = home_off + away_def - L2
         projected_away = away_off + home_def - L2
     elif mode == "multiplicative" and L2 > 0:

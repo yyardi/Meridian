@@ -156,6 +156,20 @@ class TeamGameLog(Base):
     points_allowed: Mapped[int | None] = mapped_column(Integer)
     is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Box-score stats (nullable — backfilled by core/feeds/espn_boxscores.py).
+    # Enough for the Kubatko possessions estimate FGA − OREB + TOV + 0.44·FTA,
+    # which unlocks pace-based projections (Dean Oliver's structure).
+    fga: Mapped[int | None] = mapped_column(Integer)
+    fta: Mapped[int | None] = mapped_column(Integer)
+    oreb: Mapped[int | None] = mapped_column(Integer)
+    turnovers: Mapped[int | None] = mapped_column(Integer)
+    # Quarter linescores, stored now for future garbage-time filtering.
+    q1: Mapped[int | None] = mapped_column(Integer)
+    q2: Mapped[int | None] = mapped_column(Integer)
+    q3: Mapped[int | None] = mapped_column(Integer)
+    q4: Mapped[int | None] = mapped_column(Integer)
+    ot_points: Mapped[int | None] = mapped_column(Integer)
+
     # ESPN event.seasonType.id: 1 = Preseason, 2 = Regular Season, 3 = Postseason.
     # Load-bearing twice over:
     #   - Preseason (1) must NEVER be written; it would pollute PPG and record.

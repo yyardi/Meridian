@@ -47,10 +47,20 @@ that is winning is winning by luck.
 
 | Market | Hit | ROI | Mean CLV [95% CI] | Verdict |
 |---|---|---|---|---|
-| **Totals, recent-form** | 54.1% | **+3.06%** | **+1.75 [+1.45, +2.06]** | passes the CLV gate; see caveats |
+| **Totals, recent-form** | 53.2% | +1.34% | **+1.75 [+1.45, +2.06]** | passes the CLV gate; see caveats |
 | Totals, season means | 51.0% | −3.05% | +0.83 | market-mirror |
 | Spread (+HCA) | 51.6% | −1.78% | n/a | market-mirror |
 | Moneyline (+HCA) | 39.0% | −2.42% | n/a | still miscalibrated |
+
+**Fill-lottery lesson (2026-08-01):** a row-ordering bug reshuffled which
+resting orders "filled" under the seeded fill model, and ROI moved from
++3.06% to +1.34% — while mean CLV did not move at all. ROI at n≈300 carries
+that much luck; CLV is fill-independent. This is why CLV is the gate.
+
+**Rejected by pre-registered test:** possession-based projection (Kubatko
+pace × efficiency) — CLV +1.50 [+1.19, +1.81] vs champion +1.75. Its 2026
+subslice (+8.1% ROI) is noted and deliberately not acted on: adopting on a
+subslice after rejection is textbook overfitting.
 
 **Recent-form caveats, stated before anyone bets it:**
 - Per-season ROI is unstable: +1.5% (2024), +5.8% (2025), **−9.3% (2026)** —
