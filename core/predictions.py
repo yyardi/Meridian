@@ -27,6 +27,7 @@ from decimal import Decimal
 
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from core.storage import MarketSnapshot, Prediction, get_engine, get_sessionmaker
@@ -166,9 +167,30 @@ class PredictionLogger:
                 if row is not None:
                     rows.append(row)
 
-            session.add_all(rows)
+            # ON CONFLICT DO NOTHING makes a rerun against the same snapshot
+            # idempotent (same guarantee the recorder has).
+            written = 0
+            for row in rows:
+                # Iterate MAPPER attributes, not column names: `model_config`
+                # is stored under the attribute `model_config_snapshot`, so a
+                # column-name loop raises AttributeError.
+                values = {}
+                for attr in Prediction.__mapper__.column_attrs:
+                    key = attr.key
+                    if key == "id":
+                        continue
+                    val = getattr(row, key)
+                    if val is not None:
+                        values[attr.columns[0].name] = val
+                stmt = (
+                    pg_insert(Prediction).values(**values)
+                    .on_conflict_do_nothing(constraint="uq_prediction_market_time_model")
+                    .returning(Prediction.id)
+                )
+                if session.execute(stmt).scalar() is not None:
+                    written += 1
             session.commit()
-            stats.predictions_written = len(rows)
+            stats.predictions_written = written
 
         log.info(
             "prediction_run_complete",

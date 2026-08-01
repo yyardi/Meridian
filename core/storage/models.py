@@ -289,6 +289,13 @@ class Prediction(Base):
     )
 
     __table_args__ = (
+        # A prediction is a function of (market, model, instant). Re-running
+        # against the same snapshot must be a no-op, not a duplicate row that
+        # double-counts in every performance statistic.
+        UniqueConstraint(
+            "market_slug", "predicted_at", "model_version", "config_hash",
+            name="uq_prediction_market_time_model",
+        ),
         Index("ix_predictions_predicted_at", "predicted_at"),
         Index("ix_predictions_model_version", "model_version"),
         Index("ix_predictions_config_hash", "config_hash"),
