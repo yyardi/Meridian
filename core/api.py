@@ -201,6 +201,113 @@ def events() -> dict:
     }
 
 
+@app.get("/api/picks")
+def picks() -> dict:
+    """Tonight's actionable pregame picks, with the shadow order attached."""
+    with _Session() as s:
+        pred_time = s.scalar(select(func.max(Prediction.predicted_at)))
+        if pred_time is None:
+            return {"picks": [], "predicted_at": None}
+        preds = s.scalars(
+            select(Prediction).where(Prediction.predicted_at == pred_time)
+        ).all()
+        shadow = {o.market_slug: o for o in s.scalars(select(ShadowOrder)).all()}
+        starts = {
+            slug: start for slug, start in s.execute(
+                select(MarketSnapshot.market_slug,
+                       func.max(MarketSnapshot.game_start_time))
+                .group_by(MarketSnapshot.market_slug)
+            ).all()
+        }
+
+    now = dt.datetime.now(UTC)
+    out = []
+    for p in preds:
+        start = starts.get(p.market_slug)
+        if start is None or start <= now:      # pregame only
+            continue
+        bid, ask = _f(p.market_bid), _f(p.market_ask)
+        model = _f(p.model_probability)
+        if bid is None or ask is None or model is None:
+            continue
+        edge_yes, edge_no = model - ask, bid - model
+        side, edge = ("YES", edge_yes) if edge_yes >= edge_no else ("NO", edge_no)
+        mtype = (p.sports_market_type or "").replace("basketball_team_full_game_", "")
+        if mtype == "total":
+            side = "OVER" if side == "YES" else "UNDER"
+        o = shadow.get(p.market_slug)
+        out.append({
+            "market_slug": p.market_slug,
+            "event_slug": p.event_slug,
+            "type": mtype,
+            "line": _f(p.line),
+            "side": side,
+            "edge": round(edge, 4),
+            "model": model,
+            "bid": bid, "ask": ask,
+            "game_start": start.isoformat(),
+            "hours_to_tipoff": round((start - now).total_seconds() / 3600, 1),
+            "suspect": edge > 0.15,
+            "shadow": None if o is None else {
+                "limit_price": _f(o.limit_price),
+                "quantity": _f(o.quantity),
+                "would_rest": o.would_rest,
+            },
+        })
+    out.sort(key=lambda r: -r["edge"])
+    return {"predicted_at": pred_time.isoformat(), "picks": out}
+
+
+@app.get("/api/results")
+def results(limit: int = 200) -> dict:
+    """Resolved live predictions — what the model called, and what happened."""
+    with _Session() as s:
+        rows = s.scalars(
+            select(Prediction)
+            .where(Prediction.resolved_outcome.isnot(None))
+            .order_by(Prediction.predicted_at.desc())
+            .limit(limit)
+        ).all()
+
+    out, actionable = [], []
+    for p in rows:
+        model = _f(p.model_probability)
+        mid = _f(p.market_mid)
+        # Only rows with a real market price at prediction time are meaningful.
+        tradeable = mid is not None and mid > 0
+        rec = {
+            "market_slug": p.market_slug,
+            "event_slug": p.event_slug,
+            "type": (p.sports_market_type or "").replace("basketball_team_full_game_", ""),
+            "line": _f(p.line),
+            "model": model,
+            "market": mid,
+            "settled": p.resolved_outcome,
+            "correct": p.was_correct,
+            "model_version": p.model_version,
+            "predicted_at": p.predicted_at.isoformat(),
+            "tradeable": tradeable,
+        }
+        out.append(rec)
+        if tradeable and p.was_correct is not None:
+            actionable.append(bool(p.was_correct))
+
+    return {
+        "results": out,
+        "summary": {
+            "total": len(out),
+            "tradeable": len(actionable),
+            "correct": sum(actionable),
+            "hit_rate": (sum(actionable) / len(actionable)) if actionable else None,
+        },
+    }
+
+
+@app.get("/picks")
+def picks_page() -> FileResponse:
+    return FileResponse(STATIC / "picks.html")
+
+
 @app.get("/api/analytics")
 def analytics() -> dict:
     """Pre-computed model-performance data.
