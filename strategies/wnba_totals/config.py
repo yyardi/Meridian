@@ -80,6 +80,47 @@ class WNBATotalsConfig:
     #: so the record modifier is applied to spread/moneyline only.
     apply_record_to_totals: bool = False
 
+    # -- Risk / sizing guardrails -----------------------------------------
+    #: Kelly fraction. Quarter Kelly by default: full Kelly is growth-optimal
+    #: ONLY if the edge estimate is exact, and ours is model-derived and
+    #: currently uncalibrated (see docs/math/calibration-problem.md).
+    kelly_fraction: float = field(default_factory=lambda: _env_float("WNBA_KELLY_FRAC", 0.25))
+
+    #: Hard caps, applied AFTER Kelly so a model bug cannot produce a
+    #: catastrophic bet. Percentages of bankroll.
+    max_position_size_pct: float = field(
+        default_factory=lambda: _env_float("WNBA_MAX_POS_PCT", 0.05)
+    )
+    max_game_exposure_pct: float = field(
+        default_factory=lambda: _env_float("WNBA_MAX_GAME_PCT", 0.08)
+    )
+    max_daily_exposure_pct: float = field(
+        default_factory=lambda: _env_float("WNBA_MAX_DAY_PCT", 0.20)
+    )
+    #: Below this, the edge is inside model error and not worth trading.
+    min_edge_threshold: float = field(
+        default_factory=lambda: _env_float("WNBA_MIN_EDGE", 0.03)
+    )
+    #: Stop trading entirely below this bankroll.
+    min_bankroll: float = field(default_factory=lambda: _env_float("WNBA_MIN_BANKROLL", 10.0))
+    #: Final absolute backstop, in dollars, regardless of everything above.
+    max_position_dollars: float = field(
+        default_factory=lambda: _env_float("WNBA_MAX_POS_DOLLARS", 5.0)
+    )
+
+    #: Assumed correlation between different market types on the SAME game
+    #: (e.g. moneyline and total). Conservative fixed assumption, not fitted:
+    #: ~250 games/season is not enough to estimate a covariance matrix
+    #: reliably, and a bad estimate is more dangerous than an honest constant.
+    same_game_correlation: float = field(
+        default_factory=lambda: _env_float("WNBA_SAME_GAME_CORR", 0.5)
+    )
+    #: Same-side ladder rungs (Over 176.5 and Over 179.5) are nearly the same
+    #: bet.
+    same_side_ladder_correlation: float = field(
+        default_factory=lambda: _env_float("WNBA_LADDER_CORR", 0.95)
+    )
+
     def as_dict(self) -> dict:
         """Config snapshot for hashing into the prediction log."""
         return asdict(self)

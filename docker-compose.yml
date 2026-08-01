@@ -34,5 +34,18 @@ services:
     volumes:
       - ./recorder-logs:/app/logs
 
+  scheduler:
+    build: .
+    container_name: meridian-scheduler
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+    # Stats, odds, predictions and resolution every 6h. All of these are
+    # backfillable, unlike snapshots, so a missed run costs nothing permanent.
+    command: ["sh", "-c", "alembic upgrade head && python -m core.scheduler --interval-hours 6"]
+
 volumes:
   meridian_pgdata:

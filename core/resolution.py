@@ -170,6 +170,17 @@ class ResolutionJob:
                         select(ResolvedOutcome.market_slug)
                     )
                 )
+                # Only ask about markets whose game has actually finished.
+                # Without this the job fires a settlement request per unplayed
+                # market every cycle and collects ~100 404s for nothing.
+                .where(
+                    Prediction.market_slug.in_(
+                        select(MarketSnapshot.market_slug).where(
+                            MarketSnapshot.game_start_time
+                            < dt.datetime.now(UTC) - dt.timedelta(hours=3)
+                        )
+                    )
+                )
                 .group_by(Prediction.market_slug)
                 .limit(limit)
             ).all()

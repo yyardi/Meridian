@@ -310,3 +310,52 @@ class ResolvedOutcome(Base):
         Index("ix_resolved_outcomes_game_id", "game_id"),
         Index("ix_resolved_outcomes_event_slug", "event_slug"),
     )
+
+
+class ShadowOrder(Base):
+    """An order the executor WOULD have placed. Nothing is sent to the venue.
+
+    Kept faithful enough to be comparable against reality later: tick-rounded
+    limit price, venue minimum respected, book state at decision time, and
+    whether the order would have rested (maker, earns a rebate) or crossed
+    (taker, pays a fee).
+    """
+
+    __tablename__ = "shadow_orders"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    decided_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    #: Deterministic key so a retry cannot double-place in later modes.
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+
+    prediction_id: Mapped[int | None] = mapped_column(BigInteger)
+    market_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    event_slug: Mapped[str | None] = mapped_column(String(200))
+    sports_market_type: Mapped[str | None] = mapped_column(String(64))
+    line: Mapped[Decimal | None] = mapped_column(Points)
+
+    side: Mapped[str] = mapped_column(String(8), nullable=False)      # 'buy' | 'sell'
+    limit_price: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Qty, nullable=False)
+
+    model_probability: Mapped[Decimal | None] = mapped_column(Price)
+    market_bid: Mapped[Decimal | None] = mapped_column(Price)
+    market_ask: Mapped[Decimal | None] = mapped_column(Price)
+    edge_net: Mapped[Decimal | None] = mapped_column(Numeric(8, 6))
+
+    #: True when the limit would rest on the book (earns the maker rebate).
+    would_rest: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    expected_fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+
+    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="SHADOW")
+    binding_constraint: Mapped[str | None] = mapped_column(String(40))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_shadow_orders_decided_at", "decided_at"),
+        Index("ix_shadow_orders_market_slug", "market_slug"),
+    )
