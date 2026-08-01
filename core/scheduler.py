@@ -56,7 +56,11 @@ def run_daily_jobs(season: int | None = None) -> None:
     # 3. Predict against the newest snapshot.
     _safe("predictions", PredictionLogger().run)
 
-    # 4. Resolve anything that has settled.
+    # 4. Shadow orders for the fresh predictions (places nothing).
+    from core.shadow_run import run as shadow_run
+    _safe("shadow", shadow_run, bankroll=35.68)
+
+    # 5. Resolve anything that has settled.
     _safe("resolution", ResolutionJob().run)
 
 
@@ -86,7 +90,12 @@ def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None
             # book cadence cannot see windows; 20 min can. The Polymarket leg
             # is already sampled every 15 min by the recorder.
             from core.feeds.espn_odds import ESPNOddsFetcher
+            from core.predictions import PredictionLogger
+            from core.shadow_run import run as shadow_run
             _safe("odds_fast", ESPNOddsFetcher().fetch_live)
+            # Fresh picks every 20 min so the board is current before tipoff.
+            _safe("predictions_fast", PredictionLogger().run)
+            _safe("shadow_fast", shadow_run, bankroll=35.68)
         time.sleep(odds_minutes * 60)
 
 

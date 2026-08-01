@@ -100,9 +100,19 @@ class PredictionLogger:
             as_of = as_of or snapshot_time
             season = as_of.year
 
-            markets = session.scalars(
-                select(MarketSnapshot).where(MarketSnapshot.captured_at == snapshot_time)
-            ).all()
+            markets = [
+                m for m in session.scalars(
+                    select(MarketSnapshot).where(MarketSnapshot.captured_at == snapshot_time)
+                ).all()
+                # Pregame, quotable markets only. A prediction on an in-flight
+                # game is not a pick — it cannot be traded and it contaminates
+                # the log with post-tipoff "calls".
+                if not m.is_live
+                and m.best_bid is not None and m.best_ask is not None
+            ]
+            if not markets:
+                log.info("no_pregame_markets", snapshot=snapshot_time.isoformat())
+                return stats
 
             dist = estimate_totals_distribution(as_of=as_of, session=session, season=season)
             log.info(
