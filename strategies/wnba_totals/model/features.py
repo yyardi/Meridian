@@ -35,6 +35,11 @@ class LeagueAverages:
     points_scored: float
     points_allowed: float
     games: int
+    #: Mean possessions per team-game (Kubatko estimate), 0.0 when no
+    #: box-score data exists before `as_of`.
+    possessions: float = 0.0
+    #: Mean points per possession.
+    points_per_poss: float = 0.0
 
     @property
     def is_usable(self) -> bool:
@@ -66,6 +71,13 @@ class TeamFeatures:
 
     rest_days: float | None = None
 
+    # Pace and efficiency (possession-based; 0.0 when box scores missing).
+    pace: float = 0.0                     # possessions per game, shrunk
+    off_efficiency: float = 0.0           # points per possession
+    def_efficiency: float = 0.0           # opponent points per possession
+    off_efficiency_recent: float = 0.0    # decayed variants
+    def_efficiency_recent: float = 0.0
+
     # Win-loss record — REGULAR SEASON ONLY.
     wins: int = 0
     losses: int = 0
@@ -89,6 +101,9 @@ class MatchupFeatures:
     #: League mean points per team-game, as_of. 0.0 means "unknown", in which
     #: case the projection falls back to the legacy halved formula.
     league_points_per_team: float = 0.0
+    #: League pace and efficiency, as_of; 0.0 when box scores are missing.
+    league_pace: float = 0.0
+    league_efficiency: float = 0.0
 
     @property
     def sufficient_data(self) -> bool:
@@ -128,6 +143,16 @@ def _decayed_mean(values: list[float], half_life: float) -> float:
     weights = [2.0 ** (-i / half_life) for i in range(len(values))]
     total_w = sum(weights)
     return sum(v * w for v, w in zip(values, weights)) / total_w
+
+
+def possessions_estimate(g) -> float | None:
+    """Kubatko team-possessions estimate: FGA − OREB + TOV + 0.44·FTA.
+
+    None when box-score stats are missing for the game.
+    """
+    if g.fga is None or g.oreb is None or g.turnovers is None or g.fta is None:
+        return None
+    return float(g.fga - g.oreb + g.turnovers + 0.44 * g.fta)
 
 
 def pythagorean_win_pct(points_for: float, points_against: float, exponent: float) -> float:
@@ -184,10 +209,25 @@ def league_averages(*, as_of: dt.datetime, session: Session, season: int | None 
     allowed = [r.points_allowed for r in rows if r.points_allowed is not None]
     if not scored:
         return LeagueAverages(points_scored=0.0, points_allowed=0.0, games=0)
+
+    poss = [
+        possessions_estimate(r)
+        for r in rows
+        if possessions_estimate(r) is not None
+    ]
+    eff = [
+        r.points_scored / p
+        for r, p in (
+            (r, possessions_estimate(r)) for r in rows if r.points_scored is not None
+        )
+        if p
+    ]
     return LeagueAverages(
         points_scored=sum(scored) / len(scored),
         points_allowed=sum(allowed) / len(allowed),
         games=len(rows),
+        possessions=sum(poss) / len(poss) if poss else 0.0,
+        points_per_poss=sum(eff) / len(eff) if eff else 0.0,
     )
 
 
@@ -264,6 +304,30 @@ def build_team_features(
     if games[0].game_date is not None:
         rest_days = (as_of - games[0].game_date).total_seconds() / 86400.0
 
+    # ---- Pace / efficiency (games with box scores only) -------------- #
+    pace = off_eff = def_eff = off_eff_r = def_eff_r = 0.0
+    with_stats = [
+        (g, possessions_estimate(g)) for g in games
+        if possessions_estimate(g) is not None
+        and g.points_scored is not None and g.points_allowed is not None
+    ]
+    if with_stats and league.possessions > 0:
+        poss_series = [p for _, p in with_stats]           # newest first
+        oe_series = [g.points_scored / p for g, p in with_stats]
+        de_series = [g.points_allowed / p for g, p in with_stats]
+        ns = len(with_stats)
+        pace = _shrink(sum(poss_series) / ns, league.possessions, ns, k)
+        off_eff = _shrink(sum(oe_series) / ns, league.points_per_poss, ns, k)
+        def_eff = _shrink(sum(de_series) / ns, league.points_per_poss, ns, k)
+        off_eff_r = _shrink(
+            _decayed_mean(oe_series, cfg.form_half_life_games),
+            league.points_per_poss, ns, k,
+        )
+        def_eff_r = _shrink(
+            _decayed_mean(de_series, cfg.form_half_life_games),
+            league.points_per_poss, ns, k,
+        )
+
     # ---- Record: REGULAR SEASON ONLY -------------------------------- #
     # Postseason is excluded because *regular-season* record is the feature,
     # even when predicting a playoff game. Preseason never reaches the table.
@@ -303,6 +367,11 @@ def build_team_features(
         offense_ppg_recent=off_recent,
         defense_ppg_allowed_recent=def_recent,
         rest_days=rest_days,
+        pace=pace,
+        off_efficiency=off_eff,
+        def_efficiency=def_eff,
+        off_efficiency_recent=off_eff_r,
+        def_efficiency_recent=def_eff_r,
         wins=wins,
         losses=losses,
         win_pct=win_pct,
@@ -354,6 +423,8 @@ def build_matchup_features(
         home=home, away=away, as_of=as_of,
         is_playoff_game=is_playoff_game, head_to_head_games=h2h,
         league_points_per_team=league.points_scored if league.is_usable else 0.0,
+        league_pace=league.possessions,
+        league_efficiency=league.points_per_poss,
     )
 
 

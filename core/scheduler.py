@@ -46,6 +46,10 @@ def run_daily_jobs(season: int | None = None) -> None:
     _safe("stats_today", ESPNStatsFetcher().fetch_date,
           date_yyyymmdd=today.strftime("%Y%m%d"), season=season)
 
+    # 1b. Box-score stats for yesterday's games (pace features need them).
+    from core.feeds.espn_boxscores import backfill as boxscore_backfill
+    _safe("boxscores", boxscore_backfill, start_season=season, end_season=season)
+
     # 2. Live sportsbook odds for the cross-market signal.
     _safe("odds", ESPNOddsFetcher().fetch_live)
 

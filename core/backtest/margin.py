@@ -185,7 +185,7 @@ def run_margin_backtest(
         .where(TeamGameLog.season >= cfg.start_season)
         .where(TeamGameLog.season <= cfg.end_season)
         .where(TeamGameLog.season_type.in_(types))
-        .order_by(TeamGameLog.game_date)
+        .order_by(TeamGameLog.game_date, TeamGameLog.espn_game_id)
     ).all()
 
     for gid, gdate, season, stype, home_id, away_id, hpts, apts in games:
