@@ -54,6 +54,7 @@ def _matchup(home=None, away=None, playoff=False) -> MatchupFeatures:
 # ------------------------------------------------------------------ #
 
 def test_projection_matches_hand_computation():
+    """NOTE: no league context on the matchup -> legacy halved fallback."""
     home = _team("HOME", off=90.0, deff=80.0)
     away = _team("AWAY", off=84.0, deff=76.0)
     p = project(_matchup(home, away))
@@ -63,6 +64,43 @@ def test_projection_matches_hand_computation():
     assert p.projected_away == pytest.approx(82.0)
     assert p.projected_total == pytest.approx(165.0)
     assert p.baseline_margin == pytest.approx(1.0)
+
+
+def test_strength_mode_adds_deviations_instead_of_halving():
+    """The v3 default. off_A + def_B - league_mean per side.
+
+    The original halved form shrank every matchup deviation by half —
+    measured scale slope 1.53 against a correct 1.0.
+    """
+    m = MatchupFeatures(
+        home=_team("HOME", off=90.0, deff=80.0),
+        away=_team("AWAY", off=84.0, deff=76.0),
+        as_of=AS_OF, league_points_per_team=82.0,
+    )
+    p = project(m)   # default config: totals_projection="strength"
+    assert p.projected_home == pytest.approx(90 + 76 - 82)   # 84
+    assert p.projected_away == pytest.approx(84 + 80 - 82)   # 82
+    assert p.projected_total == pytest.approx(166.0)
+    # Margin doubles relative to the halved form (2.0 vs 1.0).
+    assert p.baseline_margin == pytest.approx(2.0)
+
+
+def test_strength_reduces_to_league_total_for_average_teams():
+    """Two exactly-average teams must project exactly the league total."""
+    m = MatchupFeatures(
+        home=_team("HOME", off=82.0, deff=82.0),
+        away=_team("AWAY", off=82.0, deff=82.0),
+        as_of=AS_OF, league_points_per_team=82.0,
+    )
+    assert project(m).projected_total == pytest.approx(164.0)
+
+
+def test_missing_league_context_falls_back_to_halved():
+    """league_points_per_team=0 means unknown -> legacy behaviour, not garbage."""
+    m = _matchup(home=_team("HOME", off=90.0, deff=80.0),
+                 away=_team("AWAY", off=84.0, deff=76.0))
+    p = project(m)
+    assert p.projected_home == pytest.approx(83.0)   # (90+76)/2
 
 
 def test_projection_is_deterministic():
@@ -150,7 +188,7 @@ def test_prediction_carries_version_and_config_hash():
         market_bid=0.50, market_ask=0.52,
     )
     assert out is not None
-    assert out.model_version == MODEL_VERSION == "v2"
+    assert out.model_version == MODEL_VERSION == "v3"
     assert len(out.config_hash) == 64          # sha256 hex
     assert out.model_config_snapshot["record_beta"] == 0.0
     assert out.features["home"]["team_id"] == "HOME"

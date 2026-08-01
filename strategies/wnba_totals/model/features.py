@@ -86,6 +86,9 @@ class MatchupFeatures:
     as_of: dt.datetime
     is_playoff_game: bool = False
     head_to_head_games: int = 0
+    #: League mean points per team-game, as_of. 0.0 means "unknown", in which
+    #: case the projection falls back to the legacy halved formula.
+    league_points_per_team: float = 0.0
 
     @property
     def sufficient_data(self) -> bool:
@@ -350,6 +353,7 @@ def build_matchup_features(
     return MatchupFeatures(
         home=home, away=away, as_of=as_of,
         is_playoff_game=is_playoff_game, head_to_head_games=h2h,
+        league_points_per_team=league.points_scored if league.is_usable else 0.0,
     )
 
 

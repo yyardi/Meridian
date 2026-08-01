@@ -39,6 +39,8 @@ def main() -> int:
     p.add_argument("--csv", type=str, default=None)
     p.add_argument("--plot", type=str, default=None)
     p.add_argument("--no-playoffs", action="store_true")
+    p.add_argument("--margin", action="store_true",
+                   help="backtest spreads and moneylines instead of totals")
     args = p.parse_args()
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.WARNING)
@@ -56,6 +58,17 @@ def main() -> int:
         )
 
     with Session() as s:
+        if args.margin:
+            from core.backtest.margin import (
+                MarginBacktestConfig, format_margin_report, run_margin_backtest,
+            )
+            r = run_margin_backtest(session=s, config=MarginBacktestConfig(
+                start_season=args.start, end_season=args.end,
+                fill_model=FillModel(args.fill),
+                include_playoffs=not args.no_playoffs,
+            ))
+            print(format_margin_report(r))
+            return 0
         if args.all_fill_models:
             results = {m: run_backtest(session=s, config=cfg(m)) for m in FillModel}
             print(format_report(results[FillModel.REALISTIC]))

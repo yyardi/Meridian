@@ -87,6 +87,20 @@ class WNBATotalsConfig:
     #: so the record modifier is applied to spread/moneyline only.
     apply_record_to_totals: bool = False
 
+    #: How two teams' strengths combine into a projected score.
+    #: "halved"  — the original brief's formula, (off_A + def_B)/2. Sum both
+    #:             sides and the projected total is the AVERAGE of the two
+    #:             teams' average game totals — every matchup deviation from
+    #:             league mean is halved. Measured scale slope 1.53 (should
+    #:             be 1.0): reality moves half again as much as it projects.
+    #: "strength" — standard additive strengths, off_A + def_B − league_mean.
+    #:             Deviations add. Measured slope 1.13, CI includes 1.0.
+    #: "multiplicative" — strengths compound (off_A × def_B / league_mean).
+    #:             Empirically indistinguishable from "strength" here.
+    totals_projection: str = field(
+        default_factory=lambda: os.environ.get("WNBA_TOTALS_PROJECTION", "strength")
+    )
+
     #: Use home/away split scoring rather than overall means.
     #: A WNBA team plays ~22 home and ~22 away games, so each split is a small
     #: sample and the difference between them is mostly noise. Kept as a flag
