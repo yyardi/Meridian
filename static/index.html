@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian — WNBA</title>
+<style>
+  :root{
+    --bg:#0a0c10; --panel:#11141b; --panel2:#151922; --line:#1e2430;
+    --txt:#d7dde8; --dim:#7c879b; --faint:#4a5568;
+    --pos:#26d07c; --neg:#ff5c62; --warn:#ffb020; --accent:#4c8dff;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:12px/1.45 var(--mono);
+    font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased;
+  }
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ---- top bar ---- */
+  header{
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    padding:9px 14px; background:var(--panel);
+    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10;
+  }
+  .brand{font-weight:700; letter-spacing:.14em; font-size:12px}
+  .brand span{color:var(--accent)}
+  .stat{display:flex; gap:6px; align-items:baseline}
+  .stat .k{color:var(--faint); font-size:10px; text-transform:uppercase; letter-spacing:.08em}
+  .stat .v{font-size:12px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+  .ok{background:var(--pos); box-shadow:0 0 7px var(--pos)}
+  .bad{background:var(--neg); box-shadow:0 0 7px var(--neg)}
+  .pill{
+    margin-left:auto; padding:3px 9px; border-radius:3px; font-size:10px;
+    letter-spacing:.09em; background:#2a1a1a; color:var(--warn);
+    border:1px solid #3d2a17;
+  }
+
+  /* ---- layout ---- */
+  main{display:grid; grid-template-columns:220px 1fr; gap:0; height:calc(100vh - 41px)}
+  aside{background:var(--panel); border-right:1px solid var(--line); overflow-y:auto; padding:10px}
+  section{overflow-y:auto; padding:0}
+  h3{
+    margin:0 0 8px; font-size:10px; letter-spacing:.11em; color:var(--faint);
+    text-transform:uppercase; font-weight:600;
+  }
+  .game{
+    padding:7px 8px; border-radius:4px; cursor:pointer; margin-bottom:3px;
+    border:1px solid transparent; transition:background .1s;
+  }
+  .game:hover{background:var(--panel2)}
+  .game.sel{background:var(--panel2); border-color:var(--line)}
+  .game .t{font-size:11px; color:var(--txt)}
+  .game .s{font-size:10px; color:var(--faint); margin-top:2px}
+  .live{color:var(--neg); font-weight:700}
+
+  /* ---- table ---- */
+  table{width:100%; border-collapse:collapse}
+  thead th{
+    position:sticky; top:0; background:var(--panel); z-index:5;
+    font-size:9.5px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--faint); font-weight:600; text-align:right;
+    padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  thead th.l{text-align:left}
+  tbody td{
+    padding:5px 10px; text-align:right; border-bottom:1px solid #131720;
+    white-space:nowrap;
+  }
+  tbody td.l{text-align:left}
+  tbody tr:hover{background:#12161e}
+  .mkt{color:var(--dim); font-size:11px}
+  .tag{
+    display:inline-block; min-width:52px; text-align:center; font-size:9.5px;
+    padding:1px 5px; border-radius:2px; letter-spacing:.05em;
+  }
+  .total{background:#132a1f; color:#4fd191}
+  .spread{background:#151f33; color:#6ba3ff}
+  .winner{background:#2a1f33; color:#c08bff}
+  .pos{color:var(--pos)} .neg{color:var(--neg)} .dimc{color:var(--faint)}
+  .bar{display:inline-block; height:3px; border-radius:2px; vertical-align:middle}
+  .flash{animation:fl .5s ease-out}
+  @keyframes fl{from{background:#1d2a3d}to{background:transparent}}
+  svg.spark{vertical-align:middle}
+  .shadowdot{color:var(--warn); font-weight:700}
+  .empty{padding:34px; text-align:center; color:var(--faint)}
+  footer{
+    padding:6px 14px; font-size:10px; color:var(--faint);
+    border-top:1px solid var(--line); background:var(--panel);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">MERIDIAN<span>·</span>WNBA</div>
+  <div class="stat"><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
+  <div class="stat"><span class="k">cycles</span><span class="v num" id="s-cycles">—</span></div>
+  <div class="stat"><span class="k">age</span><span class="v num" id="s-age">—</span></div>
+  <div class="stat"><span class="k">snapshots</span><span class="v num" id="s-snaps">—</span></div>
+  <div class="stat"><span class="k">gaps</span><span class="v num" id="s-gaps">—</span></div>
+  <div class="pill" id="s-mode">SHADOW · 0 REAL ORDERS</div>
+</header>
+
+<main>
+  <aside>
+    <h3>Games</h3>
+    <div id="games"></div>
+    <h3 style="margin-top:16px">Filter</h3>
+    <div class="game" data-f="all">All markets</div>
+    <div class="game" data-f="edge">Has edge only</div>
+    <div class="game" data-f="shadow">Shadow orders</div>
+  </aside>
+
+  <section>
+    <table>
+      <thead>
+        <tr>
+          <th class="l">Market</th>
+          <th class="l">Type</th>
+          <th>Line</th>
+          <th>Bid</th>
+          <th>Ask</th>
+          <th>Spr</th>
+          <th>Mid</th>
+          <th>Model</th>
+          <th>Edge</th>
+          <th class="l">Trend</th>
+          <th>Shadow</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">no markets in the latest snapshot</div>
+  </section>
+</main>
+
+<footer id="foot">connecting…</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+let selectedEvent = null, filter = "all", prev = {}, sparkCache = {};
+
+const fmt = (v, d=2) => v === null || v === undefined ? "—" : v.toFixed(d);
+const pct = v => v === null || v === undefined ? "—" : (v>0?"+":"") + (v*100).toFixed(1) + "%";
+
+async function j(url){ const r = await fetch(url); return r.json(); }
+
+function tagClass(t){ return t === "total" ? "total" : t === "spread" ? "spread" : "winner"; }
+
+function sparkline(points){
+  if(!points || points.length < 2) return "";
+  const vals = points.map(p => p.mid);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = (max - min) || 1;
+  const w = 62, h = 15;
+  const step = w / (vals.length - 1);
+  const d = vals.map((v,i) => `${i===0?"M":"L"}${(i*step).toFixed(1)},${(h - (v-min)/range*h).toFixed(1)}`).join(" ");
+  const up = vals[vals.length-1] >= vals[0];
+  const col = up ? "#26d07c" : "#ff5c62";
+  return `<svg class="spark" width="${w}" height="${h}"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.2"/></svg>`;
+}
+
+async function loadStatus(){
+  const s = await j("/api/status");
+  $("#s-health").innerHTML =
+    `<span class="dot ${s.healthy?"ok":"bad"}"></span>${s.healthy?"LIVE":"STALE"}`;
+  $("#s-cycles").textContent = s.cycles;
+  $("#s-age").textContent = s.age_minutes === null ? "—" : s.age_minutes.toFixed(1) + "m";
+  $("#s-snaps").textContent = (s.counts.snapshots ?? 0).toLocaleString();
+  $("#s-gaps").textContent = s.gaps_recent;
+  $("#s-gaps").className = "v num " + (s.gaps_recent ? "neg" : "pos");
+  $("#s-mode").textContent = `SHADOW · ${s.real_orders_placed} REAL ORDERS`;
+  $("#foot").textContent =
+    `${(s.counts.snapshots??0).toLocaleString()} snapshots · ${(s.counts.book_levels??0).toLocaleString()} book levels · `
+    + `${s.counts.predictions??0} predictions · ${s.counts.shadow_orders??0} shadow orders · updated ${new Date().toLocaleTimeString()}`;
+}
+
+async function loadGames(){
+  const {events} = await j("/api/events");
+  $("#games").innerHTML = events.map(e => {
+    const nm = (e.event_slug||"").replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
+    const t = e.start ? new Date(e.start).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "";
+    return `<div class="game ${selectedEvent===e.event_slug?"sel":""}" data-e="${e.event_slug}">
+      <div class="t">${nm} ${e.is_live?'<span class="live">● LIVE</span>':""}</div>
+      <div class="s">${e.markets} mkts · ${t}</div></div>`;
+  }).join("");
+  document.querySelectorAll("[data-e]").forEach(el => el.onclick = () => {
+    selectedEvent = selectedEvent === el.dataset.e ? null : el.dataset.e;
+    loadGames(); loadBoard();
+  });
+}
+
+async function loadBoard(){
+  const b = await j("/api/board");
+  let rows = b.markets;
+  if(selectedEvent) rows = rows.filter(r => r.event_slug === selectedEvent);
+  if(filter === "edge") rows = rows.filter(r =>
+    r.bid !== null && r.ask !== null && r.model !== null && !r.is_live
+    && Math.abs(r.model - r.mid) > 0.02);
+  if(filter === "shadow") rows = rows.filter(r => r.shadow);
+
+  const liveEdgeOf = r => (r.bid !== null && r.ask !== null && r.model !== null && !r.is_live)
+    ? Math.abs(r.model - r.mid) : -1;
+  rows.sort((a, b2) => liveEdgeOf(b2) - liveEdgeOf(a));
+
+  $("#empty").style.display = rows.length ? "none" : "block";
+
+  $("#rows").innerHTML = rows.map(r => {
+    const key = r.market_slug;
+    const changed = prev[key] !== undefined && prev[key] !== r.mid;
+    prev[key] = r.mid;
+    // Edge is only meaningful against a live, quotable book on a pregame
+    // market. A stale pregame edge shown against an emptied in-game book
+    // reads as a 30% opportunity that cannot be traded.
+    const quotable = r.bid !== null && r.ask !== null;
+    const liveEdge = (quotable && r.model !== null) ? r.model - r.mid : null;
+    const tradeable = quotable && !r.is_live;
+    const edgeCls = !tradeable ? "dimc" : liveEdge > 0 ? "pos" : "neg";
+    const barW = !tradeable || liveEdge === null ? 0 : Math.min(Math.abs(liveEdge) * 260, 46);
+    const barCol = (liveEdge ?? 0) > 0 ? "var(--pos)" : "var(--neg)";
+    const short = key.replace(/^(tsc|asc|aec)-wnba-/,"").replace(/-\d{4}-\d{2}-\d{2}/,"");
+    const spr = r.spread === null ? "—" : (r.spread*100).toFixed(0) + "¢";
+    const sprCls = r.spread !== null && r.spread > 0.05 ? "neg" : "";
+    return `<tr class="${changed?"flash":""}">
+      <td class="l mkt">${short}${r.is_live?' <span class="live">●</span>':""}</td>
+      <td class="l"><span class="tag ${tagClass(r.type)}">${r.type||"—"}</span></td>
+      <td class="num">${r.line===null?"—":r.line.toFixed(1)}</td>
+      <td class="num">${fmt(r.bid)}</td>
+      <td class="num">${fmt(r.ask)}</td>
+      <td class="num ${sprCls}">${spr}</td>
+      <td class="num">${fmt(r.mid)}</td>
+      <td class="num">${fmt(r.model)}</td>
+      <td class="num ${edgeCls}" title="${r.is_live?"live game — v1 does not trade in-game":!quotable?"no quotes":"model minus current mid"}">${
+        r.is_live ? '<span class="live">LIVE</span>' : !quotable ? "—" : pct(liveEdge)
+      }<span class="bar" style="width:${barW}px;background:${barCol};opacity:.5"></span></td>
+      <td class="l" id="sp-${btoa(key).replace(/=/g,"")}">${sparkCache[key]||""}</td>
+      <td class="num">${r.shadow?`<span class="shadowdot">${r.shadow.would_rest?"REST":"CROSS"}</span> ${r.shadow.quantity.toFixed(1)}`:"—"}</td>
+    </tr>`;
+  }).join("");
+
+  // Sparklines for the top rows only — keeps polling cheap.
+  rows.slice(0, 14).forEach(async r => {
+    const h = await j(`/api/history/${r.market_slug}`);
+    const svg = sparkline(h.points);
+    sparkCache[r.market_slug] = svg;
+    const el = document.getElementById("sp-" + btoa(r.market_slug).replace(/=/g,""));
+    if(el) el.innerHTML = svg;
+  });
+}
+
+document.querySelectorAll("[data-f]").forEach(el => el.onclick = () => {
+  filter = el.dataset.f;
+  document.querySelectorAll("[data-f]").forEach(x => x.classList.remove("sel"));
+  el.classList.add("sel");
+  loadBoard();
+});
+
+async function tick(){
+  try{ await Promise.all([loadStatus(), loadBoard()]); }
+  catch(e){ $("#foot").textContent = "connection error — is the API running?"; }
+}
+loadGames();
+tick();
+setInterval(tick, 3000);
+setInterval(loadGames, 30000);
+</script>
+</body>
+</html>

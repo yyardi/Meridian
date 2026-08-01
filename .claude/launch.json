@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "meridian-dashboard",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": ["core.api:app", "--host", "127.0.0.1", "--port", "8008"],
+      "port": 8008
+    }
+  ]
+}
