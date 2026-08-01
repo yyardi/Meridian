@@ -60,7 +60,7 @@ def run_daily_jobs(season: int | None = None) -> None:
     _safe("resolution", ResolutionJob().run)
 
 
-def run_forever(interval_hours: float = 6.0) -> None:
+def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None:
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     structlog.configure(
@@ -70,13 +70,24 @@ def run_forever(interval_hours: float = 6.0) -> None:
                     structlog.processors.JSONRenderer()],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
     )
-    log.info("scheduler_started", interval_hours=interval_hours)
+    log.info("scheduler_started", interval_hours=interval_hours, odds_minutes=odds_minutes)
+    last_full = 0.0
     while True:
-        try:
-            run_daily_jobs()
-        except Exception as exc:
-            log.error("cycle_failed", error=str(exc), exc_info=True)
-        time.sleep(interval_hours * 3600)
+        now = time.time()
+        if now - last_full >= interval_hours * 3600:
+            try:
+                run_daily_jobs()
+            except Exception as exc:
+                log.error("cycle_failed", error=str(exc), exc_info=True)
+            last_full = now
+        else:
+            # Fast leg: sportsbook lines only. The venue-gap signal is a
+            # WINDOW — the book moves on news and the thin venue lags. A 6h
+            # book cadence cannot see windows; 20 min can. The Polymarket leg
+            # is already sampled every 15 min by the recorder.
+            from core.feeds.espn_odds import ESPNOddsFetcher
+            _safe("odds_fast", ESPNOddsFetcher().fetch_live)
+        time.sleep(odds_minutes * 60)
 
 
 def main() -> int:
