@@ -87,6 +87,11 @@
   @keyframes fl{from{background:#1d2a3d}to{background:transparent}}
   svg.spark{vertical-align:middle}
   .shadowdot{color:var(--warn); font-weight:700}
+  .side{display:inline-block;min-width:44px;text-align:center;font-size:9.5px;
+        padding:1px 5px;border-radius:2px;letter-spacing:.05em;font-weight:700}
+  .sideY{background:#10261c;color:#3fd48f}
+  .sideN{background:#2a161a;color:#ff7b80}
+  .suspect{color:var(--warn);font-weight:700;cursor:help}
   .empty{padding:34px; text-align:center; color:var(--faint)}
   footer{
     padding:6px 14px; font-size:10px; color:var(--faint);
@@ -128,6 +133,7 @@
           <th>Spr</th>
           <th>Mid</th>
           <th>Model</th>
+          <th class="l">Side</th>
           <th>Edge</th>
           <th class="l">Trend</th>
           <th>Shadow</th>
@@ -201,11 +207,13 @@ async function loadBoard(){
   if(selectedEvent) rows = rows.filter(r => r.event_slug === selectedEvent);
   if(filter === "edge") rows = rows.filter(r =>
     r.bid !== null && r.ask !== null && r.model !== null && !r.is_live
-    && Math.abs(r.model - r.mid) > 0.02);
+    && Math.max(r.model - r.ask, r.bid - r.model) > 0.02);
   if(filter === "shadow") rows = rows.filter(r => r.shadow);
 
-  const liveEdgeOf = r => (r.bid !== null && r.ask !== null && r.model !== null && !r.is_live)
-    ? Math.abs(r.model - r.mid) : -1;
+  const liveEdgeOf = r => {
+    if (r.bid === null || r.ask === null || r.model === null || r.is_live) return -99;
+    return Math.max(r.model - r.ask, r.bid - r.model);
+  };
   rows.sort((a, b2) => liveEdgeOf(b2) - liveEdgeOf(a));
 
   $("#empty").style.display = rows.length ? "none" : "block";
@@ -214,15 +222,26 @@ async function loadBoard(){
     const key = r.market_slug;
     const changed = prev[key] !== undefined && prev[key] !== r.mid;
     prev[key] = r.mid;
-    // Edge is only meaningful against a live, quotable book on a pregame
-    // market. A stale pregame edge shown against an emptied in-game book
-    // reads as a 30% opportunity that cannot be traded.
+    // These are binary markets: buying the NO side is just selling the YES
+    // side, so a "negative edge on Over" is really a positive edge on Under.
+    // Show the actionable side, priced against the real touch (you buy at the
+    // ask, you sell at the bid) rather than against mid, which no one trades.
     const quotable = r.bid !== null && r.ask !== null;
-    const liveEdge = (quotable && r.model !== null) ? r.model - r.mid : null;
     const tradeable = quotable && !r.is_live;
+    let side = null, liveEdge = null;
+    if (tradeable && r.model !== null) {
+      const edgeYes = r.model - r.ask;    // buy the quoted side at the ask
+      const edgeNo  = r.bid - r.model;    // buy the other side at (1 - bid)
+      if (edgeYes >= edgeNo) { side = "YES"; liveEdge = edgeYes; }
+      else                   { side = "NO";  liveEdge = edgeNo;  }
+      if (r.type === "total") side = (side === "YES") ? "OVER" : "UNDER";
+    }
     const edgeCls = !tradeable ? "dimc" : liveEdge > 0 ? "pos" : "neg";
     const barW = !tradeable || liveEdge === null ? 0 : Math.min(Math.abs(liveEdge) * 260, 46);
     const barCol = (liveEdge ?? 0) > 0 ? "var(--pos)" : "var(--neg)";
+    // A double-digit disagreement with a liquid market is far more often the
+    // model being wrong than a free lunch, especially while it is uncalibrated.
+    const suspect = tradeable && liveEdge !== null && liveEdge > 0.15;
     const short = key.replace(/^(tsc|asc|aec)-wnba-/,"").replace(/-\d{4}-\d{2}-\d{2}/,"");
     const spr = r.spread === null ? "—" : (r.spread*100).toFixed(0) + "¢";
     const sprCls = r.spread !== null && r.spread > 0.05 ? "neg" : "";
@@ -235,9 +254,11 @@ async function loadBoard(){
       <td class="num ${sprCls}">${spr}</td>
       <td class="num">${fmt(r.mid)}</td>
       <td class="num">${fmt(r.model)}</td>
-      <td class="num ${edgeCls}" title="${r.is_live?"live game — v1 does not trade in-game":!quotable?"no quotes":"model minus current mid"}">${
+      <td class="l">${!tradeable ? '<span class="dimc">—</span>'
+        : `<span class="side ${side==="OVER"||side==="YES"?"sideY":"sideN"}">${side}</span>`}</td>
+      <td class="num ${edgeCls}" title="${r.is_live?"live game — v1 does not trade in-game":!quotable?"no quotes":"edge on the actionable side, priced at the touch"}">${
         r.is_live ? '<span class="live">LIVE</span>' : !quotable ? "—" : pct(liveEdge)
-      }<span class="bar" style="width:${barW}px;background:${barCol};opacity:.5"></span></td>
+      }${suspect?' <span class="suspect" title="double-digit disagreement with a liquid market — more likely model error than edge">?</span>':""}<span class="bar" style="width:${barW}px;background:${barCol};opacity:.5"></span></td>
       <td class="l" id="sp-${btoa(key).replace(/=/g,"")}">${sparkCache[key]||""}</td>
       <td class="num">${r.shadow?`<span class="shadowdot">${r.shadow.would_rest?"REST":"CROSS"}</span> ${r.shadow.quantity.toFixed(1)}`:"—"}</td>
     </tr>`;
