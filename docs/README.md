@@ -4,6 +4,7 @@ Short, single-topic docs. Each one should be readable in a few minutes.
 
 The root [`README.md`](../README.md) is the project overview. These go deeper on one thing each.
 
+**Status snapshot:** [STATUS.md](STATUS.md) — one page: built, measured, stuck.
 **Current direction:** [roadmap.md](roadmap.md) — why we stayed WNBA, and the window-hunting plan.
 
 ## Math
