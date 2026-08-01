@@ -99,6 +99,19 @@
   .fbtn.on{background:#16243a;border-color:#2c4a7a;color:#cfe2ff;font-weight:600}
   .fbtn.link{color:var(--accent);border-style:dashed}
   .cnt{float:right;color:var(--faint);font-weight:400}
+  #helpbtn{margin-left:8px;width:20px;height:20px;border-radius:50%;cursor:pointer;
+    background:#1a2233;color:var(--accent);border:1px solid #2c4a7a;font:700 11px var(--mono)}
+  #helpbtn:hover{background:#22304a}
+  .helpbox{display:none;padding:12px 14px;background:#0e1218;border-bottom:1px solid var(--line);
+    font-size:11px;line-height:1.6}
+  .helpbox.on{display:block}
+  .hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px 22px;margin-top:9px}
+  .hd{color:var(--faint)}
+  .helpbox code{background:#161c26;padding:1px 4px;border-radius:2px;color:#8fb8ff}
+  .hwarn{margin-top:10px;padding:7px 10px;border-radius:3px;background:#221708;
+    border:1px solid #3d2a17;color:var(--warn)}
+  .hwarn a{color:var(--accent)}
+  .warnc{color:var(--warn)}
   .empty{padding:34px; text-align:center; color:var(--faint)}
   footer{
     padding:6px 14px; font-size:10px; color:var(--faint);
@@ -116,7 +129,30 @@
   <div class="stat"><span class="k">snapshots</span><span class="v num" id="s-snaps">—</span></div>
   <div class="stat"><span class="k">gaps</span><span class="v num" id="s-gaps">—</span></div>
   <div class="pill" id="s-mode">SHADOW · 0 REAL ORDERS</div>
+  <button id="helpbtn" title="How to read this board">?</button>
 </header>
+
+<div id="help" class="helpbox">
+  <b>Every row is one bet you could place.</b> Prices are probabilities: pay 0.30, win 1.00 if right.
+  <div class="hgrid">
+    <div><code>tsc-</code> total &nbsp;<code>asc-</code> spread &nbsp;<code>aec-</code> winner<br>
+      <span class="hd">then the two teams, the date, and the line.<br>
+      <code>tsc-wnba-lv-chi-2026-08-01-170pt5</code> = "will LV vs CHI score more than 170.5?"</span></div>
+    <div><b>BID / ASK</b> — sell price / buy price.<br>
+      <span class="hd">You always buy at the higher one. The gap is <b>SPR</b>, your cost. Red = too wide to trade.</span></div>
+    <div><b>MID</b> — what the market believes.<br><b>MODEL</b> — what we believe.<br>
+      <span class="hd">Both are probabilities of the <i>first-listed</i> outcome (Over / that team).</span></div>
+    <div><b>SIDE</b> — which way to bet if you took it.<br>
+      <span class="hd">These are yes/no contracts, so betting UNDER is just selling OVER.</span></div>
+    <div><b>EDGE</b> — model minus what you'd pay.<br>
+      <span class="hd">Green = model thinks it's cheap. <span class="warnc">?</span> = disagreement over 15%, which usually means <b>the model is wrong</b>, not that it's free money.</span></div>
+    <div><b>SHADOW</b> — the order we would have placed.<br>
+      <span class="hd">REST = sits on the book and earns a rebate. Nothing is ever actually sent.</span></div>
+  </div>
+  <div class="hwarn">The model is <b>not calibrated</b> — its 65% calls win about 49% of the time.
+    Treat green as "where the model disagrees with the market", not as a tip.
+    <a href="/analytics">See the evidence →</a></div>
+</div>
 
 <main>
   <aside>
@@ -290,9 +326,15 @@ async function loadBoard(){
   });
 }
 
+document.getElementById("helpbtn").onclick = () =>
+  document.getElementById("help").classList.toggle("on");
+
 document.querySelectorAll("[data-f]").forEach(el => el.onclick = () => {
   filter = el.dataset.f;
-  document.querySelectorAll("[data-f]").forEach(x => x.classList.remove("on"));
+  document.getElementById("helpbtn").onclick = () =>
+  document.getElementById("help").classList.toggle("on");
+
+document.querySelectorAll("[data-f]").forEach(x => x.classList.remove("on"));
   el.classList.add("on");
   loadBoard();
 });
