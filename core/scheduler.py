@@ -50,8 +50,18 @@ def run_daily_jobs(season: int | None = None) -> None:
     from core.feeds.espn_boxscores import backfill as boxscore_backfill
     _safe("boxscores", boxscore_backfill, start_season=season, end_season=season)
 
+    # 1c. Player box scores — who actually played (retrospective; screens the
+    # availability hypothesis, never feeds a tradable model).
+    from core.feeds.espn_player_boxscores import backfill as player_backfill
+    _safe("player_boxscores", player_backfill, start_season=season, end_season=season)
+
     # 2. Live sportsbook odds for the cross-market signal.
     _safe("odds", ESPNOddsFetcher().fetch_live)
+
+    # 2b. Point-in-time injury status. Unrecoverable: ESPN publishes current
+    # state only, so a poll missed is a poll lost.
+    from core.feeds.espn_injuries import run as injuries_run
+    _safe("injuries", injuries_run)
 
     # 3. Predict against the newest snapshot.
     _safe("predictions", PredictionLogger().run)
@@ -89,10 +99,15 @@ def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None
             # WINDOW — the book moves on news and the thin venue lags. A 6h
             # book cadence cannot see windows; 20 min can. The Polymarket leg
             # is already sampled every 15 min by the recorder.
+            from core.feeds.espn_injuries import run as injuries_run
             from core.feeds.espn_odds import ESPNOddsFetcher
             from core.predictions import PredictionLogger
             from core.shadow_run import run as shadow_run
             _safe("odds_fast", ESPNOddsFetcher().fetch_live)
+            # Injury status is the *cause* of most news windows, and ESPN keeps
+            # no history — an unrecorded change is gone. It rides the fast leg
+            # for the same reason the book lines do.
+            _safe("injuries_fast", injuries_run)
             # Fresh picks every 20 min so the board is current before tipoff.
             _safe("predictions_fast", PredictionLogger().run)
             _safe("shadow_fast", shadow_run, bankroll=35.68)

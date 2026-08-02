@@ -20,6 +20,7 @@ The modelling, stated precisely enough to argue with.
 | [kelly.md](math/kelly.md) | How much do we bet? |
 | [pythagorean-record.md](math/pythagorean-record.md) | Does win-loss record add anything to point differential? |
 | [point-in-time.md](math/point-in-time.md) | How do we make lookahead bias structurally impossible? |
+| [availability.md](math/availability.md) | Does knowing tonight's lineup beat the closing line? (No — measured) |
 | [calibration-problem.md](math/calibration-problem.md) | ⚠️ **Open problem** — why the model's probabilities carry no signal |
 | [research-notes.md](math/research-notes.md) | What the betting-markets literature says, tied to actions here |
 | [performance-targets.md](math/performance-targets.md) | Pre-registered bars for "good", sample sizes, gates before real money |
@@ -41,6 +42,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 
 | Doc | Covers |
 |---|---|
+| [what-runs.md](infra/what-runs.md) | What the three containers do, and why quiet hours still matter |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |
 | [data-sources.md](infra/data-sources.md) | Every external API, verified |

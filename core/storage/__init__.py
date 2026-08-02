@@ -3,7 +3,10 @@
 from core.storage.base import Base, get_database_url, get_engine, get_sessionmaker
 from core.storage.models import (
     BookLevel,
+    InjuryPoll,
+    InjuryReport,
     MarketSnapshot,
+    PlayerGameLog,
     Prediction,
     ResolvedOutcome,
     ShadowOrder,
@@ -14,7 +17,10 @@ from core.storage.models import (
 __all__ = [
     "Base",
     "BookLevel",
+    "InjuryPoll",
+    "InjuryReport",
     "MarketSnapshot",
+    "PlayerGameLog",
     "Prediction",
     "ResolvedOutcome",
     "ShadowOrder",
