@@ -32,9 +32,13 @@ windows).
    now polls book lines every 20 min. (Done.)
 2. **Window detector:** flag book-line moves ≥ 1.5 pts between polls, then
    measure whether PM lagged and for how long. This is the tradable event.
-3. **Pregame injury/lineup awareness** (the v2 idea from the original brief):
-   the model prices rosters it cannot see. Even a flag — "star listed out,
-   projection stale" — prevents the worst bets and marks likely windows.
+3. ~~**Pregame injury/lineup awareness**~~ — **built and measured, 2026-08-01.**
+   Rejected as a standing feature: an oracle arm that reads the true lineup off
+   the box score gains no CLV, because lineups are public before tip-off and
+   the closing line already prices them. The infrastructure survives the
+   rejection and feeds item 2: the injury change log is timestamped, so "star
+   ruled out at 18:42" is exactly the trigger the window detector needs. See
+   [math/availability.md](math/availability.md).
 4. **Shadow + scanner accrual** continue throughout; the 60-day shadow gate
    on the recency champion is unchanged.
 

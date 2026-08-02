@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from core.backtest.engine import DEFAULT_PRICE, _is_live_provider
+from core.backtest.engine import DEFAULT_PRICE, SlopeTracker, _is_live_provider
 from core.backtest.fills import FillModel, american_to_price, pnl_for_contract, simulate_fill
 from core.backtest.metrics import build_calibration, sample_size_verdict
 from core.config import SEASON_TYPE_POSTSEASON, SEASON_TYPE_REGULAR
@@ -120,6 +120,16 @@ class MarginBacktestConfig:
     #: Add the walk-forward home-court advantage to the projected margin.
     #: Off reproduces the (measurably miscalibrated) HCA-free model.
     use_home_advantage: bool = True
+    #: Shrink the model-vs-market margin gap by the walk-forward incremental
+    #: slope before selecting or pricing.
+    #:
+    #: Measured on 2024-2026 (n=677): the slope of (actual − market) on
+    #: (model − market) is +0.18, CI [−0.03, +0.38]. The market's own margin
+    #: MAE is 9.65 against the model's 10.19. In other words the model is
+    #: *dominated* by the closing market, and a raw gap is ~82% our own error.
+    #: Betting the unshrunk gap treats a 0.18-weight signal as weight 1.0 —
+    #: which is precisely why the unshrunk moneyline hits 33%.
+    shrink_to_market: bool = False
 
 
 @dataclass
@@ -147,6 +157,8 @@ class MarginResult:
 
     realized_margins: list[float] = field(default_factory=list)
     assumed_margin_sigma: float = 0.0
+    #: Final walk-forward incremental slope, for the report.
+    final_slope: float = 1.0
 
 
 class SpreadConventionError(RuntimeError):
@@ -163,6 +175,9 @@ def run_margin_backtest(
     mcfg = model_config or CONFIG
     rng = random.Random(cfg.seed)
     result = MarginResult(config=cfg)
+    # Estimated strictly from games BEFORE the current one, so the backtest
+    # cannot peek. Returns 1.0 (no shrinkage) until it has enough games.
+    tracker = SlopeTracker()
 
     # A wrong sign convention silently inverts every result; verify first.
     agree, total = validate_spread_convention(session, cfg.start_season, cfg.end_season)
@@ -217,10 +232,27 @@ def run_margin_backtest(
         result.assumed_margin_sigma = sigma_margin
         result.realized_margins.append(actual_margin)
 
+        # The market's margin is the anchor for both markets below. Spread is
+        # the cleaner source of it than the moneyline, so prefer it.
+        market_margin = -odds.home_spread if odds.home_spread is not None else None
+        slope = tracker.slope()
+        # Update AFTER using the slope, never before — no peeking at this game.
+        if market_margin is not None:
+            tracker.add(projection.projected_margin - market_margin,
+                        actual_margin - market_margin)
+
+        def shrunk(margin_market: float) -> float:
+            """Model margin, pulled toward the market by the measured slope.
+
+            E[actual − market | model − market] = slope × (model − market) is
+            the statistically correct predictor. The raw gap is not.
+            """
+            raw = projection.projected_margin - margin_market
+            return margin_market + (slope * raw if cfg.shrink_to_market else raw)
+
         # ---- spread ------------------------------------------------- #
         if odds.home_spread is not None:
-            market_margin = -odds.home_spread
-            diff = projection.projected_margin - market_margin
+            diff = shrunk(market_margin) - market_margin
             if abs(diff) >= cfg.spread_threshold_points:
                 bet_home = diff > 0
                 covered = home_covers(actual_margin, odds.home_spread)
@@ -244,7 +276,15 @@ def run_margin_backtest(
         if odds.home_ml is not None and odds.away_ml is not None:
             p_home_market, _ = two_sided_no_vig(odds.home_ml, odds.away_ml)
             if p_home_market is not None:
-                p_home_model = prob_home_win(projection.projected_margin, sigma_margin)
+                # Price from the shrunk margin when available. Where no spread
+                # exists there is no market margin to anchor to, so the raw
+                # projection stands and the bet is on unshrunk information —
+                # which the slope says is mostly noise.
+                margin_for_pricing = (
+                    shrunk(market_margin) if market_margin is not None
+                    else projection.projected_margin
+                )
+                p_home_model = prob_home_win(margin_for_pricing, sigma_margin)
                 gap = p_home_model - float(p_home_market)
                 if abs(gap) >= cfg.winner_prob_threshold:
                     bet_home = gap > 0
@@ -268,6 +308,7 @@ def run_margin_backtest(
                         side_p = p_home_model if bet_home else 1.0 - p_home_model
                         result.winner_calib_pairs.append((side_p, int(won)))
 
+    result.final_slope = tracker.slope()
     return result
 
 
@@ -285,6 +326,8 @@ def format_margin_report(r: MarginResult) -> str:
     add("")
     add(f"  sign convention check : {r.convention_agree}/{r.convention_total} agree "
         f"({(r.convention_agree / r.convention_total * 100) if r.convention_total else 0:.1f}%)")
+    add(f"  market shrinkage      : {'ON' if r.config.shrink_to_market else 'OFF'} "
+        f"(final walk-forward slope {r.final_slope:.3f})")
     add("  NO CLV IS POSSIBLE for these markets: ESPN history has no open/close")
     add("  pair for spreads or moneylines. Hit rate and ROI only — both are")
     add("  noise-dominated at these sample sizes.")

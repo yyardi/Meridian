@@ -534,11 +534,13 @@ Linear baseline first. Only adopt a more complex model when the walk-forward bac
 
 Shadow mode → human-confirm → (much later) autonomous, gated on a real validated track record.
 
-### Pregame check (v2)
+### Pregame check (v2) — built, measured, rejected
 
-An LLM-with-search step near tip-off, to catch what a stats model structurally cannot see: a star ruled out, a lineup change. If a top scorer is out, season-average PPG is stale for tonight and the projection is wrong with no way to self-detect.
+The idea: catch what a stats model structurally cannot see — a star ruled out, a lineup change. If a top scorer is out, season-average PPG is stale for tonight and the projection is wrong with no way to self-detect.
 
-Kept **out** of v1 and isolated in `core/pregame_check.py` because it's non-deterministic — the same game checked twice can return different results, which breaks the exactly-replayable requirement of a walk-forward backtest. Its job is to either flag *"human should look at this"* or apply a simple auditable adjustment — never to silently alter model math.
+It was built deterministically instead of as an LLM step (`player_game_logs` + a point-in-time injury change log + a minutes-redistribution adjustment) and **it does not work**. An oracle arm that reads the true lineup off the box score — strictly more information than any live check could have — gains no closing-line value: +0.06 pts on absence games, 95% CI [−0.10, +0.21]. Lineups are public before tip-off, so the close already prices them. The information predicts the game; it is not news to the market.
+
+Default is off. The infrastructure is kept because the injury log is *timestamped*, which makes it a trigger source for the news-window work rather than a feature. See [docs/math/availability.md](docs/math/availability.md).
 
 ---
 

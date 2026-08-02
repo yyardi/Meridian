@@ -12,7 +12,7 @@ One page: what exists, what it says, where we are stuck.
 
 ## Current data
 
-6,101 market snapshots (60 cycles, no gaps) · 104,916 book levels · 1,645 games · 12,034 odds rows · 1,248 settlements · 923 predictions (252 resolved) · 14 shadow orders.
+7,109 market snapshots · 104,916 book levels · 1,645 games · 12,044 odds rows · 1,248 settlements · 1,346 predictions · 14 shadow orders · **18,076 player-games (2024–26)** · **injury change log live from 2026-08-01**.
 
 ## Performance — canonical numbers
 
@@ -24,7 +24,7 @@ One page: what exists, what it says, where we are stuck.
 
 Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill model; ROI does **not** survive taker fills (−4.0%) — maker-only is load-bearing. Live log hit rates (e.g. 94% on one v3 cohort) are **not** performance: the log includes the no-edge control group by design.
 
-**Hypothesis ledger** — adopted: scale fix, HCA, recency (user's call), calibrated pricing. Rejected: home/away splits, record residual (predicted null), shrinkage-as-strategy, possession structure, MLB expansion (measured: 1¢ spreads on PM's MLB board → no venue gap there).
+**Hypothesis ledger** — adopted: scale fix, HCA, recency (user's call), calibrated pricing. Rejected: home/away splits, record residual (predicted null), shrinkage-as-strategy, possession structure, MLB expansion (measured: 1¢ spreads on PM's MLB board → no venue gap there), **roster availability** (measured: even an oracle that knows the true lineup gains no CLV — the close already prices lineups; see [availability.md](math/availability.md)).
 
 ## Where we are stuck
 
@@ -32,9 +32,9 @@ Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill
 2. **The venue gap has not been observed yet.** Scanner found sub-point gaps on quiet evenings; the hand-observed 6–8 pt gaps are hypothesised to be short *news windows*. The window detector (book moves ≥1.5 pts between polls → measure PM lag) is designed but not built.
 3. **2026 is ambiguous**: −9.3% ROI on +1.69 CLV at n=89 — outcome noise and edge decay are indistinguishable at this sample.
 4. **Moneyline calibration** remains ~10 pts overconfident (winner's curse survives HCA).
-5. **The model cannot see rosters.** Season averages price players who may not play tonight — the pregame injury/lineup flag (planned) is both protection and a window signal.
+5. ~~**The model cannot see rosters.**~~ **Settled, and not the way we expected.** The model still cannot see rosters, but an oracle arm that reads the true lineup off the box score gains no CLV (+0.06 pts on absence games, CI [−0.10, +0.21]) — lineups are public before tip-off and the close already prices them. ROI rose (+1.3% → +6.8%) but the bands overlap almost entirely — [−11.4%, +14.0%] vs [−5.0%, +18.7%] at n≈250. Roster awareness is worth *speed*, not *information*, which folds it into the window question. [availability.md](math/availability.md)
 6. **Laptop hosting**: a sleeping Mac still gaps the unrecoverable snapshot stream (`caffeinate -dis`).
 
 ## Next, in order
 
-Window detector → pregame injury/lineup flag → shadow-gate review (~Oct 1) → boosted-trees ceiling probe (queued last). Real money remains gated: backtest CLV ✅ · 60-day shadow CLV ⬜ · calibration tolerance ⬜.
+Window detector (now carrying the injury-log timestamps as a trigger source) → moneyline recalibration → de-vigged CLV ledger → shadow-gate review (~Oct 1) → boosted-trees ceiling probe (queued last). Real money remains gated: backtest CLV ✅ · 60-day shadow CLV ⬜ · calibration tolerance ⬜.

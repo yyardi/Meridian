@@ -48,6 +48,10 @@ from core.config import SEASON_TYPE_POSTSEASON, SEASON_TYPE_REGULAR
 from core.config_hash import compute_config_hash
 from core.storage import SportsbookOdds, TeamGameLog
 from strategies.wnba_totals.config import CONFIG, WNBATotalsConfig
+from strategies.wnba_totals.model.availability import (
+    PlayerAvailabilityIndex,
+    adjustment_from_projections,
+)
 from strategies.wnba_totals.model.fair_value import (
     MODEL_VERSION,
     estimate_totals_distribution,
@@ -87,6 +91,10 @@ class BetRecord:
     pnl: float
     clv_points: float | None
     is_playoff: bool
+    #: Points added to the projection for roster absences (0.0 when off).
+    availability_delta: float = 0.0
+    #: True when at least one rotation player was absent for either team.
+    has_absence: bool = False
 
 
 class SlopeTracker:
@@ -143,6 +151,22 @@ class BacktestConfig:
     #: 0.55). E[actual − line | raw_diff] = slope × raw_diff is the correct
     #: expectation to price from, and it uses no new information.
     calibrate_probabilities: bool = True
+    #: Roster-availability adjustment. Three modes, and the distinction is the
+    #: whole experiment:
+    #:   "off"     — incumbent behaviour, the control arm.
+    #:   "oracle"  — absence taken from the box score, i.e. with hindsight.
+    #:               **NOT TRADABLE.** An upper bound on what roster awareness
+    #:               could be worth, used to decide whether waiting a season
+    #:               for point-in-time injury data is justified at all.
+    #:   "report"  — absence from the point-in-time injury change log. Tradable,
+    #:               but empty before the recorder's first run (2026-08-01), so
+    #:               on history it is silently identical to "off".
+    availability_mode: str = "off"
+    #: Multiplier on the raw availability delta. 1.0 takes the minute-
+    #: redistribution arithmetic at face value. That arithmetic has offsetting
+    #: biases of unknown net sign (see availability.py), so this exists for the
+    #: data to scale the term rather than for anyone to guess it.
+    availability_beta: float = 1.0
 
 
 @dataclass
@@ -249,6 +273,49 @@ def _odds_for_game(session: Session, espn_game_id: str) -> tuple[float | None, f
     return entry, closing, over_price, under_price
 
 
+def _availability_delta(
+    *,
+    index: PlayerAvailabilityIndex | None,
+    mode: str,
+    espn_game_id: str,
+    home_id: str,
+    away_id: str | None,
+    as_of: dt.datetime,
+) -> tuple[float, bool]:
+    """Combined points adjustment for both teams' absences, and whether any.
+
+    The sum of both teams' deltas is the adjustment to the *total*: a scorer
+    out on either side lowers the expected combined score.
+    """
+    if mode == "off" or index is None or away_id is None:
+        return 0.0, False
+    if mode not in {"oracle", "report"}:
+        raise ValueError(f"unknown availability_mode: {mode!r}")
+
+    total = 0.0
+    absence = False
+    for team_id in (home_id, away_id):
+        if mode == "oracle":
+            absent = index.oracle_absent_ids(
+                espn_game_id=espn_game_id, team_id=team_id, as_of=as_of
+            )
+        else:
+            absent = index.absent_from_reports(team_id=team_id, as_of=as_of)
+        if not absent:
+            continue
+
+        projections, n_games = index.projections(team_id=team_id, as_of=as_of)
+        adj = adjustment_from_projections(
+            team_id=team_id, as_of=as_of, projections=projections,
+            n_games=n_games, absent_ids=absent,
+        )
+        if not adj.sufficient_data:
+            continue
+        total += adj.delta_points
+        absence = absence or adj.has_absence
+    return total, absence
+
+
 def run_backtest(
     *,
     session: Session,
@@ -265,6 +332,17 @@ def run_backtest(
         model_version=MODEL_VERSION,
         config_hash=compute_config_hash(mcfg.as_dict()),
     )
+
+    availability: PlayerAvailabilityIndex | None = None
+    if cfg.availability_mode != "off":
+        availability = PlayerAvailabilityIndex(
+            session=session,
+            start_season=cfg.start_season,
+            end_season=cfg.end_season,
+            half_life=mcfg.form_half_life_games,
+        )
+        if cfg.availability_mode == "report":
+            availability.load_injury_log(session=session)
 
     bankroll = cfg.starting_bankroll
     equity = [bankroll]
@@ -297,7 +375,13 @@ def run_backtest(
         dist = estimate_totals_distribution(as_of=game_date, session=session, season=season)
         projection = project(features, config=mcfg, sigma=dist.sigma)
 
-        raw_diff = projection.projected_total - entry_line
+        avail_delta, has_absence = _availability_delta(
+            index=availability, mode=cfg.availability_mode, espn_game_id=game_id,
+            home_id=home_id, away_id=away_id, as_of=game_date,
+        )
+        projected_total = projection.projected_total + cfg.availability_beta * avail_delta
+
+        raw_diff = projected_total - entry_line
         slope = tracker.slope()
         sel_diff = slope * raw_diff if cfg.shrink_to_market else raw_diff
         prob_diff = slope * raw_diff if cfg.calibrate_probabilities else sel_diff
@@ -358,11 +442,13 @@ def run_backtest(
             BetRecord(
                 game_date=game_date, espn_game_id=game_id, season=season,
                 season_type=season_type, side=side, entry_line=entry_line,
-                closing_line=closing_line, projected_total=projection.projected_total,
+                closing_line=closing_line, projected_total=projected_total,
                 model_probability=model_p, entry_price=fill.price, edge=edge,
                 contracts=fill.contracts, filled=fill.filled, fee=fill.fee,
                 actual_total=actual_total, won=won, pnl=pnl, clv_points=clv,
                 is_playoff=(season_type == SEASON_TYPE_POSTSEASON),
+                availability_delta=cfg.availability_beta * avail_delta,
+                has_absence=has_absence,
             )
         )
 

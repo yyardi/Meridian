@@ -191,6 +191,138 @@ class TeamGameLog(Base):
     )
 
 
+class PlayerGameLog(Base):
+    """One row per player per game — who actually played, and how much.
+
+    **Retrospective, not point-in-time.** A row here is only knowable after the
+    game: it is the box score. It answers "was she available?" with hindsight,
+    which is exactly what a *screening* experiment needs (an upper bound on
+    what roster awareness could be worth) and exactly what a tradable model may
+    not use. The point-in-time counterpart is `InjuryReport`, which only
+    accrues forward. Nothing in the feature layer may join these two as if they
+    were the same thing; see docs/math/availability.md.
+
+    `did_not_play` is ESPN's own flag. A player who is injured usually does not
+    appear in the payload at all, so absence from this table for a game she
+    could otherwise have played is itself the signal.
+    """
+
+    __tablename__ = "player_game_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    espn_game_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    game_date: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    season_type: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    team_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    athlete_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    athlete_name: Mapped[str | None] = mapped_column(String(120))
+    position: Mapped[str | None] = mapped_column(String(16))
+
+    starter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    did_not_play: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    dnp_reason: Mapped[str | None] = mapped_column(String(64))
+
+    minutes: Mapped[int | None] = mapped_column(Integer)
+    points: Mapped[int | None] = mapped_column(Integer)
+    plus_minus: Mapped[int | None] = mapped_column(Integer)
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("espn_game_id", "athlete_id", name="uq_player_game"),
+        Index("ix_player_game_logs_game_date", "game_date"),
+        Index("ix_player_game_logs_espn_game_id", "espn_game_id"),
+        # The as_of query shape: one team's players' prior games, newest first.
+        Index("ix_player_game_logs_team_date", "team_id", "game_date"),
+        Index("ix_player_game_logs_athlete_date", "athlete_id", "game_date"),
+    )
+
+
+class InjuryReport(Base):
+    """Point-in-time injury status — a **change log**, not a per-poll dump.
+
+    ESPN's injuries feed reports *current* state only. The same is true of the
+    `injuries` block inside a game summary: fetching the summary of a 2025 game
+    today returns injuries dated 2026, so historical status cannot be
+    reconstructed from it. This table is therefore only ever correct going
+    forward, from the moment the recorder starts.
+
+    A row is written when a player's status *changes* (including to `Cleared`,
+    synthesised when she drops out of the feed). Reading the status as of an
+    instant is "latest row for that athlete with `captured_at` <= as_of", which
+    is correct precisely because unchanged states are not re-written. Gaps in
+    coverage are not silently invisible: `InjuryPoll` records every poll, so a
+    recorder outage is detectable rather than being mistaken for "no changes".
+    """
+
+    __tablename__ = "injury_reports"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: When WE observed this state. The only timestamp a backtest may filter on.
+    captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: ESPN's own "last updated" for the designation. Informational only — it is
+    #: not evidence we knew it then.
+    reported_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="espn_injuries")
+    team_id: Mapped[str | None] = mapped_column(String(32))
+    team_name: Mapped[str | None] = mapped_column(String(64))
+
+    athlete_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    athlete_name: Mapped[str | None] = mapped_column(String(120))
+    position: Mapped[str | None] = mapped_column(String(16))
+
+    #: 'Out' | 'Day-To-Day' | 'Cleared' (synthesised) | whatever ESPN sends.
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    status_type: Mapped[str | None] = mapped_column(String(48))  # INJURY_STATUS_OUT etc.
+    detail_type: Mapped[str | None] = mapped_column(String(64))  # 'Knee', "Coach's Decision"
+    return_date: Mapped[str | None] = mapped_column(String(16))
+
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Re-running a poll must not duplicate a change.
+        UniqueConstraint("athlete_id", "captured_at", name="uq_injury_athlete_time"),
+        Index("ix_injury_reports_captured_at", "captured_at"),
+        # The as_of query shape: one athlete's status history, newest first.
+        Index("ix_injury_reports_athlete_time", "athlete_id", "captured_at"),
+        Index("ix_injury_reports_team_id", "team_id"),
+    )
+
+
+class InjuryPoll(Base):
+    """One row per injury-feed poll, whether or not anything changed.
+
+    Without this, a change log is ambiguous: no rows for a week could mean a
+    quiet week or a dead recorder. With it, coverage is a query.
+    """
+
+    __tablename__ = "injury_polls"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    captured_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, unique=True
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="espn_injuries")
+    n_teams: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_designations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_changes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_injury_polls_captured_at", "captured_at"),)
+
+
 class SportsbookOdds(Base):
     """ESPN sportsbook lines, live and historical.
 
