@@ -229,3 +229,64 @@ def test_config_hash_stable_across_processes():
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     ).stdout.strip()
     assert out == here, f"cross-process mismatch: {out} != {here}"
+
+
+# ------------------------------------------------------------------ #
+# Connection pooling — Supabase session mode caps the PROJECT at 15
+# ------------------------------------------------------------------ #
+
+
+def test_app_url_is_untouched_without_the_flag(monkeypatch):
+    from core.storage.base import app_database_url
+
+    monkeypatch.delenv("MERIDIAN_TX_POOLER", raising=False)
+    url = "postgresql+psycopg://u:p@host.pooler.supabase.com:5432/postgres"
+    assert app_database_url(url) == url
+
+
+def test_app_url_moves_to_the_transaction_pooler_when_enabled(monkeypatch):
+    """Session mode allows 15 clients across the whole project; four
+    containers plus the dashboard exhaust it. Transaction mode does not."""
+    from core.storage.base import app_database_url
+
+    monkeypatch.setenv("MERIDIAN_TX_POOLER", "1")
+    url = "postgresql+psycopg://u:p@host.pooler.supabase.com:5432/postgres"
+    assert app_database_url(url).endswith(":6543/postgres")
+
+
+def test_local_urls_are_never_rewritten(monkeypatch):
+    """Local Docker Postgres has no pooler; rewriting its port breaks it."""
+    from core.storage.base import app_database_url
+
+    monkeypatch.setenv("MERIDIAN_TX_POOLER", "1")
+    local = "postgresql+psycopg://meridian:meridian@localhost:5433/meridian"
+    assert app_database_url(local) == local
+
+
+def test_migrations_keep_session_mode(monkeypatch):
+    """Alembic reads get_database_url() directly and must NOT be rewritten —
+    transaction mode has no advisory locks."""
+    from core.storage.base import get_database_url
+
+    monkeypatch.setenv("MERIDIAN_TX_POOLER", "1")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+psycopg://u:p@host.pooler.supabase.com:5432/postgres"
+    )
+    assert ":5432/" in get_database_url()
+
+
+def test_transaction_pooler_disables_prepared_statements(monkeypatch):
+    """psycopg prepares after 5 executions; a prepared statement cannot
+    survive being rotated onto a different backend connection."""
+    from core.storage.base import get_engine
+
+    monkeypatch.setenv("MERIDIAN_TX_POOLER", "1")
+    engine = get_engine("postgresql+psycopg://u:p@host.pooler.supabase.com:5432/postgres")
+    assert engine.url.port == 6543
+    assert engine.dialect.create_connect_args(engine.url)[1].get("prepare_threshold") is None
+
+
+def test_pool_stays_small_enough_for_several_processes():
+    from core.storage.base import DEFAULT_MAX_OVERFLOW, DEFAULT_POOL_SIZE
+
+    assert DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW <= 3
