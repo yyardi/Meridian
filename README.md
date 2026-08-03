@@ -39,6 +39,33 @@ python -m core.feeds.espn_stats --backfill 2020-2026
 python -m core.feeds.espn_odds --live
 ```
 
+## The dashboard
+
+**<http://localhost:8008>** — live board, picks, results, analytics.
+
+Start it if it is not already up:
+
+```bash
+.venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008
+```
+
+| Page | Shows |
+|---|---|
+| <http://localhost:8008/> | Live board — every market, model price, edge |
+| <http://localhost:8008/picks> | Today's picks and resolved results |
+| <http://localhost:8008/analytics> | Charts: CLV, calibration, equity |
+
+Localhost only, and read-only by construction: there is no write endpoint and
+no order path anywhere in `core/api.py`. The dashboard is a window, not a
+control panel.
+
+**Reading the edge column:** an edge is only tradable if the row is
+*actionable*. Rows marked `reduced_confidence` are usually games the
+sportsbooks have not priced yet — with no book line there is nothing to anchor
+the model against, so the number shown is raw model opinion and is typically
+the largest and least trustworthy figure on the page. See
+[how-it-all-works.md](docs/how-it-all-works.md#5-the-single-most-important-idea-the-winners-curse).
+
 ---
 
 ## Table of contents
