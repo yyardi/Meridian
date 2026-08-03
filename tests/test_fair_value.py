@@ -188,7 +188,10 @@ def test_prediction_carries_version_and_config_hash():
         market_bid=0.50, market_ask=0.52,
     )
     assert out is not None
-    assert out.model_version == MODEL_VERSION == "v3"
+    # v4: the live path now applies the winner's-curse shrinkage the backtest
+    # always did. Pinned to a literal deliberately — a silent version drift
+    # would let two model generations share a grouping key in the log.
+    assert out.model_version == MODEL_VERSION == "v4"
     assert len(out.config_hash) == 64          # sha256 hex
     assert out.model_config_snapshot["record_beta"] == 0.0
     assert out.features["home"]["team_id"] == "HOME"
@@ -361,3 +364,131 @@ def test_missing_quotes_are_dropped_not_guessed():
     rungs = [LadderRung(173.5, None, None), LadderRung(176.5, 0.71, 0.77)]
     points, dropped = clean_rungs(rungs)
     assert len(points) == 1 and any("missing" in d for d in dropped)
+
+
+# ------------------------------------------------------------------ #
+# Winner's-curse shrinkage (the live path's correction)
+# ------------------------------------------------------------------ #
+
+
+def _proj(total: float, margin: float = 2.0, sigma: float = 19.0):
+    from strategies.wnba_totals.model.fair_value import Projection
+
+    half = (total - margin) / 2.0
+    return Projection(
+        projected_home=half + margin, projected_away=half,
+        projected_total=total, projected_margin=margin, baseline_margin=margin,
+        record_adjustment=0.0, sigma=sigma, is_playoff_game=False,
+        reduced_confidence=False, confidence_notes=None,
+    )
+
+
+def test_shrinkage_pulls_the_projection_toward_the_market():
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    out = shrink_to_market(_proj(182.0), market_total=175.0, slope=0.25)
+    # 175 + 0.25 * 7 = 176.75
+    assert out.projected_total == pytest.approx(176.75)
+
+
+def test_shrinkage_preserves_the_margin():
+    """The anchor is a total; there is no market total to shrink a margin by,
+    so spread and moneyline pricing must be left alone."""
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    before = _proj(182.0, margin=6.0)
+    after = shrink_to_market(before, market_total=175.0, slope=0.25)
+    assert after.projected_margin == pytest.approx(before.projected_margin)
+    assert after.projected_home - after.projected_away == pytest.approx(6.0)
+
+
+def test_shrunk_sides_still_sum_to_the_total():
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    out = shrink_to_market(_proj(182.0, margin=4.0), market_total=170.0, slope=0.3)
+    assert out.projected_home + out.projected_away == pytest.approx(out.projected_total)
+
+
+def test_slope_of_one_is_a_no_op():
+    """Slope 1.0 means 'no measured shrinkage yet' — must not alter anything."""
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    before = _proj(182.0)
+    assert shrink_to_market(before, market_total=175.0, slope=1.0) is before
+
+
+def test_no_market_anchor_is_a_no_op():
+    """Without a book line there is nothing to shrink toward."""
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    before = _proj(182.0)
+    assert shrink_to_market(before, market_total=None, slope=0.25) is before
+
+
+def test_shrinkage_shrinks_the_displayed_edge_severalfold():
+    """The bug this fixes: the dashboard showed the raw gap.
+
+    A 7-point disagreement reads as a ~14% edge unshrunk and ~2-3% shrunk at
+    the measured slope. Anyone sizing on the unshrunk number is sizing on a
+    number roughly four times too large.
+    """
+    from strategies.wnba_totals.model.fair_value import prob_over, shrink_to_market
+
+    book, sigma, slope = 175.0, 19.0, 0.231
+    raw = _proj(182.0, sigma=sigma)
+    shrunk = shrink_to_market(raw, market_total=book, slope=slope)
+
+    raw_edge = prob_over(raw.projected_total, book, sigma) - 0.5
+    shrunk_edge = prob_over(shrunk.projected_total, book, sigma) - 0.5
+
+    assert raw_edge > 0.13
+    assert shrunk_edge < 0.05
+    assert raw_edge / shrunk_edge > 3.0
+
+
+def test_margin_is_shrunk_against_its_own_anchor():
+    """Totals and margin disagree independently and must shrink separately.
+
+    A game can be one where we disagree wildly about pace and not at all about
+    who wins. Averaging those two disagreements would corrupt both.
+    """
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    before = _proj(182.0, margin=10.0)
+    after = shrink_to_market(
+        before, market_total=175.0, market_margin=2.0, slope=0.2
+    )
+    assert after.projected_total == pytest.approx(175.0 + 0.2 * 7.0)   # 176.4
+    assert after.projected_margin == pytest.approx(2.0 + 0.2 * 8.0)    # 3.6
+
+
+def test_sides_are_rebuilt_consistently_from_total_and_margin():
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    out = shrink_to_market(
+        _proj(182.0, margin=10.0), market_total=175.0,
+        market_margin=2.0, slope=0.2,
+    )
+    assert out.projected_home + out.projected_away == pytest.approx(out.projected_total)
+    assert out.projected_home - out.projected_away == pytest.approx(out.projected_margin)
+
+
+def test_a_missing_anchor_leaves_that_dimension_alone():
+    """No book spread => margin untouched, total still shrunk."""
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    before = _proj(182.0, margin=10.0)
+    after = shrink_to_market(
+        before, market_total=175.0, market_margin=None, slope=0.2
+    )
+    assert after.projected_margin == pytest.approx(10.0)
+    assert after.projected_total < before.projected_total
+
+
+def test_no_anchors_at_all_is_a_no_op():
+    from strategies.wnba_totals.model.fair_value import shrink_to_market
+
+    before = _proj(182.0)
+    assert shrink_to_market(
+        before, market_total=None, market_margin=None, slope=0.2
+    ) is before
