@@ -78,6 +78,17 @@ class MarketSnapshot(Base):
     event_score: Mapped[str | None] = mapped_column(String(32))
     event_period: Mapped[str | None] = mapped_column(String(32))
 
+    #: Which depth tier this row was sampled under, or NULL for none.
+    #:
+    #: The live recorder cannot afford full depth on every market every second,
+    #: so it samples the rungs nearest the money often ('near') and the deep
+    #: rungs rarely ('deep'). Recording the tier makes that sparsity a query
+    #: rather than a thing you have to know: a later analysis can ask "was this
+    #: market eligible for depth at this instant?" and distinguish *no resting
+    #: size* from *we did not look*. Without it the two are indistinguishable,
+    #: and an absent book reads as an empty one.
+    book_tier: Mapped[str | None] = mapped_column(String(8))
+
     # Full payload. Schemas drift; reparsing stored JSON beats re-fetching data
     # that no longer exists.
     raw: Mapped[dict | None] = mapped_column(JSONB)
@@ -117,11 +128,23 @@ class BookLevel(Base):
     quantity: Mapped[Decimal] = mapped_column(Qty, nullable=False)
     level_index: Mapped[int] = mapped_column(Integer, nullable=False)  # 0 = top of book
 
+    #: When the book call actually returned, which is NOT the parent snapshot's
+    #: `captured_at` once depth is sampled on a slower loop than price.
+    #:
+    #: The live recorder polls top-of-book every second but depth every few
+    #: seconds, so a depth row can be several seconds younger than the snapshot
+    #: it hangs from. Inheriting the parent's timestamp would silently backdate
+    #: it, and the whole depth-signal question ("did size appear *before* the
+    #: move?") is precisely a question about ordering. NULL for rows written
+    #: before this column existed, where depth and price were fetched together.
+    captured_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
     snapshot: Mapped[MarketSnapshot] = relationship(back_populates="levels")
 
     __table_args__ = (
         UniqueConstraint("snapshot_id", "side", "level_index", name="uq_book_level"),
         Index("ix_book_levels_snapshot_id", "snapshot_id"),
+        Index("ix_book_levels_captured_at", "captured_at"),
     )
 
 
@@ -321,6 +344,42 @@ class InjuryPoll(Base):
     )
 
     __table_args__ = (Index("ix_injury_polls_captured_at", "captured_at"),)
+
+
+class ModelCalibration(Base):
+    """Slow-moving fitted constants, computed once and reused.
+
+    The winner's-curse slope is estimated by walking every completed game and
+    re-deriving its point-in-time features — seconds locally, minutes against a
+    remote database. The prediction job runs every 20 minutes and cannot pay
+    that each time, but the slope only changes when games complete, so it is
+    computed daily and read from here.
+
+    `as_of` is stored because the value is a point-in-time estimate: a slope
+    fitted on games through August must never be applied to a July prediction.
+    Readers take the freshest row at or before their own `as_of`.
+    """
+
+    __tablename__ = "model_calibration"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: The instant the estimate is valid from — games strictly before it.
+    as_of: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: e.g. 'totals_market_slope'.
+    metric: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    #: Games the estimate was fitted on — an estimate from 12 games is not the
+    #: same object as one from 700, and the reader should be able to tell.
+    n_observations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    computed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("metric", "as_of", name="uq_calibration_metric_asof"),
+        Index("ix_model_calibration_metric_asof", "metric", "as_of"),
+    )
 
 
 class SportsbookOdds(Base):
