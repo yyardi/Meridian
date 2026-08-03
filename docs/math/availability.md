@@ -91,3 +91,13 @@ The gate failed, but three pieces are kept because they are load-bearing for the
 ## Status
 
 **Rejected as a standing totals feature** (oracle CLV gate, 2026-08-01). Default is `availability_mode="off"`; the incumbent champion is unchanged. Re-open only if the news-window work shows the market repricing lineups slowly on Polymarket US, which would be a claim about latency, not about the feature above.
+
+---
+
+## Postscript: Experiment 5 (pace interaction) died here too
+
+The ledger proposed replacing the arithmetic mean of team paces with a multiplicative interaction, `league_pace × (paceA/lg) × (paceB/lg)`, on the theory that a fast team amplifies a fast opponent.
+
+Measured on 2025: the multiplicative and additive forms differ by at most **0.05 possessions** — about 0.05 points on a total, against a 3.0-point betting threshold. The backtest results are byte-identical across all 322 bets because no bet ever moves.
+
+The reason is structural, not a failure of the idea: WNBA team pace has a standard deviation of **0.985 possessions** after shrinkage. The two forms agree to first order around the league mean, and the second-order term needs pace dispersion this league does not have. Nothing to fit.
