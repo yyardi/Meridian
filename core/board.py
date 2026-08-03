@@ -135,20 +135,59 @@ def latest_snapshot_per_market(
     )
 
 
-def is_pregame(snap: MarketSnapshot, *, as_of: dt.datetime) -> bool:
-    """True when this market's game has not tipped off yet.
+#: A WNBA game is 40 minutes of clock and roughly two hours of wall time. 3.5h
+#: covers overtime, a long stoppage and settlement lag, and anything past it is
+#: over whatever the flag says.
+MAX_GAME_WALL_HOURS = 3.5
 
-    Checks the **start time** as well as the `is_live` flag, deliberately. The
-    flag is only as fresh as the row carrying it, and the rows that matter here
-    are the stale ones: right after tip-off the pregame recorder's last sweep
-    can still say `is_live=False` for a game that is already running. Trusting
-    the flag alone would price a game in flight — which is precisely the
-    contamination the pregame-only rule exists to prevent.
+#: The live recorder writes every 200ms during a game. If a started game's
+#: newest row is older than this, the game has ended and its markets have
+#: dropped off the venue's board.
+LIVE_STREAM_STALE_SECONDS = 600.0
+
+PREGAME = "pregame"
+IN_PLAY = "in_play"
+FINISHED = "finished"
+
+
+def market_state(snap: MarketSnapshot, *, as_of: dt.datetime) -> str:
+    """`pregame` | `in_play` | `finished`, derived rather than believed.
+
+    **`is_live` cannot be trusted on its own, in either direction**, because it
+    is only as fresh as the row carrying it and rows now freeze at wildly
+    different times:
+
+    * *Too early.* Right after tip-off the pregame recorder's last sweep still
+      says `is_live=False` for a game already running. Believing it would price
+      a game in flight.
+    * *Too late.* When a game ends its markets drop off the venue's board, so
+      nothing ever overwrites the last row — which says `is_live=True` forever.
+      Observed: a game 4.7 hours past tip-off, its newest snapshot 2.7 hours
+      old, still rendering as LIVE. Worse, the flag froze **per market**, so one
+      game showed 9 of its 18 markets as live and the rest not.
+
+    So state comes from the clock and the stream instead: has it started, is it
+    still within a plausible game length, and is anything still writing to it.
+
+    The one ambiguity, stated: a live recorder that dies mid-game looks exactly
+    like a game that ended. That failure is deliberately biased toward
+    `finished` — dropping a market off the board is safer than presenting a
+    two-hour-old quote as a live one — and a stopped recorder is surfaced
+    separately by `/api/status`, which reports per-writer freshness.
     """
-    if snap.is_live:
-        return False
     start = snap.game_start_time
-    return start is None or start > as_of
+    if start is None or start > as_of:
+        return PREGAME
+    if (as_of - start) > dt.timedelta(hours=MAX_GAME_WALL_HOURS):
+        return FINISHED
+    if snap.is_live and snapshot_age_seconds(snap, as_of=as_of) <= LIVE_STREAM_STALE_SECONDS:
+        return IN_PLAY
+    return FINISHED
+
+
+def is_pregame(snap: MarketSnapshot, *, as_of: dt.datetime) -> bool:
+    """True when this market's game has not tipped off yet."""
+    return market_state(snap, as_of=as_of) == PREGAME
 
 
 def snapshot_age_seconds(snap: MarketSnapshot, *, as_of: dt.datetime) -> float:

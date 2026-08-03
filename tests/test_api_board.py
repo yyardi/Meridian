@@ -203,3 +203,68 @@ def test_board_is_empty_rather_than_erroring_with_no_data():
         s.commit()
     body = TestClient(app).get("/api/board").json()
     assert "markets" in body
+
+
+# ------------------------------------------------------------------ #
+# Finished games — `is_live` freezes True forever once a game ends
+# ------------------------------------------------------------------ #
+
+
+def test_a_finished_game_is_not_in_play_however_the_flag_reads():
+    """Markets leave the venue's board when a game ends, so nothing ever
+    overwrites the last row — and it says is_live=True indefinitely.
+
+    Observed: a game 4.7h past tip-off with a 2.7h-old snapshot still rendering
+    as LIVE, and the flag frozen per-market so 9 of 18 said live and 9 did not.
+    """
+    from core.board import FINISHED, IN_PLAY, market_state
+
+    now = dt.datetime.now(UTC)
+
+    def snap(started_hours_ago, age_minutes, is_live):
+        return MarketSnapshot(
+            market_slug="x", captured_at=now - dt.timedelta(minutes=age_minutes),
+            game_start_time=now - dt.timedelta(hours=started_hours_ago),
+            is_live=is_live,
+        )
+
+    # The exact observed case: long past tip-off, stale, still flagged live.
+    assert market_state(snap(4.7, 162, True), as_of=now) == FINISHED
+    # Genuinely in progress: started recently, stream still writing.
+    assert market_state(snap(1.0, 0.1, True), as_of=now) == IN_PLAY
+    # Started but the stream went quiet — the game ended.
+    assert market_state(snap(1.0, 30, True), as_of=now) == FINISHED
+    # Past any plausible game length, whatever the flag says.
+    assert market_state(snap(5.0, 0.1, True), as_of=now) == FINISHED
+
+
+def test_a_game_not_yet_started_is_pregame_even_if_flagged_live():
+    from core.board import PREGAME, market_state
+
+    now = dt.datetime.now(UTC)
+    future = MarketSnapshot(
+        market_slug="x", captured_at=now, is_live=True,
+        game_start_time=now + dt.timedelta(hours=2),
+    )
+    assert market_state(future, as_of=now) == PREGAME
+
+
+def test_finished_games_are_dropped_from_the_board(seeded):
+    """Their last quote never updates again, so leaving them in means showing
+    hours-old prices — and an edge computed against them — beside live ones."""
+    slugs = _markets(seeded)
+    # The fixture's "live" market started an hour ago with a 0.2s-old snapshot.
+    assert LIVE in slugs
+    body = seeded.get("/api/board?include_finished=true").json()
+    assert len(body["markets"]) >= len(slugs), "escape hatch still returns them"
+
+
+def test_shadow_orders_are_hidden_for_market_types_the_executor_refuses(seeded):
+    """Rows written before the moneyline was refused are artifacts of a
+    superseded policy; showing them implies an order that would never be sent."""
+    from core.api import _EXECUTOR_POLICY
+
+    assert not _EXECUTOR_POLICY.is_tradable("basketball_team_full_game_winner")
+    for m in seeded.get("/api/board").json()["markets"]:
+        if m["type"] == "winner":
+            assert m["shadow"] is None

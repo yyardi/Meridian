@@ -309,6 +309,15 @@ async function loadBoard(){
   setc("c-all", cAll); setc("c-edge", cEdge); setc("c-shadow", cShadow);
   $("#empty").style.display = rows.length ? "none" : "block";
 
+  // The same fixture can appear twice on one board — SEA-NY on the 3rd and the
+  // 5th, TOR-GSV on the 2nd and the 4th. Stripping the date made those rows
+  // render identically, so you could not tell which game an edge belonged to.
+  // Add a date back, but only where it actually disambiguates.
+  const baseLabel = r => r.market_slug
+    .replace(/^(tsc|asc|aec)-wnba-/, "").replace(/-\d{4}-\d{2}-\d{2}/, "");
+  const labelCount = {};
+  rows.forEach(r => { const b = baseLabel(r); labelCount[b] = (labelCount[b]||0)+1; });
+
   $("#rows").innerHTML = rows.map(r => {
     const key = r.market_slug;
     const changed = prev[key] !== undefined && prev[key] !== r.mid;
@@ -317,10 +326,21 @@ async function loadBoard(){
     // side, so a "negative edge on Over" is really a positive edge on Under.
     // Show the actionable side, priced against the real touch (you buy at the
     // ask, you sell at the bid) rather than against mid, which no one trades.
+    // Why this row has no edge. A blank cell reads as a malfunction; an
+    // in-play game with no model price is the model behaving correctly.
+    // Derived locally as well as read from the API so the page degrades
+    // gracefully against an older server rather than printing "null".
+    const state = r.pricing_state
+      || (r.is_live ? "in_play" : r.model === null ? "unpriced" : "priced");
+    // Only a pregame market with a model price has a side worth showing. A
+    // finished game's last quote never updates again, so an "edge" against it
+    // is arithmetic on a dead market.
+    const tradeableState = state === "priced";
+
     const quotable = r.bid !== null && r.ask !== null;
     const tradeable = quotable && !r.is_live;
     let side = null, liveEdge = null;
-    if (tradeable && r.model !== null) {
+    if (tradeable && tradeableState && r.model !== null) {
       const edgeYes = r.model - r.ask;    // buy the quoted side at the ask
       const edgeNo  = r.bid - r.model;    // buy the other side at (1 - bid)
       if (edgeYes >= edgeNo) { side = "YES"; liveEdge = edgeYes; }
@@ -335,16 +355,18 @@ async function loadBoard(){
     // A double-digit disagreement with a liquid market is far more often the
     // model being wrong than a free lunch, especially while it is uncalibrated.
     const suspect = tradeable && liveEdge !== null && liveEdge > 0.15;
-    const short = key.replace(/^(tsc|asc|aec)-wnba-/,"").replace(/-\d{4}-\d{2}-\d{2}/,"");
+    const base = baseLabel(r);
+    // Only ambiguous labels carry a date, so the common case stays uncluttered.
+    const dm = key.match(/-(\d{4})-(\d{2})-(\d{2})/);
+    const short = labelCount[base] > 1 && dm
+      ? `${base} <span class="dimc">${+dm[2]}/${+dm[3]}</span>` : base;
 
-    // Why this row has no edge. A blank cell reads as a malfunction; an
-    // in-play game with no model price is the model behaving correctly.
-    // Derived locally as well as read from the API so the page degrades
-    // gracefully against an older server rather than printing "null".
-    const state = r.pricing_state
-      || (r.is_live ? "in_play" : r.model === null ? "unpriced" : "priced");
     let edgeCell, edgeTitle, sideNote = "—";
-    if (state === "in_play") {
+    if (state === "finished") {
+      edgeCell = '<span class="dimc">final</span>';
+      edgeTitle = "this game has finished — its last quote never updates again";
+      sideNote = "final";
+    } else if (state === "in_play") {
       edgeCell = '<span class="inplay">in-play</span>';
       edgeTitle = "game in progress — the model is pregame-only and does not "
                 + "price a running game. No live model yet.";
