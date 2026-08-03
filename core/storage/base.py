@@ -85,8 +85,24 @@ DEFAULT_POOL_SIZE = 2
 DEFAULT_MAX_OVERFLOW = 1
 
 
+#: Engines are shared per (url, options), not created per caller.
+#:
+#: Every job class does `get_sessionmaker(get_engine())` in its constructor, and
+#: the scheduler constructs `PredictionLogger()`, `ESPNOddsFetcher()` and
+#: `ResolutionJob()` fresh on every cycle. Without this cache that is a new
+#: engine — and a new connection pool — several times an hour, forever. Nothing
+#: disposes them; they survive until CPython happens to collect the owning
+#: object, so the process's real connection count depends on GC timing.
+#:
+#: That is how the session-mode pooler was exhausted in the first place, and it
+#: is worth removing rather than relying on a pool cap to contain it. Sharing is
+#: safe because a SQLAlchemy Engine is thread-safe by design and is meant to be
+#: process-wide; it is the Session that must not be shared.
+_ENGINES: dict[tuple, object] = {}
+
+
 def get_engine(url: str | None = None, **kwargs):
-    """Create a SQLAlchemy engine.
+    """Return the shared engine for this URL and options, creating it once.
 
     `pool_pre_ping` matters for the recorder: it runs for days at a time and
     managed Postgres providers drop idle connections without warning.
@@ -102,6 +118,10 @@ def get_engine(url: str | None = None, **kwargs):
     resolved = app_database_url(url)
     kwargs.setdefault("pool_size", DEFAULT_POOL_SIZE)
     kwargs.setdefault("max_overflow", DEFAULT_MAX_OVERFLOW)
+    cache_key = (resolved, tuple(sorted((k, repr(v)) for k, v in kwargs.items())))
+    cached = _ENGINES.get(cache_key)
+    if cached is not None:
+        return cached
     # Hand a connection back rather than queueing forever: a recorder that
     # blocks on the pool stops recording silently, which is worse than an
     # error it can log and retry past.
@@ -114,7 +134,9 @@ def get_engine(url: str | None = None, **kwargs):
         connect_args = dict(kwargs.pop("connect_args", {}))
         connect_args.setdefault("prepare_threshold", None)
         kwargs["connect_args"] = connect_args
-    return create_engine(resolved, pool_pre_ping=True, future=True, **kwargs)
+    engine = create_engine(resolved, pool_pre_ping=True, future=True, **kwargs)
+    _ENGINES[cache_key] = engine
+    return engine
 
 
 def get_sessionmaker(engine=None):

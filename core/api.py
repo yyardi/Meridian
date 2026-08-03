@@ -13,11 +13,12 @@ exposed to a network.
 from __future__ import annotations
 
 import datetime as dt
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from core.board import latest_snapshot_per_market
 from core.executor import ExecutorConfig
@@ -88,73 +89,115 @@ def _position_label(market_type: str | None, bet_side: str | None,
     return f"{'BUY' if bet_side == 'YES' else 'SELL'} {human}"
 
 
+#: The pregame recorder polls every 15 min near tip-off and every 60 min when
+#: idle, so silence beyond 90 minutes means it has genuinely stopped. Same
+#: bound the prediction job uses to decide a quote is too stale to price.
+PREGAME_STALE_SECONDS = 90 * 60
+
+#: The dashboard polls /api/status continuously. One round trip to Supabase is
+#: ~60ms, which is cheap but not free at 1Hz forever, and it contends with a
+#: recorder writing five times a second. Five seconds of cache makes repeated
+#: polling free while keeping the number fresh enough to watch a recorder die.
+STATUS_CACHE_SECONDS = 5.0
+
+#: Everything the health page needs, in ONE round trip.
+#:
+#: `count(*)` is gone. On 857k snapshots and 735k book levels it took **over
+#: two minutes** and hit the statement timeout — it had already gone from
+#: "3.2s" to "fails", and it is on a path the dashboard polls continuously.
+#: Exact counts were never worth that: nothing on the page acts on the
+#: difference between 857,000 and 857,041.
+#:
+#: `pg_class.reltuples` is the planner's own estimate, maintained by autovacuum,
+#: and reads in ~1ms. It is approximate and the payload says so
+#: (`counts_estimated`), which is the honest trade — an estimate labelled as an
+#: estimate beats an exact number that times out.
+#:
+#: Freshness is reported **per writer**, keyed on `book_tier`: the pregame
+#: recorder leaves it NULL, the live recorder always sets it. That split is what
+#: makes the health signal work at all now — a global `max(captured_at)` is
+#: always ~0 seconds old while a game is live, so the page would read healthy
+#: with the pregame recorder dead for hours.
+_HEALTH_SQL = text("""
+select
+  (select reltuples::bigint from pg_class where relname = 'market_snapshots'),
+  (select reltuples::bigint from pg_class where relname = 'book_levels'),
+  (select reltuples::bigint from pg_class where relname = 'predictions'),
+  (select reltuples::bigint from pg_class where relname = 'shadow_orders'),
+  (select max(captured_at) from market_snapshots),
+  (select max(captured_at) from market_snapshots where book_tier is null),
+  (select max(captured_at) from market_snapshots where book_tier is not null),
+  pg_total_relation_size('market_snapshots')
+    + pg_total_relation_size('book_levels')
+""")
+
+_status_cache: dict = {"at": 0.0, "value": None}
+
+
+def _age_seconds(then, now: dt.datetime) -> float | None:
+    return None if then is None else (now - then).total_seconds()
+
+
 @app.get("/api/status")
 def status() -> dict:
-    """Recorder health: freshness, cycle count, gaps."""
+    """Recorder health, in one cached round trip.
+
+    Deliberately does **not** report a gap count any more. The old one took the
+    200 most recent distinct `captured_at` values and looked for holes over 90
+    minutes — but at 200ms sampling those 200 instants span *forty seconds*, so
+    it could not have detected a 90-minute gap even in principle. It reported 0
+    unconditionally, which is worse than reporting nothing. Counting distinct
+    instants over a useful window is not affordable either: the equivalent query
+    over 24 hours hits the statement timeout.
+
+    Per-writer age replaces it, and is the signal that actually matters: a
+    recorder that has stopped shows up immediately in its own timestamp.
+    """
+    now_mono = time.monotonic()
+    cached = _status_cache["value"]
+    if cached is not None and now_mono - _status_cache["at"] < STATUS_CACHE_SECONDS:
+        return cached
+
     with _Session() as s:
-        total, newest, cycles = s.execute(
-            select(
-                func.count(MarketSnapshot.id),
-                func.max(MarketSnapshot.captured_at),
-                func.count(func.distinct(MarketSnapshot.captured_at)),
-            )
-        ).one()
-        instants = s.scalars(
-            select(func.distinct(MarketSnapshot.captured_at))
-            .order_by(MarketSnapshot.captured_at.desc())
-            .limit(200)
-        ).all()
-        counts = {
-            "snapshots": total,
-            "book_levels": s.scalar(select(func.count()).select_from(
-                __import__("core.storage", fromlist=["BookLevel"]).BookLevel)),
-            "predictions": s.scalar(select(func.count(Prediction.id))),
-            "shadow_orders": s.scalar(select(func.count(ShadowOrder.id))),
-        }
+        row = s.execute(_HEALTH_SQL).one()
+
+    (n_snap, n_levels, n_preds, n_orders,
+     newest, pregame_newest, live_newest, stream_bytes) = row
 
     now = dt.datetime.now(UTC)
-    age_min = None
-    if newest:
-        age_min = (now - newest).total_seconds() / 60
+    pregame_age = _age_seconds(pregame_newest, now)
+    live_age = _age_seconds(live_newest, now)
 
-    gaps = 0
-    ordered = sorted(instants)
-    for a, b in zip(ordered, ordered[1:]):
-        if (b - a).total_seconds() / 60 > 90:
-            gaps += 1
+    # Health is the pregame recorder's, because it is the only writer expected
+    # to be running at all times. The live recorder is legitimately silent
+    # whenever no game is in progress, so its age is reported but never fails
+    # the check — otherwise the dashboard would show STALE every night.
+    healthy = pregame_age is not None and pregame_age < PREGAME_STALE_SECONDS
 
-    # `newest` alone is no longer a health signal. The live recorder writes
-    # every 200ms during a game, so the freshest row is always ~0 minutes old
-    # and the headline reads healthy even if the pregame recorder has been dead
-    # for hours. Health is the **stalest** market on the board, not the
-    # freshest row in the table.
-    stalest_min = None
-    with _Session() as s:
-        board_snaps = latest_snapshot_per_market(s, as_of=now)
-    if board_snaps:
-        stalest_min = max(
-            (now - snap.captured_at).total_seconds() / 60 for snap in board_snaps
-        )
-
-    healthy = age_min is not None and age_min < 90 and (
-        stalest_min is None or stalest_min < 90
-    )
-
-    return {
-        "cycles": cycles,
+    value = {
         "newest": newest.isoformat() if newest else None,
-        "age_minutes": round(age_min, 1) if age_min is not None else None,
-        #: How old the least recently updated market on the board is. This is
-        #: the number that actually detects a stopped writer.
-        "stalest_market_minutes": (
-            round(stalest_min, 1) if stalest_min is not None else None
+        "age_minutes": (
+            round(_age_seconds(newest, now) / 60, 1) if newest else None
         ),
-        "markets_on_board": len(board_snaps),
+        #: Per-writer freshness. `pregame` is the health signal; `live` is
+        #: informational and is expected to be stale between games.
+        "pregame_age_seconds": round(pregame_age, 1) if pregame_age is not None else None,
+        "live_age_seconds": round(live_age, 1) if live_age is not None else None,
         "healthy": healthy,
-        "gaps_recent": gaps,
-        "counts": counts,
+        #: Approximate — planner statistics, not a scan. See _HEALTH_SQL.
+        "counts_estimated": True,
+        "counts": {
+            "snapshots": int(n_snap or 0),
+            "book_levels": int(n_levels or 0),
+            "predictions": int(n_preds or 0),
+            "shadow_orders": int(n_orders or 0),
+        },
+        "stream_bytes": int(stream_bytes or 0),
         "real_orders_placed": 0,   # shadow mode; nothing is ever sent
     }
+    _status_cache["at"] = now_mono
+    _status_cache["value"] = value
+    return value
 
 
 def _pricing_state(snap: MarketSnapshot, prediction) -> str:

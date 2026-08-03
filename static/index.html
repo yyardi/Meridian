@@ -135,10 +135,10 @@
 <header>
   <div class="brand">MERIDIAN<span>·</span>WNBA</div>
   <div class="stat"><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
-  <div class="stat"><span class="k">cycles</span><span class="v num" id="s-cycles">—</span></div>
-  <div class="stat"><span class="k">age</span><span class="v num" id="s-age">—</span></div>
-  <div class="stat"><span class="k">snapshots</span><span class="v num" id="s-snaps">—</span></div>
-  <div class="stat"><span class="k">gaps</span><span class="v num" id="s-gaps">—</span></div>
+  <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v num" id="s-pregame">—</span></div>
+  <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v num" id="s-live">—</span></div>
+  <div class="stat" title="Estimated from planner statistics, not an exact count — an exact count on this table exceeds the statement timeout."><span class="k">snapshots</span><span class="v num" id="s-snaps">—</span></div>
+  <div class="stat" title="market_snapshots + book_levels on disk"><span class="k">stream</span><span class="v num" id="s-bytes">—</span></div>
   <div class="pill" id="s-mode">SHADOW · 0 REAL ORDERS</div>
   <button id="helpbtn" title="How to read this board">?</button>
 </header>
@@ -241,11 +241,20 @@ async function loadStatus(){
   const s = await j("/api/status");
   $("#s-health").innerHTML =
     `<span class="dot ${s.healthy?"ok":"bad"}"></span>${s.healthy?"LIVE":"STALE"}`;
-  $("#s-cycles").textContent = s.cycles;
-  $("#s-age").textContent = s.age_minutes === null ? "—" : s.age_minutes.toFixed(1) + "m";
-  $("#s-snaps").textContent = (s.counts.snapshots ?? 0).toLocaleString();
-  $("#s-gaps").textContent = s.gaps_recent;
-  $("#s-gaps").className = "v num " + (s.gaps_recent ? "neg" : "pos");
+  // Freshness is per writer now. A single "age" was always ~0 while a game was
+  // live and so could not detect the pregame recorder dying.
+  const age = sec => sec === null || sec === undefined ? "—"
+    : sec < 90 ? sec.toFixed(0) + "s"
+    : sec < 5400 ? Math.round(sec/60) + "m"
+    : Math.round(sec/3600) + "h";
+  $("#s-pregame").textContent = age(s.pregame_age_seconds);
+  $("#s-pregame").className = "v num " + (s.healthy ? "pos" : "neg");
+  $("#s-live").textContent = age(s.live_age_seconds);
+  // Approximate by design; "~" says so rather than implying a scan.
+  $("#s-snaps").textContent =
+    (s.counts_estimated ? "~" : "") + (s.counts.snapshots ?? 0).toLocaleString();
+  $("#s-bytes").textContent = s.stream_bytes
+    ? (s.stream_bytes / 1e9).toFixed(2) + " GB" : "—";
   $("#s-mode").textContent = `SHADOW · ${s.real_orders_placed} REAL ORDERS`;
   $("#foot").textContent =
     `${(s.counts.snapshots??0).toLocaleString()} snapshots · ${(s.counts.book_levels??0).toLocaleString()} book levels · `
