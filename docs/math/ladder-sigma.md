@@ -1,0 +1,86 @@
+# Is Polymarket's ladder too narrow?
+
+**Question:** the model and the market agree on the total but disagree on how *uncertain* it is. Who is right?
+
+Found 2026-08-02 while breaking down a single game's board. **Not yet established** — read the caveats.
+
+## The observation
+
+Fitting a normal to both ladders on LA–POR:
+
+| | Implied mean | Implied sigma |
+|---|---|---|
+| Polymarket ladder | 186.4 | **15.8** |
+| Model's own curve | 186.2 | **21.0** |
+| Disagreement | **−0.2 pts** | **+5.1 pts** |
+
+The two agree on the total to within a fifth of a point. **Every displayed edge on that board was a volatility disagreement, not a directional one.** That is why the sides looked contradictory — UNDER on the low rungs, OVER on the high ones. It is not a view on the game; it is a straddle.
+
+## It is not one ladder
+
+Fitting all 362 recorded pregame Polymarket ladders:
+
+| | |
+|---|---|
+| Implied sigma, median | **15.9** |
+| Mean | 16.4 |
+| sd across ladders | 1.4 |
+| 10th–90th percentile | 15.6 – 17.6 |
+
+Remarkably tight. Polymarket appears to shape its ladder with a near-constant ~16-point sigma.
+
+## What sigma actually is
+
+How far totals land from a pregame line, measured:
+
+| Season | n | sd(actual − book line) |
+|---|---|---|
+| 2024 | 261 | 15.7 |
+| 2025 | 311 | 16.1 |
+| **2026** | 213 | **20.1** |
+
+2024 and 2025 sit right on Polymarket's ~16. **2026 does not.** The scoring environment shifted — league mean went from ~166 to ~174 — and variance went with it.
+
+So the hypothesis is narrow and mechanical: **Polymarket is shaping 2026 ladders with 2024's volatility.** If true, both tails are systematically cheap, and the mispricing is structural rather than game-specific.
+
+The model is not obviously the smart one here either. Its own sigma tracks the *unconditional* season spread:
+
+| Season | sigma used | sigma realised | error |
+|---|---|---|---|
+| 2024 | 16.8 | 16.3 | +0.5 |
+| 2025 | 16.8 | 16.8 | −0.0 |
+| 2026 | 19.2 | 21.7 | **−2.4** |
+
+In 2026 the model *understates* by 2.4 points. It is closer than Polymarket's 15.9, but it is not calibrated — it is lagging the regime rather than leading it.
+
+## Why this is not yet a result
+
+The direct outcome test — do far-from-money contracts settle YES more often than their price implies? — cannot be run on what we have:
+
+| Price bucket | n | Market says | Actually hit | Diff |
+|---|---|---|---|---|
+| longshot (0.15–0.30) | 39 | 0.255 | 0.154 | −0.101 |
+| below mid (0.30–0.50) | 97 | 0.393 | 0.639 | **+0.247** |
+| favourite (0.70–0.85) | 71 | 0.760 | 0.620 | −0.140 |
+
+That +0.247 is not a finding, it is **5 games**. 305 rows from 5 games is ~60 correlated rows each. Every bucket here is noise, and the direction happens to contradict the hypothesis, which is exactly what noise does.
+
+Other reasons to withhold judgement:
+
+- **2026 is one partial season (n=213).** A variance regime that shifted once can shift back, and the whole hypothesis rests on 2026 being genuinely different rather than temporarily unlucky.
+- **The comparison mixes references.** Polymarket's ladder sigma is fitted against Polymarket's own implied mean; the 20.1 is measured against the *sportsbook* line. Close, not identical.
+- **It may already be priced into the measured edge.** The champion's +2.5% comes disproportionately from tail rungs, so its edge may *be* this sigma effect rather than the directional venue gap we have been attributing it to. That reframing matters: it would mean the model is accidentally selling correctly-shaped volatility, and would break the moment Polymarket updates its sigma.
+
+## The pre-registered test
+
+Do not act on this before it passes:
+
+> Across **n ≥ 40 games** of resolved Polymarket totals, bucket contracts by price. If the ladder is too narrow, contracts priced below 0.30 settle YES **more** often than their price implies, and contracts above 0.70 settle YES **less** often — both with 95% CIs excluding zero, and in the same direction.
+
+Sample size is **games**, not rows. At ~60 correlated rows per game, 40 games is the minimum for the buckets to mean anything.
+
+If it passes, the trade is mechanical and needs no basketball model at all: buy both tails, sell the middle. If it fails, the model's tail preference is an artifact and should be damped.
+
+## Status
+
+**Hypothesis, unproven** (2026-08-02). The sigma gap is real and consistent across 362 ladders; whether it converts to money is untested and needs ~35 more games of resolved data.
