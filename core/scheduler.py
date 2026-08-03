@@ -23,17 +23,39 @@ UTC = dt.timezone.utc
 
 
 def _safe(name: str, fn, **kwargs) -> None:
+    """Run a job, and report what it actually did — not merely that it returned.
+
+    `job_ok` used to be logged for any call that did not raise. That is how the
+    prediction job wrote zero predictions for two and a half hours, on every
+    cycle, while the scheduler reported success: it had nothing to price
+    (because of a query bug), returned normally, and looked healthy.
+
+    A job may now say so by returning a result exposing a boolean `ok`. Jobs
+    that return anything else are unchanged, so this is opt-in rather than a
+    behaviour change forced on every caller.
+    """
     try:
-        fn(**kwargs)
-        log.info("job_ok", job=name)
+        result = fn(**kwargs)
     except Exception as exc:
         log.error("job_failed", job=name, error=str(exc), exc_info=True)
+        return
+
+    ok = getattr(result, "ok", True)
+    detail = getattr(result, "summary", None) or {}
+    if ok:
+        log.info("job_ok", job=name, **detail)
+    else:
+        # Not an exception, so nothing retries and nothing alerts unless this
+        # is loud. Silent no-ops are the failure mode this guards.
+        log.warning("job_degraded", job=name,
+                    hint="completed without error but did no work", **detail)
 
 
 def run_daily_jobs(season: int | None = None) -> None:
     """One pass of every daily job, in dependency order."""
     from core.feeds.espn_odds import ESPNOddsFetcher
     from core.feeds.espn_stats import ESPNStatsFetcher
+    from core.calibration import refresh_market_slope
     from core.predictions import PredictionLogger
     from core.resolution import ResolutionJob
 
@@ -62,6 +84,11 @@ def run_daily_jobs(season: int | None = None) -> None:
     # state only, so a poll missed is a poll lost.
     from core.feeds.espn_injuries import run as injuries_run
     _safe("injuries", injuries_run)
+
+    # 2c. Refresh the winner's-curse slope. Walking every completed game
+    # takes minutes against Supabase, so the 20-min prediction leg reads a
+    # cached value and this is what keeps it fresh.
+    _safe("calibration", refresh_market_slope)
 
     # 3. Predict against the newest snapshot.
     _safe("predictions", PredictionLogger().run)

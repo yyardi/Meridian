@@ -73,6 +73,7 @@
 
   <h2 style="margin-top:24px">Past predictions — what actually happened</h2>
   <div class="kpis" id="rk"></div>
+  <div class="note" id="rnote"></div>
   <div id="results"></div>
 </div>
 
@@ -133,27 +134,37 @@ fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 
 fetch("/api/results").then(r=>r.json()).then(d=>{
   const s = d.summary;
+  // Sample size is GAMES, not rows: one game emits ~130 correlated ladder rows.
+  // And the metric is the bet win rate, not "was the probability on the right
+  // side of 0.50" — that reads ~84% while the actual bets ran 38.5%.
+  const beat = s.brier_model!=null && s.brier_market!=null && s.brier_model < s.brier_market;
   $("#rk").innerHTML = [
-    ["Resolved", s.total, ""],
-    ["Tradeable", s.tradeable, "had live quotes"],
-    ["Correct", s.correct, ""],
-    ["Hit rate", s.hit_rate==null?"—":s.hit_rate.toFixed(3), "vs 0.524 breakeven"],
+    ["Games", s.n_games, `${s.rows} rows · ~${s.rows_per_game}/game`],
+    ["Real bets", s.n_bets, `${s.n_no_bet} rows were no-bet`],
+    ["Bet win rate", s.bet_win_rate==null?"—":s.bet_win_rate.toFixed(3),
+     `vs ${s.breakeven} breakeven`],
+    ["Model vs market", beat?"model":"MARKET",
+     `Brier ${s.brier_model} vs ${s.brier_market}`],
   ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>
       <div class="k" style="margin-top:2px">${n}</div></div>`).join("");
+  $("#rnote").innerHTML = `Hit rate reads ${s.hit_rate_MISLEADING} — ignore it. It scores
+      whether the probability sat on the correct side of 0.50, which is not a bet.
+      The bet win rate above is the one that decides money.`;
 
   if(!d.results.length){ $("#results").innerHTML='<div class="empty">nothing resolved yet</div>'; return; }
   $("#results").innerHTML = `<table><thead><tr>
     <th class="l">Market</th><th class="l">Type</th><th>Line</th><th>Model said</th>
-    <th>Market said</th><th>Settled</th><th>Model right?</th><th class="l">Ver</th>
+    <th>Market said</th><th>Settled</th><th class="l">Position taken</th><th>Bet won?</th><th class="l">Ver</th>
   </tr></thead><tbody>${d.results.slice(0,60).map(r=>`
     <tr>
-      <td class="l dimc">${shortSlug(r.market_slug)}</td>
+      <td class="l">${r.human||shortSlug(r.market_slug)}</td>
       <td class="l"><span class="tag ${tagOf(r.type)}">${r.type}</span></td>
       <td>${r.line==null?"—":r.line.toFixed(1)}</td>
       <td>${num(r.model)}</td>
       <td>${r.tradeable?num(r.market):'<span class="dimc">no quote</span>'}</td>
       <td>${r.settled===1?"YES":"NO"}</td>
-      <td class="${r.correct?"ok":"bad"}">${r.correct?"✓":"✗"}</td>
+      <td class="l">${r.position||'<span class="dimc">no bet</span>'}</td>
+      <td class="${r.bet_won==null?"":(r.bet_won?"ok":"bad")}">${r.bet_won==null?'<span class="dimc">—</span>':(r.bet_won?"✓":"✗")}</td>
       <td class="l dimc">${r.model_version}</td>
     </tr>`).join("")}</tbody></table>
   <div class="dimc" style="font-size:10.5px">Rows marked "no quote" were logged while a
