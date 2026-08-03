@@ -14,14 +14,14 @@ backtest must replay exactly.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from scipy.stats import norm
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from core.config import SEASON_TYPE_REGULAR
+from core.config import SEASON_TYPE_POSTSEASON, SEASON_TYPE_REGULAR
 from core.config_hash import compute_config_hash
 from core.storage import TeamGameLog
 from strategies.wnba_totals.config import CONFIG, WNBATotalsConfig
@@ -30,7 +30,20 @@ from strategies.wnba_totals.model.features import MatchupFeatures, TeamFeatures
 #: Bump on any logic change. NOTE: this alone does not protect the prediction
 #: log — it is hand-maintained and will eventually be forgotten. `config_hash`
 #: is derived from the config actually used and cannot be forgotten.
-MODEL_VERSION = "v3"
+#:
+#: v4 (2026-08-01): the live path now applies the winner's-curse shrinkage that
+#: the backtest has always applied. Before this, `predictions` recorded the RAW
+#: model-minus-market gap while every validated number described a shrunk
+#: model — the deployed model was not the model under test, and the dashboard
+#: overstated edges roughly fourfold. The bump is mandatory rather than
+#: cosmetic: `config_hash` is derived from `WNBATotalsConfig`, and this change
+#: lives outside it, so without a version bump v3's unshrunk rows and v4's
+#: shrunk rows would share a grouping key and silently blend two model
+#: generations in every performance query.
+#:
+#: Consequence to state plainly: the 60-day shadow record starts over. That is
+#: correct — the old record describes a model that is no longer running.
+MODEL_VERSION = "v4"
 
 STRATEGY = "wnba_totals"
 
@@ -296,7 +309,7 @@ def project(
     L2 = features.league_points_per_team
     mode = getattr(cfg, "totals_projection", "halved")
     if (
-        mode == "possession"
+        mode in {"possession", "possession_interaction"}
         and features.league_pace > 0
         and features.league_efficiency > 0
         and home.pace > 0 and away.pace > 0
@@ -312,7 +325,17 @@ def project(
         else:
             oe_h, oe_a = home.off_efficiency, away.off_efficiency
             de_h, de_a = home.def_efficiency, away.def_efficiency
-        poss = home.pace + away.pace - features.league_pace
+        if mode == "possession_interaction":
+            # Multiplicative pace: lg x (paceA/lg) x (paceB/lg) = paceA·paceB/lg.
+            # The claim is that a fast team *amplifies* a fast opponent rather
+            # than averaging with it. Note this differs from the additive form
+            # only at second order — expand around the league mean and the two
+            # agree to first order — so a large difference here would be
+            # surprising, and its absence is not evidence that pace is
+            # irrelevant, only that the interaction term is small.
+            poss = home.pace * away.pace / features.league_pace
+        else:
+            poss = home.pace + away.pace - features.league_pace
         L_eff = features.league_efficiency
         projected_home = poss * (oe_h + de_a - L_eff)
         projected_away = poss * (oe_a + de_h - L_eff)
@@ -440,6 +463,182 @@ def _features_snapshot(f: MatchupFeatures) -> dict:
         "is_playoff_game": f.is_playoff_game,
         "head_to_head_games": f.head_to_head_games,
     }
+
+
+#: Below this many prior games the slope is not estimable and no shrinkage is
+#: applied. Matches `SlopeTracker.min_n` so live and backtest agree.
+SLOPE_MIN_GAMES = 100
+
+
+def estimate_market_slope(
+    *,
+    as_of: dt.datetime,
+    session: Session,
+    seasons_back: int = 3,
+) -> float:
+    """Walk-forward incremental slope of (actual − market) on (model − market).
+
+    **This is the winner's-curse correction, and it belongs on every price.**
+
+    The model and the market disagree by some number of points. Only a fraction
+    of that gap is real information; the rest is the model's own error. That
+    fraction is this slope, and it is measured, not assumed: on 2024-2026 totals
+    it is **0.231** (n=677). A raw 6-point disagreement is worth 1.4 points.
+
+    Why it must live here and not only in the backtest
+    --------------------------------------------------
+    The backtest has always applied this correction (`calibrate_probabilities`),
+    so every validated number — the +1.75 CLV champion included — describes a
+    *shrunk* model. The live path did not, which meant the deployed model was
+    not the validated one and the dashboard overstated every edge by roughly
+    four times. A 13% displayed edge was really about 3%.
+
+    Estimated only from games strictly before `as_of`, so it carries the same
+    no-lookahead guarantee as everything else in the feature layer. Returns 1.0
+    (no shrinkage) below `SLOPE_MIN_GAMES`, which is the honest behaviour rather
+    than a fitted constant standing in for absent data.
+    """
+    # Imported here: core.backtest imports this module, so a module-level
+    # import would be circular.
+    from core.backtest.engine import SlopeTracker, _odds_for_game
+    from strategies.wnba_totals.model.features import build_matchup_features
+
+    season = as_of.year
+    rows = session.execute(
+        select(
+            TeamGameLog.espn_game_id, TeamGameLog.game_date, TeamGameLog.season,
+            TeamGameLog.season_type, TeamGameLog.team_id, TeamGameLog.opponent_id,
+            (TeamGameLog.points_scored + TeamGameLog.points_allowed).label("total"),
+        )
+        .where(TeamGameLog.is_home.is_(True))
+        .where(TeamGameLog.is_completed.is_(True))
+        .where(TeamGameLog.game_date < as_of)          # no lookahead
+        .where(TeamGameLog.season >= season - seasons_back)
+        .order_by(TeamGameLog.game_date, TeamGameLog.espn_game_id)
+    ).all()
+
+    tracker = SlopeTracker(min_n=SLOPE_MIN_GAMES)
+    for game_id, game_date, game_season, season_type, home_id, away_id, total in rows:
+        if total is None:
+            continue
+        entry_line, _, _, _ = _odds_for_game(session, game_id)
+        if entry_line is None:
+            continue
+        features = build_matchup_features(
+            home_team_id=home_id, away_team_id=away_id, as_of=game_date,
+            session=session, season=game_season,
+            is_playoff_game=(season_type == SEASON_TYPE_POSTSEASON),
+        )
+        if not features.sufficient_data:
+            continue
+        dist = estimate_totals_distribution(
+            as_of=game_date, session=session, season=game_season
+        )
+        proj = project(features, sigma=dist.sigma)
+        tracker.add(proj.projected_total - entry_line, float(total) - entry_line)
+    return tracker.slope()
+
+
+#: Key under which the totals slope is cached in `model_calibration`.
+SLOPE_METRIC = "totals_market_slope"
+
+#: How stale a cached slope may be before it is recomputed. The slope is an
+#: expanding-window estimate over hundreds of games; a day of new games moves
+#: it in the third decimal.
+SLOPE_MAX_AGE = dt.timedelta(days=1)
+
+
+def read_cached_slope(
+    *, session: Session, as_of: dt.datetime, max_age: dt.timedelta = SLOPE_MAX_AGE
+) -> float | None:
+    """Freshest stored slope at or before `as_of`, if recent enough.
+
+    The `as_of <= as_of` filter is not decoration: a slope fitted on games
+    through August must never price a July prediction, or the backtest would be
+    reading the future through the calibration constant.
+    """
+    from core.storage import ModelCalibration
+
+    row = session.execute(
+        select(ModelCalibration.as_of, ModelCalibration.value)
+        .where(ModelCalibration.metric == SLOPE_METRIC)
+        .where(ModelCalibration.as_of <= as_of)
+        .order_by(ModelCalibration.as_of.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    stored_as_of, value = row
+    if as_of - stored_as_of > max_age:
+        return None
+    return float(value)
+
+
+def store_slope(
+    *, session: Session, as_of: dt.datetime, slope: float, n_observations: int = 0
+) -> None:
+    """Persist a computed slope. Idempotent per (metric, as_of)."""
+    from decimal import Decimal as _Decimal
+
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from core.storage import ModelCalibration
+
+    session.execute(
+        pg_insert(ModelCalibration)
+        .values(
+            as_of=as_of, metric=SLOPE_METRIC,
+            value=_Decimal(str(round(slope, 6))), n_observations=n_observations,
+        )
+        .on_conflict_do_nothing(constraint="uq_calibration_metric_asof")
+    )
+    session.commit()
+
+
+def shrink_to_market(
+    projection: Projection,
+    *,
+    market_total: float | None,
+    slope: float,
+    market_margin: float | None = None,
+) -> Projection:
+    """Pull a projection toward the market's numbers by the measured slope.
+
+    E[actual − market | model − market] = slope × (model − market) is the
+    statistically correct predictor. The raw gap is not, and pricing off it
+    is what makes the largest disagreements the worst bets.
+
+    **Total and margin are shrunk independently**, against their own anchors —
+    the book's consensus total and the book's consensus spread. They have to
+    be: a game can be one where we disagree wildly about pace and not at all
+    about who wins, and averaging those two disagreements would corrupt both.
+    Whichever anchor is missing is simply left alone.
+
+    Measured slopes on 2024-2026 are +0.16 to +0.23 for totals and +0.176 for
+    margin — close enough that one slope for both is honest, and both far
+    enough below 1.0 that skipping this step overstates every edge fourfold.
+    """
+    if slope >= 1.0:
+        return projection
+    if market_total is None and market_margin is None:
+        return projection
+
+    total = projection.projected_total
+    margin = projection.projected_margin
+
+    if market_total is not None:
+        total = market_total + slope * (projection.projected_total - market_total)
+    if market_margin is not None:
+        margin = market_margin + slope * (projection.projected_margin - market_margin)
+
+    # Rebuild the two sides so home + away = total and home − away = margin.
+    return replace(
+        projection,
+        projected_home=(total + margin) / 2.0,
+        projected_away=(total - margin) / 2.0,
+        projected_total=total,
+        projected_margin=margin,
+    )
 
 
 def predict_market(
