@@ -44,7 +44,13 @@ NO_BET_TOLERANCE = 0.02
 
 #: A -110 two-way market needs this to break even.
 BREAKEVEN_HIT_RATE = 0.524
-_Session = get_sessionmaker(get_engine())
+#: The dashboard serves several endpoints concurrently — status, board, events
+#: and a sparkline per visible row — so it needs more than the 2+1 a recorder
+#: does. With every request holding a connection for the length of its query, a
+#: 3-connection pool exhausted itself the moment one query got slow, turning a
+#: latency problem into 500s. Safe now that app processes are on the transaction
+#: pooler, which multiplexes.
+_Session = get_sessionmaker(get_engine(pool_size=5, max_overflow=5))
 
 STATIC = Path(__file__).parent.parent / "static"
 
