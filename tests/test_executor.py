@@ -236,3 +236,80 @@ def test_no_credentials_are_read_at_import_or_in_shadow():
     """Shadow mode must work with no keys present at all."""
     src = inspect.getsource(executor_module)
     assert "POLYMARKET_SECRET_KEY" not in src
+
+
+# ------------------------------------------------------------------ #
+# Tradable-market policy
+# ------------------------------------------------------------------ #
+
+
+def test_moneyline_is_not_tradable_by_default():
+    """Measured 2024-2026: hit 0.250 shrunk, whole CI below the 0.524
+    breakeven. The executor must refuse it, not merely size it small."""
+    cfg = ExecutorConfig()
+    assert not cfg.is_tradable("basketball_team_full_game_winner")
+
+
+def test_totals_and_spread_remain_tradable():
+    cfg = ExecutorConfig()
+    assert cfg.is_tradable("basketball_team_full_game_total")
+    assert cfg.is_tradable("basketball_team_full_game_spread")
+
+
+def test_unknown_market_is_refused():
+    """Default-deny: a market type nobody has validated is not tradable."""
+    assert not ExecutorConfig().is_tradable("basketball_player_points")
+    assert not ExecutorConfig().is_tradable(None)
+
+
+def test_empty_allowlist_disables_the_gate():
+    """An explicitly empty set means 'no policy', for research runs."""
+    cfg = ExecutorConfig(tradable_market_types=frozenset())
+    assert cfg.is_tradable("basketball_team_full_game_winner")
+
+
+# ------------------------------------------------------------------ #
+# Market policy is PER STRATEGY, not a fact about the moneyline
+# ------------------------------------------------------------------ #
+
+
+def test_anchor_is_the_default_policy():
+    from core.executor import ANCHOR_MARKETS
+
+    assert ExecutorConfig().tradable_market_types == ANCHOR_MARKETS
+
+
+def test_anchor_refuses_the_moneyline_on_measured_evidence():
+    """25.0% hit rate shrunk, whole 95% CI below the 0.524 breakeven."""
+    from core.executor import MARKET_WINNER
+
+    assert not ExecutorConfig().is_tradable(MARKET_WINNER)
+
+
+def test_pulse_does_not_inherit_anchors_exclusion():
+    """ANCHOR's evidence is about pregame FORECASTING — the market's margin
+    MAE beats ours. It says nothing about a strategy whose edge is latency.
+    Carrying the exclusion across would apply a measurement to a claim it
+    never tested."""
+    from core.executor import ANCHOR_MARKETS, PULSE_MARKETS
+
+    assert PULSE_MARKETS != ANCHOR_MARKETS
+
+
+def test_pulse_policy_is_undecided_not_permissive_by_accident():
+    """Empty means 'no policy yet', which is honest for a strategy whose
+    gates all report NO DATA. It is only safe because SHADOW mode and the
+    kill switch sit in front of it."""
+    from core.executor import PULSE_MARKETS
+
+    cfg = ExecutorConfig(tradable_market_types=PULSE_MARKETS)
+    assert cfg.mode is ExecutionMode.SHADOW
+    assert cfg.kill_switch is True
+
+
+def test_a_policy_can_be_set_explicitly_per_strategy():
+    from core.executor import MARKET_TOTAL, MARKET_WINNER
+
+    ml_only = ExecutorConfig(tradable_market_types=frozenset({MARKET_WINNER}))
+    assert ml_only.is_tradable(MARKET_WINNER)
+    assert not ml_only.is_tradable(MARKET_TOTAL)

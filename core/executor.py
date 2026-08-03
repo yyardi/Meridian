@@ -164,6 +164,49 @@ def build_order(
     )
 
 
+
+# --------------------------------------------------------------------- #
+# Market policies, one per strategy
+# --------------------------------------------------------------------- #
+
+MARKET_TOTAL = "basketball_team_full_game_total"
+MARKET_SPREAD = "basketball_team_full_game_spread"
+MARKET_WINNER = "basketball_team_full_game_winner"
+
+#: ANCHOR — pregame, hold to settlement.
+#:
+#: The moneyline is excluded on measured evidence: 2024-2026, the model hits
+#: 33.4% on raw selection and 25.0% after market shrinkage, with the entire 95%
+#: interval [0.178, 0.339] below the 0.524 breakeven. Not a marginal loser, a
+#: decisive one. See docs/math/market-shrinkage.md.
+#:
+#: **What that evidence is actually about.** It measures our ability to
+#: *forecast a winner from team ratings better than the market can*, pregame.
+#: The market's margin MAE (9.65) beats ours (10.19), so betting our
+#: disagreement loses. It says nothing about a market whose edge comes from
+#: reacting faster than the venue reprices — a completely different claim,
+#: tested against different data.
+ANCHOR_MARKETS = frozenset({MARKET_TOTAL, MARKET_SPREAD})
+
+#: PULSE — in-game. **Undecided, deliberately.**
+#:
+#: The moneyline is the market most likely to matter here: it swings hardest in
+#: close games, and a lead being cut moves it far more than it moves a deep
+#: ladder rung. Carrying ANCHOR's exclusion across would be applying a pregame
+#: forecasting result to a latency strategy, which is not what it measured.
+#:
+#: It is empty rather than permissive, because "no policy" is the honest state
+#: for a strategy with no evidence: PULSE's gates all currently report NO DATA.
+#: Set this from PULSE's own measurements once they exist — do not default it
+#: to ANCHOR's, and do not default it to everything.
+PULSE_MARKETS: frozenset[str] = frozenset()
+
+#: Research runs that need to observe a market before deciding on it. Empty set
+#: means `is_tradable` allows everything; safe only because the kill switch and
+#: SHADOW mode sit in front of it.
+RESEARCH_MARKETS: frozenset[str] = frozenset()
+
+
 @dataclass
 class ExecutorConfig:
     mode: ExecutionMode = ExecutionMode.SHADOW
@@ -172,6 +215,36 @@ class ExecutorConfig:
     kill_switch: bool = True
     tick_size: Decimal = DEFAULT_TICK_SIZE
     min_trade_qty: Decimal = DEFAULT_MIN_TRADE_QTY
+
+    #: Market types this executor is allowed to trade.
+    #:
+    #: **This is a per-strategy policy, not a fact about the moneyline.**
+    #:
+    #: The default is ANCHOR's (see `ANCHOR_MARKETS`), which excludes the
+    #: moneyline on strong measured evidence — but that evidence is about
+    #: *pregame forecasting*, and it does not transfer to a strategy whose edge
+    #: comes from somewhere else. Constructing an executor for a different
+    #: strategy means passing that strategy's own policy; inheriting ANCHOR's by
+    #: accident is how a measurement about one thing silently governs another.
+    #:
+    #: It lives on the *executor* rather than in the model config on purpose.
+    #: It is an execution policy, not a model parameter: putting it in
+    #: `WNBATotalsConfig` would change `config_hash` and split the prediction
+    #: log's history, resetting the shadow gate for a decision that has nothing
+    #: to do with how the model prices anything. Predictions for refused markets
+    #: are still logged — the log records everything, including what we decline
+    #: to trade.
+    tradable_market_types: frozenset[str] = ANCHOR_MARKETS
+
+    def is_tradable(self, sports_market_type: str | None) -> bool:
+        """False for markets this policy refuses.
+
+        An empty set means "no policy" — used by research runs that want to
+        measure a market before deciding whether to trade it.
+        """
+        if not self.tradable_market_types:
+            return True
+        return (sports_market_type or "") in self.tradable_market_types
 
 
 @dataclass

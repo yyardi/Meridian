@@ -42,8 +42,16 @@ def run(bankroll: float, dry_run: bool = False) -> int:
         ).all()
 
         games: dict[str, list[tuple[Prediction, BasketLeg]]] = defaultdict(list)
+        skipped_untradable = 0
         for p in preds:
             if p.model_probability is None or p.market_ask is None:
+                continue
+            # Markets the executor refuses on measured evidence (the moneyline)
+            # are dropped before sizing, not after: leaving them in the basket
+            # would have them consume correlation budget and shrink the stake on
+            # the markets we do want.
+            if not executor.config.is_tradable(p.sports_market_type):
+                skipped_untradable += 1
                 continue
             side = "over" if (p.sports_market_type or "").endswith("total") else ""
             games[p.event_slug or p.market_slug].append((
@@ -104,6 +112,7 @@ def run(bankroll: float, dry_run: bool = False) -> int:
         session.commit()
 
     log.info("shadow_run_complete", predictions=len(preds), shadow_orders=written,
+             skipped_untradable=skipped_untradable,
              bankroll=bankroll, placed_real_orders=0)
     return written
 
