@@ -14,6 +14,7 @@ Direction is one-way and enforced: primary -> local, never the reverse. The
 local copy is disposable; the primary is the record.
 
     python -m core.storage.sync_local                 # every backtest table
+    python -m core.storage.sync_local --stream        # ... plus the market stream
     python -m core.storage.sync_local --table player_game_logs
 """
 
@@ -31,8 +32,10 @@ from sqlalchemy.orm import sessionmaker
 
 from core.storage.base import Base
 from core.storage.models import (
+    BookLevel,
     InjuryPoll,
     InjuryReport,
+    MarketSnapshot,
     PlayerGameLog,
     Prediction,
     ResolvedOutcome,
@@ -45,10 +48,8 @@ log = structlog.get_logger(__name__)
 #: Local Docker Postgres from docker-compose.yml — same target the tests use.
 LOCAL_URL = "postgresql+psycopg://meridian:meridian@localhost:5433/meridian"
 
-#: Everything a backtest or experiment reads. `market_snapshots` and
-#: `book_levels` are deliberately excluded: they are large, they are the
-#: unrecoverable stream, and no historical backtest touches them.
-SYNCED_TABLES = {
+#: Everything a historical backtest reads. Synced by default.
+DEFAULT_TABLES = {
     "team_game_logs": TeamGameLog,
     "sportsbook_odds": SportsbookOdds,
     "player_game_logs": PlayerGameLog,
@@ -57,6 +58,29 @@ SYNCED_TABLES = {
     "resolved_outcomes": ResolvedOutcome,
     "predictions": Prediction,
 }
+
+#: The market stream. **Not** synced by default: it is the largest and
+#: fastest-growing pair of tables in the system, and now that the live recorder
+#: samples at 1s rather than 30s it grows ~30x faster than it used to. No
+#: historical backtest touches it.
+#:
+#: The microstructure experiments (adverse selection, run overreaction, depth
+#: signal) do read it, and the project rule is that experiments run against
+#: local Postgres — 11m28s against Supabase versus 13s locally is the
+#: difference between a result that gets re-run under different settings and
+#: one that stands unchallenged because re-running it is too expensive. So
+#: these are opt-in rather than unavailable:
+#:
+#:     python -m core.storage.sync_local --stream
+#:
+#: Order matters: book_levels carries a foreign key into market_snapshots, so
+#: the parent must land first.
+STREAM_TABLES = {
+    "market_snapshots": MarketSnapshot,
+    "book_levels": BookLevel,
+}
+
+SYNCED_TABLES = {**DEFAULT_TABLES, **STREAM_TABLES}
 
 #: Postgres caps a statement at 65535 bound parameters, and a multi-VALUES
 #: insert uses one per column per row. Chunk size is therefore derived from the
@@ -116,7 +140,7 @@ def sync_table(name: str, model, *, source_session, target_session) -> tuple[int
     return total, written
 
 
-def sync(tables: list[str] | None = None) -> dict[str, tuple[int, int]]:
+def sync(tables: list[str] | None = None, *, stream: bool = False) -> dict[str, tuple[int, int]]:
     source_url = os.environ.get("DATABASE_URL", "")
     target_url = os.environ.get("MERIDIAN_LOCAL_URL", LOCAL_URL)
     _guard(source_url, target_url)
@@ -128,7 +152,9 @@ def sync(tables: list[str] | None = None) -> dict[str, tuple[int, int]]:
     SourceSession = sessionmaker(bind=source)
     TargetSession = sessionmaker(bind=target)
 
-    names = tables or list(SYNCED_TABLES)
+    names = tables or list(DEFAULT_TABLES)
+    if stream and not tables:
+        names = names + list(STREAM_TABLES)
     out: dict[str, tuple[int, int]] = {}
     with SourceSession() as s, TargetSession() as t:
         for name in names:
@@ -143,6 +169,12 @@ def sync(tables: list[str] | None = None) -> dict[str, tuple[int, int]]:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="meridian-sync-local")
     parser.add_argument("--table", action="append", dest="tables", default=None)
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="also sync market_snapshots and book_levels (large; needed by the "
+             "microstructure experiments, not by any historical backtest)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
@@ -154,7 +186,7 @@ def main() -> int:
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
     )
-    results = sync(args.tables)
+    results = sync(args.tables, stream=args.stream)
     for name, (total, written) in results.items():
         print(f"{name:<22s} {written:>7,} / {total:,}")
     return 0
