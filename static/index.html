@@ -113,6 +113,17 @@
   .hwarn a{color:var(--accent)}
   .warnc{color:var(--warn)}
   .empty{padding:34px; text-align:center; color:var(--faint)}
+  /* An in-play row is the model working correctly, not failing — styled as
+     information (amber) rather than as an alarm (red). */
+  .inplay{color:var(--warn); font-size:9.5px; letter-spacing:.04em; cursor:help}
+  /* Rows are written by recorders on very different cadences, so a stale
+     pregame quote sits next to a 200ms-fresh live one and must look it. */
+  .stale{color:var(--warn)}
+  .legend{display:flex; flex-wrap:wrap; gap:6px 22px; padding:10px 14px 16px;
+          border-top:1px solid var(--line); color:var(--faint); font-size:10.5px;
+          line-height:1.5}
+  .legend b{color:var(--dim); font-weight:600}
+  .gage{color:var(--faint)}
   footer{
     padding:6px 14px; font-size:10px; color:var(--faint);
     border-top:1px solid var(--line); background:var(--panel);
@@ -180,13 +191,23 @@
           <th>Model</th>
           <th class="l">Side</th>
           <th>Edge</th>
+          <th>Age</th>
           <th class="l">Trend</th>
           <th>Shadow</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
     </table>
-    <div class="empty" id="empty" style="display:none">no markets in the latest snapshot</div>
+    <div class="empty" id="empty" style="display:none">no markets on the board</div>
+    <div class="legend">
+      <span><b>in-play</b> — game in progress; the model is pregame-only and
+      does not price a running game. Not an error.</span>
+      <span><b>no book line</b> — nothing to anchor against yet, so no edge is
+      shown.</span>
+      <span><b>Age</b> — how old this row's quote is. Live games are sampled
+      every 200ms, pregame every 15 min, so rows on this page are not equally
+      fresh.</span>
+    </div>
   </section>
 </main>
 
@@ -236,9 +257,17 @@ async function loadGames(){
   $("#games").innerHTML = events.map(e => {
     const nm = (e.event_slug||"").replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
     const t = e.start ? new Date(e.start).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "";
+    // Per-game staleness: the pregame recorder sweeps every 15 min, so a game
+    // that is not live is legitimately minutes old and should say so.
+    const a = e.age_seconds;
+    const ageTxt = a === null || a === undefined ? ""
+      : a < 90 ? `${a.toFixed(0)}s ago`
+      : a < 5400 ? `${Math.round(a/60)}m ago`
+      : `${Math.round(a/3600)}h ago`;
     return `<div class="game ${selectedEvent===e.event_slug?"sel":""}" data-e="${e.event_slug}">
       <div class="t">${nm} ${e.is_live?'<span class="live">● LIVE</span>':""}</div>
-      <div class="s">${e.markets} mkts · ${t}</div></div>`;
+      <div class="s">${e.markets} mkts · ${t}</div>
+      ${ageTxt?`<div class="s gage">updated ${ageTxt}</div>`:""}</div>`;
   }).join("");
   document.querySelectorAll("[data-e]").forEach(el => el.onclick = () => {
     selectedEvent = selectedEvent === el.dataset.e ? null : el.dataset.e;
@@ -289,13 +318,50 @@ async function loadBoard(){
       else                   { side = "NO";  liveEdge = edgeNo;  }
       if (r.type === "total") side = (side === "YES") ? "OVER" : "UNDER";
     }
-    const edgeCls = !tradeable ? "dimc" : liveEdge > 0 ? "pos" : "neg";
-    const barW = !tradeable || liveEdge === null ? 0 : Math.min(Math.abs(liveEdge) * 260, 46);
+    // liveEdge is null whenever there is no model price, which must read as
+    // "not applicable" rather than as a negative edge.
+    const edgeCls = liveEdge === null ? "dimc" : liveEdge > 0 ? "pos" : "neg";
+    const barW = liveEdge === null ? 0 : Math.min(Math.abs(liveEdge) * 260, 46);
     const barCol = (liveEdge ?? 0) > 0 ? "var(--pos)" : "var(--neg)";
     // A double-digit disagreement with a liquid market is far more often the
     // model being wrong than a free lunch, especially while it is uncalibrated.
     const suspect = tradeable && liveEdge !== null && liveEdge > 0.15;
     const short = key.replace(/^(tsc|asc|aec)-wnba-/,"").replace(/-\d{4}-\d{2}-\d{2}/,"");
+
+    // Why this row has no edge. A blank cell reads as a malfunction; an
+    // in-play game with no model price is the model behaving correctly.
+    // Derived locally as well as read from the API so the page degrades
+    // gracefully against an older server rather than printing "null".
+    const state = r.pricing_state
+      || (r.is_live ? "in_play" : r.model === null ? "unpriced" : "priced");
+    let edgeCell, edgeTitle, sideNote = "—";
+    if (state === "in_play") {
+      edgeCell = '<span class="inplay">in-play</span>';
+      edgeTitle = "game in progress — the model is pregame-only and does not "
+                + "price a running game. No live model yet.";
+      sideNote = "no live model";
+    } else if (!quotable) {
+      edgeCell = '<span class="dimc">no quotes</span>';
+      edgeTitle = "no two-sided quote on this rung";
+    } else if (r.model === null) {
+      edgeCell = '<span class="dimc">no book line</span>';
+      edgeTitle = "no sportsbook line yet, so there is nothing to anchor the "
+                + "model against — a raw model opinion is not shown";
+      sideNote = "unpriced";
+    } else {
+      edgeCell = pct(liveEdge);
+      edgeTitle = "edge on the actionable side, priced at the touch";
+    }
+
+    // Rows come from writers on very different cadences, so freshness is
+    // per-row, not per-page.
+    const age = r.age_seconds;
+    const ageTxt = age === null || age === undefined ? "—"
+      : age < 90 ? age.toFixed(1) + "s"
+      : age < 5400 ? Math.round(age/60) + "m"
+      : Math.round(age/3600) + "h";
+    const ageCls = age === null || age === undefined ? "dimc"
+      : age <= 5 ? "pos" : age <= 1200 ? "" : "stale";
     const spr = r.spread === null ? "—" : (r.spread*100).toFixed(0) + "¢";
     const sprCls = r.spread !== null && r.spread > 0.05 ? "neg" : "";
     return `<tr class="${changed?"flash":""}">
@@ -307,11 +373,11 @@ async function loadBoard(){
       <td class="num ${sprCls}">${spr}</td>
       <td class="num">${fmt(r.mid)}</td>
       <td class="num">${fmt(r.model)}</td>
-      <td class="l">${!tradeable ? '<span class="dimc">—</span>'
+      <td class="l">${side === null ? `<span class="dimc">${sideNote}</span>`
         : `<span class="side ${side==="OVER"||side==="YES"?"sideY":"sideN"}">${side}</span>`}</td>
-      <td class="num ${edgeCls}" title="${r.is_live?"live game — v1 does not trade in-game":!quotable?"no quotes":"edge on the actionable side, priced at the touch"}">${
-        r.is_live ? '<span class="live">LIVE</span>' : !quotable ? "—" : pct(liveEdge)
+      <td class="num ${edgeCls}" title="${edgeTitle}">${edgeCell
       }${suspect?' <span class="suspect" title="double-digit disagreement with a liquid market — more likely model error than edge">?</span>':""}<span class="bar" style="width:${barW}px;background:${barCol};opacity:.5"></span></td>
+      <td class="num ${ageCls}" title="quote captured ${r.captured_at||""}">${ageTxt}</td>
       <td class="l" id="sp-${btoa(key).replace(/=/g,"")}">${sparkCache[key]||""}</td>
       <td class="num">${r.shadow?`<span class="shadowdot">${r.shadow.would_rest?"REST":"CROSS"}</span> ${r.shadow.quantity.toFixed(1)}`:"—"}</td>
     </tr>`;

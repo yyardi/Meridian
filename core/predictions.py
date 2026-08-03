@@ -26,11 +26,18 @@ import sys
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from core.storage import MarketSnapshot, Prediction, get_engine, get_sessionmaker
+from core.storage import (
+    MarketSnapshot,
+    Prediction,
+    SportsbookOdds,
+    get_engine,
+    get_sessionmaker,
+)
+from core.board import is_pregame, latest_snapshot_per_market, snapshot_age_seconds
 from core.feeds.espn_client import ESPNClient
 from core.team_mapping import (
     UnknownTeamError,
@@ -43,6 +50,10 @@ from strategies.wnba_totals.model.fair_value import (
     MARKET_SPREAD,
     MARKET_TOTAL,
     MARKET_WINNER,
+    estimate_market_slope,
+    read_cached_slope,
+    shrink_to_market,
+    store_slope,
     MODEL_VERSION,
     STRATEGY,
     Projection,
@@ -58,14 +69,64 @@ log = structlog.get_logger(__name__)
 UTC = dt.timezone.utc
 
 
+#: A quote older than this is not priced as though it were current.
+#:
+#: Tied to the recorder's own cadence rather than picked freehand. The pregame
+#: recorder polls every 15 min within 6h of tip-off and every 60 min beyond it,
+#: so up to an hour old is *normal operation* for a far-dated market and must
+#: not be flagged. 90 minutes is that idle interval with margin, and it is
+#: already the project's definition of a stale recorder (`/api/status` reports
+#: unhealthy at the same bound). Anything older means a poll was genuinely
+#: missed, not merely that the market is far out.
+#:
+#: Stale markets are still logged, as `reduced_confidence` rather than dropped:
+#: dropping them would hide the staleness, and pricing them as fresh would
+#: misrepresent it.
+MAX_ACTIONABLE_SNAPSHOT_AGE_SECONDS = 5400.0
+
+
 class PredictionStats:
     def __init__(self) -> None:
+        self.markets_on_board = 0
+        self.pregame_markets = 0
+        self.quotable_markets = 0
         self.markets_seen = 0
         self.predictions_written = 0
         self.skipped_unparseable = 0
         self.skipped_insufficient = 0
         self.skipped_unknown_team = 0
+        self.stale_markets = 0
         self.errors = 0
+
+    @property
+    def ok(self) -> bool:
+        """False when the run had work to do and did none of it.
+
+        The failure this exists for wrote zero predictions for two and a half
+        hours while reporting success on every cycle. A job that silently does
+        nothing is worse than one that crashes: the crash gets noticed.
+
+        Having no pregame markets at all is *not* a fault — during a full slate
+        every game is in flight and there is genuinely nothing to price. Having
+        quotable pregame markets and writing nothing is.
+        """
+        if self.quotable_markets == 0:
+            return True
+        return self.predictions_written > 0
+
+    @property
+    def summary(self) -> dict:
+        return {
+            "markets_on_board": self.markets_on_board,
+            "pregame": self.pregame_markets,
+            "quotable": self.quotable_markets,
+            "written": self.predictions_written,
+            "stale": self.stale_markets,
+            "skipped_insufficient": self.skipped_insufficient,
+            "skipped_unparseable": self.skipped_unparseable,
+            "skipped_unknown_team": self.skipped_unknown_team,
+            "errors": self.errors,
+        }
 
 
 def _espn_team_id(session: Session, abbrev: str, season: int) -> str | None:
@@ -80,39 +141,144 @@ def _espn_team_id(session: Session, abbrev: str, season: int) -> str | None:
     )
 
 
+
+def _book_consensus(
+    session: Session, espn_game_id: str | None
+) -> tuple[float | None, float | None]:
+    """Median sportsbook (total, home margin) — the anchors we shrink toward.
+
+    ESPN stores `spread` as the HOME handicap (negative = home favoured), so
+    the implied market margin is its negation. That sign convention is verified
+    against moneyline favourites in `core.backtest.margin`, not assumed —
+    getting it backwards would invert every spread pick.
+
+    Live-odds providers are excluded: their lines are set during the game, so
+    anchoring to one would drag a pregame projection toward the current score.
+    """
+    if not espn_game_id:
+        return None, None
+    rows = session.execute(
+        select(
+            SportsbookOdds.over_under,
+            SportsbookOdds.spread,
+            SportsbookOdds.provider_name,
+        ).where(SportsbookOdds.espn_game_id == espn_game_id)
+    ).all()
+
+    def _median(values: list[float]) -> float | None:
+        values.sort()
+        return values[len(values) // 2] if values else None
+
+    totals = [
+        float(ou) for ou, _, provider in rows
+        if ou is not None and "live" not in (provider or "").lower()
+    ]
+    spreads = [
+        float(sp) for _, sp, provider in rows
+        if sp is not None and "live" not in (provider or "").lower()
+    ]
+    market_margin = _median(spreads)
+    return _median(totals), (None if market_margin is None else -market_margin)
+
+
 class PredictionLogger:
-    def __init__(self, sessionmaker=None, config: WNBATotalsConfig | None = None) -> None:
+    def __init__(
+        self,
+        sessionmaker=None,
+        config: WNBATotalsConfig | None = None,
+        *,
+        max_snapshot_age_seconds: float = MAX_ACTIONABLE_SNAPSHOT_AGE_SECONDS,
+    ) -> None:
         self._Session = sessionmaker or get_sessionmaker(get_engine())
         self.config = config or CONFIG
+        self.max_snapshot_age_seconds = max_snapshot_age_seconds
+        #: (as_of -> slope). The slope walks a few hundred games, so it is
+        #: computed once per run, not once per market.
+        self._slope_cache: dict[dt.datetime, float] = {}
 
-    def latest_snapshot_time(self, session: Session) -> dt.datetime | None:
-        return session.scalar(select(func.max(MarketSnapshot.captured_at)))
+    def _market_slope(self, *, session: Session, as_of: dt.datetime) -> float:
+        """The winner's-curse slope, from cache where possible.
+
+        Recomputing walks every completed game and re-derives its features —
+        seconds locally, minutes against Supabase. This job runs every 20
+        minutes, so it reads the daily-refreshed `model_calibration` row and
+        only pays the full cost when none is fresh enough.
+
+        Falling back to 1.0 (no shrinkage) would silently restore the bug this
+        exists to fix, so the fallback is to compute it, however slow.
+        """
+        if as_of in self._slope_cache:
+            return self._slope_cache[as_of]
+
+        slope = read_cached_slope(session=session, as_of=as_of)
+        if slope is None:
+            slope = estimate_market_slope(as_of=as_of, session=session)
+            store_slope(session=session, as_of=as_of, slope=slope)
+            log.info("market_slope_computed", as_of=as_of.isoformat(),
+                     slope=round(slope, 3))
+        else:
+            log.info("market_slope_cached", as_of=as_of.isoformat(),
+                     slope=round(slope, 3))
+
+        self._slope_cache[as_of] = slope
+        return slope
 
     def run(self, as_of: dt.datetime | None = None) -> PredictionStats:
-        """Predict every market in the most recent snapshot."""
+        """Predict every pregame market currently on the board.
+
+        `as_of` is the **run's own instant**, not the newest snapshot's
+        timestamp. Two reasons, and both are load-bearing:
+
+        * `predicted_at` must be uniform across a run. The prediction log's
+          unique constraint is `(market_slug, predicted_at, model_version,
+          config_hash)` and every performance query groups on it, as do
+          `core.shadow_run` and `/api/picks`, which both select
+          `max(predicted_at)` and expect that to name one complete run. Stamping
+          each row with its own snapshot's time would shatter a run into as many
+          "runs" as there are distinct capture instants — and with a 200ms
+          recorder that is thousands.
+        * Snapshots now arrive at wildly different times, so "the newest
+          snapshot" is no longer a coherent instant to compute features as of.
+          The wall clock is.
+
+        Per-market staleness does not disappear; it is recorded on each row
+        (`features.snapshot_age_seconds`) so it stays auditable, and it gates
+        actionability.
+        """
         stats = PredictionStats()
+        as_of = as_of or dt.datetime.now(UTC)
 
         with self._Session() as session:
-            snapshot_time = self.latest_snapshot_time(session)
-            if snapshot_time is None:
+            # Latest row PER MARKET, not the single newest cycle. See
+            # core.board: anchoring on max(captured_at) returns only whichever
+            # live game the 200ms recorder wrote last, so filtering that down to
+            # pregame markets yields an empty list for the whole duration of
+            # every game.
+            snapshots = latest_snapshot_per_market(session, as_of=as_of)
+            if not snapshots:
                 log.warning("no_snapshots", hint="run the recorder first")
                 return stats
 
-            as_of = as_of or snapshot_time
             season = as_of.year
 
+            stats.markets_on_board = len(snapshots)
+            pregame = [s for s in snapshots if is_pregame(s, as_of=as_of)]
+            stats.pregame_markets = len(pregame)
             markets = [
-                m for m in session.scalars(
-                    select(MarketSnapshot).where(MarketSnapshot.captured_at == snapshot_time)
-                ).all()
-                # Pregame, quotable markets only. A prediction on an in-flight
-                # game is not a pick — it cannot be traded and it contaminates
-                # the log with post-tipoff "calls".
-                if not m.is_live
-                and m.best_bid is not None and m.best_ask is not None
+                m for m in pregame
+                if m.best_bid is not None and m.best_ask is not None
             ]
+            stats.quotable_markets = len(markets)
+
             if not markets:
-                log.info("no_pregame_markets", snapshot=snapshot_time.isoformat())
+                # Legitimate when every game on the board is in flight. Logged
+                # at INFO with the counts that distinguish that from a fault.
+                log.info(
+                    "no_pregame_markets",
+                    as_of=as_of.isoformat(),
+                    markets_on_board=stats.markets_on_board,
+                    pregame=stats.pregame_markets,
+                )
                 return stats
 
             dist = estimate_totals_distribution(as_of=as_of, session=session, season=season)
@@ -142,7 +308,8 @@ class PredictionLogger:
             log.info("orientation_map_built", games=len(orientation_map))
 
             # One projection per event, reused across that event's ~18 markets.
-            projections: dict[str, tuple[Projection, object]] = {}
+            # (projection, features, was_anchored_to_a_book_line)
+            projections: dict[str, tuple[Projection, object, bool]] = {}
             rows: list[Prediction] = []
 
             for snap in markets:
@@ -192,15 +359,17 @@ class PredictionLogger:
             session.commit()
             stats.predictions_written = written
 
-        log.info(
-            "prediction_run_complete",
-            markets=stats.markets_seen,
-            written=stats.predictions_written,
-            skipped_insufficient=stats.skipped_insufficient,
-            skipped_unparseable=stats.skipped_unparseable,
-            skipped_unknown_team=stats.skipped_unknown_team,
-            errors=stats.errors,
-        )
+        if stats.ok:
+            log.info("prediction_run_complete", **stats.summary)
+        else:
+            # The dangerous case: there was work and none of it landed. This
+            # ran undetected for 2.5 hours because it looked like success.
+            log.warning(
+                "prediction_run_wrote_nothing",
+                hint="quotable pregame markets existed but no prediction was "
+                     "written — check skipped_* and errors",
+                **stats.summary,
+            )
         return stats
 
     def _predict_one(
@@ -232,12 +401,27 @@ class PredictionLogger:
                 is_playoff_game=False,   # regular season; playoffs flagged by season_type
                 config=self.config,
             )
+            raw = project(features, config=self.config, sigma=sigma)
+
+            # Winner's-curse correction, applied HERE so the live model is the
+            # same model the backtest validated. Without it the dashboard
+            # reported the raw model-minus-market gap, which measurement says
+            # is ~77% our own error: a 13% displayed edge was worth about 3%.
+            # The slope is computed once per run and reused across games.
+            slope = self._market_slope(session=session, as_of=as_of)
+            book_total, book_margin = _book_consensus(
+                session, orientation.espn_game_id
+            )
             projections[event_key] = (
-                project(features, config=self.config, sigma=sigma),
+                shrink_to_market(
+                    raw, market_total=book_total,
+                    market_margin=book_margin, slope=slope,
+                ),
                 features,
+                book_total is not None or book_margin is not None,
             )
 
-        projection, features = projections[event_key]
+        projection, features, anchored = projections[event_key]
 
         line = float(snap.line) if snap.line is not None else None
         bid = float(snap.best_bid) if snap.best_bid is not None else None
@@ -278,6 +462,35 @@ class PredictionLogger:
             stats.skipped_insufficient += 1
             return None
 
+        # No book line yet => nothing to shrink toward, so this price is the
+        # RAW model opinion. Those are exactly the games that show the
+        # largest edges and deserve the least trust, so they are logged but
+        # never actionable. Silence would let an unshrunk 20% edge sit on the
+        # board looking identical to a validated one.
+        actionable = pred.is_actionable and anchored
+        notes = pred.confidence_notes
+        if not anchored:
+            unshrunk = "no book line yet: price is unshrunk model opinion"
+            notes = f"{notes}; {unshrunk}" if notes else unshrunk
+
+        # Snapshots now arrive from writers on very different cadences, so a
+        # row's quote can be minutes or hours old while the run itself is
+        # current. Pricing a two-hour-old book as though it were the touch
+        # would be a quiet lie, so age is recorded on every row and gates
+        # actionability rather than being assumed away.
+        age = snapshot_age_seconds(snap, as_of=as_of)
+        stale = age > self.max_snapshot_age_seconds
+        if stale:
+            stats.stale_markets += 1
+            note = (f"stale quote: snapshot is {age / 60:.0f} min old "
+                    f"(limit {self.max_snapshot_age_seconds / 60:.0f} min)")
+            notes = f"{notes}; {note}" if notes else note
+            actionable = False
+
+        features = dict(pred.features or {})
+        features["snapshot_age_seconds"] = round(age, 1)
+        features["snapshot_captured_at"] = snap.captured_at.isoformat()
+
         return Prediction(
             predicted_at=as_of,
             model_version=pred.model_version,
@@ -293,12 +506,12 @@ class PredictionLogger:
             market_ask=to_decimal(pred.market_ask),
             market_mid=to_decimal(pred.market_mid),
             edge=to_decimal(pred.edge, "0.000001"),
-            features=pred.features,
+            features=features,
             model_config_snapshot=pred.model_config_snapshot,
             config_hash=pred.config_hash,
-            is_actionable=pred.is_actionable,
-            reduced_confidence=pred.reduced_confidence,
-            confidence_notes=pred.confidence_notes,
+            is_actionable=actionable,
+            reduced_confidence=pred.reduced_confidence or not anchored or stale,
+            confidence_notes=notes,
         )
 
 
