@@ -55,6 +55,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 |---|---|
 | [what-runs.md](infra/what-runs.md) | What the three containers do, and why quiet hours still matter |
 | [live-cadence.md](infra/live-cadence.md) | 27s → 200ms: no websocket, the DB was the bottleneck, and storage now needs retention |
+| [retention.md](infra/retention.md) | What to keep at 200ms and for how long (~60 GB/season if nothing changes) |
 | [live-odds.md](infra/live-odds.md) | ESPN publishes **no** live in-game odds — measured, and what to record instead |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |
