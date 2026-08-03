@@ -79,6 +79,37 @@ services:
     # discarding ~40% of observable changes. See docs/infra/live-cadence.md.
     command: ["sh", "-c", "alembic upgrade head && python -m core.live_recorder --interval 0.2"]
 
+  live-odds-recorder:
+    build: .
+    container_name: meridian-live-odds-recorder
+    # Separate from `scheduler` because the scheduler runs every 6 hours, which
+    # is why the database holds 3 in-play-adjacent odds rows in total. Book
+    # lines move on news, in minutes; a 6-hourly sweep cannot see that, and the
+    # news-window detector reported zero triggers largely because of it.
+    #
+    # NOTE: ESPN publishes NO live in-game odds (measured 2026-08-02 — the
+    # scoreboard odds block is empty mid-game and summary.pickcenter is a
+    # frozen pregame number). This records *pregame* line movement at fine
+    # resolution, and quarantines anything in-game behind a "(live)" provider
+    # name if the venue ever starts publishing one. See
+    # docs/infra/live-odds.md.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
+      # containers plus the dashboard exhaust it. Transaction mode (6543)
+      # shares a small server pool across many clients. Alembic still uses
+      # DATABASE_URL as given, so migrations keep session mode where their
+      # advisory locks work.
+      MERIDIAN_TX_POOLER: "1"
+      # ESPN is a separate host from Polymarket and has its own budget. One
+      # small scoreboard call per cycle at 15s is ~0.07 req/s against 3.
+      ESPN_RPS: "3"
+    command: ["python", "-m", "core.feeds.live_odds_recorder", "--interval", "15"]
+
   scheduler:
     build: .
     container_name: meridian-scheduler
