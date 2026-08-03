@@ -18,7 +18,6 @@ Honesty constraints, stated up front:
 
 from __future__ import annotations
 
-import datetime as dt
 import random
 from dataclasses import dataclass, field
 
@@ -241,14 +240,20 @@ def run_margin_backtest(
             tracker.add(projection.projected_margin - market_margin,
                         actual_margin - market_margin)
 
-        def shrunk(margin_market: float) -> float:
+        def shrunk(margin_market: float, *, _proj=projection, _slope=slope) -> float:
             """Model margin, pulled toward the market by the measured slope.
 
             E[actual − market | model − market] = slope × (model − market) is
             the statistically correct predictor. The raw gap is not.
+
+            `_proj` and `_slope` are bound as defaults rather than closed over:
+            the closure is only used inside this iteration, but binding makes
+            that a property of the function instead of a property of where it
+            happens to be called, so a later refactor cannot silently start
+            pricing one game with the next game's slope.
             """
-            raw = projection.projected_margin - margin_market
-            return margin_market + (slope * raw if cfg.shrink_to_market else raw)
+            raw = _proj.projected_margin - margin_market
+            return margin_market + (_slope * raw if cfg.shrink_to_market else raw)
 
         # ---- spread ------------------------------------------------- #
         if odds.home_spread is not None:
@@ -342,7 +347,7 @@ def format_margin_report(r: MarginResult) -> str:
             se = (hit * (1 - hit) / resolved) ** 0.5
             add(f"  hit rate : {hit:.3f} ± {se:.3f}   ({wins}/{resolved})")
             add(f"  ROI      : {pnl / staked:+.2%}" if staked else "  ROI: n/a")
-            add(f"  breakeven at -110 pricing is 0.524")
+            add("  breakeven at -110 pricing is 0.524")
         else:
             add("  nothing resolved")
         add("")

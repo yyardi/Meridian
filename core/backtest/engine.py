@@ -33,11 +33,10 @@ import random
 from dataclasses import dataclass, field
 
 import structlog
-from sqlalchemy import and_, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.backtest.fills import (
-    ASSUMPTIONS,
     FillModel,
     american_to_price,
     pnl_for_contract,
@@ -95,6 +94,14 @@ class BetRecord:
     availability_delta: float = 0.0
     #: True when at least one rotation player was absent for either team.
     has_absence: bool = False
+    #: Scoring-environment sigma used to price this bet. Stored so CLV can be
+    #: converted from line points into probability terms after the fact —
+    #: points are not comparable to an ROI, probabilities are.
+    sigma: float = 0.0
+    #: The two-sided vig-included prices quoted at entry, kept so the ledger
+    #: can de-vig them rather than guess at the book's margin.
+    over_price: float = 0.0
+    under_price: float = 0.0
 
 
 class SlopeTracker:
@@ -449,6 +456,9 @@ def run_backtest(
                 is_playoff=(season_type == SEASON_TYPE_POSTSEASON),
                 availability_delta=cfg.availability_beta * avail_delta,
                 has_absence=has_absence,
+                sigma=dist.sigma,
+                over_price=over_price,
+                under_price=under_price,
             )
         )
 
