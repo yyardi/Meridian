@@ -32,8 +32,52 @@ services:
       # Substituted from .env at runtime so no credential is committed.
       # Falls back to the local container if REMOTE_DATABASE_URL is unset.
       DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
+      # containers plus the dashboard exhaust it. Transaction mode (6543)
+      # shares a small server pool across many clients. Alembic still uses
+      # DATABASE_URL as given, so migrations keep session mode where their
+      # advisory locks work.
+      MERIDIAN_TX_POOLER: "1"
+      # Two recorders now share one IP and the gateway's ceiling is 20 req/s.
+      # The pregame recorder polls hourly and has no latency requirement, so it
+      # yields headroom to the live one rather than both sitting at 10 and
+      # leaving zero margin. 5 + 12 = 17, under the ceiling.
+      MERIDIAN_RPS: "5"
     volumes:
       - ./recorder-logs:/app/logs
+
+  live-recorder:
+    build: .
+    container_name: meridian-live-recorder
+    # Separate from `recorder` on purpose: that one samples the pregame board
+    # every 15-60 min, which is right for slow line drift and useless for
+    # anything inside a game. In-game prices travel ~37c peak-to-trough, and
+    # both unbuilt strategies (in-game trading, market making) need
+    # second-scale resolution to be measurable at all.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
+      # containers plus the dashboard exhaust it. Transaction mode (6543)
+      # shares a small server pool across many clients. Alembic still uses
+      # DATABASE_URL as given, so migrations keep session mode where their
+      # advisory locks work.
+      MERIDIAN_TX_POOLER: "1"
+      # Gets the larger share: this is the one with a latency requirement.
+      # Measured steady-state demand with a full four-game slate is ~8.9 req/s
+      # (5 for the 200ms price loop + near-money depth + a slow deep sweep), so
+      # 12 leaves headroom without crowding the gateway's 20 req/s per-IP
+      # ceiling. NOT raised when the price loop went from 1s to 200ms — depth
+      # widened from 5s to 10s to pay for it instead.
+      MERIDIAN_RPS: "12"
+    # 200ms, not one second, and measured rather than chosen: subsampling a
+    # 200ms capture of a live board, detected quote changes per second peak at
+    # 5.8/s around 200-300ms and fall to 3.5/s at 1s. The old 1s loop was
+    # discarding ~40% of observable changes. See docs/infra/live-cadence.md.
+    command: ["sh", "-c", "alembic upgrade head && python -m core.live_recorder --interval 0.2"]
 
   scheduler:
     build: .
@@ -44,6 +88,12 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
+      # containers plus the dashboard exhaust it. Transaction mode (6543)
+      # shares a small server pool across many clients. Alembic still uses
+      # DATABASE_URL as given, so migrations keep session mode where their
+      # advisory locks work.
+      MERIDIAN_TX_POOLER: "1"
     # Stats, odds, predictions and resolution every 6h. All of these are
     # backfillable, unlike snapshots, so a missed run costs nothing permanent.
     command: ["sh", "-c", "alembic upgrade head && python -m core.scheduler --interval-hours 6"]
