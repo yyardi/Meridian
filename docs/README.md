@@ -4,6 +4,8 @@ Short, single-topic docs. Each one should be readable in a few minutes.
 
 The root [`README.md`](../README.md) is the project overview. These go deeper on one thing each.
 
+**Start here:** [how-it-all-works.md](how-it-all-works.md) — the whole project in plain language, then the maths.
+**Handing off / picking up:** [next-build.md](next-build.md) — the three routes, what's built, what to measure next.
 **Status snapshot:** [STATUS.md](STATUS.md) — one page: built, measured, stuck.
 **Current direction:** [roadmap.md](roadmap.md) — why we stayed WNBA, and the window-hunting plan.
 
@@ -21,6 +23,15 @@ The modelling, stated precisely enough to argue with.
 | [pythagorean-record.md](math/pythagorean-record.md) | Does win-loss record add anything to point differential? |
 | [point-in-time.md](math/point-in-time.md) | How do we make lookahead bias structurally impossible? |
 | [availability.md](math/availability.md) | Does knowing tonight's lineup beat the closing line? (No — measured) |
+| [what-the-edge-is-worth.md](math/what-the-edge-is-worth.md) | What is +1.75 points of CLV worth in money? (+2.50% ROI) |
+| [market-shrinkage.md](math/market-shrinkage.md) | Why the moneyline loses, and why recalibration was the wrong fix |
+| [ladder-sigma.md](math/ladder-sigma.md) | Is Polymarket's ladder too narrow? (hypothesis, unproven) |
+| [news-windows.md](math/news-windows.md) | Does the thin venue lag the books on news? (no data yet) |
+| [adverse-selection.md](math/adverse-selection.md) | Does the spread survive being filled? (gates QUOTE — no data yet) |
+| [run-overreaction.md](math/run-overreaction.md) | Do prices overshoot scoring runs? (gates PULSE — no data yet) |
+| [depth-signal.md](math/depth-signal.md) | Does a whale in the book predict the next move? (no data yet) |
+| [clustered-errors.md](math/clustered-errors.md) | Why sample size is games, not rows — and why a faster recorder doesn't help |
+| [write-latency.md](math/write-latency.md) | How fast can we *act*? (our poll loop beats the venue's network cost 7:1) |
 | [calibration-problem.md](math/calibration-problem.md) | ⚠️ **Open problem** — why the model's probabilities carry no signal |
 | [research-notes.md](math/research-notes.md) | What the betting-markets literature says, tied to actions here |
 | [performance-targets.md](math/performance-targets.md) | Pre-registered bars for "good", sample sizes, gates before real money |
@@ -43,10 +54,12 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | Doc | Covers |
 |---|---|
 | [what-runs.md](infra/what-runs.md) | What the three containers do, and why quiet hours still matter |
+| [live-cadence.md](infra/live-cadence.md) | 27s → 200ms: no websocket, the DB was the bottleneck, and storage now needs retention |
+| [live-odds.md](infra/live-odds.md) | ESPN publishes **no** live in-game odds — measured, and what to record instead |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |
 | [data-sources.md](infra/data-sources.md) | Every external API, verified |
 
 ## Reading order
 
-New to the project? **[architecture.md](infra/architecture.md)** → **[fair-value.md](math/fair-value.md)** → **[clv.md](math/clv.md)**. That's the system, the model, and how we judge it.
+New to the project? **[how-it-all-works.md](how-it-all-works.md)** first, then **[architecture.md](infra/architecture.md)** → **[fair-value.md](math/fair-value.md)** → **[clv.md](math/clv.md)**. That's the system, the model, and how we judge it.
