@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from core.storage import MarketSnapshot
@@ -66,6 +66,51 @@ UTC = dt.timezone.utc
 #: board. Generous enough to cover a WNBA game (~2.5h wall) plus overtime and
 #: settlement lag.
 BOARD_LOOKBACK_HOURS = 6.0
+
+
+#: Latest row per market, via a skip scan plus one index lookup each.
+#:
+#: The obvious `DISTINCT ON (market_slug) ... ORDER BY market_slug, captured_at
+#: DESC` is correct but does not scale here. Measured on 857k rows, the planner
+#: chose `ix_market_snapshots_market_slug` and then an **Incremental Sort over
+#: 612,291 rows**, which exceeded the statement timeout — `/api/events` took
+#: 120s and returned 500. It was fine at 18k rows and quietly stopped being fine
+#: somewhere in between, which is the thing to watch for: this table now grows
+#: by ~200k rows a game.
+#:
+#: The rewrite asks the same question in a way that stays proportional to the
+#: number of *markets* (~200) rather than the number of *rows*:
+#:
+#: 1. Enumerate the distinct `market_slug` values by walking the leading column
+#:    of `ix_market_snapshots_slug_time` — a recursive "skip scan", roughly one
+#:    index seek per market instead of a scan of every row.
+#: 2. For each, take its newest row with `ORDER BY captured_at DESC LIMIT 1`,
+#:    which is a single seek on the same index.
+#:
+#: Measured after: 129ms against 120s. It gets *faster* relative to DISTINCT ON
+#: as the table grows, because its cost is set by the market count, which is
+#: bounded by the size of the league's board.
+_LATEST_PER_MARKET = text("""
+with recursive slugs as (
+        (select market_slug from market_snapshots order by market_slug limit 1)
+    union all
+        select (select m.market_slug from market_snapshots m
+                where m.market_slug > s.market_slug
+                order by m.market_slug limit 1)
+        from slugs s where s.market_slug is not null
+)
+select latest.*
+from slugs
+cross join lateral (
+    select * from market_snapshots m
+    where m.market_slug = slugs.market_slug
+      and m.captured_at <= :as_of
+    order by m.captured_at desc
+    limit 1
+) latest
+where slugs.market_slug is not null
+  and latest.game_start_time >= :cutoff
+""")
 
 
 def latest_snapshot_per_market(
@@ -83,12 +128,8 @@ def latest_snapshot_per_market(
     cutoff = as_of - dt.timedelta(hours=lookback_hours)
     return list(
         session.scalars(
-            select(MarketSnapshot)
-            .where(MarketSnapshot.captured_at <= as_of)
-            .where(MarketSnapshot.game_start_time >= cutoff)
-            .distinct(MarketSnapshot.market_slug)
-            .order_by(
-                MarketSnapshot.market_slug, MarketSnapshot.captured_at.desc()
+            select(MarketSnapshot).from_statement(
+                _LATEST_PER_MARKET.bindparams(as_of=as_of, cutoff=cutoff)
             )
         ).all()
     )
