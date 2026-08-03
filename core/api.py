@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select, text
 
-from core.board import latest_snapshot_per_market
+from core.board import FINISHED, IN_PLAY, latest_snapshot_per_market, market_state
 from core.executor import ExecutorConfig
 from core.storage import (
     MarketSnapshot,
@@ -206,26 +206,47 @@ def status() -> dict:
     return value
 
 
-def _pricing_state(snap: MarketSnapshot, prediction) -> str:
+def _pricing_state(snap: MarketSnapshot, prediction, *, as_of: dt.datetime) -> str:
     """Why a row has no edge, so the UI never has to guess.
 
     An in-play market showing no model price is the model working correctly —
     it is pregame-only and refuses to price a game in progress — but on screen
     that is indistinguishable from a malfunction. Naming the state fixes that.
+
+    Uses `market_state` rather than the raw `is_live` flag, which freezes at
+    `True` forever once a game's markets leave the venue's board.
     """
-    if snap.is_live:
+    state = market_state(snap, as_of=as_of)
+    if state == IN_PLAY:
         return "in_play"
+    if state == FINISHED:
+        return "finished"
     if prediction is None:
         return "unpriced"
     return "priced"
 
 
+def _live_board(s, *, as_of: dt.datetime, include_finished: bool):
+    """Markets still worth looking at: everything but the games that are over.
+
+    A finished game's markets keep their last quote forever — nothing
+    overwrites them once they leave the venue's board — so leaving them in
+    means showing hours-old prices, and an *edge* computed against them, beside
+    live ones. They are dropped rather than dimmed because nothing on this page
+    is actionable for a game that has already been played.
+    """
+    snaps = latest_snapshot_per_market(s, as_of=as_of)
+    if include_finished:
+        return snaps
+    return [x for x in snaps if market_state(x, as_of=as_of) != FINISHED]
+
+
 @app.get("/api/board")
-def board() -> dict:
-    """Latest snapshot of every market, joined to the newest prediction."""
+def board(include_finished: bool = False) -> dict:
+    """Latest snapshot of every market still on the board, with its prediction."""
     now = dt.datetime.now(UTC)
     with _Session() as s:
-        snaps = latest_snapshot_per_market(s, as_of=now)
+        snaps = _live_board(s, as_of=now, include_finished=include_finished)
         if not snaps:
             return {"captured_at": None, "markets": []}
         latest = max(snap.captured_at for snap in snaps)
@@ -238,9 +259,14 @@ def board() -> dict:
             ).all():
                 preds[p.market_slug] = p
 
+        # Only for market types the executor would still place. Shadow rows
+        # written before the moneyline was refused on measured evidence are
+        # historical artifacts of a superseded policy; showing them implies an
+        # order that would never be sent now.
         shadow = {
             o.market_slug: o
             for o in s.scalars(select(ShadowOrder)).all()
+            if _EXECUTOR_POLICY.is_tradable(o.sports_market_type)
         }
 
         rows = []
@@ -259,14 +285,14 @@ def board() -> dict:
                 "mid": None if bid is None or ask is None else round((ask + bid) / 2, 4),
                 "model": _f(p.model_probability) if p else None,
                 "edge": _f(p.edge) if p else None,
-                "is_live": snap.is_live,
+                "is_live": market_state(snap, as_of=now) == IN_PLAY,
                 # Per-row freshness. Rows now come from writers on very
                 # different cadences, so a single board-level timestamp would
                 # present a 15-minute-old pregame quote as though it were as
                 # fresh as a 200ms live one.
                 "captured_at": snap.captured_at.isoformat(),
                 "age_seconds": round((now - snap.captured_at).total_seconds(), 1),
-                "pricing_state": _pricing_state(snap, p),
+                "pricing_state": _pricing_state(snap, p, as_of=now),
                 "game_start": snap.game_start_time.isoformat() if snap.game_start_time else None,
                 "shadow": (
                     {
@@ -321,7 +347,7 @@ def events() -> dict:
     """
     now = dt.datetime.now(UTC)
     with _Session() as s:
-        snaps = latest_snapshot_per_market(s, as_of=now)
+        snaps = _live_board(s, as_of=now, include_finished=False)
 
     grouped: dict[str, dict] = {}
     for snap in snaps:
