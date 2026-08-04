@@ -59,7 +59,23 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # LOCAL, deliberately — not the Supabase URL the others use.
+      #
+      # This container writes ~657,000 rows a day; everything else in the system
+      # writes ~5,900. On a shared-CPU instance that pinned Supabase at 99% CPU
+      # while exceeding the free tier, and a write that fails mid-game loses
+      # that game permanently: Polymarket publishes no price history, so the
+      # tick stream cannot be refetched from anywhere.
+      #
+      # Nothing is lost by keeping it here. The only consumer is the replay
+      # engine and the microstructure experiments, and those are *required* to
+      # run against local Postgres anyway (11m28s against Supabase versus 13s
+      # locally). The old arrangement uploaded every tick and then downloaded
+      # it again via `sync_local --stream`.
+      #
+      # What Supabase keeps: predictions, odds, resolutions, game logs — the
+      # ~5,900 rows/day that actually need to survive this laptop.
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
       # Supabase session mode (5432) caps the PROJECT at 15 clients and four
       # containers plus the dashboard exhaust it. Transaction mode (6543)
       # shares a small server pool across many clients. Alembic still uses

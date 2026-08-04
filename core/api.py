@@ -39,6 +39,9 @@ app = FastAPI(title="Meridian", docs_url=None, redoc_url=None)
 #: the order path can never disagree about what is tradable.
 _EXECUTOR_POLICY = ExecutorConfig()
 
+#: Below this the shadow sizer wanted the position but not a tradable amount.
+MIN_TICKET_QTY = 0.1
+
 #: Model and market this close is not a disagreement, so it is not a bet.
 NO_BET_TOLERANCE = 0.02
 
@@ -142,6 +145,63 @@ _status_cache: dict = {"at": 0.0, "value": None}
 
 def _age_seconds(then, now: dt.datetime) -> float | None:
     return None if then is None else (now - then).total_seconds()
+
+
+
+def _ticket(bid: float | None, ask: float | None, model: float | None,
+            market_type: str | None, human: str,
+            shadow_qty: float | None) -> dict | None:
+    """The whole trade as one instruction: side, buy price, sell price, size.
+
+    Every number here already existed on the row — the side, the ask, the
+    model probability, the shadow quantity — but only as ingredients. Turning
+    them into a ticket is not cosmetic: the sell target IS the model column,
+    and nobody reading a probability next to a price would guess that. It was
+    asked for out loud several times before this existed.
+
+    The two flips that make it non-obvious:
+
+    * On a NO/UNDER, you pay ``1 - bid`` and it is worth ``1 - model``. The
+      bid/ask/model shown are always for the YES side, so an UNDER row's real
+      cost appears nowhere on screen.
+    * The sell target is fair value, **not** a multiple of entry. Buy at 19c
+      against a 27c model and you exit at 27c, not at 38c: the edge is
+      ``fair value - price``, so it is fully collected the moment the market
+      reaches the model. Holding past it is holding a fair coin.
+    """
+    if bid is None or ask is None or model is None:
+        return None
+
+    edge_yes, edge_no = model - ask, bid - model
+    yes = edge_yes >= edge_no
+    cost = ask if yes else 1.0 - bid
+    worth = model if yes else 1.0 - model
+    if cost <= 0:
+        return None
+
+    is_total = (market_type or "").endswith("total")
+    if is_total:
+        side = "OVER" if yes else "UNDER"
+        label = f"{side} {human.replace('Total ', '')}"
+    else:
+        side = "BUY" if yes else "SELL"
+        label = f"{side} {human}"
+
+    qty = shadow_qty or 0.0
+    return {
+        "label": label,
+        "buy_at": round(cost, 4),
+        "sell_at": round(worth, 4),
+        # Return on the money staked, not the probability edge. A 5-point edge
+        # on a 20c contract returns 25%; on an 80c contract, 6%. The screen
+        # showed points, and points are not what the wallet receives.
+        "return_pct": round(worth / cost - 1.0, 4),
+        "size": round(qty, 2),
+        "stake": round(qty * cost, 2),
+        # Below the venue minimum the model wanted the bet but not enough of it
+        # to be worth a ticket. Say so rather than showing a size of 0.0.
+        "too_small": qty < MIN_TICKET_QTY,
+    }
 
 
 @app.get("/api/status")
@@ -301,6 +361,13 @@ def board(include_finished: bool = False) -> dict:
                         "would_rest": shadow[snap.market_slug].would_rest,
                     }
                     if snap.market_slug in shadow else None
+                ),
+                "ticket": _ticket(
+                    bid, ask, _f(p.model_probability) if p else None,
+                    snap.sports_market_type,
+                    _human_market(snap.market_slug, snap.sports_market_type, _f(snap.line)),
+                    _f(shadow[snap.market_slug].quantity)
+                    if snap.market_slug in shadow else None,
                 ),
             })
 
@@ -489,6 +556,12 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
                 "quantity": _f(o.quantity),
                 "would_rest": o.would_rest,
             },
+            # The whole trade as one instruction. Every ingredient was already
+            # on this row; none of them said what to actually do.
+            "ticket": _ticket(
+                bid, ask, model, p.sports_market_type, human,
+                _f(o.quantity) if o is not None else None,
+            ),
         })
     # Ordered by tipoff: the soonest game is the one you can actually act on.
     out.sort(key=lambda r: (r["game_start"], -r["edge"]))

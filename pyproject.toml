@@ -35,5 +35,11 @@ packages = ["core", "strategies"]
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint.per-file-ignores]
+# A health check that crashes when one check fails is worse than useless — it
+# reports nothing about the other checks. Every `except Exception` there turns a
+# failure into a DEAD line and keeps going, which is the entire design.
+"scripts/health.py" = ["BLE001"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

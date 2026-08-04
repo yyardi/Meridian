@@ -5,9 +5,12 @@ Short, single-topic docs. Each one should be readable in a few minutes.
 The root [`README.md`](../README.md) is the project overview. These go deeper on one thing each.
 
 **Start here:** [how-it-all-works.md](how-it-all-works.md) — the whole project in plain language, then the maths.
+**What we got wrong:** [findings.md](findings.md) — venue facts, bugs, and retracted claims. **Append as you find more.**
+**PULSE queue:** [pulse-hypotheses.md](pulse-hypotheses.md) — all 14 in-game hypotheses in one editable table.
 **Handing off / picking up:** [next-build.md](next-build.md) — the three routes, what's built, what to measure next.
 **Status snapshot:** [STATUS.md](STATUS.md) — one page: built, measured, stuck.
 **Current direction:** [roadmap.md](roadmap.md) — why we stayed WNBA, and the window-hunting plan.
+**Terms:** [glossary.md](glossary.md) — every piece of jargon, defined once.
 
 ## Math
 
@@ -29,6 +32,7 @@ The modelling, stated precisely enough to argue with.
 | [news-windows.md](math/news-windows.md) | Does the thin venue lag the books on news? (no data yet) |
 | [adverse-selection.md](math/adverse-selection.md) | Does the spread survive being filled? (gates QUOTE — no data yet) |
 | [run-overreaction.md](math/run-overreaction.md) | Do prices overshoot scoring runs? (gates PULSE — no data yet) |
+| [first-score.md](math/first-score.md) | Does the opening basket move the price too much? (PULSE strategy #1 — no data yet) |
 | [depth-signal.md](math/depth-signal.md) | Does a whale in the book predict the next move? (no data yet) |
 | [clustered-errors.md](math/clustered-errors.md) | Why sample size is games, not rows — and why a faster recorder doesn't help |
 | [write-latency.md](math/write-latency.md) | How fast can we *act*? (our poll loop beats the venue's network cost 7:1) |
@@ -56,6 +60,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | [what-runs.md](infra/what-runs.md) | What the three containers do, and why quiet hours still matter |
 | [live-cadence.md](infra/live-cadence.md) | 27s → 200ms: no websocket, the DB was the bottleneck, and storage now needs retention |
 | [retention.md](infra/retention.md) | What to keep at 200ms and for how long (~60 GB/season if nothing changes) |
+| [local-sync.md](infra/local-sync.md) | Why the local copy could not finish at 837k rows, and what it now omits |
 | [live-odds.md](infra/live-odds.md) | ESPN publishes **no** live in-game odds — measured, and what to record instead |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |
@@ -64,3 +69,5 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 ## Reading order
 
 New to the project? **[how-it-all-works.md](how-it-all-works.md)** first, then **[architecture.md](infra/architecture.md)** → **[fair-value.md](math/fair-value.md)** → **[clv.md](math/clv.md)**. That's the system, the model, and how we judge it.
+
+Re-reading with experience? Go **[findings.md](findings.md)** → **[math/market-shrinkage.md](math/market-shrinkage.md)** → **[math/calibration-problem.md](math/calibration-problem.md)**. That's what's broken, why, and the one thing still unexplained.

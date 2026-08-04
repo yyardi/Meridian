@@ -1,6 +1,8 @@
-# Meridian — Status (2026-08-01)
+# Meridian — Status (2026-08-03)
 
 One page: what exists, what it says, where we are stuck.
+Companion: [findings.md](findings.md) — what we got wrong, and the venue facts that
+constrain everything below.
 
 ## What has been built (all 12 units + extensions)
 
@@ -8,11 +10,12 @@ One page: what exists, what it says, where we are stuck.
 **Model** — **v4** fair value (v3 + live winner's-curse shrinkage; the shadow clock restarted with the bump): additive strengths (`off_A + def_B − league_mean`), recency-decayed features, walk-forward home advantage, calibrated pricing via market-anchored shrinkage. One projection prices totals, spreads, and moneylines.
 **Validation** — walk-forward backtests for all three markets, CLV-primary, three fill models, pre-registered targets and gates ([performance-targets.md](math/performance-targets.md)).
 **Execution** — correlation-aware quarter-Kelly; shadow-only executor (market orders unrepresentable, kill switch on, **0 real orders ever**). Live dashboard + analytics charts at `localhost:8008`.
-**Ops** — Dockerised recorder/scheduler on Supabase (laptop-hosted), runbook, backups, 192 tests. Book lines now polled every 20 min; PM every 15 min. Recurring cost: **$0**.
+**Ops** — Dockerised recorder/scheduler on Supabase (laptop-hosted), runbook, backups, 464 tests. Live recorder writes locally at **200ms**; book lines polled every 20 min. Recurring cost: **$0**.
+**PULSE (Route B)** — replay engine ([`core/pulse/replay.py`](../core/pulse/replay.py), no lookahead, fills earned not assumed), overreaction and first-score studies, ANCHOR scorecard ([`core/scorecard.py`](../core/scorecard.py), clustered by game). All built; all waiting on games.
 
 ## Current data
 
-7,109 market snapshots · 104,916 book levels · 1,645 games · 12,044 odds rows · 1,248 settlements · 1,346 predictions · 14 shadow orders · **18,076 player-games (2024–26)** · **injury change log live from 2026-08-01**.
+839,811 market snapshots · 830,838 book levels · 3,290 team game logs · **18,145 player-games** · 12,658 sportsbook odds rows · 11,609 predictions (**8,937 on v4**) · 1,356 resolved · 1,333 shadow orders · 82 injury change rows · **20 games with tick data, 3 of them at 200ms**.
 
 ## Performance — canonical numbers
 
@@ -42,6 +45,18 @@ Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill
 5. ~~**The model cannot see rosters.**~~ **Settled, and not the way we expected.** The model still cannot see rosters, but an oracle arm that reads the true lineup off the box score gains no CLV (+0.06 pts on absence games, CI [−0.10, +0.21]) — lineups are public before tip-off and the close already prices them. ROI rose (+1.3% → +6.8%) but the bands overlap almost entirely — [−11.4%, +14.0%] vs [−5.0%, +18.7%] at n≈250. Roster awareness is worth *speed*, not *information*, which folds it into the window question. [availability.md](math/availability.md)
 6. **Laptop hosting**: a sleeping Mac still gaps the unrecoverable snapshot stream (`caffeinate -dis`).
 7. **Backtests now run locally.** `python -m core.storage.sync_local` mirrors the primary into the warm standby; a paired experiment went from **11m28s to 13s** with byte-identical results. Run experiments against `localhost:5433`, not Supabase — an experiment that costs 11 minutes gets run once and stands unchallenged.
+
+8. **The tradable half of the board may not be where the edge is.** Depth at the touch
+   is **$5** under 20¢ and **$24** at 20–35¢; the tick is **1¢ everywhere** (6.25% of
+   value at 16¢); and cheap contracts reach a 7¢ move **57%** of the time against
+   **88%** near-money. The model prefers deep out-of-the-money rungs. Nobody has
+   measured whether it has any edge at 35–65¢, where size is actually available.
+   [findings.md](findings.md#what-v1v3-mean-together)
+9. **PULSE Tier 1 is blocked on games, not code.** Both hypotheses built, both NO DATA:
+   3 of 20 recorded games have 200ms coverage, and the rest are sampled every ~15 min,
+   which cannot resolve a 30-second reaction window.
+10. **Write latency is unmeasured**, and it decides whether QUOTE is possible. Blocked
+    on the request-signing layer. [math/write-latency.md](math/write-latency.md)
 
 ## Next, in order
 

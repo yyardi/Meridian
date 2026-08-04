@@ -7,8 +7,13 @@ Two hosts, different jobs:
   odds (the scoreboard strips odds from past games)
 
 ESPN publishes no rate limits and offers no stability guarantee. We treat it as
-untrusted input: slow request rate, descriptive User-Agent, validate at the
-boundary, and never let one bad payload take down a batch.
+untrusted input: slow request rate, validate at the boundary, and never let one
+bad payload take down a batch.
+
+We send **no User-Agent override**. ESPN 403s custom and browser-like agents and
+serves library defaults — see `ESPNConfig.user_agent` for the measurements. The
+docstring here previously claimed a "descriptive User-Agent" while the code sent
+a spoofed Chrome string; both are now false and neither would work.
 """
 
 from __future__ import annotations
@@ -37,9 +42,13 @@ class ESPNClient:
     def __init__(self, config: ESPNConfig | None = None) -> None:
         self.config = config or ESPN
         self._bucket = TokenBucket(self.config.requests_per_second, self.config.burst_capacity)
+        # An empty user_agent means "leave httpx's own default alone" — ESPN 403s
+        # custom and browser-like agents but serves library defaults. See
+        # ESPNConfig.user_agent for the measurements.
+        headers = {"User-Agent": self.config.user_agent} if self.config.user_agent else {}
         self._client = httpx.Client(
             timeout=httpx.Timeout(self.config.http_timeout_seconds),
-            headers={"User-Agent": self.config.user_agent},
+            headers=headers,
             follow_redirects=True,
         )
 
