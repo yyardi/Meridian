@@ -52,13 +52,23 @@ Two new columns make the sparsity auditable: `market_snapshots.book_tier` and `b
 
 **Hypothesis to test first (do not build a model before this):** do prices *overreact* to scoring runs and then revert? If they do not, B is dead and no model saves it.
 
-**Built 2026-08-02: [`core/pulse/overreaction.py`](../core/pulse/overreaction.py). Verdict: NO DATA.** 8 runs across 1 game against a pre-registered gate of 30 runs across 10 games. Write-up: [math/run-overreaction.md](math/run-overreaction.md).
+**Built 2026-08-02: [`core/pulse/overreaction.py`](../core/pulse/overreaction.py). Verdict: NO DATA.** Re-run the same day against the 200ms stream: **149 runs across 4 games** against a pre-registered gate of 30 runs across 10 games. Write-up: [math/run-overreaction.md](math/run-overreaction.md).
 
-Two things the first run revealed, both about the camera rather than the subject:
-- All 8 triggers were *price* triggers. The score trigger fired **zero** times at ≥8 unanswered points — at the old ~910s median gap both teams have usually scored between samples, so almost nothing reads as unanswered. The study was running on one of its two legs.
-- Reversion at +5 min was **−7.25¢** (i.e. continuation, not reversion), but from one game that is noise, and it is reported as NO DATA rather than as a finding.
+- **The run count is now met; the game count binds.** 8 runs / 1 game → 149 runs / 4 games.
+- **The score trigger works now.** It fired zero times at the old ~910s cadence because both teams score between samples; at 200ms it detects 25 runs at ≥8 unanswered points. The study is running on both legs at last.
+- Reversion at +5 min is **−0.01¢**, CI [−4.06¢, +4.03¢] — flat, with the whole interval below the 6¢ round trip. A direction, not a verdict, at four clusters. The first run's −7.25¢ was the one-game noise it was reported to be.
 
-Re-run once ~10 games have accrued under the 1s recorder. The score trigger should start working then, which is the point.
+**Built 2026-08-02: [`core/pulse/first_score.py`](../core/pulse/first_score.py) — PULSE strategy #1. Verdict: NO DATA.** 18 filled trades across **3 games** against a gate of 30 across 10. Write-up: [math/first-score.md](math/first-score.md).
+
+This is the first thing built against [`core/pulse/replay.py`](../core/pulse/replay.py): a maker-only fade of the price lurch on a game's opening basket, chosen because one basket is worth ~1.3 points of final total against a 16-point residual — as close to a pure-noise event as this sport offers. Gate is on P&L with both spread costs inside the number, so the bar is zero rather than the round trip.
+
+**Both Tier 1 hypotheses now report NO DATA for the same reason, and it is worth stating plainly: 3 of the 9 recorded games have 200ms coverage.** The other six are sampled every ~15 minutes and cannot resolve a 30-second reaction window — they contribute coverage and no signal. Rows are not the constraint; three games already supply **99%** of the 830,554 ticks replayed. The constraint is games, and the fix is nights.
+
+**The full hypothesis queue lives in [pulse-hypotheses.md](pulse-hypotheses.md)** —
+fourteen ideas raised from live observation, sorted into signals, execution
+rules and model inputs, with an order of work and the multiple-comparisons
+warning that governs all of them (14 hypotheses against ~7 games produces one
+"significant" result by chance alone).
 
 **Observed hypotheses worth encoding** (from live watching, unverified):
 - Prices overreact hard to the *first* score of a game.
@@ -127,7 +137,7 @@ Non-negotiable, and every one of them has already caught a real bug:
 - **Maker-only.** Taker fills destroy the edge (−4.0% vs +1.34% on the same bets). Market orders are unrepresentable in `core/executor.py`.
 - **Pre-register the gate before looking at the number.** Five ideas died this way cheaply.
 - **Sample size is games, not rows.** One game emits ~130 correlated ladder rows — and at 1s sampling, ~130 a *second*. Cluster standard errors by game; see [math/clustered-errors.md](math/clustered-errors.md). A faster camera does not give you more games.
-- **Run experiments against local Postgres** (`python -m core.storage.sync_local`, then `DATABASE_URL=postgresql+psycopg://meridian:meridian@localhost:5433/meridian`). 11m28s → 13s, byte-identical. The microstructure experiments also need `market_snapshots` / `book_levels`, which are large and therefore opt-in: `python -m core.storage.sync_local --stream`.
+- **Run experiments against local Postgres** (`python -m core.storage.sync_local`, then `DATABASE_URL=postgresql+psycopg://meridian:meridian@localhost:5433/meridian`). 11m28s → 13s. The microstructure experiments also need `market_snapshots` / `book_levels`, which are large and therefore opt-in: `python -m core.storage.sync_local --stream`. **Two things changed here 2026-08-02** and are written up in [infra/local-sync.md](infra/local-sync.md): the copy is keyset- rather than OFFSET-paginated (the OFFSET version could no longer finish at all — it died on a statement timeout at row 31,427 of 837,220), and `market_snapshots.raw` is omitted by default, which is a 24× speedup and the reason "byte-identical" no longer describes the local copy.
 - **Bump `MODEL_VERSION` on any logic change** outside `WNBATotalsConfig` — `config_hash` won't catch it, and two generations sharing a grouping key silently corrupts every performance query.
 
 ## Fastest path
@@ -138,6 +148,8 @@ Rewritten 2026-08-02. All three measurements are **built and returning NO DATA**
 2. Re-run all three against fresh data:
    ```
    python -m core.storage.sync_local --stream
+   export DATABASE_URL=postgresql+psycopg://meridian:meridian@localhost:5433/meridian
+   python -m core.pulse.first_score
    export DATABASE_URL=postgresql+psycopg://meridian:meridian@localhost:5433/meridian
    python -m core.quote.adverse_selection
    python -m core.pulse.overreaction

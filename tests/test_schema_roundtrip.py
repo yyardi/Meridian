@@ -255,12 +255,26 @@ def test_app_url_moves_to_the_transaction_pooler_when_enabled(monkeypatch):
 
 
 def test_local_urls_are_never_rewritten(monkeypatch):
-    """Local Docker Postgres has no pooler; rewriting its port breaks it."""
+    """Local Docker Postgres has no pooler; rewriting its port breaks it.
+
+    Both URLs matter and only the second one can regress. `localhost:5433`
+    never contained ':5432/' so it passed vacuously while the rewrite was
+    matching on port alone — and the recorder, which uses the *other* form,
+    spent 23 hours logging `Connection refused` on every tick.
+    """
     from core.storage.base import app_database_url
 
     monkeypatch.setenv("MERIDIAN_TX_POOLER", "1")
-    local = "postgresql+psycopg://meridian:meridian@localhost:5433/meridian"
-    assert app_database_url(local) == local
+
+    mapped = "postgresql+psycopg://meridian:meridian@localhost:5433/meridian"
+    assert app_database_url(mapped) == mapped
+
+    # Exactly what docker-compose gives the live recorder: standard port,
+    # container hostname. This is the one that broke.
+    in_compose = "postgresql+psycopg://meridian:meridian@postgres:5432/meridian"
+    assert app_database_url(in_compose) == in_compose, (
+        "a non-Supabase host must keep 5432 — nothing else listens on 6543"
+    )
 
 
 def test_migrations_keep_session_mode(monkeypatch):

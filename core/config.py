@@ -98,12 +98,22 @@ class ESPNConfig:
     burst_capacity: int = field(default_factory=lambda: _env_int("ESPN_BURST", 3))
     http_timeout_seconds: float = field(default_factory=lambda: _env_float("ESPN_TIMEOUT", 30.0))
     max_retries: int = field(default_factory=lambda: _env_int("ESPN_MAX_RETRIES", 3))
+    #: Empty means "send httpx's own default", which is what works.
+    #:
+    #: ESPN began 403ing on 2026-08-04, and the rule is the opposite of the usual
+    #: one: it rejects User-Agents that look *custom or browser-like* and accepts
+    #: library defaults. Measured, deterministic over repeats:
+    #:
+    #:     python-httpx/0.28.1                       -> 200
+    #:     (no User-Agent header at all)             -> 200
+    #:     Mozilla/5.0 ... Chrome/120.0 Safari/537.36 -> 403   <- the old default
+    #:     Meridian/1.0 (WNBA research; contact ...)  -> 403
+    #:
+    #: So the honest UA and the spoofed one both fail, and the fix is to stop
+    #: setting the header. Override with ESPN_USER_AGENT if ESPN changes the rule
+    #: again — this is an undocumented API with no stability guarantee.
     user_agent: str = field(
-        default_factory=lambda: os.environ.get(
-            "ESPN_USER_AGENT",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        )
+        default_factory=lambda: os.environ.get("ESPN_USER_AGENT", "")
     )
 
 

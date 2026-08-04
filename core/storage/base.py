@@ -38,6 +38,13 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://meridian:meridian@localhost:5433/me
 SESSION_POOLER_PORT = ":5432/"
 TRANSACTION_POOLER_PORT = ":6543/"
 
+#: Only Supabase runs a second pooler on 6543. Every other Postgres — including
+#: the local container the live recorder writes to — listens on 5432 and nothing
+#: else, so rewriting its port points the writer at a closed door. Matching on
+#: the port alone silently killed the 200ms recorder for 23 hours: it logged
+#: `Connection refused` on every tick and no other component noticed.
+SUPABASE_POOLER_HOSTS = ("pooler.supabase.com", "supabase.co")
+
 
 def get_database_url() -> str:
     """Read DATABASE_URL from the environment, falling back to local Docker.
@@ -61,9 +68,14 @@ def app_database_url(url: str | None = None) -> str:
     would break in ways that look like flaky networking.
     """
     url = url or get_database_url()
-    if _use_transaction_pooler() and SESSION_POOLER_PORT in url:
-        return url.replace(SESSION_POOLER_PORT, TRANSACTION_POOLER_PORT)
-    return url
+    if not _use_transaction_pooler():
+        return url
+    if SESSION_POOLER_PORT not in url:
+        return url
+    if not any(host in url for host in SUPABASE_POOLER_HOSTS):
+        # A local or self-hosted Postgres. It has no 6543 listener.
+        return url
+    return url.replace(SESSION_POOLER_PORT, TRANSACTION_POOLER_PORT)
 
 
 class Base(DeclarativeBase):

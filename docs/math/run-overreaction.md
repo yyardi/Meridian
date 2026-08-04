@@ -1,7 +1,10 @@
 # Run overreaction — do prices overshoot a run and come back?
 
-**Status: NO DATA.** 8 runs across 1 game, against a pre-registered minimum of
-30 across 10. The detector is built and accruing.
+**Status: NO DATA.** Re-run 2026-08-02 under the 200ms recorder: **149 runs
+across 4 games**, against a pre-registered minimum of 30 across 10. The run
+count is now met; six more games are needed. Reversion at the gated horizon is
+flat (−0.01¢) with an interval entirely below the 6¢ round trip — a direction,
+not a verdict.
 
 Module: [`core/pulse/overreaction.py`](../../core/pulse/overreaction.py) · Gates **PULSE**
 
@@ -69,24 +72,53 @@ three after the fact turns a 5% test into a 14% one.
 dropped — overlapping windows share a price path, and counting them separately
 inflates $n$ against a gate stated in independent observations.
 
-## What the first sample looks like
+## Second run, 2026-08-02, under the 200ms recorder
 
-One game. Not a result.
+**Still NO DATA — but the binding constraint moved.** 149 runs across **4
+games**, against 30 runs across 10. The run count is now comfortably met; the
+game count is not, and it is the one that was always going to bind.
 
-| horizon | n | mean reversion |
-|---|---|---|
-| +2 min | 8 | −5.56¢ |
-| **+5 min** | 8 | **−7.25¢** |
-| +10 min | 7 | +4.43¢ |
+682,847 live ticks examined, 4,162 observed score changes, cadence 100% under
+2 minutes.
 
-All eight triggers were **price** triggers; the score trigger fired zero times
-at ≥ 8 unanswered points and only five times at ≥ 4. That is a cadence
-artifact, not a fact about basketball: at a 910s median gap, both teams have
-usually scored between consecutive samples, so almost nothing reads as
-*unanswered*.
+| horizon | n | mean reversion | 95% CI (clustered) |
+|---|---:|---:|---|
+| +2 min | 146 | −0.67¢ | [−2.95¢, +1.62¢] |
+| **+5 min** | 145 | **−0.01¢** | **[−4.06¢, +4.03¢]** ← gate |
+| +10 min | 144 | +0.93¢ | [−5.87¢, +7.74¢] |
+
+Reversion at the primary horizon is **flat to four decimal places**, and the
+interval sits entirely below the 6¢ round trip. Read that as a direction, not a
+verdict: at four clusters the pre-registered sample condition is unmet and the
+answer is NO DATA. But if this shape survives to ten games it is a **FAIL**,
+and the first run's −7.25¢ can now be set aside as the one-game noise it was
+reported to be.
+
+### The camera got fixed, and it mattered
+
+The first run's headline problem was that the score trigger fired **zero**
+times — at a 910s median gap both teams have usually scored between samples, so
+nothing reads as *unanswered*. At 200ms that is gone:
+
+| threshold | runs (score trigger alone) |
+|---|---:|
+| ≥ 12 unanswered pts | 0 |
+| ≥ 10 | 0 |
+| **≥ 8** | **25** |
+| ≥ 6 | 65 |
+| ≥ 4 | 152 |
+
+The study now runs on both legs. All 149 detected runs are still *labelled*
+`price`, because when both triggers are live the price move almost always fires
+first inside the same 2-minute window and the non-overlap rule blocks the
+second — that is the detector working as specified, not the score leg failing.
+
+Mean |price move| inside a run: **11.34¢**.
 
 ## What would change the verdict
 
-Ten games under the 1s recorder. The score trigger should start firing properly
-at 1s sampling, which is the point — right now the study is running on one of
-its two legs.
+**Six more games at 200ms.** Rows are not the constraint and never were: three
+games supply **99.8%** of the 682,847 eligible ticks here, and the fourth game
+in the count contributes 430 of them. See
+[first-score.md](first-score.md) for the per-game table that makes the two
+sampling regimes explicit.

@@ -114,19 +114,26 @@ function renderPicks(d){
         <span class="${soon?"warnc":"dimc"}">${g.hrs}h</span> · ${g.rows.length} markets</span>
       </div>
       <table><thead><tr>
-        <th class="l">Market</th><th class="l">Type</th><th>Line</th><th>Bid</th><th>Ask</th>
-        <th>Spr</th><th>Model</th><th class="l">Side</th><th>Edge</th><th>Shadow order</th>
+        <th class="l">Position</th><th>BUY at</th><th>SELL at</th><th>Return</th>
+        <th>Size</th><th>Stake</th>
+        <th class="dimc">Bid</th><th class="dimc">Ask</th><th class="dimc">Spr</th>
+        <th class="dimc">Model</th><th class="dimc">Edge</th>
       </tr></thead><tbody>${g.rows.map(p=>`
         <tr>
-          <td class="l dimc">${shortSlug(p.market_slug)}</td>
-          <td class="l"><span class="tag ${tagOf(p.type)}">${p.type}</span></td>
-          <td>${p.line==null?"—":p.line.toFixed(1)}</td>
-          <td>${num(p.bid)}</td><td>${num(p.ask)}</td>
+          <td class="l"><span class="side ${["OVER","YES","BUY"].includes(p.side)?"sideY":"sideN"}">${
+            p.ticket ? p.ticket.label : (p.human||shortSlug(p.market_slug))}</span></td>
+          <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.buy_at):"—"}</b></td>
+          <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.sell_at):"—"}</b></td>
+          <td class="${p.ticket&&p.ticket.return_pct>0?"pos":"neg"}">${
+            p.ticket?pct(p.ticket.return_pct):"—"}</td>
+          <td>${p.ticket ? (p.ticket.too_small
+                ? '<span class="dimc" title="the sizer wanted this but not a tradable amount">too small</span>'
+                : num(p.ticket.size,1)) : "—"}</td>
+          <td>${p.ticket&&!p.ticket.too_small?"$"+p.ticket.stake.toFixed(2):'<span class="dimc">—</span>'}</td>
+          <td class="dimc">${num(p.bid)}</td><td class="dimc">${num(p.ask)}</td>
           <td class="dimc">${(p.spread*100).toFixed(0)}¢</td>
-          <td>${num(p.model)}</td>
-          <td class="l"><span class="side ${["OVER","YES"].includes(p.side)?"sideY":"sideN"}">${p.side}</span></td>
-          <td class="${p.edge>0?"pos":"neg"}">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}</td>
-          <td>${p.shadow?`${p.shadow.would_rest?"REST":"CROSS"} @ ${num(p.shadow.limit_price)} × ${num(p.shadow.quantity,1)}`:'<span class="dimc">below min size</span>'}</td>
+          <td class="dimc">${num(p.model)}</td>
+          <td class="dimc">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}</td>
         </tr>`).join("")}</tbody></table>`;
   }).join("");
 }
