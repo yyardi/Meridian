@@ -73,49 +73,76 @@ Then open **<http://localhost:8008>**.
 Step 4 must say `Verdict: ALL GOOD`. If it doesn't, the red lines say what is
 broken and there is no need to guess.
 
-### What caffeinate does and does not cover
+## Watch the data arrive
 
-`-d` display, `-i` idle sleep, `-m` disk idle sleep, `-s` system sleep. Two
-limits worth knowing, because both have already cost data:
+The dashboard shows the *model's* view. These show the raw rows landing.
 
-- **`-s` only applies on AC power.** On battery the machine can still sleep.
-- **Closing the lid sleeps anyway.** `caffeinate` does not override the lid
-  switch. Carrying the laptop between rooms with the lid shut stops recording
-  regardless of what is running.
+```bash
+.venv/bin/python scripts/watch.py
+```
 
-So on a game night: **plugged in, lid open.** Check with `pmset -g assertions`
-to confirm the assertions are held.
+The **200ms tick recorder**, refreshed every 2 seconds. During a live game the
+`rows/min` counter should be in the hundreds. **If it reads 0 while a game is on,
+recording is dead and that data is gone for good.**
 
-### If the UI is down
+```bash
+.venv/bin/python scripts/watch.py --slow
+```
 
-**The dashboard is not a container.** `docker compose` does not start it and
-will not restart it. Nine times out of ten the UI being down means step 2 was
-never run, or its terminal was closed. Just run step 2 again.
+The same view of the 15-minute pregame recorder — the one the dashboard reads.
 
-### Other commands
+`Ctrl-C` stops either.
+
+## What `nohup ... &` means
+
+Steps 1 and 3 above are wrapped in it. Three separate pieces:
+
+| Piece | Does |
+|---|---|
+| `&` | run in the background and give the prompt back |
+| `nohup` | keep running after the terminal is closed |
+| `> /tmp/x.log 2>&1` | send output to a file instead of the screen |
+
+Running `caffeinate -dims` **without** the wrapper works exactly as well — it
+just occupies that terminal window until `Ctrl-C`, so the window has to stay
+open. The wrapper only frees the window.
+
+## Other commands
 
 | Command | Does |
 |---|---|
-| `docker compose up -d --build` | **use this instead of step 1 after any code or schema change** |
+| `docker compose up -d --build` | **use instead of step 2 after any code or schema change** |
 | `docker compose ps` | are the containers up |
 | `docker compose logs scheduler --tail 50` | why predictions aren't appearing |
 | `docker compose logs live-recorder --tail 50` | why tick data isn't appearing |
 | `docker compose restart scheduler` | nudge a stuck job |
+| `pmset -g assertions` | confirm the sleep guard is actually held |
+| `pkill caffeinate` | let the Mac sleep again |
+| `pkill -f uvicorn` | stop the dashboard |
 | `.venv/bin/python -m pytest -q` | run the 464 tests |
 
 > **`--build` is not optional after a schema change.** Skipping it once put the
 > recorder in a crash-loop — its Alembic could not find the new revision.
 
-### Before a game night
+## Gotchas that have already cost data
 
-Run step 3. It checks containers, ESPN, book lines, the autonomous-order
-counter, and **both databases** — the dashboard only ever sees Supabase, while
-the 200ms tick recorder writes locally. That blind spot let the tick recorder die
-for 23 hours while the UI looked perfectly healthy.
+**The dashboard is not a container.** `docker compose` does not start it and will
+not restart it. Nine times out of ten a dead UI means step 3 was never run, or
+its terminal was closed. Run step 3 again.
 
-During a live game, the `local ticks (200ms)` line must show **seconds**. If it
-shows hours while a game is on, tick recording is dead and the data is
-unrecoverable.
+**`caffeinate -s` only applies on AC power.** On battery the machine can still
+sleep. `health.py` warns about this explicitly.
+
+**`caffeinate` does not override the lid switch.** Closing the lid sleeps the
+machine regardless of what is running — carrying the laptop between rooms stops
+recording. There is no flag that fixes this. On a game night: **plugged in, lid
+open.**
+
+**The dashboard and the tick recorder use different databases.** The UI reads
+Supabase; the 200ms recorder writes to local Postgres. A healthy-looking
+dashboard says nothing about tick recording — that blind spot let the tick
+recorder die for 23 hours unnoticed. `health.py` checks both, which is why it
+exists.
 
 ### The dashboard pages
 
