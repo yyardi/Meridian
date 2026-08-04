@@ -39,51 +39,63 @@ Full picture: [docs/STATUS.md](docs/STATUS.md) · what to build next:
 
 ---
 
-## Running it
+## Start everything
 
-Three things run, and **only the first two are containers.** The dashboard is
-started by hand and stops when you close the terminal — if the UI is down, this
-is almost always why.
+Run these three, in order, from `/Users/yayardia/Documents/Quant/Meridian`.
 
-### 1. Start the background services
+**1. Start the background services**
 
 ```bash
-docker compose up -d --build && alembic upgrade head
+docker compose up -d
 ```
 
-> **`--build` is not optional after a schema change.** Skipping it once put the
-> recorder in a crash-loop — its Alembic could not find the new revision.
-
-### 2. Start the dashboard — this one is manual
-
-```bash
-.venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008
-```
-
-Then open **<http://localhost:8008>**. Leave the terminal open, or run it
-detached:
+**2. Start the dashboard**
 
 ```bash
 nohup .venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008 > /tmp/meridian-dashboard.log 2>&1 &
 ```
 
-### 3. Check everything is actually working
+**3. Check it all worked**
 
 ```bash
 .venv/bin/python scripts/health.py
 ```
 
-**Run this before every game night.** It checks containers, ESPN, book lines,
-the autonomous-order counter, and **both databases** — the dashboard only ever
-sees Supabase, while the 200ms tick recorder writes locally. That blind spot let
-the tick recorder die for 23 hours while the UI looked perfectly healthy.
+Then open **<http://localhost:8008>**.
 
-Other useful commands:
+Step 3 must say `Verdict: ALL GOOD`. If it doesn't, the red lines say what is
+broken and there is no need to guess.
 
-```bash
-python -m core --once      # one recorder cycle
-python -m core --status    # freshness check
-```
+### If the UI is down
+
+**The dashboard is not a container.** `docker compose` does not start it and
+will not restart it. Nine times out of ten the UI being down means step 2 was
+never run, or its terminal was closed. Just run step 2 again.
+
+### Other commands
+
+| Command | Does |
+|---|---|
+| `docker compose up -d --build` | **use this instead of step 1 after any code or schema change** |
+| `docker compose ps` | are the containers up |
+| `docker compose logs scheduler --tail 50` | why predictions aren't appearing |
+| `docker compose logs live-recorder --tail 50` | why tick data isn't appearing |
+| `docker compose restart scheduler` | nudge a stuck job |
+| `.venv/bin/python -m pytest -q` | run the 464 tests |
+
+> **`--build` is not optional after a schema change.** Skipping it once put the
+> recorder in a crash-loop — its Alembic could not find the new revision.
+
+### Before a game night
+
+Run step 3. It checks containers, ESPN, book lines, the autonomous-order
+counter, and **both databases** — the dashboard only ever sees Supabase, while
+the 200ms tick recorder writes locally. That blind spot let the tick recorder die
+for 23 hours while the UI looked perfectly healthy.
+
+During a live game, the `local ticks (200ms)` line must show **seconds**. If it
+shows hours while a game is on, tick recording is dead and the data is
+unrecoverable.
 
 ### The dashboard pages
 
