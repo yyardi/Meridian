@@ -73,6 +73,24 @@ Then open **<http://localhost:8008>**.
 Step 4 must say `Verdict: ALL GOOD`. If it doesn't, the red lines say what is
 broken and there is no need to guess.
 
+## Stop everything
+
+```bash
+./scripts/stop.sh
+```
+
+Stops the dashboard, the containers and the sleep guard, then verifies each one
+actually went away. Safe to run when things are already stopped, and **it deletes
+no data** — every recorded row survives.
+
+Recording stops too, and market snapshots cannot be backfilled. Don't leave it
+off through a game.
+
+> **`exit 3` when starting the dashboard means it is already running**, not that
+> it failed. Check with `lsof -nP -iTCP:8008 -sTCP:LISTEN`. To take over an
+> instance started from another terminal, run `pkill -f uvicorn` first, then
+> step 3 again.
+
 ## Watch the data arrive
 
 The dashboard shows the *model's* view. These show the raw rows landing.
