@@ -41,21 +41,28 @@ Full picture: [docs/STATUS.md](docs/STATUS.md) · what to build next:
 
 ## Start everything
 
-Run these three, in order, from `/Users/yayardia/Documents/Quant/Meridian`.
+Run these four, in order, from `/Users/yayardia/Documents/Quant/Meridian`.
 
-**1. Start the background services**
+**1. Stop the Mac sleeping** — snapshots are unrecoverable; a sleeping laptop is
+a hole in the record that nothing can backfill.
+
+```bash
+nohup caffeinate -dims > /dev/null 2>&1 &
+```
+
+**2. Start the background services**
 
 ```bash
 docker compose up -d
 ```
 
-**2. Start the dashboard**
+**3. Start the dashboard**
 
 ```bash
 nohup .venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008 > /tmp/meridian-dashboard.log 2>&1 &
 ```
 
-**3. Check it all worked**
+**4. Check it all worked**
 
 ```bash
 .venv/bin/python scripts/health.py
@@ -63,8 +70,21 @@ nohup .venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008 > /tmp/meridia
 
 Then open **<http://localhost:8008>**.
 
-Step 3 must say `Verdict: ALL GOOD`. If it doesn't, the red lines say what is
+Step 4 must say `Verdict: ALL GOOD`. If it doesn't, the red lines say what is
 broken and there is no need to guess.
+
+### What caffeinate does and does not cover
+
+`-d` display, `-i` idle sleep, `-m` disk idle sleep, `-s` system sleep. Two
+limits worth knowing, because both have already cost data:
+
+- **`-s` only applies on AC power.** On battery the machine can still sleep.
+- **Closing the lid sleeps anyway.** `caffeinate` does not override the lid
+  switch. Carrying the laptop between rooms with the lid shut stops recording
+  regardless of what is running.
+
+So on a game night: **plugged in, lid open.** Check with `pmset -g assertions`
+to confirm the assertions are held.
 
 ### If the UI is down
 
