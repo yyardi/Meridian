@@ -99,6 +99,40 @@ def check_containers() -> list[Check]:
     return checks
 
 
+def check_sleep_guard() -> list[Check]:
+    """A sleeping Mac is a hole in an unrecoverable stream.
+
+    Checks the assertions actually held by the OS rather than whether a
+    `caffeinate` process exists — a caffeinate started without flags only
+    prevents idle sleep, and would look identical in `ps`.
+    """
+    try:
+        out = subprocess.run(
+            ["pmset", "-g", "assertions"],
+            capture_output=True, text=True, timeout=15, check=False,
+        ).stdout
+    except Exception as exc:
+        return [Check(WARN, "sleep guard", f"could not query pmset: {exc}")]
+
+    def held(name: str) -> bool:
+        for line in out.splitlines():
+            if name in line and line.strip().split()[-1] != "0":
+                return True
+        return False
+
+    idle = held("PreventUserIdleSystemSleep")
+    if not idle:
+        return [Check(WARN, "sleep guard", "NOT running — see step 1 (caffeinate -dims)")]
+
+    on_battery = "Battery Power" in subprocess.run(
+        ["pmset", "-g", "batt"], capture_output=True, text=True, timeout=15, check=False,
+    ).stdout
+    if on_battery:
+        # -s is documented as valid only on AC power.
+        return [Check(WARN, "sleep guard", "held, but ON BATTERY — plug in before tipoff")]
+    return [Check(OK, "sleep guard", "caffeinate active, on AC power")]
+
+
 def check_supabase() -> list[Check]:
     """The database the dashboard reads."""
     from core.storage.base import get_engine
@@ -224,6 +258,7 @@ def main() -> int:
         print("  \033[33m>> A GAME IS LIVE — the tick recorder must be writing.\033[0m")
 
     groups: list[tuple[str, list[Check]]] = [
+        ("Host", check_sleep_guard()),
         ("Containers", check_containers()),
         ("Data feeds", check_espn() + check_book_lines()),
         ("Databases", check_supabase() + check_local_ticks(live)),
