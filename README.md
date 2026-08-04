@@ -41,95 +41,101 @@ Full picture: [docs/STATUS.md](docs/STATUS.md) · what to build next:
 
 ## Start everything
 
-Run these four, in order, from `/Users/yayardia/Documents/Quant/Meridian`.
+**One terminal tab per thing, each left open.** Every tab shows its own logs and
+stops with `Ctrl-C` in that tab. Nothing is hidden in the background.
 
-**1. Stop the Mac sleeping** — snapshots are unrecoverable; a sleeping laptop is
-a hole in the record that nothing can backfill.
+All commands run from `/Users/yayardia/Documents/Quant/Meridian`.
 
-```bash
-nohup caffeinate -dims > /dev/null 2>&1 &
-```
-
-**2. Start the background services**
+### Tab 1 — keep the Mac awake
 
 ```bash
-docker compose up -d
+caffeinate -dims
 ```
 
-**3. Start the dashboard**
+Prints nothing and just sits there. That is correct. Snapshots cannot be
+backfilled, so a sleeping laptop is a permanent hole in the record.
+
+### Tab 2 — the services, with live logs
 
 ```bash
-nohup .venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008 > /tmp/meridian-dashboard.log 2>&1 &
+docker compose up
 ```
 
-**4. Check it all worked**
+**No `-d`.** All five containers stream their logs into this tab, so you can
+watch the recorder and scheduler work. `Ctrl-C` stops all five.
+
+After changing code or the schema, use `docker compose up --build` instead.
+
+### Tab 3 — the dashboard
+
+```bash
+.venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008
+```
+
+Logs every request into this tab. `Ctrl-C` stops it. Then open
+**<http://localhost:8008>**.
+
+> **`ERROR: [Errno 48] Address already in use`, or `exit 3`, means it is already
+> running** — not that it failed. Find it with
+> `lsof -nP -iTCP:8008 -sTCP:LISTEN`, and `pkill -f uvicorn` to take it over.
+
+### Tab 4 — checks and live data
+
+This tab stays free for one-off commands.
 
 ```bash
 .venv/bin/python scripts/health.py
 ```
 
-Then open **<http://localhost:8008>**.
-
-Step 4 must say `Verdict: ALL GOOD`. If it doesn't, the red lines say what is
-broken and there is no need to guess.
-
-## Stop everything
-
-```bash
-./scripts/stop.sh
-```
-
-Stops the dashboard, the containers and the sleep guard, then verifies each one
-actually went away. Safe to run when things are already stopped, and **it deletes
-no data** — every recorded row survives.
-
-Recording stops too, and market snapshots cannot be backfilled. Don't leave it
-off through a game.
-
-> **`exit 3` when starting the dashboard means it is already running**, not that
-> it failed. Check with `lsof -nP -iTCP:8008 -sTCP:LISTEN`. To take over an
-> instance started from another terminal, run `pkill -f uvicorn` first, then
-> step 3 again.
-
-## Watch the data arrive
-
-The dashboard shows the *model's* view. These show the raw rows landing.
+Must say `Verdict: ALL GOOD`. If not, the red lines say exactly what is broken.
 
 ```bash
 .venv/bin/python scripts/watch.py
 ```
 
-The **200ms tick recorder**, refreshed every 2 seconds. During a live game the
-`rows/min` counter should be in the hundreds. **If it reads 0 while a game is on,
-recording is dead and that data is gone for good.**
+Live tail of the **200ms tick recorder**, refreshed every 2 seconds. During a
+game the `rows/min` counter should be in the hundreds. **If it reads 0 while a
+game is on, recording is dead and that data is gone for good.** Add `--slow` to
+watch the 15-minute pregame recorder instead. `Ctrl-C` stops it.
+
+## Stop everything
+
+`Ctrl-C` in tabs 1, 2 and 3. That is the whole procedure.
+
+If something was started in the background and you have lost track of it:
 
 ```bash
-.venv/bin/python scripts/watch.py --slow
+./scripts/stop.sh
 ```
 
-The same view of the 15-minute pregame recorder — the one the dashboard reads.
+Stops the dashboard, the containers and the sleep guard wherever they are, then
+verifies each one actually went away. Safe to run when things are already
+stopped, and **it deletes no data** — every recorded row survives.
 
-`Ctrl-C` stops either.
+Recording stops too. Don't leave it off through a game.
 
-## What `nohup ... &` means
+## Running in the background instead
 
-Steps 1 and 3 above are wrapped in it. Three separate pieces:
+Only if you want to close the terminals. Prefix any of the above with `nohup`
+and suffix with `&`:
 
-| Piece | Does |
-|---|---|
-| `&` | run in the background and give the prompt back |
-| `nohup` | keep running after the terminal is closed |
-| `> /tmp/x.log 2>&1` | send output to a file instead of the screen |
+```bash
+nohup caffeinate -dims > /dev/null 2>&1 &
+nohup .venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008 > /tmp/meridian-dashboard.log 2>&1 &
+```
 
-Running `caffeinate -dims` **without** the wrapper works exactly as well — it
-just occupies that terminal window until `Ctrl-C`, so the window has to stay
-open. The wrapper only frees the window.
+`&` backgrounds it, `nohup` keeps it alive after the terminal closes, and the
+redirect sends output to a file instead of the screen. For containers the
+equivalent is `docker compose up -d`, then `docker compose logs -f` to watch.
+
+**The cost is that you can no longer `Ctrl-C` any of it** — you need
+`./scripts/stop.sh` or `pkill`. Prefer the tabs.
 
 ## Other commands
 
 | Command | Does |
 |---|---|
-| `docker compose up -d --build` | **use instead of step 2 after any code or schema change** |
+| `docker compose up --build` | **use instead of tab 2 after any code or schema change** |
 | `docker compose ps` | are the containers up |
 | `docker compose logs scheduler --tail 50` | why predictions aren't appearing |
 | `docker compose logs live-recorder --tail 50` | why tick data isn't appearing |
@@ -145,8 +151,8 @@ open. The wrapper only frees the window.
 ## Gotchas that have already cost data
 
 **The dashboard is not a container.** `docker compose` does not start it and will
-not restart it. Nine times out of ten a dead UI means step 3 was never run, or
-its terminal was closed. Run step 3 again.
+not restart it. Nine times out of ten a dead UI means tab 3 was never run, or its
+terminal was closed. Run tab 3 again.
 
 **`caffeinate -s` only applies on AC power.** On battery the machine can still
 sleep. `health.py` warns about this explicitly.
