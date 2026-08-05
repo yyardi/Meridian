@@ -131,14 +131,15 @@ def test_maker_taker_classification():
                       best_bid=Decimal("0.50"), best_ask=Decimal("0.52")) is True
 
 
-def test_resting_order_earns_a_rebate():
+def test_resting_order_pays_no_fee_and_books_no_rebate():
+    """Maker fee is zero: the advertised rebate is unverified (findings C7)."""
     ex = Executor()
     d = ex.decide(
         market_slug="tsc-x", side=OrderSide.BUY, model_probability=0.60,
         size=_size(contracts=100.0), best_bid=0.50, best_ask=0.52, decided_at=NOW,
     )
     assert d.would_rest is True
-    assert d.expected_fee < 0        # negative fee == rebate earned
+    assert d.expected_fee == 0.0     # no fee paid, no rebate assumed
 
 
 def test_crossing_order_is_flagged_and_pays_a_fee():

@@ -114,11 +114,13 @@ pace — 12–12 after three minutes implies a 320-point game.
 1. Run overreaction (#1, with #3 and #4 as covariates) — built, **needs 6 more games**
 2. First-score overreaction (#2) — built, **needs 7 more games**
 
-Both are built and both report NO DATA for the same reason: **3 of 9 recorded games
-have 200ms coverage**, and the other six are sampled every ~15 minutes, which cannot
-resolve a 30-second reaction window. **The bottleneck is games, not code.** Do not
-start #3 or #5 to fill the wait — that is how fourteen hypotheses become one lucky
-coin flip.
+Both are built and both report NO DATA for the same reason: **only 3 games have full
+200ms coverage** (20 games have snapshot data, 10 have live ticks, 3 of those are at
+200ms plus 1 partial). The other six live games are sampled every ~13–15 minutes,
+which cannot resolve a 30-second reaction window. **The bottleneck is games, not
+code.** Do not start #3 or #5 to fill the wait — that is how fourteen hypotheses
+become one lucky coin flip. *(Counts re-derived from the local mirror 2026-08-04;
+this line previously said "3 of 9", which was stale.)*
 
 **Tier 2 — only after Tier 1 reports**
 

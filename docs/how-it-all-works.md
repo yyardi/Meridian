@@ -141,7 +141,7 @@ Because under pessimistic fills it's +0.11% [−1.18%, +1.40%] — **zero**. Mak
 ## 8. Maker vs taker (why that matters so much)
 
 - **Taker**: you cross the spread and buy immediately. Instant, but you pay the spread and a fee.
-- **Maker**: you post an order at your price and *wait*. You might not get filled — but if you do, you got your price and often earn a rebate.
+- **Maker**: you post an order at your price and *wait*. You might not get filled — but if you do, you got your price and you **don't pay the taker fee**. The venue also advertises a maker rebate, but we have never actually seen one land, so don't count on it.
 
 Our entire edge is smaller than the spread. So taking destroys it and making preserves it. Every result in this project is reported maker-only, and the executor cannot even represent a market order.
 

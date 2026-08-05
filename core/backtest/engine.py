@@ -174,6 +174,9 @@ class BacktestConfig:
     #: biases of unknown net sign (see availability.py), so this exists for the
     #: data to scale the term rather than for anyone to guess it.
     availability_beta: float = 1.0
+    #: Sensitivity arm: book the unverified maker rebate (findings C7). Off by
+    #: default — the venue has never paid one into this account.
+    assume_maker_rebate: bool = False
 
 
 @dataclass
@@ -410,6 +413,7 @@ def run_backtest(
             contracts=cfg.stake_per_bet / max(entry_price, 1e-6),
             model=cfg.fill_model,
             rng_value=rng.random(),
+            assume_rebate=cfg.assume_maker_rebate,
         )
 
         won = None

@@ -15,6 +15,16 @@ Two rules that make that answerable rather than merely plausible:
   selective memory. `is_actionable` is a flag, not a filter.
 * **Append-only.** A prediction's model price is never rewritten. Only the
   resolution fields are filled in later.
+* **An anchor must be fresh, not merely present.** A prediction is only
+  actionable if the freshest non-live book row for its game is under 60
+  minutes old at prediction time (`MAX_ANCHOR_AGE_SECONDS`). The threshold is
+  pre-registered — chosen 2026-08-05, before any measurement against it: the
+  fast leg polls book lines every 20 minutes, so 60 minutes is three
+  consecutive missed polls, a feed that is down rather than one between
+  cycles. The 2026-08-04 ESPN odds outage (6 hours) happened to fall between
+  games; this guard exists so the next one produces no-bets instead of bets
+  anchored to an hours-old number. Stale-anchored predictions are still
+  logged — same rule as unanchored ones — just never actionable.
 """
 
 from __future__ import annotations
@@ -84,6 +94,18 @@ UTC = dt.timezone.utc
 #: misrepresent it.
 MAX_ACTIONABLE_SNAPSHOT_AGE_SECONDS = 5400.0
 
+#: A book anchor older than this cannot mark a prediction actionable.
+#:
+#: Pre-registered at 60 minutes on 2026-08-05, before any measurement against
+#: it. The fast leg polls sportsbook lines every 20 minutes, so 60 minutes is
+#: three consecutive missed polls — an odds feed that is down, not one that is
+#: merely between cycles. This is the countermeasure to the B1/B2/B10 pattern
+#: (a computation that silently stops being correct when the world changes):
+#: `anchored` used to mean "a book row exists", with no age check, so a dead
+#: odds feed left predictions flowing against an hours-old line, marked
+#: actionable.
+MAX_ANCHOR_AGE_SECONDS = 3600.0
+
 
 class PredictionStats:
     def __init__(self) -> None:
@@ -96,6 +118,9 @@ class PredictionStats:
         self.skipped_insufficient = 0
         self.skipped_unknown_team = 0
         self.stale_markets = 0
+        self.stale_anchors = 0
+        self.suppressed_by_stale_anchor = 0
+        self.actionable_predictions = 0
         self.errors = 0
 
     @property
@@ -112,7 +137,16 @@ class PredictionStats:
         """
         if self.quotable_markets == 0:
             return True
-        return self.predictions_written > 0
+        if self.predictions_written == 0:
+            return False
+        # The odds-outage shape: predictions flowed, but every one that would
+        # have been actionable was suppressed by a stale book anchor. That is
+        # a dead feed wearing a healthy job's clothes, and the scheduler
+        # should say job_degraded, not job_ok. Zero actionable with zero
+        # suppressions is different — a board with no edge is a fine outcome.
+        if self.actionable_predictions == 0 and self.suppressed_by_stale_anchor > 0:
+            return False
+        return True
 
     @property
     def summary(self) -> dict:
@@ -121,7 +155,10 @@ class PredictionStats:
             "pregame": self.pregame_markets,
             "quotable": self.quotable_markets,
             "written": self.predictions_written,
+            "actionable": self.actionable_predictions,
             "stale": self.stale_markets,
+            "stale_anchors": self.stale_anchors,
+            "suppressed_by_stale_anchor": self.suppressed_by_stale_anchor,
             "skipped_insufficient": self.skipped_insufficient,
             "skipped_unparseable": self.skipped_unparseable,
             "skipped_unknown_team": self.skipped_unknown_team,
@@ -144,7 +181,7 @@ def _espn_team_id(session: Session, abbrev: str, season: int) -> str | None:
 
 def _book_consensus(
     session: Session, espn_game_id: str | None
-) -> tuple[float | None, float | None]:
+) -> tuple[float | None, float | None, dt.datetime | None]:
     """Median sportsbook (total, home margin) — the anchors we shrink toward.
 
     ESPN stores `spread` as the HOME handicap (negative = home favoured), so
@@ -154,14 +191,19 @@ def _book_consensus(
 
     Live-odds providers are excluded: their lines are set during the game, so
     anchoring to one would drag a pregame projection toward the current score.
+
+    The third element is the freshest `captured_at` among the rows that
+    contributed a total or spread — the caller gates actionability on its age,
+    because an anchor that *exists* is not the same as one that is *current*.
     """
     if not espn_game_id:
-        return None, None
+        return None, None, None
     rows = session.execute(
         select(
             SportsbookOdds.over_under,
             SportsbookOdds.spread,
             SportsbookOdds.provider_name,
+            SportsbookOdds.captured_at,
         ).where(SportsbookOdds.espn_game_id == espn_game_id)
     ).all()
 
@@ -169,16 +211,70 @@ def _book_consensus(
         values.sort()
         return values[len(values) // 2] if values else None
 
-    totals = [
-        float(ou) for ou, _, provider in rows
-        if ou is not None and "live" not in (provider or "").lower()
+    book = [
+        (ou, sp, cap) for ou, sp, provider, cap in rows
+        if "live" not in (provider or "").lower()
+        and (ou is not None or sp is not None)
     ]
-    spreads = [
-        float(sp) for _, sp, provider in rows
-        if sp is not None and "live" not in (provider or "").lower()
-    ]
+    totals = [float(ou) for ou, _, _ in book if ou is not None]
+    spreads = [float(sp) for _, sp, _ in book if sp is not None]
+    freshest = max((cap for _, _, cap in book if cap is not None), default=None)
     market_margin = _median(spreads)
-    return _median(totals), (None if market_margin is None else -market_margin)
+    return (
+        _median(totals),
+        None if market_margin is None else -market_margin,
+        freshest,
+    )
+
+
+def _anchor_staleness_note(
+    anchor_age_seconds: float | None,
+    *,
+    anchored: bool,
+    max_age_seconds: float = MAX_ANCHOR_AGE_SECONDS,
+) -> str | None:
+    """The confidence note when the book anchor is too old to act on.
+
+    None means no objection: the prediction is unanchored (that case has its
+    own gate) or the anchor is fresh. An anchored prediction whose anchor age
+    is unknown is treated as stale — a timestamp we cannot produce is not
+    evidence of freshness.
+    """
+    if not anchored:
+        return None
+    if anchor_age_seconds is not None and anchor_age_seconds < max_age_seconds:
+        return None
+    minutes = "?" if anchor_age_seconds is None else f"{anchor_age_seconds / 60:.0f}"
+    return f"anchor stale: {minutes}m"
+
+
+def _apply_anchor_guard(
+    *,
+    actionable: bool,
+    notes: str | None,
+    anchored: bool,
+    anchor_age_seconds: float | None,
+    stats: PredictionStats,
+) -> tuple[bool, str | None, bool]:
+    """Gate actionability on anchor freshness; returns (actionable, notes, stale).
+
+    An anchor that exists but is old is the 08-04 outage shape: the odds feed
+    died, the last book row froze, and `anchored` alone would keep blessing
+    predictions against it. Same policy as unanchored — logged, flagged, never
+    actionable, never silenced.
+    """
+    note = _anchor_staleness_note(anchor_age_seconds, anchored=anchored)
+    if note is None:
+        return actionable, notes, False
+
+    stats.stale_anchors += 1
+    if actionable:
+        # Would have been actionable but for the stale anchor — the count
+        # `PredictionStats.ok` uses to tell "feed is down" from "board has
+        # no edge".
+        stats.suppressed_by_stale_anchor += 1
+    notes = f"{notes}; {note}" if notes else note
+    return False, notes, True
 
 
 class PredictionLogger:
@@ -308,8 +404,8 @@ class PredictionLogger:
             log.info("orientation_map_built", games=len(orientation_map))
 
             # One projection per event, reused across that event's ~18 markets.
-            # (projection, features, was_anchored_to_a_book_line)
-            projections: dict[str, tuple[Projection, object, bool]] = {}
+            # (projection, features, was_anchored_to_a_book_line, anchor_age_s)
+            projections: dict[str, tuple[Projection, object, bool, float | None]] = {}
             rows: list[Prediction] = []
 
             for snap in markets:
@@ -409,8 +505,13 @@ class PredictionLogger:
             # is ~77% our own error: a 13% displayed edge was worth about 3%.
             # The slope is computed once per run and reused across games.
             slope = self._market_slope(session=session, as_of=as_of)
-            book_total, book_margin = _book_consensus(
+            book_total, book_margin, book_captured_at = _book_consensus(
                 session, orientation.espn_game_id
+            )
+            anchor_age = (
+                (as_of - book_captured_at).total_seconds()
+                if book_captured_at is not None
+                else None
             )
             projections[event_key] = (
                 shrink_to_market(
@@ -419,9 +520,10 @@ class PredictionLogger:
                 ),
                 features,
                 book_total is not None or book_margin is not None,
+                anchor_age,
             )
 
-        projection, features, anchored = projections[event_key]
+        projection, features, anchored, anchor_age = projections[event_key]
 
         line = float(snap.line) if snap.line is not None else None
         bid = float(snap.best_bid) if snap.best_bid is not None else None
@@ -487,9 +589,19 @@ class PredictionLogger:
             notes = f"{notes}; {note}" if notes else note
             actionable = False
 
+        actionable, notes, anchor_stale = _apply_anchor_guard(
+            actionable=actionable, notes=notes, anchored=anchored,
+            anchor_age_seconds=anchor_age, stats=stats,
+        )
+
+        if actionable:
+            stats.actionable_predictions += 1
+
         features = dict(pred.features or {})
         features["snapshot_age_seconds"] = round(age, 1)
         features["snapshot_captured_at"] = snap.captured_at.isoformat()
+        if anchor_age is not None:
+            features["anchor_age_seconds"] = round(anchor_age, 1)
 
         return Prediction(
             predicted_at=as_of,
@@ -510,7 +622,9 @@ class PredictionLogger:
             model_config_snapshot=pred.model_config_snapshot,
             config_hash=pred.config_hash,
             is_actionable=actionable,
-            reduced_confidence=pred.reduced_confidence or not anchored or stale,
+            reduced_confidence=(
+                pred.reduced_confidence or not anchored or stale or anchor_stale
+            ),
             confidence_notes=notes,
         )
 

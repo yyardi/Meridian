@@ -112,9 +112,20 @@ def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
     )
     log.info("scheduler_started", interval_hours=interval_hours, odds_minutes=odds_minutes)
+
+    from core.heartbeat import SERVICE_SCHEDULER, Heartbeat
+    from core.storage import get_engine, get_sessionmaker
+
+    # rows_written stays NULL: the jobs report through `_safe`, not row counts,
+    # and a fabricated 0 would read as "measured, produced nothing". The beat
+    # itself is the point (B11): no beat for 3x the fast-leg interval = dead,
+    # even at 4am with nothing scheduled.
+    heartbeat = Heartbeat(get_sessionmaker(get_engine()), SERVICE_SCHEDULER)
+
     last_full = 0.0
     while True:
         now = time.time()
+        cycle_started = time.monotonic()
         if now - last_full >= interval_hours * 3600:
             try:
                 run_daily_jobs()
@@ -138,6 +149,10 @@ def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None
             # Fresh picks every 20 min so the board is current before tipoff.
             _safe("predictions_fast", PredictionLogger().run)
             _safe("shadow_fast", shadow_run, bankroll=35.68)
+        heartbeat.beat(
+            interval_seconds=odds_minutes * 60,
+            cycle_seconds=time.monotonic() - cycle_started,
+        )
         time.sleep(odds_minutes * 60)
 
 

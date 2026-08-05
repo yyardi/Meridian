@@ -153,9 +153,9 @@ fetch("/api/analytics").then(r=>r.json()).then(d=>{
     + `The live prediction log cannot answer this yet — those games have not finished.</span>`;
 
   $("#kpis").innerHTML = [
-    ["Mean CLV", `<span class="${cls(s.mean_clv)}">${num(s.mean_clv,3)}</span>`, `± ${num(s.clv_stderr,3)} pts`],
+    ["Mean CLV", `<span class="${cls(s.mean_clv)}">${num(s.mean_clv,3)}</span>`, `± ${num(s.clv_stderr,3)} pts · vs OPENING line`],
     ["Beat close", pct(s.pct_beating_close,1), "of bets"],
-    ["Hit rate", num(s.hit_rate,3), `${s.filled} filled`],
+    ["Bet win rate", num(s.hit_rate,3), `vs 0.524 breakeven · ${s.filled} filled`],
     ["ROI", `<span class="${cls(s.roi)}">${pct(s.roi,2)}</span>`, "realistic fills"],
     ["Max drawdown", `<span class="neg">${(s.max_drawdown*100).toFixed(1)}%</span>`, "peak to trough"],
     ["Sharpe", `<span class="${cls(s.sharpe)}">${num(s.sharpe,3)}</span>`, "per bet"],
@@ -217,8 +217,9 @@ fetch("/api/analytics").then(r=>r.json()).then(d=>{
       <div class="sub">If a result is only positive under optimistic fills, it is not an edge.</div>
       <table><thead><tr><th class="l">Model</th><th>ROI</th><th>P&amp;L</th><th>Filled</th></tr></thead>
       <tbody>${fm}</tbody></table>
-      <div class="note">Negative under all three. Pessimistic is worst, as expected —
-        it crosses the spread and pays the taker fee instead of earning the rebate.</div>
+      <div class="note">Pessimistic is worst, as expected — it crosses the spread and
+        pays the taker fee a maker avoids. No maker rebate is booked anywhere on this
+        page: the advertised rebate has never been observed in this account (findings C7).</div>
     </div>
 
     <div class="card">

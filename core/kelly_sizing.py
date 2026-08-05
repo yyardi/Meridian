@@ -83,8 +83,9 @@ def net_edge(probability: float, price: float, *, is_maker: bool = True) -> floa
     """Edge after fees, in probability terms.
 
     Sizing on gross edge systematically over-bets. The executor is limit-only,
-    so the maker rebate is the default assumption — but a fill that crosses the
-    spread becomes a taker, which is worth flagging.
+    so a maker fill (fee zero — no rebate is booked, findings C7) is the
+    default assumption; a fill that crosses the spread becomes a taker, which
+    is worth flagging.
     """
     return (probability - price) - fee_per_contract(price, is_maker=is_maker)
 

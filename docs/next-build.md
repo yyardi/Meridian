@@ -10,9 +10,13 @@ Meridian prices WNBA contracts on Polymarket US. Its edge is **not** better bask
 
 | | Route | Edge source | Status |
 |---|---|---|---|
-| **A** | Pregame, hold to settlement | venue gap | **built, v4 accruing, 0 resolved** |
-| **B** | In-game directional | better live model, or run overreaction | nothing built |
-| **C** | Market making | the spread itself (3–6¢) | nothing built |
+| **A** | Pregame, hold to settlement | venue gap | **built, v4 live, 4 games post-v4** |
+| **B** | In-game directional | better live model, or run overreaction | **built, NO DATA** — `replay.py`, `overreaction.py`, `first_score.py` |
+| **C** | Market making | the spread itself (3–6¢) | **built, NO DATA** — `adverse_selection.py`, `depth_signal.py` |
+
+*(Corrected 2026-08-04. This table said "nothing built" for B and C for two days
+while the body of this same document described four built modules. The status
+column is now the one to trust; if they diverge again, believe the module list.)*
 
 The arithmetic strongly favours frequency: 2 trades/day at +2.5% turns $36 into $41 a season; 60 trades/day turns it into $3,067. **But frequency is an amplifier, not an edge** — at −2.5% those same 60 trades/day go to $0. The sign has to be established before the frequency is worth anything.
 
@@ -62,7 +66,15 @@ Two new columns make the sparsity auditable: `market_snapshots.book_tier` and `b
 
 This is the first thing built against [`core/pulse/replay.py`](../core/pulse/replay.py): a maker-only fade of the price lurch on a game's opening basket, chosen because one basket is worth ~1.3 points of final total against a 16-point residual — as close to a pure-noise event as this sport offers. Gate is on P&L with both spread costs inside the number, so the bar is zero rather than the round trip.
 
-**Both Tier 1 hypotheses now report NO DATA for the same reason, and it is worth stating plainly: 3 of the 9 recorded games have 200ms coverage.** The other six are sampled every ~15 minutes and cannot resolve a 30-second reaction window — they contribute coverage and no signal. Rows are not the constraint; three games already supply **99%** of the 830,554 ticks replayed. The constraint is games, and the fix is nights.
+**Both Tier 1 hypotheses now report NO DATA for the same reason, and it is worth stating plainly: only 3 games have usable 200ms coverage.** Counted from the local mirror on 2026-08-04:
+
+| | Games |
+|---|---|
+| any snapshot data | 20 |
+| **live** tick data | 10 |
+| **full 200ms coverage** | **3** (+1 partial, 835s only) |
+
+The other six live games are sampled every ~13–15 minutes — 9 to 42 observations across a two-hour game — and cannot resolve a 30-second reaction window. They contribute coverage and no signal. Rows are not the constraint; three games supply **99%** of the ticks replayed. The constraint is games, and the fix is nights.
 
 **The full hypothesis queue lives in [pulse-hypotheses.md](pulse-hypotheses.md)** —
 fourteen ideas raised from live observation, sorted into signals, execution
@@ -134,7 +146,7 @@ Gate is pre-registered in the doc. Needs ~40 games of resolved totals; we have 5
 Non-negotiable, and every one of them has already caught a real bug:
 
 - **Point-in-time.** Every feature computed `as_of` a timestamp, from data strictly before it. `as_of` is keyword-only with no default so lookahead is unexpressible.
-- **Maker-only.** Taker fills destroy the edge (−4.0% vs +1.34% on the same bets). Market orders are unrepresentable in `core/executor.py`.
+- **Maker-only.** Taker fills destroy the edge (−4.0% vs +0.75% on the same bets, no rebate booked — findings C7). Market orders are unrepresentable in `core/executor.py`.
 - **Pre-register the gate before looking at the number.** Five ideas died this way cheaply.
 - **Sample size is games, not rows.** One game emits ~130 correlated ladder rows — and at 1s sampling, ~130 a *second*. Cluster standard errors by game; see [math/clustered-errors.md](math/clustered-errors.md). A faster camera does not give you more games.
 - **Run experiments against local Postgres** (`python -m core.storage.sync_local`, then `DATABASE_URL=postgresql+psycopg://meridian:meridian@localhost:5433/meridian`). 11m28s → 13s. The microstructure experiments also need `market_snapshots` / `book_levels`, which are large and therefore opt-in: `python -m core.storage.sync_local --stream`. **Two things changed here 2026-08-02** and are written up in [infra/local-sync.md](infra/local-sync.md): the copy is keyset- rather than OFFSET-paginated (the OFFSET version could no longer finish at all — it died on a statement timeout at row 31,427 of 837,220), and `market_snapshots.raw` is omitted by default, which is a 24× speedup and the reason "byte-identical" no longer describes the local copy.

@@ -117,6 +117,57 @@ class ESPNConfig:
     )
 
 
+@dataclass(frozen=True)
+class KalshiConfig:
+    """Kalshi public market-data settings. Reads only — no auth, no keys.
+
+    The base URL is the public trade API; every endpoint the recorder touches
+    is unauthenticated GET. There is deliberately no credential field here: a
+    config that cannot hold a key cannot leak one into a request.
+
+    Rate limit: Kalshi's published limits are token-based per *authenticated*
+    account (Basic tier: 200 read tokens/s at 10 tokens/request = 20 req/s
+    sustained; docs.kalshi.com/getting_started/rate_limits, checked
+    2026-08-05). Unauthenticated traffic has no published number, so we assume
+    it is at most as generous as Basic and run far under it. The recorder's
+    actual demand is ~3 requests per game per minute, so the 5/s ceiling here
+    is slack, not a constraint.
+    """
+
+    base_url: str = field(
+        default_factory=lambda: os.environ.get(
+            "KALSHI_API_URL", "https://api.elections.kalshi.com/trade-api/v2"
+        )
+    )
+    requests_per_second: float = field(default_factory=lambda: _env_float("KALSHI_RPS", 5.0))
+    burst_capacity: int = field(default_factory=lambda: _env_int("KALSHI_BURST", 5))
+    http_timeout_seconds: float = field(
+        default_factory=lambda: _env_float("KALSHI_HTTP_TIMEOUT", 20.0)
+    )
+    max_retries: int = field(default_factory=lambda: _env_int("KALSHI_MAX_RETRIES", 3))
+
+    # Cadence. 60s polling runs only inside the pregame window (the interval
+    # the venue-gap comparison is pre-registered on); outside it the loop only
+    # touches the local database, so idle cycles cost Kalshi nothing.
+    poll_interval_seconds: int = field(default_factory=lambda: _env_int("KALSHI_INTERVAL", 60))
+    pregame_window_hours: float = field(
+        default_factory=lambda: _env_float("KALSHI_PREGAME_HOURS", 6.0)
+    )
+    idle_interval_seconds: int = field(
+        default_factory=lambda: _env_int("KALSHI_INTERVAL_IDLE", 15 * 60)
+    )
+    discovery_interval_seconds: int = field(
+        default_factory=lambda: _env_int("KALSHI_DISCOVERY_INTERVAL", 6 * 60 * 60)
+    )
+
+    #: Store the full market payload on every snapshot row. Off by default:
+    #: the verbatim payload is already kept point-in-time in kalshi_contracts
+    #: (written on change), and duplicating ~1 KB of unchanged rules text per
+    #: contract per minute is what Supabase quota incidents are made of
+    #: (docs/infra/supabase-quota.md).
+    snapshot_raw: bool = field(default_factory=lambda: _env_bool("KALSHI_SNAPSHOT_RAW", False))
+
+
 # ESPN season types. Load-bearing: preseason must never reach the database,
 # and postseason drives playoff down-weighting of the record feature.
 SEASON_TYPE_PRESEASON = 1
@@ -126,3 +177,4 @@ SEASON_TYPE_POSTSEASON = 3
 
 RECORDER = RecorderConfig()
 ESPN = ESPNConfig()
+KALSHI = KalshiConfig()

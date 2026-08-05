@@ -13,10 +13,20 @@ the suite to the local database for exactly this reason.
 Direction is one-way and enforced: primary -> local, never the reverse. The
 local copy is disposable; the primary is the record.
 
-    python -m core.storage.sync_local                 # every backtest table
-    python -m core.storage.sync_local                 # durable tables only
-                                                      # (--stream now REFUSES; see below)
+    python -m core.storage.sync_local                 # incremental: new rows only
+    python -m core.storage.sync_local --rebuild       # full re-copy (refreshes
+                                                      # rows updated in place)
     python -m core.storage.sync_local --table player_game_logs
+
+Incremental is the default as of 2026-08-05, and the reason is egress, not
+speed: nightly full copies of the durable tables re-pulled every row every
+night and blew through Supabase's 5 GB/month free-tier egress (measured at
+302%). An incremental pass moves only rows newer than the local max id.
+
+The cost of that default: rows *updated in place* on the primary (a
+prediction getting resolved, a game log corrected) keep their id, so an
+incremental pass never re-fetches them. Run `--rebuild` periodically — or
+after any backfill that rewrites history — to true up.
 """
 
 from __future__ import annotations
@@ -164,14 +174,13 @@ def sync_table(
     at any speed. `WHERE id > last` rides the primary key and each page costs
     the same as the first.
 
-    **`resume` skips ids already present locally**, and is therefore only
-    correct for **append-only** tables — one whose rows are never updated after
-    insert. `market_snapshots` and `book_levels` are appended by the recorders
-    and never rewritten. Everything else (`predictions`, `resolved_outcomes`,
-    `team_game_logs`, ...) is upserted in place, so a resumed copy would keep a
-    stale local row forever. The caller decides; the default is off, because
-    the failure mode of a wrong resume is silent staleness rather than an
-    error.
+    **`resume` skips ids already present locally.** For append-only tables
+    (`market_snapshots`, `book_levels`) this is exact. For tables upserted in
+    place (`predictions`, `resolved_outcomes`, `team_game_logs`, ...) it misses
+    rows that were *updated* after the last sync — an updated row keeps its id.
+    That staleness is the accepted price of not re-pulling every row every
+    night (the full copies were 302% of the free-tier egress budget); a
+    `--rebuild` pass trues up in-place updates. The caller decides.
 
     **`omit` drops columns from the wire**, writing `OMITTED_SENTINEL` locally
     instead. See `OMITTED_BY_DEFAULT` for why, and why the placeholder is not
@@ -252,7 +261,7 @@ def sync(
     tables: list[str] | None = None,
     *,
     stream: bool = False,
-    full: bool = False,
+    rebuild: bool = False,
     with_raw: bool = False,
 ) -> dict[str, tuple[int, int]]:
     source_url = os.environ.get("DATABASE_URL", "")
@@ -285,8 +294,9 @@ def sync(
             model = SYNCED_TABLES.get(name)
             if model is None:
                 raise SystemExit(f"Unknown table {name!r}. Known: {', '.join(SYNCED_TABLES)}")
-            # Resume only where it is sound: STREAM_TABLES are append-only.
-            resume = (name in STREAM_TABLES) and not full
+            # Incremental by default; --rebuild re-copies from id 0 and is the
+            # only way in-place updates on the primary reach the local copy.
+            resume = not rebuild
             omit = frozenset() if with_raw else OMITTED_BY_DEFAULT.get(name, frozenset())
             out[name] = sync_table(
                 name, model, source_session=s, target_session=t,
@@ -307,11 +317,12 @@ def main() -> int:
              "microstructure experiments, not by any historical backtest)",
     )
     parser.add_argument(
-        "--full",
+        "--rebuild",
         action="store_true",
-        help="re-copy the stream tables from id 0 instead of resuming after "
-             "the newest local id (they are append-only, so resuming is the "
-             "default; use this if you suspect the local copy is corrupt)",
+        help="re-copy from id 0 instead of resuming after the newest local id. "
+             "Incremental is the default (egress: full nightly copies were 302%% "
+             "of the free-tier budget); rebuild is the only way rows updated "
+             "in place on the primary reach the local copy",
     )
     parser.add_argument(
         "--with-raw",
@@ -332,7 +343,7 @@ def main() -> int:
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
     )
-    results = sync(args.tables, stream=args.stream, full=args.full,
+    results = sync(args.tables, stream=args.stream, rebuild=args.rebuild,
                    with_raw=args.with_raw)
     for name, (total, written) in results.items():
         print(f"{name:<22s} {written:>7,} / {total:,}")

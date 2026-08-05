@@ -255,7 +255,14 @@ async function loadStatus(){
     (s.counts_estimated ? "~" : "") + (s.counts.snapshots ?? 0).toLocaleString();
   $("#s-bytes").textContent = s.stream_bytes
     ? (s.stream_bytes / 1e9).toFixed(2) + " GB" : "—";
-  $("#s-mode").textContent = `SHADOW · ${s.real_orders_placed} REAL ORDERS`;
+  // Both counters, read from the `orders` table by /api/status — never a
+  // client-side tally. `orders_autonomous` must read 0 forever; if it does not,
+  // the CHECK constraint that makes such a row unrepresentable is gone, so the
+  // pill turns red rather than quietly showing a larger number.
+  const human = s.orders_human ?? 0, auto = s.orders_autonomous ?? 0;
+  const pill = $("#s-mode");
+  pill.textContent = `HUMAN_CONFIRM · ${human} REAL · ${auto} AUTONOMOUS`;
+  if (auto > 0) { pill.style.background = "#2a1616"; pill.style.color = "#ff5c62"; }
   $("#foot").textContent =
     `${(s.counts.snapshots??0).toLocaleString()} snapshots · ${(s.counts.book_levels??0).toLocaleString()} book levels · `
     + `${s.counts.predictions??0} predictions · ${s.counts.shadow_orders??0} shadow orders · updated ${new Date().toLocaleTimeString()}`;

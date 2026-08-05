@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from core.config import RECORDER, RecorderConfig
+from core.heartbeat import SERVICE_PREGAME, Heartbeat
 from core.polymarket.client import PolymarketGatewayClient
 from core.polymarket.schemas import Event, Market
 from core.storage import BookLevel, MarketSnapshot, get_engine, get_sessionmaker
@@ -69,6 +70,7 @@ class Recorder:
         self.config = config or RECORDER
         self._client = client or PolymarketGatewayClient(self.config)
         self._Session = sessionmaker or get_sessionmaker(get_engine())
+        self._heartbeat = Heartbeat(self._Session, SERVICE_PREGAME)
 
     # ------------------------------------------------------------------ #
     # One cycle
@@ -262,13 +264,23 @@ class Recorder:
 
         log.info("recorder_started", league=self.config.league_slug)
         while not stopping["flag"]:
+            started = time.monotonic()
+            stats = RecorderStats()
             try:
-                self.run_once()
+                stats = self.run_once()
             except Exception as exc:
                 # Absolute backstop. Nothing gets to kill this loop.
                 log.error("cycle_failed", error=str(exc), exc_info=True)
 
             interval = self.next_interval_seconds()
+            # Every cycle, whatever the cycle did (B11). A crashing cycle still
+            # beats — the process IS alive — and the 0 in rows_written is what
+            # says it produced nothing.
+            self._heartbeat.beat(
+                interval_seconds=interval,
+                rows_written=stats.snapshots_written,
+                cycle_seconds=time.monotonic() - started,
+            )
             log.info("sleeping", seconds=interval)
             # Sleep in short slices so shutdown is prompt rather than waiting
             # out a full hour.

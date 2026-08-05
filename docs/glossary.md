@@ -11,9 +11,12 @@ a real round-trip cost.
 best. Determines how much you can trade before moving the price. On this venue it is
 **\$5–24 at the touch** on cheap contracts — see [findings.md](findings.md#1-venue-facts).
 
-**Maker / Taker** — a *maker* posts a resting limit order and waits (earns a rebate
-here); a *taker* crosses the spread to fill immediately (pays a fee). Maker-only is
-load-bearing: taker fills turn +1.34% into −4.0%. [math/fees-and-spread.md](math/fees-and-spread.md)
+**Maker / Taker** — a *maker* posts a resting limit order and waits; a *taker*
+crosses the spread to fill immediately and **pays a fee** ($\Theta = 0.06$,
+venue-published and measured). Maker-only is load-bearing: taker fills turn +0.75%
+into −4.0%. A maker *rebate* is advertised by the venue but has **never been
+observed in this account** — the code books zero (findings C7) and sizes on the fee
+avoided, not the rebate earned. [math/fees-and-spread.md](math/fees-and-spread.md)
 
 **Tick** — the minimum price increment. **0.01 on every market here**, which at 16¢
 is 6.25% of contract value.

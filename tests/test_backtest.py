@@ -19,6 +19,7 @@ from core.backtest.engine import (
 )
 from core.backtest.fills import (
     THETA_MAKER,
+    THETA_MAKER_REBATE,
     THETA_TAKER,
     FillModel,
     american_to_price,
@@ -43,13 +44,24 @@ def test_fee_formula_matches_the_schedule():
     assert fee_per_contract(0.50, is_maker=True) == pytest.approx(THETA_MAKER * 0.25)
 
 
-def test_taker_pays_and_maker_earns():
+def test_maker_default_is_zero_no_rebate_booked():
+    """The advertised rebate is unverified (findings C7): default maker fee is 0."""
+    assert THETA_MAKER == 0.0
     taker = fee_per_contract(0.50, is_maker=False)
     maker = fee_per_contract(0.50, is_maker=True)
-    assert taker > 0        # a cost
-    assert maker < 0        # a rebate
-    # ~1.8c swing per contract at p=0.50 — comparable to the whole edge.
-    assert (taker - maker) == pytest.approx(0.018125)
+    assert taker > 0         # a cost
+    assert maker == 0.0      # no fee, and no rebate booked
+
+
+def test_rebate_sensitivity_arm_is_explicit_and_off_by_default():
+    """assume_rebate=True books the old -0.0125 coefficient; nothing else does."""
+    arm = fee_per_contract(0.50, is_maker=True, assume_rebate=True)
+    assert arm == pytest.approx(THETA_MAKER_REBATE * 0.25)
+    assert arm < 0
+    # The arm must not leak into taker fees.
+    assert fee_per_contract(0.50, is_maker=False, assume_rebate=True) == pytest.approx(
+        THETA_TAKER * 0.25
+    )
 
 
 def test_fees_vanish_at_the_extremes():
@@ -74,8 +86,14 @@ def test_pnl_per_contract():
 def test_optimistic_always_fills_pessimistic_pays_taker():
     opt = simulate_fill(quoted_price=0.5, contracts=10, model=FillModel.OPTIMISTIC, rng_value=0.99)
     pes = simulate_fill(quoted_price=0.5, contracts=10, model=FillModel.PESSIMISTIC, rng_value=0.99)
-    assert opt.filled and opt.is_maker and opt.fee < 0      # rebate
+    assert opt.filled and opt.is_maker and opt.fee == 0.0   # no rebate booked
     assert pes.filled and not pes.is_maker and pes.fee > 0  # fee
+
+
+def test_rebate_arm_threads_through_simulate_fill():
+    fill = simulate_fill(quoted_price=0.5, contracts=10, model=FillModel.OPTIMISTIC,
+                         rng_value=0.99, assume_rebate=True)
+    assert fill.fee < 0  # the sensitivity arm, asked for explicitly
 
 
 def test_realistic_can_miss_a_fill():

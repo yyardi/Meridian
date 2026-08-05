@@ -293,8 +293,9 @@ class ResolutionJob:
             .values(
                 resolved_outcome=ResolvedOutcome.settlement,
                 resolved_at=ResolvedOutcome.resolved_at,
-                # "Correct" = the model leaned the same way the market settled.
-                was_correct=(
+                # Direction only: the model leaned the same way the market
+                # settled. A diagnostic, not a bet result.
+                direction_correct=(
                     (Prediction.model_probability > 0.5)
                     == (ResolvedOutcome.settlement == 1)
                 ),

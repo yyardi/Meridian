@@ -21,6 +21,7 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -145,6 +146,170 @@ class BookLevel(Base):
         UniqueConstraint("snapshot_id", "side", "level_index", name="uq_book_level"),
         Index("ix_book_levels_snapshot_id", "snapshot_id"),
         Index("ix_book_levels_captured_at", "captured_at"),
+    )
+
+
+class KalshiGame(Base):
+    """One row per Kalshi WNBA game — the mapping table between venues.
+
+    There is no shared identifier between Kalshi, Polymarket, and ESPN, so the
+    join key is the same one `core.team_mapping` uses for Polymarket: the
+    **unordered ESPN team pair plus a local date**. `first_code`/`second_code`
+    preserve Kalshi's own ticker order verbatim, but nothing may read them as
+    away/home — Polymarket's slug order flipped convention mid-season
+    (team_mapping module docstring), and Kalshi's order gets the same
+    presumption of unreliability until measured otherwise.
+
+    `game_start_time` is copied from our own Polymarket snapshots, because
+    Kalshi's event payload carries no start time (strike_date is null on WNBA
+    games; verified against the venue 2026-08-05). A row with a start time is
+    therefore *by construction* a game we also record on Polymarket — the
+    "matched games only" scope rule is structural, not a filter someone can
+    forget.
+    """
+
+    __tablename__ = "kalshi_games"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: The shared suffix of the game's event tickers across all three series,
+    #: e.g. '26AUG05PHXATL' from KXWNBAGAME-26AUG05PHXATL.
+    game_key: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    #: Date encoded in the ticker (US-local, like Polymarket slug dates).
+    local_date: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    first_code: Mapped[str] = mapped_column(String(8), nullable=False)   # Kalshi's, verbatim
+    second_code: Mapped[str] = mapped_column(String(8), nullable=False)  # positional only
+    first_espn: Mapped[str | None] = mapped_column(String(16))   # NULL = unmapped (all-star)
+    second_espn: Mapped[str | None] = mapped_column(String(16))
+
+    title: Mapped[str | None] = mapped_column(String(200))  # Kalshi's, verbatim
+
+    polymarket_event_slug: Mapped[str | None] = mapped_column(String(200))
+    game_start_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    espn_game_id: Mapped[str | None] = mapped_column(String(32))
+
+    first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_kalshi_games_local_date", "local_date"),
+        Index("ix_kalshi_games_polymarket_event_slug", "polymarket_event_slug"),
+    )
+
+
+class KalshiContract(Base):
+    """Point-in-time change log of each Kalshi contract's terms, verbatim.
+
+    A cross-venue price comparison is only as honest as its strike matching:
+    Kalshi settles "Atlanta wins by more than 3.5" while Polymarket quotes
+    "Seattle covers +19.5", and a half-point or settlement-rule mismatch is
+    basis risk that must be auditable, not assumed away. This table keeps the
+    line (`floor_strike`/`cap_strike`/`strike_type`) and the settlement rules
+    (`rules_primary`/`rules_secondary`) exactly as the venue served them, plus
+    the full raw payload.
+
+    Written like `InjuryReport`: a row when terms *change*, not per poll — the
+    rules text is ~1 KB and repeating it every 60s per contract is pure quota
+    burn (docs/infra/supabase-quota.md). Reading terms as of an instant is
+    "latest row for the ticker with captured_at <= as_of".
+    """
+
+    __tablename__ = "kalshi_contracts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: When WE observed these terms — the only timestamp analysis may filter on.
+    captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    ticker: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_ticker: Mapped[str] = mapped_column(String(64), nullable=False)
+    series_ticker: Mapped[str] = mapped_column(String(32), nullable=False)
+    game_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: 'winner' | 'spread' | 'total' — derived from series_ticker.
+    market_type: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    yes_sub_title: Mapped[str | None] = mapped_column(String(200))
+    floor_strike: Mapped[Decimal | None] = mapped_column(Points)
+    cap_strike: Mapped[Decimal | None] = mapped_column(Points)
+    strike_type: Mapped[str | None] = mapped_column(String(32))
+
+    rules_primary: Mapped[str | None] = mapped_column(Text)
+    rules_secondary: Mapped[str | None] = mapped_column(Text)
+
+    open_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    close_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    expected_expiration_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    #: The full market payload as served. Schemas drift; reparsing stored JSON
+    #: beats re-fetching data that no longer exists.
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("ticker", "captured_at", name="uq_kalshi_contract_ticker_time"),
+        Index("ix_kalshi_contracts_ticker_time", "ticker", "captured_at"),
+        Index("ix_kalshi_contracts_game_key", "game_key"),
+    )
+
+
+class KalshiSnapshot(Base):
+    """One row per Kalshi contract per poll — `market_snapshots` for Kalshi.
+
+    Same reason to exist: a price at a past instant cannot be reconstructed
+    once the moment has passed. Same point-in-time contract: `captured_at` is
+    mandatory and shared across a cycle, so a cycle is a coherent instant.
+
+    Slimmer than its Polymarket sibling on purpose: the static terms live in
+    `kalshi_contracts`, and `no_bid`/`no_ask` are not stored because Kalshi's
+    no side is the yes side's complement (no_bid = 1 - yes_ask; verified
+    against live payloads 2026-08-05) — storing both would just be a place for
+    them to disagree.
+    """
+
+    __tablename__ = "kalshi_snapshots"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    ticker: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_ticker: Mapped[str] = mapped_column(String(64), nullable=False)
+    series_ticker: Mapped[str] = mapped_column(String(32), nullable=False)
+    game_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    market_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: Denormalized from the contract for query convenience, exactly as
+    #: market_snapshots carries `line`.
+    floor_strike: Mapped[Decimal | None] = mapped_column(Points)
+
+    yes_bid: Mapped[Decimal | None] = mapped_column(Price)
+    yes_ask: Mapped[Decimal | None] = mapped_column(Price)
+    last_price: Mapped[Decimal | None] = mapped_column(Price)
+    yes_bid_size: Mapped[Decimal | None] = mapped_column(Qty)
+    yes_ask_size: Mapped[Decimal | None] = mapped_column(Qty)
+
+    volume: Mapped[Decimal | None] = mapped_column(Qty)
+    open_interest: Mapped[Decimal | None] = mapped_column(Qty)
+    status: Mapped[str | None] = mapped_column(String(32))
+    result: Mapped[str | None] = mapped_column(String(16))
+
+    #: NULL unless KALSHI_SNAPSHOT_RAW is set — the verbatim payload is kept
+    #: point-in-time in kalshi_contracts instead.
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Append-only, keyed (ticker, instant): a crashed-and-rerun recorder
+        # is idempotent rather than duplicating rows.
+        UniqueConstraint("ticker", "captured_at", name="uq_kalshi_snapshot_ticker_time"),
+        Index("ix_kalshi_snapshots_captured_at", "captured_at"),
+        Index("ix_kalshi_snapshots_ticker_time", "ticker", "captured_at"),
+        Index("ix_kalshi_snapshots_game_key", "game_key"),
     )
 
 
@@ -346,6 +511,47 @@ class InjuryPoll(Base):
     __table_args__ = (Index("ix_injury_polls_captured_at", "captured_at"),)
 
 
+class ServiceHeartbeat(Base):
+    """One row per long-running writer, upserted every cycle — game or no game.
+
+    `InjuryPoll` generalised. Every writer's silence is ambiguous from its data
+    alone: the live recorder is legitimately quiet between games, the pregame
+    recorder sleeps an hour overnight, the scheduler naps twenty minutes. That
+    ambiguity is what let the 200ms recorder stay dead for 23 hours (B11) —
+    "no rows" read as "no game". A beat written unconditionally, to the same
+    database the service writes its data to, removes it: no beat for 3x the
+    service's own reported interval means dead, whatever the schedule says.
+
+    One row per service, updated in place, so the table never grows and the
+    egress cost of honesty is one tiny upsert per cycle.
+    """
+
+    __tablename__ = "service_heartbeats"
+
+    #: 'pregame_recorder' | 'live_recorder' | 'live_odds_recorder' | 'scheduler'.
+    service: Mapped[str] = mapped_column(String(64), primary_key=True)
+    #: Set from the database's own clock, so a container with a skewed clock
+    #: cannot report itself alive into the future.
+    beat_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: The cadence the writer is currently on, self-reported. Idle and active
+    #: cadences differ (200ms vs 120s for the live recorder), and the staleness
+    #: rule is relative to this, so a sleeping writer is judged by its sleep.
+    interval_seconds: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
+    #: How long the last cycle's work took.
+    cycle_seconds: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
+    #: Rows the last cycle actually landed in the database — an output, not an
+    #: exit code. NULL means "not measured" (the scheduler), which is different
+    #: from 0 ("measured, nothing written").
+    rows_written: Mapped[int | None] = mapped_column(Integer)
+    #: Cumulative rows since process start, for eyeballing a delta.
+    rows_total: Mapped[int | None] = mapped_column(BigInteger)
+    #: What the writer itself believed about game state this cycle. Readers
+    #: with an independent game signal (ESPN) should prefer their own.
+    game_live: Mapped[bool | None] = mapped_column(Boolean)
+
+
 class ModelCalibration(Base):
     """Slow-moving fitted constants, computed once and reused.
 
@@ -473,7 +679,10 @@ class Prediction(Base):
 
     resolved_outcome: Mapped[int | None] = mapped_column(SmallInteger)
     resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
-    was_correct: Mapped[bool | None] = mapped_column(Boolean)
+    #: DIAGNOSTIC, not performance: "was the model probability on the right
+    #: side of 0.50", which is not "did the bet win" (findings C5). Never
+    #: aggregate this into anything presented as a win rate.
+    direction_correct: Mapped[bool | None] = mapped_column(Boolean)
 
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -570,4 +779,106 @@ class ShadowOrder(Base):
     __table_args__ = (
         Index("ix_shadow_orders_decided_at", "decided_at"),
         Index("ix_shadow_orders_market_slug", "market_slug"),
+    )
+
+
+#: The only mode under which a real order may be accepted by the venue.
+#: Duplicated as a literal here rather than imported from `core.executor`
+#: because it is baked into a database CHECK constraint — the constraint is the
+#: authority, and a Python import could drift from what Postgres enforces.
+HUMAN_CONFIRM_MODE = "HUMAN_CONFIRM"
+
+
+class PlacedOrder(Base):
+    """An order actually sent to the venue. One row per submission attempt.
+
+    Rejected and errored attempts are rows too. That is deliberate: a table
+    that only records successes cannot answer "did we ever try?", which is the
+    question an audit actually asks.
+
+    The safety invariant is enforced by Postgres, not by Python
+    -----------------------------------------------------------
+    ``ck_orders_accepted_requires_human`` makes **an accepted order in any mode
+    other than HUMAN_CONFIRM unrepresentable**. Not discouraged, not caught by a
+    guard someone can forget to call — rejected by the database.
+
+    This is the replacement for "there is no mutating endpoint". The old
+    invariant was structural: the client had no verb but GET, so no code path
+    could place an order. Adding a POST path spends that guarantee, and it has
+    to be bought back somewhere. A CHECK constraint is the cheapest equivalent:
+    every write, from every process, migration and psql session, passes through
+    it. `orders_autonomous` on /api/status reads 0 forever *because this
+    constraint exists*, and the counter is a tripwire for the constraint having
+    been removed rather than the primary defence.
+
+    Same reasoning as the hardcoded order type in `core.executor`: the safest
+    guard is the one that makes the bad state impossible to express.
+    """
+
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    submitted_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    #: Deterministic, from `core.executor.make_idempotency_key`. UNIQUE, so a
+    #: double-click or a retry cannot produce a second submission.
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+
+    #: Execution mode. The CHECK constraint below reads this column.
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    market_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    event_slug: Mapped[str | None] = mapped_column(String(200))
+    sports_market_type: Mapped[str | None] = mapped_column(String(64))
+
+    side: Mapped[str] = mapped_column(String(8), nullable=False)       # 'buy' | 'sell'
+    #: Always ORDER_TYPE_LIMIT. Stored so a market order would be visible in the
+    #: data if one ever appeared, rather than being silently indistinguishable.
+    order_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    limit_price: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Qty, nullable=False)
+
+    #: True only when the venue confirmed acceptance. Drives both counters.
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    venue_order_id: Mapped[str | None] = mapped_column(String(120))
+    venue_status: Mapped[str | None] = mapped_column(String(64))
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(Text)
+
+    #: Write latency — the number `docs/math/write-latency.md` gates QUOTE on.
+    #: `submit_latency_ms` is our full round trip; `venue_latency_ms` is the
+    #: venue's self-reported processing time from `x-pm-server-latency`.
+    submit_latency_ms: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    venue_latency_ms: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+
+    #: Book state at submission, so a fill can later be judged against what was
+    #: actually showing rather than against a reconstruction.
+    market_bid: Mapped[Decimal | None] = mapped_column(Price)
+    market_ask: Mapped[Decimal | None] = mapped_column(Price)
+    would_rest: Mapped[bool | None] = mapped_column(Boolean)
+
+    shadow_order_id: Mapped[int | None] = mapped_column(BigInteger)
+    prediction_id: Mapped[int | None] = mapped_column(BigInteger)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        # The invariant. An accepted order must be HUMAN_CONFIRM.
+        CheckConstraint(
+            f"accepted = false OR mode = '{HUMAN_CONFIRM_MODE}'",
+            name="ck_orders_accepted_requires_human",
+        ),
+        # Market orders are unrepresentable in core.executor; keep them
+        # unrepresentable in the data too, so the two cannot drift.
+        CheckConstraint(
+            "order_type = 'ORDER_TYPE_LIMIT'",
+            name="ck_orders_limit_only",
+        ),
+        Index("ix_orders_submitted_at", "submitted_at"),
+        Index("ix_orders_market_slug", "market_slug"),
+        Index("ix_orders_mode_accepted", "mode", "accepted"),
     )
