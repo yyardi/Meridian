@@ -62,34 +62,146 @@ adverse-selection sample — a third of a second is a small slice, which is
 mildly encouraging. But that is arithmetic on a one-game sample, not a result;
 see [adverse-selection.md](adverse-selection.md).
 
-## What is NOT measured, and why
+## Authenticated read latency — measured 2026-08-04
 
-**Venue-side order processing: unknown.** Submitting, acknowledging, and
-cancelling an order all require sending one. No order was placed, modified or
-cancelled; shadow mode and the kill switch are untouched.
+**Resolved, and the number is in.** Read-only signed GETs, warm keep-alive
+connection. No order placed, modified or cancelled.
 
-**Authenticated read latency: also unknown.** Read-only GETs to
-`/v1/portfolio`, `/v1/positions`, `/v1/orders` and `/v1/balance` were attempted
-under six standard header conventions and all returned 401. The signing scheme
-is not documented anywhere in this repo — the executor makes zero authenticated
-calls by design — and it cannot be inferred from the response, because
-`Missing required API key headers` comes back for *every* path including `/`.
-Auth runs ahead of routing, so the 401s do not even confirm which routes exist.
+| Endpoint | Round-trip median | p90 | Venue-side |
+|---|---|---|---|
+| `/v1/account/balances` | 94ms | 119ms | **3ms** |
+| `/v1/portfolio/positions` | 91ms | 100ms | **3ms** |
+| `/v1/portfolio/activities` | 181ms | 227ms | 76ms |
+| cold connect + one read | 242ms | | |
 
-The credential shape suggests request signing rather than a static header: the
-key id is 36 characters (a UUID) and the secret is 88 (64 bytes base64), which
-is an Ed25519 or HMAC-SHA512 key, and "headers" is plural. Expect
-key-id + timestamp + signature.
+Reproduce with `scripts/probe_authed_read.py` (read-only; it has no verb but
+GET). The scheme is implemented in `core/polymarket/client.py`.
+
+**Venue-side read processing is now measured directly: 3ms.** Every response
+carries an `x-pm-server-latency` header giving the venue's own backend time.
+That is not an inference — it is the venue reporting its own cost, and unlike
+every other number here it is network-independent. The claim that venue
+processing "cannot be measured without placing an order" was true for *writes*;
+the read side was free all along and nobody had looked.
+
+**Authentication itself costs +12ms.** Measured by interleaving signed and
+unsigned requests on one warm connection, so both legs see identical network:
+authenticated 200 at 97ms median against a 401 short-circuit at 85ms.
+
+### Do not compare these absolutes to the table above
+
+Those are from 2026-08-02, these from 2026-08-04. Measured in the same session
+as this section:
+
+| | 2026-08-02 | 2026-08-04 |
+|---|---|---|
+| gateway board call | 158ms | 173ms |
+| small-request warm RTT | 21–36ms | 79–85ms |
+
+The board call is stable; small-request RTT is 2–4× worse *uniformly across
+both hosts*, which is a property of the measuring network that day, not of the
+venue. **Compare deltas, not absolutes.** The +12ms auth cost and the 3ms
+venue-side figure both survive, because both were taken against a same-session
+baseline. Expect different absolutes on a re-run and the same deltas.
+
+### The signing scheme, and why six attempts failed
+
+**⚠️ This section previously stated the scheme was L2 HMAC-SHA256 with five
+`POLY_*` headers. That was wrong.** The original guess in this doc — "Ed25519
+or HMAC-SHA512" — was half right and got overwritten by a confident correction
+that was not. Polymarket **US** uses three headers and **Ed25519**:
+
+```
+X-PM-Access-Key   the 36-char UUID key id
+X-PM-Timestamp    unix MILLISECONDS (±30s of server time)
+X-PM-Signature    base64(Ed25519_sign(timestamp + METHOD + path))
+```
+
+The secret is a standard-base64 **64-byte Ed25519 private key**: bytes 0–31 are
+the seed, bytes 32–63 the public key. There is no passphrase, no Polygon
+address, no HMAC, and no body term. The five-header HMAC scheme is the
+*international* CLOB at `clob.polymarket.com` — a different venue.
+
+Why the six earlier attempts could not have found this: `Missing required API
+key headers` is returned for every path, every signature, and every header set
+— **including a request carrying all five correct `POLY_*` headers**. It is not
+evidence about signing at all, only that the header *family* is unrecognised.
+The 401s were never a cryptography problem to solve.
+
+What actually discriminated was a CORS preflight. `api.polymarket.us` answers
+`OPTIONS` with a fixed, server-declared `access-control-allow-headers` naming
+the headers it accepts. Once the header names were right the error string
+started moving — `timestamp expired` (seconds, not milliseconds), then
+`Invalid API key signature` (HMAC, not Ed25519) — and each step named its own
+fix. Full account in [findings.md](../findings.md) V10.
+
+### Rate limit: the authenticated host is much tighter
+
+The gateway's documented ceiling is 20 req/s. The authenticated host returned
+429 at roughly **5 req/s**, so the probe paces at 2/s. This bears on QUOTE: a
+strategy polling authenticated state is capped well below the public board's
+cadence, so position state cannot be refreshed at the 200ms price loop's rate.
+
+## What is still NOT measured, and why
+
+**Venue-side order processing: still unknown — but the instrument now exists.**
+Submitting, acknowledging and cancelling an order all require sending one, and
+none has been sent. Shadow mode and the kill switch are untouched. The 3ms read
+figure is a floor, not a substitute: a write goes through matching and risk
+checks a balance read does not.
+
+What changed on 2026-08-04 is that measuring it no longer requires writing
+throwaway code. `POST /api/orders` records both halves of the number on every
+submission, accepted or rejected:
+
+| Column on `orders` | What it is |
+|---|---|
+| `submit_latency_ms` | our full round trip, measured around the POST |
+| `venue_latency_ms` | the venue's own `x-pm-server-latency` header |
+
+Both are returned in the endpoint's JSON and shown in the confirmation ticket
+the moment an order comes back, so the first real order produces the number
+without anyone remembering to instrument it.
+
+**This still costs the $0 record**, so it remains the user's decision and is
+not something the system does on its own: the only way an order reaches the
+venue is a human clicking Confirm on the picks page, with a server-side token
+present. See [findings.md](../findings.md) V13 for the five gates.
+
+### How to fill in this table when that happens
+
+```sql
+select market_slug, http_status, accepted,
+       submit_latency_ms, venue_latency_ms
+from orders order by submitted_at desc limit 5;
+```
+
+Then record the write here beside the read, and compare `venue_latency_ms`
+against the 3ms read baseline — that ratio is the thing worth knowing, because
+it is the only part that is network-independent. Pace any repeats: the
+authenticated host throttles at ~5 req/s (V12), and the endpoint self-limits to
+2/s for that reason.
+
+**One caveat to expect on the first attempt.** Whether a POST's signature must
+include the request body is undocumented and untested — the auth docs give the
+signed message as `timestamp + METHOD + path` with no body term and say nothing
+about POST. If that is wrong the venue answers 401 `Invalid API key signature`
+and **nothing is placed**; the client then retries once with the body appended.
+A wrong guess there cannot leak an order, only refuse one, so the first click is
+safe either way. If the retry is what succeeds, note it here — it is a real
+venue fact and nothing in the documentation records it.
 
 ## The smallest safe test, for the user to decide on
 
 This would break the "**$0 has ever been traded**" invariant, so it is written
 down rather than run.
 
-1. Get the signing spec from `polymarket.us/developer`. **Then re-run the
-   authenticated read probe** — `/v1/portfolio` is non-mutating and would give
-   auth + backend read latency for free, with no order and no risk. Do this
-   first; it may be enough on its own.
+1. ~~Get the signing spec and re-run the authenticated read probe.~~
+   **Done 2026-08-04.** It cost no order and no risk, and it delivered both
+   auth+backend read latency and — unexpectedly — venue-side read processing.
+   Note the endpoints named in the original plan (`/v1/portfolio`,
+   `/v1/balance`) do not exist; they 404 once you are past auth. The real ones
+   are `/v1/account/balances` and `/v1/portfolio/positions`.
 2. Only if step 1 proves insufficient: place **one** limit buy at a
    deliberately unmarketable price — say 0.01 on a market trading near 0.50 —
    at the venue minimum size, then cancel it immediately. Measure submit RTT,
@@ -100,8 +212,20 @@ down rather than run.
    - It cannot be done from `core/executor.py`, which has no code path to the
      venue at all.
 
-**Recommendation: do step 1, and do not do step 2 yet.** Step 2 buys a number
-that only matters once a gate has passed, and
-[adverse-selection.md](adverse-selection.md) is currently NO DATA at 1 game
-against a 10-game bar. Spending the $0 record to measure cancel latency for a
-strategy that has not cleared its first gate is the wrong order.
+**Update 2026-08-04:** step 2 is now *buildable* by a human click rather than
+by a script — `POST /api/orders` exists and is limit-only, post-only,
+size-capped by the sizer, and gated five ways. That changes who decides, not
+whether it should be done. The recommendation below is unchanged.
+
+**Recommendation: step 1 is done; still do not do step 2.** The argument is
+unchanged and if anything stronger. Step 2 buys a number that only matters once
+a gate has passed, and [adverse-selection.md](adverse-selection.md) is still NO
+DATA at 1 game against a 10-game bar. Spending the $0 record to measure cancel
+latency for a strategy that has not cleared its first gate is the wrong order.
+
+What step 1 did change: venue-side processing is 3ms for a read, so the
+"unknown venue processing" term in the headline decomposition is unlikely to be
+the generous 100ms used as a bound above. If a write is even 10× a read it is
+30ms, still well under the ~260ms detection term. **That strengthens the
+finding that our poll loop, not the venue, is the bottleneck** — without
+placing an order.

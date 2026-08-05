@@ -24,10 +24,18 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
 import core.api as api
+from core import heartbeat as hb
 from core.api import PREGAME_STALE_SECONDS, app
-from core.storage import MarketSnapshot, get_engine, get_sessionmaker
+from core.storage import (
+    MarketSnapshot,
+    ServiceHeartbeat,
+    get_engine,
+    get_sessionmaker,
+)
 
 UTC = dt.timezone.utc
+
+ALL_SERVICES = (*hb.APP_DB_SERVICES, hb.SERVICE_LIVE)
 
 
 def _snap(slug, captured_at, tier, start):
@@ -49,8 +57,39 @@ def client():
 
 
 @pytest.fixture
-def writers():
-    """A fresh pregame write and an older live write."""
+def heartbeats():
+    """Fresh beats for every expected service, restoring whatever was there.
+
+    Snapshot-and-restore rather than delete-by-pattern: the table is keyed by
+    real service names and a running recorder may own a row (the B6 lesson).
+    """
+    from sqlalchemy import select
+
+    Session = get_sessionmaker(get_engine())
+    now = dt.datetime.now(UTC)
+    with Session() as s:
+        saved = [
+            {c.name: getattr(r, c.name) for c in ServiceHeartbeat.__table__.columns}
+            for r in s.execute(select(ServiceHeartbeat)).scalars()
+        ]
+        s.execute(delete(ServiceHeartbeat))
+        for service in ALL_SERVICES:
+            s.add(ServiceHeartbeat(
+                service=service, beat_at=now - dt.timedelta(seconds=5),
+                interval_seconds=120, rows_written=0, game_live=False,
+            ))
+        s.commit()
+    yield Session
+    with Session() as s:
+        s.execute(delete(ServiceHeartbeat))
+        for row in saved:
+            s.add(ServiceHeartbeat(**row))
+        s.commit()
+
+
+@pytest.fixture
+def writers(heartbeats):
+    """A fresh pregame write and an older live write, all services beating."""
     Session = get_sessionmaker(get_engine())
     now = dt.datetime.now(UTC)
 
@@ -148,11 +187,41 @@ def test_freshness_is_reported_per_writer(client, writers):
 
 
 def test_a_silent_live_recorder_does_not_fail_the_health_check(client, writers):
-    """It is legitimately quiet between games; failing on that would show STALE
-    every night and train the reader to ignore the light."""
+    """Quiet DATA between games is legitimate — provided the heartbeat is
+    fresh. The fixture beats for it, so silence here reads as idle, not dead."""
     body = client.get("/api/status").json()
     assert body["live_age_seconds"] > 1800
     assert body["healthy"] is True
+    assert body["heartbeats"][hb.SERVICE_LIVE]["verdict"] != hb.DEAD
+
+
+def test_a_dead_heartbeat_fails_the_check_even_between_games(client, writers):
+    """The B11 case, now expressible: fresh pregame data, no game on, and a
+    live recorder whose last beat is 23 hours old. The old endpoint called
+    this healthy for a full day."""
+    with writers() as s:
+        s.get(ServiceHeartbeat, hb.SERVICE_LIVE).beat_at = (
+            dt.datetime.now(UTC) - dt.timedelta(hours=23)
+        )
+        s.commit()
+    body = client.get("/api/status").json()
+    entry = body["heartbeats"][hb.SERVICE_LIVE]
+    assert entry["verdict"] == hb.DEAD
+    assert body["healthy"] is False, (
+        "a writer silent for 3x its own cycle is dead, whatever the schedule says"
+    )
+
+
+def test_a_missing_heartbeat_is_dead_not_unknown(client, writers):
+    """A service that has never beaten is indistinguishable from one that died
+    before its first beat. Ambiguity rounds toward DEAD."""
+    with writers() as s:
+        s.execute(delete(ServiceHeartbeat).where(
+            ServiceHeartbeat.service == "scheduler"))
+        s.commit()
+    body = client.get("/api/status").json()
+    assert body["heartbeats"]["scheduler"]["verdict"] == hb.DEAD
+    assert body["healthy"] is False
 
 
 def test_a_dead_pregame_recorder_is_unhealthy(client):

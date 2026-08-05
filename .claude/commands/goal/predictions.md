@@ -47,7 +47,7 @@ For finished games, fill in ground truth:
    ```
    GET https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard?dates=YYYYMMDD
    ```
-3. Write `resolved_outcomes`; back-fill `resolved_outcome`, `resolved_at`, `was_correct` on matching `predictions`.
+3. Write `resolved_outcomes`; back-fill `resolved_outcome`, `resolved_at`, `direction_correct` on matching `predictions`.
 4. **Reconcile the two sources.** If Polymarket settlement disagrees with what ESPN's final score implies, log a loud warning and do not silently pick one. Disagreement means either a data bug or a market resolution edge case, and both are worth knowing about.
 
 ### ⚠️ Joining Polymarket to ESPN — three verified hazards

@@ -76,6 +76,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.feeds.espn_client import ESPNClient
 from core.feeds.espn_odds import ESPNOddsFetcher, _nested
+from core.heartbeat import SERVICE_LIVE_ODDS, Heartbeat
 from core.storage import SportsbookOdds, get_engine, get_sessionmaker
 
 log = structlog.get_logger(__name__)
@@ -172,6 +173,11 @@ class LiveOddsRecorder:
         )
         self.interval_seconds = interval_seconds
         self.heartbeat_seconds = heartbeat_seconds
+        #: Distinct from `heartbeat_seconds` above, which re-writes an unchanged
+        #: *odds* row every 30 min. This is the per-cycle service beat (B11) —
+        #: the thing that makes "no odds rows" mean "still market", never
+        #: "dead recorder".
+        self._service_heartbeat = Heartbeat(self._Session, SERVICE_LIVE_ODDS)
         #: (game_id, provider) -> (fingerprint, monotonic time last written)
         self._last: dict[tuple[str, str], tuple[tuple, float]] = {}
 
@@ -320,6 +326,7 @@ class LiveOddsRecorder:
         while not stopping["flag"]:
             started = time.monotonic()
             payload = None
+            stats = None
             try:
                 date_str = dt.datetime.now(UTC).strftime("%Y%m%d")
                 payload = self._client.get_scoreboard(date_str)
@@ -329,6 +336,15 @@ class LiveOddsRecorder:
                 log.error("live_odds_cycle_failed", error=str(exc), exc_info=True)
 
             wait = self.next_interval(payload)
+            # Every cycle, rows or no rows (B11). Written to the same database
+            # the odds go to, so the reader that can see the data can also see
+            # the pulse.
+            self._service_heartbeat.beat(
+                interval_seconds=wait,
+                rows_written=stats.rows_written if stats else 0,
+                cycle_seconds=time.monotonic() - started,
+                game_live=bool(stats.in_progress) if stats else None,
+            )
             deadline = started + wait
             while not stopping["flag"] and time.monotonic() < deadline:
                 time.sleep(min(1.0, deadline - time.monotonic()))

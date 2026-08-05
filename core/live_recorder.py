@@ -140,6 +140,7 @@ import structlog
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.config import RECORDER, RecorderConfig
+from core.heartbeat import SERVICE_LIVE, Heartbeat
 from core.polymarket.client import PolymarketGatewayClient
 from core.polymarket.schemas import Event, EventsResponse, Market
 from core.recorder import _parse_ts
@@ -708,6 +709,20 @@ class LiveRecorder:
         #: When each slug last had its full `raw` payload retained.
         self._last_raw: dict[str, float] = {}
 
+        # The heartbeat gets its own single-connection engine when nothing was
+        # injected: the shared pool is 2+1 and already serves the writer and
+        # depth threads, so a beat competing there could block the price loop
+        # behind a slow snapshot batch. Local Postgres has no connection budget
+        # worth defending; the loop's 200ms budget is the scarce thing.
+        self._heartbeat = Heartbeat(
+            sessionmaker
+            or get_sessionmaker(
+                get_engine(pool_size=1, max_overflow=0, pool_timeout=2)
+            ),
+            SERVICE_LIVE,
+        )
+        self._rows_at_last_beat = 0
+
         want_depth = (
             self.config.capture_depth if capture_depth is None else capture_depth
         )
@@ -938,6 +953,11 @@ class LiveRecorder:
                     wait = IDLE_POLL_SECONDS
                     gaps.clear()
 
+                # Every cycle, game or no game. This is the B11 fix: the beat,
+                # not the data, is what says "alive", so silence between games
+                # stops being an excuse for silence during them.
+                self._beat_cycle(stats, wait, now - started)
+
                 # Five lines a second is unreadable; summarise instead. The
                 # achieved cadence is reported here rather than only measurable
                 # from a test harness — the 200ms target is a claim about the
@@ -974,6 +994,23 @@ class LiveRecorder:
             self._writer.stop()
 
         log.info("live_recorder_stopped")
+
+    def _beat_cycle(self, stats: LiveCycleStats, wait: float, cycle_seconds: float) -> None:
+        """One heartbeat upsert, ~1ms against local Postgres.
+
+        `rows_written` is the delta of rows the writer thread actually landed —
+        an output, not a queue length. In async mode a batch can span cycles,
+        so a single cycle legitimately reads 0; readers judge output over their
+        own window (rows in 5 min), never a single beat's count.
+        """
+        delta = self._writer.rows_written - self._rows_at_last_beat
+        self._rows_at_last_beat = self._writer.rows_written
+        self._heartbeat.beat(
+            interval_seconds=wait,
+            rows_written=delta,
+            cycle_seconds=cycle_seconds,
+            game_live=bool(stats.markets_seen),
+        )
 
     def _sleep_remaining(self, started: float, wait: float, stopping: dict) -> None:
         """Sleep until `started + wait`, or return immediately if already past.

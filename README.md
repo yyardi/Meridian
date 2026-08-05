@@ -61,8 +61,8 @@ backfilled, so a sleeping laptop is a permanent hole in the record.
 docker compose up
 ```
 
-**No `-d`.** All five containers stream their logs into this tab, so you can
-watch the recorder and scheduler work. `Ctrl-C` stops all five.
+**No `-d`.** All six containers stream their logs into this tab, so you can
+watch the recorder and scheduler work. `Ctrl-C` stops all six.
 
 After changing code or the schema, use `docker compose up --build` instead.
 
@@ -139,6 +139,7 @@ equivalent is `docker compose up -d`, then `docker compose logs -f` to watch.
 | `docker compose ps` | are the containers up |
 | `docker compose logs scheduler --tail 50` | why predictions aren't appearing |
 | `docker compose logs live-recorder --tail 50` | why tick data isn't appearing |
+| `docker compose logs kalshi-recorder --tail 50` | why Kalshi snapshots aren't appearing |
 | `docker compose restart scheduler` | nudge a stuck job |
 | `pmset -g assertions` | confirm the sleep guard is actually held |
 | `pkill caffeinate` | let the Mac sleep again |

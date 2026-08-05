@@ -41,6 +41,8 @@ def main() -> int:
     p.add_argument("--no-playoffs", action="store_true")
     p.add_argument("--margin", action="store_true",
                    help="backtest spreads and moneylines instead of totals")
+    p.add_argument("--assume-maker-rebate", action="store_true",
+                   help="sensitivity arm: book the unverified maker rebate (findings C7)")
     args = p.parse_args()
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.WARNING)
@@ -55,6 +57,7 @@ def main() -> int:
             start_season=args.start, end_season=args.end,
             min_edge_points=args.min_edge, fill_model=fill,
             include_playoffs=not args.no_playoffs,
+            assume_maker_rebate=args.assume_maker_rebate,
         )
 
     with Session() as s:

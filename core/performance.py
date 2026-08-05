@@ -32,13 +32,21 @@ class Cohort:
     config_hash: str
     n_total: int = 0
     n_resolved: int = 0
-    n_correct: int = 0
+    n_direction_correct: int = 0
     avg_edge: float = 0.0
     avg_model_prob: float = 0.0
 
     @property
-    def hit_rate(self) -> float | None:
-        return self.n_correct / self.n_resolved if self.n_resolved else None
+    def direction_rate(self) -> float | None:
+        """DIAGNOSTIC, not performance.
+
+        Fraction of resolved predictions whose probability sat on the right
+        side of 0.50 — the log includes the no-edge control group by design
+        (findings C5), and most contracts are lopsided, so this is nearly free.
+        The money metric is the bet win rate vs the 52.4% breakeven, which
+        lives in core/scorecard.py.
+        """
+        return self.n_direction_correct / self.n_resolved if self.n_resolved else None
 
 
 @dataclass
@@ -82,11 +90,11 @@ def list_cohorts(session: Session) -> list[Cohort]:
             avg_edge=float(avg_edge) if avg_edge is not None else 0.0,
             avg_model_prob=float(avg_p) if avg_p is not None else 0.0,
         )
-        cohort.n_correct = session.scalar(
+        cohort.n_direction_correct = session.scalar(
             select(func.count(Prediction.id))
             .where(Prediction.model_version == version)
             .where(Prediction.config_hash == cfg_hash)
-            .where(Prediction.was_correct.is_(True))
+            .where(Prediction.direction_correct.is_(True))
         ) or 0
         out.append(cohort)
     return out
@@ -160,11 +168,11 @@ def summary(session: Session, *, allow_mixed: bool = False) -> str:
 
     lines.append(
         f"{'version':<10}{'config_hash':<14}{'total':>8}{'resolved':>10}"
-        f"{'hit rate':>10}{'avg edge':>11}"
+        f"{'direction✓':>11}{'avg edge':>11}"
     )
     lines.append("-" * 78)
     for c in cohorts:
-        hr = f"{c.hit_rate:.3f}" if c.hit_rate is not None else "n/a"
+        hr = f"{c.direction_rate:.3f}" if c.direction_rate is not None else "n/a"
         lines.append(
             f"{c.model_version:<10}{c.config_hash[:12]:<14}{c.n_total:>8}"
             f"{c.n_resolved:>10}{hr:>10}{c.avg_edge:>11.4f}"
@@ -177,10 +185,19 @@ def summary(session: Session, *, allow_mixed: bool = False) -> str:
             "each row is a separate model."
         )
 
+    lines.append("")
+    lines.append(
+        "  direction✓ is DIAGNOSTIC: probability on the right side of 0.50,"
+    )
+    lines.append(
+        "  over ALL log rows including the no-edge control group. It is not a"
+    )
+    lines.append("  bet win rate. Money metrics live in core/scorecard.py.")
+
     resolved = sum(c.n_resolved for c in cohorts)
     lines.append("")
     if resolved == 0:
-        lines.append("  No resolved predictions yet — hit rate and calibration")
+        lines.append("  No resolved predictions yet — direction rate and calibration")
         lines.append("  become available once games settle.")
     elif resolved < 100:
         lines.append(

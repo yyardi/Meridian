@@ -71,10 +71,10 @@ def test_fee_adjusted_edge_is_below_gross_for_a_taker():
     assert net_edge(0.60, 0.50, is_maker=False) < gross
 
 
-def test_maker_rebate_slightly_increases_net_edge():
-    """The maker fee is negative — you are paid to provide liquidity."""
+def test_maker_pays_no_fee_and_books_no_rebate():
+    """Maker fee is zero: the advertised rebate is unverified (findings C7)."""
     gross = 0.60 - 0.50
-    assert net_edge(0.60, 0.50, is_maker=True) > gross
+    assert net_edge(0.60, 0.50, is_maker=True) == pytest.approx(gross)
 
 
 def test_taker_sizes_smaller_than_maker():

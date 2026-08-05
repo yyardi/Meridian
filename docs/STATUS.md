@@ -1,4 +1,4 @@
-# Meridian — Status (2026-08-03)
+# Meridian — Status (2026-08-04)
 
 One page: what exists, what it says, where we are stuck.
 Companion: [findings.md](findings.md) — what we got wrong, and the venue facts that
@@ -15,20 +15,44 @@ constrain everything below.
 
 ## Current data
 
-839,811 market snapshots · 830,838 book levels · 3,290 team game logs · **18,145 player-games** · 12,658 sportsbook odds rows · 11,609 predictions (**8,937 on v4**) · 1,356 resolved · 1,333 shadow orders · 82 injury change rows · **20 games with tick data, 3 of them at 200ms**.
+839,811 market snapshots · 830,838 book levels · 3,290 team game logs · **18,145 player-games** · 12,658 sportsbook odds rows · 11,609 predictions (**8,937 on v4**) · 1,356 resolved · 1,333 shadow orders · 82 injury change rows.
+
+**Game coverage — the number that gates PULSE and QUOTE** (local mirror, 2026-08-04):
+**20** games have snapshot data · **10** have live ticks · **3** have full 200ms
+coverage (+1 partial, 835s). Every Tier-1 gate is written in games and needs 10.
+The phrase "20 games with tick data" appeared here previously and was wrong — 20 is
+games with *any* snapshot, most of them pregame-only.
 
 ## Performance — canonical numbers
 
 | Market | Hit | ROI | Mean CLV [95% CI] | Verdict |
 |---|---|---|---|---|
-| **Totals (champion: recency)** | 53.2% | +1.34% | **+1.75 [+1.45, +2.06]** | passes CLV gate |
+| **Totals (champion: recency)** | 53.2% | +0.75% | **+1.75 [+1.45, +2.06]** | ⚠️ **contested — see Q1** |
 | Spread (market-shrunk) | 54.1% | +2.83% | n/a | promising, n=37 |
 | Moneyline | 25–33% | −9.5% to −17.9% | n/a | **not traded** |
+
+> ⚠️ **Two live objections sit underneath this table. Read them before quoting any
+> number in it.**
+>
+> 1. **The CLV is measured against the sportsbook *opening* line**
+>    ([`engine.py:264`](../core/backtest/engine.py#L264): `entry = float(chosen.open_total)`).
+>    So +1.75 means *the model anticipates sportsbook line movement*. You cannot
+>    transact at a sportsbook open, and the venue is Polymarket — so this scores a
+>    skill the live ANCHOR strategy does not use, since ANCHOR takes the book number
+>    as an *input*. Unresolved: [findings.md Q1](findings.md#q1--is-the-headline-clv-number-measuring-a-tradable-edge-️-unresolved-contradiction).
+> 2. **C7 (the unobserved maker rebate) is now resolved in code** (2026-08-05):
+>    $\Theta_{\text{maker}} = 0$ is the default everywhere, and the table above shows
+>    the rebate-free number. Booking the rebate (`--assume-maker-rebate`, an explicit
+>    sensitivity arm) restores the old +1.34% exactly — the 0.59pp gap was entirely
+>    the unverified credit. CLV and hit rate are unchanged; the rebate never altered
+>    bet selection. [findings.md C7](findings.md#3-corrections).
+>
+> Both objections are upstream of the money figure below. Q1 remains unsettled.
 
 **What the edge is worth, in money** (Experiment 3, adopted): +1.75 points of CLV
 de-vigs to **+4.16pp of probability edge → E[ROI] +2.50% [+0.85%, +4.16%]** per unit
 staked under realistic maker-only fills — CI excludes zero, and realised ROI
-(+1.98%) sits inside it. Under *pessimistic* fills it is +0.11% [−1.18%, +1.40%]:
+(+1.38%, re-run 2026-08-05 with the maker rebate stripped per C7) sits inside it. Under *pessimistic* fills it is +0.11% [−1.18%, +1.40%]:
 maker-only is not a preference, it is load-bearing. [what-the-edge-is-worth.md](math/what-the-edge-is-worth.md)
 
 Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill model; ROI does **not** survive taker fills (−4.0%) — maker-only is load-bearing. Live log hit rates (e.g. 94% on one v3 cohort) are **not** performance: the log includes the no-edge control group by design.
@@ -53,10 +77,27 @@ Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill
    measured whether it has any edge at 35–65¢, where size is actually available.
    [findings.md](findings.md#what-v1v3-mean-together)
 9. **PULSE Tier 1 is blocked on games, not code.** Both hypotheses built, both NO DATA:
-   3 of 20 recorded games have 200ms coverage, and the rest are sampled every ~15 min,
+   3 of 10 games with live ticks have 200ms coverage, and the rest are sampled every ~15 min,
    which cannot resolve a 30-second reaction window.
 10. **Write latency is unmeasured**, and it decides whether QUOTE is possible. Blocked
-    on the request-signing layer. [math/write-latency.md](math/write-latency.md)
+    on the request-signing layer — whose scheme was **wrongly guessed** and is now
+    identified. [math/write-latency.md](math/write-latency.md)
+11. **⚠️ Silent outages are still not alerted.** Two on 2026-08-03, both caught by hand,
+    neither alerted — the pooler rewrite (B11, cost **2 games of 200ms data**) and ESPN
+    beginning to 403. Both bugs are fixed; **the monitoring gap is not.** `/api/status`
+    queries Supabase while the 200ms recorder writes to local Postgres, and
+    [`core/api.py`](../core/api.py) deliberately excludes the live recorder from the
+    health verdict because it is legitimately silent between games — so *dead for a
+    day* and *idle at 3pm* were indistinguishable. **The per-cycle heartbeat is now
+    built** (2026-08-05, [infra/heartbeats.md](infra/heartbeats.md)): every writer
+    beats every cycle into its own database, a beat older than 3× its interval is
+    DEAD regardless of game state, and a live game with a fresh beat and zero rows
+    is DEGRADED. What remains of the gap is **alerting**: the heartbeat makes
+    silence legible, but something still has to run `health.py` and look.
+12. **The headline CLV still rests on a contested input** — Q1 (CLV measured
+    against a price you cannot trade). C7 (the unobserved maker rebate) is resolved:
+    the ROI in the table is now rebate-free (+0.75%; the rebate arm restores +1.34%).
+    See the warning under the performance table.
 
 ## Next, in order
 

@@ -17,11 +17,23 @@ The real costs are:
 Fees, from the Polymarket US schedule::
 
     fee = theta * contracts * price * (1 - price)
-    theta_taker = +0.06        theta_maker = -0.0125   (maker earns a rebate)
+    theta_taker = +0.06   (venue-published; measured on 874,267 rows — V9)
+    theta_maker = 0       (default; see below)
 
-At p=0.50 a taker pays 1.5c/contract and a maker earns 0.3c — a 1.8c swing,
-comparable to the entire edge being hunted. That is why the executor is
-limit-only, and why maker and taker are modelled separately here.
+At p=0.50 a taker pays 1.5c/contract, comparable to the entire edge being
+hunted. That is why the executor is limit-only, and why maker and taker are
+modelled separately here.
+
+The maker rebate is a sensitivity arm, not a default
+----------------------------------------------------
+The venue advertises a maker rebate of *25% of the matched taker fee* — a
+share of fees collected on the other side, not a guaranteed per-contract
+credit. It has **never been observed in this account**, and the old constant
+(-0.0125) reconciles neither with the measured theta_taker = 0.06 nor with any
+recorded source (findings C7/V9). Booking it as certain was worth roughly a
+full percentage point of fictional ROI. The default is therefore zero;
+``assume_rebate=True`` turns the arm on explicitly, and stays off until a
+rebate shows up on a statement.
 """
 
 from __future__ import annotations
@@ -30,17 +42,28 @@ from dataclasses import dataclass
 from enum import Enum
 
 THETA_TAKER = 0.06
-THETA_MAKER = -0.0125
+#: Default maker coefficient: zero. No rebate is booked unless asked for.
+THETA_MAKER = 0.0
+#: The unverified rebate coefficient, kept only for the explicit sensitivity
+#: arm. Do not promote back to the default without a statement showing it.
+THETA_MAKER_REBATE = -0.0125
 
 
-def fee_per_contract(price: float, *, is_maker: bool) -> float:
-    """Signed fee per contract. Negative means a rebate is earned."""
-    theta = THETA_MAKER if is_maker else THETA_TAKER
+def fee_per_contract(price: float, *, is_maker: bool, assume_rebate: bool = False) -> float:
+    """Signed fee per contract. Negative means a rebate is earned.
+
+    ``assume_rebate`` books the unverified maker rebate (sensitivity arm only).
+    """
+    if is_maker:
+        theta = THETA_MAKER_REBATE if assume_rebate else THETA_MAKER
+    else:
+        theta = THETA_TAKER
     return theta * price * (1.0 - price)
 
 
-def fee_total(price: float, contracts: float, *, is_maker: bool) -> float:
-    return fee_per_contract(price, is_maker=is_maker) * contracts
+def fee_total(price: float, contracts: float, *, is_maker: bool,
+              assume_rebate: bool = False) -> float:
+    return fee_per_contract(price, is_maker=is_maker, assume_rebate=assume_rebate) * contracts
 
 
 class FillModel(str, Enum):
@@ -77,14 +100,14 @@ ASSUMPTIONS: dict[FillModel, FillAssumptions] = {
         fill_probability=1.0,
         is_maker=True,
         adverse_selection=0.0,
-        description="every limit order fills at the quoted price, maker rebate earned",
+        description="every limit order fills at the quoted price; maker fee zero",
     ),
     FillModel.REALISTIC: FillAssumptions(
         name=FillModel.REALISTIC,
         fill_probability=0.70,
         is_maker=True,
         adverse_selection=0.005,
-        description="70% of resting orders fill; mild adverse selection; maker rebate",
+        description="70% of resting orders fill; mild adverse selection; maker fee zero",
     ),
     FillModel.PESSIMISTIC: FillAssumptions(
         name=FillModel.PESSIMISTIC,
@@ -113,6 +136,7 @@ def simulate_fill(
     contracts: float,
     model: FillModel,
     rng_value: float,
+    assume_rebate: bool = False,
 ) -> Fill:
     """Simulate one fill.
 
@@ -132,7 +156,7 @@ def simulate_fill(
         filled=True,
         price=price,
         contracts=contracts,
-        fee=fee_total(price, contracts, is_maker=a.is_maker),
+        fee=fee_total(price, contracts, is_maker=a.is_maker, assume_rebate=assume_rebate),
         is_maker=a.is_maker,
     )
 

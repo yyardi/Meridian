@@ -46,6 +46,41 @@
   .kpi .k{color:var(--faint);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase}
   .kpi .v{font-size:17px;margin-top:3px}
   .empty{padding:24px;color:var(--faint);text-align:center}
+
+  /* --- human-confirmed order path --------------------------------------- */
+  .sendbtn{font:inherit;font-size:9.5px;letter-spacing:.06em;padding:2px 8px;border-radius:3px;
+           background:#1a2233;color:#6ba3ff;border:1px solid #24314a;cursor:pointer}
+  .sendbtn:hover{background:#20293d;color:#8fbcff}
+  .sendbtn:disabled{opacity:.35;cursor:not-allowed}
+  .sendbtn.done{background:#10261c;color:#3fd48f;border-color:#1d3d2c}
+  .sendbtn.err{background:#2a161a;color:#ff7b80;border-color:#3d2126}
+  #tokwrap{margin-left:auto;display:flex;align-items:center;gap:7px}
+  #tok{font:inherit;font-size:10px;background:#0c0f15;color:var(--txt);border:1px solid var(--line);
+       border-radius:3px;padding:3px 7px;width:150px}
+  .pill{margin-left:0}
+  /* Modal. The second click lives here — the row button only opens it. */
+  #modal{position:fixed;inset:0;background:rgba(4,6,10,.82);display:none;
+         align-items:center;justify-content:center;z-index:50}
+  #modal.on{display:flex}
+  .ticket{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+          width:min(430px,92vw);padding:0;overflow:hidden}
+  .ticket h3{margin:0;padding:11px 15px;font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+             background:#161b25;border-bottom:1px solid var(--line);color:var(--txt)}
+  .ticket .rows{padding:13px 15px}
+  .trow{display:flex;justify-content:space-between;padding:4px 0;font-size:11.5px}
+  .trow .k{color:var(--faint)}
+  .trow.big{font-size:14px;padding:8px 0;border-top:1px solid var(--line);margin-top:6px}
+  .twarn{margin:11px 15px 0;padding:8px 10px;border-radius:4px;font-size:10.5px;line-height:1.55;
+         background:#221708;color:var(--warn);border:1px solid #3d2a17}
+  .tacts{display:flex;gap:9px;padding:13px 15px;border-top:1px solid var(--line);margin-top:12px}
+  .tacts button{flex:1;font:inherit;font-size:11px;padding:8px;border-radius:4px;cursor:pointer}
+  #cancelBtn{background:#161b25;color:var(--dim);border:1px solid var(--line)}
+  #confirmBtn{background:#123021;color:#4fe6a0;border:1px solid #1e5238;font-weight:700}
+  #confirmBtn:disabled{opacity:.5;cursor:not-allowed}
+  #tresult{padding:0 15px 13px;font-size:10.5px;line-height:1.6;display:none}
+  #qty{font:inherit;font-size:12px;background:#0c0f15;color:var(--txt);border:1px solid #2a3346;
+       border-radius:3px;padding:2px 6px;width:78px;text-align:right}
+  #qty:focus{outline:none;border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -56,8 +91,28 @@
     <a href="/picks" class="on">Picks &amp; results</a>
     <a href="/analytics">Model performance</a>
   </nav>
-  <div class="pill">SHADOW · 0 REAL ORDERS</div>
+  <div id="tokwrap">
+    <input id="tok" type="password" placeholder="order token" autocomplete="off"
+           title="Server-side token from MERIDIAN_ORDER_TOKEN. Held in this tab only (sessionStorage), never persisted to disk.">
+    <div class="pill" id="modepill">SHADOW · 0 REAL ORDERS</div>
+  </div>
 </header>
+
+<!-- The confirmation ticket. The row button opens this; only the button
+     inside it sends anything. Two clicks, two different elements, and the
+     second one shows the whole order in words first. -->
+<div id="modal" role="dialog" aria-modal="true">
+  <div class="ticket">
+    <h3>Confirm order — this sends real money</h3>
+    <div class="rows" id="trows"></div>
+    <div class="twarn" id="twarn"></div>
+    <div id="tresult"></div>
+    <div class="tacts">
+      <button id="cancelBtn">Cancel</button>
+      <button id="confirmBtn">Confirm &amp; send</button>
+    </div>
+  </div>
+</div>
 
 <div class="wrap">
   <div class="banner">
@@ -117,8 +172,8 @@ function renderPicks(d){
         <th class="l">Position</th><th>BUY at</th><th>SELL at</th><th>Return</th>
         <th>Size</th><th>Stake</th>
         <th class="dimc">Bid</th><th class="dimc">Ask</th><th class="dimc">Spr</th>
-        <th class="dimc">Model</th><th class="dimc">Edge</th>
-      </tr></thead><tbody>${g.rows.map(p=>`
+        <th class="dimc">Model</th><th class="dimc">Edge</th><th></th>
+      </tr></thead><tbody>${g.rows.map((p,i)=>`
         <tr>
           <td class="l"><span class="side ${["OVER","YES","BUY"].includes(p.side)?"sideY":"sideN"}">${
             p.ticket ? p.ticket.label : (p.human||shortSlug(p.market_slug))}</span></td>
@@ -126,17 +181,185 @@ function renderPicks(d){
           <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.sell_at):"—"}</b></td>
           <td class="${p.ticket&&p.ticket.return_pct>0?"pos":"neg"}">${
             p.ticket?pct(p.ticket.return_pct):"—"}</td>
-          <td>${p.ticket ? (p.ticket.too_small
-                ? '<span class="dimc" title="the sizer wanted this but not a tradable amount">too small</span>'
-                : num(p.ticket.size,1)) : "—"}</td>
+          <td>${p.ticket && !p.ticket.too_small ? num(p.ticket.size,1)
+                : '<span class="dimc" title="The Kelly sizer wanted less than the venue minimum at this bankroll. That is a statement about bankroll, not about the market — you can still size it yourself.">not sized</span>'}</td>
           <td>${p.ticket&&!p.ticket.too_small?"$"+p.ticket.stake.toFixed(2):'<span class="dimc">—</span>'}</td>
           <td class="dimc">${num(p.bid)}</td><td class="dimc">${num(p.ask)}</td>
           <td class="dimc">${(p.spread*100).toFixed(0)}¢</td>
           <td class="dimc">${num(p.model)}</td>
           <td class="dimc">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}</td>
+          <td>${sendCell(p)}</td>
         </tr>`).join("")}</tbody></table>`;
   }).join("");
+  document.querySelectorAll(".sendbtn[data-key]").forEach(b=>{
+    b.addEventListener("click", () => openTicket(PICKS[b.dataset.key]));
+  });
 }
+
+/* --- human-confirmed order path ---------------------------------------- *
+ * The row button only OPENS the ticket. Nothing is sent until the separate
+ * confirm button inside the modal is clicked, and the ticket states the whole
+ * order in words first. A row with no computed shadow order gets no button —
+ * the page must never invent a decision the model did not make.            */
+const PICKS = {};
+
+function sendCell(p){
+  // Every row the venue could accept gets a button. A row loses one only when
+  // there is no usable book, or when the position is NO-side — not when the
+  // Kelly sizer declined it, which is a fact about bankroll, not the market.
+  if(!p.order) return '<span class="dimc" title="no usable book for this row">—</span>';
+  PICKS[p.market_slug] = p;
+  return `<button class="sendbtn" data-key="${p.market_slug}">SEND</button>`;
+}
+
+let PENDING = null;
+
+function openTicket(p){
+  PENDING = p;
+  const o = p.order;
+  $("#trows").innerHTML = `
+    <div class="trow"><span class="k">Market</span><span>${p.human||p.market_slug}</span></div>
+    <div class="trow"><span class="k">Position</span><span>${p.ticket?p.ticket.label:p.side}</span></div>
+    <div class="trow"><span class="k">Buying</span><span><b>${o.outcome}</b>${
+      o.outcome==="NO" ? ' <span class="dimc">(the UNDER / sell side)</span>' : ''}</span></div>
+    <div class="trow"><span class="k">Order type</span><span>LIMIT · post-only · resting</span></div>
+    <div class="trow"><span class="k">You pay per contract</span><span><b>${num(o.cost_per_contract,4)}</b></span></div>
+    <div class="trow"><span class="k">Sent as price.value</span><span class="dimc">${num(o.limit_price,4)}${
+      o.outcome==="NO" ? " (YES-side, = 1 − "+num(o.cost_per_contract,4)+")" : ""}</span></div>
+    <div class="trow"><span class="k">Book now (${o.outcome} side)</span><span class="dimc">bid ${num(p.bid)} / ask ${num(p.ask)}</span></div>${
+      o.outcome==="NO" ? `<div class="trow"><span class="k">&nbsp;&nbsp;same book, YES side</span><span class="dimc">bid ${
+        num(p.yes_frame.bid)} / ask ${num(p.yes_frame.ask)}</span></div>` : ""}
+    <div class="trow"><span class="k">Quantity</span>
+      <span><input id="qty" type="number" step="0.01" min="${o.min_quantity}"
+                   max="${o.max_quantity}" value="${o.default_quantity}"> contracts</span></div>
+    <div class="trow"><span class="k">${o.sized_by_model?"Model's size":"Model declined to size this"}</span>
+      <span class="dimc">${o.sized_by_model
+        ? num(o.default_quantity,2)+" contracts"
+        : "Kelly wanted below the "+o.min_quantity+" minimum"}</span></div>
+    <div class="trow big"><span class="k">Maximum stake</span><b id="stakeOut">—</b></div>`;
+
+  const qty = $("#qty"), out = $("#stakeOut");
+  const recalc = () => {
+    const q = parseFloat(qty.value);
+    if(!isFinite(q) || q < o.min_quantity){
+      out.innerHTML = `<span class="bad">below ${o.min_quantity} minimum</span>`;
+      $("#confirmBtn").disabled = true; return;
+    }
+    // Stake is cost × qty, NOT price × qty. On a NO order those differ by
+    // 1 - price, and the cost is the one that leaves the account.
+    const stake = q * o.cost_per_contract;
+    if(stake > o.max_stake_usd){
+      out.innerHTML = `<span class="bad">$${stake.toFixed(2)} — over the $${o.max_stake_usd} cap</span>`;
+      $("#confirmBtn").disabled = true; return;
+    }
+    // Sub-cent stakes are real and common here: the default is the 0.01-contract
+    // venue minimum, which on a 0.19 contract is $0.0019. Rendering that as
+    // "$0.00" reads as free, or as broken. Show enough digits to see the number.
+    out.textContent = stake < 0.01 ? "$" + stake.toFixed(4) : "$" + stake.toFixed(2);
+    $("#confirmBtn").disabled = false;
+  };
+  qty.addEventListener("input", recalc);
+  recalc();
+
+  /* The limit price is the executor's, not the BUY column. Those genuinely
+     differ: the executor rests at the bid to earn the maker side, the BUY
+     column quotes the ask you would pay to cross now. Showing the gap is the
+     point — it is the difference between the order being sent and the fill
+     you were reading about. */
+  const edgeWarn = p.edge < 0
+    ? `<b>The model is against this trade</b> (edge ${pct(p.edge)}). It expects to lose money. `
+    : "";
+  const crossCost = p.ticket ? num(p.ticket.buy_at) : "—";
+  $("#twarn").innerHTML = edgeWarn
+    + (o.outcome === "NO"
+        ? `Buying <b>NO</b>. The venue quotes every price from the YES side, so this is `
+          + `sent as <b>${num(o.limit_price,4)}</b> and costs you `
+          + `<b>${num(o.cost_per_contract,4)}</b> per contract. `
+        : "")
+    + `Resting order — it earns the maker side and may never fill. The BUY column shows `
+    + `${crossCost}, which is what you would pay to cross right now. This does not cross.`;
+
+  $("#tresult").style.display = "none";
+  $("#confirmBtn").textContent = "Confirm & send";
+  $("#confirmBtn").onclick = sendOrder;
+  $("#modal").classList.add("on");
+}
+
+function closeTicket(){ $("#modal").classList.remove("on"); PENDING = null; }
+$("#cancelBtn").addEventListener("click", closeTicket);
+$("#modal").addEventListener("click", e => { if(e.target.id === "modal") closeTicket(); });
+
+/* Token is held for this tab only. sessionStorage, not localStorage: it dies
+   with the tab rather than sitting on disk between sessions. */
+$("#tok").value = sessionStorage.getItem("meridian_order_token") || "";
+$("#tok").addEventListener("input", e =>
+  sessionStorage.setItem("meridian_order_token", e.target.value));
+
+async function sendOrder(){
+  if(!PENDING) return;
+  const p = PENDING, o = p.order;
+  const qty = parseFloat($("#qty").value);
+  const btn = $("#confirmBtn");
+  btn.disabled = true;                      // no double-send from a double-click
+  btn.textContent = "Sending…";
+  const out = $("#tresult");
+  out.style.display = "block";
+  out.innerHTML = '<span class="dimc">submitting…</span>';
+
+  try{
+    const r = await fetch("/api/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Meridian-Order-Token": $("#tok").value.trim(),
+      },
+      body: JSON.stringify({
+        market_slug: p.market_slug,
+        mode: "HUMAN_CONFIRM",          // the only value the server accepts
+        limit_price: o.limit_price,     // echo; the server derives its own
+        quantity: qty,                  // the human's number, bounds-checked
+      }),
+    });
+    const d = await r.json();
+    if(r.ok && d.accepted){
+      out.innerHTML = `<span class="ok">ACCEPTED</span> · venue id `
+        + `<b>${d.venue_order_id||"—"}</b><br><span class="dimc">write latency `
+        + `${d.submit_latency_ms}ms round-trip`
+        + (d.venue_latency_ms!=null?` · ${d.venue_latency_ms}ms venue-side`:"")
+        + `</span>`;
+      markRow(p.market_slug, "done", "SENT");
+      loadStatus();
+    } else {
+      out.innerHTML = `<span class="bad">REJECTED</span> · HTTP ${r.status}<br>`
+        + `<span class="dimc">${(d.detail||d.response||JSON.stringify(d)).slice(0,300)}</span>`;
+      markRow(p.market_slug, "err", "FAILED");
+    }
+  } catch(e){
+    out.innerHTML = `<span class="bad">ERROR</span> <span class="dimc">${e}</span>`;
+  }
+  btn.textContent = "Close";
+  btn.disabled = false;
+  btn.onclick = closeTicket;
+}
+
+function markRow(slug, cls, label){
+  const b = document.querySelector(`.sendbtn[data-key="${CSS.escape(slug)}"]`);
+  if(b){ b.className = "sendbtn " + cls; b.textContent = label; b.disabled = true; }
+}
+
+/* The header pill reads the two counters straight off /api/status, which reads
+   them off the orders table. It is not a client-side tally. */
+async function loadStatus(){
+  try{
+    const d = await (await fetch("/api/status")).json();
+    const human = d.orders_human ?? 0, auto = d.orders_autonomous ?? 0;
+    const pill = $("#modepill");
+    pill.textContent = `HUMAN_CONFIRM · ${human} REAL · ${auto} AUTONOMOUS`;
+    if(auto > 0){ pill.style.background = "#2a1616"; pill.style.color = "#ff5c62"; }
+  } catch(e){ /* the pill is informational; a failure here must not break picks */ }
+}
+loadStatus();
+
 fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 
 fetch("/api/results").then(r=>r.json()).then(d=>{
@@ -154,9 +377,9 @@ fetch("/api/results").then(r=>r.json()).then(d=>{
      `Brier ${s.brier_model} vs ${s.brier_market}`],
   ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>
       <div class="k" style="margin-top:2px">${n}</div></div>`).join("");
-  $("#rnote").innerHTML = `Hit rate reads ${s.hit_rate_MISLEADING} — ignore it. It scores
-      whether the probability sat on the correct side of 0.50, which is not a bet.
-      The bet win rate above is the one that decides money.`;
+  $("#rnote").innerHTML = `DIAGNOSTIC: direction rate reads ${s.direction_rate_DIAGNOSTIC}
+      — it scores whether the probability sat on the correct side of 0.50, which is
+      not a bet. The bet win rate above is the one that decides money.`;
 
   if(!d.results.length){ $("#results").innerHTML='<div class="empty">nothing resolved yet</div>'; return; }
   $("#results").innerHTML = `<table><thead><tr>
@@ -175,7 +398,7 @@ fetch("/api/results").then(r=>r.json()).then(d=>{
       <td class="l dimc">${r.model_version}</td>
     </tr>`).join("")}</tbody></table>
   <div class="dimc" style="font-size:10.5px">Rows marked "no quote" were logged while a
-  game was already live — they were never tradeable and are excluded from the hit rate
+  game was already live — they were never tradeable and are excluded from the metrics
   above. That bug is fixed: predictions are now pregame-only.</div>`;
 });
 </script>

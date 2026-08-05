@@ -72,6 +72,7 @@ def check_containers() -> list[Check]:
         "meridian-recorder": "pregame recorder (feeds the dashboard)",
         "meridian-live-recorder": "200ms tick recorder (PULSE)",
         "meridian-live-odds-recorder": "live odds",
+        "meridian-kalshi-recorder": "Kalshi recorder (second venue)",
         "meridian-scheduler": "scheduler (predictions)",
         "meridian-postgres": "local Postgres",
     }
@@ -146,6 +147,9 @@ def check_supabase() -> list[Check]:
                 "select max(created_at), count(*) from predictions "
                 "where created_at > now() - interval '24 hours'"
             )).one()
+            db_bytes = c.execute(text(
+                "select pg_database_size(current_database())"
+            )).scalar()
     except Exception as exc:
         return [Check(DEAD, "supabase", f"unreachable: {str(exc)[:60]}")]
 
@@ -158,11 +162,30 @@ def check_supabase() -> list[Check]:
     # Predictions ride the 20-min fast leg. 90 min means the leg is not running.
     status = OK if (pred_age or 1e9) < 5400 else WARN
     checks.append(Check(status, "predictions", f"{_fmt_age(pred_age)} · {pred_n} in 24h"))
+
+    # Supabase's free plan enforces the *reported* database size at 500 MB and
+    # returns 402 on every request past the grace period. 400 MB leaves room to
+    # notice and act before the venue does. (DELETE alone does not shrink this
+    # number — see the 2026-08-05 cleanup: VACUUM FULL is what returns space.)
+    mb = (db_bytes or 0) / 1e6
+    status = OK if mb < 400 else WARN
+    checks.append(Check(status, "supabase size",
+                        f"{mb:.0f} MB / 500 MB plan limit"
+                        + ("" if mb < 400 else " — archive & VACUUM FULL soon")))
     return checks
 
 
 def check_local_ticks(game_live: bool) -> list[Check]:
-    """The database the 200ms recorder writes to. The dashboard cannot see it."""
+    """The database the 200ms recorder writes to. The dashboard cannot see it.
+
+    Ruled by the heartbeat, not the data (B11): the recorder beats every cycle
+    whether or not a game is on, so a stale beat means DEAD **regardless of
+    game state** — "idle" is only claimable with a fresh beat. And a live game
+    with a fresh beat but zero rows is DEGRADED, loudly: alive-and-writing-
+    nothing is the exact state the old check read as healthy for 23 hours.
+    """
+    from core import heartbeat as hb
+
     try:
         engine = create_engine(LOCAL_URL)
         with engine.connect() as c:
@@ -171,19 +194,83 @@ def check_local_ticks(game_live: bool) -> list[Check]:
                 "select count(*) from market_snapshots "
                 "where captured_at > now() - interval '5 minutes'"
             )).scalar()
+            beat = c.execute(text(
+                "select extract(epoch from now() - beat_at), interval_seconds "
+                "from service_heartbeats where service = :s"
+            ), {"s": hb.SERVICE_LIVE}).one_or_none()
     except Exception as exc:
         return [Check(DEAD, "local ticks", f"unreachable: {str(exc)[:60]}")]
 
-    age = _age(latest)
+    beat_age, beat_interval = (float(beat[0]), float(beat[1])) if beat else (None, None)
+    ruling = hb.verdict(beat_age, beat_interval,
+                        game_live=game_live, rows_recent=recent)
+
+    tick_age = _age(latest)
+    if ruling == hb.DEAD:
+        limit = hb.stale_after_seconds(beat_interval) if beat_interval else None
+        detail = (
+            f"no heartbeat for {_fmt_age(beat_age)} (limit {limit:.0f}s) — DEAD, "
+            "idle is not claimable without a pulse"
+            if beat_age is not None
+            else "recorder has NEVER beaten — dead, or predates the heartbeat; "
+                 "restart it (docker compose up -d --build live-recorder)"
+        )
+        return [Check(DEAD, "local ticks (200ms)", detail)]
+    if ruling == hb.DEGRADED:
+        return [Check(WARN, "local ticks (200ms)",
+                      f"DEGRADED — GAME IS LIVE, heartbeat fresh "
+                      f"({_fmt_age(beat_age)}), and ZERO rows in 5min. "
+                      "Alive but writing nothing: the B11 failure, in progress.")]
     if game_live:
-        # During a game this recorder should be writing constantly. Silence here
-        # is the failure that cost two games of data.
-        status = OK if (age or 1e9) < 120 else DEAD
-        detail = f"{_fmt_age(age)} · {recent} rows in 5min — GAME IS LIVE"
-    else:
-        status = OK
-        detail = f"{_fmt_age(age)} · idle (no game in progress — expected)"
-    return [Check(status, "local ticks (200ms)", detail)]
+        return [Check(OK, "local ticks (200ms)",
+                      f"{_fmt_age(tick_age)} · {recent} rows in 5min — GAME IS LIVE")]
+    return [Check(OK, "local ticks (200ms)",
+                  f"{_fmt_age(tick_age)} · idle, and provably so "
+                  f"(heartbeat {_fmt_age(beat_age)})")]
+
+
+def check_app_heartbeats() -> list[Check]:
+    """Per-cycle beats for the writers on the app database (B11).
+
+    One rule for all of them, from `core.heartbeat.verdict`: a beat older than
+    3x the interval the service itself last reported means the process is not
+    running, whatever its schedule says. A service with no row at all has
+    either never run this code or is dead — treated as DEAD on purpose.
+    """
+    from core import heartbeat as hb
+    from core.storage.base import get_engine
+
+    try:
+        with get_engine().connect() as c:
+            rows = c.execute(text(
+                "select service, extract(epoch from now() - beat_at), "
+                "interval_seconds, rows_written, cycle_seconds "
+                "from service_heartbeats"
+            )).all()
+    except Exception as exc:
+        return [Check(DEAD, "heartbeats", f"query failed: {str(exc)[:60]}")]
+
+    seen = {r[0]: r for r in rows}
+    checks: list[Check] = []
+    for service in hb.APP_DB_SERVICES:
+        row = seen.get(service)
+        if row is None:
+            checks.append(Check(DEAD, f"beat: {service}",
+                                "NEVER beaten — dead, or predates the heartbeat; "
+                                "rebuild + restart the container"))
+            continue
+        _, age, interval, rows_written, cycle_s = row
+        age, interval = float(age), float(interval)
+        if hb.verdict(age, interval) == hb.DEAD:
+            checks.append(Check(DEAD, f"beat: {service}",
+                                f"last beat {_fmt_age(age)} — over 3x its "
+                                f"{interval:.0f}s cycle. The process is not running."))
+        else:
+            wrote = "n/a" if rows_written is None else f"{rows_written} rows"
+            checks.append(Check(OK, f"beat: {service}",
+                                f"{_fmt_age(age)} · cycle {interval:.0f}s · "
+                                f"{wrote} last cycle"))
+    return checks
 
 
 def check_espn() -> list[Check]:
@@ -232,17 +319,49 @@ def check_book_lines() -> list[Check]:
 
 
 def check_real_orders() -> list[Check]:
-    """The number that must stay 0 until the gates pass."""
+    """Both order counters, read from the `orders` table.
+
+    `orders_autonomous` must read 0 forever. It is a **tripwire, not the
+    defence** — the defence is the CHECK constraint
+    `ck_orders_accepted_requires_human`, which makes an accepted non-human
+    order unrepresentable. So this checks the constraint still exists too: a
+    counter that reads 0 because the rows are impossible and one that reads 0
+    because nobody has tried yet look identical, and only one of them is a
+    guarantee.
+    """
     from core.storage.base import get_engine
 
+    checks: list[Check] = []
     try:
         with get_engine().connect() as c:
-            n = c.execute(text(
-                "select count(*) from shadow_orders where mode is distinct from 'SHADOW'"
-            )).scalar()
-    except Exception:
-        return [Check(WARN, "autonomous orders", "could not verify")]
-    return [Check(OK if not n else DEAD, "autonomous orders", f"{n} (must be 0)")]
+            human, autonomous, rejected = c.execute(text("""
+                select
+                  count(*) filter (where accepted and mode = 'HUMAN_CONFIRM'),
+                  count(*) filter (where accepted and mode <> 'HUMAN_CONFIRM'),
+                  count(*) filter (where not accepted)
+                from orders
+            """)).one()
+            constraint = c.execute(text("""
+                select count(*) from pg_constraint
+                where conname = 'ck_orders_accepted_requires_human'
+            """)).scalar()
+    except Exception as exc:
+        return [Check(WARN, "order counters", f"could not verify: {str(exc)[:50]}")]
+
+    checks.append(Check(
+        OK, "orders (human-confirmed)",
+        f"{human} placed · {rejected} rejected/attempted",
+    ))
+    checks.append(Check(
+        OK if not autonomous else DEAD, "orders (autonomous)",
+        f"{autonomous} (must be 0)",
+    ))
+    checks.append(Check(
+        OK if constraint else DEAD, "  ^ enforced by",
+        "CHECK ck_orders_accepted_requires_human"
+        if constraint else "CONSTRAINT MISSING — the 0 above guarantees nothing",
+    ))
+    return checks
 
 
 def main() -> int:
@@ -261,6 +380,7 @@ def main() -> int:
         ("Host", check_sleep_guard()),
         ("Containers", check_containers()),
         ("Data feeds", check_espn() + check_book_lines()),
+        ("Heartbeats", check_app_heartbeats()),
         ("Databases", check_supabase() + check_local_ticks(live)),
         ("Safety", check_real_orders()),
     ]

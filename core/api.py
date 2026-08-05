@@ -13,23 +13,49 @@ exposed to a network.
 from __future__ import annotations
 
 import datetime as dt
+import hmac
+import os
 import time
+from decimal import Decimal
 from pathlib import Path
 
-from fastapi import FastAPI
+import structlog
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 
+from core import heartbeat
 from core.board import FINISHED, IN_PLAY, latest_snapshot_per_market, market_state
-from core.executor import ExecutorConfig
+from core.executor import (
+    VENUE_MAX_PRICE,
+    VENUE_MIN_PRICE,
+    ExecutionMode,
+    ExecutorConfig,
+    OrderSide,
+    OutcomeSide,
+    build_order,
+    round_to_tick,
+)
+from core.polymarket.client import (
+    MissingCredentialsError,
+    OrderSubmissionError,
+    PolymarketOrderClient,
+    USCredentials,
+)
+from core.ratelimit import TokenBucket
 from core.storage import (
     MarketSnapshot,
+    PlacedOrder,
     Prediction,
     ShadowOrder,
     get_engine,
     get_sessionmaker,
 )
 from core.team_mapping import parse_market_slug
+
+log = structlog.get_logger(__name__)
 
 UTC = dt.timezone.utc
 
@@ -41,6 +67,91 @@ _EXECUTOR_POLICY = ExecutorConfig()
 
 #: Below this the shadow sizer wanted the position but not a tradable amount.
 MIN_TICKET_QTY = 0.1
+
+#: The venue's own minimum. Matches `core.executor.DEFAULT_MIN_TRADE_QTY`.
+VENUE_MIN_QTY = Decimal("0.01")
+
+#: Hard ceiling on a single order, in dollars of stake. Fat-finger protection,
+#: not a risk model: there is no cancel button, so a size typed with one extra
+#: zero is unrecoverable. Deliberately an absolute cap rather than a multiple of
+#: the model's size, because the model's size is frequently ~0 on exactly the
+#: rows a human is most likely to override.
+MAX_ORDER_STAKE_USD = Decimal(os.environ.get("MERIDIAN_MAX_ORDER_STAKE_USD", "25"))
+
+
+def _derive_order_terms(pred) -> dict | None:
+    """The order the executor *would* build for this pick, computed on demand.
+
+    Why this exists: `shadow_orders` only holds rows the Kelly sizer sized above
+    the venue minimum. At a $35 bankroll that is one row in fourteen, so keying
+    the confirm button off stored shadow orders put a button on 7% of the board
+    and labelled the rest "too small" — which was not even true. They are not
+    too small to *trade*; they are too small for the *sizer*, which is a
+    statement about bankroll, not about the market.
+
+    The price is derived here and never accepted from the client. It reproduces
+    `Executor.decide` exactly: side is always BUY and a buy rests at the bid, so
+    the limit is the tick-rounded bid. That keeps the confirm path and the
+    shadow path quoting the same number, and keeps the one field where the
+    maker/taker economics live out of the caller's hands.
+
+    **Both outcomes are supported, and the NO side is where the care is.**
+
+    A totals market is one binary contract per line: YES is OVER, verified
+    against 490 settled markets. There is no separate UNDER slug, so betting
+    UNDER means buying the *NO* outcome of the same contract. The shadow
+    pipeline hardcodes `OrderSide.BUY` on YES, which is correct for an OVER
+    pick and the **opposite trade** for an UNDER one.
+
+    Two prices, and conflating them is the whole hazard:
+
+    ================  ==================  ==================
+    outcome           rests at            costs
+    ================  ==================  ==================
+    YES (OVER)        ``bid``             ``bid``
+    NO  (UNDER)       ``ask``             ``1 - ask``
+    ================  ==================  ==================
+
+    Buying NO is selling YES, so a *resting* NO buy sits at the YES **ask** —
+    joining the offer queue rather than crossing it. The venue then wants that
+    same ask in ``price.value``, because it documents "to trade the NO side at
+    any price X, set price.value = 1.00 - X", and X here is ``1 - ask``.
+
+    So ``limit_price`` below is the YES-side number in both cases, and
+    ``cost_per_contract`` is what the human actually pays. On the 2026-08-04
+    TOR-GSV board, `UNDER 155.5` (bid 0.81 / ask 0.84) becomes price.value 0.84
+    for a cost of 0.16 — against 0.19 to cross, and against the 0.81 that
+    buying YES at the bid would have cost for the reverse bet.
+    """
+    bid, ask, model = _f(pred.market_bid), _f(pred.market_ask), _f(pred.model_probability)
+    if bid is None or ask is None:
+        return None
+
+    # Same YES/NO determination the picks table uses for its label, so the
+    # button and the row it sits on can never disagree about direction.
+    is_no = model is not None and (bid - model) > (model - ask)
+
+    # A resting buy joins the near side: the bid for YES, the ask for NO.
+    limit_price = round_to_tick(ask if is_no else bid)
+    if not (VENUE_MIN_PRICE <= limit_price <= VENUE_MAX_PRICE):
+        return None
+
+    cost = (Decimal("1") - limit_price) if is_no else limit_price
+    if cost <= 0:
+        return None
+    max_qty = (MAX_ORDER_STAKE_USD / cost).quantize(Decimal("0.01"))
+    return {
+        "supported": True,
+        "outcome": OutcomeSide.NO.value if is_no else OutcomeSide.YES.value,
+        #: What the venue receives — always the YES-side price.
+        "limit_price": float(limit_price),
+        #: What you actually pay per contract. These differ on a NO order and
+        #: the ticket shows both, so a bad inversion is visible before sending.
+        "cost_per_contract": float(cost),
+        "min_quantity": float(VENUE_MIN_QTY),
+        "max_quantity": float(max_qty),
+        "max_stake_usd": float(MAX_ORDER_STAKE_USD),
+    }
 
 #: Model and market this close is not a disagreement, so it is not a bet.
 NO_BET_TOLERANCE = 0.02
@@ -137,8 +248,76 @@ select
   (select max(captured_at) from market_snapshots where book_tier is null),
   (select max(captured_at) from market_snapshots where book_tier is not null),
   pg_total_relation_size('market_snapshots')
-    + pg_total_relation_size('book_levels')
+    + pg_total_relation_size('book_levels'),
+  (select coalesce(jsonb_object_agg(service, jsonb_build_object(
+       'age_seconds', round(extract(epoch from now() - beat_at)::numeric, 1),
+       'interval_seconds', interval_seconds,
+       'rows_written', rows_written,
+       'game_live', game_live)), '{}'::jsonb)
+     from service_heartbeats)
 """)
+
+#: The live recorder's heartbeat lives in LOCAL Postgres, with its data — the
+#: whole point of B11's fix is that a heartbeat must be written where the
+#: writer writes, and this writer deliberately does not write to Supabase. The
+#: dashboard runs on the same host, so it reads both. Ages are computed by each
+#: database's own clock, immune to container clock skew.
+_LOCAL_HEARTBEAT_URL = os.environ.get(
+    "MERIDIAN_LOCAL_DATABASE_URL",
+    "postgresql+psycopg://meridian:meridian@localhost:5433/meridian",
+)
+
+_LOCAL_HEARTBEAT_SQL = text("""
+select
+  extract(epoch from now() - beat_at),
+  interval_seconds,
+  rows_written,
+  game_live,
+  (select count(*) from market_snapshots
+    where captured_at > now() - interval '5 minutes')
+from service_heartbeats where service = :service
+""")
+
+#: The two safety counters, read from the `orders` table on **every** call.
+#:
+#: Three deliberate choices, each of which the obvious alternative gets wrong:
+#:
+#: 1. **Exact `count(*)`, not `reltuples`.** Everything else on this endpoint
+#:    uses planner estimates because exact counts on 857k-row tables time out.
+#:    `orders` holds single digits, so an exact count is ~1ms — and an estimate
+#:    is worthless for an invariant that reads "must be 0 forever". `reltuples`
+#:    is also -1 until the first autovacuum, which would render as "-1 real
+#:    orders" on a fresh database.
+#:
+#: 2. **Not cached.** The five-second status cache is right for freshness
+#:    signals and wrong for this. The number that answers "has this system ever
+#:    traded autonomously?" should never be a value remembered from before.
+#:
+#: 3. **Derived from stored rows, never incremented.** There is no counter
+#:    variable anywhere in this process. A tally in memory is a claim about
+#:    history that resets on deploy; this is a query against what happened.
+#:
+#: `orders_autonomous` is a tripwire, not the defence. The defence is the CHECK
+#: constraint `ck_orders_accepted_requires_human`, which makes the row this
+#: counts unrepresentable. If this ever reads non-zero, the constraint is gone.
+_ORDER_COUNTS_SQL = text("""
+select
+  count(*) filter (where accepted and mode = 'HUMAN_CONFIRM')  as orders_human,
+  count(*) filter (where accepted and mode <> 'HUMAN_CONFIRM') as orders_autonomous,
+  count(*) filter (where not accepted)                         as orders_rejected
+from orders
+""")
+
+
+def _order_counts(session) -> dict:
+    """Both counters, straight from the table. Never a cached or in-memory tally."""
+    human, autonomous, rejected = session.execute(_ORDER_COUNTS_SQL).one()
+    return {
+        "orders_human": int(human or 0),
+        "orders_autonomous": int(autonomous or 0),
+        "orders_rejected": int(rejected or 0),
+    }
+
 
 _status_cache: dict = {"at": 0.0, "value": None}
 
@@ -204,6 +383,63 @@ def _ticket(bid: float | None, ask: float | None, model: float | None,
     }
 
 
+def _local_live_heartbeat() -> dict:
+    """The live recorder's beat, read from local Postgres.
+
+    Unreachable and missing both rule DEAD rather than unknown: the cost
+    asymmetry (a missed outage loses games permanently, a false alarm costs a
+    glance) says round ambiguity down, and "the health check cannot see the
+    writer" is precisely the state B11 sat in.
+    """
+    try:
+        engine = get_engine(_LOCAL_HEARTBEAT_URL, pool_size=1, max_overflow=0)
+        with engine.connect() as c:
+            row = c.execute(
+                _LOCAL_HEARTBEAT_SQL, {"service": heartbeat.SERVICE_LIVE}
+            ).one_or_none()
+    except Exception as exc:
+        return {"verdict": heartbeat.DEAD, "unreachable": str(exc)[:80]}
+    if row is None:
+        return {"verdict": heartbeat.DEAD, "missing": True}
+
+    age, interval, rows_written, game_live, rows_5min = row
+    age, interval = float(age), float(interval)
+    return {
+        "age_seconds": round(age, 1),
+        "interval_seconds": interval,
+        "stale_after_seconds": round(heartbeat.stale_after_seconds(interval), 1),
+        "rows_written": rows_written,
+        "game_live": game_live,
+        "rows_5min": int(rows_5min or 0),
+        "verdict": heartbeat.verdict(
+            age, interval, game_live=bool(game_live), rows_recent=int(rows_5min or 0)
+        ),
+    }
+
+
+def _heartbeat_report(beats: dict) -> dict:
+    """Verdicts for every expected writer, from the beats the primary DB holds
+    plus the live recorder's local one. A service with no row has never run
+    this code or is dead — DEAD either way."""
+    report: dict[str, dict] = {}
+    for service in heartbeat.APP_DB_SERVICES:
+        entry = beats.get(service)
+        if entry is None:
+            report[service] = {"verdict": heartbeat.DEAD, "missing": True}
+            continue
+        age = float(entry["age_seconds"])
+        interval = float(entry["interval_seconds"])
+        report[service] = {
+            "age_seconds": age,
+            "interval_seconds": interval,
+            "stale_after_seconds": round(heartbeat.stale_after_seconds(interval), 1),
+            "rows_written": entry.get("rows_written"),
+            "verdict": heartbeat.verdict(age, interval),
+        }
+    report[heartbeat.SERVICE_LIVE] = _local_live_heartbeat()
+    return report
+
+
 @app.get("/api/status")
 def status() -> dict:
     """Recorder health, in one cached round trip.
@@ -222,23 +458,36 @@ def status() -> dict:
     now_mono = time.monotonic()
     cached = _status_cache["value"]
     if cached is not None and now_mono - _status_cache["at"] < STATUS_CACHE_SECONDS:
-        return cached
+        # The order counters are re-read even on a cache hit. Everything else
+        # here is a freshness signal that tolerates five seconds of staleness;
+        # "has this system ever traded autonomously?" does not.
+        with _Session() as s:
+            return {**cached, **_order_counts(s)}
 
     with _Session() as s:
         row = s.execute(_HEALTH_SQL).one()
+        counts = _order_counts(s)
 
     (n_snap, n_levels, n_preds, n_orders,
-     newest, pregame_newest, live_newest, stream_bytes) = row
+     newest, pregame_newest, live_newest, stream_bytes, beats) = row
 
     now = dt.datetime.now(UTC)
     pregame_age = _age_seconds(pregame_newest, now)
     live_age = _age_seconds(live_newest, now)
 
-    # Health is the pregame recorder's, because it is the only writer expected
-    # to be running at all times. The live recorder is legitimately silent
-    # whenever no game is in progress, so its age is reported but never fails
-    # the check — otherwise the dashboard would show STALE every night.
-    healthy = pregame_age is not None and pregame_age < PREGAME_STALE_SECONDS
+    heartbeats = _heartbeat_report(beats or {})
+
+    # The pregame-freshness rule stays, and the heartbeat rule joins it (B11):
+    # any writer whose beat is older than 3x its own cycle interval is dead,
+    # **including the live recorder between games**. Its data is legitimately
+    # silent overnight; its heartbeat never is — that distinction is exactly
+    # what this endpoint could not express while two games of tick data were
+    # being lost.
+    healthy = (
+        pregame_age is not None
+        and pregame_age < PREGAME_STALE_SECONDS
+        and not any(v["verdict"] == heartbeat.DEAD for v in heartbeats.values())
+    )
 
     value = {
         "newest": newest.isoformat() if newest else None,
@@ -249,6 +498,10 @@ def status() -> dict:
         #: informational and is expected to be stale between games.
         "pregame_age_seconds": round(pregame_age, 1) if pregame_age is not None else None,
         "live_age_seconds": round(live_age, 1) if live_age is not None else None,
+        #: Per-service liveness (B11). `verdict` is 'dead' | 'degraded' |
+        #: 'idle' | 'ok'; any 'dead' fails `healthy`. 'degraded' means a live
+        #: game, a fresh beat, and zero rows — alive but writing nothing.
+        "heartbeats": heartbeats,
         "healthy": healthy,
         #: Approximate — planner statistics, not a scan. See _HEALTH_SQL.
         "counts_estimated": True,
@@ -259,11 +512,12 @@ def status() -> dict:
             "shadow_orders": int(n_orders or 0),
         },
         "stream_bytes": int(stream_bytes or 0),
-        "real_orders_placed": 0,   # shadow mode; nothing is ever sent
     }
     _status_cache["at"] = now_mono
     _status_cache["value"] = value
-    return value
+    # Counters are merged *after* the cache is written, so a cached payload can
+    # never carry a stale count of real orders.
+    return {**value, **counts}
 
 
 def _pricing_state(snap: MarketSnapshot, prediction, *, as_of: dt.datetime) -> str:
@@ -531,6 +785,7 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         if mtype == "total":
             side = "OVER" if side == "YES" else "UNDER"
         o = shadow.get(p.market_slug)
+        _order_terms = _derive_order_terms(p)
         human = _human_market(p.market_slug, p.sports_market_type, _f(p.line))
         out.append({
             "market_slug": p.market_slug,
@@ -545,8 +800,33 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
             "line": _f(p.line),
             "side": side,
             "edge": round(edge, 4),
-            "model": model,
-            "bid": bid, "ask": ask,
+            # Bid, ask and model are shown **in the frame of the position on
+            # this row**, which for a NO/UNDER pick is not the YES frame the
+            # database stores.
+            #
+            # This was the bug: a row read `UNDER 155.5 · BUY AT 0.20 · bid 0.80
+            # / ask 0.83`. Every number was individually right and the row as a
+            # whole was incoherent — BUY AT and SELL AT were already inverted to
+            # the UNDER side, while BID, ASK and MODEL were still quoting OVER.
+            # On the venue that market shows **bid 0.17 / ask 0.20**, which is
+            # exactly `1 - ask` and `1 - bid` of what we were printing.
+            #
+            # A binary's two sides are one book seen from opposite ends:
+            # `NO bid = 1 - YES ask`, `NO ask = 1 - YES bid`. Flipping the whole
+            # row into one frame makes BUY AT the NO ask (what crossing costs)
+            # and the resting price the NO bid — and makes the screen agree with
+            # the venue. The spread is frame-invariant, so it is unchanged.
+            **(
+                {"model": round(1.0 - model, 4), "bid": round(1.0 - ask, 4),
+                 "ask": round(1.0 - bid, 4)}
+                if side in ("NO", "UNDER")
+                else {"model": model, "bid": bid, "ask": ask}
+            ),
+            # The raw YES-side book, kept because every stored price, the venue
+            # payload's `price.value` and `shadow_orders` are all in this frame.
+            # Without it there is no way to reconcile the screen against the
+            # database.
+            "yes_frame": {"bid": bid, "ask": ask, "model": model},
             "game_start": start.isoformat(),
             "hours_to_tipoff": round(hours, 1),
             "spread": round(spread, 4),
@@ -556,11 +836,51 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
                 "quantity": _f(o.quantity),
                 "would_rest": o.would_rest,
             },
+            # What the confirm button offers. Present on every row the venue
+            # could accept, not only the ones the sizer sized.
+            #
+            # `default_quantity` is the model's size where it exists and the
+            # venue minimum where it does not. `sized_by_model` says which,
+            # so the ticket can be honest about whether the number in the box
+            # is a recommendation or just a floor.
+            # `default_quantity` inherits the model's size ONLY when the stored
+            # size was computed for the side we are actually taking.
+            #
+            # `shadow_run.py` sizes every pick as a YES buy — it passes
+            # `probability=model` and `price=market_ask`, both YES-frame, and
+            # has no concept of a NO position. So a shadow quantity on a NO row
+            # is Kelly's answer to a different question: how much YES to buy,
+            # not how much NO. Inheriting it would prefill the confirm box with
+            # a size derived from the opposite trade.
+            #
+            # Concretely, `SELL TOR +11.5` showed `SIZE 1.1` from a shadow order
+            # that was a YES buy, priced off a 0.42 bid from 18 hours earlier,
+            # while the live pick is NO at 0.50. Wrong side, wrong price, wrong
+            # time. NO rows therefore start at the venue minimum and say so.
+            "order": None if _order_terms is None else {
+                **_order_terms,
+                "default_quantity": (
+                    _f(o.quantity)
+                    if o is not None and _order_terms["outcome"] == OutcomeSide.YES.value
+                    else float(VENUE_MIN_QTY)
+                ),
+                "sized_by_model": (
+                    o is not None and _order_terms["outcome"] == OutcomeSide.YES.value
+                ),
+            },
             # The whole trade as one instruction. Every ingredient was already
             # on this row; none of them said what to actually do.
             "ticket": _ticket(
                 bid, ask, model, p.sports_market_type, human,
-                _f(o.quantity) if o is not None else None,
+                # Same rule as `default_quantity` above: a YES-side size is not
+                # the model's answer for a NO position, so the SIZE and STAKE
+                # columns show "not sized" rather than a number from the
+                # opposite trade.
+                _f(o.quantity)
+                if o is not None
+                and _order_terms is not None
+                and _order_terms["outcome"] == OutcomeSide.YES.value
+                else None,
             ),
         })
     # Ordered by tipoff: the soonest game is the one you can actually act on.
@@ -582,11 +902,11 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
 def results(limit: int = 2000) -> dict:
     """Resolved live predictions — what the model called, and what happened.
 
-    **Hit rate is the wrong metric and is reported only as a foil.** It asks
-    "was the probability on the correct side of 0.50", which is not a bet and
-    is trivially high because most contracts are lopsided. Measured on the
-    first 614 resolved rows it read 84% while the actual bets ran 38.5%, and
-    243 rows flagged "correct" were losing positions.
+    **`direction_rate_DIAGNOSTIC` is not performance and is reported only as a
+    foil.** It asks "was the probability on the correct side of 0.50", which is
+    not a bet and is trivially high because most contracts are lopsided.
+    Measured on the first 614 resolved rows it read 84% while the actual bets
+    ran 38.5%, and 243 rows flagged "correct" were losing positions.
 
     The metrics that mean something:
 
@@ -647,8 +967,8 @@ def results(limit: int = 2000) -> dict:
             "model": model,
             "market": market,
             "settled": settled,
-            # Kept for continuity, and deliberately NOT the headline.
-            "correct": (model > 0.5) == (settled == 1),
+            # DIAGNOSTIC: direction only, not a bet result.
+            "direction_correct": (model > 0.5) == (settled == 1),
             "bet_side": bet_side,
             "bet_won": bet_won,
             "model_version": p.model_version,
@@ -668,12 +988,331 @@ def results(limit: int = 2000) -> dict:
             "breakeven": BREAKEVEN_HIT_RATE,
             "brier_model": round(se_model / n_scored, 4) if n_scored else None,
             "brier_market": round(se_market / n_scored, 4) if n_scored else None,
-            # The honest headline, kept last so it reads as the footnote it is.
-            "hit_rate_MISLEADING": round(
-                sum(1 for r in out if r["correct"]) / len(out), 4
+            # Kept last so it reads as the footnote it is. Direction only —
+            # never a win rate, and never in a performance aggregate.
+            "direction_rate_DIAGNOSTIC": round(
+                sum(1 for r in out if r["direction_correct"]) / len(out), 4
             ) if out else None,
         },
     }
+
+
+# --------------------------------------------------------------------------- #
+# The human-confirmed order path
+# --------------------------------------------------------------------------- #
+#
+# This is the only route in the system that can move money, and it is the only
+# one that is authenticated. `core/api.py` is otherwise unauthenticated by
+# design — it serves a read-only dashboard — so the token here is not a login,
+# it is a second physical fact the caller must possess.
+#
+# Five independent gates, each of which alone is sufficient to refuse:
+#
+#   1. `MERIDIAN_ORDER_TOKEN` set in the server's environment, and matched.
+#   2. `mode` in the request body must be exactly HUMAN_CONFIRM.
+#   3. The price and size must match a ShadowOrder the system already computed.
+#   4. The market type must pass the same executor policy the picks page uses.
+#   5. Postgres refuses to record an accepted order in any other mode.
+#
+# Gate 3 is the one that is easy to skip and shouldn't be. Without it the token
+# holder can submit *any* price and size — the endpoint would be a generic
+# trading API with a password. With it, the endpoint can only ever transmit a
+# decision the model already made and the shadow pipeline already recorded.
+
+#: Paced well under the ~5 req/s at which the authenticated host starts
+#: returning 429 (findings.md V12). Order submission is human-driven and
+#: therefore naturally slow; this exists to make a stuck retry loop impossible
+#: rather than to shape normal traffic.
+_ORDER_BUCKET = TokenBucket(2.0, 2)
+
+#: How closely a submitted price/size must match the stored shadow order.
+#: Exact equality on Decimal after quantisation; the tolerance exists only to
+#: absorb JSON float round-tripping, not to permit a different order.
+_MATCH_TOLERANCE = Decimal("0.00005")
+
+
+class OrderRequest(BaseModel):
+    """What the confirm button sends.
+
+    The split matters:
+
+    * ``limit_price`` is an **echo**, not an instruction. The server derives the
+      price itself and refuses the request if the client's copy disagrees. That
+      catches a stale tab quoting a price the book has moved away from, without
+      ever letting the caller choose the price.
+    * ``quantity`` **is** an instruction, within bounds. The human is allowed to
+      size their own order — the model's size is a bankroll-constrained
+      suggestion, and on most rows it is below the venue minimum anyway.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    market_slug: str
+    mode: str
+    #: Echoed from the page; must match the server's own derivation.
+    limit_price: Decimal
+    #: Human-chosen. Bounded by the venue minimum and the stake cap.
+    quantity: Decimal
+
+
+def _require_order_token(request: Request) -> None:
+    """403 unless the caller presents the server's token.
+
+    A missing server-side token is also a 403, not a bypass. The failure mode
+    that matters is deploying without the variable set: if absent meant "no
+    check", the safest configuration would be the most permissive one.
+    """
+    expected = (os.environ.get("MERIDIAN_ORDER_TOKEN") or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=403,
+            detail="ordering disabled: MERIDIAN_ORDER_TOKEN is not set on the server",
+        )
+    presented = (request.headers.get("X-Meridian-Order-Token") or "").strip()
+    # Constant-time compare: this is a bearer secret and the endpoint is remote.
+    if not presented or not hmac.compare_digest(presented, expected):
+        raise HTTPException(status_code=403, detail="invalid or missing order token")
+
+
+@app.post("/api/orders")
+def submit_order(req: OrderRequest, request: Request) -> dict:
+    """Submit ONE human-confirmed limit order to the venue.
+
+    Returns the venue's answer plus the measured write latency, which is the
+    last unmeasured term in `docs/math/write-latency.md`.
+    """
+    _require_order_token(request)
+
+    # Gate 2. Not a default, not a coercion — an exact match or a refusal.
+    # This is checked before anything else touches the database or the venue.
+    if req.mode != ExecutionMode.HUMAN_CONFIRM.value:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"mode must be {ExecutionMode.HUMAN_CONFIRM.value}; got {req.mode!r}. "
+                "No other mode may reach the venue."
+            ),
+        )
+
+    with _Session() as s:
+        # Keyed off the latest *prediction*, not off `shadow_orders`. A pick the
+        # Kelly sizer declined to size still has a real market, a real book and
+        # a real price — it just has no stored order — and refusing to confirm
+        # it would put a button on 7% of the board for no safety reason.
+        latest = s.scalar(select(func.max(Prediction.predicted_at)))
+        pred = s.scalars(
+            select(Prediction).where(
+                Prediction.predicted_at == latest,
+                Prediction.market_slug == req.market_slug,
+            )
+        ).first() if latest is not None else None
+        if pred is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no current pick for {req.market_slug}; nothing to confirm",
+            )
+
+        # Gate 4 — the same policy the picks page filters on.
+        if not _EXECUTOR_POLICY.is_tradable(pred.sports_market_type):
+            raise HTTPException(
+                status_code=403,
+                detail=f"executor policy refuses {pred.sports_market_type}",
+            )
+
+        terms = _derive_order_terms(pred)
+        if terms is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"no usable book for {req.market_slug} right now",
+            )
+        # Gate 3c — direction. The outcome is the server's determination, never
+        # the caller's: a NO pick sent as a YES buy is the opposite trade, and
+        # the client does not get a say in which one it is.
+        outcome = OutcomeSide(terms["outcome"])
+
+        # Gate 3a — the PRICE is the server's, and the client's copy must agree.
+        # A mismatch means the page is stale, so the human is looking at a
+        # different trade than the one about to be sent.
+        server_price = Decimal(str(terms["limit_price"]))
+        if abs(server_price - req.limit_price) > _MATCH_TOLERANCE:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"price moved: server has {server_price}, page sent "
+                    f"{req.limit_price}. Reload the picks page."
+                ),
+            )
+
+        # Gate 3b — the SIZE is the human's, inside bounds. Below the venue
+        # minimum is unfillable; above the stake cap is almost always a typo,
+        # and there is no cancel button to undo one.
+        if req.quantity < VENUE_MIN_QTY:
+            raise HTTPException(
+                status_code=422,
+                detail=f"quantity {req.quantity} is below the venue minimum "
+                       f"{VENUE_MIN_QTY}",
+            )
+        # Stake is computed from the COST, not the price. On a NO order those
+        # differ by 1 - price, so charging the cap against `price` would size a
+        # cheap NO five times too small and an expensive one five times too big.
+        cost = Decimal(str(terms["cost_per_contract"]))
+        stake = (cost * req.quantity).quantize(Decimal("0.01"))
+        if stake > MAX_ORDER_STAKE_USD:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"stake ${stake} exceeds the ${MAX_ORDER_STAKE_USD} per-order "
+                    "cap (MERIDIAN_MAX_ORDER_STAKE_USD)"
+                ),
+            )
+
+        shadow = s.scalars(
+            select(ShadowOrder)
+            .where(ShadowOrder.market_slug == req.market_slug)
+            .order_by(ShadowOrder.decided_at.desc())
+            .limit(1)
+        ).first()
+
+        order = build_order(
+            market_slug=pred.market_slug,
+            side=OrderSide.BUY,          # we only ever open, never close
+            limit_price=server_price,    # YES-side price, both outcomes
+            quantity=req.quantity,
+            decided_at=latest,
+            outcome=outcome,
+        )
+
+        # Reserve the idempotency key BEFORE going to the venue. The UNIQUE
+        # constraint turns a double-click, a duplicated tab, or a retry into an
+        # integrity error instead of a second order. accepted=False, so this row
+        # is also the record of an attempt that never came back.
+        row = PlacedOrder(
+            submitted_at=dt.datetime.now(UTC),
+            idempotency_key=order.idempotency_key,
+            mode=ExecutionMode.HUMAN_CONFIRM.value,
+            market_slug=order.market_slug,
+            event_slug=pred.event_slug,
+            sports_market_type=pred.sports_market_type,
+            # `side` records the full direction: a bare "buy" would not
+            # distinguish buying OVER from buying UNDER, and those are opposite
+            # positions at the same price.
+            side=f"{order.side.value}_{order.outcome.value}".lower(),
+            order_type=order.order_type,
+            limit_price=order.limit_price,
+            quantity=order.quantity,
+            accepted=False,
+            market_bid=pred.market_bid,
+            market_ask=pred.market_ask,
+            # A buy resting at the bid does not cross by construction.
+            would_rest=True,
+            shadow_order_id=shadow.id if shadow is not None else None,
+            prediction_id=pred.id,
+            notes=(
+                None if shadow is not None
+                else "size chosen by human; Kelly sizer declined this row"
+            ),
+        )
+        s.add(row)
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="this exact order was already submitted (idempotency key exists)",
+            ) from None
+        row_id = row.id
+
+    # --- the venue call. Outside the session: never hold a DB connection open
+    # --- across a network round trip to a third party.
+    _ORDER_BUCKET.acquire()
+    try:
+        creds = USCredentials.from_env()
+    except MissingCredentialsError as exc:
+        _fail_order(row_id, error=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+    payload = order.to_payload()
+    try:
+        with PolymarketOrderClient(creds) as client:
+            result = client.submit_limit_order(payload)
+    except OrderSubmissionError as exc:
+        # Ambiguous: the order may or may not exist at the venue. The row stays
+        # accepted=False and records why, which is the honest state.
+        _fail_order(row_id, error=str(exc))
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+
+    accepted = result.status_code in (200, 201)
+    body = _parse_venue_body(result.body_text)
+    venue_id = None
+    venue_status = None
+    if isinstance(body, dict):
+        venue_id = body.get("orderId") or body.get("id") or body.get("clientOrderId")
+        venue_status = body.get("status") or body.get("state")
+
+    with _Session() as s:
+        stored = s.get(PlacedOrder, row_id)
+        stored.accepted = accepted
+        stored.http_status = result.status_code
+        stored.venue_order_id = str(venue_id) if venue_id else None
+        stored.venue_status = str(venue_status) if venue_status else None
+        stored.submit_latency_ms = Decimal(str(round(result.elapsed_ms, 2)))
+        if result.server_latency_ms is not None:
+            stored.venue_latency_ms = Decimal(str(round(result.server_latency_ms, 2)))
+        if not accepted:
+            stored.error = result.body_text[:1000]
+        s.commit()
+        counts = _order_counts(s)
+
+    log.info(
+        "human_confirmed_order",
+        market=order.market_slug,
+        accepted=accepted,
+        http_status=result.status_code,
+        submit_latency_ms=round(result.elapsed_ms, 1),
+        venue_latency_ms=result.server_latency_ms,
+    )
+
+    return {
+        "accepted": accepted,
+        "http_status": result.status_code,
+        "venue_order_id": venue_id,
+        "venue_status": venue_status,
+        # The measurement this whole path was also built to produce.
+        "submit_latency_ms": round(result.elapsed_ms, 1),
+        "venue_latency_ms": result.server_latency_ms,
+        "order": {
+            "market_slug": order.market_slug,
+            "side": order.side.value,
+            "outcome": order.outcome.value,
+            # Both numbers, because on a NO order they differ and only one of
+            # them is money leaving the account.
+            "limit_price": str(order.limit_price),      # sent as price.value
+            "cost_per_contract": str(order.cost_per_contract),
+            "quantity": str(order.quantity),
+            "stake": str(order.stake),
+            "order_type": order.order_type,
+        },
+        "response": result.body_text[:600],
+        **counts,
+    }
+
+
+def _parse_venue_body(text_body: str):
+    import json as _json
+    try:
+        return _json.loads(text_body)
+    except (ValueError, TypeError):
+        return None
+
+
+def _fail_order(row_id: int, *, error: str) -> None:
+    """Record why a submission never produced a venue answer."""
+    with _Session() as s:
+        stored = s.get(PlacedOrder, row_id)
+        if stored is not None:
+            stored.error = error[:1000]
+            s.commit()
 
 
 @app.get("/picks")

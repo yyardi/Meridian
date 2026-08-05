@@ -126,6 +126,35 @@ services:
       ESPN_RPS: "3"
     command: ["python", "-m", "core.feeds.live_odds_recorder", "--interval", "15"]
 
+  kalshi-recorder:
+    build: .
+    container_name: meridian-kalshi-recorder
+    # The second transactable venue (docs/kalshi-recorder.md). Ran twice as a
+    # manual foreground process and died twice with its terminal — exactly the
+    # failure mode the restart policy exists for. Kalshi snapshots are as
+    # unbackfillable as Polymarket's: a pregame price nobody wrote down is gone.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Same app database as the pregame recorder — the venue comparison joins
+      # kalshi_snapshots against market_snapshots, so they must live together.
+      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # Supabase session mode (5432) caps the PROJECT at 15 clients. Transaction
+      # mode (6543) shares a small server pool across many clients. Alembic
+      # still uses DATABASE_URL as given, so migrations keep session mode where
+      # their advisory locks work.
+      MERIDIAN_TX_POOLER: "1"
+      # Kalshi is its own host with its own budget — this does not draw on the
+      # Polymarket 20 req/s per-IP split (5 + 12) above. Demand is ~0.2 req/s.
+      KALSHI_RPS: "5"
+    # alembic upgrade first: the kalshi tables are one revision newer than what
+    # a long-running deployment may have, and a recorder that starts before its
+    # tables exist crash-loops. Concurrent upgrades from the sibling services
+    # are safe — Alembic serializes on a Postgres advisory lock.
+    command: ["sh", "-c", "alembic upgrade head && python -m core.kalshi"]
+
   scheduler:
     build: .
     container_name: meridian-scheduler

@@ -58,7 +58,7 @@ Every model output, forever. The long-run dataset.
 - `model_config` (JSONB) — **full config snapshot at prediction time**
 - `config_hash` (text, indexed) — **deterministic hash of `model_config`**
 - `reduced_confidence` (bool, default false), `confidence_notes` (text, nullable)
-- `resolved_outcome` (nullable, filled later), `resolved_at`, `was_correct`
+- `resolved_outcome` (nullable, filled later), `resolved_at`, `direction_correct`
 
 **Why `model_version` alone is not enough.** `model_version` is a hand-bumped module constant. Tunable parameters live in `strategies/wnba_totals/config.py` — decay half-life, shrinkage `k`, the Pythagorean exponent, the record coefficient. Changing any of those silently changes the model *without* bumping `model_version`, so two materially different models would share a version tag and the backtest would average them together.
 

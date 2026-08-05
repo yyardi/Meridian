@@ -15,9 +15,11 @@ Two reasons, both real:
 
 1. A ladder rung was observed quoting ``bid 0.03 / ask 0.39``. Crossing that
    fills nowhere near the intended price.
-2. Economics. The taker fee is ``+0.06 * C * p * (1-p)``; the maker coefficient
-   is ``-0.0125`` — a *rebate*. At p=0.50 that is 1.5c/contract paid versus
-   0.3c earned. Against a 2c spread, that swing is most of the edge.
+2. Economics. The taker fee is ``+0.06 * C * p * (1-p)``; a maker pays
+   nothing. At p=0.50 that is 1.5c/contract paid versus zero. Against a 2c
+   spread, that swing is most of the edge. (The venue advertises a maker
+   rebate, but it has never been observed in this account and is not booked —
+   findings C7.)
 
 Credentials
 -----------
@@ -46,9 +48,29 @@ UTC = dt.timezone.utc
 #: not a default — a constant, so there is nothing to pass incorrectly.
 _ORDER_TYPE = "ORDER_TYPE_LIMIT"
 
+#: (action, outcome) -> the venue's order intent, from
+#: docs.polymarket.us/api-reference/orders. Written as an exhaustive table
+#: rather than nested conditionals because the failure mode of getting one cell
+#: wrong is a real position on the wrong side of a real market, and a table can
+#: be read against the documentation line by line.
+#:
+#:     ORDER_INTENT_BUY_LONG    buy YES  (go long the Yes outcome)
+#:     ORDER_INTENT_SELL_LONG   sell YES (close a long Yes position)
+#:     ORDER_INTENT_BUY_SHORT   buy NO   (go long the No outcome)
+#:     ORDER_INTENT_SELL_SHORT  sell NO  (close a long No position)
+_ORDER_INTENT: dict[tuple, str] = {}   # populated below, after the enums exist
+
 #: Venue constraints, confirmed from live market payloads.
 DEFAULT_TICK_SIZE = Decimal("0.01")
 DEFAULT_MIN_TRADE_QTY = Decimal("0.01")
+
+#: Absolute exchange limits on `price.value`, per
+#: docs.polymarket.us/api-reference/orders: "Orders must have price.value
+#: between 0.01 and 0.99." Enforced locally so a price the venue would reject
+#: never becomes a submitted order — and, more importantly, so a NO order
+#: derived from a 1.00 ask fails here rather than at the venue.
+VENUE_MIN_PRICE = Decimal("0.01")
+VENUE_MAX_PRICE = Decimal("0.99")
 
 
 class ExecutionMode(str, Enum):
@@ -62,6 +84,32 @@ class ExecutionMode(str, Enum):
 class OrderSide(str, Enum):
     BUY = "buy"
     SELL = "sell"
+
+
+class OutcomeSide(str, Enum):
+    """Which outcome of the binary contract is being traded.
+
+    A totals market is **one** contract per line: YES is OVER. There is no
+    separate UNDER slug, so betting UNDER means buying the NO outcome of the
+    same contract. Verified against 490 settled markets — settlement flips
+    exactly at the line, e.g. GSV-TOR finished 158 and every line below it
+    settled 1 while every line above settled 0.
+
+    This distinction did not exist while the system only ever bought YES. It
+    has to exist now, because a NO position sent as a YES buy is not a rounding
+    error, it is the opposite trade.
+    """
+
+    YES = "YES"
+    NO = "NO"
+
+
+_ORDER_INTENT.update({
+    (OrderSide.BUY,  OutcomeSide.YES): "ORDER_INTENT_BUY_LONG",
+    (OrderSide.SELL, OutcomeSide.YES): "ORDER_INTENT_SELL_LONG",
+    (OrderSide.BUY,  OutcomeSide.NO):  "ORDER_INTENT_BUY_SHORT",
+    (OrderSide.SELL, OutcomeSide.NO):  "ORDER_INTENT_SELL_SHORT",
+})
 
 
 class ExecutionBlocked(RuntimeError):
@@ -78,21 +126,89 @@ class LimitOrder:
 
     market_slug: str
     side: OrderSide
+    #: **Always the YES-side price**, because that is what the venue's
+    #: ``price.value`` field means regardless of which outcome you are buying.
+    #: For a NO order this is *not* what you pay — see :attr:`cost_per_contract`.
     limit_price: Decimal
     quantity: Decimal
     idempotency_key: str
 
+    #: Which outcome. Defaults to YES so every existing caller — the shadow
+    #: pipeline, the backtest — keeps its current behaviour unchanged.
+    outcome: OutcomeSide = OutcomeSide.YES
+
     #: Fixed. Exposed for the payload builder, never settable by a caller.
     order_type: str = field(default=_ORDER_TYPE, init=False)
 
-    def to_payload(self) -> dict:
-        """Venue payload. Verify field names against docs.polymarket.us."""
+    @property
+    def cost_per_contract(self) -> Decimal:
+        """What one contract actually costs you.
+
+        For YES this is the limit price. For NO it is ``1 - limit_price``,
+        because the price field is quoted from the YES side either way.
+
+        This is the number a human should see on a ticket. Showing them
+        ``limit_price`` on a NO order would display 0.84 for a bet that costs
+        0.16 — which is not a cosmetic difference, it is the wrong side at four
+        times the price, and it is exactly the confusion this property exists
+        to prevent.
+        """
+        if self.outcome is OutcomeSide.NO:
+            return Decimal("1") - self.limit_price
+        return self.limit_price
+
+    @property
+    def stake(self) -> Decimal:
+        """Total cash at risk: cost per contract × quantity."""
+        return self.cost_per_contract * self.quantity
+
+    def to_payload(self, *, post_only: bool = True) -> dict:
+        """Venue payload, per docs.polymarket.us/api-reference/orders.
+
+        ``type`` is ``self.order_type``, which is ``init=False`` and therefore
+        not settable by any caller — a market order cannot be expressed through
+        this method because it cannot be expressed by this dataclass.
+
+        ``post_only`` maps to the venue's ``participateDontInitiate``: the order
+        may rest but must never cross. It defaults to True because the entire
+        economic case for this system is being a maker — the taker fee is
+        ``+0.06·C·p·(1-p)`` against a maker coefficient of at best 0, and
+        against a 2c spread that swing is most of the edge. An order that would
+        cross is rejected by the venue rather than filled expensively, which is
+        the outcome we want: a crossed limit is a mispriced decision, not a
+        trade worth having.
+
+        ``manualOrderIndicator`` is a CFTC-facing field and is truthfully
+        MANUAL: every order this system sends was clicked by a human.
+
+        **The price is always the YES side.** The venue documents this
+        explicitly: "The ``price.value`` field always represents the long
+        side's price, regardless of which order intent you use", with the
+        worked example that trading NO at 0.83 means sending 0.17. This class
+        stores ``limit_price`` in that convention already, so no inversion
+        happens here — the inversion lives in whoever *chooses* the price, and
+        :attr:`cost_per_contract` is how a human sees what they pay.
+        """
         return {
-            "market": self.market_slug,
-            "side": self.side.value,
-            "type": self.order_type,          # always limit
-            "price": str(self.limit_price),
+            "marketSlug": self.market_slug,
+            "type": self.order_type,          # always ORDER_TYPE_LIMIT
+            "price": {"value": str(self.limit_price), "currency": "USD"},
             "quantity": str(self.quantity),
+            "tif": "TIME_IN_FORCE_GOOD_TILL_CANCEL",
+            "intent": _ORDER_INTENT[(self.side, self.outcome)],
+            # The venue accepts either `intent` alone or this pair, and
+            # documents that **when both are sent the pair wins**. Sending both
+            # is therefore not redundant belt-and-braces — it makes the
+            # authoritative field the explicit one. `outcomeSide` names the
+            # outcome directly, where `intent` encodes it as long/short and
+            # relies on the reader knowing that "short" means buying NO.
+            "outcomeSide": f"OUTCOME_SIDE_{self.outcome.value}",
+            "action": (
+                "ORDER_ACTION_BUY" if self.side is OrderSide.BUY
+                else "ORDER_ACTION_SELL"
+            ),
+            "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_MANUAL",
+            "participateDontInitiate": post_only,
             "clientOrderId": self.idempotency_key,
         }
 
@@ -124,13 +240,26 @@ def would_rest(
     return limit_price > best_bid
 
 
-def make_idempotency_key(*, market_slug: str, decided_at: dt.datetime, limit_price: Decimal) -> str:
+def make_idempotency_key(
+    *,
+    market_slug: str,
+    decided_at: dt.datetime,
+    limit_price: Decimal,
+    outcome: OutcomeSide = OutcomeSide.YES,
+) -> str:
     """Deterministic key so a retry cannot double-place.
 
-    Not used in shadow mode (nothing is sent), but the key is recorded now so
-    the v2 human-confirm path inherits it rather than bolting it on later.
+    The outcome is folded in **only for NO**, deliberately. A YES order's key is
+    byte-identical to what this function produced before outcomes existed, so
+    the 1,700 rows already in `shadow_orders` keep their keys and
+    `on_conflict_do_nothing` keeps working. A NO order on the same market at the
+    same price is a genuinely different order and must not collide with its YES
+    counterpart — which it otherwise would, since both quote the same YES-side
+    price.
     """
     raw = f"{market_slug}|{decided_at.isoformat()}|{limit_price}"
+    if outcome is OutcomeSide.NO:
+        raw += "|NO"
     return "mer-" + hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
@@ -141,16 +270,26 @@ def build_order(
     limit_price: Decimal,
     quantity: Decimal,
     decided_at: dt.datetime,
+    outcome: OutcomeSide = OutcomeSide.YES,
 ) -> LimitOrder:
     """Construct a limit order.
 
-    ``limit_price`` is a required keyword argument. There is no code path that
-    produces an order without one, and no parameter that selects a different
-    order type.
+    ``limit_price`` is a required keyword argument and is **always the YES-side
+    price**, whichever outcome is being bought — that is the venue's
+    convention for ``price.value`` and keeping one convention end to end is
+    what stops an inversion getting applied twice or not at all.
+
+    The bound is the venue's own: ``price.value`` must be between 0.01 and
+    0.99. That is stricter than "inside (0, 1)" and it is the real constraint —
+    a NO order priced off a 1.00 ask would otherwise be built here and rejected
+    at the venue.
     """
     price = round_to_tick(limit_price)
-    if not (Decimal("0") < price < Decimal("1")):
-        raise ValueError(f"limit_price {price} outside (0, 1)")
+    if not (VENUE_MIN_PRICE <= price <= VENUE_MAX_PRICE):
+        raise ValueError(
+            f"price.value {price} outside the venue's "
+            f"[{VENUE_MIN_PRICE}, {VENUE_MAX_PRICE}] range"
+        )
     if quantity <= 0:
         raise ValueError("quantity must be positive")
     return LimitOrder(
@@ -158,8 +297,10 @@ def build_order(
         side=side,
         limit_price=price,
         quantity=quantity,
+        outcome=outcome,
         idempotency_key=make_idempotency_key(
-            market_slug=market_slug, decided_at=decided_at, limit_price=price
+            market_slug=market_slug, decided_at=decided_at,
+            limit_price=price, outcome=outcome,
         ),
     )
 
