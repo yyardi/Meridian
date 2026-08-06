@@ -78,9 +78,19 @@
   #confirmBtn{background:#123021;color:#4fe6a0;border:1px solid #1e5238;font-weight:700}
   #confirmBtn:disabled{opacity:.5;cursor:not-allowed}
   #tresult{padding:0 15px 13px;font-size:10.5px;line-height:1.6;display:none}
-  #qty{font:inherit;font-size:12px;background:#0c0f15;color:var(--txt);border:1px solid #2a3346;
-       border-radius:3px;padding:2px 6px;width:78px;text-align:right}
-  #qty:focus{outline:none;border-color:var(--accent)}
+  #qty,#px,#exitpx{font:inherit;font-size:12px;background:#0c0f15;color:var(--txt);
+       border:1px solid #2a3346;border-radius:3px;padding:2px 6px;width:78px;text-align:right}
+  #qty:focus,#px:focus,#exitpx:focus{outline:none;border-color:var(--accent)}
+  .restlbl{font-size:9.5px;padding:1px 6px;border-radius:2px;margin-left:6px}
+  .rests{background:#10261c;color:#3fd48f}
+  .crosses{background:#2a1f14;color:#ffb020}
+  #ackwrap{margin:11px 15px 0;padding:8px 10px;border-radius:4px;font-size:10.5px;
+           line-height:1.6;background:#2a1414;color:#ff7b80;border:1px solid #4d2020;
+           display:none}
+  #ackwrap b{color:#ff9ba0}
+  .fillFAILED{color:var(--neg);font-weight:700}
+  .fillFILLED{color:var(--pos)} .fillPARTIAL{color:var(--warn)}
+  .fillCANCELLED,.fillEXPIRED{color:var(--dim)}
 </style>
 </head>
 <body>
@@ -106,6 +116,7 @@
     <h3>Confirm order — this sends real money</h3>
     <div class="rows" id="trows"></div>
     <div class="twarn" id="twarn"></div>
+    <div id="ackwrap"></div>
     <div id="tresult"></div>
     <div class="tacts">
       <button id="cancelBtn">Cancel</button>
@@ -125,6 +136,9 @@
 
   <h2>Tonight's pregame picks <span id="hint" class="dimc" style="text-transform:none;letter-spacing:0"></span></h2>
   <div id="picks"></div>
+
+  <h2 style="margin-top:24px">Real orders — venue truth from the fill watcher</h2>
+  <div id="orders"></div>
 
   <h2 style="margin-top:24px">Past predictions — what actually happened</h2>
   <div class="kpis" id="rk"></div>
@@ -217,18 +231,30 @@ let PENDING = null;
 function openTicket(p){
   PENDING = p;
   const o = p.order;
+  /* One frame end to end (V15): every number the human can type or read here
+     is in the COST frame of the outcome being bought. The venue's YES-side
+     price.value appears only as the secondary "venue format" line, computed
+     live from the typed price; the server re-derives it and never trusts the
+     page's copy. */
   $("#trows").innerHTML = `
     <div class="trow"><span class="k">Market</span><span>${p.human||p.market_slug}</span></div>
     <div class="trow"><span class="k">Position</span><span>${p.ticket?p.ticket.label:p.side}</span></div>
     <div class="trow"><span class="k">Buying</span><span><b>${o.outcome}</b>${
       o.outcome==="NO" ? ' <span class="dimc">(the UNDER / sell side)</span>' : ''}</span></div>
-    <div class="trow"><span class="k">Order type</span><span>LIMIT · post-only · resting</span></div>
-    <div class="trow"><span class="k">You pay per contract</span><span><b>${num(o.cost_per_contract,4)}</b></span></div>
-    <div class="trow"><span class="k">Sent as price.value</span><span class="dimc">${num(o.limit_price,4)}${
-      o.outcome==="NO" ? " (YES-side, = 1 − "+num(o.cost_per_contract,4)+")" : ""}</span></div>
+    <div class="trow"><span class="k">Order type</span><span>LIMIT · good-till-cancel</span></div>
+    <div class="trow"><span class="k">Buy at (per contract)</span>
+      <span><input id="px" type="number" step="0.01" min="0.01" max="0.99"
+                   value="${num(o.cost_per_contract,2)}"><span id="restlbl"></span></span></div>
+    <div class="trow"><span class="k">Venue format</span><span class="dimc" id="venuepx"></span></div>
     <div class="trow"><span class="k">Book now (${o.outcome} side)</span><span class="dimc">bid ${num(p.bid)} / ask ${num(p.ask)}</span></div>${
       o.outcome==="NO" ? `<div class="trow"><span class="k">&nbsp;&nbsp;same book, YES side</span><span class="dimc">bid ${
         num(p.yes_frame.bid)} / ask ${num(p.yes_frame.ask)}</span></div>` : ""}
+    <div class="trow"><span class="k">Then sell at <span class="dimc">(optional exit)</span></span>
+      <span><input id="exitpx" type="number" step="0.01" min="0.01" max="0.99"
+                   value="${o.fair_value==null?"":num(o.fair_value,2)}"></span></div>
+    <div style="padding:2px 0 6px;font-size:10.5px;line-height:1.5" class="dimc">${
+      o.fair_value==null ? "No model fair value — blank means no exit."
+      : "Prefilled with model fair value "+num(o.fair_value,2)+" — the edge is collected when the market reaches the model. Sent when the entry fills, for the FILLED quantity, at exactly this price. Clear the box for no exit."}</div>
     <div class="trow"><span class="k">Quantity</span>
       <span><input id="qty" type="number" step="0.01" min="${o.min_quantity}"
                    max="${o.max_quantity}" value="${o.default_quantity}"> contracts</span></div>
@@ -236,48 +262,93 @@ function openTicket(p){
       <span class="dimc">${o.sized_by_model
         ? num(o.default_quantity,2)+" contracts"
         : "Kelly wanted below the "+o.min_quantity+" minimum"}</span></div>
+    <div class="trow"><span class="k">Return if exit fills</span><span id="retOut" class="dimc">—</span></div>
     <div class="trow big"><span class="k">Maximum stake</span><b id="stakeOut">—</b></div>`;
 
-  const qty = $("#qty"), out = $("#stakeOut");
+  const qty = $("#qty"), px = $("#px"), exitpx = $("#exitpx"), out = $("#stakeOut");
+  const onTick = v => Math.abs(v*100 - Math.round(v*100)) < 1e-6;
   const recalc = () => {
-    const q = parseFloat(qty.value);
-    if(!isFinite(q) || q < o.min_quantity){
-      out.innerHTML = `<span class="bad">below ${o.min_quantity} minimum</span>`;
-      $("#confirmBtn").disabled = true; return;
+    const q = parseFloat(qty.value), price = parseFloat(px.value);
+    const exitv = exitpx.value.trim() === "" ? null : parseFloat(exitpx.value);
+    const bad = m => { out.innerHTML = `<span class="bad">${m}</span>`;
+                       $("#confirmBtn").disabled = true; };
+    if(!isFinite(price) || price < 0.01 || price > 0.99)
+      return bad("price must be 0.01–0.99");
+    if(!onTick(price))
+      return bad("price must sit on the 1¢ tick (V2)");
+    if(exitv !== null && (!isFinite(exitv) || exitv < 0.01 || exitv > 0.99 || !onTick(exitv)))
+      return bad("exit price must be 0.01–0.99 on the 1¢ tick");
+    if(!isFinite(q) || q < o.min_quantity)
+      return bad(`below ${o.min_quantity} minimum`);
+
+    // Live rests/crosses label. Crossing pays the taker fee 0.06·C·p·(1−p);
+    // p(1−p) is frame-invariant, so the cost-frame price is fine here.
+    const feeC = 6 * price * (1 - price);
+    $("#restlbl").innerHTML = price < o.cross_price
+      ? '<span class="restlbl rests">rests — may not fill</span>'
+      : `<span class="restlbl crosses">crosses — fills now, taker fee ~${feeC.toFixed(1)}¢</span>`;
+    // The venue's YES-frame price.value, always shown so the frame conversion
+    // is visible before sending — the server derives the same number itself.
+    const vpx = o.outcome === "NO" ? (1 - price) : price;
+    $("#venuepx").textContent = o.outcome === "NO"
+      ? `${vpx.toFixed(2)} (= 1 − ${price.toFixed(2)}, YES-side price.value)`
+      : `${vpx.toFixed(2)} (YES-side price.value — same number)`;
+    // Return is computed off the SAME price that will be sent — not off a
+    // display-only number (the old ticket showed the ask, posted the bid).
+    $("#retOut").innerHTML = exitv === null
+      ? '<span class="dimc">no exit attached</span>'
+      : `<b class="${exitv>price?"pos":"neg"}">${pct(exitv/price - 1)}</b>
+         <span class="dimc">buy ${price.toFixed(2)} → sell ${exitv.toFixed(2)}</span>`;
+
+    // Fat-finger hard confirm: >5¢ through the far touch is the V14
+    // wrong-side shape. Both frames spelled out; a checkbox, not a dialog,
+    // so the acknowledgement is explicit and inspectable.
+    const through = price - o.cross_price;
+    if(through > 0.05){
+      // Rebuilt on every recalc (the numbers in it are live) — but the
+      // checkbox state must survive the rebuild, or ticking it retriggers
+      // recalc and immediately unticks it.
+      const wasChecked = !!(document.getElementById("ackbox")||{}).checked;
+      $("#ackwrap").style.display = "block";
+      $("#ackwrap").innerHTML =
+        `<b>${(through*100).toFixed(0)}¢ through the far touch.</b> `
+        + `Crossing costs ${num(o.cross_price,2)}; you typed ${price.toFixed(2)} `
+        + `(${o.outcome} cost frame) = price.value ${vpx.toFixed(2)} (YES frame). `
+        + `This is how the wrong-side trade happens — paying 0.81 for a 0.16 bet. `
+        + `<label><input type="checkbox" id="ackbox"> I mean to cross this far</label>`;
+      const box = $("#ackbox");
+      box.checked = wasChecked;
+      box.addEventListener("change", recalc);
+    } else {
+      $("#ackwrap").style.display = "none";
+      $("#ackwrap").innerHTML = "";
     }
-    // Stake is cost × qty, NOT price × qty. On a NO order those differ by
-    // 1 - price, and the cost is the one that leaves the account.
-    const stake = q * o.cost_per_contract;
-    if(stake > o.max_stake_usd){
-      out.innerHTML = `<span class="bad">$${stake.toFixed(2)} — over the $${o.max_stake_usd} cap</span>`;
-      $("#confirmBtn").disabled = true; return;
-    }
+
+    const stake = q * price;
+    if(stake > o.max_stake_usd)
+      return bad(`$${stake.toFixed(2)} — over the $${o.max_stake_usd} cap`);
     // Sub-cent stakes are real and common here: the default is the 0.01-contract
     // venue minimum, which on a 0.19 contract is $0.0019. Rendering that as
     // "$0.00" reads as free, or as broken. Show enough digits to see the number.
     out.textContent = stake < 0.01 ? "$" + stake.toFixed(4) : "$" + stake.toFixed(2);
-    $("#confirmBtn").disabled = false;
+    $("#confirmBtn").disabled = through > 0.05 && !(document.getElementById("ackbox")||{}).checked;
   };
   qty.addEventListener("input", recalc);
+  px.addEventListener("input", recalc);
+  exitpx.addEventListener("input", recalc);
   recalc();
 
-  /* The limit price is the executor's, not the BUY column. Those genuinely
-     differ: the executor rests at the bid to earn the maker side, the BUY
-     column quotes the ask you would pay to cross now. Showing the gap is the
-     point — it is the difference between the order being sent and the fill
-     you were reading about. */
   const edgeWarn = p.edge < 0
     ? `<b>The model is against this trade</b> (edge ${pct(p.edge)}). It expects to lose money. `
     : "";
-  const crossCost = p.ticket ? num(p.ticket.buy_at) : "—";
   $("#twarn").innerHTML = edgeWarn
     + (o.outcome === "NO"
-        ? `Buying <b>NO</b>. The venue quotes every price from the YES side, so this is `
-          + `sent as <b>${num(o.limit_price,4)}</b> and costs you `
-          + `<b>${num(o.cost_per_contract,4)}</b> per contract. `
+        ? `Buying <b>NO</b>. Every number on this ticket is in the NO cost frame; `
+          + `the venue receives the YES-side price.value shown on the venue-format line. `
         : "")
-    + `Resting order — it earns the maker side and may never fill. The BUY column shows `
-    + `${crossCost}, which is what you would pay to cross right now. This does not cross.`;
+    + `Pre-filled at the resting price (${num(o.cost_per_contract,2)}) — it earns the maker `
+    + `side and may never fill. Crossing now costs ${num(o.cross_price,2)}. Nudge the price `
+    + `if the book is a cent away from the model's number.`;
 
   $("#tresult").style.display = "none";
   $("#confirmBtn").textContent = "Confirm & send";
@@ -316,8 +387,13 @@ async function sendOrder(){
       body: JSON.stringify({
         market_slug: p.market_slug,
         mode: "HUMAN_CONFIRM",          // the only value the server accepts
-        limit_price: o.limit_price,     // echo; the server derives its own
+        // The typed price, in the outcome's COST frame. The server converts
+        // to the YES-frame price.value itself — the page never does.
+        limit_price: parseFloat($("#px").value),
         quantity: qty,                  // the human's number, bounds-checked
+        // Optional attached exit, same cost frame. null = no exit.
+        exit_price: $("#exitpx").value.trim()==="" ? null : parseFloat($("#exitpx").value),
+        acknowledge_crossing: !!(document.getElementById("ackbox")||{}).checked,
       }),
     });
     const d = await r.json();
@@ -326,9 +402,13 @@ async function sendOrder(){
         + `<b>${d.venue_order_id||"—"}</b><br><span class="dimc">write latency `
         + `${d.submit_latency_ms}ms round-trip`
         + (d.venue_latency_ms!=null?` · ${d.venue_latency_ms}ms venue-side`:"")
-        + `</span>`;
+        + `</span>`
+        + (d.exit ? `<br><span class="dimc">exit stored: sell at ${d.exit.sell_at} `
+            + `(price.value ${d.exit.price_value}) — submitted when the entry fills, `
+            + `for the filled quantity</span>` : "");
       markRow(p.market_slug, "done", "SENT");
       loadStatus();
+      loadOrders();
     } else {
       out.innerHTML = `<span class="bad">REJECTED</span> · HTTP ${r.status}<br>`
         + `<span class="dimc">${(d.detail||d.response||JSON.stringify(d)).slice(0,300)}</span>`;
@@ -359,6 +439,45 @@ async function loadStatus(){
   } catch(e){ /* the pill is informational; a failure here must not break picks */ }
 }
 loadStatus();
+
+/* Real orders with venue-truth fill state, reconciled by the fill watcher
+   every 60s and attributed by venue order id only. `fill_status` of null is
+   shown as "not reconciled" — "we have not looked" is a different claim from
+   "we looked and it is resting". A FAILED exit is the loudest thing on this
+   page: the human believes a resting exit protects that position and it does
+   not. */
+async function loadOrders(){
+  try{
+    const d = await (await fetch("/api/orders/recent")).json();
+    if(!d.orders || !d.orders.length){
+      $("#orders").innerHTML = '<div class="empty">no real orders yet</div>'; return;
+    }
+    const fills = f => f==null
+      ? '<span class="dimc" title="the fill watcher has not reconciled this row yet">not reconciled</span>'
+      : `<span class="fill${f}">${f}</span>`;
+    $("#orders").innerHTML = `<table><thead><tr>
+      <th class="l">When</th><th class="l">Market</th><th class="l">Side</th>
+      <th>price.value</th><th>Qty</th><th>Accepted</th><th class="l">Fill</th>
+      <th>Filled</th><th class="l">Attached exit</th>
+    </tr></thead><tbody>${d.orders.map(o=>`
+      <tr>
+        <td class="l dimc">${new Date(o.submitted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td>
+        <td class="l">${shortSlug(o.market_slug)}${o.pre_authorized?' <span class="dimc" title="pre-authorized exit: every term was fixed by a human click; the watcher only chose when">⏎ exit</span>':''}</td>
+        <td class="l">${o.side}</td>
+        <td>${num(o.limit_price)}</td>
+        <td>${num(o.quantity,2)}</td>
+        <td class="${o.accepted?"ok":"bad"}">${o.accepted?"✓":"✗"}</td>
+        <td class="l">${fills(o.fill_status)}</td>
+        <td>${o.filled_quantity==null?'<span class="dimc">—</span>':num(o.filled_quantity,2)}</td>
+        <td class="l">${o.exit==null?'<span class="dimc">—</span>':
+          o.exit.state==="FAILED"
+            ? `<span class="fillFAILED" title="${(o.exit.error||"").replace(/"/g,"&quot;")}">FAILED — position is NOT protected</span>`
+            : `${o.exit.state.toLowerCase()} @ ${num(o.exit.sell_at)}`}</td>
+      </tr>`).join("")}</tbody></table>`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadOrders();
+setInterval(loadOrders, 30000);
 
 fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 

@@ -312,13 +312,42 @@ def priced_pick():
         s.commit()
 
 
-def test_price_is_server_derived_and_a_stale_page_is_refused(client, priced_pick):
-    """Gate 3a. The price is never the caller's to choose — the server derives
-    the tick-rounded bid, exactly as `Executor.decide` would."""
+def test_a_price_far_through_the_far_touch_needs_the_hard_confirm(client, priced_pick):
+    """Gate 3a, new form. The price is the human's to nudge — but 0.95 against
+    an 0.55 ask is 40¢ through the far touch, which is the V14 wrong-side
+    shape, and it must be unreachable without the hard confirm."""
     r = client.post("/api/orders", json=_body(limit_price=0.95, quantity=1),
                     headers={"X-Meridian-Order-Token": "test-token"})
-    assert r.status_code == 409
-    assert "price moved" in r.json()["detail"]
+    assert r.status_code == 422
+    assert "through the far touch" in r.json()["detail"]
+    # The refusal spells out both frames, so the human sees the actual trade.
+    assert "price.value" in r.json()["detail"]
+
+
+def test_a_nudged_price_inside_the_book_is_accepted(client, priced_pick):
+    """The behaviour Part 3 exists for: the book is 0.52/0.55, the human types
+    0.53 to jump the queue by a cent. Reaching the 503 (no venue credentials
+    in the test env) proves every gate passed."""
+    r = client.post("/api/orders", json=_body(limit_price=0.53, quantity=1),
+                    headers={"X-Meridian-Order-Token": "test-token"})
+    assert r.status_code not in (403, 404, 409, 422), r.json()
+
+
+@pytest.mark.parametrize("price", [0.005, 0.995, 1.2, 0.0])
+def test_price_outside_venue_bounds_is_refused(client, priced_pick, price):
+    r = client.post("/api/orders", json=_body(limit_price=price, quantity=1),
+                    headers={"X-Meridian-Order-Token": "test-token"})
+    assert r.status_code == 422
+
+
+def test_price_off_the_one_cent_tick_is_refused_not_rounded(client, priced_pick):
+    """V2: the tick is 1¢ everywhere. 0.515 is not a placeable price, and
+    silently rounding it would make the number sent differ from the number
+    typed — the exact class of divergence Part 3 removes."""
+    r = client.post("/api/orders", json=_body(limit_price=0.515, quantity=1),
+                    headers={"X-Meridian-Order-Token": "test-token"})
+    assert r.status_code == 422
+    assert "tick" in r.json()["detail"]
 
 
 def test_a_human_may_choose_a_size_the_model_did_not(client, priced_pick):
@@ -527,8 +556,11 @@ def test_a_no_side_row_can_be_confirmed_end_to_end(client):
         ))
         s.commit()
     try:
+        # The request price is in the NO cost frame the ticket displays:
+        # resting NO cost = 1 - 0.84 ask = 0.16. The server converts to the
+        # YES-frame price.value (0.84) itself.
         r = client.post("/api/orders",
-                        json=_body(market_slug=slug, limit_price=0.84, quantity=1),
+                        json=_body(market_slug=slug, limit_price=0.16, quantity=1),
                         headers={"X-Meridian-Order-Token": "test-token"})
         assert r.status_code not in (403, 404, 409, 422), r.json()
     finally:
@@ -604,9 +636,16 @@ def test_no_row_reports_the_book_in_the_no_frame():
         assert row["yes_frame"] == {"bid": 0.80, "ask": 0.83, "model": 0.7319}
         # Spread is frame-invariant.
         assert row["spread"] == pytest.approx(0.03)
-        # Crossing costs the displayed ask; the resting order pays the bid.
-        assert row["ticket"]["buy_at"] == pytest.approx(0.20)
+        # BUY AT is the RESTING price — the number the order sends — and the
+        # crossing cost is its own column. Before Part 3 the ticket showed
+        # 0.20 (the ask) while the order posted at 0.17, and return_pct was
+        # computed off the display number.
+        assert row["ticket"]["buy_at"] == pytest.approx(0.17)
+        assert row["ticket"]["cross_at"] == pytest.approx(0.20)
         assert row["order"]["cost_per_contract"] == pytest.approx(0.17)
+        # Ticket-displayed price == what would be stored, frame-converted.
+        assert row["ticket"]["buy_at"] == pytest.approx(
+            1.0 - row["order"]["limit_price"])
     finally:
         _unseed_pick(slug)
 
@@ -811,7 +850,10 @@ def test_only_the_api_endpoint_imports_the_order_client():
     import pathlib
 
     root = pathlib.Path(__file__).parent.parent
-    allowed = {"core/api.py", "core/polymarket/client.py"}
+    # core/fill_watcher.py added 2026-08-05, on purpose: it submits the
+    # pre-authorized exits — orders whose every term a human fixed on the
+    # ticket, which the watcher may only transmit when the entry fills.
+    allowed = {"core/api.py", "core/polymarket/client.py", "core/fill_watcher.py"}
     offenders = []
     for path in root.rglob("*.py"):
         rel = path.relative_to(root).as_posix()

@@ -35,6 +35,8 @@ Measured on the live board, not assumed.
 | V14 | **YES = OVER (490 settled markets vs 22 artifacts), and NO orders send the YES-side price** | `price.value = 1 − cost`; a resting NO buy sits at the **ask** | 2026-08-04 | UNDER/SELL picks are orderable. Buying YES on an UNDER row would have paid 0.81 for a 0.16 bet — the opposite side. See below |
 | V15 | **A price is meaningless without its side** | picks table mixed frames: `UNDER 155.5 · BUY AT 0.20 · bid 0.80/ask 0.83`, vs the venue's 0.17/0.20 | 2026-08-04 | Rows now quote one frame throughout; `yes_frame` retained for reconciliation. See below |
 | V16 | **The shadow sizer sizes every pick as a YES buy** | `shadow_run.py` passes `probability=model`, `price=ask` for NO rows too | 2026-08-04 | Most of `shadow_orders` carries a size for the opposite trade. **Not yet fixed** — see below before quoting stake-weighted numbers |
+| V17 | **Order write latency: 93–124ms round-trip, 14–23ms venue-side** | n=3 real orders (both intents: buy_yes ×2, buy_no ×1 in the V14 frame), all accepted, 2026-08-05 | 2026-08-05 | The last unmeasured term in [math/write-latency.md](math/write-latency.md). Venue write processing ≈ 5–8× read (3ms) — detection (~260ms) still dominates. Cancel latency still unmeasured; venue-side cancels (done in the app) are invisible to the `orders` table until a fill watcher reconciles |
+| V18 | **The HUMAN_CONFIRM invariant amended: pre-authorized exits** (user-approved 2026-08-05) | `pre_authorized` flag on `orders`, pinned to HUMAN_CONFIRM by `ck_orders_pre_authorized_requires_human` | 2026-08-05 | The fill watcher may submit an attached exit whose every term a human fixed on the ticket. `orders_autonomous` keeps its meaning and must remain 0. See below |
 
 ### V10 in detail — the 401 was never a cryptography problem
 
@@ -188,6 +190,42 @@ BUY  NO  -> ORDER_INTENT_BUY_SHORT     SELL NO  -> ORDER_INTENT_SELL_SHORT
 `outcomeSide` + `action` is sent alongside `intent`; the venue documents that
 **the pair takes precedence when both are present**, so the authoritative field
 is the one that names the outcome literally.
+
+### V18 — the amendment: pre-authorized orders inside HUMAN_CONFIRM
+
+Not a measurement; a change to the safety property, recorded here like V13 was,
+because the V13 statement ("every order this system sends was clicked by a
+human") is no longer literally true and the replacement has to be written down
+before someone re-derives the old rule and calls the new behaviour a breach.
+
+**The amendment, user-approved 2026-08-05:**
+
+> A pre-authorized order is one whose market, side, price, and quantity were
+> ALL fixed by a human click; the system may submit it later on a defined
+> trigger and may do nothing else.
+
+The one pre-authorized order today is the **attached exit**: typed on the
+ticket alongside the entry, stored in `pending_exits` at click time, submitted
+by the fill watcher when the entry fills, for the venue-reported filled
+quantity, at exactly the stored price. The machine chooses the *when*; every
+other term is the human's. That is why `orders_autonomous` — "an order whose
+terms no human specified" — keeps its definition and must remain 0.
+
+What enforces it, in the same shape as V13:
+
+```sql
+ck_orders_accepted_requires_human:        accepted = false OR mode = 'HUMAN_CONFIRM'   -- unchanged
+ck_orders_pre_authorized_requires_human:  pre_authorized = false OR mode = 'HUMAN_CONFIRM'  -- new
+```
+
+The second constraint means the flag cannot be inherited by a future mode: a
+pre-authorized order outside HUMAN_CONFIRM is unrepresentable, so
+"pre-authorized" can never become the loophole through which machine-termed
+orders reach the venue. `manualOrderIndicator` remains truthfully MANUAL — the
+order's terms were entered by hand; the watcher only transmits them.
+
+See [infra/fill-watcher.md](infra/fill-watcher.md) for the watcher and the
+exit rules.
 
 ### The bug this prevented, and why it was invisible for months
 
@@ -388,6 +426,7 @@ Claims made during this project that were wrong, and what is true instead.
 | C8 | "3 of 9 recorded games have 200ms coverage" / "20 games with tick data" | Two different docs, two different denominators, neither correct. "20" was games with *any* snapshot, mostly pregame-only | Measured 2026-08-04: **20** games with snapshot data, **10** with live ticks, **3** with full 200ms coverage (+1 partial). Gates are written in games and need 10 |
 | C9 | The signing scheme is "Ed25519 or HMAC-SHA512" | Inferred from credential lengths alone, never checked against documentation. Wrong, and sufficient on its own to explain all six 401s | ~~It is **HMAC-SHA256** with five `POLY_*` headers and URL-safe base64.~~ **C9 is itself retracted — see C10.** The original guess was half right |
 | C10 | C9's own replacement: "it is HMAC-SHA256 with five `POLY_*` headers" | Read from the **international CLOB** docs (`clob.polymarket.com`) and applied to a different venue. Never tested against `api.polymarket.us` before being written down as fact — and it was believed *because* it explained the 401s, which explained nothing | Polymarket US is **Ed25519**, three `X-PM-*` headers, millisecond timestamps, no passphrase, no address, no body term. Verified by authenticated 200s. See V10 |
+| C11 | "v4 live record is 34.8% bet win vs a 52.4% breakeven — the CI excludes breakeven, the model is losing" (asserted repeatedly 2026-08-04/05) | **Category error.** 52.4% is the breakeven for ~50¢ bets; the portfolio's average entry is **32¢**, where breakeven is ~32%. Flat win rate is the wrong metric for a tail portfolio by construction — it is *supposed* to lose most bets and get paid multiples on hits. The same error family as C4/C5, committed by the reviewer this time | Scored in money at actual prices, the same 8 games / 132 bets: staked \$42.74, returned \$46.00, **+7.6% ROI** (game-clustered mean +6.1%, 95% CI **[−44%, +56%]**, taker-price entries, fees excluded). Verdict: **no evidence either way at n=8** — not the measured failure previously claimed. Flat win-rate is retired as a performance metric; money-at-price is the only bar (the prompt-4 rule, which this correction re-proves) |
 
 ### C9 → C10 in detail — a correction that was more wrong than the thing it corrected
 

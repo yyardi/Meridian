@@ -45,6 +45,12 @@ SERVICE_LIVE = "live_recorder"
 SERVICE_LIVE_ODDS = "live_odds_recorder"
 SERVICE_SCHEDULER = "scheduler"
 SERVICE_KALSHI = "kalshi_recorder"
+#: The fill watcher runs inside the API process, only when ordering is enabled
+#: (token + credentials present). It is therefore judged by `/api/status` only
+#: when that process could have started it — see `core.api._heartbeat_report` —
+#: rather than being listed in APP_DB_SERVICES, where its absence would read
+#: DEAD on every host that has never enabled ordering.
+SERVICE_FILL_WATCHER = "fill_watcher"
 
 #: The writers whose heartbeats live in the app database (Supabase in
 #: production). The live recorder's lives in local Postgres, with its data.

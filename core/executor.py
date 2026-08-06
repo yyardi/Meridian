@@ -74,10 +74,28 @@ VENUE_MAX_PRICE = Decimal("0.99")
 
 
 class ExecutionMode(str, Enum):
-    """Only SHADOW is active in v1."""
+    """Execution modes, and the one amendment inside HUMAN_CONFIRM.
+
+    HUMAN_CONFIRM carries a per-order **pre_authorized** flag (a column on the
+    `orders` row, not a fourth mode — a mode would need its own CHECK-constraint
+    carve-out, and the whole point is that it doesn't get one). Amendment,
+    user-approved 2026-08-05:
+
+        A pre-authorized order is one whose market, side, price and quantity
+        were ALL fixed by a human click; the system may submit it later on a
+        defined trigger and may do nothing else.
+
+    The only pre-authorized order today is the attached exit, submitted by the
+    fill watcher when its entry fills. `orders_autonomous` still means "an
+    order whose terms no human specified" and must remain 0 — a pre-authorized
+    exit is not autonomous, because every term is the human's; only the timing
+    is the machine's. Postgres pins the flag to this mode
+    (`ck_orders_pre_authorized_requires_human`), so no future mode can inherit
+    it.
+    """
 
     SHADOW = "SHADOW"
-    HUMAN_CONFIRM = "HUMAN_CONFIRM"   # v2 scaffold, disabled
+    HUMAN_CONFIRM = "HUMAN_CONFIRM"   # live: /api/orders + pre-authorized exits
     AUTONOMOUS = "AUTONOMOUS"          # future; raises
 
 
