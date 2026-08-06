@@ -30,6 +30,25 @@ LOCAL_TEST_URL = "postgresql+psycopg://meridian:meridian@localhost:5433/meridian
 # module import time.
 os.environ["DATABASE_URL"] = os.environ.get("MERIDIAN_TEST_DATABASE_URL", LOCAL_TEST_URL)
 
+# The suite must be structurally unable to reach the venue. Several tests
+# submit through /api/orders and assert they get the 503 that missing
+# credentials produce — which was an assumption about the developer's shell,
+# not a property of the suite, and on a shell that exports real credentials
+# those tests were sending REAL signed POSTs to api.polymarket.us. Strip the
+# credentials before anything imports; tests that need credentials construct
+# them explicitly. Set to empty rather than popped: `core.storage.base` runs
+# `load_dotenv()` at import, which would re-inject a popped key from `.env`
+# but never overrides one that exists — and `from_env` treats empty as unset.
+os.environ["POLYMARKET_KEY_ID"] = ""
+os.environ["POLYMARKET_SECRET_KEY"] = ""
+
+# The fill watcher starts on FastAPI startup when ordering is enabled, and
+# TestClient fires startup events. A test that sets MERIDIAN_ORDER_TOKEN on a
+# machine whose shell carries real venue credentials would otherwise start a
+# real background poller against the real venue. Off for the whole suite;
+# watcher tests drive `poll_once()` directly with injected fake clients.
+os.environ["MERIDIAN_FILL_WATCHER"] = "0"
+
 import pytest  # noqa: E402
 
 

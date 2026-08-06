@@ -845,6 +845,28 @@ class PlacedOrder(Base):
 
     #: True only when the venue confirmed acceptance. Drives both counters.
     accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    #: The 2026-08-05 amendment (user-approved): True for an order whose
+    #: market, side, price and quantity were ALL fixed by a human click and
+    #: which the system submitted later on a defined trigger — today, only the
+    #: attached exit, submitted when its entry fills. Every term is the
+    #: human's; only the timing is the machine's, which is why it does not
+    #: count toward `orders_autonomous`. The CHECK constraint below pins it to
+    #: HUMAN_CONFIRM so the flag can never launder a machine-termed order.
+    pre_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    #: Venue truth, written only by the fill watcher and attributed by venue
+    #: order id alone: OPEN / PARTIAL / FILLED / CANCELLED / EXPIRED. NULL
+    #: means "never reconciled", which is not the same claim as OPEN
+    #: ("reconciled, confirmed still resting") — orders #1–3 sat at
+    #: `accepted=True` while a human cancelled two of them in the app, and
+    #: nothing in this table could tell.
+    fill_status: Mapped[str | None] = mapped_column(String(16))
+    #: Contracts the venue reports filled. The attached exit's quantity is
+    #: THIS number, never `quantity` — a partial fill exited at the ordered
+    #: size would be selling contracts we do not hold.
+    filled_quantity: Mapped[Decimal | None] = mapped_column(Qty)
+    fill_checked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     venue_order_id: Mapped[str | None] = mapped_column(String(120))
     venue_status: Mapped[str | None] = mapped_column(String(64))
     http_status: Mapped[int | None] = mapped_column(Integer)
@@ -872,6 +894,12 @@ class PlacedOrder(Base):
             f"accepted = false OR mode = '{HUMAN_CONFIRM_MODE}'",
             name="ck_orders_accepted_requires_human",
         ),
+        # The amendment's own constraint: pre-authorization exists only inside
+        # HUMAN_CONFIRM. A future mode cannot inherit the flag.
+        CheckConstraint(
+            f"pre_authorized = false OR mode = '{HUMAN_CONFIRM_MODE}'",
+            name="ck_orders_pre_authorized_requires_human",
+        ),
         # Market orders are unrepresentable in core.executor; keep them
         # unrepresentable in the data too, so the two cannot drift.
         CheckConstraint(
@@ -881,4 +909,60 @@ class PlacedOrder(Base):
         Index("ix_orders_submitted_at", "submitted_at"),
         Index("ix_orders_market_slug", "market_slug"),
         Index("ix_orders_mode_accepted", "mode", "accepted"),
+    )
+
+
+class PendingExit(Base):
+    """A pre-authorized exit, stored at click time and submitted on fill.
+
+    Every term here was fixed by the human on the ticket — market, outcome,
+    price — except the quantity, which by rule is **the entry's filled
+    quantity**, knowable only when the fill watcher confirms it. The rules,
+    each load-bearing (see docs/infra/fill-watcher.md):
+
+    * `market_slug` is copied from the entry row at click time, never
+      re-looked-up at submit.
+    * `limit_price` is immutable — sent exactly as stored even if the market
+      has moved 30¢. No chasing, ever. A stale exit is the human's to cancel.
+    * The link to the entry is `entry_order_id`, our own order id: explicit,
+      one-to-one (UNIQUE), never matched by market/price/size similarity —
+      the account also holds hand trades in the same markets.
+    * Entry cancelled or expired unfilled → state DELETED, with a log line.
+    * One retry on submit failure, then FAILED loudly on the dashboard.
+    """
+
+    __tablename__ = "pending_exits"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    entry_order_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("orders.id"), nullable=False, unique=True
+    )
+
+    market_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(8), nullable=False)  # 'YES' | 'NO'
+    #: YES-frame price.value — what the venue receives, per V14.
+    limit_price: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    #: The number the human typed, in the cost frame they saw. On a NO exit
+    #: these differ by 1 − p, and keeping both is what makes the row auditable.
+    typed_price: Mapped[Decimal] = mapped_column(Price, nullable=False)
+
+    #: PENDING → SUBMITTED | FAILED | DELETED. Enforced by CHECK.
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    submitted_order_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("orders.id")
+    )
+    error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "state in ('PENDING','SUBMITTED','FAILED','DELETED')",
+            name="ck_pending_exit_state",
+        ),
+        CheckConstraint("outcome in ('YES','NO')", name="ck_pending_exit_outcome"),
+        Index("ix_pending_exits_state", "state"),
     )

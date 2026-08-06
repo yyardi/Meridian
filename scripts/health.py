@@ -364,6 +364,66 @@ def check_real_orders() -> list[Check]:
     return checks
 
 
+def check_fill_watcher() -> list[Check]:
+    """The read-back loop for real orders (V17): accepted orders can be
+    cancelled venue-side or fill without the `orders` table hearing about it,
+    and pending exits only fire if the watcher is alive.
+
+    Judged only when it has work: accepted-but-unreconciled orders or PENDING
+    exits. A host with nothing to reconcile gets an informational line, not a
+    verdict — the watcher deliberately only runs where ordering is enabled.
+    """
+    from core import heartbeat as hb
+    from core.storage.base import get_engine
+
+    try:
+        with get_engine().connect() as c:
+            open_orders = c.execute(text("""
+                select count(*) from orders
+                where accepted and venue_order_id is not null
+                  and (fill_status is null
+                       or fill_status not in ('FILLED','CANCELLED','EXPIRED'))
+            """)).scalar()
+            pending_exits, failed_exits = c.execute(text("""
+                select count(*) filter (where state = 'PENDING'),
+                       count(*) filter (where state = 'FAILED')
+                from pending_exits
+            """)).one()
+            beat = c.execute(text(
+                "select extract(epoch from now() - beat_at), interval_seconds "
+                "from service_heartbeats where service = :s"
+            ), {"s": hb.SERVICE_FILL_WATCHER}).one_or_none()
+    except Exception as exc:
+        return [Check(WARN, "fill watcher", f"could not verify: {str(exc)[:50]}")]
+
+    checks: list[Check] = []
+    # A FAILED exit means a position the human believes is protected is not.
+    # That is DEAD regardless of anything else on this page.
+    if failed_exits:
+        checks.append(Check(DEAD, "attached exits",
+                            f"{failed_exits} FAILED — a position the human believes "
+                            "is protected is NOT. Act now."))
+
+    needs_watcher = (open_orders or 0) > 0 or (pending_exits or 0) > 0
+    if not needs_watcher:
+        checks.append(Check(OK, "fill watcher",
+                            "nothing to reconcile (no open orders, no pending exits)"))
+        return checks
+
+    age = float(beat[0]) if beat else None
+    interval = float(beat[1]) if beat else None
+    if hb.verdict(age, interval) == hb.DEAD:
+        checks.append(Check(DEAD, "fill watcher",
+                            f"{open_orders} open order(s) / {pending_exits} pending "
+                            f"exit(s) and the watcher's last beat is {_fmt_age(age)} — "
+                            "venue truth is diverging from the orders table"))
+    else:
+        checks.append(Check(OK, "fill watcher",
+                            f"beat {_fmt_age(age)} · watching {open_orders} open "
+                            f"order(s), {pending_exits} pending exit(s)"))
+    return checks
+
+
 def main() -> int:
     games, live = todays_games()
 
@@ -382,7 +442,7 @@ def main() -> int:
         ("Data feeds", check_espn() + check_book_lines()),
         ("Heartbeats", check_app_heartbeats()),
         ("Databases", check_supabase() + check_local_ticks(live)),
-        ("Safety", check_real_orders()),
+        ("Safety", check_real_orders() + check_fill_watcher()),
     ]
 
     worst = OK
