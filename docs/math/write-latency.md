@@ -142,13 +142,30 @@ The gateway's documented ceiling is 20 req/s. The authenticated host returned
 strategy polling authenticated state is capped well below the public board's
 cadence, so position state cannot be refreshed at the 200ms price loop's rate.
 
-## What is still NOT measured, and why
+## Write latency — MEASURED 2026-08-05, the first real order
 
-**Venue-side order processing: still unknown — but the instrument now exists.**
-Submitting, acknowledging and cancelling an order all require sending one, and
-none has been sent. Shadow mode and the kill switch are untouched. The 3ms read
-figure is a floor, not a substitute: a write goes through matching and risk
-checks a balance read does not.
+**The number is in.** The first order in project history (1 share, DAL −10.5,
+resting at 0.20, `HUMAN_CONFIRM`, human-clicked on the picks page, ~23:10Z):
+
+| | |
+|---|---|
+| `submit_latency_ms` | **124ms** |
+| `venue_latency_ms` (venue's own header) | **17ms** |
+| result | HTTP 200, accepted, `would_rest=True` |
+
+n=1 — a first estimate, not a distribution. Venue-side write processing (17ms)
+is ~6× the 3ms read baseline — that ratio is the network-independent part, and
+it is matching-engine and risk-check work a balance read doesn't do. The QUOTE
+exposure equation is now fully populated and **detection (~260ms) remains the
+dominant term** by roughly 2×.
+
+Still unmeasured: **cancel latency** (needs a resting order and a cancel path,
+which does not exist yet), and the fill itself — "accepted" and "filled" are
+different events, and only `/v1/portfolio/positions` reports the second. On
+the no-body signing question: 124ms is consistent with a single round trip
+(reads on the same host run 91–98ms), so the no-body variant most likely
+succeeded first try — but the 401-then-retry path wasn't logged either way, so
+this is inference, not observation.
 
 What changed on 2026-08-04 is that measuring it no longer requires writing
 throwaway code. `POST /api/orders` records both halves of the number on every
