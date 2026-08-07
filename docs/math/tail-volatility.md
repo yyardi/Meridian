@@ -114,6 +114,21 @@ this data cannot measure at all.
 *because* the game is decided. The body control is the check on that, and it is
 the reason the close result reads as a phase effect rather than a tail effect.
 
+## Gate policy note (added 2026-08-08)
+
+The operator directed that PULSE hypotheses use **15-game** gates rather than
+10. That applies to hypotheses pre-registered from 2026-08-08 forward.
+
+**This one keeps its pinned 10.** Its gate was fixed before any number existed,
+and it is mid-accrual with its direction already peeked — the open edge is
+pointing the wrong way at 8 games. Moving the bar now, in either direction,
+would taint it. It closes at 10, on its own terms.
+
+**Any successor to this hypothesis takes 15.** If the tail-volatility question
+is reopened in a new form — a different trigger, a different window — that new
+row is pre-registered fresh and inherits the 15-game default. See the gate
+policy in [pulse-hypotheses.md](../pulse-hypotheses.md).
+
 ## What would change it
 
 Two more games with Q1 tail coverage takes the open edge to 10 and turns NO

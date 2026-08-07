@@ -96,7 +96,42 @@ arbitraged.
 
 ---
 
-## 4. The click list — only you can do these
+## 4. Decisions made while you were away
+
+Two, both recorded so you can reverse either in a sentence.
+
+**Your 15-game directive, applied forward-only.** You said: *"consider doing
+more games than just 10 for hypothesis testing on pulse, maybe 15 games will
+benefit."* Adopted, in three parts:
+
+1. **New hypotheses get 15 games.** Anything pre-registered from 2026-08-08
+   onward. Clean, because it was decided before any such hypothesis exists —
+   there is no number it could have been tuned against.
+2. **The four dead hypotheses stay dead.** Run overreaction, first score,
+   adverse selection and depth all failed with intervals that miss
+   profitability by margins more games cannot close — overreaction's best case
+   is +2.05¢ against a 6¢ round trip, and adverse selection's interval never
+   reaches zero at all. Re-running a failed hypothesis to a longer gate *after
+   seeing its numbers* is precisely the re-tuning the ledger's own rules
+   forbid. Extending a gate is only honest done blind.
+3. **Tail volatility (#6) keeps its 10.** Its bar was set before any number
+   existed and it is mid-accrual with its direction already visible — it is
+   pointing the wrong way at 8 games. Moving the bar now, either way, would
+   taint it. Any *successor* to it takes 15.
+
+If you disagree with any part, say so and it changes. The reasoning is written
+into [pulse-hypotheses.md](pulse-hypotheses.md) rather than assumed.
+
+**The venue-gap analysis was run against the primary, not the local mirror.**
+`market_snapshots` can't be mirrored (the live recorder writes it locally, and
+copying Supabase's version by id would destroy ticks that cannot be refetched),
+so the full 10-game computation reads the primary directly, read-only. Worth
+knowing because running that module locally gives a smaller sample and a
+different game count.
+
+---
+
+## 5. The click list — only you can do these
 
 1. **Verify the cancel endpoint.** One live cancel of a 1-share resting order.
    Nothing in the system has ever sent a cancel, so `DELETE /v1/orders/{id}` is
@@ -120,7 +155,7 @@ arbitraged.
 
 ---
 
-## 5. Your trading, straight
+## 6. Your trading, straight
 
 You asked for this to be measured, so here it is without softening.
 
