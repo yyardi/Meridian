@@ -37,6 +37,7 @@ Measured on the live board, not assumed.
 | V16 | **The shadow sizer sizes every pick as a YES buy** | `shadow_run.py` passes `probability=model`, `price=ask` for NO rows too | 2026-08-04 | Most of `shadow_orders` carries a size for the opposite trade. **Not yet fixed** — see below before quoting stake-weighted numbers |
 | V17 | **Order write latency: 93–124ms round-trip, 14–23ms venue-side** | n=3 real orders (both intents: buy_yes ×2, buy_no ×1 in the V14 frame), all accepted, 2026-08-05 | 2026-08-05 | The last unmeasured term in [math/write-latency.md](math/write-latency.md). Venue write processing ≈ 5–8× read (3ms) — detection (~260ms) still dominates. Cancel latency still unmeasured; venue-side cancels (done in the app) are invisible to the `orders` table until a fill watcher reconciles |
 | V18 | **The HUMAN_CONFIRM invariant amended: pre-authorized exits** (user-approved 2026-08-05) | `pre_authorized` flag on `orders`, pinned to HUMAN_CONFIRM by `ck_orders_pre_authorized_requires_human` | 2026-08-05 | The fill watcher may submit an attached exit whose every term a human fixed on the ticket. `orders_autonomous` keeps its meaning and must remain 0. See below |
+| V19 | **The activities feed: nested executions, authoritative embedded order state, 2dp-rounded quantities, paginated by `cursor` — and zero-fill cancels emit NO activity** | read live 2026-08-06; our 1.4645-contract order reports `cumQuantity 1.46, state ORDER_STATE_FILLED`; `/v1/orders` 501, `/v1/orders/{id}` 404; query params are honoured but NOT signed | 2026-08-06 | Fill reconciliation must read `trade.<side>Execution.order.{state,cumQuantity}` — summing fills or comparing to our ordered size strands >2dp orders as PARTIAL forever. Cancels of unfilled orders are invisible; settlement (`ACTIVITY_TYPE_POSITION_RESOLUTION`) is the only terminal signal for never-filled orders. See below |
 
 ### V10 in detail — the 401 was never a cryptography problem
 
@@ -226,6 +227,61 @@ order's terms were entered by hand; the watcher only transmits them.
 
 See [infra/fill-watcher.md](infra/fill-watcher.md) for the watcher and the
 exit rules.
+
+### V19 — the activities schema, read from the venue after guessing it wrong
+
+The fill watcher shipped (2026-08-05) with a parser written against an
+*assumed* flat schema — flagged as unverified in its own docstring, which
+turned out to be the only honest sentence in it. First live day: two entries
+filled, neither exit fired. Three stacked causes, worst first:
+
+1. **`AuthedResponse.body_text` was truncated to 2000 chars** in the client —
+   built for a latency probe that only printed excerpts. The activities page
+   runs tens of KB, so `json.loads` failed on the truncated body **every
+   cycle**.
+2. **The failure was silent.** The fetch error was recorded on a result object
+   nothing logged. The watcher beat its heartbeat proudly (`rows_written: 0`)
+   while reconciling nothing — the exact B11 shape ("ran fine, produced
+   nothing"), rebuilt from scratch one day after citing B11 in the module
+   docstring. `rows_written: 0` was on the dashboard the whole time; nothing
+   made it loud.
+3. **The schema was nothing like the guess.** Real shape:
+   `{"activities":[{"type":"ACTIVITY_TYPE_TRADE","trade":{"aggressorExecution":…,"passiveExecution":{"order":{…}}}}],"nextCursor":…,"eof":…}`.
+   Our resting orders appear as the **passive** execution; each execution
+   embeds the full order object whose `state` and `cumQuantity` are the
+   authoritative record.
+
+Measured facts now load-bearing in `core/fill_watcher.py`:
+
+* **The venue rounds quantities to 2dp.** Our 1.4645-contract order reports
+  `cumQuantity 1.46` with `state ORDER_STATE_FILLED`. Any reconciliation of
+  the form `filled >= ordered` reads PARTIAL forever; and an exit sized from
+  our own `quantity` would **oversell by 0.0045** — the exit must sell the
+  venue's count. State beats arithmetic.
+* **Zero-fill cancels are invisible.** The two orders hand-cancelled in the
+  app on 2026-08-05 appear nowhere in the feed; only `TRADE`,
+  `POSITION_RESOLUTION` and `TRANSFER` types have been observed, and there is
+  no order-status endpoint (`/v1/orders` → 501, `/v1/orders/{id}` → 404). A
+  cancelled unfilled entry therefore stays OPEN with its exit PENDING —
+  visible, and the human who cancelled is the one looking.
+* **Settlement does arrive** (`positionResolution.marketSlug`), so an order
+  still open on a settled market goes EXPIRED and its unfilled exit is
+  deleted.
+* **Pagination is `?limit=` + `?cursor=` (from `nextCursor`) + `eof`.** Query
+  parameters are honoured but **not signed** — the Ed25519 message covers the
+  bare path only, verified by a 200 on `?limit=100&cursor=…`.
+* Unexplained, parked: the venue echoes
+  `manualOrderIndicator: MANUAL_ORDER_INDICATOR_AUTOMATIC` on orders we
+  submitted with `MANUAL` (hand-app orders echo MANUAL). Whether this is a
+  display artifact of the echo or a venue-side reclassification is worth one
+  support question before QUOTE — it is the CFTC-facing field.
+
+The procedural lesson is C10's, re-learned against a payload instead of a
+doc: **a parser for a schema nobody has observed is a guess wearing a test
+suite.** The guess even had defensive logging for unrecognised shapes — which
+never fired, because the body failed one step earlier, in code whose failure
+path was quiet. Loudness has to cover the whole chain, not just the step you
+distrust.
 
 ### The bug this prevented, and why it was invisible for months
 

@@ -30,7 +30,8 @@ from core.fill_watcher import (
     OPEN,
     PARTIAL,
     FillWatcher,
-    normalize_activity,
+    OrderEvent,
+    extract_order_events,
     reconcile_order,
 )
 from core.polymarket.client import OrderSubmissionError, USCredentials
@@ -93,8 +94,47 @@ def _exit_for(s, entry: PlacedOrder, *, outcome="YES",
 
 
 # --------------------------------------------------------------------------- #
-# Fakes — injected clients; nothing in this file touches the network
+# Fakes and payload builders — nothing in this file touches the network.
+# The payload shapes are copies of the venue's OBSERVED schema (findings V19):
+# activities wrap a `trade` whose aggressor/passive executions embed the full
+# order object, and the embedded order carries the authoritative `state` and
+# `cumQuantity`.
 # --------------------------------------------------------------------------- #
+
+
+def trade_activity(order_id: str, *, state: str, cum, last_shares="1.0000",
+                   side="passiveExecution", market=SLUG,
+                   transact="2026-08-07T02:05:51.436320896Z") -> dict:
+    """One ACTIVITY_TYPE_TRADE in the venue's real nested shape."""
+    return {
+        "type": "ACTIVITY_TYPE_TRADE",
+        "trade": {
+            "id": f"T-{order_id}-{transact[-12:]}",
+            "aggressorExecution": None,
+            "marketSlug": market,
+            side: {
+                "id": f"E-{order_id}",
+                "order": {
+                    "id": order_id,
+                    "marketSlug": market,
+                    "state": state,
+                    # The venue serves this as a bare number, rounded to 2dp.
+                    "cumQuantity": cum,
+                    "leavesQuantity": 0,
+                },
+                "lastShares": last_shares,
+                "type": "EXECUTION_TYPE_FILL",
+                "transactTime": transact,
+            },
+        },
+    }
+
+
+def resolution_activity(market: str) -> dict:
+    return {
+        "type": "ACTIVITY_TYPE_POSITION_RESOLUTION",
+        "positionResolution": {"marketSlug": market, "beforePosition": {}},
+    }
 
 
 class FakeResp:
@@ -106,15 +146,16 @@ class FakeResp:
 
 
 class FakeReadClient:
-    """Serves a fixed activities list; positions is an empty 200."""
+    """Serves a fixed activities list (one page, eof); positions empty."""
 
     def __init__(self, activities: list[dict]):
         self.activities = activities
 
-    def get(self, path: str) -> FakeResp:
+    def get(self, path: str, params=None) -> FakeResp:
         if "activities" in path:
-            return FakeResp(200, json.dumps({"activities": self.activities}))
-        return FakeResp(200, json.dumps({"positions": []}))
+            return FakeResp(200, json.dumps(
+                {"activities": self.activities, "nextCursor": "", "eof": True}))
+        return FakeResp(200, json.dumps({"positions": {}}))
 
     def close(self) -> None:
         pass
@@ -198,35 +239,57 @@ def test_a_pre_authorized_exit_does_not_count_as_autonomous():
 # --------------------------------------------------------------------------- #
 
 
-def test_fill_cancel_and_expire_labels_are_recognised():
-    base = {"orderId": "v-1", "quantity": "2"}
-    assert normalize_activity({**base, "type": "FILL"}).kind == "fill"
-    assert normalize_activity({**base, "type": "ACTIVITY_TYPE_TRADE"}).kind == "fill"
-    assert normalize_activity({"orderId": "v-1", "type": "ORDER_CANCELLED"}).kind == "cancel"
-    assert normalize_activity({"orderId": "v-1", "status": "EXPIRED"}).kind == "expire"
+def test_the_real_trade_shape_yields_order_events():
+    """Pinned against the observed schema, both execution sides."""
+    a = trade_activity("v-1", state="ORDER_STATE_PARTIALLY_FILLED", cum=1,
+                       side="passiveExecution")
+    events, slug, ok = extract_order_events(a)
+    assert ok and slug is None
+    assert events == [OrderEvent("v-1", "ORDER_STATE_PARTIALLY_FILLED",
+                                 Decimal("1"), "2026-08-07T02:05:51.436320896Z")]
+
+    b = trade_activity("v-2", state="ORDER_STATE_FILLED", cum=2.47,
+                       side="aggressorExecution")
+    events, _, ok = extract_order_events(b)
+    assert ok and events[0].cum_quantity == Decimal("2.47")
+
+
+def test_resolution_and_transfer_activities():
+    events, slug, ok = extract_order_events(resolution_activity("some-market"))
+    assert ok and events == [] and slug == "some-market"
+    # Benign non-trade types carry no order state and are not an error.
+    events, slug, ok = extract_order_events({"type": "ACTIVITY_TYPE_TRANSFER"})
+    assert ok and events == [] and slug is None
 
 
 def test_unknown_shapes_are_refused_not_guessed():
-    """Attribution needs a venue order id and a recognisable type. Anything
-    less is ignored — never matched by market/price/size similarity."""
-    assert normalize_activity({"type": "FILL", "quantity": "2"}) is None       # no id
-    assert normalize_activity({"orderId": "v-1", "type": "SOMETHING_ELSE"}) is None
-    assert normalize_activity({"orderId": "v-1", "type": "FILL"}) is None      # no qty
-    assert normalize_activity({"id": "act-9", "type": "FILL", "quantity": 1}) is None
+    """A trade whose embedded order lacks id/state/cumQuantity is flagged,
+    never guessed at — schema drift must be loud (the first parser guessed a
+    flat shape and reconciled nothing for a day)."""
+    bad = {"type": "ACTIVITY_TYPE_TRADE",
+           "trade": {"passiveExecution": {"order": {"id": "v-1"}}}}   # no state
+    _, _, ok = extract_order_events(bad)
+    assert ok is False
 
 
-def test_reconcile_partial_then_full_then_cancel():
-    from core.fill_watcher import Activity
-
-    fills = [Activity("v", "fill", Decimal("2"))]
-    assert reconcile_order(Decimal("5"), fills) == (PARTIAL, Decimal("2"))
-    fills.append(Activity("v", "fill", Decimal("3")))
-    assert reconcile_order(Decimal("5"), fills) == (FILLED, Decimal("5"))
-    # Cancel after a partial keeps the fills: the position exists.
-    acts = [Activity("v", "fill", Decimal("2")), Activity("v", "cancel")]
-    assert reconcile_order(Decimal("5"), acts) == (CANCELLED, Decimal("2"))
-    assert reconcile_order(Decimal("5"), [Activity("v", "expire")]) == (EXPIRED, Decimal("0"))
-    assert reconcile_order(Decimal("5"), []) == (OPEN, Decimal("0"))
+def test_reconcile_takes_the_latest_execution_verbatim():
+    """No summing, no comparison against our ordered quantity: the embedded
+    order object carries the venue's own cumulative count and state. The venue
+    rounds to 2dp (a 1.4645 order reports cum 1.46, state FILLED), so
+    'filled >= ordered' would read PARTIAL forever — state is authoritative."""
+    events = [
+        OrderEvent("v", "ORDER_STATE_PARTIALLY_FILLED", Decimal("1"),
+                   "2026-08-07T02:05:51.436320896Z"),
+        OrderEvent("v", "ORDER_STATE_FILLED", Decimal("1.46"),
+                   "2026-08-07T02:16:08.568502473Z"),
+    ]
+    assert reconcile_order(events) == (FILLED, Decimal("1.46"))
+    assert reconcile_order(events[:1]) == (PARTIAL, Decimal("1"))
+    assert reconcile_order([]) is None
+    # If the venue ever reports a cancel state on an execution, it maps.
+    assert reconcile_order([
+        OrderEvent("v", "ORDER_STATE_CANCELED", Decimal("2"), "2026-08-07T03:00:00Z")
+    ]) == (CANCELLED, Decimal("2"))
 
 
 # --------------------------------------------------------------------------- #
@@ -234,36 +297,49 @@ def test_reconcile_partial_then_full_then_cancel():
 # --------------------------------------------------------------------------- #
 
 
-def test_venue_side_cancel_is_detected():
-    """Orders #1–3: `accepted=True` while the human cancelled two in the app.
-    The watcher is the only thing that can notice."""
+def test_a_settled_market_expires_an_open_order():
+    """Zero-fill venue-side cancels emit NO activity (verified live — the gap
+    is documented in the module and V19), but settlement does: an order still
+    open on a resolved market can never fill and goes EXPIRED, which is what
+    deletes its pending exit."""
     with _Session() as s:
-        s.add(_entry(key="cancel", venue_id="v-c1"))
+        s.add(_entry(key="expire", venue_id="v-c1", slug=SLUG + "-settled"))
         s.commit()
-    w, _ = _watcher([{"orderId": "v-c1", "type": "ORDER_CANCEL"}])
+    w, _ = _watcher([resolution_activity(SLUG + "-settled")])
     result = w.poll_once()
     assert result.updated == 1
     with _Session() as s:
-        row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-cancel").one()
-        assert row.fill_status == CANCELLED
+        row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-expire").one()
+        assert row.fill_status == EXPIRED
         assert row.fill_checked_at is not None
 
 
-def test_counters_reconcile_against_activities():
-    """filled_quantity is the sum of the venue's own fill activities for that
-    order id — not a guess, and not a position delta."""
+def test_venue_rounding_cannot_strand_a_fill():
+    """THE bug the first live run hit, pinned exactly: order for 1.4645, venue
+    reports cumQuantity 1.46 with state FILLED. Comparing filled >= ordered
+    reads PARTIAL forever and the exit never fires. State wins; the exit
+    sells the venue's 1.46 — never our 1.4645, which would oversell."""
     with _Session() as s:
-        s.add(_entry(key="sum", venue_id="v-s1", qty="5"))
+        entry = _entry(key="round", venue_id="v-s1", qty="1.4645")
+        s.add(entry)
         s.commit()
-    w, _ = _watcher([
-        {"orderId": "v-s1", "type": "FILL", "filledQuantity": "1.5"},
-        {"orderId": "v-s1", "type": "FILL", "filledQuantity": "2"},
-    ])
-    w.poll_once()
+        _exit_for(s, entry, limit_price="0.31", typed_price="0.31")
+    w, oc = _watcher(
+        [
+            trade_activity("v-s1", state="ORDER_STATE_FILLED", cum=1.46,
+                           transact="2026-08-07T02:16:08.568502473Z"),
+            trade_activity("v-s1", state="ORDER_STATE_PARTIALLY_FILLED", cum=1,
+                           transact="2026-08-07T02:05:51.436320896Z"),
+        ],
+        order_script=[FakeResp(200, json.dumps({"orderId": "v-exit-r"}))],
+    )
+    result = w.poll_once()
     with _Session() as s:
-        row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-sum").one()
-        assert row.fill_status == PARTIAL
-        assert row.filled_quantity == Decimal("3.5")
+        row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-round").one()
+        assert row.fill_status == FILLED
+        assert row.filled_quantity == Decimal("1.46")     # venue's number
+    assert result.exits_submitted == 1
+    assert oc.payloads[0]["quantity"] == "1.4600"          # venue count, not 1.4645
 
 
 def test_a_hand_trade_in_the_same_market_is_never_attributed():
@@ -277,8 +353,8 @@ def test_a_hand_trade_in_the_same_market_is_never_attributed():
         _exit_for(s, entry)
     # A hand trade: same market, plausible size, DIFFERENT venue order id.
     w, oc = _watcher([
-        {"orderId": "v-theirs", "type": "FILL", "quantity": "2",
-         "marketSlug": SLUG, "price": "0.20"},
+        trade_activity("v-theirs", state="ORDER_STATE_FILLED", cum=2,
+                       side="aggressorExecution", market=SLUG),
     ])
     result = w.poll_once()
     with _Session() as s:
@@ -291,20 +367,22 @@ def test_a_hand_trade_in_the_same_market_is_never_attributed():
 
 
 def test_partial_fill_exit_sells_the_filled_quantity_never_the_ordered():
-    """Rule 3. Entry for 5, filled 2, then cancelled: the exit must sell
-    exactly 2. Selling 5 would be selling contracts we do not hold."""
+    """Rule 3. Entry for 5, filled 2, then the market settles: the exit fires
+    for exactly 2. Selling 5 would be selling contracts we do not hold.
+    (Settlement stands in for any terminal state after a partial — a
+    venue-reported cancel state would take the same path.)"""
     with _Session() as s:
         entry = _entry(key="partial", venue_id="v-p1", qty="5")
         s.add(entry)
         s.commit()
         _exit_for(s, entry, limit_price="0.30", typed_price="0.30")
+    # First cycle: the partial fill lands. Second: the market resolves.
     w, oc = _watcher(
-        [
-            {"orderId": "v-p1", "type": "FILL", "quantity": "2"},
-            {"orderId": "v-p1", "type": "CANCEL"},
-        ],
+        [trade_activity("v-p1", state="ORDER_STATE_PARTIALLY_FILLED", cum=2)],
         order_script=[FakeResp(200, json.dumps({"orderId": "v-exit-1"}))],
     )
+    w.poll_once()
+    w._read_client = FakeReadClient([resolution_activity(SLUG)])
     result = w.poll_once()
     assert result.exits_submitted == 1
     payload = oc.payloads[0]
@@ -333,7 +411,7 @@ def test_no_side_exit_sends_the_stored_yes_frame_price_and_sell_short():
         # Human typed "sell at 0.26" in the NO cost frame → stored as 0.74.
         _exit_for(s, entry, outcome="NO", limit_price="0.74", typed_price="0.26")
     w, oc = _watcher(
-        [{"orderId": "v-n1", "type": "FILL", "quantity": "1"}],
+        [trade_activity("v-n1", state="ORDER_STATE_FILLED", cum=1)],
         order_script=[FakeResp(200, json.dumps({"orderId": "v-exit-2"}))],
     )
     w.poll_once()
@@ -353,7 +431,7 @@ def test_entry_cancelled_unfilled_deletes_the_pending_exit():
         s.add(entry)
         s.commit()
         _exit_for(s, entry)
-    w, oc = _watcher([{"orderId": "v-d1", "type": "CANCELLED"}])
+    w, oc = _watcher([resolution_activity(SLUG)])
     result = w.poll_once()
     assert result.exits_deleted == 1
     assert oc.payloads == []
@@ -370,7 +448,7 @@ def test_exit_submit_retries_once_then_succeeds():
         s.commit()
         _exit_for(s, entry)
     w, oc = _watcher(
-        [{"orderId": "v-r1", "type": "FILL", "quantity": "1"}],
+        [trade_activity("v-r1", state="ORDER_STATE_FILLED", cum=1)],
         order_script=[
             OrderSubmissionError("transport blip"),
             FakeResp(200, json.dumps({"orderId": "v-exit-3"})),
@@ -392,7 +470,7 @@ def test_venue_reject_surfaces_as_FAILED_loudly():
         s.commit()
         _exit_for(s, entry)
     w, oc = _watcher(
-        [{"orderId": "v-x1", "type": "FILL", "quantity": "1"}],
+        [trade_activity("v-x1", state="ORDER_STATE_FILLED", cum=1)],
         order_script=[FakeResp(400, json.dumps({"error": "market closed"}))],
     )
     result = w.poll_once()
@@ -414,7 +492,7 @@ def test_two_transport_failures_is_FAILED_not_a_third_attempt():
         s.commit()
         _exit_for(s, entry)
     w, oc = _watcher(
-        [{"orderId": "v-f2", "type": "FILL", "quantity": "1"}],
+        [trade_activity("v-f2", state="ORDER_STATE_FILLED", cum=1)],
         order_script=[
             OrderSubmissionError("down"),
             OrderSubmissionError("still down"),
@@ -436,7 +514,7 @@ def test_an_open_entry_leaves_the_exit_pending():
         s.add(entry)
         s.commit()
         _exit_for(s, entry)
-    w, oc = _watcher([{"orderId": "v-o1", "type": "FILL", "quantity": "1"}])
+    w, oc = _watcher([trade_activity("v-o1", state="ORDER_STATE_PARTIALLY_FILLED", cum=1)])
     w.poll_once()
     assert oc.payloads == []
     with _Session() as s:
