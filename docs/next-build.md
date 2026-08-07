@@ -10,8 +10,8 @@ Meridian prices WNBA contracts on Polymarket US. Its edge is **not** better bask
 
 | | Route | Edge source | Status |
 |---|---|---|---|
-| **A** | Pregame, hold to settlement | venue gap | **built, v4 live** — 12 resolved games, −9.4% at price, CI straddles zero; venue-gap leg being tested by the Kalshi recorder (gate ~Aug 8–9) |
-| **B** | In-game directional | ~~run overreaction~~ | **core premise FAILED its gate 2026-08-06** — 444 runs / 11 games, reversion −0.32¢ vs 6¢ cost. Prices reprice, they don't panic. First-score (#2) verdict pending; #5 remains unmeasured but orphaned (no live anchor, no live model with edge) |
+| **A** | Pregame, hold to settlement | venue gap | **built, v4 live** — 12 resolved games, −9.4% at price, CI straddles zero; **venue-gap leg MEASURED 2026-08-07 and there is no gap** — 773 line-identical pairs vs Kalshi across **10 games / 61 contracts (gate MET)**, median \|gap\| **0.00¢**, 97.2% within one cent, median signed gap exactly zero in 9 of 10 games. Such disagreement as exists is 0.50¢ at 3–6h out and **0.00¢ inside 3h**. Sign persistence not measurable. The two venues' totals ladders sit 1.0pt apart in 7 of 10 games, so line-identical comparison is structurally thin. [math/venue-gap.md](math/venue-gap.md) |
+| **B** | In-game directional | ~~run overreaction~~ ~~trailing-team ML~~ | **core premise FAILED its gate 2026-08-06** — 444 runs / 11 games, reversion −0.32¢ vs 6¢ cost. Prices reprice, they don't panic. **First-score (#2) FAILED 2026-08-07** — 75 trades / 11 games, −3.88¢, CI [−9.73, +1.97], and signal-only reversion spans zero too, so there is no phenomenon rather than a fill artifact ([math/first-score.md](math/first-score.md)). **Tier 1 is closed.** **#16 (trailing-team ML) PASSED its gate 2026-08-07 and is not tradable** — the base rate was team-blind, and anchoring it on the pregame price flips +6.84¢ to −2.20¢ ([math/win-curve.md](math/win-curve.md)). **#6 (tail volatility) NO DATA and pointing away 2026-08-07** — open edge only 8 games but its interval is −0.731¢ [−0.982, −0.480], the wrong side; close edge passes (+0.555¢) while the body gains +2.135¢, so that half is a whole-board phase effect ([math/tail-volatility.md](math/tail-volatility.md)). #5 remains unmeasured but orphaned (no live anchor, no live model with edge). **Route B has no surviving candidate.** |
 | **C** | Market making | the spread itself (3–6¢) | **FAILED its gate 2026-08-06** — net capture **−2.66¢ per filled quote**, CI [−2.96, −2.36], 630k fills / 11 games. Adverse selection ate the spread; depth adds no directional skew (whale FAIL). QUOTE stays unbuilt |
 
 *(Corrected 2026-08-04. This table said "nothing built" for B and C for two days
@@ -62,19 +62,21 @@ Two new columns make the sparsity auditable: `market_snapshots.book_tier` and `b
 - **The score trigger works now.** It fired zero times at the old ~910s cadence because both teams score between samples; at 200ms it detects 25 runs at ≥8 unanswered points. The study is running on both legs at last.
 - Reversion at +5 min is **−0.01¢**, CI [−4.06¢, +4.03¢] — flat, with the whole interval below the 6¢ round trip. A direction, not a verdict, at four clusters. The first run's −7.25¢ was the one-game noise it was reported to be.
 
-**Built 2026-08-02: [`core/pulse/first_score.py`](../core/pulse/first_score.py) — PULSE strategy #1. Verdict: NO DATA.** 18 filled trades across **3 games** against a gate of 30 across 10. Write-up: [math/first-score.md](math/first-score.md).
+**Built 2026-08-02, gated 2026-08-07: [`core/pulse/first_score.py`](../core/pulse/first_score.py) — PULSE strategy #1. Verdict: FAIL.** 75 filled trades across **11 games**: −3.88¢/contract at +5 min, CI [−9.73¢, +1.97¢]. Write-up: [math/first-score.md](math/first-score.md).
 
-This is the first thing built against [`core/pulse/replay.py`](../core/pulse/replay.py): a maker-only fade of the price lurch on a game's opening basket, chosen because one basket is worth ~1.3 points of final total against a 16-point residual — as close to a pure-noise event as this sport offers. Gate is on P&L with both spread costs inside the number, so the bar is zero rather than the round trip.
+This was the first thing built against [`core/pulse/replay.py`](../core/pulse/replay.py): a maker-only fade of the price lurch on a game's opening basket, chosen because one basket is worth ~1.3 points of final total against a 16-point residual — as close to a pure-noise event as this sport offers. Gate on P&L with both spread costs inside the number, so the bar was zero rather than the round trip.
 
-**Both Tier 1 hypotheses now report NO DATA for the same reason, and it is worth stating plainly: only 3 games have usable 200ms coverage.** Counted from the local mirror on 2026-08-04:
+Two things make the FAIL trustworthy rather than an artifact. The **signal-only** reversion — every detected lurch, filled or not — is +1.09¢ with a CI spanning zero, so the null is not the conservative fill proxy discarding the good trades. And **clustering earned its keep again**: the row-level interval would have read [−6.15¢, −1.61¢] and excluded zero, wrong by 2.3× on the standard error, turning "no evidence" into a confident loss.
+
+**Tier 1 is now closed: both fades failed on their pre-registered terms.** The blocker this section used to describe — only 3 games with 200ms coverage — is resolved. The recorder kept running and the sample arrived:
 
 | | Games |
 |---|---|
 | any snapshot data | 20 |
-| **live** tick data | 10 |
-| **full 200ms coverage** | **3** (+1 partial, 835s only) |
+| **live** tick data | 20 |
+| **usable 200ms coverage** | **20** (3.58M ticks, median gap 0.20s) |
 
-The other six live games are sampled every ~13–15 minutes — 9 to 42 observations across a two-hour game — and cannot resolve a 30-second reaction window. They contribute coverage and no signal. Rows are not the constraint; three games supply **99%** of the ticks replayed. The constraint is games, and the fix is nights.
+The 0-0 → first-score transition was observed in all 20. Waiting was the entire fix, and it cost nothing.
 
 **The full hypothesis queue lives in [pulse-hypotheses.md](pulse-hypotheses.md)** —
 fourteen ideas raised from live observation, sorted into signals, execution
