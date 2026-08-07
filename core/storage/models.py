@@ -867,6 +867,19 @@ class PlacedOrder(Base):
     #: size would be selling contracts we do not hold.
     filled_quantity: Mapped[Decimal | None] = mapped_column(Qty)
     fill_checked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    #: The human cancel path (V21). `cancel_requested_at` is written BEFORE
+    #: the venue call — an attempt that never came back must still read as an
+    #: attempt — and the rest record the venue's answer verbatim: the ack
+    #: status, the round-trip and venue-side latency (the last unmeasured
+    #: number in docs/math/write-latency.md), and the response body the V21
+    #: findings entry gets transcribed from. Only the /api/orders/{id}/cancel
+    #: endpoint writes these; no machine path may initiate a cancel.
+    cancel_requested_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_http_status: Mapped[int | None] = mapped_column(Integer)
+    cancel_latency_ms: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    cancel_venue_latency_ms: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    cancel_response: Mapped[str | None] = mapped_column(Text)
     venue_order_id: Mapped[str | None] = mapped_column(String(120))
     venue_status: Mapped[str | None] = mapped_column(String(64))
     http_status: Mapped[int | None] = mapped_column(Integer)

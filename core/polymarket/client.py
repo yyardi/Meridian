@@ -642,13 +642,16 @@ class PolymarketOrderClient:
 
     What this class does **not** do, on purpose:
 
-    * No cancel, no modify. Only `submit_limit_order` exists. Cancellation is a
-      real gap and is named in the docstring rather than half-built.
+    * No modify. `submit_limit_order` and `cancel_order` are the only verbs —
+      cancellation was added 2026-08-07 for the human cancel button (V21),
+      and amending an order remains inexpressible.
     * No market orders. The payload's order type is a constant read from
       `core.executor`, not a parameter.
     * No retry. A retried POST is how one click becomes two orders. The
       idempotency key would probably save us; "probably" is the wrong standard
-      for order submission, so the caller sees the failure instead.
+      for order submission, so the caller sees the failure instead. A cancel
+      is not retried either: its response IS the V21 measurement, and a human
+      can click again.
     """
 
     def __init__(
@@ -712,6 +715,64 @@ class PolymarketOrderClient:
                      "retrying with the body appended to the signed message",
             )
             result = self._post_signed(body, sign_body=True)
+        return result
+
+    def cancel_order(self, venue_order_id: str) -> AuthedResponse:
+        """DELETE one resting order by its venue id. **Endpoint UNVERIFIED.**
+
+        No cancel has ever been sent by this system, the venue's docs are not
+        trusted on paths (C10), and the read side of ``/v1/orders/{id}`` is a
+        404 even authenticated (V19) — so ``DELETE /v1/orders/{id}`` is the
+        REST-convention guess, built dark and awaiting one live verification
+        against a 1-share resting order. Whatever comes back — 2xx ack, 404,
+        405, 501 — is returned to the caller verbatim and recorded in
+        ``orders.cancel_response``; that body is what findings **V21** gets
+        written from.
+
+        Fails safe in every branch: a wrong path cannot cancel the wrong
+        thing (the id names one order), cannot place anything (no body, no
+        order terms), and is not retried (the response is the measurement; a
+        human can click again).
+
+        Signed like every other request: Ed25519 over ``ts + METHOD + path``,
+        no body term.
+        """
+        path = f"{ORDERS_PATH}/{venue_order_id}"
+        ts = str(int(time.time() * 1000))
+        headers = {
+            "X-PM-Access-Key": self.creds.key_id,
+            "X-PM-Timestamp": ts,
+            "X-PM-Signature": build_ed25519_signature(
+                self.creds.secret, ts, "DELETE", path
+            ),
+        }
+        started = time.perf_counter()
+        try:
+            resp = self._client.delete(path, headers=headers)
+        except httpx.HTTPError as exc:
+            raise OrderSubmissionError(
+                f"transport error cancelling {venue_order_id} — state at the "
+                f"venue is UNKNOWN, check the app before assuming either way: {exc}"
+            ) from exc
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        result = AuthedResponse(
+            method="DELETE",
+            path=path,
+            status_code=resp.status_code,
+            elapsed_ms=elapsed_ms,
+            body_text=resp.text,
+            request_headers=redact_headers(headers),
+            response_headers=dict(resp.headers),
+        )
+        log.info(
+            "order_cancel_requested",
+            venue_order_id=venue_order_id,
+            status=resp.status_code,
+            elapsed_ms=round(elapsed_ms, 1),
+            server_ms=result.server_latency_ms,
+            **self.creds.fingerprint(),
+        )
         return result
 
     def _post_signed(self, body: str, *, sign_body: bool) -> AuthedResponse:

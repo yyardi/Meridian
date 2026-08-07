@@ -784,11 +784,15 @@ def test_read_only_client_still_has_no_mutating_verb():
         assert verb not in src
 
 
-def test_order_client_can_only_submit_never_cancel_or_modify():
+def test_order_client_can_submit_and_cancel_never_modify():
+    """Updated on purpose 2026-08-07: `cancel_order` was added for the human
+    cancel button (V21) — a deliberate widening, decided here. Amending an
+    order remains inexpressible, and DELETE exists only inside cancel_order.
+    The full cancel-path invariants live in tests/test_cancel_path.py."""
     public = {n for n in dir(pm_client.PolymarketOrderClient) if not n.startswith("_")}
-    assert public == {"submit_limit_order", "close"}
+    assert public == {"submit_limit_order", "cancel_order", "close"}
     src = inspect.getsource(pm_client.PolymarketOrderClient)
-    for verb in ("_client.put", "_client.patch", "_client.delete"):
+    for verb in ("_client.put", "_client.patch"):
         assert verb not in src
 
 
