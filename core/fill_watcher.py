@@ -46,14 +46,21 @@ The exit rules, each load-bearing
    the human believes is protecting them must never silently not exist.
 7. Nothing here reads ``is_live`` — in-game is the target use.
 
-Venue payload shapes are treated as unverified
-----------------------------------------------
-The activities response schema has not been observed at volume (the venue's
-docs have been wrong for this repo before — findings C10). Parsing is
-therefore defensive: an activity that cannot be normalised is counted and
-logged, never guessed at. If the counters on ``/api/status`` disagree with the
-venue's app, the first thing to read is a ``fill_watcher_unparsed_activity``
-log line.
+The payload schema is the OBSERVED one, and cancels are invisible
+-----------------------------------------------------------------
+Parsing is written against the schema read from the live venue on 2026-08-06
+(findings V19), not against documentation — the first version of this module
+guessed a flat shape and reconciled nothing. Activities that do not match the
+observed shape are counted and logged (``fill_watcher_unparsed_activity``),
+never guessed at.
+
+One verified gap: a **zero-fill venue-side cancel emits no activity**, and no
+order-status endpoint exists (``/v1/orders`` 501, ``/v1/orders/{id}`` 404).
+A cancelled unfilled entry therefore stays OPEN here with its exit PENDING —
+both visible on the dashboard, where the human who did the cancelling can see
+and remove the exit. Market settlement (``ACTIVITY_TYPE_POSITION_RESOLUTION``)
+does arrive, so orders on settled markets go EXPIRED and their unfilled exits
+are deleted.
 """
 
 from __future__ import annotations
@@ -98,122 +105,134 @@ TERMINAL = frozenset({FILLED, CANCELLED, EXPIRED})
 
 
 # --------------------------------------------------------------------------- #
-# Activity normalisation — defensive by design
+# Activity parsing — against the OBSERVED schema, 2026-08-06 (findings V19)
 # --------------------------------------------------------------------------- #
+#
+# The real response, read from the venue rather than assumed:
+#
+#     {"activities": [...], "nextCursor": "...", "eof": false}
+#
+# Each ACTIVITY_TYPE_TRADE carries `trade.aggressorExecution` and
+# `trade.passiveExecution` (either may be null; our resting orders are the
+# passive side). Each execution embeds the full order object, and that object
+# is the authoritative record:
+#
+#     trade.<side>Execution.order.id            -> the venue order id
+#     trade.<side>Execution.order.state         -> ORDER_STATE_FILLED / _PARTIALLY_FILLED
+#     trade.<side>Execution.order.cumQuantity   -> cumulative filled, venue's number
+#     trade.<side>Execution.transactTime        -> ordering key
+#
+# `cumQuantity` from the LATEST execution is used instead of summing per-fill
+# shares, and `state` instead of comparing against our ordered quantity — the
+# venue rounds quantities to 2dp (our 1.4645-contract order reports
+# cumQuantity 1.46 with state FILLED), so "filled >= ordered" would read
+# PARTIAL forever on any order with >2dp size.
+#
+# ACTIVITY_TYPE_POSITION_RESOLUTION (`positionResolution.marketSlug`) means
+# the market settled; an order still open on a settled market can never fill
+# again and is EXPIRED. This is market-level truth, not fill attribution —
+# the venue-order-id-only rule applies to fills.
+#
+# **Cancels are invisible here.** A zero-fill cancel emits no activity
+# (verified: two orders cancelled by hand in the app on 2026-08-05 appear
+# nowhere in the feed, and no CANCEL activity or execution type has been
+# observed). There is also no order-status endpoint (`/v1/orders` is 501,
+# `/v1/orders/{id}` 404). So a venue-side cancel of an unfilled entry leaves
+# the row OPEN and its exit PENDING — visible states, both, on the dashboard;
+# the human who cancelled in the app can see and cancel the pending exit.
 
-#: Keys that may carry the VENUE's order id. Deliberately does not include
-#: bare "id" (that is the activity's own id) or "clientOrderId" (ours, but the
-#: rule is venue id only, and one rule beats two).
-_ORDER_ID_KEYS = ("orderId", "order_id", "orderID")
+ACTIVITY_TRADE = "ACTIVITY_TYPE_TRADE"
+ACTIVITY_RESOLUTION = "ACTIVITY_TYPE_POSITION_RESOLUTION"
 
-#: Keys that may carry a fill quantity, tried in order — most specific first,
-#: so a payload carrying both "filledQuantity" and a total "quantity" reads
-#: the fill, not the order size.
-_QTY_KEYS = ("filledQuantity", "filled_quantity", "fillQuantity", "matchedQuantity",
-             "quantity", "size", "shares")
-
-#: Keys that may say what kind of event this is.
-_KIND_KEYS = ("type", "activityType", "activity_type", "eventType", "event_type",
-              "status", "state")
-
-
-@dataclass(frozen=True)
-class Activity:
-    """One venue activity, normalised. `kind` is 'fill' | 'cancel' | 'expire'."""
-
-    venue_order_id: str
-    kind: str
-    quantity: Decimal = Decimal("0")
-
-
-def _classify(label: str) -> str | None:
-    """Map a venue label onto fill/cancel/expire, or None for anything else.
-
-    Substring matching on purpose: 'FILL', 'FILLED', 'ORDER_FILL',
-    'ACTIVITY_TYPE_FILL' and 'trade' should all read as fills without this
-    module having to know the venue's exact vocabulary. 'MATCH' is a fill in
-    exchange vocabulary ('matched'). Anything unrecognised returns None and is
-    logged by the caller — unknown must be loud, not silently dropped.
-    """
-    up = label.upper()
+#: Venue order states -> our fill_status. Substring match on the suffix so
+#: e.g. a hypothetical ORDER_STATE_CANCELED maps sensibly if it ever appears.
+def _status_from_state(state: str) -> str | None:
+    up = (state or "").upper()
+    if "PARTIALLY_FILLED" in up:
+        return PARTIAL
+    if "FILLED" in up:
+        return FILLED
     if "CANCEL" in up:
-        return "cancel"
+        return CANCELLED
     if "EXPIR" in up:
-        return "expire"
-    if "FILL" in up or "TRADE" in up or "MATCH" in up:
-        return "fill"
+        return EXPIRED
+    if "NEW" in up or "OPEN" in up or "WORKING" in up:
+        return OPEN
     return None
 
 
-def normalize_activity(raw: dict) -> Activity | None:
-    """One raw activity → an :class:`Activity`, or None if unparseable.
+@dataclass(frozen=True)
+class OrderEvent:
+    """One execution's view of one order: the venue's own state and count."""
 
-    None is a signal, not a shrug: the caller logs it with the raw keys so a
-    schema drift shows up in the log the first time it happens, instead of as
-    counters that quietly stop moving.
+    venue_order_id: str
+    state: str
+    cum_quantity: Decimal
+    transact_time: str      # RFC3339 with Z and 9-digit nanos — lexicographic
+                            # compare orders correctly within this format
+
+
+def extract_order_events(raw: dict) -> tuple[list[OrderEvent], str | None, bool]:
+    """One raw activity → (order events, resolved market slug, parsed_ok).
+
+    `parsed_ok` False means the activity was a shape this code does not
+    recognise — the caller logs it loudly, because unknown must never be
+    silently dropped (schema drift is exactly how the first version of this
+    parser reconciled nothing for a day).
     """
-    order_id = next(
-        (str(raw[k]) for k in _ORDER_ID_KEYS if raw.get(k) not in (None, "")), None
-    )
-    if order_id is None:
-        return None
+    kind = raw.get("type")
+    if kind == ACTIVITY_RESOLUTION:
+        slug = (raw.get("positionResolution") or {}).get("marketSlug")
+        return [], slug, slug is not None
+    if kind != ACTIVITY_TRADE:
+        # Other benign types exist (ACTIVITY_TYPE_TRANSFER); no order state
+        # in them, nothing to extract, not an error.
+        return [], None, True
 
-    kind = None
-    for key in _KIND_KEYS:
-        value = raw.get(key)
-        if isinstance(value, str):
-            kind = _classify(value)
-            if kind is not None:
-                break
-    if kind is None:
-        return None
-
-    qty = Decimal("0")
-    if kind == "fill":
-        for key in _QTY_KEYS:
-            value = raw.get(key)
-            if value in (None, ""):
-                continue
-            try:
-                qty = abs(Decimal(str(value)))
-                break
-            except (InvalidOperation, ValueError):
-                continue
-        if qty == 0:
-            return None            # a fill without a quantity is not usable
-    return Activity(venue_order_id=order_id, kind=kind, quantity=qty)
-
-
-def _extract_activity_list(body) -> list[dict]:
-    """The venue may wrap the list ({"activities": [...]}, {"data": [...]}) or
-    serve it bare. Take the first list of dicts found at the top level."""
-    if isinstance(body, list):
-        return [a for a in body if isinstance(a, dict)]
-    if isinstance(body, dict):
-        for key in ("activities", "data", "items", "results"):
-            value = body.get(key)
-            if isinstance(value, list):
-                return [a for a in value if isinstance(a, dict)]
-    return []
+    trade = raw.get("trade") or {}
+    events: list[OrderEvent] = []
+    saw_execution = False
+    for side in ("aggressorExecution", "passiveExecution"):
+        ex = trade.get(side)
+        if not isinstance(ex, dict):
+            continue
+        saw_execution = True
+        order = ex.get("order") or {}
+        oid = order.get("id")
+        state = order.get("state")
+        cum = order.get("cumQuantity")
+        if not oid or not state or cum is None:
+            return events, None, False
+        try:
+            cum_qty = Decimal(str(cum))
+        except (InvalidOperation, ValueError):
+            return events, None, False
+        events.append(OrderEvent(
+            venue_order_id=str(oid),
+            state=str(state),
+            cum_quantity=cum_qty,
+            transact_time=str(ex.get("transactTime") or ""),
+        ))
+    return events, None, saw_execution
 
 
-def reconcile_order(order_quantity: Decimal, acts: list[Activity]) -> tuple[str, Decimal]:
-    """Venue-truth state for one order from its own activities.
+def reconcile_order(events: list[OrderEvent]) -> tuple[str, Decimal] | None:
+    """Venue-truth (fill_status, filled_quantity) for one order.
 
-    Returns (fill_status, filled_quantity). Cancel/expire beat OPEN but do not
-    erase fills — a partially-filled-then-cancelled order is CANCELLED with a
-    non-zero filled quantity, and its exit covers exactly that quantity.
+    The latest execution wins outright — its embedded order object carries the
+    venue's own cumulative count and state, so nothing is summed or inferred.
+    None means "no signal in the scanned activities": the caller then falls
+    back to market resolution (EXPIRED) or leaves the row OPEN, and never
+    touches the known fill count.
     """
-    filled = sum((a.quantity for a in acts if a.kind == "fill"), Decimal("0"))
-    if filled >= order_quantity and order_quantity > 0:
-        return FILLED, filled
-    if any(a.kind == "cancel" for a in acts):
-        return CANCELLED, filled
-    if any(a.kind == "expire" for a in acts):
-        return EXPIRED, filled
-    if filled > 0:
-        return PARTIAL, filled
-    return OPEN, filled
+    if not events:
+        return None
+    latest = max(events, key=lambda e: e.transact_time)
+    status = _status_from_state(latest.state)
+    if status is None:
+        log.warning("fill_watcher_unknown_order_state", state=latest.state)
+        return None
+    return status, latest.cum_quantity
 
 
 # --------------------------------------------------------------------------- #
@@ -308,31 +327,55 @@ class FillWatcher:
         if not tracked and not pending:
             return result
 
-        activities = self._fetch_activities(result)
-        if activities is None:            # fetch failed; error already recorded
+        tracked_ids = {o.venue_order_id for o in tracked}
+        activities = self._fetch_activities(result, tracked_ids)
+        if activities is None:            # fetch failed; already logged loudly
             return result
 
-        by_order: dict[str, list[Activity]] = {}
+        by_order: dict[str, list[OrderEvent]] = {}
+        resolved_slugs: set[str] = set()
         for raw in activities:
-            act = normalize_activity(raw)
-            if act is None:
+            events, resolved_slug, ok = extract_order_events(raw)
+            if not ok:
                 result.unparsed_activities += 1
                 log.warning(
                     "fill_watcher_unparsed_activity",
+                    type=raw.get("type"),
                     keys=sorted(raw.keys())[:12],
-                    note="schema drift? attribution needs a venue order id and "
-                         "a recognisable type — this activity was ignored, "
-                         "never guessed at",
+                    note="schema drift? this activity was ignored, never "
+                         "guessed at — compare against findings V19",
                 )
-                continue
-            by_order.setdefault(act.venue_order_id, []).append(act)
+            if resolved_slug:
+                resolved_slugs.add(resolved_slug)
+            for ev in events:
+                by_order.setdefault(ev.venue_order_id, []).append(ev)
 
         now = dt.datetime.now(UTC)
         with self._Session() as s:
             for order in tracked:
                 row = s.get(PlacedOrder, order.id)
-                acts = by_order.get(row.venue_order_id, [])
-                status, filled = reconcile_order(row.quantity, acts)
+                known_filled = row.filled_quantity or Decimal("0")
+                outcome = reconcile_order(by_order.get(row.venue_order_id, []))
+                if outcome is not None:
+                    status, filled = outcome
+                    if filled < known_filled:
+                        # Fills can page out of the scanned window; venue
+                        # truth never un-fills. Keep the larger count, loudly.
+                        log.warning(
+                            "fill_watcher_fill_count_regressed",
+                            order_id=row.id, known=str(known_filled),
+                            reported=str(filled),
+                            note="scanned window no longer covers this "
+                                 "order's fills; keeping the known count",
+                        )
+                        filled = known_filled
+                elif row.market_slug in resolved_slugs:
+                    # No execution in the window but the market settled: this
+                    # order can never fill again. Market-level truth, not fill
+                    # attribution — the fill count is left as known.
+                    status, filled = EXPIRED, known_filled
+                else:
+                    status, filled = OPEN, known_filled
                 changed = (status != row.fill_status
                            or filled != (row.filled_quantity or Decimal("0")))
                 row.fill_status = status
@@ -351,31 +394,77 @@ class FillWatcher:
         self._act_on_pending_exits(result)
         return result
 
-    def _fetch_activities(self, result: PollResult) -> list[dict] | None:
+    #: Activities page size, and how many pages one cycle may walk. Three
+    #: pages of 100 cover far more than a day of this account's activity; a
+    #: fill older than that is caught by the monotonic guard never regressing
+    #: what an earlier cycle already saw.
+    PAGE_LIMIT = 100
+    MAX_PAGES = 3
+
+    def _fetch_activities(
+        self, result: PollResult, tracked_ids: set[str] | None = None
+    ) -> list[dict] | None:
+        """All scanned activity dicts, or None on failure — **logged loudly**.
+
+        The first version of this method recorded failures only on the
+        PollResult, which nothing printed: the watcher ran for a day
+        reconciling nothing in perfect silence, which is the exact B11 shape
+        this module was built to prevent. Every failure path now logs at
+        error level.
+
+        Pagination follows the venue's `cursor`/`eof` contract and stops
+        early once every tracked venue order id has been seen in the scan —
+        the common case is one page.
+        """
+        import json as _json
+
         client = self._read_client or PolymarketAuthedClient(self._creds)
         owns = self._read_client is None
+        remaining = set(tracked_ids or ())
         try:
-            acts_resp = client.get(ACTIVITIES_PATH)
-            if acts_resp.status_code != 200:
-                result.error = f"activities HTTP {acts_resp.status_code}"
-                log.warning("fill_watcher_activities_unavailable",
-                            status=acts_resp.status_code)
-                return None
-            import json as _json
-            try:
-                body = _json.loads(acts_resp.body_text)
-            except ValueError:
-                result.error = "activities body not JSON"
-                return None
+            pages: list[dict] = []
+            cursor: str | None = None
+            for _ in range(self.MAX_PAGES):
+                params: dict = {"limit": self.PAGE_LIMIT}
+                if cursor:
+                    params["cursor"] = cursor
+                resp = client.get(ACTIVITIES_PATH, params=params)
+                if resp.status_code != 200:
+                    result.error = f"activities HTTP {resp.status_code}"
+                    log.error("fill_watcher_activities_unavailable",
+                              status=resp.status_code,
+                              body=resp.body_text[:200])
+                    return None
+                try:
+                    body = _json.loads(resp.body_text)
+                except ValueError:
+                    result.error = "activities body not JSON"
+                    log.error("fill_watcher_activities_not_json",
+                              body_prefix=resp.body_text[:120],
+                              body_len=len(resp.body_text))
+                    return None
+                batch = body.get("activities") or []
+                pages.extend(a for a in batch if isinstance(a, dict))
 
-            # Positions: context only. Logged so a human can eyeball the
-            # account against the orders table; NEVER used for attribution.
+                for a in batch:
+                    trade = a.get("trade") or {}
+                    for side in ("aggressorExecution", "passiveExecution"):
+                        oid = ((trade.get(side) or {}).get("order") or {}).get("id")
+                        remaining.discard(str(oid))
+                cursor = body.get("nextCursor")
+                if body.get("eof") or not cursor or not remaining:
+                    break
+
+            # Positions: context only. Read so a human comparing the account
+            # against the orders table has both in one log; NEVER used for
+            # attribution.
             pos_resp = client.get(POSITIONS_PATH)
             if pos_resp.status_code == 200:
                 result.notes.append("positions read ok")
-            return _extract_activity_list(body)
+            return pages
         except Exception as exc:
             result.error = f"fetch failed: {str(exc)[:200]}"
+            log.error("fill_watcher_fetch_failed", error=str(exc)[:300])
             return None
         finally:
             if owns:
