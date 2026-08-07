@@ -267,6 +267,7 @@ class FillWatcher:
         interval_seconds: float = POLL_INTERVAL_SECONDS,
         read_client: PolymarketAuthedClient | None = None,
         order_client: PolymarketOrderClient | None = None,
+        settlement_lookup=None,
     ) -> None:
         self._Session = sessionmaker
         self._creds = creds
@@ -274,11 +275,51 @@ class FillWatcher:
         # Injectable for tests; production builds real clients lazily.
         self._read_client = read_client
         self._order_client = order_client
+        #: slug -> bool ("is this market settled?"). Production uses the
+        #: PUBLIC gateway settlement endpoint (no auth, its own rate bucket);
+        #: tests inject a dict-like lookup.
+        self._settlement_lookup = settlement_lookup or self._venue_settlement
+        #: Settlement is permanent, so a settled verdict is cached for the
+        #: watcher's lifetime and each slug costs at most one gateway call.
+        self._settled_slugs: set[str] = set()
         self._heartbeat = heartbeat.Heartbeat(
             sessionmaker, heartbeat.SERVICE_FILL_WATCHER
         )
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+
+    def _venue_settlement(self, market_slug: str) -> bool:
+        """True if the venue's public settlement endpoint reports 0 or 1.
+
+        Anything else — 404, no settlement field, transport error — reads as
+        "not settled": the fallback may only ever move an order to EXPIRED on
+        an explicit venue answer, never on a failure to get one.
+        """
+        from core.polymarket.client import PolymarketGatewayClient
+
+        try:
+            with PolymarketGatewayClient() as gw:
+                body = gw.get_settlement(market_slug)
+            return body.get("settlement") in (0, 1)
+        except Exception as exc:
+            log.warning("fill_watcher_settlement_check_failed",
+                        market=market_slug, error=str(exc)[:150])
+            return False
+
+    def _is_settled(self, market_slug: str) -> bool:
+        if market_slug in self._settled_slugs:
+            return True
+        try:
+            settled = bool(self._settlement_lookup(market_slug))
+        except Exception as exc:
+            # A failed lookup must cost this one answer, not the whole cycle —
+            # and "could not ask" is never "settled".
+            log.warning("fill_watcher_settlement_check_failed",
+                        market=market_slug, error=str(exc)[:150])
+            return False
+        if settled:
+            self._settled_slugs.add(market_slug)
+        return settled
 
     # ---- lifecycle -------------------------------------------------------- #
 
@@ -369,10 +410,18 @@ class FillWatcher:
                                  "order's fills; keeping the known count",
                         )
                         filled = known_filled
-                elif row.market_slug in resolved_slugs:
+                elif (row.market_slug in resolved_slugs
+                      or self._is_settled(row.market_slug)):
                     # No execution in the window but the market settled: this
-                    # order can never fill again. Market-level truth, not fill
-                    # attribution — the fill count is left as known.
+                    # order can never fill again. Two sources for that fact,
+                    # both venue truth: a POSITION_RESOLUTION activity (only
+                    # emitted for markets where we held a position) and the
+                    # PUBLIC settlement endpoint, which answers for any market
+                    # — including the ones a never-filled order sits in, where
+                    # no activity of any kind will ever arrive (V19: cancels
+                    # are invisible; this is the only terminal signal such an
+                    # order gets). Market-level truth, not fill attribution —
+                    # the fill count is left as known.
                     status, filled = EXPIRED, known_filled
                 else:
                     status, filled = OPEN, known_filled
@@ -394,12 +443,18 @@ class FillWatcher:
         self._act_on_pending_exits(result)
         return result
 
-    #: Activities page size, and how many pages one cycle may walk. Three
-    #: pages of 100 cover far more than a day of this account's activity; a
-    #: fill older than that is caught by the monotonic guard never regressing
-    #: what an earlier cycle already saw.
+    #: Activities page size, and how many pages one cycle may walk. While the
+    #: watcher is running, fills land on page one within a cycle; the deep
+    #: walk exists for catch-up after downtime — the first live night proved
+    #: 3 pages was not enough once a slate of settlements landed on top of the
+    #: fills, and orders regressed to OPEN. Ten paced pages is a ~1000-event
+    #: lookback; anything older is either already terminal in our table or
+    #: gets caught by the settlement fallback.
     PAGE_LIMIT = 100
-    MAX_PAGES = 3
+    MAX_PAGES = 10
+    #: Pause between successive pages, keeping a catch-up walk well under the
+    #: authenticated host's ~5 req/s throttle (V12).
+    PAGE_PAUSE_SECONDS = 0.35
 
     def _fetch_activities(
         self, result: PollResult, tracked_ids: set[str] | None = None
@@ -454,6 +509,7 @@ class FillWatcher:
                 cursor = body.get("nextCursor")
                 if body.get("eof") or not cursor or not remaining:
                     break
+                time.sleep(self.PAGE_PAUSE_SECONDS)
 
             # Positions: context only. Read so a human comparing the account
             # against the orders table has both in one log; NEVER used for
@@ -483,35 +539,49 @@ class FillWatcher:
             entry CANCELLED/EXPIRED, filled > 0 → submit, qty = filled
             entry CANCELLED/EXPIRED, filled = 0 → DELETE, log line (rule 5)
             entry OPEN or PARTIAL               → wait
+            exit's market settled               → DELETE, whatever the entry —
+                                                  a sell cannot execute on a
+                                                  settled market; the position
+                                                  (if any) pays at settlement
         """
         with self._Session() as s:
             rows = s.query(PendingExit).filter(PendingExit.state == "PENDING").all()
-            plans: list[tuple[int, str]] = []      # (exit id, 'submit' | 'delete')
+            plans: list[tuple[int, str]] = []      # (exit id, action)
             for x in rows:
                 entry = s.get(PlacedOrder, x.entry_order_id)
-                if entry is None or entry.fill_status not in TERMINAL:
+                if entry is None:
+                    continue
+                if self._is_settled(x.market_slug):
+                    plans.append((x.id, "delete_settled"))
+                    continue
+                if entry.fill_status not in TERMINAL:
                     continue
                 filled = entry.filled_quantity or Decimal("0")
                 plans.append((x.id, "submit" if filled > 0 else "delete"))
 
         for exit_id, action in plans:
-            if action == "delete":
-                with self._Session() as s:
-                    x = s.get(PendingExit, exit_id)
-                    entry = s.get(PlacedOrder, x.entry_order_id)
-                    x.state = "DELETED"
-                    x.updated_at = dt.datetime.now(UTC)
-                    s.commit()
-                    result.exits_deleted += 1
-                    log.info(
-                        "pending_exit_deleted",
-                        exit_id=exit_id, entry_order_id=x.entry_order_id,
-                        market=x.market_slug,
-                        reason=f"entry {entry.fill_status} with zero filled — "
-                               "there is nothing to exit",
-                    )
-            else:
+            if action == "submit":
                 self._submit_exit(exit_id, result)
+                continue
+            with self._Session() as s:
+                x = s.get(PendingExit, exit_id)
+                entry = s.get(PlacedOrder, x.entry_order_id)
+                x.state = "DELETED"
+                x.updated_at = dt.datetime.now(UTC)
+                s.commit()
+                result.exits_deleted += 1
+                log.info(
+                    "pending_exit_deleted",
+                    exit_id=exit_id, entry_order_id=x.entry_order_id,
+                    market=x.market_slug,
+                    reason=(
+                        "market settled — a sell cannot execute; the position "
+                        "(if any) pays at settlement"
+                        if action == "delete_settled"
+                        else f"entry {entry.fill_status} with zero filled — "
+                             "there is nothing to exit"
+                    ),
+                )
 
     def _submit_exit(self, exit_id: int, result: PollResult) -> None:
         """Submit one pre-authorized exit, exactly as stored.

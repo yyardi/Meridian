@@ -484,21 +484,29 @@ fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 fetch("/api/results").then(r=>r.json()).then(d=>{
   const s = d.summary;
   // Sample size is GAMES, not rows: one game emits ~130 correlated ladder rows.
-  // And the metric is the bet win rate, not "was the probability on the right
-  // side of 0.50" — that reads ~84% while the actual bets ran 38.5%.
+  // And the metric is MONEY AT PRICE (C11): a flat win rate against the 0.524
+  // breakeven is a category error on ~30¢ tail bets — the portfolio is built
+  // to lose most bets and get paid multiples on hits. Win rate and direction
+  // rate survive only as labelled diagnostics below.
   const beat = s.brier_model!=null && s.brier_market!=null && s.brier_model < s.brier_market;
+  const m = s.money || {};
+  const roi = m.roi==null ? "—" : (m.roi>0?"+":"")+(m.roi*100).toFixed(1)+"%";
   $("#rk").innerHTML = [
     ["Games", s.n_games, `${s.rows} rows · ~${s.rows_per_game}/game`],
     ["Real bets", s.n_bets, `${s.n_no_bet} rows were no-bet`],
-    ["Bet win rate", s.bet_win_rate==null?"—":s.bet_win_rate.toFixed(3),
-     `vs ${s.breakeven} breakeven`],
+    ["Money at price", roi,
+     `$${(m.staked??0).toFixed(2)} staked → $${(m.returned??0).toFixed(2)} · `
+     + `${m.n_bets??0} bets / ${m.n_games??0} games · taker entry, 1 contract, no fees`],
     ["Model vs market", beat?"model":"MARKET",
      `Brier ${s.brier_model} vs ${s.brier_market}`],
   ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>
       <div class="k" style="margin-top:2px">${n}</div></div>`).join("");
-  $("#rnote").innerHTML = `DIAGNOSTIC: direction rate reads ${s.direction_rate_DIAGNOSTIC}
-      — it scores whether the probability sat on the correct side of 0.50, which is
-      not a bet. The bet win rate above is the one that decides money.`;
+  $("#rnote").innerHTML = `DIAGNOSTIC ONLY: bet win rate reads
+      ${s.bet_win_rate_DIAGNOSTIC==null?"—":s.bet_win_rate_DIAGNOSTIC.toFixed(3)}
+      and direction rate ${s.direction_rate_DIAGNOSTIC} — neither is performance.
+      A flat win rate on ~30¢ bets is the C11 category error (most tail bets are
+      supposed to lose), and direction scores a side, not a bet. Money at price,
+      above, is the number that decides anything.`;
 
   if(!d.results.length){ $("#results").innerHTML='<div class="empty">nothing resolved yet</div>'; return; }
   $("#results").innerHTML = `<table><thead><tr>

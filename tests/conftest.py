@@ -41,6 +41,11 @@ os.environ["DATABASE_URL"] = os.environ.get("MERIDIAN_TEST_DATABASE_URL", LOCAL_
 # but never overrides one that exists — and `from_env` treats empty as unset.
 os.environ["POLYMARKET_KEY_ID"] = ""
 os.environ["POLYMARKET_SECRET_KEY"] = ""
+# Same reasoning for the order token: with it set (it lives in .env for the
+# api container), /api/status judges the fill watcher's heartbeat and every
+# status test fails healthy on a host not running the watcher. Tests that
+# exercise the order path set it explicitly with monkeypatch.
+os.environ["MERIDIAN_ORDER_TOKEN"] = ""
 
 # The fill watcher starts on FastAPI startup when ordering is enabled, and
 # TestClient fires startup events. A test that sets MERIDIAN_ORDER_TOKEN on a
