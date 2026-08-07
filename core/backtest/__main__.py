@@ -43,6 +43,10 @@ def main() -> int:
                    help="backtest spreads and moneylines instead of totals")
     p.add_argument("--assume-maker-rebate", action="store_true",
                    help="sensitivity arm: book the unverified maker rebate (findings C7)")
+    p.add_argument("--adverse-selection-cents", type=float, default=None,
+                   help="override the fill model's adverse-selection concession "
+                        "with a MEASURED value, in cents (2026-08-07 re-exam: "
+                        "2.11 pregame / 4.70 in-game)")
     args = p.parse_args()
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.WARNING)
@@ -58,6 +62,10 @@ def main() -> int:
             min_edge_points=args.min_edge, fill_model=fill,
             include_playoffs=not args.no_playoffs,
             assume_maker_rebate=args.assume_maker_rebate,
+            adverse_selection_override=(
+                None if args.adverse_selection_cents is None
+                else args.adverse_selection_cents / 100.0
+            ),
         )
 
     with Session() as s:

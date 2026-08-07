@@ -32,15 +32,31 @@ De-vigging is proportional (equal-margin): both sides scaled by one factor to su
 
 Seasons 2024–2026, min edge 3.0 points.
 
+> ⚠️ **Superseded on the fill side by C12 (2026-08-07).** The "realistic"
+> realised ROI below was computed with a 0.5¢ adverse-selection concession that
+> was a guess written before any fill had been observed. The measured pregame
+> concession is **2.11¢** [1.83, 2.39] per filled contract (in-game 4.70¢), and
+> under it the same 218 filled bets realise **−2.33%** (−1.79% to −2.86% across
+> the pregame CI; −7.27% in-game-calibrated). The conversion mathematics below
+> and the CLV numbers are untouched; the realised column is what moved.
+
 | Fill model | CLV (points) | CLV (no-vig prob) | E[ROI] from CLV | Realised ROI |
 |---|---|---|---|---|
-| optimistic | +1.751 | +0.0391 | +2.98% [+1.65%, +4.31%] | +2.12% [−8.67%, +12.91%] |
-| **realistic** | **+1.751** | **+0.0416** | **+2.50% [+0.85%, +4.16%]** | **+1.98% [−10.87%, +14.82%]** |
-| pessimistic | +1.751 | +0.0391 | +0.11% [−1.18%, +1.40%] | −4.19% [−14.98%, +6.60%] |
+| optimistic | +1.751 | +0.0391 | +2.98% [+1.65%, +4.31%] | +1.67% (re-run 2026-08-07, rebate-free) |
+| **realistic (measured 2.11¢ AS)** | **+1.751** | **+0.0416** | **+2.50% [+0.85%, +4.16%]** | **−2.33%** |
+| pessimistic | +1.751 | +0.0391 | +0.11% [−1.18%, +1.40%] | −4.04% |
 
-**The headline: +1.75 points of CLV is +4.16 percentage points of no-vig probability edge, which implies +2.50% expected ROI per unit staked, with a confidence interval that excludes zero.**
+**The revised headline: +1.75 points of CLV is still +4.16pp of no-vig
+probability edge — and measured adverse selection on the maker fill costs more
+than that edge pays.** E[ROI]-from-CLV assumes the fill is free; the fill is
+measured at 2.11¢, which is ~2/3 of the whole per-contract edge on a ~30¢
+book, before fill probability is even considered.
 
-The gate asked whether de-vigged CLV predicts what the maker-only ledger pays. It does: predicted +2.50%, realised +1.98%, and the prediction sits inside the realised interval. **PASS.**
+The gate asked whether de-vigged CLV predicts what the maker-only ledger pays.
+Under the guessed concession it appeared to (predicted +2.50%, realised +1.98%).
+Under the measured one it does not: the prediction and the realisation are
+separated by exactly the newly-measured cost, which is the honest resolution —
+the conversion was right, and its "fills are benign" assumption was wrong.
 
 ## Read the caveats before believing the headline
 
@@ -56,3 +72,9 @@ Nothing in the model. This is an accounting change and cannot improve an edge �
 ## Status
 
 **Adopted** (2026-08-01). CLV continues to be reported in points as the primary gate; the de-vigged conversion is reported alongside it so the points figure can never again be mistaken for a return.
+
+**Amended** (2026-08-07, C12): the realised column now uses the measured
+adverse-selection concession, and the money verdict flipped negative. The live
+maker fill sample to date (n=5, descriptive): pregame-placed 0/3 filled;
+in-game-placed 2/2 filled in 48 and 111 minutes — the fills that come are in
+the regime with the worse concession. See findings C12.
