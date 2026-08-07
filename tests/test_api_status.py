@@ -258,7 +258,17 @@ def test_a_missing_heartbeat_is_dead_not_unknown(client, writers):
 
 
 def test_a_dead_pregame_recorder_is_unhealthy(client):
-    """The case the old endpoint could not see."""
+    """The case the old endpoint could not see.
+
+    Same shared-database caveat as the live-tier tests above: this suite runs
+    against the real writers' local Postgres, and if any of them lands a
+    fresh pregame-tier row during the run, "pregame silent for three hours"
+    is simply not a state this environment can be put in. The scenario is
+    skipped then, not faked — deleting the foreign rows to force it would be
+    the B6 mistake.
+    """
+    from sqlalchemy import func, select
+
     Session = get_sessionmaker(get_engine())
     now = dt.datetime.now(UTC)
     with Session() as s:
@@ -271,6 +281,20 @@ def test_a_dead_pregame_recorder_is_unhealthy(client):
                     now - dt.timedelta(hours=1)))
         s.commit()
     try:
+        with Session() as s:
+            newest_foreign = s.scalar(
+                select(func.max(MarketSnapshot.captured_at)).where(
+                    MarketSnapshot.book_tier.is_(None),
+                    ~MarketSnapshot.market_slug.like("%statustest%"),
+                )
+            )
+        if (newest_foreign is not None
+                and (now - newest_foreign).total_seconds() < PREGAME_STALE_SECONDS):
+            pytest.skip(
+                "a real pregame-tier writer touched this database "
+                f"{(now - newest_foreign).total_seconds():.0f}s ago — the "
+                "stale-pregame scenario is not constructible here"
+            )
         body = client.get("/api/status").json()
         assert body["pregame_age_seconds"] > PREGAME_STALE_SECONDS
         assert body["healthy"] is False, (
