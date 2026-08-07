@@ -2,6 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "meridian-dashboard-dev",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": [
+        "DATABASE_URL=postgresql+psycopg://meridian:meridian@localhost:5433/meridian",
+        "MERIDIAN_FILL_WATCHER=0",
+        ".venv/bin/uvicorn", "core.api:app", "--host", "127.0.0.1", "--port", "8018"
+      ],
+      "port": 8018
+    },
+    {
       "name": "meridian-dashboard",
       "runtimeExecutable": ".venv/bin/uvicorn",
       "runtimeArgs": ["core.api:app", "--host", "127.0.0.1", "--port", "8008"],

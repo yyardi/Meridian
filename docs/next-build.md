@@ -10,9 +10,9 @@ Meridian prices WNBA contracts on Polymarket US. Its edge is **not** better bask
 
 | | Route | Edge source | Status |
 |---|---|---|---|
-| **A** | Pregame, hold to settlement | venue gap | **built, v4 live, 4 games post-v4** |
-| **B** | In-game directional | better live model, or run overreaction | **built, NO DATA** — `replay.py`, `overreaction.py`, `first_score.py` |
-| **C** | Market making | the spread itself (3–6¢) | **built, NO DATA** — `adverse_selection.py`, `depth_signal.py` |
+| **A** | Pregame, hold to settlement | venue gap | **built, v4 live** — 12 resolved games, −9.4% at price, CI straddles zero; venue-gap leg being tested by the Kalshi recorder (gate ~Aug 8–9) |
+| **B** | In-game directional | ~~run overreaction~~ | **core premise FAILED its gate 2026-08-06** — 444 runs / 11 games, reversion −0.32¢ vs 6¢ cost. Prices reprice, they don't panic. First-score (#2) verdict pending; #5 remains unmeasured but orphaned (no live anchor, no live model with edge) |
+| **C** | Market making | the spread itself (3–6¢) | **FAILED its gate 2026-08-06** — net capture **−2.66¢ per filled quote**, CI [−2.96, −2.36], 630k fills / 11 games. Adverse selection ate the spread; depth adds no directional skew (whale FAIL). QUOTE stays unbuilt |
 
 *(Corrected 2026-08-04. This table said "nothing built" for B and C for two days
 while the body of this same document described four built modules. The status
