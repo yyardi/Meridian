@@ -293,7 +293,7 @@ def priced_pick():
     from core.storage import Prediction
 
     with _Session() as s:
-        latest = s.scalar(text("select max(predicted_at) from predictions"))
+        latest = s.scalar(text("select max(predicted_at) from predictions")) or dt.datetime.now(UTC)
         s.execute(text("delete from predictions where market_slug = :m"),
                   {"m": TEST_SLUG})
         s.add(Prediction(
@@ -546,7 +546,7 @@ def test_a_no_side_row_can_be_confirmed_end_to_end(client):
 
     slug = TEST_SLUG + "-noside"
     with _Session() as s:
-        latest = s.scalar(text("select max(predicted_at) from predictions"))
+        latest = s.scalar(text("select max(predicted_at) from predictions")) or dt.datetime.now(UTC)
         s.add(Prediction(
             predicted_at=latest, market_slug=slug, model_version="t", strategy="t",
             sports_market_type="basketball_team_full_game_total",
@@ -581,7 +581,7 @@ def _seed_pick(slug: str, *, bid: str, ask: str, model: str):
 
     start = dt.datetime.now(UTC) + dt.timedelta(hours=3)
     with _Session() as s:
-        latest = s.scalar(text("select max(predicted_at) from predictions"))
+        latest = s.scalar(text("select max(predicted_at) from predictions")) or dt.datetime.now(UTC)
         s.execute(text("delete from predictions where market_slug = :m"), {"m": slug})
         s.execute(text("delete from market_snapshots where market_slug = :m"), {"m": slug})
         s.add(Prediction(

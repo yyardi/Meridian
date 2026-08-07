@@ -295,7 +295,7 @@ def test_fit_from_rungs_uses_mid_prices():
     assert fit.rungs_used == 5
 
 
-def test_regime_shift_is_real_and_estimator_tracks_it():
+def test_regime_shift_is_real_and_estimator_tracks_it(mirror):
     """The WNBA scoring environment is NOT stationary.
 
     Measured from our own data: 2020-2025 sit at mean 161-166 / sigma 16.5-17.7,
@@ -305,10 +305,9 @@ def test_regime_shift_is_real_and_estimator_tracks_it():
     """
     import datetime as dt
 
-    from core.storage import get_engine, get_sessionmaker
     from strategies.wnba_totals.model.fair_value import estimate_totals_distribution
 
-    S = get_sessionmaker(get_engine())
+    S = mirror   # real history, read-only (see conftest)
     with S() as s:
         d2026 = estimate_totals_distribution(
             as_of=dt.datetime(2026, 7, 31, tzinfo=UTC), session=s
@@ -323,14 +322,13 @@ def test_regime_shift_is_real_and_estimator_tracks_it():
     assert d2025.mean == pytest.approx(164.0, abs=3.0)
 
 
-def test_early_season_shrinks_toward_history():
+def test_early_season_shrinks_toward_history(mirror):
     """With 18 games played, the estimate must not chase noise."""
     import datetime as dt
 
-    from core.storage import get_engine, get_sessionmaker
     from strategies.wnba_totals.model.fair_value import estimate_totals_distribution
 
-    S = get_sessionmaker(get_engine())
+    S = mirror   # real history, read-only (see conftest)
     with S() as s:
         early = estimate_totals_distribution(
             as_of=dt.datetime(2026, 5, 15, tzinfo=UTC), session=s
@@ -344,14 +342,13 @@ def test_early_season_shrinks_toward_history():
     assert early.mean < late.mean
 
 
-def test_sigma_estimation_dedupes_games():
+def test_sigma_estimation_dedupes_games(mirror):
     """team_game_logs holds two rows per game; counting both inflates n."""
     import datetime as dt
 
-    from core.storage import get_engine, get_sessionmaker
     from strategies.wnba_totals.model.fair_value import estimate_totals_distribution
 
-    S = get_sessionmaker(get_engine())
+    S = mirror   # real history, read-only (see conftest)
     with S() as s:
         d = estimate_totals_distribution(
             as_of=dt.datetime(2025, 12, 31, tzinfo=UTC), session=s, history_seasons=0
