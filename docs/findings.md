@@ -264,9 +264,18 @@ Measured facts now load-bearing in `core/fill_watcher.py`:
   no order-status endpoint (`/v1/orders` → 501, `/v1/orders/{id}` → 404). A
   cancelled unfilled entry therefore stays OPEN with its exit PENDING —
   visible, and the human who cancelled is the one looking.
-* **Settlement does arrive** (`positionResolution.marketSlug`), so an order
-  still open on a settled market goes EXPIRED and its unfilled exit is
-  deleted.
+* **Settlement does arrive** (`positionResolution.marketSlug`) — but only for
+  markets where we **held a position**, so a never-filled order gets no
+  terminal signal from activities at all. The public
+  `/v1/markets/{slug}/settlement` endpoint (no auth) answers for any market
+  and is the watcher's terminal fallback: explicit 0/1 → EXPIRED; any failure
+  to ask → nothing. The same check deletes (never submits) an exit whose
+  market has settled.
+* **A 300-event lookback was not enough for one night.** The first live
+  night's fills were pushed past 3 pages by the slate's settlements, and
+  FILLED orders regressed to OPEN (caught by the second live day's audit).
+  The watcher now walks up to 10 paced pages on catch-up and never regresses
+  a known fill count.
 * **Pagination is `?limit=` + `?cursor=` (from `nextCursor`) + `eof`.** Query
   parameters are honoured but **not signed** — the Ed25519 message covers the
   bare path only, verified by a 200 on `?limit=100&cursor=…`.

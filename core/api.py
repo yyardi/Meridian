@@ -955,10 +955,19 @@ def results(limit: int = 2000) -> dict:
     Measured on the first 614 resolved rows it read 84% while the actual bets
     ran 38.5%, and 243 rows flagged "correct" were losing positions.
 
+    **`bet_win_rate` is a diagnostic too, as of C11.** Comparing a flat win
+    rate against the 0.524 breakeven is a category error on this portfolio:
+    0.524 is the breakeven for ~50¢ bets, and the average entry here is ~30¢,
+    where losing most bets and being paid multiples on hits is the *design*.
+    It read "0.188 vs 0.524" on the picks page — a scary number that measured
+    nothing. Retired from the headline exactly as `direction_correct` was.
+
     The metrics that mean something:
 
-    * `bet_win_rate` — of the rows where the model actually disagreed with the
-      market (the only ones that are bets), how many won. Breakeven is 0.524.
+    * `money` — dollars staked → dollars returned at actual prices, the C11
+      method: one bet per market (the latest resolved prediction for it),
+      entered at the taker price — YES costs the ask, NO costs `1 − bid` —
+      one contract per bet, fees excluded. ROI is the only bar.
     * `n_games` — rows are NOT independent. One game produces ~120 correlated
       ladder rows, so 600 rows can be five games. Sample size is games.
     * `brier_model` vs `brier_market` — squared error of each forecast on the
@@ -977,6 +986,12 @@ def results(limit: int = 2000) -> dict:
     n_bets = n_bet_wins = n_no_bet = 0
     se_model = se_market = 0.0
     n_scored = 0
+    # Money at price (C11): one bet per market, taken from its LATEST resolved
+    # prediction — rows arrive newest-first, so first occurrence wins.
+    money_seen: set[str] = set()
+    money_staked = money_returned = 0.0
+    money_bets = 0
+    money_games: set[str] = set()
 
     for p in rows:
         model = _f(p.model_probability)
@@ -998,6 +1013,20 @@ def results(limit: int = 2000) -> dict:
                 bet_won = (settled == 1) if bet_side == "YES" else (settled == 0)
                 n_bets += 1
                 n_bet_wins += int(bet_won)
+                # Money at price: what one contract of this bet actually cost
+                # (taker frame — YES pays the ask, NO pays 1 − bid) and what
+                # settlement actually paid. This is the C11 scoring, and the
+                # only aggregate on this endpoint allowed to call itself
+                # performance.
+                bid, ask = _f(p.market_bid), _f(p.market_ask)
+                if p.market_slug not in money_seen and bid is not None and ask is not None:
+                    cost = ask if bet_side == "YES" else 1.0 - bid
+                    if 0 < cost < 1:
+                        money_seen.add(p.market_slug)
+                        money_staked += cost
+                        money_returned += 1.0 if bet_won else 0.0
+                        money_bets += 1
+                        money_games.add(p.event_slug or p.market_slug)
             se_model += (model - settled) ** 2
             se_market += (market - settled) ** 2
             n_scored += 1
@@ -1031,10 +1060,27 @@ def results(limit: int = 2000) -> dict:
             "rows_per_game": round(len(out) / len(games), 1) if games else None,
             "n_bets": n_bets,
             "n_no_bet": n_no_bet,
-            "bet_win_rate": round(n_bet_wins / n_bets, 4) if n_bets else None,
-            "breakeven": BREAKEVEN_HIT_RATE,
+            # THE performance number (C11): dollars staked → dollars returned
+            # at actual taker prices, one contract per market, fees excluded.
+            "money": {
+                "staked": round(money_staked, 2),
+                "returned": round(money_returned, 2),
+                "roi": (
+                    round(money_returned / money_staked - 1.0, 4)
+                    if money_staked else None
+                ),
+                "n_bets": money_bets,
+                "n_games": len(money_games),
+            },
             "brier_model": round(se_model / n_scored, 4) if n_scored else None,
             "brier_market": round(se_market / n_scored, 4) if n_scored else None,
+            # DIAGNOSTIC ONLY (C11): a flat win rate compared to a 0.524
+            # breakeven is a category error on ~30¢ tail bets — the portfolio
+            # is designed to lose most bets and get paid multiples on hits.
+            # Kept, like direction_rate, as a foil — never as performance.
+            "bet_win_rate_DIAGNOSTIC": (
+                round(n_bet_wins / n_bets, 4) if n_bets else None
+            ),
             # Kept last so it reads as the footnote it is. Direction only —
             # never a win rate, and never in a performance aggregate.
             "direction_rate_DIAGNOSTIC": round(

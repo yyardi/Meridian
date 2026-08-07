@@ -179,12 +179,17 @@ class FakeOrderClient:
         pass
 
 
-def _watcher(activities, order_script=()) -> tuple[FillWatcher, FakeOrderClient]:
+def _watcher(activities, order_script=(),
+             settled=()) -> tuple[FillWatcher, FakeOrderClient]:
+    """`settled` is the set of market slugs the fake settlement lookup calls
+    settled; the default of nothing means no test touches the real gateway."""
     oc = FakeOrderClient(order_script)
+    settled = set(settled)
     w = FillWatcher(
         _Session, CREDS,
         read_client=FakeReadClient(activities),
         order_client=oc,
+        settlement_lookup=lambda slug: slug in settled,
     )
     return w, oc
 
@@ -312,6 +317,73 @@ def test_a_settled_market_expires_an_open_order():
         row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-expire").one()
         assert row.fill_status == EXPIRED
         assert row.fill_checked_at is not None
+
+
+def test_settlement_fallback_expires_a_never_filled_order():
+    """The first live night's residue: cancelled/never-filled orders emit NO
+    activity ever, and POSITION_RESOLUTION only arrives for markets where we
+    held a position. The public settlement endpoint answers for any market —
+    an explicit settled verdict moves the order to EXPIRED and deletes its
+    unfilled exit (rule 5)."""
+    slug = SLUG + "-neverfilled"
+    with _Session() as s:
+        entry = _entry(key="nf", venue_id="v-nf1", slug=slug)
+        s.add(entry)
+        s.commit()
+        _exit_for(s, entry)
+    w, oc = _watcher([], settled={slug})
+    result = w.poll_once()
+    with _Session() as s:
+        row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-nf").one()
+        assert row.fill_status == EXPIRED
+        assert s.query(PendingExit).one().state == "DELETED"
+    assert result.exits_deleted == 1
+    assert oc.payloads == []
+
+
+def test_settlement_failure_never_expires_anything():
+    """The fallback acts only on an explicit venue answer. A lookup that
+    errors (network, 404, schema) must leave the order OPEN — 'we could not
+    ask' is not 'the market settled'."""
+    def broken(slug):
+        raise RuntimeError("gateway down")
+    with _Session() as s:
+        s.add(_entry(key="gwdown", venue_id="v-gw1"))
+        s.commit()
+    oc = FakeOrderClient([])
+    w = FillWatcher(_Session, CREDS, read_client=FakeReadClient([]),
+                    order_client=oc, settlement_lookup=broken)
+    try:
+        w.poll_once()
+    except RuntimeError:
+        pass    # a raising lookup may surface; the row must still be safe
+    with _Session() as s:
+        row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-gwdown").one()
+        assert row.fill_status in (None, OPEN)
+
+
+def test_an_exit_on_a_settled_market_is_deleted_not_submitted():
+    """Even a FILLED entry gets no exit once the market settles: a sell
+    cannot execute there, and submitting one would end FAILED-noise or worse.
+    The position pays at settlement — there is nothing left to protect."""
+    with _Session() as s:
+        entry = _entry(key="lateexit", venue_id="v-le1", qty="1")
+        s.add(entry)
+        s.commit()
+        _exit_for(s, entry)
+    w, oc = _watcher(
+        [trade_activity("v-le1", state="ORDER_STATE_FILLED", cum=1)],
+        settled={SLUG},
+    )
+    result = w.poll_once()
+    assert result.exits_deleted == 1
+    assert oc.payloads == []
+    with _Session() as s:
+        x = s.query(PendingExit).one()
+        assert x.state == "DELETED"
+        # The entry itself still records the truth: it filled.
+        row = s.query(PlacedOrder).filter_by(idempotency_key="test-fw-lateexit").one()
+        assert row.fill_status in (FILLED, EXPIRED)
 
 
 def test_venue_rounding_cannot_strand_a_fill():

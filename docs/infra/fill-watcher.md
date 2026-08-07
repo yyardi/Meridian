@@ -37,12 +37,33 @@ price, size, or any similarity, and the positions endpoint is never used to
 infer a fill. A position delta cannot distinguish a button order's fill from a
 hand trade.
 
-**Payload shapes are treated as unverified.** The activities schema has not
-been observed at volume, and venue documentation has been wrong for this repo
-before (C10). Parsing is defensive: an activity that cannot be normalised is
-logged (`fill_watcher_unparsed_activity`, with its keys) and skipped, never
-guessed at. If the dashboard disagrees with the venue's app, read that log
-line first — it is the schema-drift alarm.
+**Payload shapes are the observed ones (V19), and parsing stays defensive.**
+An activity that does not match the observed shape is logged
+(`fill_watcher_unparsed_activity`) and skipped, never guessed at. If the
+dashboard disagrees with the venue's app, read that log line first — it is
+the schema-drift alarm.
+
+**Terminal states for orders the activities feed cannot see.** Two verified
+gaps (V19): a zero-fill cancel emits no activity ever, and
+`POSITION_RESOLUTION` only arrives for markets where we held a position — so
+a cancelled or never-filled order would stay OPEN forever on activities
+alone. The fallback is the venue's **public settlement endpoint** (no auth,
+one call per market, cached forever once settled): an explicit `settlement`
+of 0 or 1 means the market is done, the order can never fill, and it goes
+EXPIRED. A failed lookup never expires anything — "could not ask" is not
+"settled". The same check guards the exit path: an exit whose market has
+settled is DELETED, not submitted — a sell cannot execute there, and the
+position (if any) pays at settlement. True CANCELLED (human cancels in the
+app, market still trading) remains undetectable until settlement; the row
+reads OPEN and its exit PENDING, both visible to the human who did the
+cancelling.
+
+**Catch-up after downtime.** While the watcher runs, fills land on page one
+within a cycle. After an outage it walks up to 10 paced pages (~1000 events);
+anything older is caught by the settlement fallback, and a monotonic guard
+ensures a fill count never regresses when history pages out (the first live
+night: 3 pages was not enough once a slate of settlements landed on top of
+the fills, and FILLED orders read OPEN again).
 
 ## The attached exit
 
