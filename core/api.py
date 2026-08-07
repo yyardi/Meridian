@@ -1792,6 +1792,26 @@ def _stop_ev_guard() -> None:
         _ev_guard.stop()
 
 
+@app.get("/api/live-totals-fv")
+def live_totals_fv() -> dict:
+    """Formula fair value for in-game TOTALS rungs. **Display only.**
+
+    Sibling of `/api/live-fv`. Same contract: an unvalidated number for
+    looking at, kept away from `/api/picks` so it cannot become a pick by
+    accident. Nothing here imports the executor.
+    """
+    from core.live_totals_fv import GAP_HIGHLIGHT, as_dict, build_live_totals_fv
+
+    with _Session() as s:
+        rows = build_live_totals_fv(s)
+    return {
+        "rows": [as_dict(r) for r in rows],
+        "gap_highlight": GAP_HIGHLIGHT,
+        "caption": "formula FV — unvalidated, display only",
+        "tradable": False,
+    }
+
+
 @app.get("/picks")
 def picks_page() -> FileResponse:
     return FileResponse(STATIC / "picks.html")

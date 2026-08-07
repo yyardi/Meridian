@@ -145,6 +145,11 @@
   <h2 style="margin-top:24px">Open positions — EV stop-loss guard <span class="dimc" style="text-transform:none;letter-spacing:0">(formula FV, unvalidated — information only)</span></h2>
   <div id="evguard"></div>
 
+  <h2 style="margin-top:24px">Live totals — formula FV
+    <span class="dimc" style="text-transform:none;letter-spacing:0">·
+      display only, nothing here is orderable</span></h2>
+  <div id="livetot"></div>
+
   <h2 style="margin-top:24px">Real orders — venue truth from the fill watcher</h2>
   <div id="orders"></div>
 
@@ -614,6 +619,64 @@ async function loadLiveFV(){
 }
 loadLiveFV();
 setInterval(loadLiveFV, 15000);
+
+// ---------------------------------------------------------------------------
+// Live TOTALS formula FV. DISPLAY ONLY — same rules as the moneyline strip:
+// no click handler, no PICKS[] entry, no openTicket(). This one serves the
+// hand-trade audit's single measured-positive pocket (live totals, +9.4%,
+// n=31, descriptive), where what was missing was a number, not a button.
+// ---------------------------------------------------------------------------
+async function loadLiveTotals(){
+  try{
+    const d = await (await fetch("/api/live-totals-fv")).json();
+    const el = $("#livetot");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no live totals rungs right now</div>';
+      return;
+    }
+    const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
+    const games = [];
+    for(const r of d.rows){
+      let g = games.find(x=>x.ev===r.event_slug);
+      if(!g){ g={ev:r.event_slug, rows:[]}; games.push(g); }
+      g.rows.push(r);
+    }
+    el.innerHTML = `
+      <div class="banner" style="margin-bottom:8px">
+        <b>${d.caption}.</b> Projection = pregame v4 total, moved by a
+        <b>fraction</b> of how far scoring has diverged from its own expected pace
+        (coefficient 1.32 at Q1 decaying to 1.00 at full time — raw pace is never
+        extrapolated). &sigma; is the fitted per-period residual for <i>totals</i>
+        (15.9 / 13.0 / 9.7), not the win curve's margin &sigma;. Minutes left is
+        <b>estimated</b> — no game clock is published. Gap coloured past
+        ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
+      </div>
+      ${games.map(g=>{
+        const nm = g.ev.replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
+        const h = g.rows[0];
+        return `<div class="dimc" style="margin:10px 0 4px">${nm} · ${h.score}
+            · ${h.period} · ${h.minutes_left.toFixed(1)}min left${
+            h.minutes_left_is_estimate?' <span title="interpolated; no game clock is published">est.</span>':''}
+            · scored ${h.total_so_far} · pregame ${h.pregame_mu==null?"—":h.pregame_mu}
+            → projected <b>${h.projected_total==null?"—":h.projected_total}</b>
+            ${h.sigma==null?"":`(&sigma; ${h.sigma})`}</div>
+          <table><thead><tr>
+            <th class="l">Line</th><th>FV</th><th>Bid</th><th>Ask</th><th>Gap</th>
+            <th class="l">Note</th>
+          </tr></thead><tbody>${g.rows.map(r=>`
+            <tr>
+              <td class="l">${r.line.toFixed(1)}</td>
+              <td>${r.fair_value==null?'<span class="dimc">—</span>':num(r.fair_value)}</td>
+              <td class="dimc">${num(r.bid)}</td>
+              <td class="dimc">${num(r.ask)}</td>
+              <td class="${r.highlight?(r.gap>0?"pos":"neg"):"dimc"}">${gp(r.gap)}</td>
+              <td class="l dimc">${r.note||""}</td>
+            </tr>`).join("")}</tbody></table>`;
+      }).join("")}`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadLiveTotals();
+setInterval(loadLiveTotals, 15000);
 
 fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 
