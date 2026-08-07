@@ -16,10 +16,18 @@ position's own cost frame:
   row says so, so averaging-down has an honest signal instead of a red number
   and an itchy finger.
 * **EDGE INTACT** — neither. Quiet.
-* **NO FORMULA FV** — the formula covers live **moneylines only** (the win
-  curve prices a winner, not a total), or the game is not live, or the clock
-  estimate has degraded past usefulness. Said outright rather than silently
-  skipping the row: a guard that covers half the book must say which half.
+* **NO FORMULA FV** — the game is not live, the clock estimate has degraded
+  past usefulness, or the market type has no live formula. Said outright
+  rather than silently skipping the row: a guard that covers part of the book
+  must say which part.
+
+**Coverage, as of 2026-08-07:** live **moneylines** (win curve,
+`core/live_fv.py`) and live **totals** (per-period totals model,
+`core/live_totals_fv.py`). **Spreads are not priced live** and say so. Totals
+coverage is the half that matters most here — the hand-trade audit's one
+measured-positive pocket is the user's live-totals trading (+9.4%, n=31,
+descriptive), and what was missing there was a number to hold a price
+against.
 
 What it deliberately is not
 ---------------------------
@@ -66,6 +74,7 @@ import httpx
 import structlog
 
 from core.live_fv import build_live_fv
+from core.live_totals_fv import build_live_totals_fv
 from core.storage import PlacedOrder
 
 log = structlog.get_logger(__name__)
@@ -209,7 +218,17 @@ def build_guard_rows(session) -> list[GuardRow]:
     if not positions:
         return []
 
-    fv_by_market = {r.market_slug: r for r in build_live_fv(session)}
+    # Two formulas, one map. Moneylines are priced by the win curve
+    # (`core/live_fv.py`); totals by the per-period totals model
+    # (`core/live_totals_fv.py`). Both expose `.fair_value` in the YES frame
+    # and `.mid`, so everything downstream is identical — and both are equally
+    # UNVALIDATED, which is the caption every verdict carries.
+    #
+    # Totals coverage closed the gap this module used to name outright, and it
+    # is the half that matters most: the hand-trade audit's one measured
+    # positive pocket is the user's live-totals trading.
+    fv_by_market: dict = {r.market_slug: r for r in build_live_fv(session)}
+    fv_by_market.update({r.market_slug: r for r in build_live_totals_fv(session)})
 
     rows: list[GuardRow] = []
     for p in positions:
@@ -217,12 +236,13 @@ def build_guard_rows(session) -> list[GuardRow]:
         live = fv_by_market.get(p.market_slug)
         if live is None:
             fv = mid = None
-            # Winner markets get the formula; everything else never will —
-            # the win curve prices a winner, not a total, and saying so
-            # beats a silent gap in coverage.
+            # Spreads are the remaining uncovered type: nothing prices a
+            # handicap live yet. Saying which half is uncovered beats a silent
+            # gap.
             reason = (
-                "formula FV covers live moneylines only"
-                if (p.sports_market_type or "").endswith(("total", "spread"))
+                "formula FV covers live moneylines and totals; spreads are "
+                "not priced live"
+                if (p.sports_market_type or "").endswith("spread")
                 else "market not live (or FV suppressed for clock/OT reasons)"
             )
         else:

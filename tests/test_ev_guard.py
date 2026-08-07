@@ -119,16 +119,41 @@ def test_intact_and_no_fv():
 # --------------------------------------------------------------------- #
 
 
-def test_totals_positions_are_covered_honestly_as_no_fv(monkeypatch):
-    """The formula prices winners only. A totals position appears with NO_FV
-    and a message saying exactly that — never silently skipped."""
+def test_spread_positions_are_covered_honestly_as_no_fv(monkeypatch):
+    """Spreads have no live formula. The row says so — never silently skipped.
+
+    Superseded 2026-08-07: this test used to assert the same of TOTALS, which
+    were then uncovered. `core/live_totals_fv.py` closed that gap, so the
+    honest-absence contract now applies to spreads, the one remaining type.
+    """
     monkeypatch.setattr(ev, "build_live_fv", lambda s: [])
-    _position(key="tot", market_type="basketball_team_full_game_total")
+    monkeypatch.setattr(ev, "build_live_totals_fv", lambda s: [])
+    _position(key="spr", market_type="basketball_team_full_game_spread")
     with _Session() as s:
         rows = [r for r in ev.build_guard_rows(s) if r.market_slug == SLUG]
     assert len(rows) == 1
     assert rows[0].verdict == ev.NO_FV
-    assert "moneylines only" in rows[0].message
+    assert "spreads are not priced live" in rows[0].message
+
+
+def test_totals_positions_now_get_a_verdict_from_the_totals_formula(monkeypatch):
+    """The coverage gap order-path named, closed.
+
+    A totals position must be judged by `core/live_totals_fv.py` rather than
+    reported as uncoverable. This is the half that matters: the hand-trade
+    audit's one measured-positive pocket is live totals.
+    """
+    monkeypatch.setattr(ev, "build_live_fv", lambda s: [])
+    monkeypatch.setattr(
+        ev, "build_live_totals_fv",
+        lambda s: [_FakeLive(SLUG, fair_value=0.20, mid=0.30)])
+    _position(key="tot", market_type="basketball_team_full_game_total", price="0.40")
+    with _Session() as s:
+        rows = [r for r in ev.build_guard_rows(s) if r.market_slug == SLUG]
+    assert len(rows) == 1
+    # FV 0.20 has fallen below a 0.40 entry: the #9 trigger.
+    assert rows[0].verdict == ev.EDGE_GONE
+    assert "no formula FV" not in rows[0].message
 
 
 def test_unfilled_and_stale_positions_are_not_guarded(monkeypatch):
