@@ -47,6 +47,7 @@ from core.polymarket.client import (
 from core.ratelimit import TokenBucket
 from core.storage import (
     MarketSnapshot,
+    PendingExit,
     PlacedOrder,
     Prediction,
     ShadowOrder,
@@ -139,6 +140,14 @@ def _derive_order_terms(pred) -> dict | None:
     cost = (Decimal("1") - limit_price) if is_no else limit_price
     if cost <= 0:
         return None
+    # The whole book and the model, in the COST frame of this outcome. The
+    # ticket edits and validates in this frame only; the YES-frame price.value
+    # is derived once, server-side, at submit (V15: one row, one frame).
+    cross = Decimal(str(1 - bid)) if is_no else Decimal(str(ask))
+    fair = (
+        None if model is None
+        else round(1 - model, 4) if is_no else round(model, 4)
+    )
     max_qty = (MAX_ORDER_STAKE_USD / cost).quantize(Decimal("0.01"))
     return {
         "supported": True,
@@ -148,6 +157,14 @@ def _derive_order_terms(pred) -> dict | None:
         #: What you actually pay per contract. These differ on a NO order and
         #: the ticket shows both, so a bad inversion is visible before sending.
         "cost_per_contract": float(cost),
+        #: Cost-frame cross price (the far touch). A typed price at or above
+        #: this fills immediately as a taker; more than 5¢ beyond it needs the
+        #: hard confirm (`acknowledge_crossing`).
+        "cross_price": float(cross),
+        #: Model fair value in this outcome's cost frame — the exit prefill
+        #: (hypothesis #8: the edge is collected when the market reaches the
+        #: model, so fair value IS the sell target).
+        "fair_value": fair,
         "min_quantity": float(VENUE_MIN_QTY),
         "max_quantity": float(max_qty),
         "max_stake_usd": float(MAX_ORDER_STAKE_USD),
@@ -353,9 +370,16 @@ def _ticket(bid: float | None, ask: float | None, model: float | None,
 
     edge_yes, edge_no = model - ask, bid - model
     yes = edge_yes >= edge_no
-    cost = ask if yes else 1.0 - bid
+    # BUY AT is the RESTING price — the number the order actually sends — not
+    # the crossing cost. The old ticket showed the ask while the order posted
+    # at the bid (0.33 shown, 0.32 sent) and computed the return off the
+    # display number; now buy_at, return_pct and orders.limit_price are the
+    # same number in the same cost frame, with the crossing cost shown
+    # separately as cross_at.
+    buy = bid if yes else 1.0 - ask
+    cross = ask if yes else 1.0 - bid
     worth = model if yes else 1.0 - model
-    if cost <= 0:
+    if buy <= 0:
         return None
 
     is_total = (market_type or "").endswith("total")
@@ -369,14 +393,15 @@ def _ticket(bid: float | None, ask: float | None, model: float | None,
     qty = shadow_qty or 0.0
     return {
         "label": label,
-        "buy_at": round(cost, 4),
+        "buy_at": round(buy, 4),
+        "cross_at": round(cross, 4),
         "sell_at": round(worth, 4),
         # Return on the money staked, not the probability edge. A 5-point edge
         # on a 20c contract returns 25%; on an 80c contract, 6%. The screen
         # showed points, and points are not what the wallet receives.
-        "return_pct": round(worth / cost - 1.0, 4),
+        "return_pct": round(worth / buy - 1.0, 4),
         "size": round(qty, 2),
-        "stake": round(qty * cost, 2),
+        "stake": round(qty * buy, 2),
         # Below the venue minimum the model wanted the bet but not enough of it
         # to be worth a ticket. Say so rather than showing a size of 0.0.
         "too_small": qty < MIN_TICKET_QTY,
@@ -436,6 +461,28 @@ def _heartbeat_report(beats: dict) -> dict:
             "rows_written": entry.get("rows_written"),
             "verdict": heartbeat.verdict(age, interval),
         }
+    # The fill watcher is judged only where it could have started: ordering
+    # enabled in THIS process (token set — the same gate the order endpoint
+    # fails closed on). On such a host a silent watcher is exactly the B11
+    # shape — accepted orders quietly diverging from venue truth — so it is
+    # DEAD like any other missing writer. On a host that cannot order, there
+    # is nothing to reconcile and no verdict to give.
+    if (os.environ.get("MERIDIAN_ORDER_TOKEN") or "").strip():
+        entry = beats.get(heartbeat.SERVICE_FILL_WATCHER)
+        if entry is None:
+            report[heartbeat.SERVICE_FILL_WATCHER] = {
+                "verdict": heartbeat.DEAD, "missing": True,
+            }
+        else:
+            age = float(entry["age_seconds"])
+            interval = float(entry["interval_seconds"])
+            report[heartbeat.SERVICE_FILL_WATCHER] = {
+                "age_seconds": age,
+                "interval_seconds": interval,
+                "stale_after_seconds": round(heartbeat.stale_after_seconds(interval), 1),
+                "rows_written": entry.get("rows_written"),
+                "verdict": heartbeat.verdict(age, interval),
+            }
     report[heartbeat.SERVICE_LIVE] = _local_live_heartbeat()
     return report
 
@@ -908,10 +955,19 @@ def results(limit: int = 2000) -> dict:
     Measured on the first 614 resolved rows it read 84% while the actual bets
     ran 38.5%, and 243 rows flagged "correct" were losing positions.
 
+    **`bet_win_rate` is a diagnostic too, as of C11.** Comparing a flat win
+    rate against the 0.524 breakeven is a category error on this portfolio:
+    0.524 is the breakeven for ~50¢ bets, and the average entry here is ~30¢,
+    where losing most bets and being paid multiples on hits is the *design*.
+    It read "0.188 vs 0.524" on the picks page — a scary number that measured
+    nothing. Retired from the headline exactly as `direction_correct` was.
+
     The metrics that mean something:
 
-    * `bet_win_rate` — of the rows where the model actually disagreed with the
-      market (the only ones that are bets), how many won. Breakeven is 0.524.
+    * `money` — dollars staked → dollars returned at actual prices, the C11
+      method: one bet per market (the latest resolved prediction for it),
+      entered at the taker price — YES costs the ask, NO costs `1 − bid` —
+      one contract per bet, fees excluded. ROI is the only bar.
     * `n_games` — rows are NOT independent. One game produces ~120 correlated
       ladder rows, so 600 rows can be five games. Sample size is games.
     * `brier_model` vs `brier_market` — squared error of each forecast on the
@@ -930,6 +986,12 @@ def results(limit: int = 2000) -> dict:
     n_bets = n_bet_wins = n_no_bet = 0
     se_model = se_market = 0.0
     n_scored = 0
+    # Money at price (C11): one bet per market, taken from its LATEST resolved
+    # prediction — rows arrive newest-first, so first occurrence wins.
+    money_seen: set[str] = set()
+    money_staked = money_returned = 0.0
+    money_bets = 0
+    money_games: set[str] = set()
 
     for p in rows:
         model = _f(p.model_probability)
@@ -951,6 +1013,20 @@ def results(limit: int = 2000) -> dict:
                 bet_won = (settled == 1) if bet_side == "YES" else (settled == 0)
                 n_bets += 1
                 n_bet_wins += int(bet_won)
+                # Money at price: what one contract of this bet actually cost
+                # (taker frame — YES pays the ask, NO pays 1 − bid) and what
+                # settlement actually paid. This is the C11 scoring, and the
+                # only aggregate on this endpoint allowed to call itself
+                # performance.
+                bid, ask = _f(p.market_bid), _f(p.market_ask)
+                if p.market_slug not in money_seen and bid is not None and ask is not None:
+                    cost = ask if bet_side == "YES" else 1.0 - bid
+                    if 0 < cost < 1:
+                        money_seen.add(p.market_slug)
+                        money_staked += cost
+                        money_returned += 1.0 if bet_won else 0.0
+                        money_bets += 1
+                        money_games.add(p.event_slug or p.market_slug)
             se_model += (model - settled) ** 2
             se_market += (market - settled) ** 2
             n_scored += 1
@@ -984,10 +1060,27 @@ def results(limit: int = 2000) -> dict:
             "rows_per_game": round(len(out) / len(games), 1) if games else None,
             "n_bets": n_bets,
             "n_no_bet": n_no_bet,
-            "bet_win_rate": round(n_bet_wins / n_bets, 4) if n_bets else None,
-            "breakeven": BREAKEVEN_HIT_RATE,
+            # THE performance number (C11): dollars staked → dollars returned
+            # at actual taker prices, one contract per market, fees excluded.
+            "money": {
+                "staked": round(money_staked, 2),
+                "returned": round(money_returned, 2),
+                "roi": (
+                    round(money_returned / money_staked - 1.0, 4)
+                    if money_staked else None
+                ),
+                "n_bets": money_bets,
+                "n_games": len(money_games),
+            },
             "brier_model": round(se_model / n_scored, 4) if n_scored else None,
             "brier_market": round(se_market / n_scored, 4) if n_scored else None,
+            # DIAGNOSTIC ONLY (C11): a flat win rate compared to a 0.524
+            # breakeven is a category error on ~30¢ tail bets — the portfolio
+            # is designed to lose most bets and get paid multiples on hits.
+            # Kept, like direction_rate, as a foil — never as performance.
+            "bet_win_rate_DIAGNOSTIC": (
+                round(n_bet_wins / n_bets, 4) if n_bets else None
+            ),
             # Kept last so it reads as the footnote it is. Direction only —
             # never a win rate, and never in a performance aggregate.
             "direction_rate_DIAGNOSTIC": round(
@@ -1025,34 +1118,72 @@ def results(limit: int = 2000) -> dict:
 #: rather than to shape normal traffic.
 _ORDER_BUCKET = TokenBucket(2.0, 2)
 
-#: How closely a submitted price/size must match the stored shadow order.
-#: Exact equality on Decimal after quantisation; the tolerance exists only to
-#: absorb JSON float round-tripping, not to permit a different order.
-_MATCH_TOLERANCE = Decimal("0.00005")
-
-
 class OrderRequest(BaseModel):
     """What the confirm button sends.
 
-    The split matters:
+    ``limit_price`` and ``quantity`` are both the human's instructions, within
+    bounds. The price used to be a server-derived echo; it became editable so
+    the human can nudge a limit when the book is a cent away from the model's
+    number. What the caller still **cannot** choose: the outcome (the server
+    determines direction from the model and the book), the order type (limit,
+    by construction), and the mode.
 
-    * ``limit_price`` is an **echo**, not an instruction. The server derives the
-      price itself and refuses the request if the client's copy disagrees. That
-      catches a stale tab quoting a price the book has moved away from, without
-      ever letting the caller choose the price.
-    * ``quantity`` **is** an instruction, within bounds. The human is allowed to
-      size their own order — the model's size is a bankroll-constrained
-      suggestion, and on most rows it is below the venue minimum anyway.
+    **Every price in this request is in the COST frame** — the frame the
+    ticket displays, where the number is what one contract costs you. For a
+    YES order that equals the venue's ``price.value``; for a NO order the
+    server converts once, ``price.value = 1 − cost`` (V14). The client never
+    performs the conversion, so the wrong-side trade (paying 0.81 for a 0.16
+    bet) is not expressible from the UI.
+
+    Validation the server enforces on both prices: within [0.01, 0.99], on the
+    1¢ tick (V2). A price more than 5¢ through the far touch additionally
+    requires ``acknowledge_crossing`` — the hard confirm the page shows with
+    both frames spelled out.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     market_slug: str
     mode: str
-    #: Echoed from the page; must match the server's own derivation.
+    #: Human-edited price in the outcome's cost frame. Pre-filled by the page
+    #: with the current resting price.
     limit_price: Decimal
     #: Human-chosen. Bounded by the venue minimum and the stake cap.
     quantity: Decimal
+    #: Optional attached exit: "then sell at ___", in the same cost frame,
+    #: pre-filled with model fair value and human-editable. Stored as a
+    #: pre-authorized pending order; submitted by the fill watcher when the
+    #: entry fills, exactly as typed, for the filled quantity.
+    exit_price: Decimal | None = None
+    #: Hard-confirm flag for a price more than 5¢ through the far touch. The
+    #: page only sets it after showing the both-frames warning.
+    acknowledge_crossing: bool = False
+
+
+#: Tick and fat-finger bounds for a human-typed price.
+_TICK = Decimal("0.01")
+_MAX_THROUGH_FAR_TOUCH = Decimal("0.05")
+
+
+def _validate_typed_price(price: Decimal, *, what: str) -> None:
+    """[0.01, 0.99] and 1¢-tick alignment (V2), for a human-typed cost price.
+
+    422 rather than silent rounding: a price the venue would reject, or one
+    between ticks, is a typo — and correcting a typo silently is how the
+    number on screen stops being the number sent.
+    """
+    if not (VENUE_MIN_PRICE <= price <= VENUE_MAX_PRICE):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{what} {price} outside the venue's "
+                   f"[{VENUE_MIN_PRICE}, {VENUE_MAX_PRICE}] range",
+        )
+    if price != price.quantize(_TICK):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{what} {price} is not on the 1¢ tick (V2: tick is 0.01 "
+                   "on all 96/96 markets measured)",
+        )
 
 
 def _require_order_token(request: Request) -> None:
@@ -1130,17 +1261,43 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
         # the client does not get a say in which one it is.
         outcome = OutcomeSide(terms["outcome"])
 
-        # Gate 3a — the PRICE is the server's, and the client's copy must agree.
-        # A mismatch means the page is stale, so the human is looking at a
-        # different trade than the one about to be sent.
-        server_price = Decimal(str(terms["limit_price"]))
-        if abs(server_price - req.limit_price) > _MATCH_TOLERANCE:
+        # Gate 3a — the PRICE is the human's, inside validation. It arrives in
+        # the outcome's COST frame (the frame the ticket displays and the
+        # human edited); the YES-frame price.value the venue wants is derived
+        # HERE, once, from the server's own outcome determination. The client
+        # never converts, so a frame error is not expressible from the UI.
+        _validate_typed_price(req.limit_price, what="limit price")
+        cost = req.limit_price
+        server_price = (
+            (Decimal("1") - cost) if outcome is OutcomeSide.NO else cost
+        )
+
+        # Fat-finger guard: more than 5¢ through the far touch is almost
+        # never a nudge — it is the V14 wrong-side shape (paying 0.81 for a
+        # 0.16 bet). Refused unless the page's hard confirm was clicked, and
+        # the refusal spells out both frames so the human can see which trade
+        # they are actually about to make.
+        far_touch = Decimal(str(terms["cross_price"]))
+        if cost > far_touch + _MAX_THROUGH_FAR_TOUCH and not req.acknowledge_crossing:
             raise HTTPException(
-                status_code=409,
+                status_code=422,
                 detail=(
-                    f"price moved: server has {server_price}, page sent "
-                    f"{req.limit_price}. Reload the picks page."
+                    f"price {cost} is more than {_MAX_THROUGH_FAR_TOUCH} through "
+                    f"the far touch ({far_touch} to cross, {terms['outcome']} "
+                    f"cost frame; venue price.value would be {server_price}). "
+                    "If this is really intended, confirm the crossing on the "
+                    "ticket (acknowledge_crossing)."
                 ),
+            )
+
+        # The attached exit, validated BEFORE any row is written or any money
+        # moves: a request that would store an invalid exit must fail whole.
+        exit_yes_price = None
+        if req.exit_price is not None:
+            _validate_typed_price(req.exit_price, what="exit price")
+            exit_yes_price = (
+                (Decimal("1") - req.exit_price)
+                if outcome is OutcomeSide.NO else req.exit_price
             )
 
         # Gate 3b — the SIZE is the human's, inside bounds. Below the venue
@@ -1155,7 +1312,6 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
         # Stake is computed from the COST, not the price. On a NO order those
         # differ by 1 - price, so charging the cap against `price` would size a
         # cheap NO five times too small and an expensive one five times too big.
-        cost = Decimal(str(terms["cost_per_contract"]))
         stake = (cost * req.quantity).quantize(Decimal("0.01"))
         if stake > MAX_ORDER_STAKE_USD:
             raise HTTPException(
@@ -1203,8 +1359,9 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
             accepted=False,
             market_bid=pred.market_bid,
             market_ask=pred.market_ask,
-            # A buy resting at the bid does not cross by construction.
-            would_rest=True,
+            # No longer true by construction now the price is editable: a
+            # typed price at or beyond the far touch crosses and pays taker.
+            would_rest=cost < far_touch,
             shadow_order_id=shadow.id if shadow is not None else None,
             prediction_id=pred.id,
             notes=(
@@ -1223,13 +1380,33 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
             ) from None
         row_id = row.id
 
+        # The attached exit is stored NOW, at click time, linked to the entry
+        # by OUR order id — explicit, one-to-one, never matched by similarity.
+        # Market slug and price are frozen here (rules 1–2): the watcher sends
+        # them as stored and never re-derives either.
+        exit_row_id = None
+        if exit_yes_price is not None:
+            exit_row = PendingExit(
+                entry_order_id=row_id,
+                market_slug=row.market_slug,     # copied from the entry row
+                outcome=outcome.value,
+                limit_price=exit_yes_price,      # YES-frame, immutable
+                typed_price=req.exit_price,      # what the human saw and typed
+                state="PENDING",
+            )
+            s.add(exit_row)
+            s.commit()
+            exit_row_id = exit_row.id
+
     # --- the venue call. Outside the session: never hold a DB connection open
     # --- across a network round trip to a third party.
     _ORDER_BUCKET.acquire()
     try:
         creds = USCredentials.from_env()
     except MissingCredentialsError as exc:
-        _fail_order(row_id, error=str(exc))
+        # Nothing was sent, so the entry definitively does not exist — the
+        # attached exit is deleted along with the attempt.
+        _fail_order(row_id, error=str(exc), delete_exit_id=exit_row_id)
         raise HTTPException(status_code=503, detail=str(exc)) from None
 
     payload = order.to_payload()
@@ -1238,7 +1415,9 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
             result = client.submit_limit_order(payload)
     except OrderSubmissionError as exc:
         # Ambiguous: the order may or may not exist at the venue. The row stays
-        # accepted=False and records why, which is the honest state.
+        # accepted=False and records why, which is the honest state — and the
+        # pending exit stays PENDING for the same reason: if the entry does
+        # exist and later fills, the exit the human typed must still fire.
         _fail_order(row_id, error=str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from None
 
@@ -1261,6 +1440,19 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
             stored.venue_latency_ms = Decimal(str(round(result.server_latency_ms, 2)))
         if not accepted:
             stored.error = result.body_text[:1000]
+            # A definitively rejected entry never existed at the venue, so its
+            # attached exit has nothing to protect. Deleted with a log line
+            # (rule 5). A transport error takes the other branch above and
+            # leaves the exit PENDING, because the entry MAY exist.
+            if exit_row_id is not None:
+                x = s.get(PendingExit, exit_row_id)
+                x.state = "DELETED"
+                x.updated_at = dt.datetime.now(UTC)
+                log.info(
+                    "pending_exit_deleted", exit_id=exit_row_id,
+                    entry_order_id=row_id,
+                    reason="entry rejected by the venue — nothing to exit",
+                )
         s.commit()
         counts = _order_counts(s)
 
@@ -1293,6 +1485,14 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
             "stake": str(order.stake),
             "order_type": order.order_type,
         },
+        # The attached exit, if one was stored. `state` is PENDING until the
+        # fill watcher confirms the entry's fill and submits it.
+        "exit": None if exit_row_id is None else {
+            "pending_exit_id": exit_row_id,
+            "state": "DELETED" if not accepted else "PENDING",
+            "sell_at": str(req.exit_price),           # cost frame, as typed
+            "price_value": str(exit_yes_price),       # YES frame, as will be sent
+        },
         "response": result.body_text[:600],
         **counts,
     }
@@ -1306,13 +1506,115 @@ def _parse_venue_body(text_body: str):
         return None
 
 
-def _fail_order(row_id: int, *, error: str) -> None:
-    """Record why a submission never produced a venue answer."""
+def _fail_order(row_id: int, *, error: str, delete_exit_id: int | None = None) -> None:
+    """Record why a submission never produced a venue answer.
+
+    ``delete_exit_id`` is passed only when the failure is definitive (nothing
+    was ever sent). An ambiguous transport failure must NOT delete the exit —
+    the entry may exist at the venue, and the exit protecting it must survive.
+    """
     with _Session() as s:
         stored = s.get(PlacedOrder, row_id)
         if stored is not None:
             stored.error = error[:1000]
-            s.commit()
+        if delete_exit_id is not None:
+            x = s.get(PendingExit, delete_exit_id)
+            if x is not None:
+                x.state = "DELETED"
+                x.updated_at = dt.datetime.now(UTC)
+                log.info("pending_exit_deleted", exit_id=delete_exit_id,
+                         reason="entry was never sent — nothing to exit")
+        s.commit()
+
+
+@app.get("/api/orders/recent")
+def recent_orders(limit: int = 25) -> dict:
+    """Real orders with their venue-truth fill state, plus attached exits.
+
+    This is what the picks page's order panel reads. `fill_status` of null
+    means the fill watcher has never reconciled the row — shown as such, never
+    as OPEN, because "we have not looked" and "we looked and it is resting"
+    are different claims (the book_tier lesson, applied to orders).
+
+    A FAILED exit is the loudest thing on this payload: it means the human
+    believes a position has a resting exit protecting it and it does not.
+    """
+    with _Session() as s:
+        rows = s.scalars(
+            select(PlacedOrder)
+            .order_by(PlacedOrder.submitted_at.desc())
+            .limit(limit)
+        ).all()
+        exits = {
+            x.entry_order_id: x
+            for x in s.scalars(select(PendingExit)).all()
+        }
+
+    out = []
+    for o in rows:
+        x = exits.get(o.id)
+        out.append({
+            "id": o.id,
+            "submitted_at": o.submitted_at.isoformat(),
+            "market_slug": o.market_slug,
+            "side": o.side,
+            "limit_price": _f(o.limit_price),          # YES frame (stored)
+            "quantity": _f(o.quantity),
+            "accepted": o.accepted,
+            "pre_authorized": o.pre_authorized,
+            "venue_order_id": o.venue_order_id,
+            "fill_status": o.fill_status,               # null = never reconciled
+            "filled_quantity": _f(o.filled_quantity),
+            "fill_checked_at": (
+                o.fill_checked_at.isoformat() if o.fill_checked_at else None
+            ),
+            "error": (o.error or "")[:200] or None,
+            "exit": None if x is None else {
+                "state": x.state,
+                "sell_at": _f(x.typed_price),           # cost frame, as typed
+                "price_value": _f(x.limit_price),       # YES frame, as sent
+                "error": (x.error or "")[:200] or None,
+            },
+        })
+    return {"orders": out}
+
+
+# --------------------------------------------------------------------------- #
+# Fill watcher lifecycle
+# --------------------------------------------------------------------------- #
+#
+# The watcher runs inside this process because this process is the only one
+# that places orders — the read-back loop belongs next to the write path. It
+# starts only when ordering itself is enabled (token + credentials), which is
+# also the condition under which /api/status judges its heartbeat: a host that
+# cannot order has nothing to reconcile.
+
+_fill_watcher = None
+
+
+@app.on_event("startup")
+def _maybe_start_fill_watcher() -> None:
+    global _fill_watcher
+    if os.environ.get("MERIDIAN_FILL_WATCHER", "1") != "1":
+        log.info("fill_watcher_disabled", reason="MERIDIAN_FILL_WATCHER != 1")
+        return
+    if not (os.environ.get("MERIDIAN_ORDER_TOKEN") or "").strip():
+        return                      # ordering disabled; nothing to reconcile
+    try:
+        creds = USCredentials.from_env()
+    except MissingCredentialsError as exc:
+        log.warning("fill_watcher_not_started", reason=str(exc))
+        return
+    from core.fill_watcher import FillWatcher
+
+    _fill_watcher = FillWatcher(_Session, creds)
+    _fill_watcher.start()
+
+
+@app.on_event("shutdown")
+def _stop_fill_watcher() -> None:
+    if _fill_watcher is not None:
+        _fill_watcher.stop()
 
 
 @app.get("/picks")

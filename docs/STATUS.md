@@ -76,12 +76,17 @@ Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill
    **88%** near-money. The model prefers deep out-of-the-money rungs. Nobody has
    measured whether it has any edge at 35–65¢, where size is actually available.
    [findings.md](findings.md#what-v1v3-mean-together)
-9. **PULSE Tier 1 is blocked on games, not code.** Both hypotheses built, both NO DATA:
-   3 of 10 games with live ticks have 200ms coverage, and the rest are sampled every ~15 min,
-   which cannot resolve a 30-second reaction window.
-10. **Write latency is unmeasured**, and it decides whether QUOTE is possible. Blocked
-    on the request-signing layer — whose scheme was **wrongly guessed** and is now
-    identified. [math/write-latency.md](math/write-latency.md)
+9. ~~**PULSE Tier 1 is blocked on games, not code.**~~ **The games arrived, and three
+   verdicts landed 2026-08-06, all FAIL:** run overreaction (444 runs / 11 games,
+   reversion −0.32¢ vs 6¢ cost — with #3/#4 dying as covariates), adverse selection
+   (−2.66¢ net capture per filled quote, CI [−2.96, −2.36] — naive quoting is dead,
+   QUOTE stays unbuilt), and whale/depth (+0.22¢ at 60s, 0.15× half-spread — the book
+   beyond the top predicts nothing). First-score (#2) reports at 10 games; it stands
+   at 9. In-game prices, on this evidence, **reprice rather than overreact**.
+10. ~~**Write latency is unmeasured**~~ **Measured 2026-08-05 (V17):** 93–124ms
+    round-trip, 14–23ms venue-side, n=3 real human-confirmed orders. Detection
+    (~260ms) remains the dominant term. Moot for QUOTE unless a faster detector
+    revives the adverse-selection question with a much tighter horizon.
 11. **⚠️ Silent outages are still not alerted.** Two on 2026-08-03, both caught by hand,
     neither alerted — the pooler rewrite (B11, cost **2 games of 200ms data**) and ESPN
     beginning to 403. Both bugs are fixed; **the monitoring gap is not.** `/api/status`

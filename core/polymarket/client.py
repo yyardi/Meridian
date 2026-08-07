@@ -495,7 +495,15 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
 
 @dataclass
 class AuthedResponse:
-    """One probe result, including the timing that motivated the probe."""
+    """One signed-request result, including the timing that motivated the probe.
+
+    ``body_text`` is the **complete** response body. It used to be truncated
+    to 2000 characters — harmless while the only consumer was a probe printing
+    excerpts, and silently fatal the moment the fill watcher tried to
+    ``json.loads`` an activities page that runs tens of KB: every parse failed,
+    so no fill was ever reconciled and no pre-authorized exit ever fired.
+    Truncation is display's job; every log/persist site already slices.
+    """
 
     method: str
     path: str
@@ -560,7 +568,12 @@ class PolymarketAuthedClient:
     def close(self) -> None:
         self._client.close()
 
-    def get(self, path: str, timestamp_ms: int | None = None) -> AuthedResponse:
+    def get(
+        self,
+        path: str,
+        timestamp_ms: int | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> AuthedResponse:
         """Signed GET. Returns the response rather than raising on 4xx, because
         the status *is* the measurement here.
 
@@ -568,10 +581,14 @@ class PolymarketAuthedClient:
         request reports the wrong number. Each call signs its own fresh
         timestamp — a signature is valid for one request within a 30s window,
         so a cached header set silently expires mid-measurement.
+
+        ``params`` are sent but **not signed** — the venue signs the path only
+        (verified live 2026-08-06: ``?limit=100&cursor=...`` on a signature
+        over the bare path returns 200 and honours both parameters).
         """
         headers = us_auth_headers(self.creds, "GET", path, timestamp_ms)
         started = time.perf_counter()
-        resp = self._client.get(path, headers=headers)
+        resp = self._client.get(path, params=params, headers=headers)
         elapsed_ms = (time.perf_counter() - started) * 1000
 
         result = AuthedResponse(
@@ -579,7 +596,7 @@ class PolymarketAuthedClient:
             path=path,
             status_code=resp.status_code,
             elapsed_ms=elapsed_ms,
-            body_text=resp.text[:2000],
+            body_text=resp.text,
             request_headers=redact_headers(headers),
             response_headers=dict(resp.headers),
         )
@@ -727,7 +744,7 @@ class PolymarketOrderClient:
             path=ORDERS_PATH,
             status_code=resp.status_code,
             elapsed_ms=elapsed_ms,
-            body_text=resp.text[:2000],
+            body_text=resp.text,   # complete; consumers truncate for display
             request_headers=redact_headers(headers),
             response_headers=dict(resp.headers),
         )
