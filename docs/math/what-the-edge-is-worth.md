@@ -32,7 +32,7 @@ De-vigging is proportional (equal-margin): both sides scaled by one factor to su
 
 Seasons 2024–2026, min edge 3.0 points.
 
-> ⚠️ **Superseded on the fill side by C12 (2026-08-07).** The "realistic"
+> ⚠️ **Superseded on the fill side by C13 (2026-08-07).** The "realistic"
 > realised ROI below was computed with a 0.5¢ adverse-selection concession that
 > was a guess written before any fill had been observed. The measured pregame
 > concession is **2.11¢** [1.83, 2.39] per filled contract (in-game 4.70¢), and
@@ -73,8 +73,8 @@ Nothing in the model. This is an accounting change and cannot improve an edge �
 
 **Adopted** (2026-08-01). CLV continues to be reported in points as the primary gate; the de-vigged conversion is reported alongside it so the points figure can never again be mistaken for a return.
 
-**Amended** (2026-08-07, C12): the realised column now uses the measured
+**Amended** (2026-08-07, C13): the realised column now uses the measured
 adverse-selection concession, and the money verdict flipped negative. The live
 maker fill sample to date (n=5, descriptive): pregame-placed 0/3 filled;
 in-game-placed 2/2 filled in 48 and 111 minutes — the fills that come are in
-the regime with the worse concession. See findings C12.
+the regime with the worse concession. See findings C13.

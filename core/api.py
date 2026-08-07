@@ -1747,6 +1747,51 @@ def live_fv() -> dict:
     }
 
 
+@app.get("/api/ev-guard")
+def ev_guard() -> dict:
+    """Hypothesis #9 as an alert: open button positions vs live formula FV.
+
+    Information only — the guard has no code path to an order, and the FV it
+    runs on is the same UNVALIDATED formula as the strip. The background
+    thread (started below when an ntfy topic is configured) pushes EDGE-GONE
+    transitions to the phone; this endpoint is the same rows for the page.
+    """
+    from core.ev_guard import CAPTION, build_guard_rows
+
+    with _Session() as s:
+        rows = build_guard_rows(s)
+    return {
+        "rows": [r.as_dict() for r in rows],
+        "caption": CAPTION,
+        "tradable": False,
+    }
+
+
+_ev_guard = None
+
+
+@app.on_event("startup")
+def _maybe_start_ev_guard() -> None:
+    """Alert loop only — and only when there is a phone to alert. The rows
+    are always served by the endpoint; the thread exists for the pushes."""
+    global _ev_guard
+    if os.environ.get("MERIDIAN_EV_GUARD", "1") != "1":
+        return
+    topic = (os.environ.get("MERIDIAN_NTFY_TOPIC") or "").strip()
+    if not topic:
+        return
+    from core.ev_guard import EVGuard
+
+    _ev_guard = EVGuard(_Session, topic=topic)
+    _ev_guard.start()
+
+
+@app.on_event("shutdown")
+def _stop_ev_guard() -> None:
+    if _ev_guard is not None:
+        _ev_guard.stop()
+
+
 @app.get("/picks")
 def picks_page() -> FileResponse:
     return FileResponse(STATIC / "picks.html")
