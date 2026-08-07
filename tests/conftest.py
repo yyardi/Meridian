@@ -47,6 +47,12 @@ os.environ["POLYMARKET_SECRET_KEY"] = ""
 # exercise the order path set it explicitly with monkeypatch.
 os.environ["MERIDIAN_ORDER_TOKEN"] = ""
 
+# The EV guard's background loop pushes to a REAL ntfy topic (it lives in
+# .env for the alerter) on EDGE-GONE transitions, and TestClient fires
+# startup events — a test seeding a losing position would ping the user's
+# phone. Off for the suite; guard tests drive check_once() with a fake pusher.
+os.environ["MERIDIAN_EV_GUARD"] = "0"
+
 # The fill watcher starts on FastAPI startup when ordering is enabled, and
 # TestClient fires startup events. A test that sets MERIDIAN_ORDER_TOKEN on a
 # machine whose shell carries real venue credentials would otherwise start a

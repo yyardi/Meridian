@@ -27,8 +27,8 @@ games with *any* snapshot, most of them pregame-only.
 
 | Market | Hit | ROI | Mean CLV [95% CI] | Verdict |
 |---|---|---|---|---|
-| **Totals (champion: recency)** | 53.2% | **−2.33%** (measured fills, C12; was +0.75% on a guessed concession) | **+1.75 [+1.45, +2.06]** | ⚠️ **negative under measured fills — see C12, and Q1 on the CLV** |
-| Spread (market-shrunk) | 54.1% | +2.83% (pre-C12 fill model; not re-run) | n/a | promising, n=37 |
+| **Totals (champion: recency)** | 53.2% | **−2.33%** (measured fills, C13; was +0.75% on a guessed concession) | **+1.75 [+1.45, +2.06]** | ⚠️ **negative under measured fills — see C13, and Q1 on the CLV** |
+| Spread (market-shrunk) | 54.1% | +2.83% (pre-C13 fill model; not re-run) | n/a | promising, n=37 |
 | Moneyline | 25–33% | −9.5% to −17.9% | n/a | **not traded** |
 
 > ⚠️ **Two live objections sit underneath this table. Read them before quoting any
@@ -47,7 +47,7 @@ games with *any* snapshot, most of them pregame-only.
 >    the unverified credit. CLV and hit rate are unchanged; the rebate never altered
 >    bet selection. [findings.md C7](findings.md#3-corrections).
 >
-> 3. **C12 (2026-08-07): the fill model's adverse selection is now MEASURED, and
+> 3. **C13 (2026-08-07): the fill model's adverse selection is now MEASURED, and
 >    the +0.75% did not survive it.** REALISTIC carried a 0.5¢ concession guessed
 >    before any fill existed; measured pregame — ANCHOR's regime — it is **2.11¢**
 >    [1.83, 2.39] (in-game **4.70¢**). Recalibrated: **−2.33%** primary, −1.79% to
@@ -58,11 +58,11 @@ games with *any* snapshot, most of them pregame-only.
 > All three objections are upstream of the money figure below. Q1 remains unsettled.
 
 **What the edge is worth, in money** (Experiment 3, **superseded on the fill side
-by C12**): +1.75 points of CLV still de-vigs to +4.16pp of probability edge →
+by C13**): +1.75 points of CLV still de-vigs to +4.16pp of probability edge →
 E[ROI] +2.50% [+0.85%, +4.16%] *if fills were benign* — but measured adverse
 selection costs 2.11¢ per filled contract pregame, and the realised canonical ROI
 under it is **−2.33%**. The CLV is real; the maker fill eats it. Maker-only was
-load-bearing against the taker fee; C12 shows maker fills carry their own
+load-bearing against the taker fee; C13 shows maker fills carry their own
 measured cost too. [what-the-edge-is-worth.md](math/what-the-edge-is-worth.md)
 
 Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill model; ROI does **not** survive taker fills (−4.0%) — maker-only is load-bearing. Live log hit rates (e.g. 94% on one v3 cohort) are **not** performance: the log includes the no-edge control group by design.

@@ -142,6 +142,9 @@
       display only, nothing here is orderable</span></h2>
   <div id="livefv"></div>
 
+  <h2 style="margin-top:24px">Open positions — EV stop-loss guard <span class="dimc" style="text-transform:none;letter-spacing:0">(formula FV, unvalidated — information only)</span></h2>
+  <div id="evguard"></div>
+
   <h2 style="margin-top:24px">Real orders — venue truth from the fill watcher</h2>
   <div id="orders"></div>
 
@@ -515,6 +518,51 @@ async function loadOrders(){
 }
 loadOrders();
 setInterval(loadOrders, 30000);
+
+/* EV stop-loss guard (hypothesis #9 as an ALERT). Driven by the UNVALIDATED
+   formula FV — same caption discipline as the strip. Two signals, mirrored:
+   EDGE GONE (FV fell to/below entry: the reason to hold is gone, urgency
+   styled like a FAILED exit) and PRICE NOISE — FV INTACT (#11 guard: price
+   dropped but FV holds, so averaging-down has an honest signal). There is
+   deliberately no button in this table: nothing here can sell. */
+async function loadEVGuard(){
+  try{
+    const d = await (await fetch("/api/ev-guard")).json();
+    const el = $("#evguard");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no open button positions</div>'; return;
+    }
+    const vcell = r => {
+      if(r.verdict === "EDGE_GONE")
+        return `<span class="fillFAILED">${r.message} — the formula's reason to hold is gone</span>`;
+      if(r.verdict === "PRICE_NOISE")
+        return `<span class="fillPARTIAL">${r.message}</span>`;
+      if(r.verdict === "INTACT")
+        return `<span class="fillFILLED">${r.message}</span>`;
+      return `<span class="dimc">${r.message}</span>`;
+    };
+    el.innerHTML = `
+      <div class="dimc" style="font-size:10.5px;margin-bottom:6px">
+        ${d.caption}. EDGE GONE pushes to the phone (ntfy) once per crossing;
+        recovery pushes an all-clear. Nothing on this panel is orderable.
+      </div>
+      <table><thead><tr>
+        <th class="l">Market</th><th class="l">Side</th><th>Qty</th>
+        <th>Entry</th><th>FV now</th><th>Mid now</th><th class="l">Verdict</th>
+      </tr></thead><tbody>${d.rows.map(r=>`
+        <tr>
+          <td class="l">${shortSlug(r.market_slug)}</td>
+          <td class="l">${r.outcome}</td>
+          <td>${r.filled_quantity.toFixed(2)}</td>
+          <td>${num(r.entry_cost)}</td>
+          <td>${r.fv==null?'<span class="dimc">—</span>':num(r.fv)}</td>
+          <td>${r.mid==null?'<span class="dimc">—</span>':num(r.mid)}</td>
+          <td class="l">${vcell(r)}</td>
+        </tr>`).join("")}</tbody></table>`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadEVGuard();
+setInterval(loadEVGuard, 20000);
 
 // ---------------------------------------------------------------------------
 // Live formula fair value. DISPLAY ONLY.

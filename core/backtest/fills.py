@@ -106,7 +106,7 @@ ASSUMPTIONS: dict[FillModel, FillAssumptions] = {
         name=FillModel.REALISTIC,
         fill_probability=0.70,
         is_maker=True,
-        # MEASURED, not stylised (2026-08-07 fill re-exam, findings C12). The
+        # MEASURED, not stylised (2026-08-07 fill re-exam, findings C13). The
         # old 0.005 was a guess written before any fill had been observed; the
         # pregame measurement — ANCHOR's own regime, 28k quote-windows / 30
         # games at the recorder's 900s cadence — puts E[-dmid | filled] at
@@ -114,7 +114,7 @@ ASSUMPTIONS: dict[FillModel, FillAssumptions] = {
         # re-exam's sensitivity arm, not here: ANCHOR rests pregame.
         adverse_selection=0.0211,
         description="70% of resting orders fill; MEASURED pregame adverse "
-                    "selection (2.11c, C12); maker fee zero",
+                    "selection (2.11c, C13); maker fee zero",
     ),
     FillModel.PESSIMISTIC: FillAssumptions(
         name=FillModel.PESSIMISTIC,
@@ -122,7 +122,7 @@ ASSUMPTIONS: dict[FillModel, FillAssumptions] = {
         is_maker=False,
         # Kept at the stylised 1.5c: this arm's pessimism is the taker fee.
         # Note the measured IN-GAME concession (4.70c) is worse than this —
-        # "pessimistic" is no longer the floor for in-game quoting (C12).
+        # "pessimistic" is no longer the floor for in-game quoting (C13).
         adverse_selection=0.015,
         description="cross the spread every time: taker fee plus adverse selection",
     ),
