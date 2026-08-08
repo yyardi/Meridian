@@ -2,7 +2,7 @@
 
 Read this first. Everything else has a link.
 
-**One sentence: the week measured nine ideas, killed most of them, built the
+**One sentence: the week measured ten ideas, killed all but one of them, built the
 tools that made the killing cheap, and found that the one thing making money is
 your own live-totals trading.**
 
@@ -22,7 +22,7 @@ Every one had its pass/fail bar written down *before* the number was computed.
 | **Adverse selection** (market making) | ❌ **FAIL** | −2.66¢ per filled quote, 630k fills / 11 games | [adverse-selection.md](math/adverse-selection.md) |
 | **Whale / depth signal** | ❌ **FAIL** | +0.22¢, CI spans zero. Big resting orders predict nothing | [depth-signal.md](math/depth-signal.md) |
 | **Trailing-team underpricing** (your IND trade) | ⚠️ **PASSED — and not tradable** | +6.8¢ on its stated terms, but **−2.2¢** once you account for who's playing | [win-curve.md](math/win-curve.md) |
-| **Tail volatility** | ⏳ Not enough games — **and pointing the wrong way** | Tails are *quieter* early, not livelier. Needs 2 more games to close | [tail-volatility.md](math/tail-volatility.md) |
+| **Tail volatility** | ❌ **FAIL** (gate closed 2026-08-08) | Tails are *quieter* early, not livelier (−0.65¢). The close is livelier — but the whole board is, 3.1× more | [tail-volatility.md](math/tail-volatility.md) |
 | **ANCHOR's +0.75% edge** | ❌ **Gone** | Recalibrated to **−2.33%**. The old number rested on a 0.5¢ guess; measured reality is 2.11¢ | findings C13 |
 | **Kalshi second-venue gap** — *the founding question* | ❌ **No gap** (gate met, 10 games) | 773 matched contract-pairs: the venues agree **within one tick**, median gap **0.00¢**, 97.2% within a cent, and exactly identical inside 3h of tip-off | [venue-gap.md](math/venue-gap.md) |
 
