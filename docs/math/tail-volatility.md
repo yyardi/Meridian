@@ -3,12 +3,15 @@
 **Status: NO DATA on the pre-registered gate**, and both halves of the
 hypothesis are pointing away from it.
 
-- **Open edge: 8 games, under the 10 minimum → NO DATA.** Direction, not a
-  verdict: **−0.731¢**, CI [−0.982, −0.480], entirely *below* zero. The tails
+- **Open edge: 9 games, under the 10 minimum → NO DATA.** Direction, not a
+  verdict: **−0.662¢**, CI [−0.930, −0.393], entirely *below* zero. The tails
   are **quieter** at the open than mid-game, not livelier.
-- **Close edge: passes on its own** (+0.555¢, CI [+0.278, +0.831], 11 games) —
-  but the **body** rungs gain **+2.135¢** over the same phase. The tails move
+- **Close edge: passes on its own** (+0.645¢, CI [+0.403, +0.887], 14 games) —
+  but the **body** rungs gain **+2.198¢** over the same phase. The tails move
   *less* than the body, not most.
+
+*(Re-run 2026-08-08 after a 3-game slate: 8 → 9 open-phase games. The interval
+tightened and stayed entirely on the wrong side of zero.)*
 
 Module: [`core/pulse/tail_volatility.py`](../../core/pulse/tail_volatility.py) ·
 Ledger row [#6](../pulse-hypotheses.md) · overlaps
@@ -75,9 +78,9 @@ would smuggle the cadence artifact back in.
 
 | phase | tail n | games | tail mean | body n | games | body mean |
 |---|---:|---:|---:|---:|---:|---:|
-| open | 319 | **8** | 0.699¢ | 4,071 | 11 | 1.775¢ |
-| mid | 2,494 | 11 | 1.363¢ | 7,292 | 11 | 2.380¢ |
-| close | 2,195 | 12 | 2.048¢ | 2,417 | 12 | 4.500¢ |
+| open | 353 | **9** | 0.722¢ | 5,418 | 14 | 1.758¢ |
+| mid | 3,162 | 14 | 1.295¢ | 9,555 | 14 | 2.355¢ |
+| close | 3,228 | 15 | 2.047¢ | 2,994 | 15 | 4.543¢ |
 
 Contrasts are **paired within game** — each game contributes one difference of
 its own two phase means — then clustered by game, so a game that is livelier
@@ -85,25 +88,31 @@ throughout cannot move the result.
 
 | comparison | games | diff | 95% CI (clustered) |
 |---|---:|---:|---|
-| **tail** open vs mid | 8 | **−0.731¢** | [−0.982, −0.480] |
-| **tail** close vs mid | 11 | **+0.555¢** | [+0.278, +0.831] |
-| body open vs mid | 11 | −0.592¢ | [−0.722, −0.462] |
-| body close vs mid | 11 | **+2.135¢** | [+1.351, +2.919] |
+| **tail** open vs mid | 9 | **−0.662¢** | [−0.930, −0.393] |
+| **tail** close vs mid | 14 | **+0.645¢** | [+0.403, +0.887] |
+| body open vs mid | 14 | −0.583¢ | [−0.709, −0.457] |
+| body close vs mid | 14 | **+2.198¢** | [+1.584, +2.813] |
 
 ## Reading it
 
-**The open half is contradicted, not merely unproven.** At 8 games it is NO
+**The open half is contradicted, not merely unproven.** At 9 games it is NO
 DATA by the pre-registered rule and must be reported as such. But the interval
-excludes zero on the *wrong side*: tails move 0.73¢ less per 30s in Q1 than in
-Q2–Q3. If that survives to 10 games it is a FAIL, not a pass in waiting.
+excludes zero on the *wrong side*: tails move 0.66¢ less per 30s in Q1 than in
+Q2–Q3, and the interval **tightened** across the 2026-08-08 slate rather than
+drifting toward zero. If it survives to 10 games it is a FAIL, not a pass in
+waiting.
 
 **The close half is real and is not about tails.** Tail rungs do gain +0.555¢,
 significantly. Body rungs gain **+2.135¢** — nearly 4× as much. So at the close
 the tails move *less* than the rest of the board. The hypothesis says the tails
 move *most*. That is the interpretation rule firing exactly as written.
 
-**Why the open sample is thin is itself the answer.** 319 tail windows across 8
-games at the open, against 2,195 across 12 at the close. Early in a game almost
+**Why the open sample is thin is itself the answer, and it is structural.** 353
+tail windows across 9 games at the open, against 3,228 across 15 at the close —
+and **6 of 15 games produce no open-phase tail window at all.** The 2026-08-08
+slate added three games and only one of them reached the open phase. The open
+edge accrues at roughly half the rate of the other two, so "one more game" has
+been true for two slates running. Early in a game almost
 nothing is tail-priced — a rung reaches 0.10 or 0.90 because the game has
 resolved toward it. So "tails at the open" is a small, structurally unusual
 population, and the observation that prompted this row was probably about
@@ -131,8 +140,10 @@ policy in [pulse-hypotheses.md](../pulse-hypotheses.md).
 
 ## What would change it
 
-Two more games with Q1 tail coverage takes the open edge to 10 and turns NO
-DATA into a verdict — on current direction, a FAIL. Nothing in the module needs
+**One** more game with Q1 tail coverage takes the open edge to 10 and turns NO
+DATA into a verdict — on current direction, a FAIL. Note the rate: mid and
+close are at 14 and 15 games while open sits at 9, because a rung is only
+tail-priced in Q1 if it is a far ladder line that is still in the near tier. Nothing in the module needs
 changing:
 
 ```bash
