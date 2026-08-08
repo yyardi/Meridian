@@ -79,6 +79,12 @@ is gate-peeking wearing the costume of a status update.
 Coverage facts are fine and often the most useful thing in the row ("6 of 15
 games yield no open-phase window"). Those describe the sample, not the answer.
 
+**The complement, ratified 2026-08-08: a FINAL gated verdict carries its full
+figures.** Rows #1, #2, #6 and #7 all show their interval, and they should — a
+bare "FAIL" understates how settled a thing is, and those figures are what keep
+the dead honestly dead when someone proposes reopening one. The diet is about
+interim directions becoming anchors, not about published results.
+
 Applied to #6 while it accrued; applies to #17 and everything registered after it.
 
 ---
@@ -245,10 +251,30 @@ which is roughly what a market that is not obviously broken should look like.
 What the work did produce is a live fair value ([math/win-curve.md](math/win-curve.md)),
 which is the input rule #9 always needed.
 
-Before adding a row #17, read the two standing rules above — the anchoring rule
+**The original signal rows are complete, as of 2026-08-08.** Every `signal`
+hypothesis that could be tested has been built, pre-registered and gated:
+**#1, #2, #6 and #7 FAILED**, and **#3 and #4** were struck out with #1 as the
+same mechanism. Six of the seven answered "no". The seventh, **#5**, is the one
+exception and is not answered — it is blocked behind adverse selection, which
+itself FAILED, so it is orphaned rather than open.
+
+**Be precise about what that does and does not include.** The `rule` and
+`input` rows are a different kind and several are still open: **#9 — the EV
+stop-loss — remains missing and is the important one**, #10 and #11 are
+deferred, #13 is measured but underpowered, and #14 is low priority. #8 is
+settled and #12 shipped as a live input. "The fourteen are done" would be an
+overstatement; "every testable signal has been tested" is the true version.
+
+The part worth keeping: all of it cost **$0 of trading losses**. Being wrong
+six times took some recorder uptime and a fortnight rather than money, which is
+the entire purpose of the apparatus.
+
+Before adding a row #18, read the two standing rules above — the anchoring rule
 from #16/#15, and the control-naming rule from #6 — and note that fourteen
 hypotheses against this much data was always going to produce one apparent
 winner by chance. It produced #16, and the anchoring check caught it.
+
+#17 is registered and untouched; it needs its own 15 games.
 
 ---
 
