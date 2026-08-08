@@ -1,17 +1,17 @@
 # Tail volatility — do the far rungs move most at the edges of a game?
 
-**Status: NO DATA on the pre-registered gate**, and both halves of the
-hypothesis are pointing away from it.
+**Status: NO DATA — 9 of 10 open-phase games.** Accruing.
 
-- **Open edge: 9 games, under the 10 minimum → NO DATA.** Direction, not a
-  verdict: **−0.662¢**, CI [−0.930, −0.393], entirely *below* zero. The tails
-  are **quieter** at the open than mid-game, not livelier.
-- **Close edge: passes on its own** (+0.645¢, CI [+0.403, +0.887], 14 games) —
-  but the **body** rungs gain **+2.198¢** over the same phase. The tails move
-  *less* than the body, not most.
+The open phase accrues at roughly half the rate of the other two (mid 14 games,
+close 15): a rung is tail-priced in Q1 only if it is a far ladder line still
+inside the near tier, and **6 of 15 games yield no open-phase window at all**.
+One more Q1-covered game closes the gate.
 
-*(Re-run 2026-08-08 after a 3-game slate: 8 → 9 open-phase games. The interval
-tightened and stayed entirely on the wrong side of zero.)*
+**Interim figures are below, under a dated "INTERIM — not for decisions"
+heading, and are deliberately absent from this summary and from the ledger
+row.** Both are skim surfaces, and a direction republished on a skim surface
+each slate becomes an anchor that invites deciding the gate early. See the
+ledger discipline note in [pulse-hypotheses.md](../pulse-hypotheses.md).
 
 Module: [`core/pulse/tail_volatility.py`](../../core/pulse/tail_volatility.py) ·
 Ledger row [#6](../pulse-hypotheses.md) · overlaps
@@ -72,6 +72,17 @@ Moves are net |Δmid| over a fixed **30s** window (inherited from
 rather than summed travel, because summed travel scales with sample count and
 would smuggle the cadence artifact back in.
 
+## INTERIM — not for decisions (as of 2026-08-08)
+
+**Everything in this section is mid-accrual and must not be acted on.** The
+gate is 10 open-phase games; it stands at 9. These figures are published here,
+and deliberately **not** in the ledger row, under the house style recorded in
+[pulse-hypotheses.md](../pulse-hypotheses.md): the ledger is the surface people
+skim, and a direction republished there each slate becomes an anchor that
+invites deciding the gate early.
+
+Read what follows as *where the sample currently sits*, not as an answer.
+
 ## The numbers
 
 18,788 windows.
@@ -93,7 +104,7 @@ throughout cannot move the result.
 | body open vs mid | 14 | −0.583¢ | [−0.709, −0.457] |
 | body close vs mid | 14 | **+2.198¢** | [+1.584, +2.813] |
 
-## Reading it
+### Reading it (still INTERIM)
 
 **The open half is contradicted, not merely unproven.** At 9 games it is NO
 DATA by the pre-registered rule and must be reported as such. But the interval
