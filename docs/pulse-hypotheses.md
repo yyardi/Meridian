@@ -54,13 +54,30 @@ preamble's own rule forbids: *the gate is written before the number is
 computed.* Extending a gate is only honest when it is done blind.
 
 **3. #6 keeps its pinned 10.** Tail volatility's gate was fixed before any
-number existed and it is **mid-accrual with its direction already peeked**
-(the open edge is pointing the wrong way at 8 games). Changing its bar now —
-in either direction — would taint it. It closes at 10, on its own terms. Its
+number existed and it is **mid-accrual with its direction already peeked**.
+Changing its bar now — in either direction — would taint it. It closes at 10, on its own terms. Its
 write-up may *note* this policy for any successor hypothesis, and does.
 
 **Any part of this is the operator's to override in person.** It is written
 down this way so the reasoning is visible rather than assumed.
+
+## Ledger discipline during accrual — house style, 2026-08-08
+
+**A row that is still accruing carries its status and its count, and nothing
+else.** `NO DATA — 9 of 10 open-phase games` is a complete ledger entry. An
+interim mean, interval or direction is not permitted in this table.
+
+Why the ledger specifically, when the same numbers are printed elsewhere: the
+module prints them on every run — that is its job — and the write-up may keep
+them under an explicit dated **"INTERIM — not for decisions"** heading. But
+**the ledger is the surface people skim.** A direction republished here every
+slate becomes an anchor, and an anchor invites deciding the gate early — which
+is gate-peeking wearing the costume of a status update.
+
+Coverage facts are fine and often the most useful thing in the row ("6 of 15
+games yield no open-phase window"). Those describe the sample, not the answer.
+
+Applies to #6 now, and to #17 and everything registered after it.
 
 ---
 
@@ -77,7 +94,7 @@ model feature, not a strategy.
 | 3 | signal | **Lead cut.** A large lead narrowing moves the chart hard. | *"MIN had a 15 point lead cut to 8 and the charts moved 10%"* | — | **dead with #1** (2026-08-06) — same mechanism, and re-testing it separately after #1 failed would be threshold-shopping |
 | 4 | signal | **Late runs.** The same run matters more with less time left. | *"14-2 and odds dropped for MIN crazy"* | — | **dead with #1** (2026-08-06) — same reasoning |
 | 5 | signal | **Q4 tight-game moneyline.** Violent repricing in close endgames. | *"flips and flops 10-20% every few seconds"* | — | not built — **blocked on adverse selection.** Biggest prize, biggest trap |
-| 6 | signal | **Tail volatility at the edges.** Deep rungs move most at the start and end of a game. | *"the tail odds move a ton at the start and end"* | both edges > mid, CI excluding zero, 10 games (pinned pre-policy) | **NO DATA — still accruing, and still pointing away. Re-run 2026-08-08 after a 3-game slate.** [`core/pulse/tail_volatility.py`](../core/pulse/tail_volatility.py). Open edge now **9 of 10 games** (was 8) — only 1 of tonight's 3 reached it, because a rung is tail-priced in Q1 only if it is a far ladder line still in the near tier, and **6 of 15 games have no open-phase tail windows at all**. Its interval **hardened** against the hypothesis: **−0.662¢ [−0.930, −0.393]**, entirely below zero — tails are *quieter* at the open. Close edge passes (+0.645¢) while the **body** gains +2.198¢, ~3.4× more, so that half is a whole-board phase effect — the pre-registered control firing. **Deep-tier rungs remain unmeasurable at any sample size** (30s cadence vs 0.20s, C1). [math/tail-volatility.md](math/tail-volatility.md) |
+| 6 | signal | **Tail volatility at the edges.** Deep rungs move most at the start and end of a game. | *"the tail odds move a ton at the start and end"* | both edges > mid, CI excluding zero, 10 games (pinned pre-policy) | **NO DATA — 9 of 10 open-phase games**, accruing. [`core/pulse/tail_volatility.py`](../core/pulse/tail_volatility.py). Open accrues at roughly half the rate of mid/close (14 and 15 games): a rung is tail-priced in Q1 only if it is a far ladder line still in the near tier, and **6 of 15 games yield no open-phase window at all**. Interim numbers are in the write-up under a dated INTERIM heading, deliberately not here. [math/tail-volatility.md](math/tail-volatility.md) |
 | 7 | signal | **Whale / depth.** Large resting size predicts the move toward it. | *"prediction market whales tend to know stuff"* | — / 10 games | **FAIL — gated, 2026-08-06.** 473 appearances / 15 games: move toward the whale +0.22¢ at +60s, CI [−0.25¢, +0.68¢], 0.15× the half-spread. Resting size does not predict the next move |
 | 8 | rule | **Sell at fair value.** The exit target is the model's number, not a multiple of entry. | — | — | **settled.** Applied manually; now shown in the ticket UI |
 | 9 | rule | **Stop-loss in EV terms.** Exit when *fair value* falls to your price — not when the price falls. | — | — | **missing, and the important one.** See below |
