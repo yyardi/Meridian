@@ -1,0 +1,25 @@
+# The QUOTE shadow engine, as a compose OVERLAY:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.quote.yml up -d quote-engine
+#
+# A separate file, deliberately: docker-compose.yml was carrying another
+# session's uncommitted work when this shipped, and editing it would have
+# swept that work into an unrelated commit. Fold this block into the main
+# file when it is clean (docs/math/quote-shadow.md, ops notes).
+#
+# Shadow only: the engine reads the LOCAL tick database, writes simulated
+# fills and one heartbeat back to it, and touches the venue only through the
+# public settlement endpoint. No credentials are mounted because none are
+# needed — the absence of POLYMARKET_* below is load-bearing.
+services:
+  quote-engine:
+    build: .
+    container_name: meridian-quote-engine
+    command: python -m core.quote.engine
+    environment:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      MERIDIAN_QUOTE_INTERVAL_SECONDS: "5"
+      MERIDIAN_QUOTE_SETTLE_EVERY_SECONDS: "600"
+    depends_on:
+      - postgres
+    restart: unless-stopped
