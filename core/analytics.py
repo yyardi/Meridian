@@ -21,7 +21,10 @@ from core.backtest.engine import BacktestConfig, run_backtest
 from core.backtest.fills import FillModel
 from core.storage import Prediction, get_engine, get_sessionmaker
 
-OUT = Path(__file__).parent.parent / "reports" / "analytics.json"
+from core.paths import reports_dir
+
+# Regenerable output; lives under the one artifact root (core/paths.py).
+OUT = reports_dir() / "analytics.json"
 
 #: The walk-forward backtest issues many small queries per game. Over a remote
 #: connection the round-trip latency dominates and a full run takes tens of
@@ -150,7 +153,7 @@ def main() -> int:
     ap.add_argument("--database-url", default=None,
                     help="defaults to the local standby (fast); historical data is static")
     args = ap.parse_args()
-    OUT.parent.mkdir(exist_ok=True)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     data = build(args.database_url)
     OUT.write_text(json.dumps(data, indent=1))
     print(f"wrote {OUT}")

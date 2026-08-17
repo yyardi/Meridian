@@ -24,7 +24,7 @@ Every one had its pass/fail bar written down *before* the number was computed.
 | **Trailing-team underpricing** (your IND trade) | ⚠️ **PASSED — and not tradable** | +6.8¢ on its stated terms, but **−2.2¢** once you account for who's playing | [win-curve.md](math/win-curve.md) |
 | **Tail volatility** | ❌ **FAIL** (gate closed 2026-08-08) | Tails are *quieter* early, not livelier (−0.65¢). The close is livelier — but the whole board is, 3.1× more | [tail-volatility.md](math/tail-volatility.md) |
 | **ANCHOR's +0.75% edge** | ❌ **Gone** | Recalibrated to **−2.33%**. The old number rested on a 0.5¢ guess; measured reality is 2.11¢ | findings C13 |
-| **Kalshi second-venue gap** — *the founding question* | ❌ **No gap** (gate met, 10 games) | 773 matched contract-pairs: the venues agree **within one tick**, median gap **0.00¢**, 97.2% within a cent, and exactly identical inside 3h of tip-off | [venue-gap.md](math/venue-gap.md) |
+| **Kalshi second-venue gap** — *the founding question* | ❌ **FAIL, confirmed at 3.6× the gate** (36 games, 2026-08-10) | 3,651 matched contract-pairs: median gap **0.0000**, exactly zero in 35 of 36 games (the 36th a half-tick), zero in every hours-to-tip bucket; clustered mean 0.29¢ [0.22, 0.36]. Roadmap fork (in-game · other league · abandon) is **your decision** | [venue-gap.md](math/venue-gap.md) |
 
 ### The one that deserves a paragraph
 
@@ -152,6 +152,29 @@ different game count.
    Two things push: the **alerter** (something broke) and **ev_guard** (a
    position's edge is gone, or a drawdown is just noise). The alerter refuses to
    start without a topic set, so silence means it isn't running.
+6. **Finish the QUOTE shadow-engine deploy — blocked on Docker, in this order.**
+   The migration half is DONE (local mirror at `a7d94e02c5b1`,
+   `shadow_quote_fills` exists); the container half is blocked because the
+   uncommitted Dockerfile bumps the base image to `python:3.12-slim`, which
+   is not in the local cache, and **Docker Desktop's pull path is wedged**
+   (a bare `docker pull` produces zero output; the daemon answers local
+   commands fine; the registry itself is reachable). The planned fix is your
+   Docker Desktop restart — but do it in this order:
+
+   1. ⚠️ **First kill pid `79996`** (`docker compose up --build`, running
+      since ~01:35Z on 2026-08-16, stalled on the same pull). It is a
+      FULL-STACK rebuild: if the pull path unwedges — including the moment
+      Docker restarts — it will recreate **all 8 containers from the
+      uncommitted working tree**, unsupervised. `kill 79996`, then check
+      nothing else matches `ps aux | grep 'compose up'`.
+   2. Restart Docker Desktop in a no-game window (the 8 recorders go down
+      with it; they restart on their own).
+   3. Bring up the engine — one line, touches nothing else:
+      `docker compose -f docker-compose.yml -f docker-compose.quote.yml up -d --build quote-engine`
+   4. Verify: `meridian-quote-engine` in `docker ps` (count goes **8 → 9**),
+      a `quote_engine` row appearing in `service_heartbeats`, and quiet logs
+      until the next pregame board. What it measures — registered before it
+      ever runs — is in [quote-shadow.md](math/quote-shadow.md).
 
 ---
 

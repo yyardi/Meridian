@@ -103,3 +103,69 @@ def test_nothing_settled_reports_no_data():
 
 def test_breakeven_matches_the_two_way_market():
     assert BREAKEVEN == pytest.approx(0.524, abs=0.001)
+
+
+# ------------------------------------------------------------------ #
+# Money at price (C11 frame) with a measured fill concession (C13)
+# ------------------------------------------------------------------ #
+
+from core.scorecard import money_score  # noqa: E402
+
+
+def _priced(game, market, model, mkt, outcome, bid, ask):
+    return Settled(event_slug=game, market_slug=market, market_type="total",
+                   model=model, market=mkt, outcome=outcome, bid=bid, ask=ask)
+
+
+def test_money_yes_bet_is_costed_at_the_maker_bid():
+    """YES rests at the bid (maker-only is load-bearing). Win pays 1."""
+    rows = [_priced("g1", "m1", 0.60, 0.50, 1, bid=0.48, ask=0.52)]
+    s = money_score(rows)
+    assert s["staked"] == pytest.approx(0.48)
+    assert s["returned"] == 1.0
+    assert s["roi_pooled"] == pytest.approx(1 / 0.48 - 1)
+
+
+def test_money_no_bet_costs_one_minus_ask():
+    """NO rests at the YES ask and costs 1 − ask (V14). NO wins when
+    outcome = 0."""
+    rows = [_priced("g1", "m1", 0.40, 0.50, 0, bid=0.48, ask=0.52)]
+    s = money_score(rows)
+    assert s["staked"] == pytest.approx(0.48)  # 1 - 0.52
+    assert s["returned"] == 1.0
+
+
+def test_concession_worsens_the_price_never_the_selection():
+    """C13's rule: every arm scores the identical bet set; only cost moves."""
+    rows = [
+        _priced("g1", "m1", 0.60, 0.50, 1, bid=0.48, ask=0.52),
+        _priced("g2", "m2", 0.40, 0.50, 1, bid=0.48, ask=0.52),  # NO, loses
+    ]
+    base = money_score(rows)
+    dear = money_score(rows, concession=0.0211)
+    assert base["n_bets"] == dear["n_bets"] == 2
+    assert dear["staked"] == pytest.approx(base["staked"] + 2 * 0.0211)
+    assert dear["returned"] == base["returned"]
+    assert dear["roi_pooled"] < base["roi_pooled"]
+
+
+def test_money_clusters_by_game_not_row():
+    """One game's 3 correlated wins are one cluster; ROI interval uses games."""
+    rows = ([_priced("g1", f"m{i}", 0.60, 0.50, 1, bid=0.50, ask=0.52)
+             for i in range(3)]
+            + [_priced("g2", "mx", 0.60, 0.50, 0, bid=0.50, ask=0.52)])
+    s = money_score(rows)
+    assert s["n_games"] == 2
+    assert s["roi_clustered"]["games"] == 2
+
+
+def test_taker_frame_uses_the_crossing_price():
+    rows = [_priced("g1", "m1", 0.60, 0.50, 1, bid=0.48, ask=0.52)]
+    assert money_score(rows, taker=True)["staked"] == pytest.approx(0.52)
+
+
+def test_rows_without_a_touch_are_skipped_and_counted():
+    rows = [Settled(event_slug="g", market_slug="m", market_type="total",
+                    model=0.60, market=0.50, outcome=1)]
+    s = money_score(rows)
+    assert s["n_bets"] == 0 and s["skipped_no_touch"] == 1

@@ -51,10 +51,20 @@ SERVICE_KALSHI = "kalshi_recorder"
 #: rather than being listed in APP_DB_SERVICES, where its absence would read
 #: DEAD on every host that has never enabled ordering.
 SERVICE_FILL_WATCHER = "fill_watcher"
+#: The alerter beats too — but its beat is a secondary signal on purpose. Its
+#: primary liveness proof is the 9:00 CT digest that ALWAYS sends: a watchdog
+#: whose own death is silent is B11 all over again, one level up.
+SERVICE_ALERTER = "alerter"
 
 #: The writers whose heartbeats live in the app database (Supabase in
 #: production). The live recorder's lives in local Postgres, with its data.
-APP_DB_SERVICES = (SERVICE_PREGAME, SERVICE_LIVE_ODDS, SERVICE_SCHEDULER, SERVICE_KALSHI)
+APP_DB_SERVICES = (
+    SERVICE_PREGAME,
+    SERVICE_LIVE_ODDS,
+    SERVICE_SCHEDULER,
+    SERVICE_KALSHI,
+    SERVICE_ALERTER,
+)
 
 DEAD = "dead"
 DEGRADED = "degraded"

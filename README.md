@@ -61,25 +61,25 @@ backfilled, so a sleeping laptop is a permanent hole in the record.
 docker compose up
 ```
 
-**No `-d`.** All six containers stream their logs into this tab, so you can
-watch the recorder and scheduler work. `Ctrl-C` stops all six.
+**No `-d`.** All eight containers stream their logs into this tab, so you can
+watch the recorder and scheduler work. `Ctrl-C` stops all eight.
 
 After changing code or the schema, use `docker compose up --build` instead.
 
-### Tab 3 — the dashboard
+**The dashboard is one of the eight** (`meridian-api`, since 2026-08-07) — open
+**<http://localhost:8008>** once the stack is up. There is no separate uvicorn
+tab any more: the host `nohup uvicorn` was the only component that died on
+reboot, which is disqualifying on a machine that runs unattended. The fill
+watcher lives inside that container and starts with it.
 
-```bash
-.venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008
-```
+**So is the phone alerter** (`meridian-alerter`): the health checks below,
+evaluated every 5 minutes, pushed to `ntfy.sh/$MERIDIAN_NTFY_TOPIC` on any
+transition to DEAD, plus a 9:00 CT daily digest that always sends — a missing
+digest means the alerter itself is dead. Subscribe to the topic in the ntfy
+app before leaving the machine alone; test the channel with
+`docker compose exec alerter python -m core.alerter --test`.
 
-Logs every request into this tab. `Ctrl-C` stops it. Then open
-**<http://localhost:8008>**.
-
-> **`ERROR: [Errno 48] Address already in use`, or `exit 3`, means it is already
-> running** — not that it failed. Find it with
-> `lsof -nP -iTCP:8008 -sTCP:LISTEN`, and `pkill -f uvicorn` to take it over.
-
-### Tab 4 — checks and live data
+### Tab 3 — checks and live data
 
 This tab stays free for one-off commands.
 
@@ -100,7 +100,7 @@ watch the 15-minute pregame recorder instead. `Ctrl-C` stops it.
 
 ## Stop everything
 
-`Ctrl-C` in tabs 1, 2 and 3. That is the whole procedure.
+`Ctrl-C` in tabs 1 and 2. That is the whole procedure.
 
 If something was started in the background and you have lost track of it:
 
@@ -121,12 +121,14 @@ and suffix with `&`:
 
 ```bash
 nohup caffeinate -dims > /dev/null 2>&1 &
-nohup .venv/bin/uvicorn core.api:app --host 127.0.0.1 --port 8008 > /tmp/meridian-dashboard.log 2>&1 &
 ```
 
 `&` backgrounds it, `nohup` keeps it alive after the terminal closes, and the
 redirect sends output to a file instead of the screen. For containers the
 equivalent is `docker compose up -d`, then `docker compose logs -f` to watch.
+**For an unattended stretch (vacation), `docker compose up -d` is the right
+mode** — `restart: unless-stopped` brings every container back after a crash
+or reboot, and the alerter's startup push tells your phone the reboot happened.
 
 **The cost is that you can no longer `Ctrl-C` any of it** — you need
 `./scripts/stop.sh` or `pkill`. Prefer the tabs.
@@ -141,19 +143,22 @@ equivalent is `docker compose up -d`, then `docker compose logs -f` to watch.
 | `docker compose logs live-recorder --tail 50` | why tick data isn't appearing |
 | `docker compose logs kalshi-recorder --tail 50` | why Kalshi snapshots aren't appearing |
 | `docker compose restart scheduler` | nudge a stuck job |
+| `docker compose logs api --tail 50` | why the dashboard is misbehaving |
+| `docker compose logs alerter --tail 50` | what the alerter last pushed |
+| `docker compose exec alerter python -m core.alerter --test` | test push to the phone |
 | `pmset -g assertions` | confirm the sleep guard is actually held |
 | `pkill caffeinate` | let the Mac sleep again |
-| `pkill -f uvicorn` | stop the dashboard |
-| `.venv/bin/python -m pytest -q` | run the 464 tests |
+| `.venv/bin/python -m pytest -q` | run the tests |
 
 > **`--build` is not optional after a schema change.** Skipping it once put the
 > recorder in a crash-loop — its Alembic could not find the new revision.
 
 ## Gotchas that have already cost data
 
-**The dashboard is not a container.** `docker compose` does not start it and will
-not restart it. Nine times out of ten a dead UI means tab 3 was never run, or its
-terminal was closed. Run tab 3 again.
+**The dashboard used to be a host process, and that cost a reboot's worth of
+coverage.** Since 2026-08-07 it is the `meridian-api` container and restarts
+with everything else. If the UI is dead now, `docker compose ps` — not a
+terminal tab — is where to look.
 
 **`caffeinate -s` only applies on AC power.** On battery the machine can still
 sleep. `health.py` warns about this explicitly.
@@ -177,9 +182,12 @@ exists.
 | `/picks` | Today's picks as trade tickets, and resolved results |
 | `/analytics` | CLV, calibration, equity charts |
 
-Localhost only and **unauthenticated by construction** — it must not be exposed to a
-network. Read-only today: there is no write endpoint and no order path in
-[`core/api.py`](core/api.py).
+Published on **all interfaces** (operator decision, 2026-08-07) so the dashboard
+is readable over the tailnet while away — which also makes the unauthenticated
+read endpoints reachable from the LAN. The one write path — the human-confirm
+order endpoint — is separately gated by `MERIDIAN_ORDER_TOKEN` and fails closed
+without it. Revert to `127.0.0.1:8008:8008` in docker-compose.yml when remote
+access is no longer needed.
 
 **Reading the edge column:** an edge is tradable only if the row is *actionable*.
 Rows marked `reduced_confidence` are usually games the sportsbooks have not priced
@@ -194,6 +202,7 @@ DATABASE_URL=postgresql://...   # Supabase
 MERIDIAN_TX_POOLER=1            # route to the transaction pooler (port 6543)
 POLYMARKET_KEY_ID=...           # executor only
 POLYMARKET_SECRET_KEY=...       # executor only
+MERIDIAN_NTFY_TOPIC=...         # phone alerts — subscribe to it in the ntfy app
 ```
 
 Never commit these. `.env` is gitignored.

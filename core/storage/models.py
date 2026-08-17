@@ -136,8 +136,11 @@ class BookLevel(Base):
     #: seconds, so a depth row can be several seconds younger than the snapshot
     #: it hangs from. Inheriting the parent's timestamp would silently backdate
     #: it, and the whole depth-signal question ("did size appear *before* the
-    #: move?") is precisely a question about ordering. NULL for rows written
-    #: before this column existed, where depth and price were fetched together.
+    #: move?") is precisely a question about ordering. Stamped by EVERY writer
+    #: since 2026-08-07 (the pregame path uses its cycle instant, which is
+    #: exact there): the partitioned local table routes on this column and its
+    #: PK forbids NULL. Still nullable in the model because Supabase keeps
+    #: historical fetched-together rows where it genuinely was NULL.
     captured_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
     snapshot: Mapped[MarketSnapshot] = relationship(back_populates="levels")
@@ -509,6 +512,37 @@ class InjuryPoll(Base):
     )
 
     __table_args__ = (Index("ix_injury_polls_captured_at", "captured_at"),)
+
+
+class RetentionLog(Base):
+    """One row per archived tick partition — the receipt the invariant rests on.
+
+    The retention job (core/retention.py) may only DETACH a partition after a
+    row exists here with `verified_at` set: dump written, restored into a
+    scratch database, row count and id range matched exactly. The health check
+    and the alerter read this table; a missing or stale tail is loud.
+    """
+
+    __tablename__ = "retention_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    table_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    partition_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    month_start: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rows_archived: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    dump_path: Mapped[str] = mapped_column(Text, nullable=False)
+    dump_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    dump_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    verified_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    detached_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    dropped_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("partition_name", name="uq_retention_partition"),
+    )
 
 
 class ServiceHeartbeat(Base):
