@@ -46,8 +46,9 @@ Postgres (`MERIDIAN_LOCAL_DATABASE_URL`, default `localhost:5433`).
 
 ## What it deliberately does not do
 
-* **No alerting.** This makes silence *legible*; something still has to look.
-  `health.py` before every game night is the current discipline.
+* **No alerting here.** This layer only makes silence *legible*. The looking
+  is [the alerter](alerter.md) (added 2026-08-07), which evaluates these
+  verdicts every 5 minutes and pushes transitions to the phone.
 * **The scheduler's `rows_written` is NULL**, not 0 — its jobs report through
   `_safe`, and a fabricated zero would read as "measured, produced nothing".
 * Per-cycle `rows_written` from the live recorder can legitimately be 0 on a

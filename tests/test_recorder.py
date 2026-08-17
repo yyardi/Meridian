@@ -83,13 +83,22 @@ class FakeClient:
 @pytest.fixture
 def clean_db():
     Session = get_sessionmaker(get_engine())
-    with Session() as s:
+
+    def _wipe(s):
+        # Explicit two-step delete: since the tables went partitioned there is
+        # no FK cascade from snapshots to levels (a plain FK cannot reference
+        # a partitioned table), so relying on it would strand orphan rows.
+        s.execute(delete(BookLevel).where(BookLevel.snapshot_id.in_(
+            select(MarketSnapshot.id).where(MarketSnapshot.market_slug.like("%test%"))
+        )))
         s.execute(delete(MarketSnapshot).where(MarketSnapshot.market_slug.like("%test%")))
         s.commit()
+
+    with Session() as s:
+        _wipe(s)
     yield Session
     with Session() as s:
-        s.execute(delete(MarketSnapshot).where(MarketSnapshot.market_slug.like("%test%")))
-        s.commit()
+        _wipe(s)
 
 
 def _recorder(client, sessionmaker, **overrides):

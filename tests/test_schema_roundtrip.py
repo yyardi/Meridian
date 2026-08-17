@@ -92,6 +92,9 @@ def test_roundtrip_all_tables(session):
             price=Decimal("0.5100"),
             quantity=Decimal("1559.0000"),
             level_index=0,
+            # Stamped always since the partition conversion: the local table
+            # routes on captured_at and its PK forbids NULL.
+            captured_at=snap.captured_at,
         )
     )
     session.add(

@@ -12,6 +12,11 @@ services:
       - "5433:5432"
     volumes:
       - meridian_pgdata:/var/lib/postgresql/data
+      # Tick-archive dumps (core/retention.py): pg_dump runs inside this
+      # container — the host has no postgres client tools — and writes here so
+      # the archives live on the host, outside the database volume they exist
+      # to shrink.
+      - ./backups/ticks:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U meridian -d meridian"]
       interval: 5s
@@ -173,6 +178,72 @@ services:
     # Stats, odds, predictions and resolution every 6h. All of these are
     # backfillable, unlike snapshots, so a missed run costs nothing permanent.
     command: ["sh", "-c", "alembic upgrade head && python -m core.scheduler --interval-hours 6"]
+
+  api:
+    build: .
+    container_name: meridian-api
+    # Until 2026-08-07 this was a host `nohup uvicorn` — the ONLY component
+    # that did not survive a reboot, on the machine that must now run two
+    # weeks unattended. The fill watcher lives inside this process (the
+    # read-back loop belongs next to the write path), so a dead dashboard was
+    # also silently a dead fill watcher: pre-authorized exits only fire while
+    # this is up.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # All interfaces, DELIBERATELY (operator decision, 2026-08-07): the
+      # dashboard is read over the tailnet while the operator is away, and the
+      # pre-container uvicorn already ran on 0.0.0.0. The cost is stated
+      # plainly: the read endpoints are unauthenticated and now reachable from
+      # the LAN as well as the tailnet — the order path alone is gated by
+      # MERIDIAN_ORDER_TOKEN. Revert to "127.0.0.1:8008:8008" when remote
+      # access is no longer needed.
+      - "8008:8008"
+    environment:
+      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_TX_POOLER: "1"
+      # The live recorder's heartbeat + tick counts live in local Postgres.
+      # From inside the compose network that is `postgres:5432`, not the
+      # host's `localhost:5433` default.
+      MERIDIAN_LOCAL_DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      # Ordering + fill watcher. All optional: absent means the order path is
+      # disabled (403) and the watcher does not start — same as before.
+      POLYMARKET_KEY_ID: ${POLYMARKET_KEY_ID:-}
+      POLYMARKET_SECRET_KEY: ${POLYMARKET_SECRET_KEY:-}
+      MERIDIAN_ORDER_TOKEN: ${MERIDIAN_ORDER_TOKEN:-}
+      MERIDIAN_MAX_ORDER_STAKE_USD: ${MERIDIAN_MAX_ORDER_STAKE_USD:-25}
+    # --host 0.0.0.0 is the container binding; the ports line above is what
+    # keeps it loopback-only on the host.
+    command: ["sh", "-c", "alembic upgrade head && uvicorn core.api:app --host 0.0.0.0 --port 8008"]
+
+  alerter:
+    build: .
+    container_name: meridian-alerter
+    # Evaluates core/healthchecks.py — the same set scripts/health.py prints —
+    # every 5 minutes and pushes transitions to the phone via ntfy. The 9:00 CT
+    # digest ALWAYS sends, green or not: it is this container's own liveness
+    # proof, so a silent phone always means something (B11, applied to the
+    # alarm itself). Its startup push doubles as the reboot notification.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_TX_POOLER: "1"
+      MERIDIAN_LOCAL_DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      # The topic is the whole security model of ntfy — treat it like a
+      # password. The alerter exits loudly if this is unset.
+      MERIDIAN_NTFY_TOPIC: ${MERIDIAN_NTFY_TOPIC:-}
+      MERIDIAN_NTFY_SERVER: ${MERIDIAN_NTFY_SERVER:-https://ntfy.sh}
+      # statvfs on a bind-mounted host directory reports the HOST disk —
+      # the one that actually fills — not the Docker VM's overlay filesystem.
+      MERIDIAN_DISK_PATH: /hostdisk
+    volumes:
+      - ./recorder-logs:/hostdisk:ro
+    command: ["sh", "-c", "alembic upgrade head && python -m core.alerter"]
 
 volumes:
   meridian_pgdata:

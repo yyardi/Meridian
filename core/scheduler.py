@@ -100,6 +100,16 @@ def run_daily_jobs(season: int | None = None) -> None:
     # 5. Resolve anything that has settled.
     _safe("resolution", ResolutionJob().run)
 
+    # 6. Supabase rolling archive (approved 2026-08-07): every ~3 days,
+    # archive-then-delete rows older than 72h from the three big tables and
+    # VACUUM FULL — the primary grows ~59 MB/day against a 500 MB cap.
+    # Stateless cadence: the retention_log receipts decide "due", so restarts
+    # cannot double-run it. Skips itself while a game is live. Every delete
+    # sits behind a verified dump; a verification failure aborts untouched
+    # and pushes to the phone.
+    from core.retention import rolling_if_due
+    _safe("supabase_rolling", rolling_if_due)
+
 
 def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None:
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
