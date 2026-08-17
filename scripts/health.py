@@ -36,7 +36,7 @@ from core.healthchecks import (
     check_local_ticks,
     check_real_orders,
     check_retention,
-    check_supabase,
+    check_primary_db,
     todays_games,
 )
 
@@ -129,7 +129,7 @@ def main() -> int:
         ("Containers", check_containers()),
         ("Data feeds", check_espn() + check_book_lines()),
         ("Heartbeats", check_app_heartbeats()),
-        ("Databases", check_supabase(live) + check_local_ticks(live)
+        ("Databases", check_primary_db(live) + check_local_ticks(live)
                       + check_local_pg_size() + check_retention()),
         ("Safety", check_real_orders() + check_fill_watcher()),
     ]
