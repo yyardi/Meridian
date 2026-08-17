@@ -83,8 +83,10 @@ GRACE_DAYS = 15
 #: Extra months of future partitions kept ready ahead of now.
 MONTHS_AHEAD = 2
 
-BACKUP_DIR_HOST = Path(__file__).resolve().parent.parent / "backups" / "ticks"
-BACKUP_DIR_CONTAINER = "/backups"
+# Paths route through core.paths (MERIDIAN_DATA_DIR override, default
+# <repo>/backups). BACKUP_DIR_CONTAINER is the container side of the
+# compose mount and moves only together with docker-compose.yml.
+from core.paths import BACKUP_DIR_CONTAINER, supabase_dir, ticks_dir
 
 COMPOSE = ["docker", "compose", "exec", "-T", "postgres"]
 PG_ENV = ["env", "PGUSER=meridian", "PGPASSWORD=meridian", "PGDATABASE=meridian"]
@@ -386,7 +388,7 @@ def archive_month(engine, ms: dt.datetime, *, now: dt.datetime | None = None) ->
     now = now or dt.datetime.now(UTC)
     if next_month(ms) > now - dt.timedelta(days=KEEP_DAYS):
         raise RuntimeError(f"{month_label(ms)} is inside the {KEEP_DAYS}-day keep window")
-    BACKUP_DIR_HOST.mkdir(parents=True, exist_ok=True)
+    ticks_dir().mkdir(parents=True, exist_ok=True)
 
     receipts = []
     for parent in PARENTS:
@@ -399,7 +401,7 @@ def archive_month(engine, ms: dt.datetime, *, now: dt.datetime | None = None) ->
                 f"select count(*), min(id), max(id) from {part}"
             )).one()
 
-        dump_host = BACKUP_DIR_HOST / f"{part}.dump"
+        dump_host = ticks_dir() / f"{part}.dump"
         dump_ctr = f"{BACKUP_DIR_CONTAINER}/{part}.dump"
         r = _pg(["pg_dump", "-Fc", "-t", f"public.{part}", "-f", dump_ctr])
         if r.returncode != 0:
@@ -504,7 +506,6 @@ ROLLING_TABLES = ("book_levels", "predictions", "market_snapshots")
 ROLLING_KEEP_HOURS = 72
 ROLLING_EVERY_DAYS = 3
 
-BACKUP_DIR_SUPABASE = Path(__file__).resolve().parent.parent / "backups" / "supabase"
 
 #: How rows are aged per table. book_levels has no reliable own timestamp on
 #: the pregame path (captured_at NULL), so it ages through its parent snapshot.
@@ -587,7 +588,7 @@ def rolling_run(engine, *, now: dt.datetime | None = None) -> list[dict]:
     now = now or dt.datetime.now(UTC)
     cutoff = now - dt.timedelta(hours=ROLLING_KEEP_HOURS)
     stamp = now.strftime("%Y%m%dT%H%M")
-    BACKUP_DIR_SUPABASE.mkdir(parents=True, exist_ok=True)
+    supabase_dir().mkdir(parents=True, exist_ok=True)
 
     # ---- phase 1: measure, dump, verify (read-only against the primary) --- #
     plans: list[dict] = []
@@ -646,7 +647,7 @@ def rolling_run(engine, *, now: dt.datetime | None = None) -> list[dict]:
             # the whole verification phase passes.
             dump_name = f"{tbl}-rolling-{stamp}.csv"
             dump_ctr = f"{BACKUP_DIR_CONTAINER}/{dump_name}"
-            staging = BACKUP_DIR_HOST / dump_name
+            staging = ticks_dir() / dump_name
             pred = _ROLLING_AGE[tbl].replace(":cutoff", cutoff_lit)
             r = _pg_remote(["psql", "-v", "ON_ERROR_STOP=1", "-c",
                             f"\\copy (select * from {tbl} where {pred}) "
@@ -687,7 +688,7 @@ def rolling_run(engine, *, now: dt.datetime | None = None) -> list[dict]:
         # All three verified: move the dumps to their permanent home and seal
         # them (path + sha recorded in the receipt below).
         for plan in plans:
-            final = BACKUP_DIR_SUPABASE / plan["dump_name"]
+            final = supabase_dir() / plan["dump_name"]
             plan["staging"].replace(final)
             plan["dump_path"] = str(final)
             plan["dump_bytes"] = final.stat().st_size
