@@ -188,7 +188,7 @@ class Recorder:
 
         if self.config.capture_depth:
             try:
-                self._record_book(session, market.slug, snapshot_id)
+                self._record_book(session, market.slug, snapshot_id, captured_at)
                 stats.books_written += 1
             except Exception as exc:
                 # Depth is valuable but optional; never lose the top-of-book
@@ -196,7 +196,17 @@ class Recorder:
                 stats.book_errors += 1
                 log.warning("book_fetch_failed", market_slug=market.slug, error=str(exc))
 
-    def _record_book(self, session: Session, market_slug: str, snapshot_id: int) -> None:
+    def _record_book(
+        self, session: Session, market_slug: str, snapshot_id: int,
+        captured_at: dt.datetime,
+    ) -> None:
+        """Depth for one snapshot, stamped with the cycle's own instant.
+
+        On this path price and depth are fetched in the same cycle, so the
+        snapshot's `captured_at` is the honest timestamp (the live recorder's
+        split depth loop stamps its own). Stamped always since 2026-08-07: the
+        partitioned local table routes on it and its PK forbids NULL.
+        """
         book, _raw = self._client.get_book(market_slug)
         data = book.market_data
         if data is None:
@@ -215,6 +225,7 @@ class Recorder:
                         "price": price,
                         "quantity": entry.qty,
                         "level_index": idx,
+                        "captured_at": captured_at,
                     }
                 )
         if rows:

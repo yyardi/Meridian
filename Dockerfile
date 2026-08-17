@@ -12,6 +12,8 @@ COPY core ./core
 COPY strategies ./strategies
 COPY alembic ./alembic
 COPY alembic.ini ./
+# The dashboard's static pages — core/api.py serves them from ../static.
+COPY static ./static
 
 RUN pip install --no-cache-dir -e .
 

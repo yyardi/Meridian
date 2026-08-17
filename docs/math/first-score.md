@@ -1,8 +1,19 @@
 # First-score fade — does the opening basket move the price too much?
 
-**Status: NO DATA.** 18 filled trades across **3 games**, against a
-pre-registered minimum of 30 across 10. The strategy is built, tested and
-accruing.
+**Status: FAIL — gated, 2026-08-07.** 75 filled trades across **11 games**:
+net P&L **−3.88¢/contract** at the +5 min gate, 95% CI [−9.73¢, +1.97¢].
+Sample conditions met, profit conditions not.
+
+Read the interval before reading the mean: it **spans zero**, so this is *no
+evidence of profit*, not measured loss. And the ungated signal-only column
+spans zero too (+1.09¢, [−3.15, +5.33]) — which is the important part. The
+fill proxy is biased against a fade by construction, so a FAIL could have been
+an artifact of it; it is not. **There is no reversion to discard.** With
+[run-overreaction.md](run-overreaction.md) also FAILED, the whole fade family
+is closed on its own pre-registered terms.
+
+*(Superseded: this doc previously read NO DATA at 18 trades / 3 games. Nine
+more games at 200ms cadence answered it.)*
 
 Module: [`core/pulse/first_score.py`](../../core/pulse/first_score.py) ·
 Strategy #1 for **PULSE** · Hypothesis #2 in
@@ -185,14 +196,45 @@ This is the mirror image of [adverse-selection.md](adverse-selection.md), whose
 fill rule biases the other way. The signal-only column above exists precisely so
 the two can be told apart when the sample arrives.
 
-## What it needs
+## The games arrived, and the answer was no
 
-**7 more games at 200ms cadence.** Not more rows — the three usable games
-already carry 824,238 of the 830,554 replayed, or **99%**. At ~4 games a slate
-that is about two more nights,
-assuming the live recorder stays up.
+The NO DATA verdict needed 7 more games at 200ms. It got them: 20 games
+replayed, 3,582,007 ticks, cadence median 0.20s, and the 0-0 → first-score
+transition observed in **all 20**. 138 signals across 11 games, 75 filled
+(54%).
 
-Nothing in this module needs changing when that happens. Re-run it:
+| horizon | n | mean | 95% CI (clustered) |
+|---|---:|---:|---|
+| +2 min | 75 | −6.05¢ | [−10.44, −1.67] |
+| **+5 min** | 75 | **−3.88¢** | **[−9.73, +1.97]** ← gate |
+| +10 min | 75 | −3.55¢ | [−11.16, +4.07] |
+
+Clustering earned its keep again: the row-level interval at the gate would
+have read [−6.15¢, −1.61¢] and excluded zero. It is wrong by 2.3× on the
+standard error, and it would have turned "no evidence" into a confident loss.
+
+Per market type at the gate, ungated and not to be read as a finding: spread
++0.71¢ (21 fills / 10 games), total −6.45¢ (51 / 10), winner +7.67¢ (3 / 3).
+`PULSE_MARKETS` stays empty — picking the best of three arms out of a sample
+this size is how three tests become one finding.
+
+## What this closes
+
+Both Tier 1 fades have now failed on their pre-registered terms:
+
+| # | hypothesis | verdict |
+|---|---|---|
+| 1 | run overreaction | **FAIL** 2026-08-06 — 444 runs / 11 games, −0.32¢ vs a 6¢ cost |
+| 2 | first score | **FAIL** 2026-08-07 — 75 trades / 11 games, −3.88¢, CI spans zero |
+
+The two were designed so that #2 was the strongest form of the claim: one
+basket out of ~170 points is as close to a pure-noise event as this sport
+offers, so if prices overshoot anywhere they overshoot there. They do not.
+**Do not build anything else in this family** — #3 (lead cut) and #4 (late
+runs) are the same mechanism at different magnitudes and were already struck
+out with #1.
+
+Re-run if the question is ever reopened:
 
 ```bash
 python -m core.pulse.first_score

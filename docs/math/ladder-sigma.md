@@ -81,6 +81,41 @@ Sample size is **games**, not rows. At ~60 correlated rows per game, 40 games is
 
 If it passes, the trade is mechanical and needs no basketball model at all: buy both tails, sell the middle. If it fails, the model's tail preference is an artifact and should be damped.
 
+## Corroborating context, added 2026-08-07 — the gate above is unchanged
+
+Two independent measurements landed since this was written. **Neither touches
+the pre-registered test**, and neither is evidence that it passes; they are
+recorded here because both bear on the premise that one constant sigma
+describes this market.
+
+**1. Live margin sigma is not constant across a game.**
+[win-curve.md](win-curve.md) fits P(win | margin, minutes left) over 787 games
+and gets sigma = **2.628** points per sqrt-minute — but the implied value
+**decays by period**: 2.98 at end-Q1, 2.77 at the half, **2.40** at end-Q3. A
+pure sqrt-time random walk would hold one sigma at every horizon. It does not,
+so late points are worth more than sqrt(t) predicts.
+
+**2. Tail activity is not constant across a game either.**
+[tail-volatility.md](tail-volatility.md) measures |30s mid move| by game phase
+and finds the tails **quieter** at the open than mid-game (−0.731¢, 8 games —
+under-powered, reported as NO DATA) and livelier at the close (+0.555¢) —
+though the *body* rungs gain +2.135¢ over the same phase, roughly 4x more.
+
+Together these say the same thing from two directions: **variance in this
+market is time-dependent**, so a ladder shaped with one constant sigma is
+mis-shaped in a way that varies through the game rather than uniformly.
+
+That is a reason the 15.9-vs-20.1 gap might be *structural* rather than a
+mispricing anyone will correct — and equally a reason it might be concentrated
+in particular game states rather than spread evenly across the settled sample
+this doc's gate will score. **It does not move the gate.** If anything it
+argues for reading the eventual result by game phase as well as by price
+bucket, which the current test does not do and should not be retrofitted to do
+after the fact.
+
 ## Status
 
-**Hypothesis, unproven** (2026-08-02). The sigma gap is real and consistent across 362 ladders; whether it converts to money is untested and needs ~35 more games of resolved data.
+**Hypothesis, unproven** (2026-08-02; context added 2026-08-07). The sigma gap
+is real and consistent across 362 ladders; whether it converts to money is
+untested and needs ~35 more games of resolved data. The pre-registered test is
+unchanged.

@@ -7,6 +7,8 @@
 > each ladder rung."* — the founding thesis
 
 **Gate MET: 10 comparable games. Verdict: there is no venue gap.**
+**Confirmed on the full sample 2026-08-10 — 36 games, 3.6x the gate. See
+[the full-sample verdict](#the-full-sample-verdict-2026-08-10) below.**
 
 Across **773 line-identical contract-pairs** on 61 distinct contracts, the two
 venues agree: median |gap| **0.00¢** (median of game medians), **97.2% of pairs
@@ -15,7 +17,39 @@ zero**. Sign persistence is not measurable — only one game carries a sign at
 all, so there is nothing to persist.
 
 Module: [`core/kalshi/analysis.py`](../../core/kalshi/analysis.py) ·
-pre-registered 2026-08-05 · run 2026-08-07
+pre-registered 2026-08-05 · first run 2026-08-07 · full sample 2026-08-10
+
+## The full-sample verdict (2026-08-10)
+
+**VERDICT — founding thesis (cross-venue gap, pre-registered 2026-08-05, gate
+10 matched games): FAIL at pregame resolution.** Polymarket and Kalshi price
+line-identical WNBA pregame contracts identically to within a fraction of one
+tick.
+
+* **Sample**: 36 comparable games (gate met 3.6x) · 3,651 same-minute pairs ·
+  pairing lag p50 15.8s / p90 27.6s / max 32.7s against the pinned 60s.
+* **Statistic 1 — median |mid gap|: 0.0000.** 35 of 36 games have an exactly
+  zero median; the one signed game reads −0.005, a half-tick. Zero in every
+  hours-to-tip bucket.
+* **Statistic 2 — sign persistence: 1.0 on 1 signed game of 36 — vacuous.**
+  No gap, hence no sign structure to persist. (One numerical note: a
+  game-median of +5.55e-17 — float residue from ``(bid+ask)/2`` on a
+  one-cent-tick market — initially counted as "signed"; ``SIGN_EPSILON``
+  now implements the registered "nonzero" wording. Definitions unchanged.)
+* **Supporting, not gated**: game-clustered mean |gap| 0.29¢, 95% CI
+  [0.22¢, 0.36¢].
+
+Tradability and fees remain a separately-registered question, per this
+module's own rules. The roadmap fork this verdict forces — in-game
+resolution, a different league, or abandoning the cross-venue route — is an
+**operator decision, queued for the user's return**.
+
+*Provenance note for PR review:* the `report()` implementation predates the
+manager's 2026-08-10 dispatch and sits uncommitted in the working tree along
+with everything else from this week; it was verified line-by-line against the
+registration and given its test file (`tests/test_kalshi_gap.py`) on
+2026-08-10, but **it has not been human-reviewed — flag in the PR** so the
+founding verdict does not rest on unreviewed matching code.
 
 ## The pre-registration, unchanged
 

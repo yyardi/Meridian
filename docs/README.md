@@ -29,7 +29,7 @@ The modelling, stated precisely enough to argue with.
 | [availability.md](math/availability.md) | Does knowing tonight's lineup beat the closing line? (No — measured) |
 | [what-the-edge-is-worth.md](math/what-the-edge-is-worth.md) | What is +1.75 points of CLV worth in money? (+2.50% ROI) |
 | [market-shrinkage.md](math/market-shrinkage.md) | Why the moneyline loses, and why recalibration was the wrong fix |
-| [venue-gap.md](math/venue-gap.md) | Is Polymarket mispriced against Kalshi? (**the founding question** — no gap found, 7 of 10 games) |
+| [venue-gap.md](math/venue-gap.md) | Is Polymarket mispriced against Kalshi? (**the founding question — FAILED** at pregame resolution: 0.00¢ median gap, 36 games, 3.6× the gate) |
 | [ladder-sigma.md](math/ladder-sigma.md) | Is Polymarket's ladder too narrow? (hypothesis, unproven) |
 | [news-windows.md](math/news-windows.md) | Does the thin venue lag the books on news? (no data yet) |
 | [adverse-selection.md](math/adverse-selection.md) | Does the spread survive being filled? (**FAILED** — −2.66¢ per filled quote; QUOTE stays unbuilt) |

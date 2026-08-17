@@ -72,6 +72,7 @@ Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill
 ## Where we are stuck
 
 1. **The shadow gate is a clock, not a task.** The champion needs ~60 days of live shadow CLV before the next decision. Nothing accelerates it.
+   **But the clock now ticks against a negative record (C14, 2026-08-10):** at 41 games / 543 settled v4 bets, money-at-price ROI is negative in every measured-concession arm with the game-clustered CI excluding zero (pregame 2.11¢: −23.2% [−41.4, −5.0]), and the win-rate scorecard reads FAIL at a sample that now clears its 10-game floor. [findings C14](findings.md#c14--the-live-shadow-record-under-measured-fills-re-exam-2026-08-10).
 2. **The venue gap has not been observed yet.** The window detector is now BUILT (`python -m core.window_detector`) but has **zero triggers** — 0 book moves >=1.5 pts in 61 consecutive poll pairs. Not a null result; the experiment has not run. Binding constraint is cadence, not modelling: PM idles at 60 min and the lag is measured in minutes. [news-windows.md](math/news-windows.md)
    Background: the scanner found sub-point gaps on quiet evenings; the hand-observed 6–8 pt gaps are hypothesised to be short *news windows*.
 3. **2026 is ambiguous**: −9.3% ROI on +1.69 CLV at n=89 — outcome noise and edge decay are indistinguishable at this sample.
