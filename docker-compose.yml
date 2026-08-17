@@ -50,7 +50,6 @@ services:
       # yields headroom to the live one rather than both sitting at 10 and
       # leaving zero margin. 5 + 12 = 17, under the ceiling.
       MERIDIAN_RPS: "5"
-    volumes:
 
   live-recorder:
     build: .
