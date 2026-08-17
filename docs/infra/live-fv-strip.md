@@ -1,7 +1,9 @@
 # The live FV strip — a number on a screen, and nothing else
 
-On `/picks`, under the pregame table: one row per in-game moneyline, showing a
-formula fair value beside the market's bid/ask.
+On the landing page `/`, under the pregame picks table: one row per in-game
+moneyline, showing a formula fair value beside the market's bid/ask.
+(It was `/picks` until the two pages were merged —
+[landing-page.md](landing-page.md).)
 
 Module: [`core/live_fv.py`](../../core/live_fv.py) · endpoint `/api/live-fv` ·
 maths in [math/win-curve.md](../math/win-curve.md)

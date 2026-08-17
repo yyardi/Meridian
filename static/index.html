@@ -3,90 +3,135 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian — Live board</title>
+<title>Meridian</title>
 <style>
-  :root{
-    --bg:#0a0c10; --panel:#11141b; --panel2:#151922; --line:#1e2430;
-    --txt:#d7dde8; --dim:#7c879b; --faint:#4a5568;
-    --pos:#26d07c; --neg:#ff5c62; --warn:#ffb020; --accent:#4c8dff;
-    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  }
+  :root{--bg:#0a0c10;--panel:#11141b;--line:#1e2430;--txt:#d7dde8;--dim:#7c879b;
+        --faint:#4a5568;--pos:#26d07c;--neg:#ff5c62;--warn:#ffb020;--accent:#4c8dff;
+        --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
-  body{
-    background:var(--bg); color:var(--txt);
-    font:12px/1.45 var(--mono);
-    font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased;
-  }
-  .num{font-variant-numeric:tabular-nums}
+  body{margin:0;background:var(--bg);color:var(--txt);font:12px/1.5 var(--mono);
+       font-variant-numeric:tabular-nums}
+  header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:9px 14px;
+         background:var(--panel);border-bottom:1px solid var(--line);position:sticky;
+         top:0;z-index:9}
+  .brand{font-weight:700;letter-spacing:.14em}.brand span{color:var(--accent)}
+  nav a{color:var(--faint);text-decoration:none;margin-right:12px;font-size:11px;
+        padding:3px 8px;border-radius:3px}
+  nav a.on{color:var(--txt);background:#1a1f2b}
+  .pill{margin-left:auto;padding:3px 9px;border-radius:3px;font-size:10px;letter-spacing:.09em;
+        background:#2a1a1a;color:var(--warn);border:1px solid #3d2a17}
+  .wrap{padding:14px;max-width:1400px;overflow-x:auto}
+  h2{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);
+     margin:0 0 8px;font-weight:600}
+  .banner{border:1px solid #3d2a17;background:#221708;color:var(--warn);padding:9px 12px;
+          border-radius:4px;margin-bottom:14px;font-size:11px;line-height:1.6}
+  table{width:100%;border-collapse:collapse;margin-bottom:22px}
+  th{text-align:right;color:var(--faint);font-size:9.5px;letter-spacing:.08em;
+     text-transform:uppercase;padding:6px 9px;border-bottom:1px solid var(--line)}
+  th.l,td.l{text-align:left}
+  td{text-align:right;padding:5px 9px;border-bottom:1px solid #131720;white-space:nowrap}
+  tr:hover{background:#12161e}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--warn)}
+  .side{display:inline-block;min-width:46px;text-align:center;font-size:9.5px;padding:1px 5px;
+        border-radius:2px;font-weight:700}
+  .sideY{background:#10261c;color:#3fd48f}.sideN{background:#2a161a;color:#ff7b80}
+  .tag{display:inline-block;min-width:50px;text-align:center;font-size:9.5px;padding:1px 5px;
+       border-radius:2px}
+  .total{background:#132a1f;color:#4fd191}.spread{background:#151f33;color:#6ba3ff}
+  .winner{background:#2a1f33;color:#c08bff}
+  .ok{color:var(--pos);font-weight:700}.bad{color:var(--neg);font-weight:700}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;
+        background:var(--line);border:1px solid var(--line);border-radius:5px;
+        overflow:hidden;margin-bottom:14px}
+  .kpi{background:var(--panel);padding:10px 12px}
+  .kpi .k{color:var(--faint);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase}
+  .kpi .v{font-size:17px;margin-top:3px}
+  .empty{padding:24px;color:var(--faint);text-align:center}
 
-  /* ---- top bar ---- */
-  header{
-    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
-    padding:9px 14px; background:var(--panel);
-    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10;
-  }
-  .brand{font-weight:700; letter-spacing:.14em; font-size:12px}
-  .brand span{color:var(--accent)}
-  .stat{display:flex; gap:6px; align-items:baseline}
-  .stat .k{color:var(--faint); font-size:10px; text-transform:uppercase; letter-spacing:.08em}
-  .stat .v{font-size:12px}
+  /* --- health stats, carried over from the old live board --------------- */
+  .stat{display:flex;gap:6px;align-items:baseline}
+  .stat .k{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em}
+  .stat .v{font-size:11.5px}
   .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
-  .ok{background:var(--pos); box-shadow:0 0 7px var(--pos)}
-  .bad{background:var(--neg); box-shadow:0 0 7px var(--neg)}
-  .pill{
-    margin-left:auto; padding:3px 9px; border-radius:3px; font-size:10px;
-    letter-spacing:.09em; background:#2a1a1a; color:var(--warn);
-    border:1px solid #3d2a17;
-  }
+  .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
+  .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
 
-  /* ---- layout ---- */
-  main{display:grid; grid-template-columns:220px 1fr; gap:0; height:calc(100vh - 41px)}
-  aside{background:var(--panel); border-right:1px solid var(--line); overflow-y:auto; padding:10px}
-  section{overflow-y:auto; padding:0}
-  h3{
-    margin:0 0 8px; font-size:10px; letter-spacing:.11em; color:var(--faint);
-    text-transform:uppercase; font-weight:600;
-  }
-  .game{
-    padding:7px 8px; border-radius:4px; cursor:pointer; margin-bottom:3px;
-    border:1px solid transparent; transition:background .1s;
-  }
-  .game:hover{background:var(--panel2)}
-  .game.sel{background:var(--panel2); border-color:var(--line)}
-  .game .t{font-size:11px; color:var(--txt)}
-  .game .s{font-size:10px; color:var(--faint); margin-top:2px}
-  .live{color:var(--neg); font-weight:700}
+  /* --- game context strip ----------------------------------------------- *
+   * All that survives of the old live board: which games are on, what the
+   * score is, when they tip. It frames the picks below; it is not a market
+   * table and nothing on it is clickable or orderable.
+   *
+   * Class names are `.scard`, NOT `.gcard`. The game tape owns .gcard/.gt and
+   * binds click handlers with a document-wide `querySelectorAll(".gcard")`,
+   * so sharing the name would have hung openGame() off every strip card —
+   * silently making a display-only surface clickable, which is the one thing
+   * it must not be. The CSS would have collided too (:hover, .on).          */
+  .stripwrap{display:flex;align-items:stretch;background:#0d1016;
+             border-bottom:1px solid var(--line)}
+  .striplbl{flex:0 0 auto;display:flex;align-items:center;padding:0 12px 0 14px;
+            font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+            color:var(--faint);border-right:1px solid var(--line);cursor:help}
+  .strip{display:flex;gap:8px;overflow-x:auto;padding:9px 14px;flex:1 1 auto;
+         min-width:0}
+  .scard{flex:0 0 auto;min-width:132px;background:var(--panel);
+         border:1px solid var(--line);border-radius:4px;padding:7px 10px}
+  .scard.livecard{border-color:#3d2126}
+  .scard.haspicks{border-color:#24314a;background:#101825}
+  .scard .sct{font-size:11px;font-weight:700;letter-spacing:.04em}
+  .scard .scs{font-size:10px;color:var(--faint);margin-top:3px}
+  .scard .scscore{font-size:13px;margin-top:2px}
+  .livedot{color:var(--neg);font-weight:700}
+  .soonc{color:var(--warn)}
+  .stale{color:var(--warn)}
+  .pickc{color:var(--accent)}
+  .stripempty{color:var(--faint);font-size:10.5px;padding:4px 0}
+  footer{padding:6px 14px;font-size:10px;color:var(--faint);
+         border-top:1px solid var(--line);background:var(--panel);margin-top:8px}
 
-  /* ---- table ---- */
-  table{width:100%; border-collapse:collapse}
-  thead th{
-    position:sticky; top:0; background:var(--panel); z-index:5;
-    font-size:9.5px; letter-spacing:.09em; text-transform:uppercase;
-    color:var(--faint); font-weight:600; text-align:right;
-    padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap;
-  }
-  thead th.l{text-align:left}
-  tbody td{
-    padding:5px 10px; text-align:right; border-bottom:1px solid #131720;
-    white-space:nowrap;
-  }
-  tbody td.l{text-align:left}
-  tbody tr:hover{background:#12161e}
-  .mkt{color:var(--dim); font-size:11px}
-  .tag{
-    display:inline-block; min-width:52px; text-align:center; font-size:9.5px;
-    padding:1px 5px; border-radius:2px; letter-spacing:.05em;
-  }
-  .total{background:#132a1f; color:#4fd191}
-  .spread{background:#151f33; color:#6ba3ff}
-  .winner{background:#2a1f33; color:#c08bff}
-  .pos{color:var(--pos)} .neg{color:var(--neg)} .dimc{color:var(--faint)}
-  .bar{display:inline-block; height:3px; border-radius:2px; vertical-align:middle}
-  .flash{animation:fl .5s ease-out}
-  @keyframes fl{from{background:#1d2a3d}to{background:transparent}}
-  svg.spark{vertical-align:middle}
-  .shadowdot{color:var(--warn); font-weight:700}
+  /* --- human-confirmed order path --------------------------------------- */
+  .sendbtn{font:inherit;font-size:9.5px;letter-spacing:.06em;padding:2px 8px;border-radius:3px;
+           background:#1a2233;color:#6ba3ff;border:1px solid #24314a;cursor:pointer}
+  .sendbtn:hover{background:#20293d;color:#8fbcff}
+  .sendbtn:disabled{opacity:.35;cursor:not-allowed}
+  .sendbtn.done{background:#10261c;color:#3fd48f;border-color:#1d3d2c}
+  .sendbtn.err{background:#2a161a;color:#ff7b80;border-color:#3d2126}
+  #tokwrap{margin-left:auto;display:flex;align-items:center;gap:7px}
+  #tok{font:inherit;font-size:10px;background:#0c0f15;color:var(--txt);border:1px solid var(--line);
+       border-radius:3px;padding:3px 7px;width:150px}
+  .pill{margin-left:0}
+  /* Modal. The second click lives here — the row button only opens it. */
+  #modal{position:fixed;inset:0;background:rgba(4,6,10,.82);display:none;
+         align-items:center;justify-content:center;z-index:50}
+  #modal.on{display:flex}
+  .ticket{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+          width:min(430px,92vw);padding:0;overflow:hidden}
+  .ticket h3{margin:0;padding:11px 15px;font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+             background:#161b25;border-bottom:1px solid var(--line);color:var(--txt)}
+  .ticket .rows{padding:13px 15px}
+  .trow{display:flex;justify-content:space-between;padding:4px 0;font-size:11.5px}
+  .trow .k{color:var(--faint)}
+  .trow.big{font-size:14px;padding:8px 0;border-top:1px solid var(--line);margin-top:6px}
+  .twarn{margin:11px 15px 0;padding:8px 10px;border-radius:4px;font-size:10.5px;line-height:1.55;
+         background:#221708;color:var(--warn);border:1px solid #3d2a17}
+  .tacts{display:flex;gap:9px;padding:13px 15px;border-top:1px solid var(--line);margin-top:12px}
+  .tacts button{flex:1;font:inherit;font-size:11px;padding:8px;border-radius:4px;cursor:pointer}
+  #cancelBtn{background:#161b25;color:var(--dim);border:1px solid var(--line)}
+  #confirmBtn{background:#123021;color:#4fe6a0;border:1px solid #1e5238;font-weight:700}
+  #confirmBtn:disabled{opacity:.5;cursor:not-allowed}
+  #tresult{padding:0 15px 13px;font-size:10.5px;line-height:1.6;display:none}
+  #qty,#px,#exitpx{font:inherit;font-size:12px;background:#0c0f15;color:var(--txt);
+       border:1px solid #2a3346;border-radius:3px;padding:2px 6px;width:78px;text-align:right}
+  #qty:focus,#px:focus,#exitpx:focus{outline:none;border-color:var(--accent)}
+  .restlbl{font-size:9.5px;padding:1px 6px;border-radius:2px;margin-left:6px}
+  .rests{background:#10261c;color:#3fd48f}
+  .crosses{background:#2a1f14;color:#ffb020}
+  #ackwrap{margin:11px 15px 0;padding:8px 10px;border-radius:4px;font-size:10.5px;
+           line-height:1.6;background:#2a1414;color:#ff7b80;border:1px solid #4d2020;
+           display:none}
+  #ackwrap b{color:#ff9ba0}
+  .fillFAILED{color:var(--neg);font-weight:700}
+  .fillFILLED{color:var(--pos)} .fillPARTIAL{color:var(--warn)}
+  .fillCANCELLED,.fillEXPIRED{color:var(--dim)}
   /* --- league tabs ------------------------------------------------------ *
      "MERIDIAN · WNBA" was a hardcoded string on three pages. League is now a
      parameter end to end (core/leagues.py), and this is its control.        */
@@ -96,355 +141,978 @@
   .lgt:hover{color:var(--txt)}
   .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
   .lgt.empty{color:var(--faint);opacity:.75}
-  .side{display:inline-block;min-width:44px;text-align:center;font-size:9.5px;
-        padding:1px 5px;border-radius:2px;letter-spacing:.05em;font-weight:700}
-  .sideY{background:#10261c;color:#3fd48f}
-  .sideN{background:#2a161a;color:#ff7b80}
-  .suspect{color:var(--warn);font-weight:700;cursor:help}
-  .fbtn{display:block;padding:6px 9px;border-radius:4px;margin-bottom:4px;cursor:pointer;
-        border:1px solid var(--line);background:#0e1218;font-size:11px;color:var(--dim);
-        text-decoration:none}
-  .fbtn:hover{background:var(--panel2);color:var(--txt)}
-  .fbtn.on{background:#16243a;border-color:#2c4a7a;color:#cfe2ff;font-weight:600}
-  .fbtn.link{color:var(--accent);border-style:dashed}
-  .cnt{float:right;color:var(--faint);font-weight:400}
-  #helpbtn{margin-left:8px;width:20px;height:20px;border-radius:50%;cursor:pointer;
-    background:#1a2233;color:var(--accent);border:1px solid #2c4a7a;font:700 11px var(--mono)}
-  #helpbtn:hover{background:#22304a}
-  .helpbox{display:none;padding:12px 14px;background:#0e1218;border-bottom:1px solid var(--line);
-    font-size:11px;line-height:1.6}
-  .helpbox.on{display:block}
-  .hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px 22px;margin-top:9px}
-  .hd{color:var(--faint)}
-  .helpbox code{background:#161c26;padding:1px 4px;border-radius:2px;color:#8fb8ff}
-  .hwarn{margin-top:10px;padding:7px 10px;border-radius:3px;background:#221708;
-    border:1px solid #3d2a17;color:var(--warn)}
-  .hwarn a{color:var(--accent)}
-  .warnc{color:var(--warn)}
-  .empty{padding:34px; text-align:center; color:var(--faint)}
-  /* An in-play row is the model working correctly, not failing — styled as
-     information (amber) rather than as an alarm (red). */
-  .inplay{color:var(--warn); font-size:9.5px; letter-spacing:.04em; cursor:help}
-  /* Rows are written by recorders on very different cadences, so a stale
-     pregame quote sits next to a 200ms-fresh live one and must look it. */
-  .stale{color:var(--warn)}
-  .legend{display:flex; flex-wrap:wrap; gap:6px 22px; padding:10px 14px 16px;
-          border-top:1px solid var(--line); color:var(--faint); font-size:10.5px;
-          line-height:1.5}
-  .legend b{color:var(--dim); font-weight:600}
-  .gage{color:var(--faint)}
-  footer{
-    padding:6px 14px; font-size:10px; color:var(--faint);
-    border-top:1px solid var(--line); background:var(--panel);
-  }
+
+  /* --- game tape: the per-game deep dive ------------------------------- */
+  .glist{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px;
+         margin-bottom:14px}
+  .gcard{background:var(--panel);border:1px solid var(--line);border-radius:4px;
+         padding:8px 10px;cursor:pointer}
+  .gcard:hover{border-color:#2c3a52;background:#141922}
+  .gcard.on{border-color:var(--accent);background:#131a28}
+  .gcard .gt{font-weight:700;letter-spacing:.05em}
+  .gcard .gm{color:var(--faint);font-size:10px;margin-top:2px}
+  /* The timeline spine. One node per decision instant: the model re-decides
+     the whole ladder each cycle, so a "trade" in isolation is misleading —
+     what it decided is a basket, and the basket is the unit worth reading. */
+  .tl{border-left:2px solid var(--line);margin-left:8px;padding-left:0}
+  .round{position:relative;padding:0 0 4px 18px;margin-bottom:2px}
+  .round::before{content:"";position:absolute;left:-6px;top:7px;width:9px;height:9px;
+                 border-radius:50%;background:var(--faint);border:2px solid var(--bg)}
+  .round.live::before{background:var(--warn)}
+  .rhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:4px 0 3px;
+         font-size:10.5px}
+  .rtime{font-weight:700}
+  .ctxchip{font-size:9.5px;padding:1px 6px;border-radius:2px;background:#161b25;
+           color:var(--dim);border:1px solid var(--line)}
+  .ctxchip.livec{background:#2a1a1a;color:var(--warn);border-color:#3d2a17}
+  .round table{margin-bottom:6px}
+  .round td,.round th{padding:3px 8px}
+  .gpath{background:var(--panel);border:1px solid var(--line);border-radius:4px;
+         padding:10px 12px;margin-bottom:12px}
+  .aftr{border:1px solid #1e2a3d;background:#0e141f;color:var(--dim);padding:7px 10px;
+        border-radius:4px;margin-bottom:10px;font-size:10.5px;line-height:1.55}
 </style>
 </head>
 <body>
-
 <header>
   <div class="brand">MERIDIAN</div>
   <div class="lg" id="lgtabs"></div>
-  <div class="stat"><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
-  <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v num" id="s-pregame">—</span></div>
-  <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v num" id="s-live">—</span></div>
-  <div class="stat" title="Estimated from planner statistics, not an exact count — an exact count on this table exceeds the statement timeout."><span class="k">snapshots</span><span class="v num" id="s-snaps">—</span></div>
-  <div class="stat" title="market_snapshots + book_levels on disk"><span class="k">stream</span><span class="v num" id="s-bytes">—</span></div>
-  <div class="pill" id="s-mode">SHADOW · 0 REAL ORDERS</div>
-  <button id="helpbtn" title="How to read this board">?</button>
+  <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
+  <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v" id="s-live">—</span></div>
+  <nav>
+    <a href="/" class="on">Picks</a>
+    <a href="/analytics">Model performance</a>
+  </nav>
+  <div id="tokwrap">
+    <input id="tok" type="password" placeholder="order token" autocomplete="off"
+           title="Server-side token from MERIDIAN_ORDER_TOKEN. Held in this tab only (sessionStorage), never persisted to disk.">
+    <div class="pill" id="modepill">SHADOW · 0 REAL ORDERS</div>
+  </div>
 </header>
 
-<div id="help" class="helpbox">
-  <b>Every row is one bet you could place.</b> Prices are probabilities: pay 0.30, win 1.00 if right.
-  <div class="hgrid">
-    <div><code>tsc-</code> total &nbsp;<code>asc-</code> spread &nbsp;<code>aec-</code> winner<br>
-      <span class="hd">then the two teams, the date, and the line.<br>
-      <code>tsc-wnba-lv-chi-2026-08-01-170pt5</code> = "will LV vs CHI score more than 170.5?"</span></div>
-    <div><b>BID / ASK</b> — sell price / buy price.<br>
-      <span class="hd">You always buy at the higher one. The gap is <b>SPR</b>, your cost. Red = too wide to trade.</span></div>
-    <div><b>MID</b> — what the market believes.<br><b>MODEL</b> — what we believe.<br>
-      <span class="hd">Both are probabilities of the <i>first-listed</i> outcome (Over / that team).</span></div>
-    <div><b>SIDE</b> — which way to bet if you took it.<br>
-      <span class="hd">These are yes/no contracts, so betting UNDER is just selling OVER.</span></div>
-    <div><b>EDGE</b> — model minus what you'd pay.<br>
-      <span class="hd">Green = model thinks it's cheap. <span class="warnc">?</span> = disagreement over 15%, which usually means <b>the model is wrong</b>, not that it's free money.</span></div>
-    <div><b>SHADOW</b> — the order we would have placed.<br>
-      <span class="hd">REST = sits on the book and earns a rebate. Nothing is ever actually sent.</span></div>
+<!-- The confirmation ticket. The row button opens this; only the button
+     inside it sends anything. Two clicks, two different elements, and the
+     second one shows the whole order in words first. -->
+<div id="modal" role="dialog" aria-modal="true">
+  <div class="ticket">
+    <h3>Confirm order — this sends real money</h3>
+    <div class="rows" id="trows"></div>
+    <div class="twarn" id="twarn"></div>
+    <div id="ackwrap"></div>
+    <div id="tresult"></div>
+    <div class="tacts">
+      <button id="cancelBtn">Cancel</button>
+      <button id="confirmBtn">Confirm &amp; send</button>
+    </div>
   </div>
-  <div class="hwarn">The model is <b>not calibrated</b> — its 65% calls win about 49% of the time.
-    Treat green as "where the model disagrees with the market", not as a tip.
-    <a href="/analytics">See the evidence →</a></div>
 </div>
 
-<main>
-  <aside>
-    <h3>Games</h3>
-    <div id="games"></div>
-    <h3 style="margin-top:16px">Board</h3>
-    <div class="fbtn on">All markets <span class="cnt" id="c-all"></span></div>
-    <a href="/picks" class="fbtn link">Game tape &amp; results →</a>
-    <a href="/analytics" class="fbtn link">Model performance →</a>
-  </aside>
+<!-- Game context strip. The one piece of the old live board worth keeping:
+     which games are on, the score if one is running, and how long until the
+     next tip. It frames the picks; it is not a market table, has no click
+     handler and nothing on it can become an order.
 
-  <section>
-    <table>
-      <thead>
-        <tr>
-          <th class="l">Market</th>
-          <th class="l">Type</th>
-          <th>Line</th>
-          <th>Bid</th>
-          <th>Ask</th>
-          <th>Spr</th>
-          <th>Mid</th>
-          <th>Model</th>
-          <th class="l">Side</th>
-          <th>Edge</th>
-          <th>Age</th>
-          <th class="l">Trend</th>
-          <th>Shadow</th>
-        </tr>
-      </thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <div class="empty" id="empty" style="display:none">no markets on the board</div>
-    <div class="legend">
-      <span><b>in-play</b> — game in progress; the model is pregame-only and
-      does not price a running game. Not an error.</span>
-      <span><b>no book line</b> — nothing to anchor against yet, so no edge is
-      shown.</span>
-      <span><b>Age</b> — how old this row's quote is. Live games are sampled
-      every 200ms, pregame every 15 min, so rows on this page are not equally
-      fresh.</span>
-    </div>
-  </section>
-</main>
+     Labelled "now" on purpose. This surface renders CURRENT state; the game
+     tape further down renders historical state as of each past decision and
+     never reads a snapshot later than that decision. Two surfaces, two
+     questions — saying which is which is what makes the pair legible rather
+     than merely non-contradictory. The label sits outside the scroller so it
+     stays put while the cards scroll past it. -->
+<div class="stripwrap">
+  <div class="striplbl" title="Current state — live scores and tip countdowns. Historical state as of each past decision lives in the game tape below, not here.">now</div>
+  <div class="strip" id="strip"><div class="stripempty">loading games…</div></div>
+</div>
+
+<div class="wrap">
+  <div class="banner">
+    <b>These are shadow picks, not advice.</b> The model passes its CLV gate but is
+    still inside its 60-day shadow window, and it does not know tonight's injuries or
+    lineups. <span class="warnc">?</span> marks a disagreement over 15% — usually our
+    missing information, not free money. Real edge looks like small gaps that are
+    right more often than not.
+  </div>
+
+  <h2>Tonight's pregame picks <span id="hint" class="dimc" style="text-transform:none;letter-spacing:0"></span></h2>
+  <!-- Placeholder, not an empty div: this is the first thing on the landing
+       page now, and a blank gap while /api/picks answers reads as "no picks
+       tonight" — the opposite of what it means. -->
+  <div id="picks"><div class="empty">loading picks…</div></div>
+
+  <h2 style="margin-top:24px">Live moneylines — formula FV
+    <span class="dimc" style="text-transform:none;letter-spacing:0">·
+      display only, nothing here is orderable</span></h2>
+  <div id="livefv"></div>
+
+  <h2 style="margin-top:24px">Open positions — EV stop-loss guard <span class="dimc" style="text-transform:none;letter-spacing:0">(formula FV, unvalidated — information only)</span></h2>
+  <div id="evguard"></div>
+
+  <h2 style="margin-top:24px">Live totals — formula FV
+    <span class="dimc" style="text-transform:none;letter-spacing:0">·
+      display only, nothing here is orderable</span></h2>
+  <div id="livetot"></div>
+
+  <h2 style="margin-top:24px">Real orders — venue truth from the fill watcher</h2>
+  <div id="orders"></div>
+
+  <h2 style="margin-top:24px">Past predictions — what actually happened</h2>
+  <div class="kpis" id="rk"></div>
+  <div class="note" id="rnote"></div>
+
+  <h2 style="margin-top:24px">Game tape <span class="dimc"
+    style="text-transform:none;letter-spacing:0">· click a game to see every shadow
+    trade in it, in the order the model decided them</span></h2>
+  <div id="glist"></div>
+  <div id="gdetail"></div>
+</div>
 
 <footer id="foot">connecting…</footer>
 
 <script>
 const $ = s => document.querySelector(s);
-let selectedEvent = null, prev = {}, sparkCache = {};
+const pct = (v,d=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d)+"%";
+const num = (v,d=2) => v==null ? "—" : v.toFixed(d);
+const tagOf = t => t==="total"?"total":t==="spread"?"spread":"winner";
 
-const fmt = (v, d=2) => v === null || v === undefined ? "—" : v.toFixed(d);
-const pct = v => v === null || v === undefined ? "—" : (v>0?"+":"") + (v*100).toFixed(1) + "%";
+/* Strips the type prefix and ANY league slug, not just wnba — a hardcoded
+   league here silently stopped shortening the moment a second one appeared. */
+function shortSlug(s){ return s.replace(/^(tsc|asc|aec)-[a-z]+-/,"").replace(/-\d{4}-\d{2}-\d{2}/,""); }
+function shortEvent(s){ return (s||"").replace(/^[a-z]+-/,"").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase(); }
 
-async function j(url){ const r = await fetch(url); return r.json(); }
+/* Rows on this system are written by recorders on very different cadences —
+   200ms live, 15 min pregame — so every age on the page is per-writer and
+   must read in its own natural unit rather than as a raw second count. */
+const agef = sec => sec == null ? "—"
+  : sec < 90 ? sec.toFixed(0) + "s"
+  : sec < 5400 ? Math.round(sec/60) + "m"
+  : Math.round(sec/3600) + "h";
 
-function tagClass(t){ return t === "total" ? "total" : t === "spread" ? "spread" : "winner"; }
+function renderPicks(d){
+  const f = d.filtered || {};
+  $("#hint").textContent =
+    ` — next ${d.horizon_hours}h only · ${f.beyond_horizon||0} far-dated and `
+    + `${f.spread_too_wide||0} wide-spread markets hidden`;
 
-function sparkline(points){
-  if(!points || points.length < 2) return "";
-  const vals = points.map(p => p.mid);
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const range = (max - min) || 1;
-  const w = 62, h = 15;
-  const step = w / (vals.length - 1);
-  const d = vals.map((v,i) => `${i===0?"M":"L"}${(i*step).toFixed(1)},${(h - (v-min)/range*h).toFixed(1)}`).join(" ");
-  const up = vals[vals.length-1] >= vals[0];
-  const col = up ? "#26d07c" : "#ff5c62";
-  return `<svg class="spark" width="${w}" height="${h}"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.2"/></svg>`;
-}
-
-async function loadStatus(){
-  const s = await j("/api/status");
-  $("#s-health").innerHTML =
-    `<span class="dot ${s.healthy?"ok":"bad"}"></span>${s.healthy?"LIVE":"STALE"}`;
-  // Freshness is per writer now. A single "age" was always ~0 while a game was
-  // live and so could not detect the pregame recorder dying.
-  const age = sec => sec === null || sec === undefined ? "—"
-    : sec < 90 ? sec.toFixed(0) + "s"
-    : sec < 5400 ? Math.round(sec/60) + "m"
-    : Math.round(sec/3600) + "h";
-  $("#s-pregame").textContent = age(s.pregame_age_seconds);
-  $("#s-pregame").className = "v num " + (s.healthy ? "pos" : "neg");
-  $("#s-live").textContent = age(s.live_age_seconds);
-  // Approximate by design; "~" says so rather than implying a scan.
-  $("#s-snaps").textContent =
-    (s.counts_estimated ? "~" : "") + (s.counts.snapshots ?? 0).toLocaleString();
-  $("#s-bytes").textContent = s.stream_bytes
-    ? (s.stream_bytes / 1e9).toFixed(2) + " GB" : "—";
-  // Both counters, read from the `orders` table by /api/status — never a
-  // client-side tally. `orders_autonomous` must read 0 forever; if it does not,
-  // the CHECK constraint that makes such a row unrepresentable is gone, so the
-  // pill turns red rather than quietly showing a larger number.
-  const human = s.orders_human ?? 0, auto = s.orders_autonomous ?? 0;
-  const pill = $("#s-mode");
-  pill.textContent = `HUMAN_CONFIRM · ${human} REAL · ${auto} AUTONOMOUS`;
-  if (auto > 0) { pill.style.background = "#2a1616"; pill.style.color = "#ff5c62"; }
-  $("#foot").textContent =
-    `${(s.counts.snapshots??0).toLocaleString()} snapshots · ${(s.counts.book_levels??0).toLocaleString()} book levels · `
-    + `${s.counts.predictions??0} predictions · ${s.counts.shadow_orders??0} shadow orders · updated ${new Date().toLocaleTimeString()}`;
-}
-
-async function loadGames(){
-  const {events} = await j(`/api/events?league=${encodeURIComponent(LEAGUE)}`);
-  $("#games").innerHTML = events.map(e => {
-    const nm = (e.event_slug||"").replace(/^[a-z]+-/,"").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
-    const t = e.start ? new Date(e.start).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "";
-    // Per-game staleness: the pregame recorder sweeps every 15 min, so a game
-    // that is not live is legitimately minutes old and should say so.
-    const a = e.age_seconds;
-    const ageTxt = a === null || a === undefined ? ""
-      : a < 90 ? `${a.toFixed(0)}s ago`
-      : a < 5400 ? `${Math.round(a/60)}m ago`
-      : `${Math.round(a/3600)}h ago`;
-    return `<div class="game ${selectedEvent===e.event_slug?"sel":""}" data-e="${e.event_slug}">
-      <div class="t">${nm} ${e.is_live?'<span class="live">● LIVE</span>':""}</div>
-      <div class="s">${e.markets} mkts · ${t}</div>
-      ${ageTxt?`<div class="s gage">updated ${ageTxt}</div>`:""}</div>`;
-  }).join("");
-  document.querySelectorAll("[data-e]").forEach(el => el.onclick = () => {
-    selectedEvent = selectedEvent === el.dataset.e ? null : el.dataset.e;
-    loadGames(); loadBoard();
-  });
-}
-
-async function loadBoard(){
-  const b = await j(`/api/board?league=${encodeURIComponent(LEAGUE)}`);
-  if(b.recorded === false){
-    $("#rows").innerHTML = "";
-    $("#empty").style.display = "block";
-    $("#empty").textContent = b.empty_state;
+  if(!d.picks || !d.picks.length){
+    PICK_EVENTS = new Set();
+    renderStrip();
+    $("#picks").innerHTML = '<div class="empty">No tradeable pregame markets right now.<br>'
+      + '<span style="font-size:10.5px">Games further out are excluded on purpose: measured on a live board, '
+      + 'markets 6–24h away had a 20¢ median spread (67% wider than 10¢) versus 1¢ inside 6h. '
+      + 'Those prices are not real quotes yet.</span></div>';
     return;
   }
-  let rows = b.markets;
-  if(selectedEvent) rows = rows.filter(r => r.event_slug === selectedEvent);
-
-  const liveEdgeOf = r => {
-    if (r.bid === null || r.ask === null || r.model === null || r.is_live) return -99;
-    return Math.max(r.model - r.ask, r.bid - r.model);
-  };
-  rows.sort((a, b2) => liveEdgeOf(b2) - liveEdgeOf(a));
-
-  const all = selectedEvent ? b.markets.filter(r => r.event_slug === selectedEvent) : b.markets;
-  const setc = (id,v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
-  setc("c-all", all.length);
-  $("#empty").style.display = rows.length ? "none" : "block";
-
-  // The same fixture can appear twice on one board — SEA-NY on the 3rd and the
-  // 5th, TOR-GSV on the 2nd and the 4th. Stripping the date made those rows
-  // render identically, so you could not tell which game an edge belonged to.
-  // Add a date back, but only where it actually disambiguates.
-  // Any league slug, not just wnba: a hardcoded one silently stopped
-  // shortening the moment a second league appeared on the board.
-  const baseLabel = r => r.market_slug
-    .replace(/^(tsc|asc|aec)-[a-z]+-/, "").replace(/-\d{4}-\d{2}-\d{2}/, "");
-  const labelCount = {};
-  rows.forEach(r => { const b = baseLabel(r); labelCount[b] = (labelCount[b]||0)+1; });
-
-  $("#rows").innerHTML = rows.map(r => {
-    const key = r.market_slug;
-    const changed = prev[key] !== undefined && prev[key] !== r.mid;
-    prev[key] = r.mid;
-    // These are binary markets: buying the NO side is just selling the YES
-    // side, so a "negative edge on Over" is really a positive edge on Under.
-    // Show the actionable side, priced against the real touch (you buy at the
-    // ask, you sell at the bid) rather than against mid, which no one trades.
-    // Why this row has no edge. A blank cell reads as a malfunction; an
-    // in-play game with no model price is the model behaving correctly.
-    // Derived locally as well as read from the API so the page degrades
-    // gracefully against an older server rather than printing "null".
-    const state = r.pricing_state
-      || (r.is_live ? "in_play" : r.model === null ? "unpriced" : "priced");
-    // Only a pregame market with a model price has a side worth showing. A
-    // finished game's last quote never updates again, so an "edge" against it
-    // is arithmetic on a dead market.
-    const tradeableState = state === "priced";
-
-    const quotable = r.bid !== null && r.ask !== null;
-    const tradeable = quotable && !r.is_live;
-    let side = null, liveEdge = null;
-    if (tradeable && tradeableState && r.model !== null) {
-      const edgeYes = r.model - r.ask;    // buy the quoted side at the ask
-      const edgeNo  = r.bid - r.model;    // buy the other side at (1 - bid)
-      if (edgeYes >= edgeNo) { side = "YES"; liveEdge = edgeYes; }
-      else                   { side = "NO";  liveEdge = edgeNo;  }
-      if (r.type === "total") side = (side === "YES") ? "OVER" : "UNDER";
-    }
-    // liveEdge is null whenever there is no model price, which must read as
-    // "not applicable" rather than as a negative edge.
-    const edgeCls = liveEdge === null ? "dimc" : liveEdge > 0 ? "pos" : "neg";
-    const barW = liveEdge === null ? 0 : Math.min(Math.abs(liveEdge) * 260, 46);
-    const barCol = (liveEdge ?? 0) > 0 ? "var(--pos)" : "var(--neg)";
-    // A double-digit disagreement with a liquid market is far more often the
-    // model being wrong than a free lunch, especially while it is uncalibrated.
-    const suspect = tradeable && liveEdge !== null && liveEdge > 0.15;
-    const base = baseLabel(r);
-    // Only ambiguous labels carry a date, so the common case stays uncluttered.
-    const dm = key.match(/-(\d{4})-(\d{2})-(\d{2})/);
-    const short = labelCount[base] > 1 && dm
-      ? `${base} <span class="dimc">${+dm[2]}/${+dm[3]}</span>` : base;
-
-    let edgeCell, edgeTitle, sideNote = "—";
-    if (state === "finished") {
-      edgeCell = '<span class="dimc">final</span>';
-      edgeTitle = "this game has finished — its last quote never updates again";
-      sideNote = "final";
-    } else if (state === "in_play") {
-      edgeCell = '<span class="inplay">in-play</span>';
-      edgeTitle = "game in progress — the model is pregame-only and does not "
-                + "price a running game. No live model yet.";
-      sideNote = "no live model";
-    } else if (!quotable) {
-      edgeCell = '<span class="dimc">no quotes</span>';
-      edgeTitle = "no two-sided quote on this rung";
-    } else if (r.model === null) {
-      edgeCell = '<span class="dimc">no book line</span>';
-      edgeTitle = "no sportsbook line yet, so there is nothing to anchor the "
-                + "model against — a raw model opinion is not shown";
-      sideNote = "unpriced";
-    } else {
-      edgeCell = pct(liveEdge);
-      edgeTitle = "edge on the actionable side, priced at the touch";
-    }
-
-    // Rows come from writers on very different cadences, so freshness is
-    // per-row, not per-page.
-    const age = r.age_seconds;
-    const ageTxt = age === null || age === undefined ? "—"
-      : age < 90 ? age.toFixed(1) + "s"
-      : age < 5400 ? Math.round(age/60) + "m"
-      : Math.round(age/3600) + "h";
-    const ageCls = age === null || age === undefined ? "dimc"
-      : age <= 5 ? "pos" : age <= 1200 ? "" : "stale";
-    const spr = r.spread === null ? "—" : (r.spread*100).toFixed(0) + "¢";
-    const sprCls = r.spread !== null && r.spread > 0.05 ? "neg" : "";
-    return `<tr class="${changed?"flash":""}">
-      <td class="l mkt">${short}${r.is_live?' <span class="live">●</span>':""}</td>
-      <td class="l"><span class="tag ${tagClass(r.type)}">${r.type||"—"}</span></td>
-      <td class="num">${r.line===null?"—":r.line.toFixed(1)}</td>
-      <td class="num">${fmt(r.bid)}</td>
-      <td class="num">${fmt(r.ask)}</td>
-      <td class="num ${sprCls}">${spr}</td>
-      <td class="num">${fmt(r.mid)}</td>
-      <td class="num">${fmt(r.model)}</td>
-      <td class="l">${side === null ? `<span class="dimc">${sideNote}</span>`
-        : `<span class="side ${side==="OVER"||side==="YES"?"sideY":"sideN"}">${side}</span>`}</td>
-      <td class="num ${edgeCls}" title="${edgeTitle}">${edgeCell
-      }${suspect?' <span class="suspect" title="double-digit disagreement with a liquid market — more likely model error than edge">?</span>':""}<span class="bar" style="width:${barW}px;background:${barCol};opacity:.5"></span></td>
-      <td class="num ${ageCls}" title="quote captured ${r.captured_at||""}">${ageTxt}</td>
-      <td class="l" id="sp-${btoa(key).replace(/=/g,"")}">${sparkCache[key]||""}</td>
-      <td class="num">${r.shadow?`<span class="shadowdot">${r.shadow.would_rest?"REST":"CROSS"}</span> ${r.shadow.quantity.toFixed(1)}`:"—"}</td>
-    </tr>`;
+  // Group by game, ordered by tipoff.
+  const games = [];
+  PICK_EVENTS = new Set(d.picks.map(p => p.event_slug));
+  renderStrip();
+  for(const p of d.picks){
+    let g = games.find(x => x.ev === p.event_slug);
+    if(!g){ g = {ev: p.event_slug, start: p.game_start, hrs: p.hours_to_tipoff, rows: []}; games.push(g); }
+    g.rows.push(p);
+  }
+  // No SHADOW column. The old live board carried one (REST/CROSS + the sizer's
+  // quantity) and it did not come across the merge: it duplicated what the
+  // confirm ticket already computes live off the price actually in the box —
+  // the ticket's rests/crosses label moves as you nudge the price, while a
+  // column showed the verdict for a limit price nobody was going to send. Two
+  // numbers for one decision, and the stale one was the bigger.
+  $("#picks").innerHTML = games.map(g => {
+    const nm = shortEvent(g.ev);
+    const when = new Date(g.start).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"});
+    const soon = g.hrs <= 3;
+    return `<div style="margin-bottom:6px;margin-top:14px;font-size:11px">
+        <b>${nm}</b> <span class="dimc">· ${when} · tips in
+        <span class="${soon?"warnc":"dimc"}">${g.hrs}h</span> · ${g.rows.length} markets</span>
+      </div>
+      <table><thead><tr>
+        <th class="l">Position</th><th>BUY at</th><th>SELL at</th><th>Return</th>
+        <th>Size</th><th>Stake</th>
+        <th class="dimc">Bid</th><th class="dimc">Ask</th><th class="dimc">Spr</th>
+        <th class="dimc">Model</th><th class="dimc">Edge</th><th></th>
+      </tr></thead><tbody>${g.rows.map((p,i)=>`
+        <tr>
+          <td class="l"><span class="side ${["OVER","YES","BUY"].includes(p.side)?"sideY":"sideN"}">${
+            p.ticket ? p.ticket.label : (p.human||shortSlug(p.market_slug))}</span></td>
+          <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.buy_at):"—"}</b></td>
+          <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.sell_at):"—"}</b></td>
+          <td class="${p.ticket&&p.ticket.return_pct>0?"pos":"neg"}">${
+            p.ticket?pct(p.ticket.return_pct):"—"}</td>
+          <td>${p.ticket && !p.ticket.too_small ? num(p.ticket.size,1)
+                : '<span class="dimc" title="The Kelly sizer wanted less than the venue minimum at this bankroll. That is a statement about bankroll, not about the market — you can still size it yourself.">not sized</span>'}</td>
+          <td>${p.ticket&&!p.ticket.too_small?"$"+p.ticket.stake.toFixed(2):'<span class="dimc">—</span>'}</td>
+          <td class="dimc">${num(p.bid)}</td><td class="dimc">${num(p.ask)}</td>
+          <td class="dimc">${(p.spread*100).toFixed(0)}¢</td>
+          <td class="dimc">${num(p.model)}</td>
+          <td class="dimc">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}</td>
+          <td>${sendCell(p)}</td>
+        </tr>`).join("")}</tbody></table>`;
   }).join("");
-
-  // Sparklines for the top rows only — keeps polling cheap.
-  rows.slice(0, 14).forEach(async r => {
-    const h = await j(`/api/history/${r.market_slug}`);
-    const svg = sparkline(h.points);
-    sparkCache[r.market_slug] = svg;
-    const el = document.getElementById("sp-" + btoa(r.market_slug).replace(/=/g,""));
-    if(el) el.innerHTML = svg;
+  document.querySelectorAll(".sendbtn[data-key]").forEach(b=>{
+    b.addEventListener("click", () => openTicket(PICKS[b.dataset.key]));
   });
 }
 
-document.getElementById("helpbtn").onclick = () =>
-  document.getElementById("help").classList.toggle("on");
+/* --- human-confirmed order path ---------------------------------------- *
+ * The row button only OPENS the ticket. Nothing is sent until the separate
+ * confirm button inside the modal is clicked, and the ticket states the whole
+ * order in words first. A row with no computed shadow order gets no button —
+ * the page must never invent a decision the model did not make.            */
+const PICKS = {};
+
+function sendCell(p){
+  // Every row the venue could accept gets a button. A row loses one only when
+  // there is no usable book, or when the position is NO-side — not when the
+  // Kelly sizer declined it, which is a fact about bankroll, not the market.
+  if(!p.order) return '<span class="dimc" title="no usable book for this row">—</span>';
+  PICKS[p.market_slug] = p;
+  return `<button class="sendbtn" data-key="${p.market_slug}">SEND</button>`;
+}
+
+let PENDING = null;
+
+function openTicket(p){
+  PENDING = p;
+  const o = p.order;
+  /* One frame end to end (V15): every number the human can type or read here
+     is in the COST frame of the outcome being bought. The venue's YES-side
+     price.value appears only as the secondary "venue format" line, computed
+     live from the typed price; the server re-derives it and never trusts the
+     page's copy. */
+  $("#trows").innerHTML = `
+    <div class="trow"><span class="k">Market</span><span>${p.human||p.market_slug}</span></div>
+    <div class="trow"><span class="k">Position</span><span>${p.ticket?p.ticket.label:p.side}</span></div>
+    <div class="trow"><span class="k">Buying</span><span><b>${o.outcome}</b>${
+      o.outcome==="NO" ? ' <span class="dimc">(the UNDER / sell side)</span>' : ''}</span></div>
+    <div class="trow"><span class="k">Order type</span><span>LIMIT · good-till-cancel</span></div>
+    <div class="trow"><span class="k">Buy at (per contract)</span>
+      <span><input id="px" type="number" step="0.01" min="0.01" max="0.99"
+                   value="${num(o.cost_per_contract,2)}"><span id="restlbl"></span></span></div>
+    <div class="trow"><span class="k">Venue format</span><span class="dimc" id="venuepx"></span></div>
+    <div class="trow"><span class="k">Book now (${o.outcome} side)</span><span class="dimc">bid ${num(p.bid)} / ask ${num(p.ask)}</span></div>${
+      o.outcome==="NO" ? `<div class="trow"><span class="k">&nbsp;&nbsp;same book, YES side</span><span class="dimc">bid ${
+        num(p.yes_frame.bid)} / ask ${num(p.yes_frame.ask)}</span></div>` : ""}
+    <div class="trow"><span class="k">Then sell at <span class="dimc">(optional exit)</span></span>
+      <span><input id="exitpx" type="number" step="0.01" min="0.01" max="0.99"
+                   value="${o.fair_value==null?"":num(o.fair_value,2)}"></span></div>
+    <div style="padding:2px 0 6px;font-size:10.5px;line-height:1.5" class="dimc">${
+      o.fair_value==null ? "No model fair value — blank means no exit."
+      : "Prefilled with model fair value "+num(o.fair_value,2)+" — the edge is collected when the market reaches the model. Sent when the entry fills, for the FILLED quantity, at exactly this price. Clear the box for no exit."}</div>
+    <div class="trow"><span class="k">Quantity</span>
+      <span><input id="qty" type="number" step="0.01" min="${o.min_quantity}"
+                   max="${o.max_quantity}" value="${o.default_quantity}"> contracts</span></div>
+    <div class="trow"><span class="k">${o.sized_by_model?"Model's size":"Model declined to size this"}</span>
+      <span class="dimc">${o.sized_by_model
+        ? num(o.default_quantity,2)+" contracts"
+        : "Kelly wanted below the "+o.min_quantity+" minimum"}</span></div>
+    <div class="trow"><span class="k">Return if exit fills</span><span id="retOut" class="dimc">—</span></div>
+    <div class="trow big"><span class="k">Maximum stake</span><b id="stakeOut">—</b></div>`;
+
+  const qty = $("#qty"), px = $("#px"), exitpx = $("#exitpx"), out = $("#stakeOut");
+  const onTick = v => Math.abs(v*100 - Math.round(v*100)) < 1e-6;
+  const recalc = () => {
+    const q = parseFloat(qty.value), price = parseFloat(px.value);
+    const exitv = exitpx.value.trim() === "" ? null : parseFloat(exitpx.value);
+    const bad = m => { out.innerHTML = `<span class="bad">${m}</span>`;
+                       $("#confirmBtn").disabled = true; };
+    if(!isFinite(price) || price < 0.01 || price > 0.99)
+      return bad("price must be 0.01–0.99");
+    if(!onTick(price))
+      return bad("price must sit on the 1¢ tick (V2)");
+    if(exitv !== null && (!isFinite(exitv) || exitv < 0.01 || exitv > 0.99 || !onTick(exitv)))
+      return bad("exit price must be 0.01–0.99 on the 1¢ tick");
+    if(!isFinite(q) || q < o.min_quantity)
+      return bad(`below ${o.min_quantity} minimum`);
+
+    // Live rests/crosses label. Crossing pays the taker fee 0.06·C·p·(1−p);
+    // p(1−p) is frame-invariant, so the cost-frame price is fine here.
+    const feeC = 6 * price * (1 - price);
+    $("#restlbl").innerHTML = price < o.cross_price
+      ? '<span class="restlbl rests">rests — may not fill</span>'
+      : `<span class="restlbl crosses">crosses — fills now, taker fee ~${feeC.toFixed(1)}¢</span>`;
+    // The venue's YES-frame price.value, always shown so the frame conversion
+    // is visible before sending — the server derives the same number itself.
+    const vpx = o.outcome === "NO" ? (1 - price) : price;
+    $("#venuepx").textContent = o.outcome === "NO"
+      ? `${vpx.toFixed(2)} (= 1 − ${price.toFixed(2)}, YES-side price.value)`
+      : `${vpx.toFixed(2)} (YES-side price.value — same number)`;
+    // Return is computed off the SAME price that will be sent — not off a
+    // display-only number (the old ticket showed the ask, posted the bid).
+    $("#retOut").innerHTML = exitv === null
+      ? '<span class="dimc">no exit attached</span>'
+      : `<b class="${exitv>price?"pos":"neg"}">${pct(exitv/price - 1)}</b>
+         <span class="dimc">buy ${price.toFixed(2)} → sell ${exitv.toFixed(2)}</span>`;
+
+    // Fat-finger hard confirm: >5¢ through the far touch is the V14
+    // wrong-side shape. Both frames spelled out; a checkbox, not a dialog,
+    // so the acknowledgement is explicit and inspectable.
+    const through = price - o.cross_price;
+    if(through > 0.05){
+      // Rebuilt on every recalc (the numbers in it are live) — but the
+      // checkbox state must survive the rebuild, or ticking it retriggers
+      // recalc and immediately unticks it.
+      const wasChecked = !!(document.getElementById("ackbox")||{}).checked;
+      $("#ackwrap").style.display = "block";
+      $("#ackwrap").innerHTML =
+        `<b>${(through*100).toFixed(0)}¢ through the far touch.</b> `
+        + `Crossing costs ${num(o.cross_price,2)}; you typed ${price.toFixed(2)} `
+        + `(${o.outcome} cost frame) = price.value ${vpx.toFixed(2)} (YES frame). `
+        + `This is how the wrong-side trade happens — paying 0.81 for a 0.16 bet. `
+        + `<label><input type="checkbox" id="ackbox"> I mean to cross this far</label>`;
+      const box = $("#ackbox");
+      box.checked = wasChecked;
+      box.addEventListener("change", recalc);
+    } else {
+      $("#ackwrap").style.display = "none";
+      $("#ackwrap").innerHTML = "";
+    }
+
+    const stake = q * price;
+    if(stake > o.max_stake_usd)
+      return bad(`$${stake.toFixed(2)} — over the $${o.max_stake_usd} cap`);
+    // Sub-cent stakes are real and common here: the default is the 0.01-contract
+    // venue minimum, which on a 0.19 contract is $0.0019. Rendering that as
+    // "$0.00" reads as free, or as broken. Show enough digits to see the number.
+    out.textContent = stake < 0.01 ? "$" + stake.toFixed(4) : "$" + stake.toFixed(2);
+    $("#confirmBtn").disabled = through > 0.05 && !(document.getElementById("ackbox")||{}).checked;
+  };
+  qty.addEventListener("input", recalc);
+  px.addEventListener("input", recalc);
+  exitpx.addEventListener("input", recalc);
+  recalc();
+
+  const edgeWarn = p.edge < 0
+    ? `<b>The model is against this trade</b> (edge ${pct(p.edge)}). It expects to lose money. `
+    : "";
+  $("#twarn").innerHTML = edgeWarn
+    + (o.outcome === "NO"
+        ? `Buying <b>NO</b>. Every number on this ticket is in the NO cost frame; `
+          + `the venue receives the YES-side price.value shown on the venue-format line. `
+        : "")
+    + `Pre-filled at the resting price (${num(o.cost_per_contract,2)}) — it earns the maker `
+    + `side and may never fill. Crossing now costs ${num(o.cross_price,2)}. Nudge the price `
+    + `if the book is a cent away from the model's number.`;
+
+  $("#tresult").style.display = "none";
+  $("#confirmBtn").textContent = "Confirm & send";
+  $("#confirmBtn").onclick = sendOrder;
+  $("#modal").classList.add("on");
+}
+
+function closeTicket(){ $("#modal").classList.remove("on"); PENDING = null; }
+$("#cancelBtn").addEventListener("click", closeTicket);
+$("#modal").addEventListener("click", e => { if(e.target.id === "modal") closeTicket(); });
+
+/* Token is held for this tab only. sessionStorage, not localStorage: it dies
+   with the tab rather than sitting on disk between sessions. */
+$("#tok").value = sessionStorage.getItem("meridian_order_token") || "";
+$("#tok").addEventListener("input", e =>
+  sessionStorage.setItem("meridian_order_token", e.target.value));
+
+async function sendOrder(){
+  if(!PENDING) return;
+  const p = PENDING, o = p.order;
+  const qty = parseFloat($("#qty").value);
+  const btn = $("#confirmBtn");
+  btn.disabled = true;                      // no double-send from a double-click
+  btn.textContent = "Sending…";
+  const out = $("#tresult");
+  out.style.display = "block";
+  out.innerHTML = '<span class="dimc">submitting…</span>';
+
+  try{
+    const r = await fetch("/api/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Meridian-Order-Token": $("#tok").value.trim(),
+      },
+      body: JSON.stringify({
+        market_slug: p.market_slug,
+        mode: "HUMAN_CONFIRM",          // the only value the server accepts
+        // The typed price, in the outcome's COST frame. The server converts
+        // to the YES-frame price.value itself — the page never does.
+        limit_price: parseFloat($("#px").value),
+        quantity: qty,                  // the human's number, bounds-checked
+        // Optional attached exit, same cost frame. null = no exit.
+        exit_price: $("#exitpx").value.trim()==="" ? null : parseFloat($("#exitpx").value),
+        acknowledge_crossing: !!(document.getElementById("ackbox")||{}).checked,
+      }),
+    });
+    const d = await r.json();
+    if(r.ok && d.accepted){
+      out.innerHTML = `<span class="ok">ACCEPTED</span> · venue id `
+        + `<b>${d.venue_order_id||"—"}</b><br><span class="dimc">write latency `
+        + `${d.submit_latency_ms}ms round-trip`
+        + (d.venue_latency_ms!=null?` · ${d.venue_latency_ms}ms venue-side`:"")
+        + `</span>`
+        + (d.exit ? `<br><span class="dimc">exit stored: sell at ${d.exit.sell_at} `
+            + `(price.value ${d.exit.price_value}) — submitted when the entry fills, `
+            + `for the filled quantity</span>` : "");
+      markRow(p.market_slug, "done", "SENT");
+      loadStatus();
+      loadOrders();
+    } else {
+      out.innerHTML = `<span class="bad">REJECTED</span> · HTTP ${r.status}<br>`
+        + `<span class="dimc">${(d.detail||d.response||JSON.stringify(d)).slice(0,300)}</span>`;
+      markRow(p.market_slug, "err", "FAILED");
+    }
+  } catch(e){
+    out.innerHTML = `<span class="bad">ERROR</span> <span class="dimc">${e}</span>`;
+  }
+  btn.textContent = "Close";
+  btn.disabled = false;
+  btn.onclick = closeTicket;
+}
+
+function markRow(slug, cls, label){
+  const b = document.querySelector(`.sendbtn[data-key="${CSS.escape(slug)}"]`);
+  if(b){ b.className = "sendbtn " + cls; b.textContent = label; b.disabled = true; }
+}
+
+/* The header pill reads the two counters straight off /api/status, which reads
+   them off the orders table. It is not a client-side tally.
+
+   The recorder-health stats beside it came from the old live board. They are
+   kept because a pick priced off a dead writer is the one failure this page
+   cannot show any other way: the row still renders, it is just stale. */
+async function loadStatus(){
+  try{
+    const d = await (await fetch("/api/status")).json();
+    const human = d.orders_human ?? 0, auto = d.orders_autonomous ?? 0;
+    const pill = $("#modepill");
+    pill.textContent = `HUMAN_CONFIRM · ${human} REAL · ${auto} AUTONOMOUS`;
+    if(auto > 0){ pill.style.background = "#2a1616"; pill.style.color = "#ff5c62"; }
+
+    $("#s-health").innerHTML =
+      `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
+    // Freshness is per writer. `pregame` is the health signal; `live` is
+    // legitimately silent between games and so is never coloured red.
+    $("#s-pregame").textContent = agef(d.pregame_age_seconds);
+    $("#s-pregame").className = "v " + (d.healthy ? "pos" : "neg");
+    $("#s-live").textContent = agef(d.live_age_seconds);
+
+    // Counts are planner estimates, and postgres reports reltuples = -1 for a
+    // table it has never analysed. That is "unknown", not a negative count —
+    // the old board printed "-1 snapshots", which reads as a broken counter.
+    const c = d.counts || {};
+    const cnt = v => v == null || v < 0 ? "unknown"
+      : (d.counts_estimated ? "~" : "") + v.toLocaleString();
+    $("#foot").textContent =
+      `${cnt(c.snapshots)} snapshots · ${cnt(c.book_levels)} book levels · `
+      + `${cnt(c.predictions)} predictions · ${cnt(c.shadow_orders)} shadow orders · `
+      + `updated ${new Date().toLocaleTimeString()}`;
+  } catch(e){ /* the pill is informational; a failure here must not break picks */ }
+}
+loadStatus();
+setInterval(loadStatus, 15000);
+
+/* --- game context strip ------------------------------------------------ *
+ * The whole of the old live board that survived. `/api/events` says which
+ * games are on and when they tip; `/api/live-fv` supplies the score for the
+ * ones already running, so the strip renders from a cache of both rather than
+ * fetching twice. Display only — no click handler, no PICKS[] entry, nothing
+ * here can open a ticket, and its cards are `.scard` precisely so the game
+ * tape's document-wide `.gcard` click binding cannot reach them.
+ *
+ * `PICK_EVENTS` is null until /api/picks has answered. Three states, not two:
+ * "no picks for this game" and "we have not asked yet" are different claims,
+ * and the strip renders first.                                             */
+let EVENTS = [], LIVE_CTX = {}, PICK_EVENTS = null;
+
+function renderStrip(){
+  const el = $("#strip");
+  if(!EVENTS.length){
+    el.innerHTML = '<div class="stripempty">no games on the board</div>'; return;
+  }
+  const now = Date.now();
+  el.innerHTML = EVENTS.map(e => {
+    // shortEvent() is the page's one spelling of a fixture — the pick group
+    // headers use it too, so the strip and the table cannot disagree.
+    const nm = shortEvent(e.event_slug);
+    const ctx = LIVE_CTX[e.event_slug];
+    const start = e.start ? new Date(e.start) : null;
+    const hrs = start ? (start.getTime() - now) / 3.6e6 : null;
+
+    let line2, line3;
+    if(e.is_live){
+      // A running game gets the score; the model is pregame-only, so this is
+      // context for the picks above it and never a price.
+      line2 = ctx
+        ? `<div class="scscore">${ctx.score} <span class="dimc">${ctx.period}</span></div>`
+        : '<div class="scscore dimc">live</div>';
+      line3 = ctx
+        ? `<div class="scs">${ctx.minutes_left.toFixed(1)} min left${
+            ctx.minutes_left_is_estimate ? " est." : ""}</div>`
+        : "";
+    } else if(hrs != null && hrs > 0){
+      const soon = hrs <= 3;
+      line2 = `<div class="scscore ${soon?"soonc":"dimc"}" style="font-size:11.5px">tips in ${
+        hrs < 1 ? Math.round(hrs*60)+"m" : hrs.toFixed(1)+"h"}</div>`;
+      line3 = `<div class="scs">${start.toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})}</div>`;
+    } else {
+      line2 = '<div class="scscore dimc" style="font-size:11.5px">underway</div>';
+      line3 = start ? `<div class="scs">${start.toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})}</div>` : "";
+    }
+    // Per-game staleness: the pregame sweep is every 15 min, so a game that is
+    // not live is legitimately minutes old and has to say so rather than
+    // looking as fresh as a 200ms live one.
+    const a = e.age_seconds;
+    const ageCls = a == null ? "dimc" : a <= 5 ? "" : a <= 1200 ? "dimc" : "stale";
+    // A game with picks below is the only reason to keep reading. Games
+    // without them are still listed — "nothing here tonight" is an answer —
+    // but they are not the ones the page is about.
+    const has = PICK_EVENTS === null ? null : PICK_EVENTS.has(e.event_slug);
+    return `<div class="scard ${e.is_live?"livecard":""} ${has?"haspicks":""}">
+      <div class="sct">${nm}${e.is_live?' <span class="livedot">●</span>':""}</div>
+      ${line2}${line3}
+      <div class="scs">${e.markets} mkts · <span class="${ageCls}">${agef(a)} old</span></div>
+      <div class="scs">${has === null ? '<span class="dimc">…</span>'
+        : has ? '<span class="pickc">picks below ↓</span>'
+        : '<span class="dimc">no picks</span>'}</div>
+    </div>`;
+  }).join("");
+}
+
+/* League-aware, like every other loader on the page: the strip must show the
+   slate for the tab you are on, not whichever league the server defaults to. */
+async function loadEvents(league){
+  try{
+    const q = league ? `?league=${encodeURIComponent(league)}` : "";
+    EVENTS = (await (await fetch("/api/events" + q)).json()).events || [];
+    renderStrip();
+  } catch(e){ /* context only; a failure here must not break picks */ }
+}
+
+/* Real orders with venue-truth fill state, reconciled by the fill watcher
+   every 60s and attributed by venue order id only. `fill_status` of null is
+   shown as "not reconciled" — "we have not looked" is a different claim from
+   "we looked and it is resting". A FAILED exit is the loudest thing on this
+   page: the human believes a resting exit protects that position and it does
+   not. */
+async function loadOrders(){
+  try{
+    const d = await (await fetch("/api/orders/recent")).json();
+    if(!d.orders || !d.orders.length){
+      $("#orders").innerHTML = '<div class="empty">no real orders yet</div>'; return;
+    }
+    const fills = f => f==null
+      ? '<span class="dimc" title="the fill watcher has not reconciled this row yet">not reconciled</span>'
+      : `<span class="fill${f}">${f}</span>`;
+    $("#orders").innerHTML = `<table><thead><tr>
+      <th class="l">When</th><th class="l">Market</th><th class="l">Side</th>
+      <th>price.value</th><th>Qty</th><th>Accepted</th><th class="l">Fill</th>
+      <th>Filled</th><th class="l">Attached exit</th><th></th>
+    </tr></thead><tbody>${d.orders.map(o=>`
+      <tr>
+        <td class="l dimc">${new Date(o.submitted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td>
+        <td class="l">${shortSlug(o.market_slug)}${o.pre_authorized?' <span class="dimc" title="pre-authorized exit: every term was fixed by a human click; the watcher only chose when">⏎ exit</span>':''}</td>
+        <td class="l">${o.side}</td>
+        <td>${num(o.limit_price)}</td>
+        <td>${num(o.quantity,2)}</td>
+        <td class="${o.accepted?"ok":"bad"}">${o.accepted?"✓":"✗"}</td>
+        <td class="l">${fills(o.fill_status)}</td>
+        <td>${o.filled_quantity==null?'<span class="dimc">—</span>':num(o.filled_quantity,2)}</td>
+        <td class="l">${o.exit==null?'<span class="dimc">—</span>':
+          o.exit.state==="FAILED"
+            ? `<span class="fillFAILED" title="${(o.exit.error||"").replace(/"/g,"&quot;")}">FAILED — position is NOT protected</span>`
+            : `${o.exit.state.toLowerCase()} @ ${num(o.exit.sell_at)}`}</td>
+        <td>${o.cancellable
+          ? `<button class="sendbtn cxbtn" data-oid="${o.id}">CANCEL</button>`
+          : o.cancel_latency_ms!=null
+            ? `<span class="dimc" title="HTTP ${o.cancel_http_status}">cxl ${o.cancel_latency_ms}ms</span>`
+            : ""}</td>
+      </tr>`).join("")}</tbody></table>`;
+    /* Two clicks, same button: first arms it, second sends. Nothing else on
+       the page can trigger this — a machine may never initiate a cancel. */
+    document.querySelectorAll(".cxbtn").forEach(b=>{
+      b.addEventListener("click", async () => {
+        if(b.dataset.armed !== "1"){
+          b.dataset.armed = "1"; b.textContent = "SURE?";
+          b.className = "sendbtn cxbtn err";
+          setTimeout(()=>{ if(b.dataset.armed==="1"){
+            b.dataset.armed=""; b.textContent="CANCEL"; b.className="sendbtn cxbtn"; }}, 4000);
+          return;
+        }
+        b.disabled = true; b.textContent = "…";
+        try{
+          const r = await fetch(`/api/orders/${b.dataset.oid}/cancel`, {
+            method: "POST",
+            headers: {"X-Meridian-Order-Token": $("#tok").value.trim()},
+          });
+          const j = await r.json();
+          b.textContent = r.ok && j.acknowledged
+            ? `CANCELLED · ${j.cancel_latency_ms}ms`
+            : `HTTP ${r.status}`;
+          b.className = "sendbtn cxbtn " + (r.ok && j.acknowledged ? "done" : "err");
+          b.title = (j.detail || j.response || "").slice(0,200);
+        } catch(e){ b.textContent = "ERROR"; b.className = "sendbtn cxbtn err"; }
+        setTimeout(loadOrders, 2500);
+      });
+    });
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadOrders();
+setInterval(loadOrders, 30000);
+
+/* EV stop-loss guard (hypothesis #9 as an ALERT). Driven by the UNVALIDATED
+   formula FV — same caption discipline as the strip. Two signals, mirrored:
+   EDGE GONE (FV fell to/below entry: the reason to hold is gone, urgency
+   styled like a FAILED exit) and PRICE NOISE — FV INTACT (#11 guard: price
+   dropped but FV holds, so averaging-down has an honest signal). There is
+   deliberately no button in this table: nothing here can sell. */
+async function loadEVGuard(){
+  try{
+    const d = await (await fetch("/api/ev-guard")).json();
+    const el = $("#evguard");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no open button positions</div>'; return;
+    }
+    const vcell = r => {
+      if(r.verdict === "EDGE_GONE")
+        return `<span class="fillFAILED">${r.message} — the formula's reason to hold is gone</span>`;
+      if(r.verdict === "PRICE_NOISE")
+        return `<span class="fillPARTIAL">${r.message}</span>`;
+      if(r.verdict === "INTACT")
+        return `<span class="fillFILLED">${r.message}</span>`;
+      return `<span class="dimc">${r.message}</span>`;
+    };
+    el.innerHTML = `
+      <div class="dimc" style="font-size:10.5px;margin-bottom:6px">
+        ${d.caption}. EDGE GONE pushes to the phone (ntfy) once per crossing;
+        recovery pushes an all-clear. Nothing on this panel is orderable.
+      </div>
+      <table><thead><tr>
+        <th class="l">Market</th><th class="l">Side</th><th>Qty</th>
+        <th>Entry</th><th>FV now</th><th>Mid now</th><th class="l">Verdict</th>
+      </tr></thead><tbody>${d.rows.map(r=>`
+        <tr>
+          <td class="l">${shortSlug(r.market_slug)}</td>
+          <td class="l">${r.outcome}</td>
+          <td>${r.filled_quantity.toFixed(2)}</td>
+          <td>${num(r.entry_cost)}</td>
+          <td>${r.fv==null?'<span class="dimc">—</span>':num(r.fv)}</td>
+          <td>${r.mid==null?'<span class="dimc">—</span>':num(r.mid)}</td>
+          <td class="l">${vcell(r)}</td>
+        </tr>`).join("")}</tbody></table>`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadEVGuard();
+setInterval(loadEVGuard, 20000);
+
+// ---------------------------------------------------------------------------
+// Live formula fair value. DISPLAY ONLY.
+//
+// There is deliberately no click handler, no PICKS[] entry and no openTicket()
+// call anywhere in this block. Every other table on this page can become an
+// order; this one cannot, and that is the point. The number is unvalidated:
+// hypothesis #16 passed its pre-registered gate using exactly this formula's
+// team-blind ancestor and then inverted under a confound check.
+// ---------------------------------------------------------------------------
+async function loadLiveFV(){
+  try{
+    const d = await (await fetch("/api/live-fv")).json();
+    // The context strip reads its scores from here rather than fetching the
+    // same endpoint a second time. Rebuilt before the early return below, so
+    // a slate with no live game clears the strip instead of leaving a stale
+    // score frozen on it.
+    LIVE_CTX = {};
+    for(const r of (d.rows || [])){
+      if(!LIVE_CTX[r.event_slug]) LIVE_CTX[r.event_slug] = r;
+    }
+    renderStrip();
+    const el = $("#livefv");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no live moneylines right now</div>';
+      return;
+    }
+    const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
+    el.innerHTML = `
+      <div class="banner" style="margin-bottom:8px">
+        <b>${d.caption}.</b> P = &Phi;((margin + pregame edge &times; t/40) /
+        (&sigma;&radic;t)), &sigma;=${d.sigma} fitted from 787 games. Minutes left is
+        <b>estimated</b> — the venue publishes no game clock, so time inside a period is
+        interpolated from wall clock and is wrong whenever the clock stops. The gap is
+        coloured only past ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
+      </div>
+      <table><thead><tr>
+        <th class="l">Market</th><th class="l">Per</th><th>Score</th><th>Marg</th>
+        <th>Min left</th><th>Pregame</th><th>FV</th><th>Bid</th><th>Ask</th>
+        <th>Gap</th><th class="l">Note</th>
+      </tr></thead><tbody>${d.rows.map(r=>`
+        <tr>
+          <td class="l">${r.label||shortSlug(r.market_slug)}</td>
+          <td class="l dimc">${r.period}</td>
+          <td>${r.score}</td>
+          <td class="${r.margin>0?"pos":r.margin<0?"neg":"dimc"}">${r.margin>0?"+":""}${r.margin}</td>
+          <td>${r.minutes_left.toFixed(1)}${r.minutes_left_is_estimate
+                ? '<span class="dimc" title="interpolated from wall clock; the venue publishes no game clock"> est.</span>'
+                : ''}</td>
+          <td class="dimc">${num(r.pregame_price)}</td>
+          <td>${r.fair_value==null?'<span class="dimc">—</span>':num(r.fair_value)}</td>
+          <td class="dimc">${num(r.bid)}</td>
+          <td class="dimc">${num(r.ask)}</td>
+          <td class="${r.highlight?(r.gap>0?"pos":"neg"):"dimc"}">${gp(r.gap)}</td>
+          <td class="l dimc">${r.note||""}</td>
+        </tr>`).join("")}</tbody></table>`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadLiveFV();
+setInterval(loadLiveFV, 15000);
+
+// ---------------------------------------------------------------------------
+// Live TOTALS formula FV. DISPLAY ONLY — same rules as the moneyline strip:
+// no click handler, no PICKS[] entry, no openTicket(). This one serves the
+// hand-trade audit's single measured-positive pocket (live totals, +9.4%,
+// n=31, descriptive), where what was missing was a number, not a button.
+// ---------------------------------------------------------------------------
+async function loadLiveTotals(){
+  try{
+    const d = await (await fetch("/api/live-totals-fv")).json();
+    const el = $("#livetot");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no live totals rungs right now</div>';
+      return;
+    }
+    const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
+    const games = [];
+    for(const r of d.rows){
+      let g = games.find(x=>x.ev===r.event_slug);
+      if(!g){ g={ev:r.event_slug, rows:[]}; games.push(g); }
+      g.rows.push(r);
+    }
+    el.innerHTML = `
+      <div class="banner" style="margin-bottom:8px">
+        <b>${d.caption}.</b> Projection = pregame v4 total, moved by a
+        <b>fraction</b> of how far scoring has diverged from its own expected pace
+        (coefficient 1.32 at Q1 decaying to 1.00 at full time — raw pace is never
+        extrapolated). &sigma; is the fitted per-period residual for <i>totals</i>
+        (15.9 / 13.0 / 9.7), not the win curve's margin &sigma;. Minutes left is
+        <b>estimated</b> — no game clock is published. Gap coloured past
+        ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
+      </div>
+      ${games.map(g=>{
+        const nm = shortEvent(g.ev);
+        const h = g.rows[0];
+        return `<div class="dimc" style="margin:10px 0 4px">${nm} · ${h.score}
+            · ${h.period} · ${h.minutes_left.toFixed(1)}min left${
+            h.minutes_left_is_estimate?' <span title="interpolated; no game clock is published">est.</span>':''}
+            · scored ${h.total_so_far} · pregame ${h.pregame_mu==null?"—":h.pregame_mu}
+            → projected <b>${h.projected_total==null?"—":h.projected_total}</b>
+            ${h.sigma==null?"":`(&sigma; ${h.sigma})`}</div>
+          <table><thead><tr>
+            <th class="l">Line</th><th>FV</th><th>Bid</th><th>Ask</th><th>Gap</th>
+            <th class="l">Note</th>
+          </tr></thead><tbody>${g.rows.map(r=>`
+            <tr>
+              <td class="l">${r.line.toFixed(1)}</td>
+              <td>${r.fair_value==null?'<span class="dimc">—</span>':num(r.fair_value)}</td>
+              <td class="dimc">${num(r.bid)}</td>
+              <td class="dimc">${num(r.ask)}</td>
+              <td class="${r.highlight?(r.gap>0?"pos":"neg"):"dimc"}">${gp(r.gap)}</td>
+              <td class="l dimc">${r.note||""}</td>
+            </tr>`).join("")}</tbody></table>`;
+      }).join("")}`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadLiveTotals();
+setInterval(loadLiveTotals, 15000);
+
+
+fetch("/api/results").then(r=>r.json()).then(d=>{
+  const s = d.summary;
+  // Sample size is GAMES, not rows: one game emits ~130 correlated ladder rows.
+  // And the metric is MONEY AT PRICE (C11): a flat win rate against the 0.524
+  // breakeven is a category error on ~30¢ tail bets — the portfolio is built
+  // to lose most bets and get paid multiples on hits. Win rate and direction
+  // rate survive only as labelled diagnostics below.
+  const beat = s.brier_model!=null && s.brier_market!=null && s.brier_model < s.brier_market;
+  const m = s.money || {};
+  const roi = m.roi==null ? "—" : (m.roi>0?"+":"")+(m.roi*100).toFixed(1)+"%";
+  $("#rk").innerHTML = [
+    ["Games", s.n_games, `${s.rows} rows · ~${s.rows_per_game}/game`],
+    ["Real bets", s.n_bets, `${s.n_no_bet} rows were no-bet`],
+    ["Money at price", roi,
+     `$${(m.staked??0).toFixed(2)} staked → $${(m.returned??0).toFixed(2)} · `
+     + `${m.n_bets??0} bets / ${m.n_games??0} games · taker entry, 1 contract, no fees`],
+    ["Model vs market", beat?"model":"MARKET",
+     `Brier ${s.brier_model} vs ${s.brier_market}`],
+  ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>
+      <div class="k" style="margin-top:2px">${n}</div></div>`).join("");
+  $("#rnote").innerHTML = `DIAGNOSTIC ONLY: bet win rate reads
+      ${s.bet_win_rate_DIAGNOSTIC==null?"—":s.bet_win_rate_DIAGNOSTIC.toFixed(3)}
+      and direction rate ${s.direction_rate_DIAGNOSTIC} — neither is performance.
+      A flat win rate on ~30¢ bets is the C11 category error (most tail bets are
+      supposed to lose), and direction scores a side, not a bet. Money at price,
+      above, is the number that decides anything.`;
+
+});
+
+/* --- game tape: one game, every shadow trade, in decision order ---------- *
+ *
+ * Replaces a flat 60-row table of the most recent resolved predictions. That
+ * table could tell you the model went 3-for-11 and could not tell you what it
+ * was looking at when it decided any of them, which is the only question worth
+ * asking after a bad night.
+ *
+ * The one rule this view exists to keep: everything under a decision is read
+ * AS OF that decision. The server does that bounding (core/game_detail.py);
+ * this file must not undo it by, say, labelling a round with the final score.
+ * The game's own path is rendered separately and explicitly marked as what
+ * happened AFTER — see the note above it.                                   */
+
+const clock = t => new Date(t).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+const day   = t => new Date(t).toLocaleDateString([], {month:"short",day:"numeric"});
+
+function ctxChip(c){
+  // Pregame is the honest, overwhelmingly common answer: the model prices a
+  // game before tip and does not price a running one, so its decisions carry
+  // no score. Saying "pregame" is information; a row of dashes reads as a
+  // broken join.
+  if(!c.is_live) return '<span class="ctxchip">pregame · 0-0</span>';
+  const mins = c.minutes_left==null ? "" :
+    ` · ${c.minutes_left.toFixed(1)}m left${c.minutes_left_is_estimate?" est.":""}`;
+  const marg = c.margin==null ? "" : ` · margin ${c.margin>0?"+":""}${c.margin}`;
+  return `<span class="ctxchip livec" title="${c.note||"game state as of this decision"}">`
+       + `LIVE ${c.score||"—"} · ${c.period||"?"}${marg}${mins}</span>`;
+}
+
+function gamePath(d){
+  // Score margin and the moneyline mid on one time axis. This is context for
+  // the reader, NOT an input to any decision above it — every point here is
+  // later than every decision on the page.
+  const pts = d.timeline.filter(p => p.margin!=null || p.mid!=null);
+  if(pts.length < 3) return "";
+  const W=920,H=150,P={l:34,r:34,t:10,b:16};
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const mgs = pts.map(p=>p.margin).filter(v=>v!=null);
+  const mx = Math.max(6, ...mgs.map(Math.abs));
+  const X = i => P.l + i/(pts.length-1)*iw;
+  const Ym = v => P.t + ih/2 - (v/mx)*(ih/2-4);       // margin, centred on 0
+  const Yp = v => P.t + (1-v)*ih;                      // price 0..1
+
+  let g = `<line x1="${P.l}" y1="${Ym(0)}" x2="${P.l+iw}" y2="${Ym(0)}" stroke="#2a3242"/>`;
+  const seg = (sel, Y, col, w) => {
+    let d="", pen=false;
+    pts.forEach((p,i)=>{ const v=sel(p);
+      if(v==null){ pen=false; return; }
+      d += (pen?"L":"M") + X(i).toFixed(1) + "," + Y(v).toFixed(1); pen=true; });
+    return d ? `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}"/>` : "";
+  };
+  g += seg(p=>p.mid, Yp, "#4c8dff", 1.2);
+  g += seg(p=>p.margin, Ym, "#ffb020", 1.5);
+  // Period boundaries, the only instants the clock is exact.
+  let last=null;
+  pts.forEach((p,i)=>{ if(p.period && p.period!==last){
+    if(last!==null) g += `<line x1="${X(i)}" y1="${P.t}" x2="${X(i)}" y2="${P.t+ih}" `
+      + `stroke="#2a3242" stroke-dasharray="2,3"/>`
+      + `<text x="${X(i)+3}" y="${P.t+9}" fill="#4a5568" font-size="9">${p.period}</text>`;
+    last=p.period; } });
+  g += `<text x="4" y="${Ym(0)-4}" fill="#ffb020" font-size="9">margin ±${mx}</text>`;
+  g += `<text x="${P.l+iw+4}" y="${Yp(0.5)}" fill="#4c8dff" font-size="9">mid</text>`;
+  return `<div class="gpath">
+      <div class="dimc" style="font-size:10px;margin-bottom:4px">
+        ${d.timeline_market} · <span style="color:#ffb020">score margin</span> and
+        <span style="color:#4c8dff">market mid</span>, ${pts.length} points</div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg></div>`;
+}
+
+function renderGame(d){
+  // Group by decision instant. shadow_run re-decides the whole ladder every
+  // cycle, so the unit that was actually decided is the basket, not the rung.
+  const rounds = [];
+  for(const t of d.trades){
+    let r = rounds.find(x => x.at === t.decided_at);
+    if(!r){ r = {at:t.decided_at, ctx:t.context, h:t.hours_to_tipoff, rows:[]}; rounds.push(r); }
+    r.rows.push(t);
+  }
+  rounds.reverse();   // newest decision first: the last thing it thought
+
+  const resolved = d.trades.filter(t => t.pnl_if_filled!=null);
+  const pnl = resolved.reduce((a,t)=>a+t.pnl_if_filled, 0);
+  const won = resolved.filter(t=>t.bet_won).length;
+
+  $("#gdetail").innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="k">Game</div><div class="v">${d.label}</div>
+        <div class="k" style="margin-top:2px">${d.tipoff?day(d.tipoff)+" "+clock(d.tipoff):"—"}
+        ${d.final_score?" · final "+d.final_score:""}</div></div>
+      <div class="kpi"><div class="k">Shadow trades</div><div class="v">${d.n_trades}</div>
+        <div class="k" style="margin-top:2px">${rounds.length} decision rounds</div></div>
+      <div class="kpi"><div class="k">Decided in-play</div>
+        <div class="v ${d.n_live_decisions?"warnc":"dimc"}">${d.n_live_decisions}</div>
+        <div class="k" style="margin-top:2px">the model is pregame-only</div></div>
+      <div class="kpi"><div class="k">P&amp;L if filled</div>
+        <div class="v ${pnl>0?"pos":"neg"}">${pnl>=0?"+":""}$${pnl.toFixed(2)}</div>
+        <div class="k" style="margin-top:2px">${won}/${resolved.length} won ·
+          <b>conditional</b> — never sent</div></div>
+    </div>
+
+    <div class="aftr"><b>P&amp;L if filled is not a return.</b> These orders were
+      decided and never sent, and most of them would have <i>rested</i> on the book —
+      a resting limit fills only when someone crosses it. This is what the bets would
+      have paid <i>had they all filled at their limits</i>, which is the most
+      optimistic fill assumption there is. The backtest's fill model
+      (<code>core/backtest/fills.py</code>) exists because this number needs one.</div>
+
+    ${gamePath(d)}
+    ${d.timeline.length ? `<div class="aftr">The chart above is what happened
+      <b>after</b> these decisions — it was not an input to any of them. Every
+      score and clock reading <i>inside</i> a round below is read as of that
+      round's timestamp.</div>` : ""}
+
+    <div class="tl">${rounds.map(r=>`
+      <div class="round ${r.ctx.is_live?"live":""}">
+        <div class="rhead">
+          <span class="rtime">${day(r.at)} ${clock(r.at)}</span>
+          <span class="dimc">${r.h==null?"":(r.h>=0?`${r.h.toFixed(1)}h before tip`:`${(-r.h).toFixed(1)}h after tip`)}</span>
+          ${ctxChip(r.ctx)}
+          <span class="dimc">${r.rows.length} rung${r.rows.length>1?"s":""}</span>
+          ${r.ctx.age_seconds!=null && r.ctx.age_seconds>900
+            ? `<span class="dimc" title="how stale the quote behind this reading was">quote ${Math.round(r.ctx.age_seconds/60)}m old</span>` : ""}
+        </div>
+        <table><thead><tr>
+          <th class="l">Position</th><th class="l">Type</th>
+          <th class="dimc">Bid</th><th class="dimc">Ask</th><th class="dimc">Spr</th>
+          <th>Model FV</th><th>Edge</th><th>Limit</th><th>Size</th>
+          <th class="l">Order</th><th>Settled</th><th>Won?</th><th>P&amp;L if filled</th>
+        </tr></thead><tbody>${r.rows.map(t=>`
+          <tr>
+            <td class="l">${t.position||t.human}</td>
+            <td class="l"><span class="tag ${tagOf(t.type)}">${t.type}</span></td>
+            <td class="dimc">${num(t.bid)}</td>
+            <td class="dimc">${num(t.ask)}</td>
+            <td class="dimc">${t.spread==null?"—":(t.spread*100).toFixed(0)+"¢"}</td>
+            <td>${num(t.model_fv)}</td>
+            <td class="${t.edge>0?"pos":"neg"}">${pct(t.edge)}</td>
+            <td>${num(t.limit_price)}</td>
+            <td>${t.quantity.toFixed(2)}</td>
+            <td class="l"><span class="dimc" title="${t.binding_constraint||""}">${
+              t.would_rest?"REST":"CROSS"}</span></td>
+            <td>${t.resolved_outcome==null?'<span class="dimc">—</span>':(t.resolved_outcome===1?"YES":"NO")}</td>
+            <td class="${t.bet_won==null?"":(t.bet_won?"ok":"bad")}">${
+              t.bet_won==null?'<span class="dimc">—</span>':(t.bet_won?"✓":"✗")}</td>
+            <td class="${t.pnl_if_filled==null?"dimc":(t.pnl_if_filled>0?"pos":"neg")}">${
+              t.pnl_if_filled==null?"—":(t.pnl_if_filled>=0?"+":"")+t.pnl_if_filled.toFixed(2)}</td>
+          </tr>`).join("")}</tbody></table>
+      </div>`).join("")}</div>`;
+  $("#gdetail").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function openGame(slug, card){
+  document.querySelectorAll(".gcard").forEach(c=>c.classList.remove("on"));
+  if(card) card.classList.add("on");
+  $("#gdetail").innerHTML = '<div class="empty">loading game tape…</div>';
+  fetch(`/api/game/${encodeURIComponent(slug)}`)
+    .then(r => r.ok ? r.json() : r.json().then(e=>Promise.reject(e.detail||r.status)))
+    .then(renderGame)
+    .catch(e => { $("#gdetail").innerHTML = `<div class="empty">${e}</div>`; });
+}
 
 /* --- league tabs -------------------------------------------------------- *
- * The header read a hardcoded "MERIDIAN · WNBA". League is a parameter now,
- * all the way down to the queries (core/leagues.py), and the choice is
- * remembered per browser so every page agrees with the others.
+ * The header read a hardcoded "MERIDIAN · WNBA" on every page. League is a
+ * parameter now, all the way down to the queries (core/leagues.py), and the
+ * choice is remembered per browser so the three pages agree with each other.
  *
  * A league with no data gets an honest empty state, never a blank table: an
  * empty board and a broken board look identical, and only one of them is fine.
@@ -460,15 +1128,12 @@ function mountLeagueTabs(onChange){
       `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
                data-lg="${l.slug}"
                title="${l.recorded?"":l.empty_state}">${l.name}</button>`).join("");
-    const named = d.leagues.find(l => l.slug === LEAGUE);
-    if(named) document.title = `Meridian — ${named.name} board`;
     document.querySelectorAll(".lgt").forEach(b=>{
       b.addEventListener("click", ()=>{
         if(b.dataset.lg === LEAGUE) return;
         LEAGUE = b.dataset.lg;
         localStorage.setItem(LG_KEY, LEAGUE);
         document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
-        document.title = `Meridian — ${b.textContent.trim()} board`;
         onChange(LEAGUE);
       });
     });
@@ -476,14 +1141,46 @@ function mountLeagueTabs(onChange){
   });
 }
 
-async function tick(){
-  try{ await Promise.all([loadStatus(), loadBoard()]); }
-  catch(e){ $("#foot").textContent = "connection error — is the API running?"; }
+function loadGames(league){
+  fetch(`/api/games?league=${encodeURIComponent(league)}`).then(r=>r.json()).then(d=>{
+    $("#gdetail").innerHTML = "";
+    if(!d.games.length){
+      $("#glist").innerHTML = `<div class="empty">${d.empty_state}</div>`;
+      return;
+    }
+    $("#glist").innerHTML = `<div class="glist">${d.games.map(g=>`
+      <div class="gcard" data-slug="${g.event_slug}">
+        <div class="gt">${g.label}</div>
+        <div class="gm">${day(g.last_decision)} · ${g.n_trades} shadow trades ·
+          ${g.n_resolved?g.n_resolved+" resolved":'<span class="warnc">unresolved</span>'}</div>
+      </div>`).join("")}</div>`;
+    document.querySelectorAll(".gcard").forEach(c=>{
+      c.addEventListener("click", ()=>openGame(c.dataset.slug, c));
+    });
+  });
 }
-mountLeagueTabs(() => { selectedEvent = null; loadGames(); loadBoard(); })
-  .then(() => { loadGames(); tick(); });
-setInterval(tick, 3000);
-setInterval(loadGames, 30000);
+
+function loadPicks(league){
+  fetch(`/api/picks?league=${encodeURIComponent(league)}`)
+    .then(r=>r.json())
+    .then(d => {
+      if(d.recorded === false){
+        $("#hint").textContent = "";
+        $("#picks").innerHTML = `<div class="empty">${d.empty_state}</div>`;
+        // Clear the strip's marks as well: without this the previous league's
+        // "picks below" survives a tab switch onto a league with no data.
+        PICK_EVENTS = new Set();
+        renderStrip();
+        return;
+      }
+      renderPicks(d);
+    });
+}
+
+let LEAGUE_NOW = null;
+mountLeagueTabs(lg => { LEAGUE_NOW = lg; loadPicks(lg); loadGames(lg); loadEvents(lg); })
+  .then(lg => { LEAGUE_NOW = lg; loadPicks(lg); loadGames(lg); loadEvents(lg); });
+setInterval(() => loadEvents(LEAGUE_NOW), 30000);
 </script>
 </body>
 </html>

@@ -66,10 +66,15 @@ def test_the_serialised_row_carries_no_order_or_size_fields():
 
 
 def test_the_strip_markup_has_no_ticket_handler():
-    """The picks page opens tickets from other tables; not from this one."""
+    """The picks page opens tickets from other tables; not from this one.
+
+    The page moved to `static/index.html` when the live board and the picks
+    page were merged into one landing page; the guard did not move with it,
+    so it is repointed here.
+    """
     from pathlib import Path
 
-    html = Path("static/picks.html").read_text()
+    html = Path("static/index.html").read_text()
     start = html.index("async function loadLiveFV")
     block = html[start:html.index("setInterval(loadLiveFV", start)]
     for forbidden in ("openTicket", "sendCell", "PICKS[", "confirmBtn"):

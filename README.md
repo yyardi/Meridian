@@ -178,8 +178,8 @@ exists.
 
 | Page | Shows |
 |---|---|
-| `/` | Live board — every market, model price, edge |
-| `/picks` | Today's picks as trade tickets, and the game tape — click a game for every shadow trade in it |
+| `/` | Today's picks as trade tickets, framed by a game/score strip, plus resolved results and the game tape — click a game for every shadow trade in it |
+| `/picks` | Redirects to `/` — the picks page *is* the landing page ([why](docs/infra/landing-page.md)) |
 | `/analytics` | CLV, calibration, equity charts |
 
 Published on **all interfaces** (operator decision, 2026-08-07) so the dashboard
