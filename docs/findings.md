@@ -38,6 +38,10 @@ Measured on the live board, not assumed.
 | V17 | **Order write latency: 93–124ms round-trip, 14–23ms venue-side** | n=3 real orders (both intents: buy_yes ×2, buy_no ×1 in the V14 frame), all accepted, 2026-08-05 | 2026-08-05 | The last unmeasured term in [math/write-latency.md](math/write-latency.md). Venue write processing ≈ 5–8× read (3ms) — detection (~260ms) still dominates. Cancel latency still unmeasured; venue-side cancels (done in the app) are invisible to the `orders` table until a fill watcher reconciles |
 | V18 | **The HUMAN_CONFIRM invariant amended: pre-authorized exits** (user-approved 2026-08-05) | `pre_authorized` flag on `orders`, pinned to HUMAN_CONFIRM by `ck_orders_pre_authorized_requires_human` | 2026-08-05 | The fill watcher may submit an attached exit whose every term a human fixed on the ticket. `orders_autonomous` keeps its meaning and must remain 0. See below |
 | V19 | **The activities feed: nested executions, authoritative embedded order state, 2dp-rounded quantities, paginated by `cursor` — and zero-fill cancels emit NO activity** | read live 2026-08-06; our 1.4645-contract order reports `cumQuantity 1.46, state ORDER_STATE_FILLED`; `/v1/orders` 501, `/v1/orders/{id}` 404; query params are honoured but NOT signed | 2026-08-06 | Fill reconciliation must read `trade.<side>Execution.order.{state,cumQuantity}` — summing fills or comparing to our ordered size strands >2dp orders as PARTIAL forever. Cancels of unfilled orders are invisible; settlement (`ACTIVITY_TYPE_POSITION_RESOLUTION`) is the only terminal signal for never-filled orders. See below |
+| V20 | **`event_score` is `first_team-second_team`, matching the market slug — and YES on a winner market = the first team wins** | all 12 finished games with both a final `event_score` and a settled winner price: **12 / 12** agree in sign | 2026-08-07 | The frame every live-margin calculation depends on. Had the venue reported home-first while quoting the slug's first team, ~half would disagree. Pinned in `tests/test_win_curve.py`; used by [math/win-curve.md](math/win-curve.md) and `core/live_fv.py` |
+| V21 | **⚠️ UNVERIFIED — the cancel endpoint.** Built dark as `DELETE /v1/orders/{id}` (REST convention; V19 rules out the read side, and no cancel has ever been sent by this system) | awaiting one live cancel of a 1-share resting order, human-placed and human-clicked | 2026-08-07 | The button records the venue's verbatim response into `orders.cancel_response` plus round-trip and venue-side latency — the **last unmeasured number** in [math/write-latency.md](math/write-latency.md). **After the first live cancel, replace this row with what the venue actually answered.** A 2xx marks the row CANCELLED; anything else changes nothing (an unacknowledged cancel proves nothing; settlement remains the terminal backstop). Cancels stay human-initiated only — no machine path references the verb, pinned in `tests/test_cancel_path.py` |
+| V22 | **V7's MLB result reproduces, and the comparison that produced it was never horizon-matched** | live MLB board 2026-08-07: 50 events / 505 markets, tick **0.005 (58%)**, near-money median spread **1.00¢**, fee 0.06 (100%). But MLB was observed at a median **+27.7h** to tip-off against WNBA's +0.0h, and **no** horizon bucket has data on both sides | 2026-08-07 | V7 stands — MLB is tighter even allowing for horizon, and carries half-cent ticks WNBA does not. What was missing is that spread swings **12×** with time to tip-off on the same board (WNBA: 1.00¢ inside 3h, 12.00¢ at 12–24h), so a far-dated board reads as thin, and thin is what this project buys. [`core/survey.py`](../core/survey.py) now reports every spread per horizon bucket and refuses to imply a comparison when the buckets do not overlap. [infra/board-survey.md](infra/board-survey.md) |
+| V23 | **Polymarket and Kalshi quote the same price to within one tick — and their totals ladders are deliberately staggered a point apart** | **773** line-identical pairs within 60s across **10 games / 61 contracts** (gate MET): median \|gap\| **0.00¢**, **97.2% within one cent**, median signed gap exactly zero in **9 of 10 games**. Disagreement sits 3–6h out (0.50¢) and is **0.00¢ inside 3h**. Both venues list 9 totals rungs at 3-pt spacing; in **7 of 10 games they sit exactly 1.0pt apart** (26 line-identical totals of 90 vs 90) | 2026-08-07 | **The founding thesis has no mechanism** — there is no venue gap to translate. Sign persistence is not measurable (1 of 10 games has a nonzero median), which is stronger than a flipping sign. **The gate's power is below its game count**: two games contribute one contract each, so it may need restating in matched contracts — operator's call. Independently cross-checked: magnitudes agree to ≤0.04¢ against a separately-written implementation. [math/venue-gap.md](math/venue-gap.md) |
 
 ### V10 in detail — the 401 was never a cryptography problem
 
@@ -492,6 +496,70 @@ Claims made during this project that were wrong, and what is true instead.
 | C9 | The signing scheme is "Ed25519 or HMAC-SHA512" | Inferred from credential lengths alone, never checked against documentation. Wrong, and sufficient on its own to explain all six 401s | ~~It is **HMAC-SHA256** with five `POLY_*` headers and URL-safe base64.~~ **C9 is itself retracted — see C10.** The original guess was half right |
 | C10 | C9's own replacement: "it is HMAC-SHA256 with five `POLY_*` headers" | Read from the **international CLOB** docs (`clob.polymarket.com`) and applied to a different venue. Never tested against `api.polymarket.us` before being written down as fact — and it was believed *because* it explained the 401s, which explained nothing | Polymarket US is **Ed25519**, three `X-PM-*` headers, millisecond timestamps, no passphrase, no address, no body term. Verified by authenticated 200s. See V10 |
 | C11 | "v4 live record is 34.8% bet win vs a 52.4% breakeven — the CI excludes breakeven, the model is losing" (asserted repeatedly 2026-08-04/05) | **Category error.** 52.4% is the breakeven for ~50¢ bets; the portfolio's average entry is **32¢**, where breakeven is ~32%. Flat win rate is the wrong metric for a tail portfolio by construction — it is *supposed* to lose most bets and get paid multiples on hits. The same error family as C4/C5, committed by the reviewer this time | Scored in money at actual prices, the same 8 games / 132 bets: staked \$42.74, returned \$46.00, **+7.6% ROI** (game-clustered mean +6.1%, 95% CI **[−44%, +56%]**, taker-price entries, fees excluded). Verdict: **no evidence either way at n=8** — not the measured failure previously claimed. Flat win-rate is retired as a performance metric; money-at-price is the only bar (the prompt-4 rule, which this correction re-proves) |
+| C13 | "ANCHOR totals: +0.75% ROI under realistic fills" (the canonical headline since C7) | REALISTIC's adverse-selection concession was a **0.5¢ guess written before any fill had ever been observed**. Measured (2026-08-07): pregame — ANCHOR's own regime — **2.11¢** [1.83, 2.39] per filled quote (E[−dmid \| fill], 28k windows / 30 games at the recorder's 900s cadence); in-game **4.70¢** [4.41, 5.00] (1.9M windows / 13 games). The stylised number was 4–9× too kind | Recalibrated canonical run (same 308 bets / 218 fills / CLV +1.751 — the concession changes no selection): pregame-calibrated **−2.33%** (primary; CI-edge arms −1.79% / −2.86%), in-game-calibrated **−7.27%** (worst case). **The +0.75% does not survive measured reality; ANCHOR's maker edge is negative at every measured concession.** Positive only under OPTIMISTIC (+1.67%), which the engine's own report defines as not-an-edge. See below |
+| C12 | Hypothesis #16's gate: "trailing team's historical P minus market-implied P > 2¢" — **pre-registered 2026-08-07 by the manager, met the same day** (+6.84¢, CI [+0.84, +12.83], 19 games), and caught the same day by the pregame-price-anchored control | **The benchmark was team-blind and the price was not.** The league base rate says a team trailing by 1 at the half wins 42% — averaged over every team that has ever trailed by 1. The market knows it is LA, priced 0.085 pregame. The gate could only ever have measured how often good teams trail bad ones; the four largest "edges" are all heavy pregame underdogs | Anchoring the base rate on the pregame price flips the sign: **−2.20¢, CI [−3.90, −0.49]**. Recorded as **PASS on its stated terms and NOT TRADABLE**, because retrofitting the gate after seeing the number is the failure this project exists to avoid. **New standing rule:** any hypothesis of the form "the market disagrees with a historical frequency" must carry the anchoring check *inside* its gate before it runs — a base rate is a fair-value benchmark only if it conditions on everything the price conditions on. Same family as C4/C5/C11. **The error was in the gate's design, not in its execution** — which is the uncomfortable half: pre-registration protects against moving a bar after seeing the number, and protects against nothing if the bar measures the wrong quantity. A confounded gate that passes is worse than no gate, because it arrives wearing the authority of the process. Manager-authored and manager-accepted 2026-08-07. [math/win-curve.md](math/win-curve.md) |
+
+### C13 in detail — the fill re-exam: ANCHOR's ROI was resting on a guessed concession
+
+**Method, registered before computing** (2026-08-07): pregame arm = `is_live=false`
+snapshots, the adverse-selection module's own quotable band and fill rule,
+horizon 900s (the pregame recorder's sweep interval, tolerance 450–1800s),
+clustered by game. Backtest mapping fixed in the same breath: the engine rests
+AT its entry price with no half-spread cushion, so the concession is the full
+conditional mid move, `E[−dmid | filled] = mean(half-spread) − mean(net capture)`
+— not the net-capture number itself.
+
+**Measured:**
+
+| Arm | windows / games | net capture per fill | concession E[−dmid \| fill] |
+|---|---|---|---|
+| In-game (30s, 1s cadence, local) | 1.94M / 13 | −2.74¢ [−3.03, −2.44] | **+4.70¢** [4.41, 5.00] |
+| Pregame (900s, sweep cadence, primary DB) | 28.2k / 30 | −0.86¢ [−1.14, −0.58] | **+2.11¢** [1.83, 2.39] |
+
+(The −2.66¢ recorded in STATUS on 2026-08-06 was the same in-game measurement
+at 11 games; it has drifted to −2.74¢ at 13 and stays inside the old CI.)
+Pregame adverse selection is real but ~2.2× milder than in-game — the flow is
+slower and the mid drifts less per unit of resting time. Both arms are computed
+from the fill rule that undercounts the fills that hurt, so both are
+**optimistic bounds**.
+
+**The canonical backtest under measured concessions** (2024–2026 totals,
+min-edge 3.0, identical 308 bets / 218 fills / CLV +1.751 in every arm —
+a concession changes prices, never selection):
+
+| Concession | ROI |
+|---|---|
+| 0.5¢ (the old stylised REALISTIC) | +0.75% |
+| 1.83¢ (pregame CI favourable edge) | −1.79% |
+| **2.11¢ (pregame point estimate — primary)** | **−2.33%** |
+| 2.39¢ (pregame CI worst edge) | −2.86% |
+| 4.70¢ (in-game-calibrated — worst case) | −7.27% |
+| optimistic (every order fills, no concession) | +1.67% |
+
+The entire pregame CI maps to negative ROI. `FillModel.REALISTIC` now carries
+the measured 2.11¢ as its default, so the canonical number a fresh run prints
+is **−2.33%**, and the engine's own footer applies: positive only under
+OPTIMISTIC is not an edge.
+
+**The live maker fill sample** (every resting button order to date, n=5 —
+descriptive, far too small to calibrate `fill_probability`, reported because
+they are the first real datapoints): pregame-placed **0/3 filled** (all three
+2026-08-05 orders died unfilled — two hand-cancelled, one expired); in-game
+placed **2/2 filled**, at 48 and 111 minutes to completion. Note the direction:
+the 70% fill assumption looks generous pregame and the fills that DO come are
+the in-game ones — the regime with the 4.70¢ concession. Both live fills were
+entries the mid moved *through* on the way down before settling lower (both
+markets settled at 0), which is one anecdote of exactly the mechanism the
+measurement prices.
+
+**What survives:** CLV (+1.751 [+1.446, +2.055]) is untouched — the model
+still anticipates sportsbook line movement (with Q1's objection still open on
+what that is worth). What died is the claim that resting maker orders collect
+that edge on this venue at these concessions. Between C7 (−0.59pp of fictional
+rebate) and C13 (−3.1pp of guessed concession), the headline has now given
+back +1.34% → −2.33% without a single modelling change — both corrections
+were about what a *fill* costs, and both times the optimistic side of an
+unmeasured number had been baked into the canonical figure.
 
 ### C9 → C10 in detail — a correction that was more wrong than the thing it corrected
 

@@ -137,6 +137,19 @@
   <h2>Tonight's pregame picks <span id="hint" class="dimc" style="text-transform:none;letter-spacing:0"></span></h2>
   <div id="picks"></div>
 
+  <h2 style="margin-top:24px">Live moneylines — formula FV
+    <span class="dimc" style="text-transform:none;letter-spacing:0">·
+      display only, nothing here is orderable</span></h2>
+  <div id="livefv"></div>
+
+  <h2 style="margin-top:24px">Open positions — EV stop-loss guard <span class="dimc" style="text-transform:none;letter-spacing:0">(formula FV, unvalidated — information only)</span></h2>
+  <div id="evguard"></div>
+
+  <h2 style="margin-top:24px">Live totals — formula FV
+    <span class="dimc" style="text-transform:none;letter-spacing:0">·
+      display only, nothing here is orderable</span></h2>
+  <div id="livetot"></div>
+
   <h2 style="margin-top:24px">Real orders — venue truth from the fill watcher</h2>
   <div id="orders"></div>
 
@@ -458,7 +471,7 @@ async function loadOrders(){
     $("#orders").innerHTML = `<table><thead><tr>
       <th class="l">When</th><th class="l">Market</th><th class="l">Side</th>
       <th>price.value</th><th>Qty</th><th>Accepted</th><th class="l">Fill</th>
-      <th>Filled</th><th class="l">Attached exit</th>
+      <th>Filled</th><th class="l">Attached exit</th><th></th>
     </tr></thead><tbody>${d.orders.map(o=>`
       <tr>
         <td class="l dimc">${new Date(o.submitted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td>
@@ -473,11 +486,197 @@ async function loadOrders(){
           o.exit.state==="FAILED"
             ? `<span class="fillFAILED" title="${(o.exit.error||"").replace(/"/g,"&quot;")}">FAILED — position is NOT protected</span>`
             : `${o.exit.state.toLowerCase()} @ ${num(o.exit.sell_at)}`}</td>
+        <td>${o.cancellable
+          ? `<button class="sendbtn cxbtn" data-oid="${o.id}">CANCEL</button>`
+          : o.cancel_latency_ms!=null
+            ? `<span class="dimc" title="HTTP ${o.cancel_http_status}">cxl ${o.cancel_latency_ms}ms</span>`
+            : ""}</td>
       </tr>`).join("")}</tbody></table>`;
+    /* Two clicks, same button: first arms it, second sends. Nothing else on
+       the page can trigger this — a machine may never initiate a cancel. */
+    document.querySelectorAll(".cxbtn").forEach(b=>{
+      b.addEventListener("click", async () => {
+        if(b.dataset.armed !== "1"){
+          b.dataset.armed = "1"; b.textContent = "SURE?";
+          b.className = "sendbtn cxbtn err";
+          setTimeout(()=>{ if(b.dataset.armed==="1"){
+            b.dataset.armed=""; b.textContent="CANCEL"; b.className="sendbtn cxbtn"; }}, 4000);
+          return;
+        }
+        b.disabled = true; b.textContent = "…";
+        try{
+          const r = await fetch(`/api/orders/${b.dataset.oid}/cancel`, {
+            method: "POST",
+            headers: {"X-Meridian-Order-Token": $("#tok").value.trim()},
+          });
+          const j = await r.json();
+          b.textContent = r.ok && j.acknowledged
+            ? `CANCELLED · ${j.cancel_latency_ms}ms`
+            : `HTTP ${r.status}`;
+          b.className = "sendbtn cxbtn " + (r.ok && j.acknowledged ? "done" : "err");
+          b.title = (j.detail || j.response || "").slice(0,200);
+        } catch(e){ b.textContent = "ERROR"; b.className = "sendbtn cxbtn err"; }
+        setTimeout(loadOrders, 2500);
+      });
+    });
   } catch(e){ /* informational panel; must not break picks */ }
 }
 loadOrders();
 setInterval(loadOrders, 30000);
+
+/* EV stop-loss guard (hypothesis #9 as an ALERT). Driven by the UNVALIDATED
+   formula FV — same caption discipline as the strip. Two signals, mirrored:
+   EDGE GONE (FV fell to/below entry: the reason to hold is gone, urgency
+   styled like a FAILED exit) and PRICE NOISE — FV INTACT (#11 guard: price
+   dropped but FV holds, so averaging-down has an honest signal). There is
+   deliberately no button in this table: nothing here can sell. */
+async function loadEVGuard(){
+  try{
+    const d = await (await fetch("/api/ev-guard")).json();
+    const el = $("#evguard");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no open button positions</div>'; return;
+    }
+    const vcell = r => {
+      if(r.verdict === "EDGE_GONE")
+        return `<span class="fillFAILED">${r.message} — the formula's reason to hold is gone</span>`;
+      if(r.verdict === "PRICE_NOISE")
+        return `<span class="fillPARTIAL">${r.message}</span>`;
+      if(r.verdict === "INTACT")
+        return `<span class="fillFILLED">${r.message}</span>`;
+      return `<span class="dimc">${r.message}</span>`;
+    };
+    el.innerHTML = `
+      <div class="dimc" style="font-size:10.5px;margin-bottom:6px">
+        ${d.caption}. EDGE GONE pushes to the phone (ntfy) once per crossing;
+        recovery pushes an all-clear. Nothing on this panel is orderable.
+      </div>
+      <table><thead><tr>
+        <th class="l">Market</th><th class="l">Side</th><th>Qty</th>
+        <th>Entry</th><th>FV now</th><th>Mid now</th><th class="l">Verdict</th>
+      </tr></thead><tbody>${d.rows.map(r=>`
+        <tr>
+          <td class="l">${shortSlug(r.market_slug)}</td>
+          <td class="l">${r.outcome}</td>
+          <td>${r.filled_quantity.toFixed(2)}</td>
+          <td>${num(r.entry_cost)}</td>
+          <td>${r.fv==null?'<span class="dimc">—</span>':num(r.fv)}</td>
+          <td>${r.mid==null?'<span class="dimc">—</span>':num(r.mid)}</td>
+          <td class="l">${vcell(r)}</td>
+        </tr>`).join("")}</tbody></table>`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadEVGuard();
+setInterval(loadEVGuard, 20000);
+
+// ---------------------------------------------------------------------------
+// Live formula fair value. DISPLAY ONLY.
+//
+// There is deliberately no click handler, no PICKS[] entry and no openTicket()
+// call anywhere in this block. Every other table on this page can become an
+// order; this one cannot, and that is the point. The number is unvalidated:
+// hypothesis #16 passed its pre-registered gate using exactly this formula's
+// team-blind ancestor and then inverted under a confound check.
+// ---------------------------------------------------------------------------
+async function loadLiveFV(){
+  try{
+    const d = await (await fetch("/api/live-fv")).json();
+    const el = $("#livefv");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no live moneylines right now</div>';
+      return;
+    }
+    const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
+    el.innerHTML = `
+      <div class="banner" style="margin-bottom:8px">
+        <b>${d.caption}.</b> P = &Phi;((margin + pregame edge &times; t/40) /
+        (&sigma;&radic;t)), &sigma;=${d.sigma} fitted from 787 games. Minutes left is
+        <b>estimated</b> — the venue publishes no game clock, so time inside a period is
+        interpolated from wall clock and is wrong whenever the clock stops. The gap is
+        coloured only past ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
+      </div>
+      <table><thead><tr>
+        <th class="l">Market</th><th class="l">Per</th><th>Score</th><th>Marg</th>
+        <th>Min left</th><th>Pregame</th><th>FV</th><th>Bid</th><th>Ask</th>
+        <th>Gap</th><th class="l">Note</th>
+      </tr></thead><tbody>${d.rows.map(r=>`
+        <tr>
+          <td class="l">${r.label||shortSlug(r.market_slug)}</td>
+          <td class="l dimc">${r.period}</td>
+          <td>${r.score}</td>
+          <td class="${r.margin>0?"pos":r.margin<0?"neg":"dimc"}">${r.margin>0?"+":""}${r.margin}</td>
+          <td>${r.minutes_left.toFixed(1)}${r.minutes_left_is_estimate
+                ? '<span class="dimc" title="interpolated from wall clock; the venue publishes no game clock"> est.</span>'
+                : ''}</td>
+          <td class="dimc">${num(r.pregame_price)}</td>
+          <td>${r.fair_value==null?'<span class="dimc">—</span>':num(r.fair_value)}</td>
+          <td class="dimc">${num(r.bid)}</td>
+          <td class="dimc">${num(r.ask)}</td>
+          <td class="${r.highlight?(r.gap>0?"pos":"neg"):"dimc"}">${gp(r.gap)}</td>
+          <td class="l dimc">${r.note||""}</td>
+        </tr>`).join("")}</tbody></table>`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadLiveFV();
+setInterval(loadLiveFV, 15000);
+
+// ---------------------------------------------------------------------------
+// Live TOTALS formula FV. DISPLAY ONLY — same rules as the moneyline strip:
+// no click handler, no PICKS[] entry, no openTicket(). This one serves the
+// hand-trade audit's single measured-positive pocket (live totals, +9.4%,
+// n=31, descriptive), where what was missing was a number, not a button.
+// ---------------------------------------------------------------------------
+async function loadLiveTotals(){
+  try{
+    const d = await (await fetch("/api/live-totals-fv")).json();
+    const el = $("#livetot");
+    if(!d.rows || !d.rows.length){
+      el.innerHTML = '<div class="empty">no live totals rungs right now</div>';
+      return;
+    }
+    const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
+    const games = [];
+    for(const r of d.rows){
+      let g = games.find(x=>x.ev===r.event_slug);
+      if(!g){ g={ev:r.event_slug, rows:[]}; games.push(g); }
+      g.rows.push(r);
+    }
+    el.innerHTML = `
+      <div class="banner" style="margin-bottom:8px">
+        <b>${d.caption}.</b> Projection = pregame v4 total, moved by a
+        <b>fraction</b> of how far scoring has diverged from its own expected pace
+        (coefficient 1.32 at Q1 decaying to 1.00 at full time — raw pace is never
+        extrapolated). &sigma; is the fitted per-period residual for <i>totals</i>
+        (15.9 / 13.0 / 9.7), not the win curve's margin &sigma;. Minutes left is
+        <b>estimated</b> — no game clock is published. Gap coloured past
+        ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
+      </div>
+      ${games.map(g=>{
+        const nm = g.ev.replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
+        const h = g.rows[0];
+        return `<div class="dimc" style="margin:10px 0 4px">${nm} · ${h.score}
+            · ${h.period} · ${h.minutes_left.toFixed(1)}min left${
+            h.minutes_left_is_estimate?' <span title="interpolated; no game clock is published">est.</span>':''}
+            · scored ${h.total_so_far} · pregame ${h.pregame_mu==null?"—":h.pregame_mu}
+            → projected <b>${h.projected_total==null?"—":h.projected_total}</b>
+            ${h.sigma==null?"":`(&sigma; ${h.sigma})`}</div>
+          <table><thead><tr>
+            <th class="l">Line</th><th>FV</th><th>Bid</th><th>Ask</th><th>Gap</th>
+            <th class="l">Note</th>
+          </tr></thead><tbody>${g.rows.map(r=>`
+            <tr>
+              <td class="l">${r.line.toFixed(1)}</td>
+              <td>${r.fair_value==null?'<span class="dimc">—</span>':num(r.fair_value)}</td>
+              <td class="dimc">${num(r.bid)}</td>
+              <td class="dimc">${num(r.ask)}</td>
+              <td class="${r.highlight?(r.gap>0?"pos":"neg"):"dimc"}">${gp(r.gap)}</td>
+              <td class="l dimc">${r.note||""}</td>
+            </tr>`).join("")}</tbody></table>`;
+      }).join("")}`;
+  } catch(e){ /* informational panel; must not break picks */ }
+}
+loadLiveTotals();
+setInterval(loadLiveTotals, 15000);
 
 fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 

@@ -16,14 +16,14 @@ from core.backfill import (
 from core.storage import get_engine, get_sessionmaker
 
 
-def test_real_coverage_matches_known_reality():
+def test_real_coverage_matches_known_reality(mirror):
     """Against the live database, after the 2020-2026 backfill.
 
     These numbers are load-bearing: 2020-2022 genuinely have no closing lines
     (ESPN provides multi-book consensus but no open/close split), so CLV must
     not be computed there.
     """
-    bf = Backfill(sessionmaker=get_sessionmaker(get_engine()))
+    bf = Backfill(sessionmaker=mirror)   # real history, read-only (conftest)
     rows = {c.season: c for c in bf.coverage(2020, 2026)}
 
     # Every season has games and odds.
@@ -46,14 +46,14 @@ def test_real_coverage_matches_known_reality():
     assert all(c.suspicious_totals == 0 for c in rows.values())
 
 
-def test_postseason_cohorts_are_small_enough_to_warn_about():
+def test_postseason_cohorts_are_small_enough_to_warn_about(mirror):
     """Playoff samples are ~15-24 games/season.
 
     The record feature is down-weighted in playoffs, and the backtest reports
     them separately — but no playoff-specific conclusion is supportable at this
     size, which the report must make obvious.
     """
-    bf = Backfill(sessionmaker=get_sessionmaker(get_engine()))
+    bf = Backfill(sessionmaker=mirror)   # real history, read-only (conftest)
     rows = [c for c in bf.coverage(2020, 2025) if c.postseason]
     assert rows, "expected postseason games in 2020-2025"
     assert all(c.postseason <= 30 for c in rows), [c.postseason for c in rows]

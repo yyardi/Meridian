@@ -6,8 +6,10 @@ Serves the live board, recorder health, prediction/edge data and shadow orders.
 the dashboard is a window, not a control panel. Placing orders stays in
 `core/executor.py`, in shadow mode, behind a kill switch.
 
-Binds to localhost only. Nothing here is authenticated, so it must not be
-exposed to a network.
+Reads are unauthenticated; how far they are exposed is decided at the compose
+layer (loopback vs all interfaces — currently all, for tailnet dashboard access
+while the operator is away). The order path is gated by MERIDIAN_ORDER_TOKEN
+regardless of binding and fails closed without it.
 """
 
 from __future__ import annotations
@@ -1527,6 +1529,101 @@ def _fail_order(row_id: int, *, error: str, delete_exit_id: int | None = None) -
         s.commit()
 
 
+@app.post("/api/orders/{order_id}/cancel")
+def cancel_order(order_id: int, request: Request) -> dict:
+    """Cancel ONE resting human order. Human-initiated only, by construction.
+
+    Same invariants as SEND: the server token gates it, the order being
+    cancelled is a HUMAN_CONFIRM row this system placed, and no machine path
+    exists — the fill watcher has no reference to `cancel_order`, and a test
+    pins that. The venue's cancel endpoint is UNVERIFIED (V21): whatever it
+    answers is recorded verbatim on the row, which is both the audit trail
+    and the measurement — cancel latency is the last unmeasured number in
+    docs/math/write-latency.md.
+
+    On a 2xx ack the row goes CANCELLED locally (fills preserved — the
+    watcher's exit rules then apply: fills > 0 submits the exit for the
+    filled quantity, zero deletes it). On anything else the row's fill state
+    is untouched: an unacknowledged cancel proves nothing, and the settlement
+    fallback remains the terminal backstop either way.
+    """
+    _require_order_token(request)
+
+    with _Session() as s:
+        row = s.get(PlacedOrder, order_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"no order #{order_id}")
+        if not row.accepted or not row.venue_order_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"order #{order_id} was never accepted by the venue — "
+                       "there is nothing resting to cancel",
+            )
+        if row.fill_status in ("FILLED", "CANCELLED", "EXPIRED"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"order #{order_id} is already terminal "
+                       f"({row.fill_status}) — nothing resting to cancel",
+            )
+        if row.mode != ExecutionMode.HUMAN_CONFIRM.value:
+            raise HTTPException(
+                status_code=403,
+                detail="only HUMAN_CONFIRM orders exist to be cancelled",
+            )
+        venue_order_id = row.venue_order_id
+        # The attempt is recorded BEFORE the venue call, so a cancel that
+        # never comes back is still visible as an attempt.
+        row.cancel_requested_at = dt.datetime.now(UTC)
+        s.commit()
+
+    _ORDER_BUCKET.acquire()
+    try:
+        creds = USCredentials.from_env()
+    except MissingCredentialsError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+    try:
+        with PolymarketOrderClient(creds) as client:
+            result = client.cancel_order(venue_order_id)
+    except OrderSubmissionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+
+    acknowledged = result.status_code in (200, 201, 202, 204)
+    with _Session() as s:
+        row = s.get(PlacedOrder, order_id)
+        row.cancel_http_status = result.status_code
+        row.cancel_latency_ms = Decimal(str(round(result.elapsed_ms, 2)))
+        if result.server_latency_ms is not None:
+            row.cancel_venue_latency_ms = Decimal(
+                str(round(result.server_latency_ms, 2)))
+        # The V21 evidence: whatever the venue actually said, verbatim.
+        row.cancel_response = result.body_text[:1000]
+        if acknowledged:
+            row.fill_status = "CANCELLED"
+        s.commit()
+
+    log.info(
+        "human_cancel",
+        order_id=order_id,
+        venue_order_id=venue_order_id,
+        acknowledged=acknowledged,
+        http_status=result.status_code,
+        cancel_latency_ms=round(result.elapsed_ms, 1),
+        venue_latency_ms=result.server_latency_ms,
+        note="record the response body into findings V21 — this endpoint "
+             "shape was unverified until this very request",
+    )
+
+    return {
+        "acknowledged": acknowledged,
+        "http_status": result.status_code,
+        # The measurement this endpoint exists to produce.
+        "cancel_latency_ms": round(result.elapsed_ms, 1),
+        "venue_latency_ms": result.server_latency_ms,
+        "response": result.body_text[:600],
+    }
+
+
 @app.get("/api/orders/recent")
 def recent_orders(limit: int = 25) -> dict:
     """Real orders with their venue-truth fill state, plus attached exits.
@@ -1569,6 +1666,16 @@ def recent_orders(limit: int = 25) -> dict:
                 o.fill_checked_at.isoformat() if o.fill_checked_at else None
             ),
             "error": (o.error or "")[:200] or None,
+            # Cancel state, for the panel's button and the latency readout.
+            "cancellable": bool(
+                o.accepted and o.venue_order_id
+                and o.fill_status not in ("FILLED", "CANCELLED", "EXPIRED")
+            ),
+            "cancel_requested_at": (
+                o.cancel_requested_at.isoformat() if o.cancel_requested_at else None
+            ),
+            "cancel_http_status": o.cancel_http_status,
+            "cancel_latency_ms": _f(o.cancel_latency_ms),
             "exit": None if x is None else {
                 "state": x.state,
                 "sell_at": _f(x.typed_price),           # cost frame, as typed
@@ -1615,6 +1722,94 @@ def _maybe_start_fill_watcher() -> None:
 def _stop_fill_watcher() -> None:
     if _fill_watcher is not None:
         _fill_watcher.stop()
+
+
+@app.get("/api/live-fv")
+def live_fv() -> dict:
+    """Formula fair value for in-game moneylines. **Display only.**
+
+    Deliberately separate from `/api/picks`. That endpoint returns *picks* —
+    things with an order, a size and a confirm button behind them. This
+    returns an unvalidated number for looking at, and keeping them apart is
+    what stops the second becoming the first by accident. See
+    `core/live_fv.py`; nothing here imports the executor.
+    """
+    from core.live_fv import DEFAULT_SIGMA, GAP_HIGHLIGHT, as_dict, build_live_fv
+
+    with _Session() as s:
+        rows = build_live_fv(s)
+    return {
+        "rows": [as_dict(r) for r in rows],
+        "sigma": DEFAULT_SIGMA,
+        "gap_highlight": GAP_HIGHLIGHT,
+        "caption": "formula FV — unvalidated, display only",
+        "tradable": False,
+    }
+
+
+@app.get("/api/ev-guard")
+def ev_guard() -> dict:
+    """Hypothesis #9 as an alert: open button positions vs live formula FV.
+
+    Information only — the guard has no code path to an order, and the FV it
+    runs on is the same UNVALIDATED formula as the strip. The background
+    thread (started below when an ntfy topic is configured) pushes EDGE-GONE
+    transitions to the phone; this endpoint is the same rows for the page.
+    """
+    from core.ev_guard import CAPTION, build_guard_rows
+
+    with _Session() as s:
+        rows = build_guard_rows(s)
+    return {
+        "rows": [r.as_dict() for r in rows],
+        "caption": CAPTION,
+        "tradable": False,
+    }
+
+
+_ev_guard = None
+
+
+@app.on_event("startup")
+def _maybe_start_ev_guard() -> None:
+    """Alert loop only — and only when there is a phone to alert. The rows
+    are always served by the endpoint; the thread exists for the pushes."""
+    global _ev_guard
+    if os.environ.get("MERIDIAN_EV_GUARD", "1") != "1":
+        return
+    topic = (os.environ.get("MERIDIAN_NTFY_TOPIC") or "").strip()
+    if not topic:
+        return
+    from core.ev_guard import EVGuard
+
+    _ev_guard = EVGuard(_Session, topic=topic)
+    _ev_guard.start()
+
+
+@app.on_event("shutdown")
+def _stop_ev_guard() -> None:
+    if _ev_guard is not None:
+        _ev_guard.stop()
+
+
+@app.get("/api/live-totals-fv")
+def live_totals_fv() -> dict:
+    """Formula fair value for in-game TOTALS rungs. **Display only.**
+
+    Sibling of `/api/live-fv`. Same contract: an unvalidated number for
+    looking at, kept away from `/api/picks` so it cannot become a pick by
+    accident. Nothing here imports the executor.
+    """
+    from core.live_totals_fv import GAP_HIGHLIGHT, as_dict, build_live_totals_fv
+
+    with _Session() as s:
+        rows = build_live_totals_fv(s)
+    return {
+        "rows": [as_dict(r) for r in rows],
+        "gap_highlight": GAP_HIGHLIGHT,
+        "caption": "formula FV — unvalidated, display only",
+        "tradable": False,
+    }
 
 
 @app.get("/picks")

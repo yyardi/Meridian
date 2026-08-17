@@ -106,13 +106,23 @@ ASSUMPTIONS: dict[FillModel, FillAssumptions] = {
         name=FillModel.REALISTIC,
         fill_probability=0.70,
         is_maker=True,
-        adverse_selection=0.005,
-        description="70% of resting orders fill; mild adverse selection; maker fee zero",
+        # MEASURED, not stylised (2026-08-07 fill re-exam, findings C13). The
+        # old 0.005 was a guess written before any fill had been observed; the
+        # pregame measurement — ANCHOR's own regime, 28k quote-windows / 30
+        # games at the recorder's 900s cadence — puts E[-dmid | filled] at
+        # 2.11c [1.83, 2.39]. The in-game figure is 4.70c and lives in the
+        # re-exam's sensitivity arm, not here: ANCHOR rests pregame.
+        adverse_selection=0.0211,
+        description="70% of resting orders fill; MEASURED pregame adverse "
+                    "selection (2.11c, C13); maker fee zero",
     ),
     FillModel.PESSIMISTIC: FillAssumptions(
         name=FillModel.PESSIMISTIC,
         fill_probability=1.0,
         is_maker=False,
+        # Kept at the stylised 1.5c: this arm's pessimism is the taker fee.
+        # Note the measured IN-GAME concession (4.70c) is worse than this —
+        # "pessimistic" is no longer the floor for in-game quoting (C13).
         adverse_selection=0.015,
         description="cross the spread every time: taker fee plus adverse selection",
     ),
@@ -137,12 +147,22 @@ def simulate_fill(
     model: FillModel,
     rng_value: float,
     assume_rebate: bool = False,
+    adverse_selection_override: float | None = None,
 ) -> Fill:
     """Simulate one fill.
 
     `rng_value` is passed in (rather than drawn here) so the engine stays
     deterministic and exactly replayable — a seeded sequence lives in the
     caller.
+
+    ``adverse_selection_override`` (price units, e.g. 0.021 = 2.1c) replaces
+    the model's stylised concession with a MEASURED one. Added 2026-08-07 for
+    the ANCHOR fill re-exam: REALISTIC's 0.005 was a guess written before any
+    fill had ever been observed, and the measured numbers are 0.021 (pregame,
+    the regime ANCHOR rests in — 30 games) and 0.047 (in-game — 13 games),
+    both derived as E[-dmid | filled] from recorded quote-windows. The engine
+    rests AT its entry price with no half-spread cushion, which is why the
+    concession is the full conditional mid move, not the net-capture number.
     """
     a = ASSUMPTIONS[model]
 
@@ -150,8 +170,12 @@ def simulate_fill(
         return Fill(filled=False, price=quoted_price, contracts=0.0, fee=0.0,
                     is_maker=a.is_maker)
 
+    concession = (
+        a.adverse_selection if adverse_selection_override is None
+        else adverse_selection_override
+    )
     # Adverse selection worsens the effective entry price.
-    price = min(max(quoted_price + a.adverse_selection, 1e-4), 1 - 1e-4)
+    price = min(max(quoted_price + concession, 1e-4), 1 - 1e-4)
     return Fill(
         filled=True,
         price=price,

@@ -293,7 +293,7 @@ def priced_pick():
     from core.storage import Prediction
 
     with _Session() as s:
-        latest = s.scalar(text("select max(predicted_at) from predictions"))
+        latest = s.scalar(text("select max(predicted_at) from predictions")) or dt.datetime.now(UTC)
         s.execute(text("delete from predictions where market_slug = :m"),
                   {"m": TEST_SLUG})
         s.add(Prediction(
@@ -546,7 +546,7 @@ def test_a_no_side_row_can_be_confirmed_end_to_end(client):
 
     slug = TEST_SLUG + "-noside"
     with _Session() as s:
-        latest = s.scalar(text("select max(predicted_at) from predictions"))
+        latest = s.scalar(text("select max(predicted_at) from predictions")) or dt.datetime.now(UTC)
         s.add(Prediction(
             predicted_at=latest, market_slug=slug, model_version="t", strategy="t",
             sports_market_type="basketball_team_full_game_total",
@@ -581,7 +581,7 @@ def _seed_pick(slug: str, *, bid: str, ask: str, model: str):
 
     start = dt.datetime.now(UTC) + dt.timedelta(hours=3)
     with _Session() as s:
-        latest = s.scalar(text("select max(predicted_at) from predictions"))
+        latest = s.scalar(text("select max(predicted_at) from predictions")) or dt.datetime.now(UTC)
         s.execute(text("delete from predictions where market_slug = :m"), {"m": slug})
         s.execute(text("delete from market_snapshots where market_slug = :m"), {"m": slug})
         s.add(Prediction(
@@ -784,11 +784,15 @@ def test_read_only_client_still_has_no_mutating_verb():
         assert verb not in src
 
 
-def test_order_client_can_only_submit_never_cancel_or_modify():
+def test_order_client_can_submit_and_cancel_never_modify():
+    """Updated on purpose 2026-08-07: `cancel_order` was added for the human
+    cancel button (V21) — a deliberate widening, decided here. Amending an
+    order remains inexpressible, and DELETE exists only inside cancel_order.
+    The full cancel-path invariants live in tests/test_cancel_path.py."""
     public = {n for n in dir(pm_client.PolymarketOrderClient) if not n.startswith("_")}
-    assert public == {"submit_limit_order", "close"}
+    assert public == {"submit_limit_order", "cancel_order", "close"}
     src = inspect.getsource(pm_client.PolymarketOrderClient)
-    for verb in ("_client.put", "_client.patch", "_client.delete"):
+    for verb in ("_client.put", "_client.patch"):
         assert verb not in src
 
 

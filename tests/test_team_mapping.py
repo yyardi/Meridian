@@ -78,13 +78,13 @@ def test_parsed_slug_exposes_unordered_pair():
     assert p.espn_pair == frozenset({"GS", "PHX"})
 
 
-def test_orientation_comes_from_espn_not_the_slug():
+def test_orientation_comes_from_espn_not_the_slug(mirror):
     """Measured: 18 of 285 closed markets put the HOME team first.
 
     `aec-wnba-gsv-phx-2026-05-10` is one of them — GS was home and won 95-79,
     so a slug-order assumption would invert the moneyline.
     """
-    S = get_sessionmaker(get_engine())
+    S = mirror   # real history, read-only (see conftest)
     with S() as s:
         p = parse_market_slug("aec-wnba-gsv-phx-2026-05-10")
         o = resolve_orientation(session=s, parsed=p)
@@ -94,8 +94,8 @@ def test_orientation_comes_from_espn_not_the_slug():
     assert o.first_is_home is True    # the slug's first team was home here
 
 
-def test_orientation_handles_the_normal_ordering_too():
-    S = get_sessionmaker(get_engine())
+def test_orientation_handles_the_normal_ordering_too(mirror):
+    S = mirror   # real history, read-only (see conftest)
     with S() as s:
         p = parse_market_slug("aec-wnba-min-tor-2026-07-30")
         o = resolve_orientation(session=s, parsed=p)
