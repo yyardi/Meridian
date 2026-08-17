@@ -72,6 +72,10 @@ class Settled:
     model: float
     market: float
     outcome: int
+    #: Touch at prediction time, YES frame. None on rows logged before the
+    #: columns existed; money-at-price scoring skips those rows and says so.
+    bid: float | None = None
+    ask: float | None = None
 
     @property
     def is_bet(self) -> bool:
@@ -107,6 +111,8 @@ def load_settled(session: Session, *, model_version: str | None = None) -> list[
             Prediction.market_mid,
             Prediction.resolved_outcome,
             Prediction.predicted_at,
+            Prediction.market_bid,
+            Prediction.market_ask,
         )
         .where(Prediction.resolved_outcome.is_not(None))
         .where(Prediction.market_mid.is_not(None))
@@ -117,7 +123,7 @@ def load_settled(session: Session, *, model_version: str | None = None) -> list[
         stmt = stmt.where(Prediction.model_version == model_version)
 
     latest: dict[str, Settled] = {}
-    for ev, mk, typ, model, market, outcome, _at in session.execute(stmt).all():
+    for ev, mk, typ, model, market, outcome, _at, bid, ask in session.execute(stmt).all():
         latest[mk] = Settled(
             event_slug=ev or mk,
             market_slug=mk,
@@ -125,8 +131,78 @@ def load_settled(session: Session, *, model_version: str | None = None) -> list[
             model=float(model),
             market=float(market),
             outcome=int(outcome),
+            bid=None if bid is None else float(bid),
+            ask=None if ask is None else float(ask),
         )
     return list(latest.values())
+
+
+# --------------------------------------------------------------------- #
+# Money at price — the C11 frame, with a measured fill concession
+# --------------------------------------------------------------------- #
+#
+# Flat win rate was retired as a performance metric by C11 (a 32c-entry
+# portfolio is SUPPOSED to lose most bets); money at the actual entry price is
+# the only bar. This scores the same deduped shadow record in that frame,
+# one contract per bet (the shadow sizer's stake-weighted numbers are
+# quarantined by V16), fees excluded, exactly as C11's canonical scoring.
+#
+# `concession` is C13's mechanism: a maker fill arrives, in expectation, after
+# the mid has moved that far against the resting order — so the effective
+# entry cost is `cost + concession` while the settlement payout is unchanged.
+# A concession changes prices, never selection: the bet set is identical in
+# every arm. Measured values (findings C13): pregame — ANCHOR's regime —
+# 2.11c [1.83, 2.39]; in-game 4.70c. (The −2.66c sometimes quoted is the
+# QUOTE study's in-game net-capture at 11 games and belongs to that regime.)
+
+
+def money_score(rows: list[Settled], *, concession: float = 0.0,
+                taker: bool = False) -> dict:
+    """Money-at-price ROI over the shadow record, clustered by game.
+
+    Maker entries by default (ANCHOR is maker-only by construction): a YES bet
+    rests at the bid, a NO bet rests at the ask and costs 1 − ask (V14).
+    ``taker=True`` scores crossing entries instead (YES at ask, NO at 1 − bid)
+    — the frame C11's original +7.6% used — for reconciliation only.
+    """
+    stakes = returns = 0.0
+    by_game: dict[str, list[float]] = defaultdict(list)
+    skipped = 0
+    for r in rows:
+        side = r.bet_side
+        if side is None:
+            continue
+        if r.bid is None or r.ask is None:
+            skipped += 1
+            continue
+        if side == "YES":
+            cost = (r.ask if taker else r.bid) + concession
+            payout = 1.0 if r.outcome == 1 else 0.0
+        else:
+            cost = (1.0 - (r.bid if taker else r.ask)) + concession
+            payout = 1.0 if r.outcome == 0 else 0.0
+        if cost <= 0:
+            skipped += 1
+            continue
+        stakes += cost
+        returns += payout
+        by_game[r.event_slug].append(payout / cost - 1.0)
+
+    cl = clustered_mean(dict(by_game)) if by_game else None
+    n_bets = sum(len(v) for v in by_game.values())
+    return {
+        "concession": concession,
+        "entry": "taker" if taker else "maker",
+        "n_bets": n_bets,
+        "n_games": len(by_game),
+        "skipped_no_touch": skipped,
+        "staked": round(stakes, 4),
+        "returned": round(returns, 4),
+        "roi_pooled": None if stakes == 0 else (returns - stakes) / stakes,
+        "roi_clustered": None if cl is None else {
+            "mean": cl.mean, "lo": cl.lo, "hi": cl.hi, "games": cl.n_clusters,
+        },
+    }
 
 
 def score(rows: list[Settled]) -> dict:
@@ -233,6 +309,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="meridian-scorecard")
     parser.add_argument("--version", type=str, default=None,
                         help="model_version to score, e.g. v4 (default: all)")
+    parser.add_argument("--money", action="store_true",
+                        help="money-at-price arms (C11 frame) with measured "
+                             "fill concessions (C13)")
     args = parser.parse_args()
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.WARNING)
@@ -242,6 +321,22 @@ def main() -> int:
     with Session() as session:
         rows = load_settled(session, model_version=args.version)
     print(format_report(rows, label=args.version or "all versions"))
+
+    if args.money:
+        import json
+
+        arms = [
+            dict(concession=0.0, taker=True),      # C11's original frame
+            dict(concession=0.0),                  # maker, no concession
+            dict(concession=0.0183),               # pregame CI favourable
+            dict(concession=0.0211),               # pregame point (C13 primary)
+            dict(concession=0.0239),               # pregame CI worst
+            dict(concession=0.0266),               # QUOTE in-game figure, as dispatched
+            dict(concession=0.0470),               # in-game calibrated worst case
+        ]
+        print("\nMONEY AT PRICE (1 contract/bet, fees excluded, C11 frame)")
+        for kw in arms:
+            print(json.dumps(money_score(rows, **kw)))
     return 0
 
 

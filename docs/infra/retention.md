@@ -1,111 +1,130 @@
-# Retention: what to keep at full resolution, and for how long
+# Retention — monthly partitions, archive-then-detach, no tick ever deleted
 
-**Proposal, not yet applied.** Nothing has been deleted. The market stream is
-the one unrecoverable dataset in this project, so pruning it is a decision to
-take deliberately rather than a change to slip in.
+**Implemented 2026-08-07** (`core/retention.py`). This replaces the earlier
+proposal on this page, and is stricter than it: the proposal's downsampling
+tiers (30s thinning, dropping deep book levels) are **not built and not
+planned**. Every future in-game hypothesis replays the tick archive, so the
+invariant is absolute — **no row is ever deleted without a verified copy
+existing first**, and nothing is thinned at all. "Retention" moves whole
+months out of the live database into compressed dumps; it never discards.
 
-## Where it stands
+## The shape
 
-Measured 2026-08-03, roughly one day after the recorder moved to 200ms:
+`market_snapshots` and `book_levels` are natively partitioned by
+`captured_at`, one partition per calendar month (`market_snapshots_y2026m08`,
+…), plus a DEFAULT partition as a safety net: a row whose month has no
+partition lands in DEFAULT rather than erroring, so a missed maintenance run
+can never cost data — the health check reports a non-empty DEFAULT instead.
 
-| | rows | on disk | bytes/row |
-|---|---|---|---|
-| `market_snapshots` | ~857,000 | 598 MB | ~700 |
-| `book_levels` | ~735,000 | 118 MB | ~161 |
-| **total** | | **751 MB** | |
+Conversion measured on 2026-08-07: 3,582,007 snapshot rows + 1,439,117 book
+rows copied in ~3 minutes inside one transaction, old tables kept until row
+counts matched exactly, then dropped. Legacy NULL `captured_at` book rows
+(328,753 — from the era when depth and price were fetched together) were first
+backfilled from their parent snapshot's timestamp, which is exact for that era.
 
-From the recorder's own per-minute log, one live game writes **~1,750 snapshot
-rows/min** and ~950 book levels/min. Over a two-hour game:
+Schema deltas the conversion made (Postgres requires the partition key in
+every unique constraint):
 
+* PKs are now `(id, captured_at)`; `id` keeps its sequence.
+* `uq_snapshot_market_time` unchanged — recorder idempotency intact by name
+  and semantics (`tests/test_retention.py` pins it).
+* `uq_book_level` gained `captured_at`; every writer stamps one value per
+  batch, so rerun-idempotency is preserved.
+* The `book_levels → market_snapshots` FK is gone (cannot reference a
+  partitioned table without the key). The join column is unchanged; test
+  fixtures now delete levels explicitly instead of riding the cascade.
+
+**Local only.** The conversion is an explicit operator command, deliberately
+NOT an Alembic migration — `alembic upgrade head` runs on every container
+start against both databases, and a full-table rewrite must never happen
+implicitly against Supabase (395 of 500 MB). Only the small `retention_log`
+receipts table travels through Alembic.
+
+## Archival of a month — the order is the invariant
+
+```bash
+python -m core.retention archive --yes     # refuses while a game is live
 ```
-snapshots   210,000 rows x 700 B  = 147 MB
-book_levels 114,000 rows x 161 B  =  18 MB
-                              per game ~165 MB
+
+For each month wholly older than **30 days** (`KEEP_DAYS`), per table:
+
+1. `pg_dump -Fc` the partition to `ticks/` under the artifact root ([infra/artifact-paths.md](artifact-paths.md); bind-mounted into the
+   postgres container — the host has no pg client tools).
+2. **Verify the dump restores**: scratch database, parent schema, `pg_restore`,
+   then row count and min/max id must equal the live partition exactly.
+3. Record rows, bytes, sha256 and `verified_at` in `retention_log`.
+4. Only then `DETACH PARTITION` and drop the detached table.
+
+Any failure aborts **before** step 4 — proven in anger on the first run, when
+a pg_restore constraint-replay quirk failed verification and the partition
+stayed attached. The worst reachable outcome is a stale dump file; a missing
+month is unreachable by construction.
+
+Restoring an archived month later (two steps, because replaying the dump's
+post-data against the live parent duplicates the cascaded constraint):
+
+```bash
+docker compose exec -T postgres env PGUSER=meridian PGDATABASE=meridian \
+  pg_restore -d meridian --section=pre-data --section=data /backups/<partition>.dump
 ```
 
-At roughly 90 games a month and ~4 months of season left, that is **~55-60 GB**.
-Supabase Pro includes 8 GB.
+then attach it: `alter table market_snapshots attach partition
+market_snapshots_y2026m07 for values from ('2026-07-01') to ('2026-08-01');`
 
-The table is already past the point of being queryable in the obvious ways:
-`count(*)` exceeds the two-minute statement timeout, and so does a grouped
-aggregate over a *six-hour* window. That is not only a cost problem — it is
-already shaping what analysis is possible.
+## Operations
 
-## What the data is actually for
+| command | does |
+|---|---|
+| `python -m core.retention status` | partitions, DEFAULT row counts, what's archivable, log tail |
+| `python -m core.retention ensure` | create current + 2 future monthly partitions |
+| `python -m core.retention archive --yes` | dump → verify → detach eligible months |
+| `python -m core.retention migrate --yes` | the one-time conversion (done 2026-08-07) |
 
-This is the part that decides the policy, and it is narrower than it looks.
+`migrate` and `archive` refuse to run while a game is live (the conversion
+holds an ACCESS EXCLUSIVE lock and the 200ms writer would drop ticks once its
+30s buffer fills). Run between slates, like rebuilds.
 
-| Consumer | Resolution it needs | Window it needs |
-|---|---|---|
-| Microstructure gates ([adverse-selection](../math/adverse-selection.md), [run-overreaction](../math/run-overreaction.md), [depth-signal](../math/depth-signal.md)) | **full 200ms** | **~10 games** |
-| ANCHOR / CLV | one point near tip-off, plus the close | whole season |
-| Venue-gap and news windows | ~30s | whole season |
-| Long-run audit, "what did the board look like" | ~1 min | whole season |
+Health: `check_retention` in [`core/healthchecks.py`](../../core/healthchecks.py)
+— evaluated by `scripts/health.py` and pushed by the alerter — warns on rows
+stranded in DEFAULT, a missing current-month partition, and any month still
+attached 15 days past eligibility (`GRACE_DAYS`). Disk free already warns at
+20 GB.
 
-Only the first row needs 200ms, and it needs about **ten games** of it — the
-pre-registered gates are n ≥ 10 games, and a second run after a bug fix is
-worth budgeting for. Ten games is **~1.7 GB**. Four months of 200ms is 55 GB.
-We are proposing to store thirty times what the only consumer of it requires.
+## The Supabase rolling window (added 2026-08-07, flow emergency)
 
-## Proposal
+The primary grows ~59 MB/day against its 500 MB cap with no cold stock to
+shed (nothing older than 14 days exists). `python -m core.retention
+supabase-rolling --yes` applies the same invariant to the three big tables
+(`book_levels`, `predictions`, `market_snapshots` — **not** `kalshi_snapshots`,
+whose rows the pre-registered venue-gap gate counts):
 
-**Tier A — full resolution, last 7 days.** Everything exactly as recorded.
-At ~3 games a slate day that is ~20 games, twice the gate requirement, with
-room to re-run. Steady state ~3.5 GB.
+1. Export the >72h slice per table as CSV via `\copy` (version-agnostic —
+   pg_dump 16 refuses the PG 17 server, measured; CSV is also readable
+   forever, a virtue in an archive) to `supabase/` under the artifact root.
+2. Load into a local scratch database and require an exact count match on the
+   closed set (rows older than the cutoff can neither appear nor vanish).
+3. Receipt in `retention_log`, then DELETE the archived rows, then
+   `VACUUM FULL` smallest-table-first (the enforced number is the *reported*
+   size, which DELETE alone never shrinks).
 
-**Tier B — beyond 7 days, downsample to one row per market per 30 seconds.**
-30s is precisely the cadence this recorder ran at until 2026-08-02, and it was
-adequate for everything except microstructure. A 150x reduction: a game's
-snapshots go from 147 MB to ~1 MB.
+Any verification failure aborts with nothing deleted **and pushes urgent to
+the phone** — both failure pushes observed live on 2026-08-07 behaved exactly
+so. Every run's receipts appear in the alerter's daily digest, alongside the
+`Supabase: <MB> · ~MB/day · days-to-cap` line.
 
-**Tier C — beyond 7 days, drop `book_levels` except `level_index = 0`.**
-Depth outside the experiment window serves no analysis we have defined, and
-top-of-book is already denormalised onto `market_snapshots` as
-`best_bid`/`best_ask`. This is ~85% of the depth table.
+The scheduler runs it automatically every ~3 days (`rolling_if_due` — the
+receipts are the cadence state, so restarts cannot double-run it; it skips
+itself while a game is live). "Log every prediction, forever" holds: every
+row lives on in the verified archive; the live table is the working set.
 
-Steady state: **~3.5 GB rolling plus ~1 MB per archived game** — flat, rather
-than 60 GB and climbing.
+## What this deliberately does not do
 
-## Mechanism: partition first, and do it soon
-
-Use monthly `RANGE` partitions on `captured_at` for both tables.
-
-The reason is not elegance. Ageing data out of an unpartitioned table means
-`DELETE` over tens of millions of rows, which leaves dead tuples that need a
-`VACUUM FULL` — an `ACCESS EXCLUSIVE` lock and a full table rewrite needing
-double the disk. On a table that already cannot be counted, that is not a
-maintenance operation, it is an outage. With partitions, ageing out is
-`DETACH`/`DROP PARTITION`: O(1), no lock on live writes, no vacuum.
-
-**This gets harder every day.** Converting a table to partitioned requires
-copying it. At 751 MB that is minutes; at 20 GB it is a maintenance window we
-do not have a way to take without losing recording time. If any part of this
-proposal is adopted, adopt the partitioning part first.
-
-Order:
-
-1. Partition `market_snapshots` and `book_levels` by month (do this now).
-2. Add the downsampling job, run it dry first and diff the row counts.
-3. Only then start dropping old partitions.
-
-## What is deliberately not proposed
-
-**Dropping `raw` retrospectively.** It is already sampled at 30s going forward
-(the live recorder keeps it once per market per 30s rather than five times a
-second), which took the row from 2,576 bytes to ~700. Rewriting history to
-strip it from older rows would mean an `UPDATE` over the whole table — the same
-vacuum problem as `DELETE`, for a one-off gain the partitioning plan gets for
-free as those partitions age out.
-
-**A time-based rule stated in days when the requirement is in games.** Seven
-days is a proxy. The honest rule is "the last N completed games", and if the
-schedule thins out late in the season the window should be measured in games,
-not days. Partition boundaries have to be time, but the *downsampling* job
-should take a game count and derive the cutoff.
-
-## Before any of this runs
-
-The gates need ~10 games at full resolution and currently have **6 games total
-in the database, most of them at the old 30s cadence**. Do not prune until the
-microstructure experiments have actually run against a full-resolution sample —
-pruning first would destroy the only data they have been waiting for.
+* **No downsampling, no dropping `raw`, no depth thinning.** The earlier
+  proposal's Tier B/C are superseded: disk is bounded by moving months into
+  compressed dumps, not by discarding resolution the microstructure gates may
+  yet need.
+* **No automation of the archive step.** It runs by hand (or a future cron)
+  precisely because it ends in a `DROP`; the health check nags when it is
+  overdue rather than anything dropping data on a timer.
+* **Nothing touches Supabase.** Its 395 MB problem is separate (archive &
+  VACUUM FULL, tracked by its own WARN).

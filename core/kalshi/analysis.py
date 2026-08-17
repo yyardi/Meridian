@@ -404,15 +404,25 @@ def median_abs_gap(pairs: list[Pair]) -> float | None:
     return statistics.median(statistics.median(v) for v in by_game.values())
 
 
+#: Below this, a "gap" is floating-point residue, not a price difference. Both
+#: venues tick at 1 cent, so the smallest representable real gap is 0.005 (a
+#: half-tick of mid). Measured on the 2026-08-10 full-sample run: one game's
+#: median came out +5.55e-17 — arithmetic dust from (bid+ask)/2 — and without
+#: this guard it would have counted as a "signed" game in statistic 2. This
+#: implements the registered "nonzero" wording; it does not change it.
+SIGN_EPSILON = 1e-9
+
+
 def sign_persistence(pairs: list[Pair]) -> tuple[float | None, int, int]:
     """Statistic 2: fraction of games whose game-level median gap shares a sign.
 
-    Games whose median gap is exactly zero carry no sign and are excluded from
-    the denominator — the spec asks about pairs "where the gap is nonzero".
-    Returns (fraction, games_with_a_sign, games_total).
+    Games whose median gap is zero (within SIGN_EPSILON — see above) carry no
+    sign and are excluded from the denominator — the spec asks about pairs
+    "where the gap is nonzero". Returns (fraction, games_with_a_sign,
+    games_total).
     """
     medians = game_medians(pairs)
-    signed = {g: m for g, m in medians.items() if m != 0.0}
+    signed = {g: m for g, m in medians.items() if abs(m) > SIGN_EPSILON}
     if not signed:
         return None, 0, len(medians)
     positives = sum(1 for m in signed.values() if m > 0)
