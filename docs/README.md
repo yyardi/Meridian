@@ -73,7 +73,8 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | [retention.md](infra/retention.md) | What to keep at 200ms and for how long (~60 GB/season if nothing changes) |
 | [board-survey.md](infra/board-survey.md) | Is another league's board worth trading? The V7 method as a tool, for October's NBA decision |
 | [local-sync.md](infra/local-sync.md) | Why the local copy could not finish at 837k rows, and what it now omits |
-| [live-fv-strip.md](infra/live-fv-strip.md) | The display-only live fair value on /picks, and the three cases where it refuses to print a number |
+| [landing-page.md](infra/landing-page.md) | Why `/` is the picks page now, what came across from the live board, and what did not |
+| [live-fv-strip.md](infra/live-fv-strip.md) | The display-only live fair value under the picks table, and the three cases where it refuses to print a number |
 | [live-odds.md](infra/live-odds.md) | ESPN publishes **no** live in-game odds — measured, and what to record instead |
 | [fill-watcher.md](infra/fill-watcher.md) | How order fill state comes back from the venue, and the pre-authorized exit rules |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
