@@ -20,7 +20,9 @@ The rules:
   rebuilt from the database at any time.
 
 The docker-compose mounts must agree with these paths: the postgres container
-stages dumps at ``/backups`` which compose binds to ``$MERIDIAN_DATA_DIR/ticks``.
+stages dumps at ``/backups`` which compose binds to ``$MERIDIAN_DATA_DIR/ticks``,
+and the api container sees the whole root at ``/data`` with ``MERIDIAN_DATA_DIR``
+set to match, so a file the host wrote resolves to the same path inside it.
 Change one, change both — `tests/test_paths.py` pins the contract.
 """
 
@@ -33,6 +35,20 @@ from pathlib import Path
 #: binds ``$MERIDIAN_DATA_DIR/ticks`` here; pg_dump/psql inside the container
 #: write to this path and the host job picks the files up via `ticks_dir()`.
 BACKUP_DIR_CONTAINER = "/backups"
+
+#: Where an application container sees the whole artifact root.
+#:
+#: The postgres mount above is a *staging* mount: the container writes there
+#: and a host job collects it, so the two sides may name the path differently.
+#: This one is the opposite — the api container must resolve
+#: `analytics_path()` to the **same file** the host-run analytics job wrote.
+#: That only holds if compose does both halves together: bind
+#: ``$MERIDIAN_DATA_DIR`` here *and* set ``MERIDIAN_DATA_DIR`` to this value
+#: inside the container. Bind without the env var and `data_dir()` falls back
+#: to ``/app/backups``, which is not the mount — the exact bug that made the
+#: model-performance page report "run `python -m core.analytics` first"
+#: forever, no matter how many times the operator ran it.
+DATA_DIR_CONTAINER = "/data"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -58,3 +74,16 @@ def supabase_dir() -> Path:
 def reports_dir() -> Path:
     """Regenerable outputs (analytics.json). Not an archive."""
     return data_dir() / "reports"
+
+
+def analytics_path() -> Path:
+    """The pre-computed model-performance blob — **one** function, called by
+    both the writer (`core.analytics`) and the reader (`core.api`).
+
+    Existed as two independently-derived expressions until 2026-08-17. They
+    agreed symbolically and still resolved to different files, because the
+    writer runs on the host and the reader runs in a container that had no
+    mount: same code, same env, two disks. `tests/test_analytics_path.py`
+    pins writer == reader so a future move cannot separate them again.
+    """
+    return reports_dir() / "analytics.json"

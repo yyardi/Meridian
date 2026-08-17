@@ -1823,13 +1823,43 @@ def analytics() -> dict:
 
     Built by `python -m core.analytics`, not computed here: a walk-forward run
     takes ~17s locally and far longer against a remote database.
+
+    The path comes from `core.paths.analytics_path()` — the same call the
+    writer makes, never a second expression that happens to look the same.
+
+    **The error names the path.** For six weeks this returned a bare "run
+    `python -m core.analytics` first" while the operator was running exactly
+    that, successfully, on the host: the api container had no mount for the
+    artifact root, so writer and reader resolved the same code to different
+    disks. An error that cannot distinguish "never built" from "built where I
+    cannot see it" sends you to re-run a job that already worked.
     """
     import json
-    from core.paths import reports_dir
 
-    path = reports_dir() / "analytics.json"
+    from core.paths import DATA_DIR_CONTAINER, analytics_path, data_dir
+
+    path = analytics_path()
     if not path.exists():
-        return {"error": "run `python -m core.analytics` first"}
+        root = data_dir()
+        if not root.is_dir():
+            # The artifact root itself is missing. Inside a container that
+            # means the compose mount is absent, not that analytics never ran.
+            return {
+                "error": (
+                    f"no artifact root at {root} — nothing has been built here, "
+                    f"and if this is the api container the {DATA_DIR_CONTAINER} "
+                    "mount is missing (see docs/infra/analytics-path.md)"
+                ),
+                "looked_in": str(path),
+                "data_dir": str(root),
+                "data_dir_exists": False,
+            }
+        return {
+            "error": f"no analytics blob at {path} — run `python -m core.analytics`",
+            "looked_in": str(path),
+            "data_dir": str(root),
+            "data_dir_exists": True,
+        }
     return json.loads(path.read_text())
 
 
