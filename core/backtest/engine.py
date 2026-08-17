@@ -177,6 +177,11 @@ class BacktestConfig:
     #: Sensitivity arm: book the unverified maker rebate (findings C7). Off by
     #: default — the venue has never paid one into this account.
     assume_maker_rebate: bool = False
+    #: MEASURED adverse-selection concession in price units, overriding the
+    #: fill model's stylised one (2026-08-07 fill re-exam). None keeps the
+    #: model's default. Measured values: 0.021 pregame (ANCHOR's regime,
+    #: 30 games), 0.047 in-game (13 games) — both E[-dmid | filled].
+    adverse_selection_override: float | None = None
 
 
 @dataclass
@@ -414,6 +419,7 @@ def run_backtest(
             model=cfg.fill_model,
             rng_value=rng.random(),
             assume_rebate=cfg.assume_maker_rebate,
+            adverse_selection_override=cfg.adverse_selection_override,
         )
 
         won = None

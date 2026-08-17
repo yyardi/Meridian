@@ -46,6 +46,9 @@ from core.storage.models import (
     BookLevel,
     InjuryPoll,
     InjuryReport,
+    KalshiContract,
+    KalshiGame,
+    KalshiSnapshot,
     MarketSnapshot,
     PlayerGameLog,
     Prediction,
@@ -70,6 +73,23 @@ DEFAULT_TABLES = {
     "predictions": Prediction,
 }
 
+#: The second venue. Small next to the market stream (~42k snapshot rows at a
+#: 60s cadence) and read by the cross-venue gap analysis, so it syncs by
+#: default rather than opt-in.
+KALSHI_TABLES = {
+    "kalshi_games": KalshiGame,
+    "kalshi_contracts": KalshiContract,
+    "kalshi_snapshots": KalshiSnapshot,
+}
+DEFAULT_TABLES.update(KALSHI_TABLES)
+
+#: Tables the primary UPDATES in place, so an incremental copy by id would
+#: never see the change. `kalshi_games.polymarket_event_slug` is filled in by
+#: discovery *after* the row is first written, and it is exactly the field the
+#: cross-venue analysis joins on — resuming past it would leave every game
+#: silently unmatched in the local copy.
+NEVER_RESUME = frozenset({"kalshi_games"})
+
 #: The market stream. **Not** synced by default: it is the largest and
 #: fastest-growing pair of tables in the system, and now that the live recorder
 #: samples at 1s rather than 30s it grows ~30x faster than it used to. No
@@ -86,6 +106,7 @@ DEFAULT_TABLES = {
 #:
 #: Order matters: book_levels carries a foreign key into market_snapshots, so
 #: the parent must land first.
+
 STREAM_TABLES = {
     "market_snapshots": MarketSnapshot,
     "book_levels": BookLevel,
@@ -296,7 +317,7 @@ def sync(
                 raise SystemExit(f"Unknown table {name!r}. Known: {', '.join(SYNCED_TABLES)}")
             # Incremental by default; --rebuild re-copies from id 0 and is the
             # only way in-place updates on the primary reach the local copy.
-            resume = not rebuild
+            resume = (not rebuild) and name not in NEVER_RESUME
             omit = frozenset() if with_raw else OMITTED_BY_DEFAULT.get(name, frozenset())
             out[name] = sync_table(
                 name, model, source_session=s, target_session=t,

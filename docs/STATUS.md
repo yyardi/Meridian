@@ -27,8 +27,8 @@ games with *any* snapshot, most of them pregame-only.
 
 | Market | Hit | ROI | Mean CLV [95% CI] | Verdict |
 |---|---|---|---|---|
-| **Totals (champion: recency)** | 53.2% | +0.75% | **+1.75 [+1.45, +2.06]** | ⚠️ **contested — see Q1** |
-| Spread (market-shrunk) | 54.1% | +2.83% | n/a | promising, n=37 |
+| **Totals (champion: recency)** | 53.2% | **−2.33%** (measured fills, C13; was +0.75% on a guessed concession) | **+1.75 [+1.45, +2.06]** | ⚠️ **negative under measured fills — see C13, and Q1 on the CLV** |
+| Spread (market-shrunk) | 54.1% | +2.83% (pre-C13 fill model; not re-run) | n/a | promising, n=37 |
 | Moneyline | 25–33% | −9.5% to −17.9% | n/a | **not traded** |
 
 > ⚠️ **Two live objections sit underneath this table. Read them before quoting any
@@ -47,13 +47,23 @@ games with *any* snapshot, most of them pregame-only.
 >    the unverified credit. CLV and hit rate are unchanged; the rebate never altered
 >    bet selection. [findings.md C7](findings.md#3-corrections).
 >
-> Both objections are upstream of the money figure below. Q1 remains unsettled.
+> 3. **C13 (2026-08-07): the fill model's adverse selection is now MEASURED, and
+>    the +0.75% did not survive it.** REALISTIC carried a 0.5¢ concession guessed
+>    before any fill existed; measured pregame — ANCHOR's regime — it is **2.11¢**
+>    [1.83, 2.39] (in-game **4.70¢**). Recalibrated: **−2.33%** primary, −1.79% to
+>    −2.86% across the pregame CI, −7.27% in-game-calibrated. Same bets, same CLV —
+>    only the cost of being filled changed. Positive only under OPTIMISTIC, which
+>    the engine's own report defines as not-an-edge.
+>
+> All three objections are upstream of the money figure below. Q1 remains unsettled.
 
-**What the edge is worth, in money** (Experiment 3, adopted): +1.75 points of CLV
-de-vigs to **+4.16pp of probability edge → E[ROI] +2.50% [+0.85%, +4.16%]** per unit
-staked under realistic maker-only fills — CI excludes zero, and realised ROI
-(+1.38%, re-run 2026-08-05 with the maker rebate stripped per C7) sits inside it. Under *pessimistic* fills it is +0.11% [−1.18%, +1.40%]:
-maker-only is not a preference, it is load-bearing. [what-the-edge-is-worth.md](math/what-the-edge-is-worth.md)
+**What the edge is worth, in money** (Experiment 3, **superseded on the fill side
+by C13**): +1.75 points of CLV still de-vigs to +4.16pp of probability edge →
+E[ROI] +2.50% [+0.85%, +4.16%] *if fills were benign* — but measured adverse
+selection costs 2.11¢ per filled contract pregame, and the realised canonical ROI
+under it is **−2.33%**. The CLV is real; the maker fill eats it. Maker-only was
+load-bearing against the taker fee; C13 shows maker fills carry their own
+measured cost too. [what-the-edge-is-worth.md](math/what-the-edge-is-worth.md)
 
 Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill model; ROI does **not** survive taker fills (−4.0%) — maker-only is load-bearing. Live log hit rates (e.g. 94% on one v3 cohort) are **not** performance: the log includes the no-edge control group by design.
 
@@ -97,8 +107,10 @@ Breakeven is 52.4%. The champion's CLV CI excludes zero in every season and fill
     built** (2026-08-05, [infra/heartbeats.md](infra/heartbeats.md)): every writer
     beats every cycle into its own database, a beat older than 3× its interval is
     DEAD regardless of game state, and a live game with a fresh beat and zero rows
-    is DEGRADED. What remains of the gap is **alerting**: the heartbeat makes
-    silence legible, but something still has to run `health.py` and look.
+    is DEGRADED. **Alerting is now built too** (2026-08-07,
+    [infra/alerter.md](infra/alerter.md)): a container evaluates the same checks
+    every 5 minutes and pushes transitions to the phone via ntfy, with a 9:00 CT
+    digest that always sends — so the alarm's own death is loud as well.
 12. **The headline CLV still rests on a contested input** — Q1 (CLV measured
     against a price you cannot trade). C7 (the unobserved maker rebate) is resolved:
     the ROI in the table is now rebate-free (+0.75%; the rebate arm restores +1.34%).

@@ -612,7 +612,7 @@ def _seed_prediction(slug: str, *, bid: str, ask: str, model: str):
     from core.storage import Prediction
 
     with _Session() as s:
-        latest = s.scalar(text("select max(predicted_at) from predictions"))
+        latest = s.scalar(text("select max(predicted_at) from predictions")) or dt.datetime.now(UTC)
         s.add(Prediction(
             predicted_at=latest, market_slug=slug, model_version="t", strategy="t",
             sports_market_type="basketball_team_full_game_total",

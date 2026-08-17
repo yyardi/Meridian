@@ -333,9 +333,23 @@ def test_unmatched_game_is_never_polled(clean_kalshi_rows):
 
 
 def test_gate_reports_but_never_concludes(polymarket_game):
+    """The gate reports coverage and never a conclusion.
+
+    Updated 2026-08-07: `gate_status` used to expose a single `matched_games`
+    count taken from `count_matched_games`, which only checked that a game had
+    a Polymarket *slug* and at least one **Kalshi** snapshot. The spec it
+    implements requires same-minute pregame snapshots **on both venues**, and
+    the two disagreed on live data (proxy 10, real gate 7). Both are now
+    reported so the disagreement stays visible.
+    """
     recorder = _recorder()
     recorder.run_once(captured_at=dt.datetime.now(UTC))
     with _Session() as s:
         status = gate_status(s)
     assert status["required"] == 10
-    assert status["matched_games"] >= 1
+    # Discovery coverage: the recorder found and mapped a game.
+    assert status["discovered_games"] >= 1
+    # The real gate is a subset — it also demands Polymarket data.
+    assert status["comparable_games"] <= status["discovered_games"]
+    # And it never concludes on its own.
+    assert status["gate_met"] is (status["comparable_games"] >= 10)
