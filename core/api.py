@@ -1825,7 +1825,9 @@ def analytics() -> dict:
     takes ~17s locally and far longer against a remote database.
     """
     import json
-    path = Path(__file__).parent.parent / "reports" / "analytics.json"
+    from core.paths import reports_dir
+
+    path = reports_dir() / "analytics.json"
     if not path.exists():
         return {"error": "run `python -m core.analytics` first"}
     return json.loads(path.read_text())

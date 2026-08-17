@@ -16,7 +16,9 @@ services:
       # container — the host has no postgres client tools — and writes here so
       # the archives live on the host, outside the database volume they exist
       # to shrink.
-      - ./backups/ticks:/backups
+      # Must agree with core/paths.py: BACKUP_DIR_CONTAINER is /backups,
+      # the host side is $MERIDIAN_DATA_DIR/ticks (default ./backups/ticks).
+      - ${MERIDIAN_DATA_DIR:-./backups}/ticks:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U meridian -d meridian"]
       interval: 5s
@@ -49,7 +51,6 @@ services:
       # leaving zero margin. 5 + 12 = 17, under the ceiling.
       MERIDIAN_RPS: "5"
     volumes:
-      - ./recorder-logs:/app/logs
 
   live-recorder:
     build: .
@@ -242,7 +243,9 @@ services:
       # the one that actually fills — not the Docker VM's overlay filesystem.
       MERIDIAN_DISK_PATH: /hostdisk
     volumes:
-      - ./recorder-logs:/hostdisk:ro
+      # Any host directory works for the statvfs disk check; the artifact
+      # root is the natural one (core/paths.py).
+      - ${MERIDIAN_DATA_DIR:-./backups}:/hostdisk:ro
     command: ["sh", "-c", "alembic upgrade head && python -m core.alerter"]
 
 volumes:

@@ -48,7 +48,7 @@ python -m core.retention archive --yes     # refuses while a game is live
 
 For each month wholly older than **30 days** (`KEEP_DAYS`), per table:
 
-1. `pg_dump -Fc` the partition to `backups/ticks/` (bind-mounted into the
+1. `pg_dump -Fc` the partition to `ticks/` under the artifact root ([infra/artifact-paths.md](artifact-paths.md); bind-mounted into the
    postgres container — the host has no pg client tools).
 2. **Verify the dump restores**: scratch database, parent schema, `pg_restore`,
    then row count and min/max id must equal the live partition exactly.
@@ -100,7 +100,7 @@ whose rows the pre-registered venue-gap gate counts):
 
 1. Export the >72h slice per table as CSV via `\copy` (version-agnostic —
    pg_dump 16 refuses the PG 17 server, measured; CSV is also readable
-   forever, a virtue in an archive) to `backups/supabase/`.
+   forever, a virtue in an archive) to `supabase/` under the artifact root.
 2. Load into a local scratch database and require an exact count match on the
    closed set (rows older than the cutoff can neither appear nor vanish).
 3. Receipt in `retention_log`, then DELETE the archived rows, then
