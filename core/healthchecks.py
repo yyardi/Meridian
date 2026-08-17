@@ -30,9 +30,6 @@ OK, WARN, DEAD = "OK  ", "WARN", "DEAD"
 #: any automatic deletion: tick data is unrecoverable, cleanup is a human call.
 MIN_DISK_FREE_GB = 20.0
 
-#: Supabase's free plan enforces the *reported* database size at 500 MB and
-#: returns 402 on every request past the grace period. 400 leaves room to act.
-SUPABASE_WARN_MB = 400.0
 
 
 def local_url() -> str:
@@ -78,7 +75,7 @@ def _fmt_age(seconds: float | None) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def supabase_snapshot_verdict(
+def primary_snapshot_verdict(
     snap_age: float | None,
     hb_age: float | None,
     hb_interval: float | None,
@@ -107,8 +104,9 @@ def supabase_snapshot_verdict(
     return OK
 
 
-def check_supabase(game_live: bool = False) -> list[Check]:
-    """The database the dashboard reads."""
+def check_primary_db(game_live: bool = False) -> list[Check]:
+    """The primary database — local Postgres since the 2026-08-17
+    Supabase exit (one database, one source of truth)."""
     from core import heartbeat as hb
     from core.storage.base import get_engine
 
@@ -125,35 +123,25 @@ def check_supabase(game_live: bool = False) -> list[Check]:
                 "select max(created_at), count(*) from predictions "
                 "where created_at > now() - interval '24 hours'"
             )).one()
-            db_bytes = c.execute(text(
-                "select pg_database_size(current_database())"
-            )).scalar()
     except Exception as exc:
-        return [Check(DEAD, "supabase", f"unreachable: {str(exc)[:60]}")]
+        return [Check(DEAD, "primary db", f"unreachable: {str(exc)[:60]}")]
 
     snap_age = _age(snap)
     hb_age, hb_interval = (float(beat[0]), float(beat[1])) if beat else (None, None)
-    status = supabase_snapshot_verdict(snap_age, hb_age, hb_interval,
+    status = primary_snapshot_verdict(snap_age, hb_age, hb_interval,
                                        game_live=game_live)
     hb_dead = hb.verdict(hb_age, hb_interval) == hb.DEAD
     detail = f"{_fmt_age(snap_age)} · heartbeat {_fmt_age(hb_age)}"
     if status != OK:
         detail += (" — recorder heartbeat stale, the process is gone" if hb_dead
                    else " — GAME IS LIVE and pregame data is stale")
-    checks.append(Check(status, "supabase snapshots", detail))
+    checks.append(Check(status, "primary snapshots", detail))
 
     pred_age = _age(pred_ts)
     # Predictions ride the 20-min fast leg. 90 min means the leg is not running.
     status = OK if (pred_age or 1e9) < 5400 else WARN
     checks.append(Check(status, "predictions", f"{_fmt_age(pred_age)} · {pred_n} in 24h"))
 
-    # (DELETE alone does not shrink the reported size — see the 2026-08-05
-    # cleanup: VACUUM FULL is what returns space.)
-    mb = (db_bytes or 0) / 1e6
-    status = OK if mb < SUPABASE_WARN_MB else WARN
-    checks.append(Check(status, "supabase size",
-                        f"{mb:.0f} MB / 500 MB plan limit"
-                        + ("" if mb < SUPABASE_WARN_MB else " — archive & VACUUM FULL soon")))
     return checks
 
 
@@ -511,8 +499,10 @@ def check_retention() -> list[Check]:
     return checks
 
 
-def supabase_growth() -> dict | None:
-    """Size, estimated MB/day, and days to the 500 MB cap — for the digest.
+def primary_db_growth() -> dict | None:
+    """Primary-DB size and estimated MB/day — for the digest. (The 500 MB
+    cap language died with Supabase; growth is bounded by local retention
+    and watched by the disk check.)
 
     Growth is estimated from each big table's last-24h row count times its
     current bytes-per-row, so no size history table is needed. `book_levels`
@@ -552,12 +542,9 @@ def supabase_growth() -> dict | None:
     except Exception as exc:
         log_note = str(exc)[:80]
         return {"error": log_note}
-    size_mb = total / 1e6
-    headroom = max(500.0 - size_mb, 0.0)
     return {
-        "size_mb": round(size_mb, 1),
+        "size_mb": round(total / 1e6, 1),
         "est_mb_per_day": round(mb_day, 1),
-        "days_to_cap": round(headroom / mb_day, 1) if mb_day > 0.5 else None,
     }
 
 
@@ -568,7 +555,7 @@ def shared_checks(game_live: bool) -> list[Check]:
         check_espn()
         + check_book_lines()
         + check_app_heartbeats()
-        + check_supabase(game_live)
+        + check_primary_db(game_live)
         + check_local_ticks(game_live)
         + check_disk()
         + check_local_pg_size()

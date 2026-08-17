@@ -104,13 +104,10 @@ def test_warn_that_clears_never_pushes(alerter):
     assert _push_all(a, [Check(OK, "predictions", "fresh")]) == []
 
 
-def test_disk_and_supabase_warns_push_immediately(alerter):
+def test_disk_warn_pushes_immediately(alerter):
     a, _ = alerter
-    pushes = _push_all(a, [
-        Check(WARN, "disk free", "18 GB free"),
-        Check(WARN, "supabase size", "412 MB"),
-    ])
-    assert len(pushes) == 2, "slow burns that end in data loss push on arrival"
+    pushes = _push_all(a, [Check(WARN, "disk free", "18 GB free")])
+    assert len(pushes) == 1, "a slow burn that ends in data loss pushes on arrival"
 
 
 # ------------------------------------------------------------------ #
@@ -122,21 +119,21 @@ def test_idle_hour_with_fresh_heartbeat_is_not_dead():
     """The 2026-08-08 overnight flap: pregame recorder idles at 60 min, the
     old 45-min data threshold paged urgent every hour. A fresh heartbeat at
     the recorder's own cadence means idle, not dead."""
-    from core.healthchecks import DEAD as HC_DEAD, OK as HC_OK, supabase_snapshot_verdict
+    from core.healthchecks import DEAD as HC_DEAD, OK as HC_OK, primary_snapshot_verdict
 
     fifty_nine_min = 59 * 60.0
-    assert supabase_snapshot_verdict(
+    assert primary_snapshot_verdict(
         fifty_nine_min, hb_age=120.0, hb_interval=3600.0, game_live=False
     ) == HC_OK
 
 
 def test_stale_heartbeat_is_dead_whatever_the_data_says():
-    from core.healthchecks import DEAD as HC_DEAD, supabase_snapshot_verdict
+    from core.healthchecks import DEAD as HC_DEAD, primary_snapshot_verdict
 
-    assert supabase_snapshot_verdict(
+    assert primary_snapshot_verdict(
         60.0, hb_age=4 * 3600.0, hb_interval=900.0, game_live=False
     ) == HC_DEAD
-    assert supabase_snapshot_verdict(
+    assert primary_snapshot_verdict(
         60.0, hb_age=None, hb_interval=None, game_live=False
     ) == HC_DEAD, "never beaten reads dead — B11's rounding rule"
 
@@ -145,12 +142,12 @@ def test_live_game_with_stale_pregame_data_is_dead_even_if_alive():
     """During a game the recorder should be on the 15-min leg; an hour of
     silence with a game on means picks are pricing off stale quotes — DEAD
     even though the process itself is beating (the B1 lesson: outputs)."""
-    from core.healthchecks import DEAD as HC_DEAD, OK as HC_OK, supabase_snapshot_verdict
+    from core.healthchecks import DEAD as HC_DEAD, OK as HC_OK, primary_snapshot_verdict
 
-    assert supabase_snapshot_verdict(
+    assert primary_snapshot_verdict(
         3600.0, hb_age=120.0, hb_interval=900.0, game_live=True
     ) == HC_DEAD
-    assert supabase_snapshot_verdict(
+    assert primary_snapshot_verdict(
         600.0, hb_age=120.0, hb_interval=900.0, game_live=True
     ) == HC_OK
 

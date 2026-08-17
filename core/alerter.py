@@ -67,7 +67,7 @@ CYCLE_SECONDS = 300.0
 #: A WARN that persists this long is a condition, not a blip.
 WARN_PERSIST_SECONDS = 30 * 60
 #: These WARNs push on arrival — slow burns that end in data loss if missed.
-IMMEDIATE_WARN_CHECKS = {"disk free", "supabase size"}
+IMMEDIATE_WARN_CHECKS = {"disk free"}
 DIGEST_HOUR_CT = 9
 
 
@@ -265,20 +265,18 @@ class Alerter:
     def _digest_data(self) -> list[str]:
         out: list[str] = []
         try:
-            from core.healthchecks import supabase_growth
+            from core.healthchecks import primary_db_growth
 
-            g = supabase_growth()
+            g = primary_db_growth()
             if g and "error" not in g:
-                cap = ("n/a" if g["days_to_cap"] is None
-                       else f"{g['days_to_cap']:.1f} days")
-                out.append(f"Supabase: {g['size_mb']:.0f} MB · "
-                           f"~{g['est_mb_per_day']:.0f} MB/day · "
-                           f"cap (500 MB) in {cap}")
+                out.append(f"Primary DB: {g['size_mb']:.0f} MB · "
+                           f"~{g['est_mb_per_day']:.0f} MB/day (local; bounded "
+                           "by retention, watched by the disk check)")
             else:
-                out.append(f"Supabase growth: could not estimate "
+                out.append(f"Primary DB growth: could not estimate "
                            f"({(g or {}).get('error', 'no data')})")
         except Exception as exc:
-            out.append(f"Supabase growth: {str(exc)[:60]}")
+            out.append(f"Primary DB growth: {str(exc)[:60]}")
         try:
             from sqlalchemy import create_engine
             with create_engine(local_url()).connect() as c:

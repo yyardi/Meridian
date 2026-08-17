@@ -66,6 +66,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | [what-runs.md](infra/what-runs.md) | What the three containers do, and why quiet hours still matter |
 | [live-cadence.md](infra/live-cadence.md) | 27s → 200ms: no websocket, the DB was the bottleneck, and storage now needs retention |
 | [artifact-paths.md](infra/artifact-paths.md) | One artifact root (`MERIDIAN_DATA_DIR`), two archive subtrees, and the compose mount contract |
+| [supabase-exit.md](infra/supabase-exit.md) | One database: the import design (natural keys, id remaps) and the repoint |
 | [retention.md](infra/retention.md) | What to keep at 200ms and for how long (~60 GB/season if nothing changes) |
 | [board-survey.md](infra/board-survey.md) | Is another league's board worth trading? The V7 method as a tool, for October's NBA decision |
 | [local-sync.md](infra/local-sync.md) | Why the local copy could not finish at 837k rows, and what it now omits |
