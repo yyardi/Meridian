@@ -754,8 +754,20 @@ def rolling_run(engine, *, now: dt.datetime | None = None) -> list[dict]:
 
 
 def rolling_if_due(now: dt.datetime | None = None) -> list[dict] | None:
-    """The scheduler's entry point: run when due AND no game is live."""
+    """The scheduler's entry point: run when due AND no game is live.
+
+    PARKED since the 2026-08-17 Supabase exit: with the primary local, the
+    partition-based monthly archive is the retention mechanism and this job
+    has no remote to roll. It wakes up again the day DATABASE_URL points at a
+    remote (AWS) — the check is on the URL, not on a flag someone must
+    remember."""
+    from core.storage.base import get_database_url
     from core.storage import get_engine
+
+    url = get_database_url()
+    if "localhost" in url or "127.0.0.1" in url or "@postgres:" in url:
+        log.debug("rolling_parked_primary_is_local")
+        return None
 
     engine = get_engine()
     if not rolling_due(engine, now):

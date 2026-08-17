@@ -36,15 +36,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # Substituted from .env at runtime so no credential is committed.
-      # Falls back to the local container if REMOTE_DATABASE_URL is unset.
-      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
-      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
-      # containers plus the dashboard exhaust it. Transaction mode (6543)
-      # shares a small server pool across many clients. Alembic still uses
-      # DATABASE_URL as given, so migrations keep session mode where their
-      # advisory locks work.
-      MERIDIAN_TX_POOLER: "1"
+      # Local postgres is the primary since the 2026-08-17 Supabase exit. A
+      # future remote (AWS) is one env var: set MERIDIAN_DATABASE_URL.
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       # Two recorders now share one IP and the gateway's ceiling is 20 req/s.
       # The pregame recorder polls hourly and has no latency requirement, so it
       # yields headroom to the live one rather than both sitting at 10 and
@@ -81,12 +75,6 @@ services:
       # What Supabase keeps: predictions, odds, resolutions, game logs — the
       # ~5,900 rows/day that actually need to survive this laptop.
       DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
-      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
-      # containers plus the dashboard exhaust it. Transaction mode (6543)
-      # shares a small server pool across many clients. Alembic still uses
-      # DATABASE_URL as given, so migrations keep session mode where their
-      # advisory locks work.
-      MERIDIAN_TX_POOLER: "1"
       # Gets the larger share: this is the one with a latency requirement.
       # Measured steady-state demand with a full four-game slate is ~8.9 req/s
       # (5 for the 200ms price loop + near-money depth + a slow deep sweep), so
@@ -119,13 +107,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
-      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
-      # containers plus the dashboard exhaust it. Transaction mode (6543)
-      # shares a small server pool across many clients. Alembic still uses
-      # DATABASE_URL as given, so migrations keep session mode where their
-      # advisory locks work.
-      MERIDIAN_TX_POOLER: "1"
+      # Local postgres is the primary since the 2026-08-17 Supabase exit. A
+      # future remote (AWS) is one env var: set MERIDIAN_DATABASE_URL.
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       # ESPN is a separate host from Polymarket and has its own budget. One
       # small scoreboard call per cycle at 15s is ~0.07 req/s against 3.
       ESPN_RPS: "3"
@@ -145,12 +129,9 @@ services:
     environment:
       # Same app database as the pregame recorder — the venue comparison joins
       # kalshi_snapshots against market_snapshots, so they must live together.
-      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
-      # Supabase session mode (5432) caps the PROJECT at 15 clients. Transaction
-      # mode (6543) shares a small server pool across many clients. Alembic
-      # still uses DATABASE_URL as given, so migrations keep session mode where
-      # their advisory locks work.
-      MERIDIAN_TX_POOLER: "1"
+      # Local postgres is the primary since the 2026-08-17 Supabase exit. A
+      # future remote (AWS) is one env var: set MERIDIAN_DATABASE_URL.
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       # Kalshi is its own host with its own budget — this does not draw on the
       # Polymarket 20 req/s per-IP split (5 + 12) above. Demand is ~0.2 req/s.
       KALSHI_RPS: "5"
@@ -168,13 +149,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
-      # Supabase session mode (5432) caps the PROJECT at 15 clients and four
-      # containers plus the dashboard exhaust it. Transaction mode (6543)
-      # shares a small server pool across many clients. Alembic still uses
-      # DATABASE_URL as given, so migrations keep session mode where their
-      # advisory locks work.
-      MERIDIAN_TX_POOLER: "1"
+      # Local postgres is the primary since the 2026-08-17 Supabase exit. A
+      # future remote (AWS) is one env var: set MERIDIAN_DATABASE_URL.
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
     # Stats, odds, predictions and resolution every 6h. All of these are
     # backfillable, unlike snapshots, so a missed run costs nothing permanent.
     command: ["sh", "-c", "alembic upgrade head && python -m core.scheduler --interval-hours 6"]
@@ -202,8 +179,9 @@ services:
       # access is no longer needed.
       - "8008:8008"
     environment:
-      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
-      MERIDIAN_TX_POOLER: "1"
+      # Local postgres is the primary since the 2026-08-17 Supabase exit. A
+      # future remote (AWS) is one env var: set MERIDIAN_DATABASE_URL.
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       # The live recorder's heartbeat + tick counts live in local Postgres.
       # From inside the compose network that is `postgres:5432`, not the
       # host's `localhost:5433` default.
@@ -231,8 +209,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${REMOTE_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
-      MERIDIAN_TX_POOLER: "1"
+      # Local postgres is the primary since the 2026-08-17 Supabase exit. A
+      # future remote (AWS) is one env var: set MERIDIAN_DATABASE_URL.
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       MERIDIAN_LOCAL_DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
       # The topic is the whole security model of ntfy — treat it like a
       # password. The alerter exits loudly if this is unset.
