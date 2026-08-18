@@ -13,7 +13,6 @@ Everything quantitative here comes from the historical walk-forward backtest.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from sqlalchemy import func, select
 
@@ -21,10 +20,7 @@ from core.backtest.engine import BacktestConfig, run_backtest
 from core.backtest.fills import FillModel
 from core.storage import Prediction, get_engine, get_sessionmaker
 
-from core.paths import reports_dir
-
-# Regenerable output; lives under the one artifact root (core/paths.py).
-OUT = reports_dir() / "analytics.json"
+from core.paths import analytics_path
 
 #: The walk-forward backtest issues many small queries per game. Over a remote
 #: connection the round-trip latency dominates and a full run takes tens of
@@ -153,10 +149,13 @@ def main() -> int:
     ap.add_argument("--database-url", default=None,
                     help="defaults to the local standby (fast); historical data is static")
     args = ap.parse_args()
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    # Resolved here, not at import: MERIDIAN_DATA_DIR is read per call so the
+    # host job and the api container land on the same file (core/paths.py).
+    out = analytics_path()
+    out.parent.mkdir(parents=True, exist_ok=True)
     data = build(args.database_url)
-    OUT.write_text(json.dumps(data, indent=1))
-    print(f"wrote {OUT}")
+    out.write_text(json.dumps(data, indent=1))
+    print(f"wrote {out}")
     print(f"  bets={data['summary']['bets']} roi={data['summary']['roi']:.4f} "
           f"clv={data['summary']['mean_clv']:+.3f}")
     return 0
