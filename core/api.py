@@ -1090,8 +1090,40 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
     }
 
 
+def _era_window(s, era: str):
+    """(since, before, meta) for an operator-facing query. Presentation only.
+
+    `pulse` (the default everywhere) shows the record from PULSE's first live
+    decision onward; `archive` shows the pregame ANCHOR record before it.
+    While no live decision exists the PULSE era has not started: pulse shows
+    an honestly empty record — the operator's clean slate — rather than the
+    archive under a new name.
+    """
+    from core.era import ANCHOR_LABEL, era_boundary
+
+    if era not in ("pulse", "archive"):
+        raise HTTPException(status_code=400,
+                            detail=f"era must be 'pulse' or 'archive', not {era!r}")
+    boundary = era_boundary(s)
+    meta = {
+        "era": era,
+        "era_boundary": boundary.isoformat() if boundary else None,
+        "era_started": boundary is not None,
+        "archive_label": ANCHOR_LABEL,
+    }
+    if era == "archive":
+        # Everything before the boundary; the whole record while no boundary
+        # exists — the archive IS the history, and hiding it because the new
+        # era has not begun would delete it from view entirely.
+        return None, boundary, meta
+    if boundary is None:
+        # PULSE era requested, not started: an impossible window (empty set).
+        return dt.datetime.max.replace(tzinfo=UTC), None, meta
+    return boundary, None, meta
+
+
 @app.get("/api/results")
-def results(limit: int = 2000) -> dict:
+def results(limit: int = 2000, era: str = "pulse") -> dict:
     """Resolved live predictions — what the model called, and what happened.
 
     **`direction_rate_DIAGNOSTIC` is not performance and is reported only as a
@@ -1120,11 +1152,17 @@ def results(limit: int = 2000) -> dict:
       adding information no matter what the hit rate says.
     """
     with _Session() as s:
+        since, before, era_meta = _era_window(s, era)
+        q = (select(Prediction)
+             .where(Prediction.resolved_outcome.is_not(None)))
+        # Era filter — presentation only. The registered measurements
+        # (core/analytics.py and friends) never route through here.
+        if since is not None:
+            q = q.where(Prediction.predicted_at >= since)
+        if before is not None:
+            q = q.where(Prediction.predicted_at < before)
         rows = s.scalars(
-            select(Prediction)
-            .where(Prediction.resolved_outcome.is_not(None))
-            .order_by(Prediction.predicted_at.desc())
-            .limit(limit)
+            q.order_by(Prediction.predicted_at.desc()).limit(limit)
         ).all()
 
     out, games = [], set()
@@ -1198,6 +1236,7 @@ def results(limit: int = 2000) -> dict:
         })
 
     return {
+        **era_meta,
         "results": out,
         "summary": {
             "rows": len(out),
@@ -2081,12 +2120,16 @@ def _league_or_400(slug: str | None):
 
 
 @app.get("/api/games")
-def games(league: str | None = None, limit: int = 60) -> dict:
+def games(league: str | None = None, limit: int = 60, era: str = "pulse") -> dict:
     """Games this league's model has shadow-traded, newest first.
 
     Driven by `shadow_orders`: a game the model never decided anything in has
     nothing for the deep dive to show, and listing it would promise a page
     that turns out empty.
+
+    ``era`` filters the LIST only — `/api/game/{slug}` opens any game clicked
+    from either view, so the archive stays readable in full. A game belongs
+    to the era of its last decision (core/era.py).
     """
     lg = _league_or_400(league)
     if not lg.recorded:
@@ -2094,8 +2137,11 @@ def games(league: str | None = None, limit: int = 60) -> dict:
                 "recorded": False, "empty_state": lg.empty_state, "games": []}
 
     with _Session() as s:
-        rows = list_games(s, league=lg.slug, limit=limit)
+        since, before, era_meta = _era_window(s, era)
+        rows = list_games(s, league=lg.slug, limit=limit,
+                          since=since, before=before)
     return {
+        **era_meta,
         "league": lg.slug,
         "league_name": lg.name,
         "recorded": True,
