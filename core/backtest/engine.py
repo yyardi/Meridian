@@ -251,9 +251,25 @@ def _odds_for_game(session: Session, espn_game_id: str) -> tuple[float | None, f
     Closing lines are used only where a genuine `close` object existed — never
     inferred, since CLV is the headline metric.
     """
+    # COLUMNS, NOT ENTITIES — this is a memory bound, not a style choice.
+    # `session.scalars(select(SportsbookOdds))` returns ORM instances, and the
+    # identity map holds a strong reference to every one of them for the life
+    # of the session. build() shares ONE session across all three fill models,
+    # so a full traversal of sportsbook_odds was retained for the whole run and
+    # released only when build() returned. That is what took the operator's
+    # machine to ~9GB RSS and swap on 2026-08-18. Row tuples are not tracked,
+    # so peak memory here is now one game's odds rather than the whole table.
     rows = [
-        r for r in session.scalars(
-            select(SportsbookOdds).where(SportsbookOdds.espn_game_id == espn_game_id)
+        r for r in session.execute(
+            select(
+                SportsbookOdds.provider_name,
+                SportsbookOdds.open_total,
+                SportsbookOdds.close_total,
+                SportsbookOdds.is_closing_line,
+                SportsbookOdds.over_under,
+                SportsbookOdds.over_odds,
+                SportsbookOdds.under_odds,
+            ).where(SportsbookOdds.espn_game_id == espn_game_id)
         ).all()
         if not _is_live_provider(r.provider_name)
     ]
