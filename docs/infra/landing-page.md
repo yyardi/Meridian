@@ -82,6 +82,22 @@ the CLV gate, `?` for a disagreement over 15% — and
 [`tests/test_landing_page.py`](../../tests/test_landing_page.py) fails if any
 of them is lost in a future redesign.
 
+## Two things the merge with the game tape needed
+
+**Class namespaces.** The strip's cards are `.scard`, not `.gcard`. The game
+tape owns `.gcard`/`.gt` and binds its click handlers with a document-wide
+`querySelectorAll(".gcard")`, so sharing the name would have hung `openGame()`
+off every strip card — silently making a display-only surface clickable — and
+the CSS (`:hover`, `.on`) would have collided too.
+
+**Stale league responses.** Every league-scoped loader drops a response for a
+league the operator has since switched away from. Measured here,
+`/api/picks?league=wnba` took over three seconds while NBA answered
+immediately, so switching WNBA → NBA let the late WNBA response overwrite the
+NBA view: sixteen WNBA picks under an NBA tab, each with a live SEND button.
+Elsewhere a stale table is a nuisance; on the picks table it is an order for a
+game the operator is not looking at.
+
 ## Related
 
 * [live-fv-strip.md](live-fv-strip.md) — the display-only fair value below the

@@ -679,7 +679,9 @@ function renderStrip(){
 async function loadEvents(league){
   try{
     const q = league ? `?league=${encodeURIComponent(league)}` : "";
-    EVENTS = (await (await fetch("/api/events" + q)).json()).events || [];
+    const rows = (await (await fetch("/api/events" + q)).json()).events || [];
+    if(stale(league)) return;
+    EVENTS = rows;
     renderStrip();
   } catch(e){ /* context only; a failure here must not break picks */ }
 }
@@ -1143,6 +1145,7 @@ function mountLeagueTabs(onChange){
 
 function loadGames(league){
   fetch(`/api/games?league=${encodeURIComponent(league)}`).then(r=>r.json()).then(d=>{
+    if(stale(league)) return;
     $("#gdetail").innerHTML = "";
     if(!d.games.length){
       $("#glist").innerHTML = `<div class="empty">${d.empty_state}</div>`;
@@ -1160,10 +1163,21 @@ function loadGames(league){
   });
 }
 
+/* Every league-scoped loader drops a response for a league you have since
+   switched away from. Without this the page renders the LAST response to
+   arrive rather than the one you asked for, and the picks query is the slow
+   one — measured here, WNBA took over three seconds while NBA answered
+   immediately, so switching WNBA -> NBA left sixteen WNBA picks sitting under
+   an NBA tab, each with a live SEND button. A stale table is a nuisance
+   anywhere else on this page; on the picks table it is an order for a game
+   the operator is not looking at. */
+function stale(league){ return league !== LEAGUE; }
+
 function loadPicks(league){
   fetch(`/api/picks?league=${encodeURIComponent(league)}`)
     .then(r=>r.json())
     .then(d => {
+      if(stale(league)) return;
       if(d.recorded === false){
         $("#hint").textContent = "";
         $("#picks").innerHTML = `<div class="empty">${d.empty_state}</div>`;
@@ -1177,10 +1191,11 @@ function loadPicks(league){
     });
 }
 
-let LEAGUE_NOW = null;
-mountLeagueTabs(lg => { LEAGUE_NOW = lg; loadPicks(lg); loadGames(lg); loadEvents(lg); })
-  .then(lg => { LEAGUE_NOW = lg; loadPicks(lg); loadGames(lg); loadEvents(lg); });
-setInterval(() => loadEvents(LEAGUE_NOW), 30000);
+mountLeagueTabs(lg => { loadPicks(lg); loadGames(lg); loadEvents(lg); })
+  .then(lg => { loadPicks(lg); loadGames(lg); loadEvents(lg); });
+// Refresh off LEAGUE itself rather than a copy — the copy is one more thing
+// that can disagree with the tab you are looking at.
+setInterval(() => loadEvents(LEAGUE), 30000);
 </script>
 </body>
 </html>
