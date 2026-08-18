@@ -403,6 +403,7 @@ the list is a curiosity rather than a P&L.
 | B9 | **`/api/status` took 3.2s** | dashboard sluggish | `count(*)` on tables growing 5 rows/sec | Now 9ms |
 | B10 | **Live path never applied shrinkage** | v2/v3 overstated every edge ~4× | The backtest shrank; the live path did not. Two code paths, one of them wrong | Fixed in v4. The version bump is mandatory — `config_hash` would otherwise blend two model generations |
 | B11 | **Transaction-pooler rewrite killed the 200ms recorder for 23 hours** | **2 games of tick data, unrecoverable** | `app_database_url()` matched on port `:5432/` alone, not on the host being Supabase, so it rewrote the *local* recorder's URL to 6543 where nothing listens | Fixed: rewrite now requires a Supabase host. See below — the test that should have caught it passed vacuously |
+| B12 | **ESPN moved the season type; 18 days of results vanished** | ~51 games missing; the pregame model predicted on team form frozen at 2026-07-31 | `Event.season_type_id` read `event["seasonType"]`; the scoreboard endpoint nests it as `season.type` and carries no such key, so `_rows_for_event` correctly refused every event for having an unknown season type | An assertion on **rows written**, not on the job not raising. `_safe` had nothing to catch and the scheduler heartbeat reports `rows_written: NULL` by design. See below |
 
 ### B11 in detail — three failures stacked
 
@@ -606,6 +607,62 @@ Two properties carried over from existing policy:
   `job_degraded` — the same mechanism B1 forced into existence. Zero
   actionable with zero suppressions stays healthy: a board with no edge is a
   fine outcome, not a fault.
+
+---
+
+### B12 in detail — a guard that returns "nothing to do" looks exactly like a guard that works
+
+`Event.season_type_id` read `event["seasonType"]`. The **scoreboard** endpoint —
+the one the daily incremental update calls — carries no such key; it nests the
+same number as `season: {"year": 2026, "type": 2, "slug": "regular-season"}`.
+The schedule endpoint still uses the old spelling, so only the daily path broke.
+
+`_rows_for_event` refuses an event whose season type is unknown. That guard is
+**correct**: a preseason game written into the regular-season record corrupts
+every feature derived from it. But it made the property load-bearing, and the
+failure was silent in every channel we have:
+
+| signal | what it said |
+|---|---|
+| `fetch_date("20260810")` | `events=2 rows_written=0` |
+| exception | none — `_safe` had nothing to catch |
+| scheduler heartbeat | fresh, `rows_written: NULL` **by design** |
+| `predictions` | still written every 20 minutes |
+| `/api/status` | healthy |
+
+Measured on the live primary, 2026-08-18:
+
+    team_game_logs    max(game_date) = 2026-07-31   (18 days stale)
+    player_game_logs  max(game_date) = 2026-07-31
+    market_snapshots  51 distinct WNBA events in 2026-08-01..08-18
+    sportsbook_odds   current (max game_date 2026-08-19)
+    injury_reports    current
+
+So ~51 games of results were missing while the pregame model kept predicting on
+team form frozen at 2026-07-31. Both games sampled on 08-10 were `STATUS_FINAL`
+with real scores (107-95, 97-88) and were dropped anyway.
+
+**Two consequences worth separating.** The model degraded quietly — nobody was
+looking at a wrong number, they were looking at a right number computed from
+stale inputs. And the injury work was blocked without appearing blocked:
+injury collection began 2026-08-01, the day after the last scoreable game, so
+the `availability_mode="report"` arm produced a **bit-identical** A/B — ROI,
+CLV and hit-rate deltas all `+0.000000`, bet sequence included, over **0**
+overlapping games. A bit-identical result is not a small effect; it
+is the arm never engaging, and reading it as "injuries do not matter" would have
+been the expensive mistake this finding prevents.
+
+**The class this belongs to** is the one `#13` catalogued: a check pointed at
+something that cannot move. `rows_written: NULL` for the scheduler is a
+deliberate choice — the jobs report through `_safe`, not row counts — and it is
+exactly the field that would have shown this. The fix is not to distrust `_safe`
+but to assert on *outputs*: `tests/test_espn_season_type.py` asserts two rows
+come back from a completed game, in both payload shapes, rather than asserting
+that parsing did not raise. It also pins the two cases where returning nothing
+is still right — preseason, and a genuinely absent season type.
+
+Worth asking of every other feed: **what does it look like when this writes
+nothing, and would anyone know?**
 
 ---
 
@@ -842,6 +899,8 @@ that chain starts from +1.75.
    there. Kalshi is CFTC-regulated, carries WNBA markets, and its market-data
    endpoints need no auth — recording it alongside turns the venue-gap thesis from
    an inference into a query. Queued.
+
+---
 
 ---
 

@@ -97,8 +97,13 @@ class SeasonType(BaseModel):
     # SEASON_TYPE_* constants all over the codebase.
     id: int | None = None
     name: str | None = None
+    #: The scoreboard endpoint spells the same number `type` inside the event's
+    #: `season` object (`{"year": 2026, "type": 2, "slug": "regular-season"}`),
+    #: where the schedule endpoint spells it `id` inside `seasonType`. Both are
+    #: live; see `Event.season_type_id`.
+    type: int | None = None
 
-    @field_validator("id", mode="before")
+    @field_validator("id", "type", mode="before")
     @classmethod
     def _to_int(cls, v: Any) -> int | None:
         if v is None:
@@ -116,7 +121,13 @@ class Event(BaseModel):
     date: dt.datetime | None = None
     name: str | None = None
     short_name: str | None = Field(default=None, alias="shortName")
+    #: ESPN publishes the season type in TWO places and only one at a time.
+    #: `seasonType` is the schedule endpoint's spelling. The scoreboard endpoint
+    #: nests it instead as `season: {"year":…, "type": 2, "slug":…}` and carries
+    #: no top-level `seasonType` at all. Both fields are read because both feeds
+    #: are live — see `season_type_id`.
     season_type: SeasonType | None = Field(default=None, alias="seasonType")
+    season: SeasonType | None = None
     competitions: list[Competition] = Field(default_factory=list)
 
     @field_validator("id", mode="before")
@@ -140,7 +151,31 @@ class Event(BaseModel):
 
     @property
     def season_type_id(self) -> int | None:
-        return self.season_type.id if self.season_type else None
+        """The season type, from whichever field this feed happens to use.
+
+        Returning None here is not cosmetic: `_rows_for_event` drops any event
+        whose season type is unknown, which is the right guard — writing a
+        preseason game into the regular-season record would corrupt every
+        feature built from it. But it makes this property load-bearing, and it
+        failed in the quietest possible way.
+
+        When the scoreboard payload stopped carrying `seasonType`, this returned
+        None for every game, the fetch succeeded having written 0 rows, nothing
+        raised, and the scheduler's heartbeat reports `rows_written: NULL` by
+        design. Eighteen days and ~51 games of results went missing behind a
+        green dashboard, while the pregame model kept predicting every 20
+        minutes on team form frozen at 2026-07-31.
+
+        Reading both spellings is the fix. `tests/test_espn_season_type.py`
+        pins each payload shape and asserts a completed game survives.
+        """
+        for source in (self.season_type, self.season):
+            if source is None:
+                continue
+            value = source.id if source.id is not None else source.type
+            if value is not None:
+                return value
+        return None
 
 
 class ScheduleResponse(BaseModel):
