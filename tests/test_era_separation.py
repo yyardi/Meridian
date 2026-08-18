@@ -222,6 +222,14 @@ def test_the_era_buttons_do_not_wear_the_league_tabs_class():
 
 
 def test_the_analytics_page_says_whose_record_it_is():
+    """Three sections, three caveats — never a global banner that misstates
+    one model's status because of another's."""
     html = Path("static/analytics.html").read_text()
     assert "ANCHOR model's registered record" in html
-    assert "never mixed into these numbers" in html
+    assert 'id="pulsescope"' in html and 'id="quotescope"' in html
+    # each model's caveat names its own floors
+    assert "100 filled entries" in html
+    assert "500 settled fills" in html
+    # PULSE's section renders the report's verdict or an accruing chip — and
+    # like the quote page, never computes a performance number itself
+    assert "accruing — no verdict yet" in html
