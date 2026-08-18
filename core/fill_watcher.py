@@ -113,8 +113,22 @@ TERMINAL = frozenset({FILLED, CANCELLED, EXPIRED})
 #     {"activities": [...], "nextCursor": "...", "eof": false}
 #
 # Each ACTIVITY_TYPE_TRADE carries `trade.aggressorExecution` and
-# `trade.passiveExecution` (either may be null; our resting orders are the
-# passive side). Each execution embeds the full order object, and that object
+# `trade.passiveExecution`. This comment used to add "(either may be null)" —
+# it is not true, and it is worth knowing why this loop is safe anyway.
+# Measured 2026-08-17: **455 of 455** trade activities carry BOTH legs, ours
+# and the counterparty's. `trade.isAggressor` says which is ours (V22).
+#
+# This watcher reads both and is unharmed, because it matches on **venue order
+# id** against our own `orders` table: a counterparty's order id is not in it,
+# so their events are inert. That is attribution by identity rather than by
+# position in the payload, and it is the reason the same false belief cost
+# `core/audit/hand_trades.py` — which reconstructs *exposure*, where the extra
+# leg is equal and opposite — every number it published.
+#
+# Left as-is deliberately: this is the live order path, the behaviour is
+# correct, and narrowing the loop would be a change with no defect to fix.
+#
+# Each execution embeds the full order object, and that object
 # is the authoritative record:
 #
 #     trade.<side>Execution.order.id            -> the venue order id

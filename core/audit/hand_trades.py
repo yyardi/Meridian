@@ -24,9 +24,24 @@ entry price:
   per-execution commission fields are summed and shown as reported; headline
   ROI is gross, matching how C11's numbers were scored.
 
+Whose fill is it (V22, corrected 2026-08-17)
+---------------------------------------------
+A trade has two sides and **the venue sends both**. This module originally
+took every non-null execution, on the belief — stated in this docstring — that
+"the feed nulls the side that is not ours". Measured against the live feed:
+455 of 455 trade activities carry both executions, so every trade was counted
+twice, once as us and once as our counterparty, at opposite YES exposure.
+:func:`our_execution` now picks our leg by ``trade.isAggressor``, verified four
+independent ways, and refuses rather than guesses when it cannot tell.
+
+The numbers in ``docs/math/hand-trade-audit.md`` are regenerated against the
+corrected feed; the WNBA-only rows are withdrawn rather than restated, because
+this module buckets by the venue's ``sportsMarketType`` and never could tell
+WNBA from NBA.
+
 Round-trip reconstruction
 -------------------------
-Every execution becomes a signed YES-exposure delta: +q for (BUY, YES) and
+Our execution becomes a signed YES-exposure delta: +q for (BUY, YES) and
 (SELL, NO); −q for (SELL, YES) and (BUY, NO). Within one market, an episode
 runs from the moment net exposure leaves zero until it returns to zero — by
 trades, by settlement (``ACTIVITY_TYPE_POSITION_RESOLUTION`` closes whatever
@@ -137,6 +152,68 @@ def _dec(value) -> Decimal | None:
         return None
 
 
+def our_execution(trade: dict) -> tuple[dict | None, str | None]:
+    """Which of a trade's two executions is **ours**. Returns (execution, problem).
+
+    A trade has two sides and the venue sends both. The original parser here
+    took whichever executions were non-null, on the belief — written into its
+    own docstring — that "the feed nulls the side that is not ours". Measured
+    against the live feed on 2026-08-17: **455 of 455 trade activities carry
+    both**, so every trade was being counted twice, once as us and once as our
+    counterparty, with opposite YES exposure. See `docs/findings.md` V22.
+
+    ``trade.isAggressor`` is the discriminator, and four independent checks
+    agree on it across all 455:
+
+    * the leg it picks **never** has ``OUTCOME_SIDE_UNSPECIFIED`` (0/455),
+      while the other leg does 365 times — the venue redacts the counterparty's
+      outcome and never its account-holder's;
+    * likewise ``manualOrderIndicator``: never ``UNDEFINED`` on our leg, 351
+      times on theirs;
+    * all three of this system's own button orders (matched by venue order id
+      against the `orders` table) sit on the leg it picks;
+    * ``trade.qty``, the account-level quantity, equals our leg's
+      ``lastShares`` in 449/455.
+
+    The redaction pattern is also used here as a **guard**: if ``isAggressor``
+    ever picks a leg with an unspecified outcome, that is the venue changing
+    the field's meaning, and every row in an export would silently invert. It
+    refuses instead.
+
+    Ambiguity is refused, never guessed — guessing is what produced the double
+    count. The fixture shape used by the existing tests (one execution null,
+    no ``isAggressor``) still resolves, because with a single execution there
+    is nothing to choose between.
+    """
+    present = {
+        role: trade.get(key)
+        for role, key in (("aggressor", "aggressorExecution"),
+                          ("passive", "passiveExecution"))
+        if isinstance(trade.get(key), dict)
+    }
+    if not present:
+        return None, "trade carries no execution"
+
+    flag = trade.get("isAggressor")
+    if isinstance(flag, bool):
+        ours = present.get("aggressor" if flag else "passive")
+        if ours is None:
+            return None, f"isAggressor={flag} names an execution the payload omits"
+    elif len(present) == 1:
+        ours = next(iter(present.values()))
+    else:
+        return None, "both executions present and no isAggressor to choose between them"
+
+    outcome = str(((ours.get("order") or {}).get("outcomeSide")) or "")
+    if outcome.endswith("_UNSPECIFIED"):
+        return None, (
+            "the chosen execution has OUTCOME_SIDE_UNSPECIFIED, which the venue "
+            "uses only for the counterparty — isAggressor no longer means what "
+            "it did on 2026-08-17"
+        )
+    return ours, None
+
+
 def parse_activity(raw: dict) -> tuple[list[Fill], Resolution | None, bool]:
     """One raw activity → (our fills, resolution, parsed_ok).
 
@@ -156,38 +233,39 @@ def parse_activity(raw: dict) -> tuple[list[Fill], Resolution | None, bool]:
 
     trade = raw.get("trade") or {}
     market = trade.get("market") or {}
-    fills: list[Fill] = []
-    saw_execution = False
-    for side_key in ("aggressorExecution", "passiveExecution"):
-        ex = trade.get(side_key)
-        if not isinstance(ex, dict):
-            continue                 # the feed nulls the side that is not ours
-        saw_execution = True
-        order = ex.get("order") or {}
-        oid = order.get("id")
-        px = _dec(((ex.get("lastPx") or {}).get("value")))
-        shares = _dec(ex.get("lastShares"))
-        at = _parse_ts(ex.get("transactTime"))
-        side = str(order.get("side") or "")
-        outcome = str(order.get("outcomeSide") or "")
-        if not oid or px is None or shares is None or at is None \
-                or "SIDE" not in side or "OUTCOME" not in outcome:
-            return fills, None, False
-        fills.append(Fill(
-            market_slug=str(trade.get("marketSlug") or order.get("marketSlug") or ""),
-            market_type=market.get("sportsMarketType"),
-            game_start=_parse_ts(market.get("gameStartTime")),
-            at=at,
-            venue_order_id=str(oid),
-            is_buy="BUY" in side,
-            outcome_yes=outcome.endswith("_YES"),
-            yes_price=px,
-            shares=shares,
-            manual="MANUAL_ORDER_INDICATOR_MANUAL" == order.get("manualOrderIndicator"),
-            commission=_dec(((ex.get("commissionNotionalCollected") or {}).get("value")))
-            or ZERO,
-        ))
-    return fills, None, saw_execution
+
+    ex, problem = our_execution(trade)
+    if problem is not None:
+        log.warning("hand_audit_execution_undecidable", problem=problem,
+                    market=trade.get("marketSlug"))
+        return [], None, False
+    if ex is None:
+        return [], None, True        # nothing of ours on this trade
+
+    order = ex.get("order") or {}
+    oid = order.get("id")
+    px = _dec(((ex.get("lastPx") or {}).get("value")))
+    shares = _dec(ex.get("lastShares"))
+    at = _parse_ts(ex.get("transactTime"))
+    side = str(order.get("side") or "")
+    outcome = str(order.get("outcomeSide") or "")
+    if not oid or px is None or shares is None or at is None \
+            or "SIDE" not in side or "OUTCOME" not in outcome:
+        return [], None, False
+    return [Fill(
+        market_slug=str(trade.get("marketSlug") or order.get("marketSlug") or ""),
+        market_type=market.get("sportsMarketType"),
+        game_start=_parse_ts(market.get("gameStartTime")),
+        at=at,
+        venue_order_id=str(oid),
+        is_buy="BUY" in side,
+        outcome_yes=outcome.endswith("_YES"),
+        yes_price=px,
+        shares=shares,
+        manual="MANUAL_ORDER_INDICATOR_MANUAL" == order.get("manualOrderIndicator"),
+        commission=_dec(((ex.get("commissionNotionalCollected") or {}).get("value")))
+        or ZERO,
+    )], None, True
 
 
 # --------------------------------------------------------------------------- #
@@ -483,13 +561,18 @@ def run_audit(activities: list[dict], excluded_ids: set[str],
                 excluded += 1
                 continue
             if not f.manual:
-                # Kept, and correctly so. The exclusion rule is venue id, not
-                # this flag: 28 fills marked AUTOMATIC were observed spanning
-                # May–August across NBA/IPL/EPL/ATP — months before this
-                # system could place an order — so the indicator marks some
-                # app flow, not machine trading, and is recorded here only as
-                # context. If this count ever grows in step with button
-                # orders, THEN revisit the exclusion set.
+                # Kept, and the exclusion rule stays venue order id. This
+                # counter used to read 28, which was cited as evidence that
+                # the venue's AUTOMATIC flag "marks some app flow, not machine
+                # trading" — 28 obvious hand trades across four sports, months
+                # before this system could order. They were **counterparty**
+                # fills (V22): the flag was never ours to read. On our own leg
+                # AUTOMATIC appears exactly 3 times, which is exactly the three
+                # button orders. So the flag has been truthful all along, and
+                # V19's parked question is answered. The id rule still stands
+                # on its own merits — the human trades the same markets at the
+                # same prices — but this counter is now a real signal: if it
+                # grows without button orders growing, something is off.
                 non_manual_kept += 1
             fills.append(f)
 
