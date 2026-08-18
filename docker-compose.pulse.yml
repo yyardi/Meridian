@@ -1,0 +1,39 @@
+# The PULSE live engine, as a compose OVERLAY:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.pulse.yml up -d pulse-engine
+#
+# A separate file, the quote engine's own precedent: the overlay ships without
+# touching docker-compose.yml, and the deploy stays operator-gated between
+# slates — nothing starts because this file merged. Fold the block into the
+# main file when the operator has watched a slate run
+# (docs/math/pulse-live.md, ops notes).
+#
+# Shadow only: the engine reads the LOCAL tick database (the same postgres the
+# live recorder writes), writes decision rows and one heartbeat back to it,
+# and touches the venue only through the public settlement endpoint. Sizing
+# reads stored account_balances rows and NEVER fetches. No credentials are
+# mounted because none are needed — the absence of POLYMARKET_* below is
+# load-bearing, and an AST-level test additionally pins that the engine
+# cannot import the executor or any venue-writing client.
+services:
+  pulse-engine:
+    build: .
+    container_name: meridian-pulse-engine
+    # alembic upgrade first: pulse_decisions is one revision newer than what a
+    # long-running deployment may have, and an engine that starts before its
+    # table exists crash-loops. Concurrent upgrades from sibling services are
+    # safe — Alembic serializes on a Postgres advisory lock.
+    command: ["sh", "-c", "alembic upgrade head && python -m core.pulse.live"]
+    environment:
+      # LOCAL, like the live recorder and the quote engine: the 200ms tick
+      # stream this loop decides on never leaves this machine.
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      MERIDIAN_PULSE_INTERVAL_SECONDS: "1"
+      MERIDIAN_PULSE_SETTLE_EVERY_SECONDS: "600"
+      MERIDIAN_PULSE_PROFIT_TARGET: "0.05"
+      MERIDIAN_PULSE_STOP_ADVERSE: "0.10"
+      MERIDIAN_PULSE_HOLD_LOG_SECONDS: "60"
+      MERIDIAN_PULSE_MAX_OPEN_PER_EVENT: "3"
+    depends_on:
+      - postgres
+    restart: unless-stopped
