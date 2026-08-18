@@ -330,7 +330,7 @@ def main() -> int:
     # tomorrow. This is an operator-facing artifact; it follows the operator's
     # clock. Row timestamps still carry both zones.
     today = dt.datetime.now(CENTRAL).date().isoformat()
-    xlsx = args.out or (paths.data_dir() / "exports" / f"wnba-trades-{today}.xlsx")
+    xlsx = args.out or (paths.exports_dir() / f"wnba-trades-{today}.xlsx")
     csv_path = xlsx.with_suffix(".csv")
     for path in (xlsx, csv_path):
         if path.exists() and not args.force:

@@ -21,10 +21,11 @@ The rules:
 
   **"Generated" does not imply "regenerable", and the distinction is a
   deletion hazard.** ``reports/`` is safe to clear because every byte of it
-  can be rebuilt by re-running a job. A future subtree holding generated
-  output that carries anything a human typed — an annotated export, a sheet
-  with the operator's reasoning in it — cannot be rebuilt by anything, and a
-  retention rule copied from ``reports/`` on the strength of both being
+  can be rebuilt by re-running a job. ``exports/`` is not, and it is no longer
+  hypothetical: it holds the operator's WNBA trade sheet, whose last three
+  columns are filled in by hand. Regenerate it and the reasoning is gone —
+  nothing can rebuild that, which is why the writer refuses to overwrite.
+  A retention rule copied from ``reports/`` on the strength of both being
   "outputs" would destroy the only irreplaceable thing under this root.
   Check regenerability per subtree, never by category.
 
@@ -89,6 +90,23 @@ def supabase_dir() -> Path:
 def reports_dir() -> Path:
     """Regenerable outputs (analytics.json). Not an archive."""
     return data_dir() / "reports"
+
+
+def exports_dir() -> Path:
+    """Operator-facing exports (the hand-annotation trade sheet).
+
+    Deliberately plain: no ``DATA_DIR_CONTAINER`` counterpart and no compose
+    mount, because unlike :func:`analytics_path` there is no container side to
+    agree with. Nothing in any image reads or writes this; it is written by a
+    host script and opened by a human. Giving it a mount would widen a
+    container's view of the artifact root to protect nothing — and the api's
+    mount was narrowed to ``reports/`` on 2026-08-17 for exactly that reason.
+
+    **Generated, but NOT regenerable** — see the deletion hazard in the module
+    docstring. Once the operator has written in the annotation columns, that
+    file is the only copy of those notes.
+    """
+    return data_dir() / "exports"
 
 
 def analytics_path() -> Path:
