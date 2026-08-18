@@ -59,15 +59,16 @@ The operator held an open position while ``assetNotional`` read 0 — the
 balances payload does not carry positions on this venue. They live at
 ``GET /v1/portfolio/positions`` (docs.polymarket.us): a **map** of market slug
 to position, with ``netPositionDecimal`` (signed quantity), ``cost`` (basis)
-and ``cashValue``. The docs disagree with themselves about ``cashValue``: the
-REST page calls it "unrealized PnL", the SDK page "current unrealized value"
-i.e. market value. This module takes the SDK reading AND verifies it whenever
-it can: a position in a market we record is cross-checked against our own book
-mid, and the verdict is logged (``bankroll_cashvalue_semantics``). Until a
-real position has been observed, the reading is provisional and every
-per-position value is clamped to ±quantity — the most a binary contract can
-be worth — so the wrong interpretation cannot mis-state equity by more than
-the position's own size.
+and ``cashValue``. The docs disagreed with themselves about ``cashValue`` —
+the REST page called it "unrealized PnL", the SDK page "current unrealized
+value" — and **Polymarket support settled it (2026-08-18)**: ``cashValue`` is
+the position's current market value, unrealized PnL is ``cashValue − cost``,
+and ``assetNotional`` staying 0 while positions are open is *intended* —
+position exposure is represented only through the positions endpoint. The
+clamp to ±quantity stays (a binary contract is worth at most $1; it now
+guards venue-side bugs rather than a doc reading), and
+``verify_position_value`` stays as the empirical cross-check of what support
+said — a confirmation in an email is not yet an observation in a log.
 
 Two numbers now leave this module, deliberately distinct:
 
@@ -156,11 +157,10 @@ def _amount(obj, field: str) -> Decimal:
 class Position:
     """One open position, in the venue's own fields.
 
-    ``value`` is the equity contribution: ``cashValue`` under the SDK reading,
-    clamped to ±``quantity`` because a binary contract is worth at most $1 —
-    the clamp bounds the damage of the other documented reading to the
-    position's own size, and the cross-check in :func:`verify_position_value`
-    is what retires the ambiguity with data.
+    ``value`` is the equity contribution: ``cashValue``, confirmed by venue
+    support (2026-08-18) as the position's current market value. Clamped to
+    ±``quantity`` because a binary contract is worth at most $1 — the clamp
+    now guards venue-side bugs, not a doc ambiguity.
     """
 
     market_slug: str
@@ -178,6 +178,12 @@ class Position:
         cap = abs(self.quantity)
         return max(-cap, min(self.cash_value, cap))
 
+    @property
+    def unrealized(self) -> Decimal:
+        """``cashValue − cost`` — support's definition, stated explicitly so
+        no reader re-derives it wrong from the once-ambiguous docs."""
+        return self.value - self.cost
+
     def to_dict(self) -> dict:
         return {
             "market_slug": self.market_slug,
@@ -187,6 +193,7 @@ class Position:
             "cash_value": float(self.cash_value),
             "value": float(self.value),
             "realized": float(self.realized),
+            "unrealized": float(self.unrealized),
             "expired": self.expired,
             "title": self.title,
             "outcome": self.outcome,
@@ -423,13 +430,14 @@ def fetch(client=None) -> AccountSnapshot:
 
 
 def verify_position_value(position: Position, mid: float) -> str:
-    """Which documented reading of ``cashValue`` fits this observation?
+    """Does ``cashValue`` behave the way support says it does?
 
-    Called opportunistically from :func:`refresh` for positions in markets we
-    record, where our own book supplies an independent mark. Returns the
-    verdict it logs: ``value`` (SDK reading — cashValue ≈ quantity×mid),
-    ``pnl`` (REST reading — cashValue ≈ quantity×mid − cost), or
-    ``ambiguous``. Observational only; nothing branches on it yet.
+    Support confirmed (2026-08-18) that ``cashValue`` is market value — the
+    ``value`` verdict here. The check stays because a confirmation in an
+    email is not an observation in a log: every position in a recorded market
+    still gets compared against our own book, and a ``pnl`` verdict now means
+    the venue's behaviour disagrees with its support's answer, which is worth
+    knowing loudly. Observational only; nothing branches on it.
     """
     q = float(position.quantity)
     as_value = abs(float(position.cash_value) - q * mid)
@@ -611,10 +619,32 @@ def main() -> int:
     parser.add_argument("--refresh", action="store_true",
                         help="poll the venue and store the reading")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--raw", action="store_true",
+                        help="print the raw balances and positions bodies, "
+                             "for reconciling fields with venue support")
     args = parser.parse_args()
 
     logging.basicConfig(format="%(message)s", stream=sys.stderr, level=logging.WARNING)
     import core.storage  # noqa: F401  loads .env, like every CLI here
+
+    if args.raw:
+        # The two bodies support asked to see side by side for one open
+        # position. Nothing in either is a credential; the account id is the
+        # only thing worth redacting before sending.
+        from core.polymarket.client import PolymarketAuthedClient, USCredentials
+        client = PolymarketAuthedClient(USCredentials.from_env())
+        try:
+            for label, path in (("balances", BALANCES_PATH),
+                                ("positions", POSITIONS_PATH)):
+                resp = client.get(path)
+                print(f"--- GET {path} (HTTP {resp.status_code}) ---")
+                try:
+                    print(json.dumps(json.loads(resp.body_text), indent=2))
+                except ValueError:
+                    print(resp.body_text[:2000])
+        finally:
+            client.close()
+        return 0
 
     try:
         snapshot = refresh() if args.refresh else current()
