@@ -341,11 +341,35 @@ function renderBankroll(b){
     return;
   }
   const secs = b.age_seconds ?? 0;
-  if(el) el.innerHTML = `Bankroll <b>$${b.bankroll.toFixed(2)}</b> `
-    + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · positions `
-    + `$${(b.asset_notional??0).toFixed(2)} · ${agef(secs)} ago</span>`;
+  /* Positions come from /v1/portfolio/positions now — the balances payload
+     kept reading $0 in positions while the operator was in a live trade.
+     `equity` is cash + clamped position values; `bankroll` (sizing) is still
+     cash alone. "positions unread" is a different claim from "$0.00": the
+     first means the endpoint failed, the second that the account is flat. */
+  const posTxt = b.positions_read_ok === false
+    ? '<span class="warnc">positions unread</span>'
+    : `positions $${(b.positions_value??0).toFixed(2)}`
+      + ((b.n_positions??0) ? ` (${b.n_positions} open)` : "");
+  if(el){
+    let rows = "";
+    if((b.positions||[]).length){
+      rows = `<table style="margin-top:6px"><thead><tr>
+        <th class="l">Position</th><th>Qty</th><th>Cost</th><th>Value</th>
+        <th>Realized</th></tr></thead><tbody>${b.positions.map(pn=>`
+        <tr>
+          <td class="l">${pn.title||shortSlug(pn.market_slug)}${pn.outcome?` <span class="dimc">${pn.outcome}</span>`:""}</td>
+          <td>${pn.quantity.toFixed(2)}</td>
+          <td>$${pn.cost.toFixed(2)}</td>
+          <td class="${pn.value>=pn.cost?"pos":"neg"}">$${pn.value.toFixed(2)}</td>
+          <td class="dimc">$${pn.realized.toFixed(2)}</td>
+        </tr>`).join("")}</tbody></table>`;
+    }
+    el.innerHTML = `Bankroll <b>$${((b.equity??b.bankroll)).toFixed(2)}</b> `
+      + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · ${posTxt}`
+      + ` · ${agef(secs)} ago</span>${rows}`;
+  }
   if(st){
-    st.textContent = "$" + b.bankroll.toFixed(2);
+    st.textContent = "$" + (b.equity??b.bankroll).toFixed(2);
     st.className = "v num " + (secs >= 3600 ? "neg" : "pos");
   }
 }
