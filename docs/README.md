@@ -43,6 +43,7 @@ The modelling, stated precisely enough to argue with.
 | [write-latency.md](math/write-latency.md) | How fast can we *act*? (our poll loop beats the venue's network cost 7:1) |
 | [calibration-problem.md](math/calibration-problem.md) | ⚠️ **Open problem** — why the model's probabilities carry no signal |
 | [hand-trade-audit.md](math/hand-trade-audit.md) | The human's app trading scored at prices (descriptive — n too small for any verdict) |
+| [moneyline-spread-baseline.md](math/moneyline-spread-baseline.md) | Do the moneyline and spread have an edge? (**neither** — both CIs cross zero; CLV structurally unavailable) |
 | [injury-delta.md](math/injury-delta.md) | Is injury awareness worth anything? (**not yet measurable** — wired and point-in-time correct, but zero overlapping games) |
 | [research-notes.md](math/research-notes.md) | What the betting-markets literature says, tied to actions here |
 | [performance-targets.md](math/performance-targets.md) | Pre-registered bars for "good", sample sizes, gates before real money |
