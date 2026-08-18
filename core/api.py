@@ -824,6 +824,14 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
     which board you are looking at.
     """
     lg = _league_or_400(league)
+    if not lg.recorded:
+        # Short-circuit before the query, matching /api/games. Without this an
+        # unrecorded league still walks every prediction on record and discards
+        # all of them — seconds of work to return nothing, and seconds is
+        # exactly the window the page's stale-response guard has to cover.
+        return {"picks": [], "predicted_at": None, "league": lg.slug,
+                "league_name": lg.name, "recorded": False,
+                "empty_state": lg.empty_state}
     with _Session() as s:
         pred_time = s.scalar(select(func.max(Prediction.predicted_at)))
         if pred_time is None:

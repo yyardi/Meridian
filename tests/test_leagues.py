@@ -94,3 +94,43 @@ def test_no_page_strips_a_hardcoded_league_slug():
         body = page.read_text()
         assert '"wnba-"' not in body, page.name
         assert "-wnba-/" not in body, page.name
+
+
+def test_an_unrecorded_league_short_circuits_before_the_query(client):
+    """A league with no data must not walk every prediction on record to
+    return nothing.
+
+    Seconds of pointless work is not the real cost — the window is. While that
+    request is in flight the page can still be painted by a slower response for
+    the league the operator just left, so the shorter this is, the less the
+    stale-response guard has to cover. `/api/games` already did this; `/api/picks`
+    is the one with the SEND buttons on it and did not.
+    """
+    body = client.get("/api/picks?league=nba").json()
+    assert body["recorded"] is False
+    assert body["picks"] == []
+    assert body["predicted_at"] is None
+    assert body["empty_state"]
+
+
+def test_every_league_scoped_loader_checks_the_league_before_painting():
+    """The stale-response race, pinned in the pages themselves.
+
+    /api/picks?league=wnba took 3.2s against an unrecorded league answering in
+    2ms, so switching away mid-flight let the slow response land LAST and
+    repaint the picks table under the wrong tab — with live SEND buttons on
+    markets for a league the operator was not looking at. Reproduced in a
+    browser before the fix and again after.
+
+    Every fetch whose URL carries a league must be followed by the guard; a
+    loader added later without one reintroduces the same bug silently.
+    """
+    for page in ("picks.html", "index.html"):
+        src = (REPO / "static" / page).read_text()
+        assert "function stale(league)" in src, f"{page} has no guard"
+        for line_no, line in enumerate(src.splitlines(), 1):
+            if "league=${encodeURIComponent(" in line:
+                window = "\n".join(src.splitlines()[line_no - 1:line_no + 6])
+                assert "stale(league)" in window, (
+                    f"{page}:{line_no} fetches a league without a stale check"
+                )
