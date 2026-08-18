@@ -47,6 +47,17 @@
   .kpi .k{color:var(--faint);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase}
   .kpi .v{font-size:17px;margin-top:3px}
   .empty{padding:24px;color:var(--faint);text-align:center}
+  /* A market with no order behind it. Visible, and visibly not orderable —
+     the reason sits where the SEND button would be. */
+  tr.notact td{opacity:.62}
+  tr.notact:hover td{opacity:1}
+  .sideOff{display:inline-block;min-width:46px;text-align:center;font-size:9.5px;
+           padding:1px 5px;border-radius:2px;font-weight:700;
+           background:#171c26;color:#7c879b}
+  .moved{font-size:9.5px;color:var(--warn);cursor:help;font-weight:700}
+  .whynot{font-size:9.5px;letter-spacing:.04em;color:var(--faint);cursor:help;
+          border:1px solid var(--line);border-radius:3px;padding:1px 6px;
+          display:inline-block;white-space:nowrap}
 
   /* --- health stats, carried over from the old live board --------------- */
   .stat{display:flex;gap:6px;align-items:baseline}
@@ -320,70 +331,223 @@ function renderBankroll(b){
     + `</span> — every stake below is a fraction of this.`;
 }
 
-function renderPicks(d){
-  const f = d.filtered || {};
-  $("#hint").textContent =
-    ` — next ${d.horizon_hours}h only · ${f.beyond_horizon||0} far-dated and `
-    + `${f.spread_too_wide||0} wide-spread markets hidden`;
+/* --- the market board -------------------------------------------------- *
+ * Every market on the board gets a row, not only the ones that are
+ * actionable. The picks-only version shipped with "No tradeable pregame
+ * markets right now" on a night with 95 quoted markets — technically true and
+ * useless: the operator reads this page to see lines, and a page that hides
+ * every line whenever nothing is orderable answers a question nobody asked.
+ *
+ * Rows that ARE picks carry the server's own numbers verbatim — buy/sell,
+ * return, size, stake — and a SEND button. Rows that are not render the same
+ * columns greyed, with the reason in place of the button.                  */
 
-  if(!d.picks || !d.picks.length){
-    PICK_EVENTS = new Set();
-    renderStrip();
-    $("#picks").innerHTML = '<div class="empty">No tradeable pregame markets right now.<br>'
-      + '<span style="font-size:10.5px">Games further out are excluded on purpose: measured on a live board, '
-      + 'markets 6–24h away had a 20¢ median spread (67% wider than 10¢) versus 1¢ inside 6h. '
-      + 'Those prices are not real quotes yet.</span></div>';
+//: Mirrors of the server's pick filters, used ONLY to explain a row that is
+//: already absent from /api/picks — never to decide whether one is tradable.
+//: Verified against the live board: these reproduce /api/picks `filtered`
+//: exactly (77 far-dated, 1 moneyline, 17 unanchored, 0 wide).
+const HORIZON_HOURS = 14, MAX_TRADEABLE_SPREAD = 0.06;
+
+/* The actionable side and its frame, derived the way /api/picks derives it.
+ *
+ * Only ever applied to rows that are NOT picks. Those have no order path, so
+ * a client-side derivation here cannot disagree with anything that places an
+ * order. A row that IS a pick uses the server's numbers and is never
+ * recomputed — two renderings of one tradable decision is exactly the drift
+ * this page was merged to remove. */
+function positionView(r){
+  if(r.bid == null || r.ask == null || r.model == null) return null;
+  const edgeYes = r.model - r.ask, edgeNo = r.bid - r.model;
+  const yes = edgeYes >= edgeNo;
+  // Deliberately the server's LABEL convention (ticket.label: "BUY IND -16.5",
+  // "OVER 175.5"), not its `side` field, which stays YES/NO for spreads. These
+  // rows sit directly beside pick rows that show the label, so matching the
+  // label is what keeps one table reading in one language.
+  const side = r.type === "total" ? (yes ? "OVER" : "UNDER")
+             : r.type === "spread" ? (yes ? "BUY" : "SELL")
+             : (yes ? "YES" : "NO");
+  // A binary's two sides are one book seen from opposite ends:
+  // NO bid = 1 - YES ask. Flip the whole row or none of it.
+  return yes
+    ? {side, bid: r.bid, ask: r.ask, model: r.model, edge: edgeYes}
+    : {side, bid: 1 - r.ask, ask: 1 - r.bid, model: 1 - r.model, edge: edgeNo};
+}
+
+/* Why this row has no SEND button. A blank cell reads as a malfunction. */
+function whyNotActionable(r, hrs){
+  if(r.pricing_state === "in_play")
+    return ["in-play", "game in progress — the model is pregame-only and does not price a running game. Not an error."];
+  if(r.pricing_state === "finished")
+    return ["final", "this game has finished; its last quote never updates again"];
+  if(r.bid == null || r.ask == null)
+    return ["no quotes", "no two-sided quote on this rung"];
+  if(r.model == null)
+    return ["no model", "no model price for this market yet"];
+  if(hrs != null && hrs <= 0)
+    return ["started", "past tipoff"];
+  if(hrs != null && hrs > HORIZON_HOURS)
+    return [`beyond ${HORIZON_HOURS}h`,
+            `tips in ${hrs.toFixed(1)}h. Far-dated boards are not really quoted yet — measured, 6–24h out the median spread was 20¢ against 1¢ inside 6h.`];
+  if(r.spread != null && r.spread > MAX_TRADEABLE_SPREAD)
+    return [`spread ${(r.spread*100).toFixed(0)}¢`,
+            `wider than the ${MAX_TRADEABLE_SPREAD*100}¢ tradeable limit — not a usable price whatever the timing`];
+  if(r.type === "winner")
+    return ["moneyline", "the executor refuses the moneyline on measured evidence: 25–33% hit rate, whole CI below the 52.4% breakeven"];
+  // Everything else passed, so the server's actionability gate is what held
+  // it back: the model is logged but its sportsbook anchor is missing or too
+  // old to act on. The age itself is not exposed by any endpoint.
+  return ["no fresh line",
+          "logged but not actionable — the sportsbook anchor behind this model price is missing or too old to act on"];
+}
+
+function renderBoard(b, picksBySlug){
+  const rows = b.markets || [];
+  if(!rows.length){
+    $("#hint").textContent = "";
+    $("#picks").innerHTML = `<div class="empty">${
+      b.recorded === false ? b.empty_state : "no markets on the board"}</div>`;
     return;
   }
-  // Group by game, ordered by tipoff.
+  const nPicks = Object.keys(picksBySlug).length;
+  $("#hint").textContent =
+    ` — ${rows.length} markets on the board · ${nPicks} actionable`
+    + (nPicks ? "" : " · nothing orderable right now, lines shown anyway");
+
+  const now = Date.now();
   const games = [];
-  PICK_EVENTS = new Set(d.picks.map(p => p.event_slug));
-  renderStrip();
-  for(const p of d.picks){
-    let g = games.find(x => x.ev === p.event_slug);
-    if(!g){ g = {ev: p.event_slug, start: p.game_start, hrs: p.hours_to_tipoff, rows: []}; games.push(g); }
-    g.rows.push(p);
+  for(const r of rows){
+    let g = games.find(x => x.ev === r.event_slug);
+    if(!g){ g = {ev: r.event_slug, start: r.game_start, rows: []}; games.push(g); }
+    if(r.game_start && (!g.start || r.game_start < g.start)) g.start = r.game_start;
+    g.rows.push(r);
   }
+  games.sort((x, y) => (x.start || "").localeCompare(y.start || ""));
+
   // No SHADOW column. The old live board carried one (REST/CROSS + the sizer's
-  // quantity) and it did not come across the merge: it duplicated what the
-  // confirm ticket already computes live off the price actually in the box —
-  // the ticket's rests/crosses label moves as you nudge the price, while a
-  // column showed the verdict for a limit price nobody was going to send. Two
-  // numbers for one decision, and the stale one was the bigger.
+  // quantity) and it did not come back with the tables: it duplicated what the
+  // confirm ticket already computes live off the price actually in the box.
   $("#picks").innerHTML = games.map(g => {
-    const nm = shortEvent(g.ev);
-    const when = new Date(g.start).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"});
-    const soon = g.hrs <= 3;
+    const hrs = g.start ? (new Date(g.start).getTime() - now) / 3.6e6 : null;
+    const when = g.start
+      ? new Date(g.start).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"}) : "—";
+    const tip = hrs == null ? "" : hrs <= 0 ? "underway"
+      : `tips in <span class="${hrs <= 3 ? "warnc" : "dimc"}">${hrs.toFixed(1)}h</span>`;
+    const acts = g.rows.filter(r => picksBySlug[r.market_slug]).length;
+
+    // Actionable rows first — the reason to open the page — then by edge.
+    const ordered = g.rows.slice().sort((a, c) => {
+      const pa = !!picksBySlug[a.market_slug], pc = !!picksBySlug[c.market_slug];
+      if(pa !== pc) return pa ? -1 : 1;
+      const ea = (positionView(a) || {}).edge ?? -99, ec = (positionView(c) || {}).edge ?? -99;
+      return ec - ea;
+    });
+
     return `<div style="margin-bottom:6px;margin-top:14px;font-size:11px">
-        <b>${nm}</b> <span class="dimc">· ${when} · tips in
-        <span class="${soon?"warnc":"dimc"}">${g.hrs}h</span> · ${g.rows.length} markets</span>
+        <b>${shortEvent(g.ev)}</b> <span class="dimc">· ${when} · ${tip} ·
+        ${g.rows.length} markets${acts ? ` · <span class="pickc">${acts} actionable</span>` : ""}</span>
       </div>
       <table><thead><tr>
-        <th class="l">Position</th><th>BUY at</th><th>SELL at</th><th>Return</th>
+        <th class="l">Position</th><th>Line</th><th>BUY at</th><th>SELL at</th><th>Return</th>
         <th>Size</th><th>Stake</th>
         <th class="dimc">Bid</th><th class="dimc">Ask</th><th class="dimc">Spr</th>
-        <th class="dimc">Model</th><th class="dimc">Edge</th><th></th>
-      </tr></thead><tbody>${g.rows.map((p,i)=>`
-        <tr>
-          <td class="l"><span class="side ${["OVER","YES","BUY"].includes(p.side)?"sideY":"sideN"}">${
-            p.ticket ? p.ticket.label : (p.human||shortSlug(p.market_slug))}</span></td>
-          <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.buy_at):"—"}</b></td>
-          <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.sell_at):"—"}</b></td>
-          <td class="${p.ticket&&p.ticket.return_pct>0?"pos":"neg"}">${
-            p.ticket?pct(p.ticket.return_pct):"—"}</td>
-          <td>${p.ticket && !p.ticket.too_small ? num(p.ticket.size,1)
-                : '<span class="dimc" title="The Kelly sizer wanted less than the venue minimum at this bankroll. That is a statement about bankroll, not about the market — you can still size it yourself.">not sized</span>'}</td>
-          <td>${p.ticket&&!p.ticket.too_small?"$"+p.ticket.stake.toFixed(2):'<span class="dimc">—</span>'}</td>
-          <td class="dimc">${num(p.bid)}</td><td class="dimc">${num(p.ask)}</td>
-          <td class="dimc">${(p.spread*100).toFixed(0)}¢</td>
-          <td class="dimc">${num(p.model)}</td>
-          <td class="dimc">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}</td>
-          <td>${sendCell(p)}</td>
-        </tr>`).join("")}</tbody></table>`;
+        <th class="dimc">Model FV</th><th class="dimc">Edge</th>
+        <th class="dimc">Age</th><th></th>
+      </tr></thead><tbody>${ordered.map(r => {
+        const p = picksBySlug[r.market_slug];
+        // The board row is passed alongside so a pick can show the age of the
+        // LIVE quote, and flag when the book has moved off the price it was
+        // priced against.
+        return p ? pickRow(p, r) : boardRow(r, hrs);
+      }).join("")}</tbody></table>`;
   }).join("");
-  document.querySelectorAll(".sendbtn[data-key]").forEach(b=>{
-    b.addEventListener("click", () => openTicket(PICKS[b.dataset.key]));
+
+  document.querySelectorAll(".sendbtn[data-key]").forEach(b2 => {
+    b2.addEventListener("click", () => openTicket(PICKS[b2.dataset.key]));
   });
+}
+
+/* The live quote for a pick, in the pick's own frame.
+ *
+ * /api/picks and /api/board do not read the same thing. A pick's bid/ask are
+ * `Prediction.market_bid/ask`, frozen at `predicted_at`; the board's are the
+ * latest `MarketSnapshot`. Predictions run every 20 minutes, so a pick can be
+ * that stale — measured here, a 174.5 total was priced against ask 0.44 while
+ * the book had moved to 0.48.
+ *
+ * Putting both in one table without saying so is how a row ends up with every
+ * number individually right and the row as a whole wrong. So each row stays
+ * internally consistent — pick rows entirely the server's, board rows
+ * entirely the board's — and where the two disagree the row says so. */
+function livePrice(br, p){
+  if(!br || br.bid == null || br.ask == null) return null;
+  // A binary's two sides are one book from opposite ends. Use the side the
+  // SERVER chose for this pick, never a re-derived one.
+  const no = p.side === "NO" || p.side === "UNDER";
+  return no ? {bid: 1 - br.ask, ask: 1 - br.bid} : {bid: br.bid, ask: br.ask};
+}
+
+function movedChip(p, br){
+  const live = livePrice(br, p);
+  if(!live || p.ask == null) return "";
+  const d = live.ask - p.ask;
+  if(Math.abs(d) < 0.005) return "";
+  return ` <span class="moved" title="Priced against ask ${num(p.ask)} at the last model run; the book is ${
+    num(live.ask)} now (${d > 0 ? "+" : ""}${(d*100).toFixed(0)}¢). Return and edge on this row are as of that run, not as of now.">${
+    d > 0 ? "▲" : "▼"}${Math.abs(d*100).toFixed(0)}¢</span>`;
+}
+
+/* An actionable row. Every number is the server's; none is recomputed here. */
+function pickRow(p, br){
+  return `<tr>
+    <td class="l"><span class="side ${["OVER","YES","BUY"].includes(p.side)?"sideY":"sideN"}">${
+      p.ticket ? p.ticket.label : (p.human||shortSlug(p.market_slug))}</span></td>
+    <td class="num">${p.line==null?'<span class="dimc">—</span>':p.line.toFixed(1)}</td>
+    <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.buy_at):"—"}</b></td>
+    <td class="${p.ticket?"pos":""}"><b>${p.ticket?num(p.ticket.sell_at):"—"}</b></td>
+    <td class="${p.ticket&&p.ticket.return_pct>0?"pos":"neg"}">${
+      p.ticket?pct(p.ticket.return_pct):"—"}</td>
+    <td>${p.ticket && !p.ticket.too_small ? num(p.ticket.size,1)
+          : '<span class="dimc" title="The Kelly sizer wanted less than the venue minimum at this bankroll. That is a statement about bankroll, not about the market — you can still size it yourself.">not sized</span>'}</td>
+    <td>${p.ticket&&!p.ticket.too_small?"$"+p.ticket.stake.toFixed(2):'<span class="dimc">—</span>'}</td>
+    <td class="dimc">${num(p.bid)}</td><td class="dimc">${num(p.ask)}</td>
+    <td class="dimc">${(p.spread*100).toFixed(0)}¢</td>
+    <td class="dimc">${num(p.model)}</td>
+    <td class="dimc">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}${movedChip(p, br)}</td>
+    <td class="num ${ageCls(br)}" title="age of the live quote for this market">${br?agef(br.age_seconds):"—"}</td>
+    <td>${sendCell(p)}</td>
+  </tr>`;
+}
+
+//: Rows come from writers on very different cadences — 200ms live, 15 min
+//: pregame — so freshness is per row, never per page.
+function ageCls(br){
+  const a = br ? br.age_seconds : null;
+  return a == null ? "dimc" : a <= 5 ? "" : a <= 1200 ? "dimc" : "stale";
+}
+
+/* A market with no order behind it. Same columns, greyed, reason where the
+   button would be — visible, and visibly not orderable. */
+function boardRow(r, hrs){
+  const v = positionView(r);
+  const [why, explain] = whyNotActionable(r, hrs);
+  // The slug already encodes the rung; the line has its own column now, so
+  // repeating it in the label read as two different numbers.
+  const label = shortSlug(r.market_slug);
+  return `<tr class="notact">
+    <td class="l">${v
+      ? `<span class="side sideOff">${v.side}</span> <span class="dimc">${label}</span>`
+      : `<span class="dimc">${label}</span>`}</td>
+    <td class="num">${r.line==null?'<span class="dimc">—</span>':r.line.toFixed(1)}</td>
+    <td class="dimc">—</td><td class="dimc">—</td><td class="dimc">—</td>
+    <td class="dimc">—</td><td class="dimc">—</td>
+    <td class="dimc">${v?num(v.bid):num(r.bid)}</td>
+    <td class="dimc">${v?num(v.ask):num(r.ask)}</td>
+    <td class="dimc">${r.spread==null?"—":(r.spread*100).toFixed(0)+"¢"}</td>
+    <td class="dimc">${v?num(v.model):num(r.model)}</td>
+    <td class="dimc">${v?pct(v.edge):"—"}</td>
+    <td class="num ${ageCls(r)}" title="age of the live quote for this market">${agef(r.age_seconds)}</td>
+    <td><span class="whynot" title="${explain.replace(/"/g,"&quot;")}">${why}</span></td>
+  </tr>`;
 }
 
 /* --- human-confirmed order path ---------------------------------------- *
@@ -1230,35 +1394,48 @@ function loadGames(league){
    the operator is not looking at. */
 function stale(league){ return league !== LEAGUE; }
 
-function loadPicks(league){
-  fetch(`/api/picks?league=${encodeURIComponent(league)}`)
-    .then(r=>r.json())
-    .then(d => {
-      if(stale(league)) return;
-      // After the guard, not before. A stale response does carry a correct
-      // bankroll — the balance is league-invariant — so exempting this one
-      // field would be harmless today. It is still the wrong shape: the
-      // exemption would rest on a property of the DATA that nothing enforces,
-      // and a per-league or per-venue balance would turn it into precisely the
-      // render-whatever-arrives-last bug this guard exists to kill. One rule,
-      // no carve-outs.
-      //
-      // Before the unrecorded-league return, though: the bankroll is a fact
-      // about the ACCOUNT, true on a league we do not record, and the server
-      // sends it on that path for exactly that reason.
-      renderBankroll(d.bankroll);
-      if(d.recorded === false){
-        $("#hint").textContent = "";
-        $("#picks").innerHTML = `<div class="empty">${d.empty_state}</div>`;
-        // Clear the strip's marks as well: without this the previous league's
-        // "picks below" survives a tab switch onto a league with no data.
-        PICK_EVENTS = new Set();
-        renderStrip();
-        return;
-      }
-      renderPicks(d);
-    });
+async function loadPicks(league){
+  /* Two endpoints, one table. /api/board is every market on the board;
+     /api/picks is the subset with an order behind it. Fetched together so a
+     row can never show a SEND button from one snapshot beside a price from
+     another. */
+  let board, picks;
+  try{
+    [board, picks] = await Promise.all([
+      fetch(`/api/board?league=${encodeURIComponent(league)}`).then(r=>r.json()),
+      fetch(`/api/picks?league=${encodeURIComponent(league)}`).then(r=>r.json()),
+    ]);
+  } catch(e){ return; }
+  if(stale(league)) return;
+
+  // After the stale guard, before the unrecorded-league return — B's rule and
+  // B's reason, kept verbatim through this rewrite because I got it wrong once
+  // already here. After the guard: a stale response carries a correct bankroll
+  // today (the balance is league-invariant), but exempting one field would
+  // rest on a property of the DATA that nothing enforces, and a per-venue
+  // balance would turn it into the render-whatever-arrives-last bug the guard
+  // exists to kill. Before the return: the bankroll is a fact about the
+  // ACCOUNT, true on a league we do not record, and the server sends it on
+  // that path for exactly that reason.
+  renderBankroll(picks.bankroll);
+
+  if(board.recorded === false){
+    $("#hint").textContent = "";
+    $("#picks").innerHTML = `<div class="empty">${board.empty_state}</div>`;
+    PICK_EVENTS = new Set();
+    renderStrip();
+    return;
+  }
+  const list = picks.picks || [];
+  const bySlug = {};
+  for(const p of list) bySlug[p.market_slug] = p;
+  // The strip marks games with something actionable, not games with markets —
+  // every game on the board has markets, so that would mark all of them.
+  PICK_EVENTS = new Set(list.map(p => p.event_slug));
+  renderStrip();
+  renderBoard(board, bySlug);
 }
+
 
 mountLeagueTabs(lg => { loadPicks(lg); loadGames(lg); loadEvents(lg); })
   .then(lg => { loadPicks(lg); loadGames(lg); loadEvents(lg); });
