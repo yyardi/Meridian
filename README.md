@@ -179,7 +179,7 @@ exists.
 | Page | Shows |
 |---|---|
 | `/` | Live board — every market, model price, edge |
-| `/picks` | Today's picks as trade tickets, and resolved results |
+| `/picks` | Today's picks as trade tickets, and the game tape — click a game for every shadow trade in it |
 | `/analytics` | CLV, calibration, equity charts |
 
 Published on **all interfaces** (operator decision, 2026-08-07) so the dashboard

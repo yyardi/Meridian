@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian — WNBA</title>
+<title>Meridian — Live board</title>
 <style>
   :root{
     --bg:#0a0c10; --panel:#11141b; --panel2:#151922; --line:#1e2430;
@@ -87,6 +87,15 @@
   @keyframes fl{from{background:#1d2a3d}to{background:transparent}}
   svg.spark{vertical-align:middle}
   .shadowdot{color:var(--warn); font-weight:700}
+  /* --- league tabs ------------------------------------------------------ *
+     "MERIDIAN · WNBA" was a hardcoded string on three pages. League is now a
+     parameter end to end (core/leagues.py), and this is its control.        */
+  .lg{display:flex;gap:2px;margin-left:10px}
+  .lgt{font:inherit;font-size:10px;letter-spacing:.09em;padding:3px 9px;border-radius:3px;
+       background:transparent;color:var(--faint);border:1px solid transparent;cursor:pointer}
+  .lgt:hover{color:var(--txt)}
+  .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .lgt.empty{color:var(--faint);opacity:.75}
   .side{display:inline-block;min-width:44px;text-align:center;font-size:9.5px;
         padding:1px 5px;border-radius:2px;letter-spacing:.05em;font-weight:700}
   .sideY{background:#10261c;color:#3fd48f}
@@ -133,7 +142,8 @@
 <body>
 
 <header>
-  <div class="brand">MERIDIAN<span>·</span>WNBA</div>
+  <div class="brand">MERIDIAN</div>
+  <div class="lg" id="lgtabs"></div>
   <div class="stat"><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
   <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v num" id="s-pregame">—</span></div>
   <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v num" id="s-live">—</span></div>
@@ -169,11 +179,9 @@
   <aside>
     <h3>Games</h3>
     <div id="games"></div>
-    <h3 style="margin-top:16px">Filter</h3>
-    <div class="fbtn on" data-f="all">All markets <span class="cnt" id="c-all"></span></div>
-    <div class="fbtn" data-f="edge">Edge &gt; 2% <span class="cnt" id="c-edge"></span></div>
-    <div class="fbtn" data-f="shadow">Shadow orders <span class="cnt" id="c-shadow"></span></div>
-    <a href="/picks" class="fbtn link">Picks &amp; results →</a>
+    <h3 style="margin-top:16px">Board</h3>
+    <div class="fbtn on">All markets <span class="cnt" id="c-all"></span></div>
+    <a href="/picks" class="fbtn link">Game tape &amp; results →</a>
     <a href="/analytics" class="fbtn link">Model performance →</a>
   </aside>
 
@@ -215,7 +223,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let selectedEvent = null, filter = "all", prev = {}, sparkCache = {};
+let selectedEvent = null, prev = {}, sparkCache = {};
 
 const fmt = (v, d=2) => v === null || v === undefined ? "—" : v.toFixed(d);
 const pct = v => v === null || v === undefined ? "—" : (v>0?"+":"") + (v*100).toFixed(1) + "%";
@@ -269,9 +277,9 @@ async function loadStatus(){
 }
 
 async function loadGames(){
-  const {events} = await j("/api/events");
+  const {events} = await j(`/api/events?league=${encodeURIComponent(LEAGUE)}`);
   $("#games").innerHTML = events.map(e => {
-    const nm = (e.event_slug||"").replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
+    const nm = (e.event_slug||"").replace(/^[a-z]+-/,"").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
     const t = e.start ? new Date(e.start).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "";
     // Per-game staleness: the pregame recorder sweeps every 15 min, so a game
     // that is not live is legitimately minutes old and should say so.
@@ -292,13 +300,15 @@ async function loadGames(){
 }
 
 async function loadBoard(){
-  const b = await j("/api/board");
+  const b = await j(`/api/board?league=${encodeURIComponent(LEAGUE)}`);
+  if(b.recorded === false){
+    $("#rows").innerHTML = "";
+    $("#empty").style.display = "block";
+    $("#empty").textContent = b.empty_state;
+    return;
+  }
   let rows = b.markets;
   if(selectedEvent) rows = rows.filter(r => r.event_slug === selectedEvent);
-  if(filter === "edge") rows = rows.filter(r =>
-    r.bid !== null && r.ask !== null && r.model !== null && !r.is_live
-    && Math.max(r.model - r.ask, r.bid - r.model) > 0.02);
-  if(filter === "shadow") rows = rows.filter(r => r.shadow);
 
   const liveEdgeOf = r => {
     if (r.bid === null || r.ask === null || r.model === null || r.is_live) return -99;
@@ -307,21 +317,18 @@ async function loadBoard(){
   rows.sort((a, b2) => liveEdgeOf(b2) - liveEdgeOf(a));
 
   const all = selectedEvent ? b.markets.filter(r => r.event_slug === selectedEvent) : b.markets;
-  const tradeableEdge = r => (r.bid!==null && r.ask!==null && r.model!==null && !r.is_live)
-    ? Math.max(r.model - r.ask, r.bid - r.model) : null;
-  const cAll = all.length;
-  const cEdge = all.filter(r => (tradeableEdge(r) ?? -1) > 0.02).length;
-  const cShadow = all.filter(r => r.shadow).length;
   const setc = (id,v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
-  setc("c-all", cAll); setc("c-edge", cEdge); setc("c-shadow", cShadow);
+  setc("c-all", all.length);
   $("#empty").style.display = rows.length ? "none" : "block";
 
   // The same fixture can appear twice on one board — SEA-NY on the 3rd and the
   // 5th, TOR-GSV on the 2nd and the 4th. Stripping the date made those rows
   // render identically, so you could not tell which game an edge belonged to.
   // Add a date back, but only where it actually disambiguates.
+  // Any league slug, not just wnba: a hardcoded one silently stopped
+  // shortening the moment a second league appeared on the board.
   const baseLabel = r => r.market_slug
-    .replace(/^(tsc|asc|aec)-wnba-/, "").replace(/-\d{4}-\d{2}-\d{2}/, "");
+    .replace(/^(tsc|asc|aec)-[a-z]+-/, "").replace(/-\d{4}-\d{2}-\d{2}/, "");
   const labelCount = {};
   rows.forEach(r => { const b = baseLabel(r); labelCount[b] = (labelCount[b]||0)+1; });
 
@@ -434,22 +441,47 @@ async function loadBoard(){
 document.getElementById("helpbtn").onclick = () =>
   document.getElementById("help").classList.toggle("on");
 
-document.querySelectorAll("[data-f]").forEach(el => el.onclick = () => {
-  filter = el.dataset.f;
-  document.getElementById("helpbtn").onclick = () =>
-  document.getElementById("help").classList.toggle("on");
+/* --- league tabs -------------------------------------------------------- *
+ * The header read a hardcoded "MERIDIAN · WNBA". League is a parameter now,
+ * all the way down to the queries (core/leagues.py), and the choice is
+ * remembered per browser so every page agrees with the others.
+ *
+ * A league with no data gets an honest empty state, never a blank table: an
+ * empty board and a broken board look identical, and only one of them is fine.
+ */
+const LG_KEY = "meridian.league";
+let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
 
-document.querySelectorAll("[data-f]").forEach(x => x.classList.remove("on"));
-  el.classList.add("on");
-  loadBoard();
-});
+function mountLeagueTabs(onChange){
+  return fetch("/api/leagues").then(r=>r.json()).then(d=>{
+    if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
+    const el = document.getElementById("lgtabs");
+    if(el) el.innerHTML = d.leagues.map(l =>
+      `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
+               data-lg="${l.slug}"
+               title="${l.recorded?"":l.empty_state}">${l.name}</button>`).join("");
+    const named = d.leagues.find(l => l.slug === LEAGUE);
+    if(named) document.title = `Meridian — ${named.name} board`;
+    document.querySelectorAll(".lgt").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        if(b.dataset.lg === LEAGUE) return;
+        LEAGUE = b.dataset.lg;
+        localStorage.setItem(LG_KEY, LEAGUE);
+        document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
+        document.title = `Meridian — ${b.textContent.trim()} board`;
+        onChange(LEAGUE);
+      });
+    });
+    return LEAGUE;
+  });
+}
 
 async function tick(){
   try{ await Promise.all([loadStatus(), loadBoard()]); }
   catch(e){ $("#foot").textContent = "connection error — is the API running?"; }
 }
-loadGames();
-tick();
+mountLeagueTabs(() => { selectedEvent = null; loadGames(); loadBoard(); })
+  .then(() => { loadGames(); tick(); });
 setInterval(tick, 3000);
 setInterval(loadGames, 30000);
 </script>
