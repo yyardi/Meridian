@@ -77,6 +77,12 @@ def run_daily_jobs(season: int | None = None) -> None:
     from core.feeds.espn_player_boxscores import backfill as player_backfill
     _safe("player_boxscores", player_backfill, start_season=season, end_season=season)
 
+    # 1d. The account's real balance, before anything sizes against it. Every
+    # dollar figure downstream is a fraction of this number; it used to be a
+    # literal that went stale the moment money moved.
+    from core.bankroll import refresh as refresh_bankroll
+    _safe("bankroll", refresh_bankroll)
+
     # 2. Live sportsbook odds for the cross-market signal.
     _safe("odds", ESPNOddsFetcher().fetch_live)
 
@@ -93,9 +99,11 @@ def run_daily_jobs(season: int | None = None) -> None:
     # 3. Predict against the newest snapshot.
     _safe("predictions", PredictionLogger().run)
 
-    # 4. Shadow orders for the fresh predictions (places nothing).
+    # 4. Shadow orders for the fresh predictions (places nothing). Bankroll is
+    # read from the venue inside `shadow_run`; a balance it cannot establish
+    # writes nothing rather than sizing against a guess.
     from core.shadow_run import run as shadow_run
-    _safe("shadow", shadow_run, bankroll=35.68)
+    _safe("shadow", shadow_run)
 
     # 5. Resolve anything that has settled.
     _safe("resolution", ResolutionJob().run)
@@ -147,10 +155,15 @@ def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None
             # WINDOW — the book moves on news and the thin venue lags. A 6h
             # book cadence cannot see windows; 20 min can. The Polymarket leg
             # is already sampled every 15 min by the recorder.
+            from core.bankroll import refresh as refresh_bankroll
             from core.feeds.espn_injuries import run as injuries_run
             from core.feeds.espn_odds import ESPNOddsFetcher
             from core.predictions import PredictionLogger
             from core.shadow_run import run as shadow_run
+            # The balance moves on every fill, settlement and withdrawal, so it
+            # rides the 20-minute leg with the lines: a bankroll refreshed once
+            # every six hours is the stale-constant bug with extra steps.
+            _safe("bankroll_fast", refresh_bankroll)
             _safe("odds_fast", ESPNOddsFetcher().fetch_live)
             # Injury status is the *cause* of most news windows, and ESPN keeps
             # no history — an unrecorded change is gone. It rides the fast leg
@@ -158,7 +171,7 @@ def run_forever(interval_hours: float = 6.0, odds_minutes: float = 20.0) -> None
             _safe("injuries_fast", injuries_run)
             # Fresh picks every 20 min so the board is current before tipoff.
             _safe("predictions_fast", PredictionLogger().run)
-            _safe("shadow_fast", shadow_run, bankroll=35.68)
+            _safe("shadow_fast", shadow_run)
         heartbeat.beat(
             interval_seconds=odds_minutes * 60,
             cycle_seconds=time.monotonic() - cycle_started,
