@@ -117,6 +117,12 @@ class PulseDecision(Base):
     phase: Mapped[str] = mapped_column(String(8), nullable=False)
     action: Mapped[str] = mapped_column(String(8), nullable=False)
     side: Mapped[str] = mapped_column(String(3), nullable=False)
+    #: Which estimate set priced this decision ('v1' | 'v2'). Recorded per
+    #: row — not per engine mode — so two model generations never blend in a
+    #: performance query (the era-separation lesson). A v2-mode engine whose
+    #: form refused prices with v1 values and its rows say 'v1'.
+    estimates_version: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="v1", server_default="v1")
 
     #: The resting price, YES frame always.
     limit_price: Mapped[Decimal] = mapped_column(Price, nullable=False)

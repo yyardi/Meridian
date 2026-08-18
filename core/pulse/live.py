@@ -118,6 +118,18 @@ MARKET_WINNER = "basketball_team_full_game_winner"
 MARKET_TOTAL = "basketball_team_full_game_total"
 MARKET_SPREAD = "basketball_team_full_game_spread"
 
+#: Which estimate set prices decisions. 'v1' is the informationally-thin
+#: baseline (pregame price + score/clock + the league constant sigma); 'v2'
+#: adds the point-in-time inputs from `core/pulse/team_form.py` — per-matchup
+#: fitted volatility and the (currently weight-1.0, by measurement) blended
+#: totals anchor. v2 components REFUSE stale form and fall back to the v1
+#: values; every decision row records which set actually priced it, so the
+#: two model generations never blend in a performance query (the
+#: era-separation lesson).
+ESTIMATES_V1 = "v1"
+ESTIMATES_V2 = "v2"
+DEFAULT_ESTIMATES_VERSION = os.environ.get("MERIDIAN_PULSE_ESTIMATES", ESTIMATES_V1)
+
 #: Cycle cadence. The tick stream is 200ms; 1s reads every market's newest
 #: tick without re-walking the stream, and the fill rule is endpoint-based
 #: either way (sub-cycle touches are invisible, see the module docstring).
@@ -247,6 +259,10 @@ class Estimate:
     projected_total: float | None
     total_sigma: float | None
     note: str | None = None
+    #: Which estimate set actually priced this — 'v2' only when a v2 input
+    #: (matchup sigma, blended anchor) fed the number; a v2-mode engine whose
+    #: form refused still prices with v1 values and says so.
+    version: str = ESTIMATES_V1
 
 
 @dataclass
@@ -305,6 +321,9 @@ class CycleResult:
 class EventAnchors:
     winner_mid: float | None = None   # pregame moneyline mid, YES frame
     totals_mu: float | None = None    # v4 ladder-fitted pregame projected total
+    #: v2 inputs (core/pulse/team_form.py), None when form refused or v1 mode.
+    matchup_sigma: float | None = None
+    totals_mu_v2: float | None = None
 
 
 # --------------------------------------------------------------------- #
@@ -327,6 +346,7 @@ class PulseEngine:
         hold_log_seconds: float = DEFAULT_HOLD_LOG_SECONDS,
         max_open_per_event: int = DEFAULT_MAX_OPEN_PER_EVENT,
         sigma: float = DEFAULT_SIGMA,
+        estimates_version: str = DEFAULT_ESTIMATES_VERSION,
         settlement_lookup=None,
         bankroll_reader=None,
     ) -> None:
@@ -338,6 +358,7 @@ class PulseEngine:
         self.hold_log_seconds = hold_log_seconds
         self.max_open_per_event = max_open_per_event
         self.sigma = sigma
+        self.estimates_version = estimates_version
         #: slug -> 0|1|None. Production asks the PUBLIC gateway; tests inject.
         self._settlement_lookup = settlement_lookup or self._venue_settlement
         #: () -> float|None. Production reads stored account_balances rows and
@@ -413,10 +434,12 @@ class PulseEngine:
         Pregame quantities — pinned once found. Only events still missing one
         are re-queried, at most every ANCHOR_REFRESH_SECONDS.
         """
+        want_v2 = self.estimates_version == ESTIMATES_V2
         missing = [e for e in events
                    if e not in self._anchors
                    or self._anchors[e].winner_mid is None
-                   or self._anchors[e].totals_mu is None]
+                   or self._anchors[e].totals_mu is None
+                   or (want_v2 and self._anchors[e].matchup_sigma is None)]
         if not missing:
             return
         if time.monotonic() - self._last_anchor_refresh < ANCHOR_REFRESH_SECONDS:
@@ -445,9 +468,38 @@ class PulseEngine:
             totals = {}
         for e in missing:
             prior = self._anchors.get(e, EventAnchors())
+            winner_mid = prior.winner_mid or winner.get(e)
+            totals_mu = prior.totals_mu or totals.get(e)
+            matchup_sigma = prior.matchup_sigma
+            totals_mu_v2 = prior.totals_mu_v2
+            if want_v2 and matchup_sigma is None:
+                # Point-in-time trivially: the logs hold only completed past
+                # games. Stale form returns None and the estimate stays v1 —
+                # a refusal with a log line, never a silent degrade.
+                from core.pulse.team_form import (
+                    blended_total_anchor,
+                    event_team_abbrevs,
+                    matchup_form,
+                )
+                abbrevs = event_team_abbrevs(e)
+                if abbrevs is not None:
+                    form = matchup_form(
+                        session, first_abbrev=abbrevs[0],
+                        second_abbrev=abbrevs[1],
+                        as_of=dt.datetime.now(UTC))
+                    if form is not None:
+                        matchup_sigma = form.sigma
+                        totals_mu_v2 = blended_total_anchor(totals_mu, form)
+                        log.info("pulse_v2_form", event=e,
+                                 sigma=round(form.sigma, 3),
+                                 sigma_multiplier=round(form.sigma_multiplier, 3),
+                                 form_total=round(form.form_total, 1),
+                                 staleness_days=round(form.staleness_days, 1))
             self._anchors[e] = EventAnchors(
-                winner_mid=prior.winner_mid or winner.get(e),
-                totals_mu=prior.totals_mu or totals.get(e),
+                winner_mid=winner_mid,
+                totals_mu=totals_mu,
+                matchup_sigma=matchup_sigma,
+                totals_mu_v2=totals_mu_v2,
             )
 
     def _stored_bankroll(self) -> float | None:
@@ -488,22 +540,36 @@ class PulseEngine:
         fv = projected = sigma_t = None
         note = clock.note
 
+        # v2 inputs, where the form allowed them; the version label records
+        # what actually priced the number, not what mode the engine ran in.
+        version = ESTIMATES_V1
+        sigma = self.sigma
+        totals_mu = anchors.totals_mu
+        if self.estimates_version == ESTIMATES_V2:
+            if (strategy in (STRAT_WINNER, STRAT_SPREAD)
+                    and anchors.matchup_sigma is not None):
+                sigma = anchors.matchup_sigma
+                version = ESTIMATES_V2
+            elif strategy == STRAT_TOTAL and anchors.totals_mu_v2 is not None:
+                totals_mu = anchors.totals_mu_v2
+                version = ESTIMATES_V2
+
         if pair is None:
             note = "no score on the tick — no estimate"
         elif not clock.usable:
             pass                       # suppressed, not approximated (live_fv's rule)
         elif strategy == STRAT_WINNER:
             fv = fair_value(margin=margin, minutes_left=clock.minutes_left,
-                            pregame_price=anchors.winner_mid, sigma=self.sigma)
+                            pregame_price=anchors.winner_mid, sigma=sigma)
             if anchors.winner_mid is None:
                 note = "no pregame quote — no fair value"
         elif strategy == STRAT_TOTAL:
-            if ob.line is None or anchors.totals_mu is None:
+            if ob.line is None or totals_mu is None:
                 note = "no v4 pregame ladder — no anchor" if ob.line is not None else note
             else:
                 elapsed = REGULATION_MINUTES - clock.minutes_left
                 projected = project_total(
-                    pregame_mu=anchors.totals_mu, total_so_far=total_so_far,
+                    pregame_mu=totals_mu, total_so_far=total_so_far,
                     elapsed_minutes=elapsed)
                 sigma_t = remaining_sigma(elapsed)
                 fv = over_probability(projected_total=projected,
@@ -514,7 +580,7 @@ class PulseEngine:
             else:
                 fv = spread_fair_value(
                     margin=margin, minutes_left=clock.minutes_left, line=ob.line,
-                    pregame_price=anchors.winner_mid, sigma=self.sigma)
+                    pregame_price=anchors.winner_mid, sigma=sigma)
                 if anchors.winner_mid is None:
                     note = "no pregame quote — no fair value"
                 elif fv is None:
@@ -524,6 +590,7 @@ class PulseEngine:
             strategy=strategy, fair_value=fv, clock=clock,
             score=ob.event_score, margin=margin, total_so_far=total_so_far,
             projected_total=projected, total_sigma=sigma_t, note=note,
+            version=version,
         )
 
     # ---- decision rows ---------------------------------------------------- #
@@ -569,6 +636,7 @@ class PulseEngine:
             market_ask=dec(ob.ask),
             fair_value=dec(est.fair_value),
             edge_net=dec(edge_net),
+            estimates_version=est.version,
         )
 
     def _withdraw(self, session, decision_id: int, at: dt.datetime | None = None) -> None:
