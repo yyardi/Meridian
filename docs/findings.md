@@ -714,4 +714,60 @@ that chain starts from +1.75.
 
 ---
 
+### V22 — a trade has two sides, and the venue sends both
+
+**Every number `core/audit/hand_trades.py` has ever published was computed
+over a feed containing our counterparty's fills as well as our own.**
+
+That module's parser walked both `trade.aggressorExecution` and
+`trade.passiveExecution`, on a belief written into its own docstring: *"the
+feed nulls the side that is not ours."* Measured against the live feed on
+2026-08-17: **455 of 455** trade activities carry both. The two legs are the
+two counterparties of one trade — same price, opposite side — so every real
+fill was booked against a phantom offsetting one.
+
+The double count was invisible for the worst possible reason: the phantom leg
+is *equal and opposite*, so a market's net exposure still returned to zero and
+round trips still closed. Nothing looked broken. The WNBA fill count for this
+season was 188; it is 94.
+
+`trade.isAggressor` is the discriminator (397 True / 58 False), and four
+independent checks agree on it across all 455:
+
+| check | our leg | the other leg |
+|---|---|---|
+| `order.outcomeSide` is `UNSPECIFIED` | 0 / 455 | 365 / 455 |
+| `order.manualOrderIndicator` is `UNDEFINED` | 0 / 455 | 351 / 455 |
+| carries one of this system's own venue order ids | 3 / 3 | 0 / 3 |
+| `trade.qty` equals the leg's `lastShares` | 449 / 455 | — |
+
+The venue redacts the counterparty's fields and never the account-holder's,
+which is now used as a **guard**: if `isAggressor` ever selects a leg with an
+unspecified outcome side, the parser refuses rather than silently inverting
+every row downstream.
+
+**This answers V19's parked question.** V19 recorded, unexplained, that the
+venue echoed `AUTOMATIC` on orders we sent as `MANUAL`, and the audit noted 28
+obvious hand trades flagged `AUTOMATIC` months before this system could place
+an order. Those were **counterparty** flags. On our own leg, `AUTOMATIC`
+appears exactly three times — exactly the three button orders. The field was
+truthful the whole time; we were reading someone else's copy of it.
+
+`core/fill_watcher.py` reads the same feed and is **unaffected**: it attributes
+by venue order id against our own `orders` table, so a counterparty's events
+find no match and are inert. Attribution by identity survived a payload
+assumption that attribution by position did not — which is the transferable
+lesson, and the same one C10 and V19 keep teaching in different costumes: *a
+parser for a schema nobody has re-observed is a guess with a test suite.* This
+one had been observed, once, and then generalised from.
+
+Still open: the venue's own `trade.realizedPnl` (present on 29 of the 94 WNBA
+fills) equals `cost - costBasis`, and matches **none** of FIFO or average cost,
+gross or net of fee, on more than 3 of those 29. Its basis convention is
+undocumented. Both numbers ship side by side in the trade export rather than
+one being reconciled into the other by guesswork. One question to the venue
+settles it.
+
+---
+
 *Started 2026-08-03. Append, don't rewrite.*

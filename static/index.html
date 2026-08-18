@@ -139,6 +139,11 @@
   <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v num" id="s-live">—</span></div>
   <div class="stat" title="Estimated from planner statistics, not an exact count — an exact count on this table exceeds the statement timeout."><span class="k">snapshots</span><span class="v num" id="s-snaps">—</span></div>
   <div class="stat" title="market_snapshots + book_levels on disk"><span class="k">stream</span><span class="v num" id="s-bytes">—</span></div>
+  <!-- The account, read from the venue every scheduler cycle. It sits in the
+       header because every size the system computes is a fraction of it, and
+       a bankroll that has quietly stopped being true is invisible anywhere
+       else on the page. -->
+  <div class="stat" id="s-bankroll-wrap" title="Account balance from Polymarket US. Every stake is a fraction of this."><span class="k">bankroll</span><span class="v num" id="s-bankroll">—</span></div>
   <div class="pill" id="s-mode">SHADOW · 0 REAL ORDERS</div>
   <button id="helpbtn" title="How to read this board">?</button>
 </header>
@@ -255,6 +260,24 @@ async function loadStatus(){
     (s.counts_estimated ? "~" : "") + (s.counts.snapshots ?? 0).toLocaleString();
   $("#s-bytes").textContent = s.stream_bytes
     ? (s.stream_bytes / 1e9).toFixed(2) + " GB" : "—";
+  // Unknown reads "?" and turns red. It never falls back to a number: a
+  // plausible balance the venue did not give us is the bug this replaced.
+  const br = s.bankroll, brEl = $("#s-bankroll");
+  if (br && br.bankroll != null) {
+    brEl.textContent = "$" + br.bankroll.toFixed(2);
+    const mins = Math.round((br.age_seconds ?? 0) / 60);
+    brEl.className = "v num " + (mins >= 60 ? "neg" : "pos");
+    $("#s-bankroll-wrap").title =
+      `Account balance from Polymarket US: $${br.bankroll.toFixed(2)} `
+      + `(cash $${(br.cash ?? 0).toFixed(2)}, in positions $${(br.asset_notional ?? 0).toFixed(2)}), `
+      + `read ${mins}m ago. Every stake is a fraction of this.`;
+  } else {
+    brEl.textContent = "?";
+    brEl.className = "v num neg";
+    $("#s-bankroll-wrap").title =
+      "The venue balance could not be read: " + ((br && br.unavailable) || "unknown")
+      + ". Nothing is sized against a guessed bankroll.";
+  }
   // Both counters, read from the `orders` table by /api/status — never a
   // client-side tally. `orders_autonomous` must read 0 forever; if it does not,
   // the CHECK constraint that makes such a row unrepresentable is gone, so the

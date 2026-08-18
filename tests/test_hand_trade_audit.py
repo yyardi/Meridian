@@ -228,3 +228,99 @@ def test_parse_real_shape_smoke():
     assert not f.is_buy and f.outcome_yes and f.manual
     assert f.yes_price == Decimal("0.25") and f.shares == Decimal("20.0000")
     assert f.yes_delta == Decimal("-20.0000")
+
+
+# ------------------------------------------------------------------ #
+# V22 — a trade has two sides and the venue sends both
+# ------------------------------------------------------------------ #
+#
+# This module used to take every non-null execution, on the belief written
+# into its own docstring that "the feed nulls the side that is not ours".
+# Measured 2026-08-17: 455 of 455 trade activities carried BOTH, so every
+# trade was scored twice — once as us, once as our counterparty, at opposite
+# YES exposure. `isAggressor` is the discriminator.
+
+
+def _two_sided(*, is_aggressor, our_side="ORDER_SIDE_BUY",
+               our_outcome="OUTCOME_SIDE_YES", their_outcome="OUTCOME_SIDE_UNSPECIFIED",
+               slug="m1"):
+    """The real shape: both executions populated, one of them ours."""
+    def _leg(oid, side, outcome, manual, commission):
+        return {
+            "order": {"id": oid, "side": side, "outcomeSide": outcome,
+                      "manualOrderIndicator": manual},
+            "lastPx": {"value": "0.4800"},
+            "lastShares": "12.0000",
+            "transactTime": "2026-08-06T22:10:00.000000000Z",
+            "commissionNotionalCollected": {"value": commission},
+        }
+
+    their_side = ("ORDER_SIDE_SELL" if our_side == "ORDER_SIDE_BUY"
+                  else "ORDER_SIDE_BUY")
+    ours = _leg("OURS", our_side, our_outcome,
+                "MANUAL_ORDER_INDICATOR_MANUAL", "0.1800")
+    theirs = _leg("THEIRS", their_side, their_outcome,
+                  "MANUAL_ORDER_INDICATOR_UNDEFINED", "-0.0400")
+    return {
+        "type": "ACTIVITY_TYPE_TRADE",
+        "trade": {
+            "marketSlug": slug,
+            "isAggressor": is_aggressor,
+            "qty": "12",
+            "realizedPnl": {"value": "2.54"},
+            "market": {"sportsMarketType": "basketball_team_full_game_total",
+                       "gameStartTime": "2026-08-06T23:00:00Z"},
+            "aggressorExecution": ours if is_aggressor else theirs,
+            "passiveExecution": theirs if is_aggressor else ours,
+        },
+    }
+
+
+def test_only_our_side_of_a_two_sided_trade_is_scored():
+    for is_aggressor in (True, False):
+        fills, _, ok = parse_activity(_two_sided(is_aggressor=is_aggressor))
+        assert ok, "the real shape must parse"
+        assert len(fills) == 1, "the counterparty's leg is not our fill"
+        assert fills[0].venue_order_id == "OURS"
+        assert fills[0].yes_delta == Decimal("12.0000")
+
+
+def test_counting_both_legs_would_have_netted_to_zero():
+    """Why the double count was invisible: the two legs are equal and
+    opposite, so a market's net exposure always returned to zero and the
+    reconstruction happily closed round trips out of counterparty fills."""
+    trade = _two_sided(is_aggressor=True, their_outcome="OUTCOME_SIDE_YES")["trade"]
+    ours = trade["aggressorExecution"]["order"]
+    theirs = trade["passiveExecution"]["order"]
+    assert ours["side"] != theirs["side"] and ours["outcomeSide"] == theirs["outcomeSide"]
+
+
+def test_the_venues_own_realized_pnl_is_carried_for_cross_checking():
+    fills, _, _ = parse_activity(_two_sided(is_aggressor=True))
+    assert fills[0].venue_realized_pnl == Decimal("2.54")
+
+
+def test_an_unspecified_outcome_on_our_leg_is_refused():
+    """The venue only redacts the counterparty's outcome. If `isAggressor`
+    ever points at a redacted leg the field has changed meaning, and every row
+    of an export would silently invert. Refuse rather than invert."""
+    raw = _two_sided(is_aggressor=True, our_outcome="OUTCOME_SIDE_UNSPECIFIED")
+    fills, _, ok = parse_activity(raw)
+    assert not ok and fills == []
+
+
+def test_both_legs_present_with_no_isaggressor_is_refused_not_guessed():
+    raw = _two_sided(is_aggressor=True)
+    del raw["trade"]["isAggressor"]
+    fills, _, ok = parse_activity(raw)
+    assert not ok and fills == []
+
+
+def test_a_single_execution_still_resolves_without_isaggressor():
+    """The one-sided shape the older fixtures use: nothing to choose between,
+    so it parses rather than refusing."""
+    raw = _activity(oid="SOLO", side="ORDER_SIDE_BUY",
+                    outcome="OUTCOME_SIDE_YES", px="0.30", shares="10")
+    assert "isAggressor" not in raw["trade"]
+    fills, _, ok = parse_activity(raw)
+    assert ok and len(fills) == 1 and fills[0].venue_order_id == "SOLO"

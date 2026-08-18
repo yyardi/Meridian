@@ -23,6 +23,11 @@ dependencies = [
     "scipy>=1.11",
     "pandas>=2.1",
     "statsmodels>=0.14",
+    # The trade export writes .xlsx alongside CSV. The operator annotates the
+    # workbook by hand, and a CSV loses the frozen panes and column widths that
+    # make hundreds of fills readable. `core.audit.trade_export` degrades to
+    # CSV-only when this is absent rather than failing the export.
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
