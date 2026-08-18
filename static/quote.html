@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian — QUOTE</title>
+<style>
+  :root{--bg:#0a0c10;--panel:#11141b;--line:#1e2430;--txt:#d7dde8;--dim:#7c879b;
+        --faint:#4a5568;--pos:#26d07c;--neg:#ff5c62;--warn:#ffb020;--accent:#4c8dff;
+        --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:12px/1.5 var(--mono);
+       font-variant-numeric:tabular-nums}
+  header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:9px 14px;
+         background:var(--panel);border-bottom:1px solid var(--line);position:sticky;
+         top:0;z-index:9}
+  .brand{font-weight:700;letter-spacing:.14em}
+  nav a{color:var(--faint);text-decoration:none;margin-right:12px;font-size:11px;
+        padding:3px 8px;border-radius:3px}
+  nav a.on{color:var(--txt);background:#1a1f2b}
+  .lg{display:flex;gap:4px}
+  .lgt{font:inherit;font-size:10.5px;letter-spacing:.06em;padding:3px 10px;border-radius:3px;
+       background:none;border:1px solid transparent;color:var(--faint);cursor:pointer}
+  .lgt:hover{color:var(--txt)}
+  .lgt.on{background:#16243a;border-color:#2c4a7a;color:#cfe2ff}
+  .lgt.empty{opacity:.55}
+  .stat{display:flex;gap:6px;align-items:baseline}
+  .stat .k{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em}
+  .stat .v{font-size:11.5px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+  .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
+  .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
+  .wrap{padding:14px;max-width:1400px;overflow-x:auto}
+  h2{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);
+     margin:0 0 8px;font-weight:600}
+  table{width:100%;border-collapse:collapse;margin-bottom:22px}
+  th{text-align:right;color:var(--faint);font-size:9.5px;letter-spacing:.08em;
+     text-transform:uppercase;padding:6px 9px;border-bottom:1px solid var(--line)}
+  th.l,td.l{text-align:left}
+  td{text-align:right;padding:5px 9px;border-bottom:1px solid #131720;white-space:nowrap}
+  tr:hover{background:#12161e}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--warn)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;
+        background:var(--line);border:1px solid var(--line);border-radius:5px;
+        overflow:hidden;margin-bottom:14px}
+  .kpi{background:var(--panel);padding:10px 12px}
+  .kpi .k{color:var(--faint);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase}
+  .kpi .v{font-size:17px;margin-top:3px}
+  .empty{padding:24px;color:var(--faint);text-align:center}
+  .explain{border:1px solid var(--line);background:#0e1218;border-radius:4px;
+           padding:10px 12px;margin-bottom:14px;font-size:11px;line-height:1.6;
+           color:var(--dim)}
+  .explain b{color:var(--txt)}
+  .accruing{display:inline-block;padding:1px 7px;border-radius:3px;font-size:9.5px;
+            letter-spacing:.06em;background:#16243a;border:1px solid #2c4a7a;color:#cfe2ff}
+  .verdictPASS{color:var(--pos);font-weight:700}
+  .verdictFAIL{color:var(--neg);font-weight:700}
+  .meter{height:4px;background:#1a2029;border-radius:2px;overflow:hidden;margin-top:4px}
+  .meter i{display:block;height:100%;background:var(--accent)}
+  .sideB{color:#3fd48f}.sideA{color:#ff9ba0}
+  footer{padding:6px 14px;font-size:10px;color:var(--faint);
+         border-top:1px solid var(--line);background:var(--panel)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">MERIDIAN</div>
+  <div class="lg" id="lgtabs"></div>
+  <div class="stat" title="The engine's heartbeat: one beat per 5s cycle. DEAD past 3x its interval."><span class="k">engine</span><span class="v" id="s-engine">—</span></div>
+  <div class="stat" title="Markets currently inside the quotable band, from the newest observations."><span class="k">quoting</span><span class="v num" id="s-quoting">—</span></div>
+  <div class="stat" title="Simulated fills accrued, total."><span class="k">fills</span><span class="v num" id="s-fills">—</span></div>
+  <nav>
+    <a href="/">Picks</a>
+    <a href="/quote" class="on">QUOTE</a>
+    <a href="/analytics">Model performance</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <div class="explain">
+    <b>What QUOTE is.</b> A shadow market-maker: it posts both sides at the touch,
+    earns the spread when both fill, and pays <b>adverse selection</b> — the book
+    moves against a resting quote before it can be pulled (measured −2.74¢ per fill
+    in-game on the static study). The whole experiment is whether <b>requoting every
+    5s</b> flips that sign. <b>Nothing is sent</b>: fills are simulated against the
+    recorded book, and the pre-registered verdict
+    (<code>docs/math/quote-shadow.md</code>) stays <b>NO DATA</b> until each regime
+    reaches its floor — nothing here is a performance claim before then.
+  </div>
+
+  <h2>Per-regime capture vs the pre-registered floors <span class="dimc"
+    style="text-transform:none;letter-spacing:0">· all leagues — the measurement is
+    registered regime-split, not league-split</span></h2>
+  <div id="regimes"><div class="empty">loading…</div></div>
+
+  <h2 style="margin-top:24px">Quoting now <span class="dimc" id="qnote"
+    style="text-transform:none;letter-spacing:0"></span></h2>
+  <div id="quoting"></div>
+
+  <h2 style="margin-top:24px">Recent simulated fills</h2>
+  <div id="fills"></div>
+</div>
+
+<footer id="foot">connecting…</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* League tabs — same storage key as every other page, so the choice follows
+   you across them. They filter the LIVE tables (quoting now, recent fills) by
+   slug prefix. The per-regime measurement deliberately stays global: it is
+   pre-registered as regime-split, not league-split, and re-slicing a
+   registered analysis in the client would show a different measurement under
+   the registered one's name. */
+const LG_KEY = "meridian.league";
+let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
+fetch("/api/leagues").then(r=>r.json()).then(d=>{
+  if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
+  const el = document.getElementById("lgtabs");
+  el.innerHTML = d.leagues.map(l =>
+    `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
+             data-lg="${l.slug}">${l.name}</button>`).join("");
+  el.querySelectorAll(".lgt").forEach(b => b.addEventListener("click", () => {
+    if(b.dataset.lg === LEAGUE) return;
+    LEAGUE = b.dataset.lg; localStorage.setItem(LG_KEY, LEAGUE);
+    el.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
+    load();
+  }));
+});
+const inLeague = slug => slug.replace(/^(tsc|asc|aec)-/,"").startsWith(LEAGUE + "-");
+const num = (v,d=2) => v==null ? "—" : v.toFixed(d);
+const pct = (v,d=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d)+"%";
+const cts = (v,d=2) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d)+"¢";
+function shortSlug(s){ return s.replace(/^(tsc|asc|aec)-[a-z]+-/,"").replace(/-\d{4}-\d{2}-\d{2}/,""); }
+const agef = sec => sec == null ? "—"
+  : sec < 90 ? sec.toFixed(0) + "s"
+  : sec < 5400 ? Math.round(sec/60) + "m"
+  : Math.round(sec/3600) + "h";
+
+function regimeCard(name, r, floors){
+  const fillPct = Math.min(100, r.n_settled / floors.fills * 100);
+  const gamePct = Math.min(100, r.n_games / floors.games * 100);
+  // The verdict is the server's, verbatim. This page never invents one —
+  // rendering "accruing" while the report says NO DATA is the entire honesty
+  // contract of a pre-registered measurement.
+  const v = r.at_floor
+    ? `<span class="verdict${r.verdict.startsWith("PASS")?"PASS":"FAIL"}">${r.verdict}</span>`
+    : `<span class="accruing" title="Pre-registered floors: ${floors.fills} settled fills AND ${floors.games} games per regime. Until both are met there is deliberately no performance verdict.">accruing — no verdict yet</span>`;
+  const cap = r.capture, roi = r.roi;
+  return `<div class="kpi">
+    <div class="k">${name}</div>
+    <div class="v">${v}</div>
+    <div class="k" style="margin-top:6px">${r.n_settled}/${floors.fills} settled fills</div>
+    <div class="meter"><i style="width:${fillPct}%"></i></div>
+    <div class="k" style="margin-top:4px">${r.n_games}/${floors.games} games</div>
+    <div class="meter"><i style="width:${gamePct}%"></i></div>
+    <div class="k" style="margin-top:6px"
+      title="net capture per fill, marked at the next observation — the static study's own metric. CI is game-clustered; ${r.n_games} game(s) means it is nearly uninformative yet.">
+      capture/fill ${cap?cts(cap.mean):"—"}${cap?` <span class="dimc">[${cts(cap.lo)}, ${cts(cap.hi)}]</span>`:""}</div>
+    <div class="k" title="money at price on settled fills, game-clustered CI">
+      roi ${roi?pct(roi.mean):"—"}${roi?` <span class="dimc">[${pct(roi.lo)}, ${pct(roi.hi)}]</span>`:""}
+      · staked $${num(r.staked)}</div>
+  </div>`;
+}
+
+async function load(){
+  let d;
+  try{ d = await (await fetch("/api/quote")).json(); }
+  catch(e){ $("#foot").textContent = "connection error"; return; }
+
+  const hb = d.heartbeat;
+  $("#s-engine").innerHTML = hb
+    ? `<span class="dot ${hb.verdict==="ok"||hb.verdict==="idle"?"ok":"bad"}"></span>${hb.verdict.toUpperCase()} · beat ${agef(hb.age_seconds)} ago`
+    : '<span class="dot bad"></span>NEVER BEATEN';
+  $("#s-quoting").textContent = `${d.quotable_now}/${d.observed_now}`;
+  $("#s-fills").textContent = hb ? (hb.fills_total ?? "—") : "—";
+
+  const names = Object.keys(d.regimes);
+  $("#regimes").innerHTML = names.length
+    ? `<div class="kpis">${names.map(n=>regimeCard(n, d.regimes[n], d.floors)).join("")}</div>`
+    : '<div class="empty">no fills recorded yet — the engine has not simulated anything</div>';
+
+  const quoting = d.quoting.filter(q => inLeague(q.market_slug));
+  $("#qnote").textContent = ` — ${quoting.length} ${LEAGUE.toUpperCase()} markets inside the quotable band (${d.quotable_now} across leagues, of ${d.observed_now} observed). Reconstructed from the same observations through the engine's own code; the engine's memory is not readable from here.`;
+  $("#quoting").innerHTML = quoting.length ? `<table><thead><tr>
+      <th class="l">Market</th><th class="l">Regime</th><th>Bid</th><th>Ask</th>
+      <th>Spr</th><th>Data age</th>
+    </tr></thead><tbody>${quoting.map(q=>`
+      <tr>
+        <td class="l">${shortSlug(q.market_slug)}</td>
+        <td class="l ${q.regime==="ingame"?"warnc":"dimc"}">${q.regime}</td>
+        <td class="sideB">${num(q.bid)}</td>
+        <td class="sideA">${num(q.ask)}</td>
+        <td class="dimc">${(q.spread*100).toFixed(0)}¢</td>
+        <td class="dimc">${agef(q.age_seconds)}</td>
+      </tr>`).join("")}</tbody></table>`
+    : '<div class="empty">nothing inside the quotable band right now</div>';
+
+  const fills = d.recent_fills.filter(f => inLeague(f.market_slug));
+  $("#fills").innerHTML = fills.length ? `<table><thead><tr>
+      <th class="l">Filled</th><th class="l">Market</th><th class="l">Regime</th>
+      <th class="l">Side</th><th>Quote</th><th>Mid@quote</th><th>Mid@fill</th>
+      <th title="(mid@quote − price) for bids, (price − mid@fill)… the static study's mark">Capture</th>
+      <th>Settled</th>
+    </tr></thead><tbody>${fills.map(f=>{
+      const cap = f.side==="bid" ? (f.mid_at_fill!=null&&f.quote_price!=null ? f.mid_at_fill-f.quote_price : null)
+                                 : (f.mid_at_fill!=null&&f.quote_price!=null ? f.quote_price-f.mid_at_fill : null);
+      return `<tr>
+        <td class="l dimc">${new Date(f.filled_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td>
+        <td class="l">${shortSlug(f.market_slug)}</td>
+        <td class="l ${f.regime==="ingame"?"warnc":"dimc"}">${f.regime}</td>
+        <td class="l ${f.side==="bid"?"sideB":"sideA"}">${f.side.toUpperCase()}</td>
+        <td>${num(f.quote_price)}</td>
+        <td class="dimc">${num(f.mid_at_quote)}</td>
+        <td class="dimc">${num(f.mid_at_fill)}</td>
+        <td class="${cap==null?"dimc":cap>0?"pos":"neg"}">${cts(cap)}</td>
+        <td>${f.settlement==null?'<span class="dimc">—</span>':(f.settlement===1?"YES":"NO")}</td>
+      </tr>`;}).join("")}</tbody></table>`
+    : '<div class="empty">no fills yet</div>';
+
+  $("#foot").textContent = `engine cycle ${hb?num(hb.cycle_seconds,3)+"s":"—"} of ${hb?num(hb.interval_seconds,0)+"s":"—"} interval · updated ${new Date().toLocaleTimeString()}`;
+}
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
