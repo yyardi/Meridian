@@ -42,6 +42,45 @@ asked yet" are different claims and the strip renders first.
 Nothing on the strip is clickable. It has no `openTicket` call, no `PICKS[]`
 entry and no order path, and a test asserts so.
 
+## The table shows markets, not only picks
+
+The first version of this page rendered `/api/picks` only. On a night with 95
+quoted markets and nothing inside the 14-hour horizon it printed *"No tradeable
+pregame markets right now"* and nothing else — true, and useless. The operator
+reads this page to see lines; a page that hides every line whenever nothing is
+orderable answers a question nobody asked.
+
+The body is now driven by `/api/board` — every market still on the board — with
+`/api/picks` merged onto it by `market_slug`:
+
+* a row **with** a pick carries the server's own buy/sell, return, size, stake
+  and a SEND button, none of it recomputed here;
+* a row **without** one renders the same columns greyed, with the reason where
+  the button would be: `beyond 14h`, `spread 12¢`, `moneyline`, `in-play`,
+  `no fresh line`.
+
+The reason branches mirror the server's filters and were checked against it:
+they reproduce `/api/picks` `filtered` exactly — 77 far-dated, 1 moneyline,
+17 unanchored, 0 wide.
+
+### The two endpoints are not the same instant
+
+`/api/picks` prices are `Prediction.market_bid/ask`, frozen at `predicted_at`.
+`/api/board` prices are the latest `MarketSnapshot`. Predictions run every 20
+minutes, so a pick can be that stale — measured here, a 174.5 total priced
+against ask 0.44 while the book had moved to 0.48.
+
+Each row therefore stays internally consistent (pick rows entirely the
+server's, board rows entirely the board's), an **Age** column gives the live
+quote's freshness per row, and a pick whose book has moved off its priced-at
+carries a `▲4¢` marker saying so. Two instants in one table without saying so
+is how a row ends up with every number individually right and the row as a
+whole wrong.
+
+The client-side side/frame derivation in `positionView()` is applied **only**
+to rows with no order path. A row that can become an order always uses the
+server's numbers.
+
 ## Two game-context surfaces, deliberately not one
 
 The strip renders **current** state — live score, tip countdown, staleness —
