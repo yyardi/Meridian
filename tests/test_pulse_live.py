@@ -436,11 +436,11 @@ def test_report_is_counts_only_below_the_floors():
                             event=f"{EVENT}-g{g}", exit_price=0.65)
         s.commit()
     with _Session() as s:
-        r = pr.build_report(s)
+        r = pr.build_report(s)["v1"]
     assert r.n_entry_fills == 50 and r.n_games == 5
     assert not r.at_floor
     assert r.verdict == "NO DATA"
-    assert "NO DATA" in pr.format_report(r)
+    assert "NO DATA" in pr.format_report({"v1": r})
 
 
 def test_report_scores_round_trips_at_floor_clustered_by_game():
@@ -451,7 +451,7 @@ def test_report_scores_round_trips_at_floor_clustered_by_game():
                             event=f"{EVENT}-g{g}", exit_price=0.65)
         s.commit()
     with _Session() as s:
-        r = pr.build_report(s)
+        r = pr.build_report(s)["v1"]
     assert r.at_floor
     assert r.n_round_trips == 100
     # +5c on a 60c entry, money-at-price: per-$ capture 0.0833..., every game.
@@ -467,7 +467,7 @@ def test_report_scores_rides_to_settlement_in_the_v14_frame():
         _seed_entry(s, slug=SLUG + "-no", side=NO, price=0.60, settlement=1)
         s.commit()
     with _Session() as s:
-        r = pr.build_report(s)
+        r = pr.build_report(s)["v1"]
     # yes: staked 0.60*2 returned 1*2; no: staked 0.40*2 returned 0.
     assert r.ride_staked == pytest.approx(1.2 + 0.8)
     assert r.ride_returned == pytest.approx(2.0 + 0.0)
