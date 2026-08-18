@@ -25,6 +25,26 @@ def test_env_override_wins(monkeypatch):
     assert paths.ticks_dir() == Path("/somewhere/else/ticks")
     assert paths.supabase_dir() == Path("/somewhere/else/supabase")
     assert paths.reports_dir() == Path("/somewhere/else/reports")
+    assert paths.exports_dir() == Path("/somewhere/else/exports")
+
+
+def test_exports_has_no_container_side():
+    """`exports/` is host-only: written by a script, opened by a human. Unlike
+    `analytics_path()` there is nothing in a container to agree with, so it
+    gets no DATA_DIR_CONTAINER counterpart and no compose mount. Adding one
+    would widen a container's view of the artifact root to protect nothing —
+    the api's mount was narrowed to reports/ for exactly that reason."""
+    compose = (Path(paths.__file__).parent.parent / "docker-compose.yml").read_text()
+    assert "/exports" not in compose
+
+
+def test_the_writer_routes_through_the_helper():
+    """No hardcoded exports path may creep back into the export script — the
+    same rule the retention job is held to below."""
+    src = (Path(paths.__file__).parent.parent
+           / "scripts" / "export_wnba_trades.py").read_text()
+    assert "exports_dir()" in src
+    assert '/ "exports"' not in src
 
 
 def test_blank_override_falls_back(monkeypatch):
