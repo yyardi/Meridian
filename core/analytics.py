@@ -13,6 +13,8 @@ Everything quantitative here comes from the historical walk-forward backtest.
 from __future__ import annotations
 
 import json
+import sys
+import time
 
 from sqlalchemy import func, select
 from sqlalchemy import text as sql_text
@@ -70,16 +72,6 @@ _TYPE_LABELS = {
     "basketball_team_full_game_spread": "spread",
 }
 
-#: Phase is `predicted_at` against the game's start time.
-_PHASE_SQL = """
-    with starts as (
-        select market_slug, min(game_start_time) as gst
-        from market_snapshots
-        where game_start_time is not null
-        group by market_slug
-    )
-"""
-
 CAPTION = (
     "Split by market type. Only totals have ever been backtested — spread and "
     "moneyline numbers are prediction records with no validation behind them, "
@@ -93,58 +85,63 @@ CAPTION = (
 )
 
 
-def _brier(pairs: list[tuple[float, int]]) -> float | None:
-    """Mean squared error of a probability against a 0/1 outcome."""
-    if not pairs:
-        return None
-    return round(sum((p - o) ** 2 for p, o in pairs) / len(pairs), 5)
-
-
 def _prediction_rows(session) -> dict[tuple[str, str], dict]:
     """Live-log counts and Brier scores, keyed by (type, phase).
+
+    ONE PASS, AGGREGATED IN POSTGRES. The first version of this ran the
+    `starts` aggregate over market_snapshots TWICE and shipped ~96k resolved
+    predictions to Python to square them there. On the local archive that is a
+    13.7M-row scan done twice for six output rows. It is now a single query
+    whose result set is the six rows themselves, with the Brier means computed
+    by the database — so this function's memory is flat no matter how large
+    either table gets.
+
+    `starts` is pruned to the market_slugs that actually appear in predictions
+    (~1k of them) so the planner can avoid aggregating the whole snapshot
+    table; that pruning is a speed measure and cannot change the result, since
+    every row it removes has no prediction to join to.
 
     In-play rows are expected to be nearly empty — the model is pregame-only —
     and are emitted anyway. "The model has never predicted inside a game" is a
     fact worth seeing, not an absence to hide.
     """
-    counts = session.execute(sql_text(_PHASE_SQL + """
+    rows = session.execute(sql_text("""
+        with starts as (
+            select market_slug, min(game_start_time) as gst
+            from market_snapshots
+            where game_start_time is not null
+              and market_slug in (select distinct market_slug from predictions)
+            group by market_slug
+        )
         select p.sports_market_type,
                case when s.gst is not null and p.predicted_at >= s.gst
-                    then 'ingame' else 'pregame' end as phase,
-               count(*), count(p.resolved_outcome), count(distinct p.game_id)
+                    then 'ingame' else 'pregame' end                    as phase,
+               count(*)                                                 as n_preds,
+               count(p.resolved_outcome)                                as n_resolved,
+               count(distinct p.game_id)                                as n_games,
+               avg(power(p.model_probability - p.resolved_outcome, 2))
+                   filter (where p.resolved_outcome is not null
+                             and p.model_probability is not null)       as brier_model,
+               avg(power(p.market_mid - p.resolved_outcome, 2))
+                   filter (where p.resolved_outcome is not null
+                             and p.market_mid is not null)              as brier_market
         from predictions p
         left join starts s on s.market_slug = p.market_slug
         group by 1, 2
     """)).all()
 
-    resolved = session.execute(sql_text(_PHASE_SQL + """
-        select p.sports_market_type,
-               case when s.gst is not null and p.predicted_at >= s.gst
-                    then 'ingame' else 'pregame' end as phase,
-               p.model_probability, p.market_mid, p.resolved_outcome
-        from predictions p
-        left join starts s on s.market_slug = p.market_slug
-        where p.resolved_outcome is not null
-    """)).all()
-
-    model_pairs: dict[tuple[str, str], list] = {}
-    market_pairs: dict[tuple[str, str], list] = {}
-    for mtype, phase, prob, mid, outcome in resolved:
-        key = (_TYPE_LABELS.get(mtype or "", "other"), phase)
-        if prob is not None:
-            model_pairs.setdefault(key, []).append((float(prob), outcome))
-        if mid is not None:
-            market_pairs.setdefault(key, []).append((float(mid), outcome))
-
     out: dict[tuple[str, str], dict] = {}
-    for mtype, phase, n_preds, n_resolved, n_games in counts:
+    for mtype, phase, n_preds, n_resolved, n_games, b_model, b_market in rows:
         key = (_TYPE_LABELS.get(mtype or "", "other"), phase)
-        agg = out.setdefault(key, {"n_preds": 0, "n_resolved": 0, "n_games": 0})
+        agg = out.setdefault(key, {"n_preds": 0, "n_resolved": 0, "n_games": 0,
+                                   "brier_model": None, "brier_market": None})
         agg["n_preds"] += n_preds
         agg["n_resolved"] += n_resolved
         agg["n_games"] = max(agg["n_games"], n_games)
-        agg["brier_model"] = _brier(model_pairs.get(key, []))
-        agg["brier_market"] = _brier(market_pairs.get(key, []))
+        if b_model is not None:
+            agg["brier_model"] = round(float(b_model), 5)
+        if b_market is not None:
+            agg["brier_market"] = round(float(b_market), 5)
     return out
 
 
@@ -217,14 +214,74 @@ def by_market_type(session, result) -> dict:
     return {"rows": rows, "caption": CAPTION}
 
 
-def build(backtest_url: str | None = None) -> dict:
+#: Peak RSS of this process, in MB. Reported at every stage so a run that is
+#: growing without bound says so while it is still growing, rather than being
+#: discovered afterwards in a swap-thrashed machine. `ru_maxrss` is bytes on
+#: macOS and kilobytes on Linux — normalised here rather than guessed at.
+def _peak_rss_mb() -> float:
+    import resource
+    import sys as _sys
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak / (1024 * 1024) if _sys.platform == "darwin" else peak / 1024
+
+
+class _Progress:
+    """Per-stage progress with elapsed time and peak memory.
+
+    THE CONTRACT: this job may not hang silently. On 2026-08-18 two host runs
+    reached ~9GB RSS and never finished, with nothing on stdout to say what
+    they were doing or that memory was climbing — the machine had to be
+    restarted. Every stage now announces itself before it starts and reports
+    its own duration and the process peak after it ends, so a long run looks
+    long rather than looking dead.
+    """
+
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
+        self.started = time.monotonic()
+
+    def stage(self, label: str):
+        return _Stage(self, label)
+
+    def _emit(self, text: str) -> None:
+        if self.enabled:
+            print(text, file=sys.stderr, flush=True)
+
+    def done(self) -> None:
+        self._emit(f"[analytics] TOTAL {time.monotonic() - self.started:6.1f}s "
+                   f"peak {_peak_rss_mb():.0f}MB")
+
+
+class _Stage:
+    def __init__(self, progress: _Progress, label: str) -> None:
+        self.progress, self.label = progress, label
+
+    def __enter__(self):
+        self.t0 = time.monotonic()
+        self.progress._emit(f"[analytics] {self.label} ...")
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.progress._emit(
+            f"[analytics] {self.label:<34} {time.monotonic() - self.t0:6.1f}s "
+            f"peak {_peak_rss_mb():.0f}MB")
+
+
+def build(backtest_url: str | None = None, *, progress: bool = True) -> dict:
+    prog = _Progress(progress)
     Session = get_sessionmaker(get_engine(backtest_url or LOCAL_URL))
     with Session() as s:
-        results = {
-            m: run_backtest(session=s, config=BacktestConfig(
-                start_season=2024, end_season=2026, fill_model=m))
-            for m in FillModel
-        }
+        results = {}
+        for m in FillModel:
+            with prog.stage(f"backtest ({m.value})"):
+                results[m] = run_backtest(session=s, config=BacktestConfig(
+                    start_season=2024, end_season=2026, fill_model=m))
+            # Release this pass's ORM state before the next one starts. The
+            # odds path no longer loads entities, but the session still
+            # accumulates whatever the engine touches, and three passes share
+            # one session — so the identity map is cleared between them rather
+            # than left to grow for the whole run.
+            s.expunge_all()
         r = results[FillModel.REALISTIC]
 
         # Live prediction log: distribution only. No outcomes yet.
@@ -239,8 +296,10 @@ def build(backtest_url: str | None = None) -> dict:
         ).all()
 
         # Inside the session deliberately: `s` is closed below.
-        market_type_split = by_market_type(s, r)
+        with prog.stage("by_market_type (SQL aggregate)"):
+            market_type_split = by_market_type(s, r)
 
+    prog.done()
     m = r.metrics
     equity = m.equity_curve
 
