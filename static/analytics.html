@@ -14,8 +14,15 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);
        font:12px/1.5 var(--mono);font-variant-numeric:tabular-nums}
-  header{display:flex;align-items:center;gap:18px;padding:9px 14px;
-         background:var(--panel);border-bottom:1px solid var(--line)}
+  header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:9px 14px;
+         background:var(--panel);border-bottom:1px solid var(--line);position:sticky;
+         top:0;z-index:9}
+  .stat{display:flex;gap:6px;align-items:baseline}
+  .stat .k{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em}
+  .stat .v{font-size:11.5px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+  .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
+  .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
   .brand{font-weight:700;letter-spacing:.14em}
   .brand span{color:var(--accent)}
   nav a{color:var(--faint);text-decoration:none;margin-right:14px;font-size:11px;
@@ -55,15 +62,26 @@
 </style>
 </head>
 <body>
+<!-- Same bar as the landing page, deliberately — one header, learned once.
+     Only the token box is absent: nothing on this page can place an order. -->
 <header>
   <div class="brand">MERIDIAN</div>
   <div class="lg" id="lgtabs"></div>
-  <nav><a href="/">Live board</a><a href="/picks">Game tape &amp; results</a><a href="/analytics" class="on">Model performance</a></nav>
+  <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
+  <div class="stat" title="How old the pregame recorder's newest data is. Stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
+  <div class="stat" title="Account balance from Polymarket US."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
+  <nav>
+    <a href="/">Picks</a>
+    <a href="/quote">QUOTE</a>
+    <a href="/analytics" class="on">Model performance</a>
+  </nav>
 </header>
 
 <div class="wrap">
   <div class="banner" id="scope">loading…</div>
   <div class="kpis" id="kpis"></div>
+  <div id="bytype"></div>
   <div class="grid" id="cards"></div>
 </div>
 
@@ -160,6 +178,28 @@ function clvChart(d){
 const LG_KEY = "meridian.league";
 let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
 
+/* Header stats — the same three signals and the same units as the landing
+   page's header, so the bar reads identically on both. */
+const agef = sec => sec == null ? "—"
+  : sec < 90 ? sec.toFixed(0) + "s"
+  : sec < 5400 ? Math.round(sec/60) + "m"
+  : Math.round(sec/3600) + "h";
+async function loadHeader(){
+  try{
+    const d = await (await fetch("/api/status")).json();
+    $("#s-health").innerHTML =
+      `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
+    $("#s-pregame").textContent = agef(d.pregame_age_seconds);
+    $("#s-pregame").className = "v " + (d.healthy ? "pos" : "neg");
+    $("#s-live").textContent = agef(d.live_age_seconds);
+    const br = d.bankroll;
+    $("#s-bankroll").textContent =
+      br && br.bankroll != null ? "$" + br.bankroll.toFixed(2) : "?";
+  } catch(e){ /* informational */ }
+}
+loadHeader();
+setInterval(loadHeader, 30000);
+
 fetch("/api/leagues").then(r=>r.json()).then(d=>{
   if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
   const el = document.getElementById("lgtabs");
@@ -186,6 +226,64 @@ fetch("/api/leagues").then(r=>r.json()).then(d=>{
   paint();
 });
 
+/* Per-market-type × phase split. Shape agreed with Builder D (2026-08-18):
+   `by_market_type: {rows, caption}`; row = {type, phase, n_preds, n_resolved,
+   n_games, brier_model, brier_market, clv{mean,stderr,n}|null,
+   money{staked,returned,roi,n_bets,win_rate,entry_cost}|null, backtested,
+   note}. Contract: rows render exactly as sent, no client-side arithmetic
+   beyond formatting; null renders as a dash, never as 0 (roi 0 means broke
+   even, null means no data — they must not look alike); absent key = section
+   hidden; empty rows = "no data yet".
+
+   Two of D's fields carry the section's honesty and get special treatment:
+   - backtested:false rows grey out with the note inline — without this,
+     unvalidated moneyline ROI would sit in the same column as validated
+     totals ROI, worse than the totals-only table this replaces;
+   - win_rate renders ONLY as one cell with its stake-weighted entry cost
+     ("48% @ 0.47") — the entry cost IS the breakeven the rate must beat, and
+     a win-rate column readable alone is the C11 category error at higher
+     resolution. */
+function renderByType(bt){
+  const el = document.getElementById("bytype");
+  if(!el) return;
+  if(!bt){ el.innerHTML = ""; return; }
+  if(!(bt.rows||[]).length){
+    el.innerHTML = `<div class="banner">${bt.caption||""}<br>
+      <span style="color:var(--faint)">no data yet</span></div>`;
+    return;
+  }
+  const cell = (v, f) => v==null ? '<span style="color:var(--faint)">—</span>' : f(v);
+  el.innerHTML = `
+    <div class="banner" style="margin:14px 0 8px">${bt.caption||""}</div>
+    <table style="margin-bottom:22px"><thead><tr>
+      <th class="l">Type</th><th class="l">Phase</th>
+      <th>Preds</th><th>Resolved</th><th>Games</th>
+      <th>Brier model</th><th>Brier market</th>
+      <th title="closing line value, mean ± stderr">CLV</th>
+      <th title="money at price">ROI</th>
+      <th title="win rate @ stake-weighted entry cost — the entry cost IS the breakeven">Win @ cost</th>
+      <th>Staked</th><th class="l"></th>
+    </tr></thead><tbody>${bt.rows.map(r=>{
+      const m = r.money, off = r.backtested === false;
+      return `<tr style="${off?"opacity:.55":""}">
+        <td class="l">${r.type}</td>
+        <td class="l" style="color:var(--faint)">${r.phase}</td>
+        <td>${cell(r.n_preds, v=>v)}</td>
+        <td>${cell(r.n_resolved, v=>v)}</td>
+        <td>${cell(r.n_games, v=>v)}</td>
+        <td>${cell(r.brier_model, v=>num(v,4))}</td>
+        <td>${cell(r.brier_market, v=>num(v,4))}</td>
+        <td>${r.clv ? `<span class="${cls(r.clv.mean)}">${num(r.clv.mean,3)}</span>
+             <span style="color:var(--faint)">± ${num(r.clv.stderr,3)}</span>` : cell(null)}</td>
+        <td>${m && m.roi != null ? `<span class="${cls(m.roi)}">${pct(m.roi,2)}</span>` : cell(null)}</td>
+        <td>${m && m.win_rate != null && m.entry_cost != null
+             ? `${num(m.win_rate,3)} <span style="color:var(--faint)">@ ${num(m.entry_cost,2)}</span>` : cell(null)}</td>
+        <td>${m && m.staked != null ? "$"+num(m.staked,2) : cell(null)}</td>
+        <td class="l" style="color:var(--faint);font-size:10px">${
+          off ? '<span class="warnc">never backtested</span>' + (r.note?" · "+r.note:"") : (r.note||"")}</td>
+      </tr>`;}).join("")}</tbody></table>`;
+}
+
 function load(){
 fetch("/api/analytics").then(r=>r.json()).then(d=>{
   if(d.error){ $("#scope").textContent = d.error; return; }
@@ -205,6 +303,8 @@ fetch("/api/analytics").then(r=>r.json()).then(d=>{
     ["Edge → return", `<span class="${Math.abs(s.edge_corr)<0.05?"warnc":cls(s.edge_corr)}">${num(s.edge_corr,3)}</span>`, "correlation"],
     ["Fees", num(s.total_fees,2), "units"],
   ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${n}</div></div>`).join("");
+
+  renderByType(d.by_market_type);
 
   const fm = Object.entries(d.fill_models).map(([k,v])=>
     `<tr><td class="l">${k}</td><td class="${cls(v.roi)}">${pct(v.roi,2)}</td>

@@ -79,9 +79,23 @@
    * it must not be. The CSS would have collided too (:hover, .on).          */
   .stripwrap{display:flex;align-items:stretch;background:#0d1016;
              border-bottom:1px solid var(--line)}
-  .striplbl{flex:0 0 auto;display:flex;align-items:center;padding:0 12px 0 14px;
-            font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
-            color:var(--faint);border-right:1px solid var(--line);cursor:help}
+  .stripnav{flex:0 0 auto;display:flex;flex-direction:column;justify-content:center;
+            gap:3px;padding:0 10px 0 12px;border-right:1px solid var(--line)}
+  .vbtn{font:inherit;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+        background:none;border:1px solid transparent;border-radius:3px;color:var(--faint);
+        cursor:pointer;padding:2px 8px}
+  .vbtn:hover{color:var(--txt)}
+  .vbtn.on{background:#16243a;border-color:#2c4a7a;color:#cfe2ff}
+  .scard{cursor:pointer}
+  .scard:hover{border-color:#2c3a52}
+  .scard.sel{border-color:var(--accent);background:#131a28}
+  .newtab{float:right;font-size:10px;color:var(--faint);text-decoration:none;
+          padding:0 3px;border-radius:2px;margin:-2px -4px 0 4px}
+  .newtab:hover{color:var(--accent);background:#1a2233}
+  .phasechip{font-weight:700;letter-spacing:.06em}
+  .gptip{display:none;position:absolute;z-index:20;max-width:240px;background:#0e1218;
+         border:1px solid #2a3346;border-radius:4px;padding:7px 9px;font-size:10.5px;
+         line-height:1.5;pointer-events:none}
   .strip{display:flex;gap:8px;overflow-x:auto;padding:9px 14px;flex:1 1 auto;
          min-width:0}
   .scard{flex:0 0 auto;min-width:132px;background:var(--panel);
@@ -189,22 +203,34 @@
   <div class="brand">MERIDIAN</div>
   <div class="lg" id="lgtabs"></div>
   <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
-  <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v" id="s-pregame">—</span></div>
-  <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v" id="s-live">—</span></div>
+  <!-- These two are DATA AGES — how old each recorder's newest row is — not
+       anything about the games. The operator read "PREGAME 8m / LIVE 0s"
+       during a live game and reasonably asked what they meant; the label now
+       says the unit. -->
+  <div class="stat" title="How old the pregame recorder's newest data is. This writer should never be silent — stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games — informational, not a health check."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
   <!-- The account, read from the venue every scheduler cycle. It sits in the
        header because every size on this page is a fraction of it, and a
        bankroll that has quietly stopped being true is invisible anywhere else. -->
-  <div class="stat" id="s-bankroll-wrap" title="Account balance from Polymarket US. Every stake is a fraction of this."><span class="k">bankroll</span><span class="v num" id="s-bankroll">—</span></div>
+  <div class="stat" id="s-bankroll-wrap" title="Account balance from Polymarket US, re-read from the venue every 60s."><span class="k">bankroll</span><span class="v num" id="s-bankroll">—</span></div>
   <nav>
     <a href="/" class="on">Picks</a>
+    <a href="/quote">QUOTE</a>
     <a href="/analytics">Model performance</a>
   </nav>
   <div id="tokwrap">
     <input id="tok" type="password" placeholder="order token" autocomplete="off"
            title="Server-side token from MERIDIAN_ORDER_TOKEN. Held in this tab only (sessionStorage), never persisted to disk.">
-    <div class="pill" id="modepill">SHADOW · 0 REAL ORDERS</div>
   </div>
 </header>
+
+<!-- Invisible until it matters. The old header pill announced HUMAN_CONFIRM /
+     REAL / AUTONOMOUS on every load; the operator asked for it gone, and the
+     only part of it that was ever load-bearing is the autonomous counter —
+     which must read 0 forever. So: nothing at all in the normal case, and a
+     banner that cannot be missed if it ever stops being 0. -->
+<div id="autoalert" style="display:none;background:#2a1414;color:#ff7b80;border-bottom:1px solid #4d2020;
+     padding:8px 14px;font-weight:700"></div>
 
 <!-- The confirmation ticket. The row button opens this; only the button
      inside it sends anything. Two clicks, two different elements, and the
@@ -235,21 +261,23 @@
      than merely non-contradictory. The label sits outside the scroller so it
      stays put while the cards scroll past it. -->
 <div class="stripwrap">
-  <div class="striplbl" title="Current state — live scores and tip countdowns. Historical state as of each past decision lives in the game tape below, not here.">now</div>
+  <div class="stripnav">
+    <button class="striplbl vbtn on" data-view="now" title="Live games' tables — or the next game to tip when nothing is live. Current state; each past decision's view of the game lives in the tape below.">now</button>
+    <button class="vbtn" data-view="all" title="Every game's table">all</button>
+  </div>
   <div class="strip" id="strip"><div class="stripempty">loading games…</div></div>
 </div>
 
 <div class="wrap">
-  <div class="banner">
-    <b>These are shadow picks, not advice.</b> The model passes its CLV gate but is
-    still inside its 60-day shadow window, and it does not know tonight's injuries or
-    lineups. <span class="warnc">?</span> marks a disagreement over 15% — usually our
-    missing information, not free money. Real edge looks like small gaps that are
-    right more often than not.
-  </div>
+  <!-- The shadow-picks banner used to live here. Removed at the operator's
+       request (2026-08-17): they read this page all day and the caveat had
+       become wallpaper. The per-row honesty survives where it is load-bearing
+       — the ? marker on wide disagreements, the greyed not-actionable rows —
+       and the full model-quality story lives on /analytics, which is where
+       someone deciding whether to TRUST the model should be looking anyway.
 
-  <!-- Above the picks table and OUTSIDE #picks: the unrecorded-league branch
-       replaces #picks wholesale, and the bankroll is true on every league. -->
+       Bankroll sits OUTSIDE #picks: the unrecorded-league branch replaces
+       #picks wholesale, and the balance is true on every league. -->
   <div class="note" id="bankroll"></div>
 
   <h2>Tonight's pregame picks <span id="hint" class="dimc" style="text-transform:none;letter-spacing:0"></span></h2>
@@ -263,16 +291,13 @@
       display only, nothing here is orderable</span></h2>
   <div id="livefv"></div>
 
-  <h2 style="margin-top:24px">Open positions — EV stop-loss guard <span class="dimc" style="text-transform:none;letter-spacing:0">(formula FV, unvalidated — information only)</span></h2>
+  <h2 style="margin-top:24px">Open positions — EV guard <span class="dimc" style="text-transform:none;letter-spacing:0">· formula FV, unvalidated</span></h2>
   <div id="evguard"></div>
 
   <h2 style="margin-top:24px">Live totals — formula FV
     <span class="dimc" style="text-transform:none;letter-spacing:0">·
       display only, nothing here is orderable</span></h2>
   <div id="livetot"></div>
-
-  <h2 style="margin-top:24px">Real orders — venue truth from the fill watcher</h2>
-  <div id="orders"></div>
 
   <h2 style="margin-top:24px">Past predictions — what actually happened</h2>
   <div class="kpis" id="rk"></div>
@@ -310,26 +335,64 @@ const agef = sec => sec == null ? "—"
    filled in with a plausible number — the failure being fixed here is that a
    stale constant looked exactly like a live reading on this page. */
 function renderBankroll(b){
-  const el = $("#bankroll");
-  if(!el) return;
+  // One writer for both displays (the header stat and the note), so they can
+  // never disagree. Unknown is SAID, never filled with a plausible number —
+  // a stale constant looking exactly like a live reading is the bug this
+  // feature replaced.
+  const el = $("#bankroll"), st = $("#s-bankroll");
   if(!b || b.bankroll == null){
-    el.innerHTML = '<span class="warnc">Bankroll unknown</span> — the venue balance '
-      + 'could not be read, so every size below is unsized rather than guessed.'
-      + (b && b.unavailable ? ` <span class="dimc">(${b.unavailable})</span>` : "");
+    if(el) el.innerHTML = '<span class="warnc">Bankroll unknown</span>'
+      + (b && b.unavailable ? ` <span class="dimc">${b.unavailable}</span>` : "");
+    if(st){ st.textContent = "?"; st.className = "v num neg"; }
     return;
   }
-  const mins = Math.round((b.age_seconds||0)/60);
-  // `isStale`, not `stale`: this page has a global stale(league) guard, and a
-  // local const of that name would shadow it for the rest of this function.
-  // Harmless today because nothing here calls it — which is exactly how the
-  // .gcard/.scard collision would have gone unnoticed.
-  const isStale = mins >= 60;
-  el.innerHTML = `Bankroll <b>$${b.bankroll.toFixed(2)}</b> ${b.currency||""} `
-    + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · in positions `
-    + `$${(b.asset_notional??0).toFixed(2)} · read `
-    + `<span class="${isStale?"warnc":"dimc"}">${mins}m ago</span>`
-    + `</span> — every stake below is a fraction of this.`;
+  const secs = b.age_seconds ?? 0;
+  /* Positions come from /v1/portfolio/positions now — the balances payload
+     kept reading $0 in positions while the operator was in a live trade.
+     `equity` is cash + clamped position values; `bankroll` (sizing) is still
+     cash alone. "positions unread" is a different claim from "$0.00": the
+     first means the endpoint failed, the second that the account is flat. */
+  const posTxt = b.positions_read_ok === false
+    ? '<span class="warnc">positions unread</span>'
+    : `positions $${(b.positions_value??0).toFixed(2)}`
+      + ((b.n_positions??0) ? ` (${b.n_positions} open)` : "");
+  if(el){
+    let rows = "";
+    if((b.positions||[]).length){
+      rows = `<table style="margin-top:6px"><thead><tr>
+        <th class="l">Position</th><th>Qty</th><th>Cost</th><th>Value</th>
+        <th>Realized</th></tr></thead><tbody>${b.positions.map(pn=>`
+        <tr>
+          <td class="l">${pn.title||shortSlug(pn.market_slug)}${pn.outcome?` <span class="dimc">${pn.outcome}</span>`:""}</td>
+          <td>${pn.quantity.toFixed(2)}</td>
+          <td>$${pn.cost.toFixed(2)}</td>
+          <td class="${pn.value>=pn.cost?"pos":"neg"}">$${pn.value.toFixed(2)}</td>
+          <td class="dimc">$${pn.realized.toFixed(2)}</td>
+        </tr>`).join("")}</tbody></table>`;
+    }
+    el.innerHTML = `Bankroll <b>$${((b.equity??b.bankroll)).toFixed(2)}</b> `
+      + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · ${posTxt}`
+      + ` · ${agef(secs)} ago</span>${rows}`;
+  }
+  if(st){
+    st.textContent = "$" + (b.equity??b.bankroll).toFixed(2);
+    st.className = "v num " + (secs >= 3600 ? "neg" : "pos");
+  }
 }
+
+/* Live, not the scheduler's stored reading. /api/bankroll?refresh=true is the
+   on-demand half of the poller — a read-only GET against a signed GET, rate-
+   limited server-side — and it exists for exactly this moment: the operator
+   is IN a trade and the 20-minute cadence is too slow to trust. On failure
+   the last rendered value stands; nothing falls back to a guess. */
+async function refreshBankroll(){
+  try{
+    const r = await fetch("/api/bankroll?refresh=true");
+    if(r.ok) renderBankroll(await r.json());
+  } catch(e){ /* keep the last reading */ }
+}
+refreshBankroll();
+setInterval(refreshBankroll, 60000);
 
 /* --- the market board -------------------------------------------------- *
  * Every market on the board gets a row, not only the ones that are
@@ -401,6 +464,7 @@ function whyNotActionable(r, hrs){
 }
 
 function renderBoard(b, picksBySlug){
+  LAST_BOARD = b; LAST_PICKS_BYSLUG = picksBySlug;
   const rows = b.markets || [];
   if(!rows.length){
     $("#hint").textContent = "";
@@ -409,9 +473,7 @@ function renderBoard(b, picksBySlug){
     return;
   }
   const nPicks = Object.keys(picksBySlug).length;
-  $("#hint").textContent =
-    ` — ${rows.length} markets on the board · ${nPicks} actionable`
-    + (nPicks ? "" : " · nothing orderable right now, lines shown anyway");
+  $("#hint").textContent = ` — ${rows.length} markets · ${nPicks} actionable`;
 
   const now = Date.now();
   const games = [];
@@ -423,10 +485,27 @@ function renderBoard(b, picksBySlug){
   }
   games.sort((x, y) => (x.start || "").localeCompare(y.start || ""));
 
+  const shown = viewGames(games);
+  if(VIEW.mode !== "game") document.title = "Meridian";
+  if(VIEW.mode === "game"){
+    // A single-game tab names itself, so ten of them stay tellable apart.
+    document.title = shown.length ? `${shortEvent(VIEW.ev)} — Meridian` : "Meridian";
+    if(!shown.length){
+      $("#picks").innerHTML = `<div class="empty">${shortEvent(VIEW.ev)} is not on the board
+        — finished, or not listed yet. <span class="pickc" style="cursor:pointer"
+        onclick="setView({mode:'now'})">back to now →</span></div>`;
+      return;
+    }
+  } else if(VIEW.mode === "now" && shown.length && !shown.some(g => g.rows.some(r=>r.is_live))){
+    // Say when NOW fell through to the next tip, or one table with no live
+    // badge reads like a bug.
+    $("#hint").textContent += " · nothing live — showing next to tip";
+  }
+
   // No SHADOW column. The old live board carried one (REST/CROSS + the sizer's
   // quantity) and it did not come back with the tables: it duplicated what the
   // confirm ticket already computes live off the price actually in the box.
-  $("#picks").innerHTML = games.map(g => {
+  $("#picks").innerHTML = shown.map(g => {
     const hrs = g.start ? (new Date(g.start).getTime() - now) / 3.6e6 : null;
     const when = g.start
       ? new Date(g.start).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"}) : "—";
@@ -751,7 +830,8 @@ async function sendOrder(){
             + `for the filled quantity</span>` : "");
       markRow(p.market_slug, "done", "SENT");
       loadStatus();
-      loadOrders();
+      refreshBankroll();
+      if(OPEN_GAME) loadGameOrders(OPEN_GAME);
     } else {
       out.innerHTML = `<span class="bad">REJECTED</span> · HTTP ${r.status}<br>`
         + `<span class="dimc">${(d.detail||d.response||JSON.stringify(d)).slice(0,300)}</span>`;
@@ -779,10 +859,16 @@ function markRow(slug, cls, label){
 async function loadStatus(){
   try{
     const d = await (await fetch("/api/status")).json();
-    const human = d.orders_human ?? 0, auto = d.orders_autonomous ?? 0;
-    const pill = $("#modepill");
-    pill.textContent = `HUMAN_CONFIRM · ${human} REAL · ${auto} AUTONOMOUS`;
-    if(auto > 0){ pill.style.background = "#2a1616"; pill.style.color = "#ff5c62"; }
+    // The header pill is gone (operator request). Its one load-bearing job —
+    // the autonomous counter, which must read 0 forever — survives as a
+    // banner that only exists when it fires. Absence of noise in the normal
+    // case, impossible to miss in the abnormal one.
+    const auto = d.orders_autonomous ?? 0, alert = $("#autoalert");
+    if(auto > 0){
+      alert.style.display = "block";
+      alert.textContent = `${auto} AUTONOMOUS ORDER${auto>1?"S":""} — the CHECK `
+        + `constraint that makes machine orders unrepresentable is gone. Stop and look.`;
+    } else { alert.style.display = "none"; }
 
     $("#s-health").innerHTML =
       `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
@@ -802,27 +888,10 @@ async function loadStatus(){
       `${cnt(c.snapshots)} snapshots · ${cnt(c.book_levels)} book levels · `
       + `${cnt(c.predictions)} predictions · ${cnt(c.shadow_orders)} shadow orders · `
       + `updated ${new Date().toLocaleTimeString()}`;
-    // Unknown reads "?" and turns red — the same word `cnt()` uses above for
-    // a count nobody has measured, and for the same reason. It never falls
-    // back to a number: a plausible balance the venue did not give us is
-    // indistinguishable on screen from a real one, and that is the bug this
-    // whole feature replaced.
-    const br = d.bankroll, brEl = $("#s-bankroll");
-    if (br && br.bankroll != null) {
-      brEl.textContent = "$" + br.bankroll.toFixed(2);
-      const mins = Math.round((br.age_seconds ?? 0) / 60);
-      brEl.className = "v num " + (mins >= 60 ? "neg" : "pos");
-      $("#s-bankroll-wrap").title =
-        `Account balance from Polymarket US: $${br.bankroll.toFixed(2)} `
-        + `(cash $${(br.cash ?? 0).toFixed(2)}, in positions $${(br.asset_notional ?? 0).toFixed(2)}), `
-        + `read ${mins}m ago. Every stake is a fraction of this.`;
-    } else {
-      brEl.textContent = "?";
-      brEl.className = "v num neg";
-      $("#s-bankroll-wrap").title =
-        "The venue balance could not be read: " + ((br && br.unavailable) || "unknown")
-        + ". Nothing is sized against a guessed bankroll.";
-    }
+    // Bankroll is NOT written from here any more. renderBankroll() owns both
+    // displays and is fed by the 60s live poll; letting this 15s loop also
+    // write it made the header flap between the fresh venue read and the
+    // scheduler's 20-minute-old stored one.
   } catch(e){ /* the pill is informational; a failure here must not break picks */ }
 }
 loadStatus();
@@ -840,6 +909,40 @@ setInterval(loadStatus, 15000);
  * "no picks for this game" and "we have not asked yet" are different claims,
  * and the strip renders first.                                             */
 let EVENTS = [], LIVE_CTX = {}, PICK_EVENTS = null;
+
+/* Which tables the board shows. The all-games wall was the operator's actual
+   complaint — every future game's ladder stacked under the strip, when the
+   question on opening the page is "what is on NOW".
+
+     now   — live games; if none are live, the next game to tip
+     all   — everything (the old behaviour, one click away)
+     game  — exactly one game, from a strip card or from ?game= in the URL,
+             which is what the card's ↗ opens in a new tab.
+
+   Board and picks payloads are cached so switching views re-renders without
+   refetching. */
+let VIEW = {mode: "now"};
+let LAST_BOARD = null, LAST_PICKS_BYSLUG = null;
+
+const QGAME = new URLSearchParams(location.search).get("game");
+if(QGAME) VIEW = {mode: "game", ev: QGAME};
+
+function setView(v){
+  VIEW = v;
+  renderStrip();
+  if(LAST_BOARD) renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
+}
+
+function viewGames(games){
+  if(VIEW.mode === "game") return games.filter(g => g.ev === VIEW.ev);
+  if(VIEW.mode === "all") return games;
+  // "now": every live game — decided per game, any live market marks it.
+  const live = games.filter(g => g.rows.some(r => r.is_live));
+  if(live.length) return live;
+  // Nothing live: the next game to tip is the one the operator can act on.
+  const upcoming = games.filter(g => g.start && new Date(g.start) > new Date());
+  return upcoming.length ? [upcoming[0]] : games;
+}
 
 function renderStrip(){
   const el = $("#strip");
@@ -884,8 +987,12 @@ function renderStrip(){
     // without them are still listed — "nothing here tonight" is an answer —
     // but they are not the ones the page is about.
     const has = PICK_EVENTS === null ? null : PICK_EVENTS.has(e.event_slug);
-    return `<div class="scard ${e.is_live?"livecard":""} ${has?"haspicks":""}">
-      <div class="sct">${nm}${e.is_live?' <span class="livedot">●</span>':""}</div>
+    const sel = VIEW.mode === "game" && VIEW.ev === e.event_slug;
+    return `<div class="scard ${e.is_live?"livecard":""} ${has?"haspicks":""} ${sel?"sel":""}"
+         data-ev="${e.event_slug}">
+      <div class="sct">${nm}${e.is_live?' <span class="livedot">●</span>':""}
+        <a class="newtab" href="/?game=${encodeURIComponent(e.event_slug)}" target="_blank"
+           title="open this game's table in a new tab">↗</a></div>
       ${line2}${line3}
       <div class="scs">${e.markets} mkts · <span class="${ageCls}">${agef(a)} old</span></div>
       <div class="scs">${has === null ? '<span class="dimc">…</span>'
@@ -893,7 +1000,23 @@ function renderStrip(){
         : '<span class="dimc">no picks</span>'}</div>
     </div>`;
   }).join("");
+
+  /* Cards filter the tables below; clicking the selected one again returns to
+     NOW. Navigation only — nothing here opens a ticket or touches the order
+     path, and the ↗ is an <a>, so the browser owns the new tab. */
+  el.querySelectorAll(".scard").forEach(c => {
+    c.addEventListener("click", ev => {
+      if(ev.target.closest(".newtab")) return;   // the link is the link
+      const slug = c.dataset.ev;
+      setView(VIEW.mode === "game" && VIEW.ev === slug ? {mode:"now"} : {mode:"game", ev:slug});
+    });
+  });
+  document.querySelectorAll(".vbtn").forEach(b => b.classList.toggle("on",
+    VIEW.mode === b.dataset.view));
 }
+
+document.querySelectorAll(".vbtn").forEach(b =>
+  b.addEventListener("click", () => setView({mode: b.dataset.view})));
 
 /* League-aware, like every other loader on the page: the strip must show the
    slate for the tab you are on, not whichever league the server defaults to. */
@@ -913,20 +1036,35 @@ async function loadEvents(league){
    "we looked and it is resting". A FAILED exit is the loudest thing on this
    page: the human believes a resting exit protects that position and it does
    not. */
-async function loadOrders(){
+/* Real orders, shown inside the game they belong to. The page-level panel is
+   gone (operator request): a flat list of every order ever was noise on the
+   landing page, and the question it answered — "what did I do in THIS game?"
+   — is exactly the game tape's question. Slug containment does the join:
+   event `wnba-tor-por-2026-08-06` is a substring of every one of its market
+   slugs (`tsc-wnba-tor-por-2026-08-06-197pt5`).
+
+   A FAILED attached exit stays the loudest thing here: the operator believes
+   a resting exit protects that position, and it does not. */
+let OPEN_GAME = null;
+
+async function loadGameOrders(ev){
+  const el = document.getElementById("gorders");
+  if(!el || !ev) return;
   try{
-    const d = await (await fetch("/api/orders/recent")).json();
-    if(!d.orders || !d.orders.length){
-      $("#orders").innerHTML = '<div class="empty">no real orders yet</div>'; return;
+    const d = await (await fetch("/api/orders/recent?limit=100")).json();
+    const mine = (d.orders||[]).filter(o => (o.market_slug||"").includes(ev));
+    if(!mine.length){
+      el.innerHTML = '<div class="dimc" style="font-size:10.5px;padding:4px 0">no real orders in this game</div>';
+      return;
     }
     const fills = f => f==null
       ? '<span class="dimc" title="the fill watcher has not reconciled this row yet">not reconciled</span>'
       : `<span class="fill${f}">${f}</span>`;
-    $("#orders").innerHTML = `<table><thead><tr>
+    el.innerHTML = `<table><thead><tr>
       <th class="l">When</th><th class="l">Market</th><th class="l">Side</th>
       <th>price.value</th><th>Qty</th><th>Accepted</th><th class="l">Fill</th>
       <th>Filled</th><th class="l">Attached exit</th><th></th>
-    </tr></thead><tbody>${d.orders.map(o=>`
+    </tr></thead><tbody>${mine.map(o=>`
       <tr>
         <td class="l dimc">${new Date(o.submitted_at).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td>
         <td class="l">${shortSlug(o.market_slug)}${o.pre_authorized?' <span class="dimc" title="pre-authorized exit: every term was fixed by a human click; the watcher only chose when">⏎ exit</span>':''}</td>
@@ -948,7 +1086,7 @@ async function loadOrders(){
       </tr>`).join("")}</tbody></table>`;
     /* Two clicks, same button: first arms it, second sends. Nothing else on
        the page can trigger this — a machine may never initiate a cancel. */
-    document.querySelectorAll(".cxbtn").forEach(b=>{
+    el.querySelectorAll(".cxbtn").forEach(b=>{
       b.addEventListener("click", async () => {
         if(b.dataset.armed !== "1"){
           b.dataset.armed = "1"; b.textContent = "SURE?";
@@ -970,13 +1108,12 @@ async function loadOrders(){
           b.className = "sendbtn cxbtn " + (r.ok && j.acknowledged ? "done" : "err");
           b.title = (j.detail || j.response || "").slice(0,200);
         } catch(e){ b.textContent = "ERROR"; b.className = "sendbtn cxbtn err"; }
-        setTimeout(loadOrders, 2500);
+        setTimeout(()=>loadGameOrders(OPEN_GAME), 2500);
+        refreshBankroll();
       });
     });
-  } catch(e){ /* informational panel; must not break picks */ }
+  } catch(e){ /* informational; must not break the tape */ }
 }
-loadOrders();
-setInterval(loadOrders, 30000);
 
 /* EV stop-loss guard (hypothesis #9 as an ALERT). Driven by the UNVALIDATED
    formula FV — same caption discipline as the strip. Two signals, mirrored:
@@ -1001,10 +1138,9 @@ async function loadEVGuard(){
       return `<span class="dimc">${r.message}</span>`;
     };
     el.innerHTML = `
-      <div class="dimc" style="font-size:10.5px;margin-bottom:6px">
-        ${d.caption}. EDGE GONE pushes to the phone (ntfy) once per crossing;
-        recovery pushes an all-clear. Nothing on this panel is orderable.
-      </div>
+      <div class="dimc" style="font-size:10.5px;margin-bottom:6px"
+           title="EDGE GONE pushes to the phone once per crossing; recovery pushes an all-clear.">
+        ${d.caption} · nothing here is orderable</div>
       <table><thead><tr>
         <th class="l">Market</th><th class="l">Side</th><th>Qty</th>
         <th>Entry</th><th>FV now</th><th>Mid now</th><th class="l">Verdict</th>
@@ -1051,13 +1187,9 @@ async function loadLiveFV(){
     }
     const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
     el.innerHTML = `
-      <div class="banner" style="margin-bottom:8px">
-        <b>${d.caption}.</b> P = &Phi;((margin + pregame edge &times; t/40) /
-        (&sigma;&radic;t)), &sigma;=${d.sigma} fitted from 787 games. Minutes left is
-        <b>estimated</b> — the venue publishes no game clock, so time inside a period is
-        interpolated from wall clock and is wrong whenever the clock stops. The gap is
-        coloured only past ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
-      </div>
+      <div class="dimc" style="font-size:10.5px;margin-bottom:6px"
+           title="P = Φ((margin + pregame edge × t/40) / (σ√t)), σ=${d.sigma} fitted from 787 games. Minutes left is interpolated from wall clock — the venue publishes no game clock — so it is wrong whenever the clock stops. Gap coloured past ${(d.gap_highlight*100).toFixed(0)}c.">
+        ${d.caption} · hover for the formula · nothing here is orderable</div>
       <table><thead><tr>
         <th class="l">Market</th><th class="l">Per</th><th>Score</th><th>Marg</th>
         <th>Min left</th><th>Pregame</th><th>FV</th><th>Bid</th><th>Ask</th>
@@ -1105,15 +1237,9 @@ async function loadLiveTotals(){
       g.rows.push(r);
     }
     el.innerHTML = `
-      <div class="banner" style="margin-bottom:8px">
-        <b>${d.caption}.</b> Projection = pregame v4 total, moved by a
-        <b>fraction</b> of how far scoring has diverged from its own expected pace
-        (coefficient 1.32 at Q1 decaying to 1.00 at full time — raw pace is never
-        extrapolated). &sigma; is the fitted per-period residual for <i>totals</i>
-        (15.9 / 13.0 / 9.7), not the win curve's margin &sigma;. Minutes left is
-        <b>estimated</b> — no game clock is published. Gap coloured past
-        ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
-      </div>
+      <div class="dimc" style="font-size:10.5px;margin-bottom:6px"
+           title="Projection = pregame v4 total moved by a FRACTION of scoring's divergence from its expected pace (coefficient 1.32 at Q1 decaying to 1.00 — raw pace is never extrapolated). σ is the fitted per-period totals residual (15.9 / 13.0 / 9.7), not the win curve's margin σ. Minutes left is interpolated — no game clock is published. Gap coloured past ${(d.gap_highlight*100).toFixed(0)}c.">
+        ${d.caption} · hover for the formula · nothing here is orderable</div>
       ${games.map(g=>{
         const nm = shortEvent(g.ev);
         const h = g.rows[0];
@@ -1162,12 +1288,12 @@ fetch("/api/results").then(r=>r.json()).then(d=>{
      `Brier ${s.brier_model} vs ${s.brier_market}`],
   ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>
       <div class="k" style="margin-top:2px">${n}</div></div>`).join("");
-  $("#rnote").innerHTML = `DIAGNOSTIC ONLY: bet win rate reads
-      ${s.bet_win_rate_DIAGNOSTIC==null?"—":s.bet_win_rate_DIAGNOSTIC.toFixed(3)}
-      and direction rate ${s.direction_rate_DIAGNOSTIC} — neither is performance.
-      A flat win rate on ~30¢ bets is the C11 category error (most tail bets are
-      supposed to lose), and direction scores a side, not a bet. Money at price,
-      above, is the number that decides anything.`;
+  // One line; the C11 explanation lives in the tooltip and, in full, on
+  // /analytics — which is where someone weighing the model should be.
+  $("#rnote").innerHTML = `<span class="dimc" style="font-size:10.5px"
+      title="A flat win rate on ~30¢ bets is the C11 category error — most tail bets are supposed to lose — and direction scores a side, not a bet. Money at price is the number that decides anything.">diagnostic only: win rate ${
+      s.bet_win_rate_DIAGNOSTIC==null?"—":s.bet_win_rate_DIAGNOSTIC.toFixed(3)} · direction ${
+      s.direction_rate_DIAGNOSTIC} · neither is performance — money at price decides</span>`;
 
 });
 
@@ -1188,56 +1314,214 @@ const clock = t => new Date(t).toLocaleTimeString([], {hour:"2-digit",minute:"2-
 const day   = t => new Date(t).toLocaleDateString([], {month:"short",day:"numeric"});
 
 function ctxChip(c){
-  // Pregame is the honest, overwhelmingly common answer: the model prices a
-  // game before tip and does not price a running one, so its decisions carry
-  // no score. Saying "pregame" is information; a row of dashes reads as a
-  // broken join.
-  if(!c.is_live) return '<span class="ctxchip">pregame · 0-0</span>';
+  // Every round is labelled PREGAME or IN-PLAY in words, loudly — the
+  // CHI-SEA confusion was a reader scanning 90 rounds of tables and not
+  // being able to tell which side of tip any of them sat on. Pregame is the
+  // honest, overwhelmingly common answer: the model prices a game before tip
+  // and does not price a running one, so its decisions carry no score.
+  //
+  // SEAM: when the live PULSE tape lands (Builder C), its decisions join this
+  // same view and this same chip — an in-play PULSE decision is c.is_live
+  // with a real score, and needs no new rendering. Keep this the one place a
+  // round's phase is turned into words.
+  if(!c.is_live) return '<span class="ctxchip phasechip">PREGAME</span>';
   const mins = c.minutes_left==null ? "" :
     ` · ${c.minutes_left.toFixed(1)}m left${c.minutes_left_is_estimate?" est.":""}`;
   const marg = c.margin==null ? "" : ` · margin ${c.margin>0?"+":""}${c.margin}`;
-  return `<span class="ctxchip livec" title="${c.note||"game state as of this decision"}">`
-       + `LIVE ${c.score||"—"} · ${c.period||"?"}${marg}${mins}</span>`;
+  return `<span class="ctxchip livec phasechip" title="${c.note||"game state as of this decision"}">`
+       + `IN-PLAY ${c.score||"—"} · ${c.period||"?"}${marg}${mins}</span>`;
 }
 
 function gamePath(d){
-  // Score margin and the moneyline mid on one time axis. This is context for
-  // the reader, NOT an input to any decision above it — every point here is
-  // later than every decision on the page.
-  const pts = d.timeline.filter(p => p.margin!=null || p.mid!=null);
+  /* Score margin and the market mid on one REAL time axis, with the model's
+     decision instants marked on it. Rebuilt from the first version, which had
+     no axes, no timeline and no hover — "not cosmetic, i need it" (operator).
+
+     Everything here is context, not input: every path point is later than
+     every decision it sits beside, and the decision dots are markers into the
+     tables below, not data. */
+  const pts = (d.timeline||[]).filter(p => p.margin!=null || p.mid!=null);
   if(pts.length < 3) return "";
-  const W=920,H=150,P={l:34,r:34,t:10,b:16};
+
+  const W=920,H=190,P={l:40,r:40,t:26,b:24};
   const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const T = p => new Date(p.at).getTime();
+  const t0 = T(pts[0]), t1 = T(pts[pts.length-1]) || t0+1;
+
+  /* Decision rounds, grouped by instant. Nearly all are pregame — hours
+     before t0 — so a linear axis would be one long empty runway. Pregame
+     decisions live in a fixed narrow gutter left of the axis instead, and
+     in-game ones sit at their true time. */
+  const GUT = 26;
+  const rounds = [];
+  for(const t of d.trades){
+    let r = rounds.find(x => x.at === t.decided_at);
+    if(!r){ r = {at:t.decided_at, rows:[]}; rounds.push(r); }
+    r.rows.push(t);
+  }
+  rounds.sort((a,b)=>a.at<b.at?-1:1);
+
+  const X  = t => P.l + GUT + (t - t0)/(t1 - t0) * (iw - GUT);
   const mgs = pts.map(p=>p.margin).filter(v=>v!=null);
   const mx = Math.max(6, ...mgs.map(Math.abs));
-  const X = i => P.l + i/(pts.length-1)*iw;
-  const Ym = v => P.t + ih/2 - (v/mx)*(ih/2-4);       // margin, centred on 0
-  const Yp = v => P.t + (1-v)*ih;                      // price 0..1
+  const Ym = v => P.t + ih/2 - (v/mx)*(ih/2-4);
+  const Yp = v => P.t + (1-v)*ih;
 
-  let g = `<line x1="${P.l}" y1="${Ym(0)}" x2="${P.l+iw}" y2="${Ym(0)}" stroke="#2a3242"/>`;
+  // ---- axes ----
+  let g = `<line x1="${P.l+GUT}" y1="${Ym(0)}" x2="${P.l+iw}" y2="${Ym(0)}" stroke="#2a3242"/>`;
+  // left = margin, right = price. Ticks labelled so the two scales are readable.
+  [[-mx,"−"+mx],[0,"0"],[mx,"+"+mx]].forEach(([v,lbl])=>{
+    g += `<text x="${P.l+GUT-5}" y="${Ym(v)+3}" fill="#ffb020" font-size="9" text-anchor="end" opacity=".8">${lbl}</text>`;
+  });
+  [[0,"0"],[0.5,".5"],[1,"1"]].forEach(([v,lbl])=>{
+    g += `<text x="${P.l+iw+5}" y="${Yp(v)+3}" fill="#4c8dff" font-size="9" opacity=".8">${lbl}</text>`;
+  });
+  // time ticks every ~30 min of game clock, labelled in wall time
+  const span = t1 - t0, step = span > 2.4e6 ? 1.8e6 : 6e5;
+  for(let t = Math.ceil(t0/step)*step; t < t1; t += step){
+    g += `<line x1="${X(t)}" y1="${P.t+ih}" x2="${X(t)}" y2="${P.t+ih+3}" stroke="#2a3242"/>`
+       + `<text x="${X(t)}" y="${P.t+ih+13}" fill="#4a5568" font-size="9" text-anchor="middle">${clock(t)}</text>`;
+  }
+
   const seg = (sel, Y, col, w) => {
-    let d="", pen=false;
-    pts.forEach((p,i)=>{ const v=sel(p);
+    let dd="", pen=false;
+    pts.forEach(p=>{ const v=sel(p);
       if(v==null){ pen=false; return; }
-      d += (pen?"L":"M") + X(i).toFixed(1) + "," + Y(v).toFixed(1); pen=true; });
-    return d ? `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}"/>` : "";
+      dd += (pen?"L":"M") + X(T(p)).toFixed(1) + "," + Y(v).toFixed(1); pen=true; });
+    return dd ? `<path d="${dd}" fill="none" stroke="${col}" stroke-width="${w}"/>` : "";
   };
   g += seg(p=>p.mid, Yp, "#4c8dff", 1.2);
   g += seg(p=>p.margin, Ym, "#ffb020", 1.5);
-  // Period boundaries, the only instants the clock is exact.
+
+  // period boundaries — the only instants the game clock is exact
   let last=null;
-  pts.forEach((p,i)=>{ if(p.period && p.period!==last){
-    if(last!==null) g += `<line x1="${X(i)}" y1="${P.t}" x2="${X(i)}" y2="${P.t+ih}" `
+  pts.forEach(p=>{ if(p.period && p.period!==last){
+    if(last!==null) g += `<line x1="${X(T(p))}" y1="${P.t}" x2="${X(T(p))}" y2="${P.t+ih}" `
       + `stroke="#2a3242" stroke-dasharray="2,3"/>`
-      + `<text x="${X(i)+3}" y="${P.t+9}" fill="#4a5568" font-size="9">${p.period}</text>`;
+      + `<text x="${X(T(p))+3}" y="${P.t+9}" fill="#4a5568" font-size="9">${p.period}</text>`;
     last=p.period; } });
-  g += `<text x="4" y="${Ym(0)-4}" fill="#ffb020" font-size="9">margin ±${mx}</text>`;
-  g += `<text x="${P.l+iw+4}" y="${Yp(0.5)}" fill="#4c8dff" font-size="9">mid</text>`;
-  return `<div class="gpath">
+
+  /* ---- decision dots, clustered ----
+     One dot per cluster of rounds that would overlap on screen (~10px).
+     Pregame rounds all land in the gutter, which is exactly the "500 orders
+     at the start" case: one dot, sized by count, hover lists a few and says
+     how many more. */
+  const marks = rounds.map((r,i)=>({
+    x: new Date(r.at).getTime() < t0 ? P.l + GUT/2 : X(new Date(r.at).getTime()),
+    r, i,
+  }));
+  const clusters = [];
+  for(const m of marks){
+    const c = clusters.find(c => Math.abs(c.x - m.x) < 10);
+    if(c){ c.members.push(m); c.x = (c.x*(c.members.length-1)+m.x)/c.members.length; }
+    else clusters.push({x: m.x, members: [m]});
+  }
+  const DOT_Y = P.t + ih + 1;
+  clusters.forEach((c,ci)=>{
+    const n = c.members.reduce((a,m)=>a+m.r.rows.length,0);
+    const rad = Math.min(3 + Math.log2(1+n), 7).toFixed(1);
+    const pre = c.members.every(m => new Date(m.r.at).getTime() < t0);
+    g += `<circle class="tdot" data-c="${ci}" cx="${c.x.toFixed(1)}" cy="${DOT_Y}" r="${rad}"
+        fill="${pre?"#7c879b":"#c08bff"}" opacity=".85" style="cursor:pointer"/>`;
+  });
+  if(clusters.length && clusters.some(c=>c.members.every(m=>new Date(m.r.at).getTime()<t0)))
+    g += `<text x="${P.l+GUT/2}" y="${H-2}" fill="#4a5568" font-size="8" text-anchor="middle">pregame</text>`;
+
+  // serialise cluster contents for the hover card
+  const cdata = clusters.map(c => ({
+    x: c.x,
+    n: c.members.reduce((a,m)=>a+m.r.rows.length,0),
+    rounds: c.members.map(m => ({
+      at: m.r.at,
+      idx: m.i,
+      rows: m.r.rows.slice(0,4).map(t=>t.position||t.human),
+      more: Math.max(0, m.r.rows.length-4),
+    })),
+  }));
+
+  return `<div class="gpath" style="position:relative">
       <div class="dimc" style="font-size:10px;margin-bottom:4px">
-        ${d.timeline_market} · <span style="color:#ffb020">score margin</span> and
-        <span style="color:#4c8dff">market mid</span>, ${pts.length} points</div>
-      <svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg></div>`;
+        ${d.timeline_market} · <span style="color:#ffb020">score margin</span> ·
+        <span style="color:#4c8dff">market mid</span> ·
+        <span style="color:#c08bff">●</span><span style="color:#7c879b">●</span>
+        decisions (hover; click jumps to the round) · ${pts.length} points</div>
+      <svg id="gpsvg" viewBox="0 0 ${W} ${H}" width="100%">${g}
+        <line id="gpcross" y1="${P.t}" y2="${P.t+ih}" stroke="#3a4356" visibility="hidden"/>
+      </svg>
+      <div id="gptip" class="gptip"></div>
+      <script type="application/json" id="gpdata">${JSON.stringify(
+        {t0,t1,W,H,P,GUT,clusters:cdata,
+         pts: pts.map(p=>({t:T(p),score:p.score,margin:p.margin,mid:p.mid,period:p.period}))}
+      ).replace(/</g,"\\u003c")}<\/script>
+    </div>`;
+}
+
+/* Hover + click wiring for the chart. Separate from gamePath because the SVG
+   must be in the DOM first; renderGame calls this after it lands. */
+function wireGamePath(){
+  const svg = document.getElementById("gpsvg"), tip = document.getElementById("gptip");
+  if(!svg || !tip) return;
+  const D = JSON.parse(document.getElementById("gpdata").textContent);
+  const cross = document.getElementById("gpcross");
+  const toSvgX = e => {
+    const r = svg.getBoundingClientRect();
+    // A rect can report zero width while the chart is outside the viewport;
+    // a real pointer can only be over the chart when it is visible, so null
+    // simply means "not a real hover" and both handlers drop it.
+    return r.width ? (e.clientX - r.left) / r.width * D.W : null;
+  };
+  const place = (e, html) => {
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const r = svg.getBoundingClientRect();
+    const px = e.clientX - r.left;
+    tip.style.left = Math.min(px + 12, r.width - 230) + "px";
+    tip.style.top = "18px";
+  };
+
+  svg.addEventListener("mousemove", e => {
+    const x = toSvgX(e);
+    if(x == null) return;
+    // A dot wins over the crosshair when the pointer is near one.
+    const c = D.clusters.find(c => Math.abs(c.x - x) < 9);
+    if(c){
+      cross.setAttribute("visibility","hidden");
+      const lines = [];
+      for(const r of c.rounds.slice(0,3)){
+        lines.push(`<b>${clock(r.at)}</b> · ${r.rows.join(", ")}${r.more?` <span class="dimc">+${r.more} more</span>`:""}`);
+      }
+      if(c.rounds.length > 3) lines.push(`<span class="dimc">… +${c.rounds.length-3} more rounds</span>`);
+      place(e, `<b>${c.n} trade${c.n>1?"s":""}</b><br>${lines.join("<br>")}
+        <br><span class="dimc">click to jump to the round</span>`);
+      return;
+    }
+    // crosshair: nearest path point in time
+    if(x < D.P.l + D.GUT || x > D.W - D.P.r){ tip.style.display="none"; cross.setAttribute("visibility","hidden"); return; }
+    const t = D.t0 + (x - D.P.l - D.GUT)/(D.W - D.P.l - D.P.r - D.GUT) * (D.t1 - D.t0);
+    let best = D.pts[0];
+    for(const p of D.pts) if(Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    cross.setAttribute("x1", x); cross.setAttribute("x2", x);
+    cross.setAttribute("visibility","visible");
+    place(e, `<b>${clock(best.t)}</b> · ${best.period||""}<br>`
+      + `score ${best.score||"—"} <span style="color:#ffb020">margin ${best.margin>0?"+":""}${best.margin??"—"}</span><br>`
+      + `<span style="color:#4c8dff">mid ${best.mid==null?"—":best.mid.toFixed(2)}</span>`);
+  });
+  svg.addEventListener("mouseleave", () => {
+    tip.style.display="none"; cross.setAttribute("visibility","hidden");
+  });
+  svg.addEventListener("click", e => {
+    const x = toSvgX(e);
+    if(x == null) return;
+    const c = D.clusters.find(c => Math.abs(c.x - x) < 9);
+    if(!c || !c.rounds.length) return;
+    // Jump to the newest round in the cluster — rounds render newest-first.
+    const el = document.getElementById("round-" + c.rounds[c.rounds.length-1].idx);
+    // Instant, not smooth: the jump can be thousands of pixels and a smooth
+    // scroll that far either lags or silently gives up partway.
+    if(el){ el.scrollIntoView({block:"center"});
+            el.style.outline = "1px solid #2c4a7a";
+            setTimeout(()=>{ el.style.outline = ""; }, 1600); }
+  });
 }
 
 function renderGame(d){
@@ -1264,28 +1548,30 @@ function renderGame(d){
         <div class="k" style="margin-top:2px">${rounds.length} decision rounds</div></div>
       <div class="kpi"><div class="k">Decided in-play</div>
         <div class="v ${d.n_live_decisions?"warnc":"dimc"}">${d.n_live_decisions}</div>
-        <div class="k" style="margin-top:2px">the model is pregame-only</div></div>
-      <div class="kpi"><div class="k">P&amp;L if filled</div>
+        <div class="k" style="margin-top:2px">${d.n_live_decisions
+          ? "rounds below marked IN-PLAY"
+          : "every decision below was made before tip"}</div></div>
+      <div class="kpi" title="Not a return. These orders were decided and never sent; most would have RESTED, and a resting limit fills only when someone crosses it. This is what the bets pay if every one fills at its limit — the most optimistic fill assumption there is.">
+        <div class="k">P&amp;L if filled</div>
         <div class="v ${pnl>0?"pos":"neg"}">${pnl>=0?"+":""}$${pnl.toFixed(2)}</div>
         <div class="k" style="margin-top:2px">${won}/${resolved.length} won ·
-          <b>conditional</b> — never sent</div></div>
+          <b>conditional</b> — never sent · hover</div></div>
     </div>
 
-    <div class="aftr"><b>P&amp;L if filled is not a return.</b> These orders were
-      decided and never sent, and most of them would have <i>rested</i> on the book —
-      a resting limit fills only when someone crosses it. This is what the bets would
-      have paid <i>had they all filled at their limits</i>, which is the most
-      optimistic fill assumption there is. The backtest's fill model
-      (<code>core/backtest/fills.py</code>) exists because this number needs one.</div>
+    ${d.n_live_decisions ? "" : `<div class="dimc" style="font-size:11px;margin:2px 0 8px">
+      The model was <b>pregame-only</b> for this game: all ${d.n_trades} shadow
+      trades were decided before tip, none during play.</div>`}
 
     ${gamePath(d)}
-    ${d.timeline.length ? `<div class="aftr">The chart above is what happened
-      <b>after</b> these decisions — it was not an input to any of them. Every
-      score and clock reading <i>inside</i> a round below is read as of that
-      round's timestamp.</div>` : ""}
 
-    <div class="tl">${rounds.map(r=>`
-      <div class="round ${r.ctx.is_live?"live":""}">
+    <h2 style="margin-top:18px">Real orders in this game</h2>
+    <div id="gorders"><div class="dimc" style="font-size:10.5px">loading…</div></div>
+    ${d.timeline.length ? `<div class="dimc" style="font-size:10px;margin:4px 0 8px"
+      title="It was not an input to any decision. Every score and clock reading inside a round below is read as of that round's timestamp.">
+      the chart is what happened AFTER these decisions — hover</div>` : ""}
+
+    <div class="tl">${rounds.map((r,ri)=>`
+      <div class="round ${r.ctx.is_live?"live":""}" id="round-${rounds.length-1-ri}">
         <div class="rhead">
           <span class="rtime">${day(r.at)} ${clock(r.at)}</span>
           <span class="dimc">${r.h==null?"":(r.h>=0?`${r.h.toFixed(1)}h before tip`:`${(-r.h).toFixed(1)}h after tip`)}</span>
@@ -1319,16 +1605,18 @@ function renderGame(d){
               t.pnl_if_filled==null?"—":(t.pnl_if_filled>=0?"+":"")+t.pnl_if_filled.toFixed(2)}</td>
           </tr>`).join("")}</tbody></table>
       </div>`).join("")}</div>`;
+  wireGamePath();
   $("#gdetail").scrollIntoView({behavior:"smooth", block:"start"});
 }
 
 function openGame(slug, card){
   document.querySelectorAll(".gcard").forEach(c=>c.classList.remove("on"));
   if(card) card.classList.add("on");
+  OPEN_GAME = slug;
   $("#gdetail").innerHTML = '<div class="empty">loading game tape…</div>';
   fetch(`/api/game/${encodeURIComponent(slug)}`)
     .then(r => r.ok ? r.json() : r.json().then(e=>Promise.reject(e.detail||r.status)))
-    .then(renderGame)
+    .then(d => { renderGame(d); loadGameOrders(d.event_slug); })
     .catch(e => { $("#gdetail").innerHTML = `<div class="empty">${e}</div>`; });
 }
 
@@ -1342,6 +1630,11 @@ function openGame(slug, card){
  */
 const LG_KEY = "meridian.league";
 let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
+// A ?game= link carries its own league in the slug prefix ("wnba-dal-gsv-…").
+// Honour the link over the stored tab — without this, an NBA game link opened
+// while the saved league is WNBA renders an empty page — but do not persist
+// it: a link someone sent you should not repoint every future visit.
+if(QGAME && /^[a-z]+-/.test(QGAME)) LEAGUE = QGAME.split("-")[0];
 
 function mountLeagueTabs(onChange){
   return fetch("/api/leagues").then(r=>r.json()).then(d=>{
