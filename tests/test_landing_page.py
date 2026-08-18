@@ -170,6 +170,15 @@ def test_the_strip_is_display_only(html):
         assert forbidden not in strip, f"{forbidden} must not appear in the strip"
 
 
+def test_the_strip_says_it_is_current_state(html):
+    """It sits next to a retrospective game tape (PR #7). Saying which is which
+    is what makes the pair legible rather than merely non-contradictory — and
+    the two must never be merged into one component that can render both."""
+    assert '"striplbl"' in html or "striplbl" in html
+    strip_label = _block(html, 'class="striplbl"', "</div>")
+    assert ">now" in strip_label.lower() or "now<" in strip_label.lower()
+
+
 def test_the_strip_reports_per_game_staleness(html):
     """A 15-minute-old pregame quote must not look as fresh as a 200ms one."""
     strip = _block(html, "function renderStrip(){", "async function loadEvents")
