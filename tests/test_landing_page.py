@@ -194,8 +194,21 @@ def test_the_send_flow_still_needs_the_token_header(html):
     assert 'sessionStorage.setItem("meridian_order_token"' in html
     # sessionStorage, not localStorage: the token dies with the tab rather
     # than sitting on disk between sessions.
-    assert "localStorage.setItem" not in html
-    assert "localStorage.getItem" not in html
+    #
+    # Scoped to the token, not to localStorage page-wide. The broad version
+    # was wrong in a way that would only have shown up later: a durable UI
+    # preference (a league tab, a column choice) is a perfectly good reason to
+    # touch localStorage, and a test that bans the API outright fails on the
+    # first one and teaches whoever hits it that the rule is noise. The rule
+    # is about the token.
+    # Every access to the token goes through sessionStorage — checked by
+    # looking at what precedes each mention rather than by banning the API.
+    import re
+
+    for m in re.finditer(r'(\w+Storage)\.\w+\(\s*"meridian_order_token"', html):
+        assert m.group(1) == "sessionStorage", (
+            f"the order token must not touch {m.group(1)}")
+    assert 'sessionStorage.getItem("meridian_order_token")' in html
 
 
 def test_the_row_button_only_opens_the_ticket(html):
