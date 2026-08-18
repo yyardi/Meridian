@@ -68,11 +68,12 @@
   <div class="brand">MERIDIAN</div>
   <div class="lg" id="lgtabs"></div>
   <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
-  <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v" id="s-pregame">—</span></div>
-  <div class="stat" title="Live recorder — legitimately silent between games."><span class="k">live</span><span class="v" id="s-live">—</span></div>
+  <div class="stat" title="How old the pregame recorder's newest data is. Stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
   <div class="stat" title="Account balance from Polymarket US."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
   <nav>
     <a href="/">Picks</a>
+    <a href="/quote">QUOTE</a>
     <a href="/analytics" class="on">Model performance</a>
   </nav>
 </header>
@@ -80,6 +81,7 @@
 <div class="wrap">
   <div class="banner" id="scope">loading…</div>
   <div class="kpis" id="kpis"></div>
+  <div id="bytype"></div>
   <div class="grid" id="cards"></div>
 </div>
 
@@ -224,6 +226,64 @@ fetch("/api/leagues").then(r=>r.json()).then(d=>{
   paint();
 });
 
+/* Per-market-type × phase split. Shape agreed with Builder D (2026-08-18):
+   `by_market_type: {rows, caption}`; row = {type, phase, n_preds, n_resolved,
+   n_games, brier_model, brier_market, clv{mean,stderr,n}|null,
+   money{staked,returned,roi,n_bets,win_rate,entry_cost}|null, backtested,
+   note}. Contract: rows render exactly as sent, no client-side arithmetic
+   beyond formatting; null renders as a dash, never as 0 (roi 0 means broke
+   even, null means no data — they must not look alike); absent key = section
+   hidden; empty rows = "no data yet".
+
+   Two of D's fields carry the section's honesty and get special treatment:
+   - backtested:false rows grey out with the note inline — without this,
+     unvalidated moneyline ROI would sit in the same column as validated
+     totals ROI, worse than the totals-only table this replaces;
+   - win_rate renders ONLY as one cell with its stake-weighted entry cost
+     ("48% @ 0.47") — the entry cost IS the breakeven the rate must beat, and
+     a win-rate column readable alone is the C11 category error at higher
+     resolution. */
+function renderByType(bt){
+  const el = document.getElementById("bytype");
+  if(!el) return;
+  if(!bt){ el.innerHTML = ""; return; }
+  if(!(bt.rows||[]).length){
+    el.innerHTML = `<div class="banner">${bt.caption||""}<br>
+      <span style="color:var(--faint)">no data yet</span></div>`;
+    return;
+  }
+  const cell = (v, f) => v==null ? '<span style="color:var(--faint)">—</span>' : f(v);
+  el.innerHTML = `
+    <div class="banner" style="margin:14px 0 8px">${bt.caption||""}</div>
+    <table style="margin-bottom:22px"><thead><tr>
+      <th class="l">Type</th><th class="l">Phase</th>
+      <th>Preds</th><th>Resolved</th><th>Games</th>
+      <th>Brier model</th><th>Brier market</th>
+      <th title="closing line value, mean ± stderr">CLV</th>
+      <th title="money at price">ROI</th>
+      <th title="win rate @ stake-weighted entry cost — the entry cost IS the breakeven">Win @ cost</th>
+      <th>Staked</th><th class="l"></th>
+    </tr></thead><tbody>${bt.rows.map(r=>{
+      const m = r.money, off = r.backtested === false;
+      return `<tr style="${off?"opacity:.55":""}">
+        <td class="l">${r.type}</td>
+        <td class="l" style="color:var(--faint)">${r.phase}</td>
+        <td>${cell(r.n_preds, v=>v)}</td>
+        <td>${cell(r.n_resolved, v=>v)}</td>
+        <td>${cell(r.n_games, v=>v)}</td>
+        <td>${cell(r.brier_model, v=>num(v,4))}</td>
+        <td>${cell(r.brier_market, v=>num(v,4))}</td>
+        <td>${r.clv ? `<span class="${cls(r.clv.mean)}">${num(r.clv.mean,3)}</span>
+             <span style="color:var(--faint)">± ${num(r.clv.stderr,3)}</span>` : cell(null)}</td>
+        <td>${m && m.roi != null ? `<span class="${cls(m.roi)}">${pct(m.roi,2)}</span>` : cell(null)}</td>
+        <td>${m && m.win_rate != null && m.entry_cost != null
+             ? `${num(m.win_rate,3)} <span style="color:var(--faint)">@ ${num(m.entry_cost,2)}</span>` : cell(null)}</td>
+        <td>${m && m.staked != null ? "$"+num(m.staked,2) : cell(null)}</td>
+        <td class="l" style="color:var(--faint);font-size:10px">${
+          off ? '<span class="warnc">never backtested</span>' + (r.note?" · "+r.note:"") : (r.note||"")}</td>
+      </tr>`;}).join("")}</tbody></table>`;
+}
+
 function load(){
 fetch("/api/analytics").then(r=>r.json()).then(d=>{
   if(d.error){ $("#scope").textContent = d.error; return; }
@@ -243,6 +303,8 @@ fetch("/api/analytics").then(r=>r.json()).then(d=>{
     ["Edge → return", `<span class="${Math.abs(s.edge_corr)<0.05?"warnc":cls(s.edge_corr)}">${num(s.edge_corr,3)}</span>`, "correlation"],
     ["Fees", num(s.total_fees,2), "units"],
   ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${n}</div></div>`).join("");
+
+  renderByType(d.by_market_type);
 
   const fm = Object.entries(d.fill_models).map(([k,v])=>
     `<tr><td class="l">${k}</td><td class="${cls(v.roi)}">${pct(v.roi,2)}</td>
