@@ -70,6 +70,13 @@ diagnostic) error. Apply with:
 docker compose up -d api
 ```
 
+**That command is not as narrow as it looks.** The api's start command is
+`alembic upgrade head && uvicorn ...`, so recreating it migrates the database
+to head — including any migration merged since the last recreate, by any
+branch. It is a schema change plus a mount change, not a mount change. Check
+what is pending (`alembic heads`, `alembic current`) before running it, rather
+than reading this section as "restart one container to fix one page".
+
 ## The error now names the path
 
 The old message could not distinguish *"never built"* from *"built where I
