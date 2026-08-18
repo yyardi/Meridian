@@ -72,17 +72,45 @@
   <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
   <div class="stat" title="Account balance from Polymarket US."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
   <nav>
-    <a href="/">Picks</a>
+    <a href="/">PULSE</a>
     <a href="/quote">QUOTE</a>
     <a href="/analytics" class="on">Model performance</a>
   </nav>
 </header>
 
+<!-- Split BY MODEL (operator request, 2026-08-18): three sections, each
+     carrying its OWN scope caveat — never a global banner that misstates one
+     model's status because of another's. ANCHOR is the pregame model's
+     registered record (the era archive); PULSE accrues against its
+     registered floors; QUOTE embeds its capture meters. One page, three
+     standings, no mixing. -->
 <div class="wrap">
+  <h2 style="font-size:13px;letter-spacing:.12em;margin:4px 0 8px">ANCHOR
+    <span class="dimc" style="font-size:10.5px;letter-spacing:0;text-transform:none">
+    · pregame model · the archive era's registered record</span>
+    <span class="dimc" id="freshness" style="font-size:10.5px;letter-spacing:0;text-transform:none"></span></h2>
   <div class="banner" id="scope">loading…</div>
   <div class="kpis" id="kpis"></div>
   <div id="bytype"></div>
   <div class="grid" id="cards"></div>
+
+  <h2 style="font-size:13px;letter-spacing:.12em;margin:26px 0 8px">PULSE
+    <span class="dimc" style="font-size:10.5px;letter-spacing:0;text-transform:none">
+    · live in-game model · the current era</span></h2>
+  <div class="banner" id="pulsescope">Shadow-only, structurally: no order path exists.
+    Registered floors: ≥100 filled entries and ≥10 games before any verdict —
+    counts only below that, by pre-registration
+    (<code>docs/math/pulse-live.md</code>).</div>
+  <div id="pulsebody"><div class="empty" style="padding:18px;color:var(--faint);text-align:center">loading…</div></div>
+
+  <h2 style="font-size:13px;letter-spacing:.12em;margin:26px 0 8px">QUOTE
+    <span class="dimc" style="font-size:10.5px;letter-spacing:0;text-transform:none">
+    · shadow market-maker · <a href="/quote" style="color:var(--accent)">full page →</a></span></h2>
+  <div class="banner" id="quotescope">Nothing is sent — fills are simulated against
+    the recorded book. Pre-registered floors: ≥500 settled fills and ≥10 games per
+    regime; the verdict is the report's own and stays NO DATA below them
+    (<code>docs/math/quote-shadow.md</code>).</div>
+  <div id="quotebody"><div class="empty" style="padding:18px;color:var(--faint);text-align:center">loading…</div></div>
 </div>
 
 <script>
@@ -284,6 +312,87 @@ function renderByType(bt){
       </tr>`;}).join("")}</tbody></table>`;
 }
 
+const agof = sec => sec == null ? "" : sec < 5400 ? ` · generated ${Math.round(sec/60)}m ago`
+  : ` · generated ${(sec/3600).toFixed(1)}h ago — run core.analytics to refresh`;
+
+/* PULSE: counts vs the registered floors, from /api/pulse — which serializes
+   core.pulse.live_report verbatim. Below the floors this renders counts and
+   an accruing chip; at the floors it renders the report's own verdict. The
+   page never computes a performance number for PULSE. */
+function meter(now, floor){
+  return `<div style="height:4px;background:#1a2029;border-radius:2px;overflow:hidden;margin-top:4px">
+    <i style="display:block;height:100%;width:${Math.min(100, now/floor*100)}%;background:var(--accent)"></i></div>`;
+}
+async function loadPulse(){
+  const el = document.getElementById("pulsebody");
+  try{
+    const d = await (await fetch("/api/pulse")).json();
+    if(!d.n_decisions){
+      el.innerHTML = `<div style="padding:18px;text-align:center;color:var(--faint)">
+        No decisions yet — the PULSE era begins with its first live game.<br>
+        <span style="font-size:10.5px">Its record accrues here against the registered
+        floors (${d.floors.entry_fills} filled entries / ${d.floors.games} games).</span></div>`;
+      return;
+    }
+    const v = d.at_floor
+      ? `<span class="${d.verdict.startsWith("PASS")?"pos":"neg"}" style="font-weight:700">${d.verdict}</span>`
+      : `<span style="background:#16243a;border:1px solid #2c4a7a;color:#cfe2ff;border-radius:3px;
+           padding:1px 7px;font-size:9.5px;letter-spacing:.06em">accruing — no verdict yet</span>`;
+    const cm = c => c ? `${pct(c.mean,2)} <span class="dimc">[${pct(c.lo,2)}, ${pct(c.hi,2)}]</span>` : "—";
+    el.innerHTML = `<div class="kpis">
+      <div class="kpi"><div class="k">standing</div><div class="v">${v}</div>
+        <div class="n">first decision ${d.first_decision ? new Date(d.first_decision).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"}</div></div>
+      <div class="kpi"><div class="k">filled entries</div><div class="v">${d.n_entry_fills}/${d.floors.entry_fills}</div>
+        ${meter(d.n_entry_fills, d.floors.entry_fills)}
+        <div class="n">${d.n_decisions} decisions · ${d.n_entries} entries</div></div>
+      <div class="kpi"><div class="k">games</div><div class="v">${d.n_games}/${d.floors.games}</div>
+        ${meter(d.n_games, d.floors.games)}
+        <div class="n">distinct events with a filled entry</div></div>
+      <div class="kpi" title="round trips: entry and exit both filled. rides: unexited, settled. Money at price (C11), the report's own scoring.">
+        <div class="k">settled so far</div>
+        <div class="v">${d.n_round_trips + d.n_rides_settled}</div>
+        <div class="n">${d.n_round_trips} round trips · ${d.n_rides_settled} rides ·
+          trip roi ${cm(d.trip_roi)} · ride roi ${cm(d.ride_roi)}</div></div>
+    </div>`;
+  } catch(e){
+    el.innerHTML = '<div style="padding:18px;text-align:center;color:var(--faint)">/api/pulse unavailable</div>';
+  }
+}
+loadPulse();
+setInterval(loadPulse, 30000);
+
+/* QUOTE: the /quote page's own regime cards, compact. Same payload, same
+   verdict strings — embedding, not recomputing. */
+async function loadQuoteSection(){
+  const el = document.getElementById("quotebody");
+  try{
+    const d = await (await fetch("/api/quote")).json();
+    const names = Object.keys(d.regimes || {});
+    if(!names.length){
+      el.innerHTML = '<div style="padding:18px;text-align:center;color:var(--faint)">no fills recorded yet</div>';
+      return;
+    }
+    el.innerHTML = `<div class="kpis">${names.map(n => {
+      const r = d.regimes[n];
+      const v = r.at_floor
+        ? `<span class="${r.verdict.startsWith("PASS")?"pos":"neg"}" style="font-weight:700">${r.verdict}</span>`
+        : `<span style="background:#16243a;border:1px solid #2c4a7a;color:#cfe2ff;border-radius:3px;
+             padding:1px 7px;font-size:9.5px;letter-spacing:.06em">accruing — no verdict yet</span>`;
+      const cap = r.capture ? `${(r.capture.mean*100).toFixed(2)}¢ <span class="dimc">[${(r.capture.lo*100).toFixed(2)}, ${(r.capture.hi*100).toFixed(2)}]</span>` : "—";
+      return `<div class="kpi"><div class="k">${n}</div><div class="v">${v}</div>
+        <div class="k" style="margin-top:6px">${r.n_settled}/${d.floors.fills} settled fills</div>
+        ${meter(r.n_settled, d.floors.fills)}
+        <div class="k" style="margin-top:4px">${r.n_games}/${d.floors.games} games</div>
+        ${meter(r.n_games, d.floors.games)}
+        <div class="n" style="margin-top:5px">capture/fill ${cap}</div></div>`;
+    }).join("")}</div>`;
+  } catch(e){
+    el.innerHTML = '<div style="padding:18px;text-align:center;color:var(--faint)">/api/quote unavailable</div>';
+  }
+}
+loadQuoteSection();
+setInterval(loadQuoteSection, 30000);
+
 function load(){
 fetch("/api/analytics").then(r=>r.json()).then(d=>{
   if(d.error){ $("#scope").textContent = d.error; return; }
@@ -296,13 +405,14 @@ fetch("/api/analytics").then(r=>r.json()).then(d=>{
   // pregame ANCHOR model's, and it says so. PULSE-era analytics arrive from
   // PULSE's own registered producer when its floors fill, never by
   // re-slicing this one.
+  document.getElementById("freshness").textContent = agof(d.generated_age_seconds);
   $("#scope").innerHTML = `<b>Scope:</b> ${d.scope_warning}<br>`
     + `<span style="color:var(--faint)">Source: ${d.generated_from}. `
     + `The live prediction log cannot answer this yet — those games have not finished.</span><br>`
     + `<span style="color:var(--faint)"><b style="color:var(--warn)">Era:</b> this is the `
     + `pregame ANCHOR model's registered record, full history — the archive era on the `
-    + `landing page. PULSE-era analytics accrue separately under their own registered `
-    + `floors and are never mixed into these numbers.</span>`;
+    + `landing page. The PULSE and QUOTE sections below carry their own records and `
+    + `caveats; nothing here is mixed into these numbers.</span>`;
 
   $("#kpis").innerHTML = [
     ["Mean CLV", `<span class="${cls(s.mean_clv)}">${num(s.mean_clv,3)}</span>`, `± ${num(s.clv_stderr,3)} pts · vs OPENING line`],
