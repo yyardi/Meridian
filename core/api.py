@@ -1,6 +1,7 @@
 """Read-only JSON API behind the Meridian dashboard.
 
-Serves the live board, recorder health, prediction/edge data and shadow orders.
+Serves the picks landing page, recorder health, prediction/edge data and
+shadow orders.
 
 **Read-only by construction.** There is no write endpoint and no order path —
 the dashboard is a window, not a control panel. Placing orders stays in
@@ -23,7 +24,7 @@ from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
@@ -2049,8 +2050,20 @@ def game(event_slug: str, timeline: bool = True, bucket_seconds: int = 30) -> di
 
 
 @app.get("/picks")
-def picks_page() -> FileResponse:
-    return FileResponse(STATIC / "picks.html")
+def picks_page() -> RedirectResponse:
+    """Kept as a permanent alias, not a page.
+
+    The picks page *is* the landing page now — the old live board it used to
+    sit behind was a click the operator spent every session getting past. One
+    page means one URL, so this redirects rather than serving a second copy;
+    two documents rendering the same picks is exactly how the send button and
+    the numbers beside it drift apart.
+
+    302 rather than 301: a permanently-cached redirect in the operator's
+    browser would survive any future decision to give `/picks` its own page
+    again, and there is no cost to re-asking.
+    """
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.get("/api/analytics")
@@ -2106,4 +2119,10 @@ def analytics_page() -> FileResponse:
 
 @app.get("/")
 def index() -> FileResponse:
+    """The picks page. There is no separate live board any more.
+
+    `/api/board` outlives the page it was written for and is still served —
+    it is the only endpoint that returns every rung with its prediction, and
+    the replay and board-cadence tests read it — but nothing renders it.
+    """
     return FileResponse(STATIC / "index.html")

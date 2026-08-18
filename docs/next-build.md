@@ -26,7 +26,7 @@ v4 shipped 2026-08-02. It applies winner's-curse shrinkage in the live path, whi
 
 - **3,546 predictions, 562 shadow orders, 0 resolved.** No evidence yet either way.
 - ⚠️ **The clock was stopped and nobody knew.** `PredictionLogger.run()` anchored on `max(captured_at)` and then filtered out live markets, so during a game — when the 200ms live recorder owns the newest timestamp — it found nothing to price. Zero predictions were written for the entire duration of the 2026-08-02 la-por game (19:30–21:56) while the scheduler logged `job_ok` every 20 minutes. No predictions means no shadow orders, so **nothing accrued toward the 50-resolved-bet gate at any tip-off**. Fixed 2026-08-02 via [`core/board.py`](../core/board.py); the scheduler now logs `job_degraded` when a job completes without error and does no work. Detail: [infra/live-cadence.md](infra/live-cadence.md).
-- The gate is **~50 resolved bets** (CLV converges ~10× faster than P&L), then check `bet_win_rate` vs 0.524 and `brier_model` vs `brier_market` on `/picks`.
+- The gate is **~50 resolved bets** (CLV converges ~10× faster than P&L), then check `bet_win_rate` vs 0.524 and `brier_model` vs `brier_market` on the landing page `/`.
 - **v2/v3's live record: 38.5% bet win rate over 5 games, and the market beat the model on Brier.** That is the disease v4 targets, measured three independent ways (backtest slope 0.16, live big-disagreement accuracy 41%, live bet win rate 38.5%).
 - Nothing to build here. It is a clock.
 
