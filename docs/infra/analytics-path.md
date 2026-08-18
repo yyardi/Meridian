@@ -77,6 +77,32 @@ branch. It is a schema change plus a mount change, not a mount change. Check
 what is pending (`alembic heads`, `alembic current`) before running it, rather
 than reading this section as "restart one container to fix one page".
 
+**It is also not as broad as it looks, and that cuts the other way.** A plain
+`up -d` recreates the container from the **existing image**; the service is
+`build: .` and nothing rebuilds without `--build`. The Dockerfile does
+`COPY core ./core` and `COPY static ./static`, so *code and dashboard HTML are
+baked in*. Which means:
+
+| command | fixes this page | ships new `core/` + `static/` | runs alembic |
+|---|---|---|---|
+| `docker compose up -d api` | **yes** | no | yes |
+| `docker compose up -d --build api` | yes | yes | yes |
+
+The first row is the surprising one and it is verified, not assumed — the
+pre-#7 image, given only the two compose halves, resolves the blob:
+
+    $ docker run --rm -e MERIDIAN_DATA_DIR=/data \
+        -v "$PWD/backups/reports:/data/reports:ro" meridian-api ...
+    analytics_path absent -> confirmed pre-#7 image
+    reports_dir  : /data/reports
+    blob exists  : True
+
+This page's fix lives entirely in compose, and the shipped image's `data_dir()`
+has honoured `MERIDIAN_DATA_DIR` per call since the artifact-root change — so
+the bind alone puts the blob exactly where the old code already looks. Anything
+in `core/` or `static/` needs `--build`. Two commands with different blast
+radii, not one command with a caveat.
+
 ## The error now names the path
 
 The old message could not distinguish *"never built"* from *"built where I
