@@ -119,11 +119,20 @@ checks.
 > read the near-matching ROI as evidence that two runs agreed. It was not.
 > (Raised by Builder C.)
 >
-> The same trap has a smaller cousin: these numbers are the CLI's, which
-> excludes the system's own button orders. A run passing no exclusion set
-> reports 455 fills / 291 trips against the 452 / 289 here — same ROI to the
-> decimal. Quote the fill count alongside any figure from this page, or two
-> correct runs will look like a disagreement. (Caught by Builder B.) And every test built `Fill` objects directly, so nothing exercised the
+> **On this feed the pattern is three-for-three, and it is worth stating as a
+> rule.** Each time, the summary number survived and the composition moved:
+>
+> | error | what stayed put | what actually moved |
+> |---|---|---|
+> | the double count | net exposure per trade (phantom leg is equal and opposite) | fills 452 → 910 |
+> | wrong exclusion set | ROI, −7.5% to the decimal | fills 452 → 455, trips 289 → 291 |
+> | the venue's `realizedPnl` | the total | per-row attribution, >26 of 29 rows |
+>
+> So: **on this feed, check counts and composition — never the ratio.** An
+> invariant that holds under the error is not a check, and this data produces
+> them repeatedly. Quote the fill count alongside any figure from this page,
+> or two correct runs will look like a disagreement. (Pattern identified by
+> Builder B, who caught the second one.) And every test built `Fill` objects directly, so nothing exercised the
 parser. The fixtures now carry both legs, and a redacted `outcomeSide` on the
 selected leg is refused rather than silently scored as a NO position, which
 would invert the row rather than drop it.
