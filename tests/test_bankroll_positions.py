@@ -143,6 +143,15 @@ def test_a_sane_cash_value_passes_through_unclamped():
     assert p.value == Decimal("0.77")
 
 
+def test_unrealized_is_value_minus_cost_per_supports_definition():
+    """Support (2026-08-18): cashValue is market value; unrealized PnL is
+    cashValue − cost. Stated as a field so nobody re-derives it wrong from
+    the once-ambiguous docs."""
+    [p] = bk.parse_positions(_body({"m": _pos_payload()}))
+    assert p.unrealized == Decimal("0.10")
+    assert p.to_dict()["unrealized"] == 0.10
+
+
 # ------------------------------------------------------------------ #
 # bankroll vs equity — sizing must not inherit display's optimism
 # ------------------------------------------------------------------ #

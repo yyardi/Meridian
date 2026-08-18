@@ -23,24 +23,28 @@ Two causes, only one of which was already fixed:
 | `bankroll` | `min(currentBalance, buyingPower)` — unchanged | **Sizing** (Kelly). Position value is not spendable on the next order. |
 | `equity` | `bankroll` + Σ clamped position values | **Display**. What the account is worth. |
 
-## The `cashValue` ambiguity, and how it is contained
+## The `cashValue` ambiguity — settled by support, still verified by us
 
-Polymarket's own docs disagree about the one field that matters:
+Polymarket's docs disagreed about the one field that matters: the REST
+reference called `cashValue` "Unrealized PnL", the SDK reference "Current
+unrealized value". **Support settled it (2026-08-18):**
 
-* REST reference: `cashValue` = "Unrealized PnL for the position"
-* Python SDK reference: `cashValue` = "Current unrealized value" (market value)
+* `cashValue` **is the position's current market value** — not `cost + cashValue`.
+* Unrealized PnL is therefore `cashValue − cost` (exposed as `unrealized`).
+* `assetNotional` staying 0 with open positions is **intended**: position
+  exposure is represented only through the positions endpoint.
 
-Those give different equities. Until a real open position settles it, the
-module (a) takes the SDK reading, (b) **clamps** every position's value to
-±quantity — a binary contract is worth at most $1, so the wrong reading can
-mis-state equity by at most the position's own size — and (c) self-verifies:
-`verify_position_value()` cross-checks `cashValue` against our own recorder's
-mid whenever the position is in a market we record, and logs a verdict
-(`bankroll_cashvalue_semantics`: `value` / `pnl` / `ambiguous`). The next
-open position in a WNBA market answers the question with data.
+Two guards stay anyway. The clamp to ±quantity now bounds venue-side bugs
+rather than a doc reading. And `verify_position_value()` still cross-checks
+`cashValue` against our own recorder's mid for positions in recorded markets
+— a confirmation in an email is not yet an observation in a log, and a `pnl`
+verdict now means the venue disagrees with its own support, which deserves to
+be loud. Positions in markets we do not record get the clamp only.
 
-Positions in markets we do not record (the operator's hand trades on other
-sports) cannot be cross-checked; they get the clamp only.
+`python -m core.bankroll --raw` prints the raw balances and positions bodies
+side by side — the artifact support asked for to reconcile fields precisely,
+capturable the next time a position is open. Redact the account id before
+sending.
 
 ## Failure shape
 
@@ -53,8 +57,8 @@ One signing gotcha, learned the 401 way: the cursor must travel as `params=`
 — the Ed25519 signature covers the bare path, and a query string embedded in
 the path signs the wrong message.
 
-## Still open (support question)
+## History
 
-Which `cashValue` reading is correct, and whether `assetNotional` is *meant*
-to stay 0 while positions are open. Asked of Polymarket support; either
-answer tightens this module.
+Asked of Polymarket support 2026-08-18; answered the same day (see above).
+The REST reference's "Unrealized PnL" description was the wrong half; support
+noted it is likely a documentation issue, not account behaviour.
