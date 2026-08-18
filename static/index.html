@@ -79,6 +79,10 @@
    * it must not be. The CSS would have collided too (:hover, .on).          */
   .stripwrap{display:flex;align-items:stretch;background:#0d1016;
              border-bottom:1px solid var(--line)}
+  .erabtn{font:inherit;font-size:10.5px;letter-spacing:.06em;padding:3px 10px;border-radius:3px;
+          background:none;border:1px solid transparent;color:var(--faint);cursor:pointer}
+  .erabtn:hover{color:var(--txt)}
+  .erabtn.on{background:#16243a;border-color:#2c4a7a;color:#cfe2ff}
   .stripnav{flex:0 0 auto;display:flex;flex-direction:column;justify-content:center;
             gap:3px;padding:0 10px 0 12px;border-right:1px solid var(--line)}
   .vbtn{font:inherit;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
@@ -299,11 +303,36 @@
       display only, nothing here is orderable</span></h2>
   <div id="livetot"></div>
 
-  <h2 style="margin-top:24px">Past predictions — what actually happened</h2>
+  <!-- Era separation (operator request, 2026-08-18): everything below this
+       toggle is HISTORY, and history now has two eras. PULSE (default) is
+       the record from the live loop's first in-game decision onward — the
+       clean slate. The archive is the pregame ANCHOR model's record: never
+       deleted, never mixed, one click away. The toggle governs BOTH history
+       sections (results and the tape) so the two can never show different
+       eras on one screen. -->
+  <div style="display:flex;align-items:center;gap:10px;margin-top:24px">
+    <h2 style="margin:0">Past predictions — what actually happened</h2>
+    <!-- .erabtn, deliberately NOT .lgt: the league wiring binds document-wide
+         to .lgt, so borrowing that class for styling also borrowed its click
+         handler — one click set LEAGUE to undefined and persisted it. The
+         .gcard/.scard lesson, relearned on a button. -->
+    <span class="lg" id="eratoggle">
+      <button class="erabtn on" data-era="pulse" title="The record since PULSE's first live in-game decision — the current era.">current era</button>
+      <button class="erabtn" data-era="archive" title="The pregame ANCHOR model's record, before PULSE went live. Kept in full; shown on demand; never mixed into the current era's numbers.">pregame archive</button>
+    </span>
+  </div>
+  <div id="erabanner" style="display:none;border:1px solid #3d2a17;background:#221708;color:var(--warn);
+       padding:7px 11px;border-radius:4px;margin:8px 0;font-size:10.5px"></div>
   <div class="kpis" id="rk"></div>
   <div class="note" id="rnote"></div>
+  <!-- New with the era work: the per-row results table was dropped in the
+       board-tables rewrite (the game tape replaced it), so "Past predictions"
+       is the KPIs and the diagnostic line above. This div carries only the
+       era empty-state message. -->
+  <div id="results"></div>
 
-  <h2 style="margin-top:24px">Game tape <span class="dimc"
+  <h2 style="margin-top:24px">Game tape <span id="tapeera" class="warnc"
+    style="text-transform:none;letter-spacing:0;display:none">ARCHIVE · </span><span class="dimc"
     style="text-transform:none;letter-spacing:0">· click a game to see every shadow
     trade in it, in the order the model decided them</span></h2>
   <div id="glist"></div>
@@ -1268,7 +1297,47 @@ loadLiveTotals();
 setInterval(loadLiveTotals, 15000);
 
 
-fetch("/api/results").then(r=>r.json()).then(d=>{
+/* Which era history renders. "pulse" is the clean slate the operator asked
+   for; "archive" is the ANCHOR record, labelled. Guarded like the league
+   switch: a slow archive response must not land under a pulse toggle. */
+let ERA = "pulse";
+document.querySelectorAll("#eratoggle .erabtn").forEach(b =>
+  b.addEventListener("click", () => {
+    if(b.dataset.era === ERA) return;
+    ERA = b.dataset.era;
+    document.querySelectorAll("#eratoggle .erabtn").forEach(x =>
+      x.classList.toggle("on", x.dataset.era === ERA));
+    loadResults();
+    loadGames(LEAGUE);
+  }));
+
+function loadResults(){
+  const era = ERA;
+  fetch(`/api/results?era=${era}`).then(r=>r.json()).then(d=>{
+  if(era !== ERA) return;
+
+  // The archive banner: visible exactly when the archive is, worded from the
+  // server's own label so every page spells the era the same way.
+  const eb = document.getElementById("erabanner");
+  if(era === "archive"){
+    eb.style.display = "block";
+    eb.innerHTML = `<b>${d.archive_label}</b> — everything below predates PULSE's first
+      live decision${d.era_boundary ? " ("+new Date(d.era_boundary).toLocaleString()+")" : ""}.
+      Not part of the current era's numbers.`;
+  } else { eb.style.display = "none"; }
+  document.getElementById("tapeera").style.display = era === "archive" ? "" : "none";
+
+  if(era === "pulse" && !d.era_started){
+    $("#rk").innerHTML = "";
+    $("#rnote").innerHTML = "";
+    $("#results").innerHTML = `<div class="empty">The PULSE era begins with its first
+      live in-game decision — nothing yet.<br><span class="dimc" style="font-size:10.5px">
+      The pregame model's record is intact under the archive toggle above.</span></div>`;
+    return;
+  }
+  // A populated view owns the container: without this, the unstarted-era
+  // message survives a switch to the archive and sits under real numbers.
+  $("#results").innerHTML = "";
   const s = d.summary;
   // Sample size is GAMES, not rows: one game emits ~130 correlated ladder rows.
   // And the metric is MONEY AT PRICE (C11): a flat win rate against the 0.524
@@ -1295,7 +1364,9 @@ fetch("/api/results").then(r=>r.json()).then(d=>{
       s.bet_win_rate_DIAGNOSTIC==null?"—":s.bet_win_rate_DIAGNOSTIC.toFixed(3)} · direction ${
       s.direction_rate_DIAGNOSTIC} · neither is performance — money at price decides</span>`;
 
-});
+  });
+}
+loadResults();
 
 /* --- game tape: one game, every shadow trade, in decision order ---------- *
  *
@@ -1658,11 +1729,14 @@ function mountLeagueTabs(onChange){
 }
 
 function loadGames(league){
-  fetch(`/api/games?league=${encodeURIComponent(league)}`).then(r=>r.json()).then(d=>{
-    if(stale(league)) return;
+  const era = ERA;
+  fetch(`/api/games?league=${encodeURIComponent(league)}&era=${era}`).then(r=>r.json()).then(d=>{
+    if(stale(league) || era !== ERA) return;
     $("#gdetail").innerHTML = "";
     if(!d.games.length){
-      $("#glist").innerHTML = `<div class="empty">${d.empty_state}</div>`;
+      $("#glist").innerHTML = era === "pulse" && !d.era_started
+        ? `<div class="empty">No games in the PULSE era yet — the archive holds the pregame record.</div>`
+        : `<div class="empty">${d.empty_state}</div>`;
       return;
     }
     $("#glist").innerHTML = `<div class="glist">${d.games.map(g=>`
