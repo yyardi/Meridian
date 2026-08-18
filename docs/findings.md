@@ -456,11 +456,32 @@ and stopped being correct** when the world changed. These never tested the thing
 they claimed to test, from the first commit. They did not decay; they were born
 green and stayed green.
 
-B11 is the expensive member and it predates the rest:
-`test_local_urls_are_never_rewritten` used `localhost:5433`, which never contained
-`:5432/`, so it could not fail no matter what the function did. **A test for the
-right idea, written against an input that could not exercise it.** Cost: two games
-of 200ms tick data that cannot be refetched from anywhere.
+B11 is the expensive member and it predates the rest. The repo already contains a
+written confession of the pattern, in the test's own docstring
+([`tests/test_schema_roundtrip.py`](../tests/test_schema_roundtrip.py)):
+
+> Both URLs matter and only the second one can regress. `localhost:5433` never
+> contained ':5432/' so it passed vacuously while the rewrite was matching on port
+> alone — and the recorder, which uses the *other* form, spent 23 hours logging
+> `Connection refused` on every tick.
+
+**A test for the right idea, written against an input that could not exercise it.**
+23 hours of outage; the cost was two games of 200ms tick data, which cannot be
+refetched from anywhere.
+
+B11 also demonstrates the **countermeasure**, not only the failure. Its fix did not
+replace the vacuous assertion — it added a second one beside it, on the compose form
+that actually broke:
+
+```python
+    # Exactly what docker-compose gives the live recorder: standard port,
+    # container hostname. This is the one that broke.
+    in_compose = "postgresql+psycopg://meridian:meridian@postgres:5432/meridian"
+```
+
+One vacuous case plus one real. That is the same move as replacing a hardcoded page
+list with a discovery form: keep the case you thought of, and add the one that can
+actually fail.
 
 Then eight more in a single day (2026-08-17/18), found by four people working in
 parallel on unrelated changes:
