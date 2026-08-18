@@ -151,12 +151,17 @@ def test_the_picks_table_has_no_shadow_column(html):
 # --------------------------------------------------------------------- #
 
 
-def test_the_banner_disclaimers_survive_the_merge(html):
-    """Ratified text. A redesign is not a reason to lose any of it."""
-    assert "These are shadow picks, not advice." in html
-    assert "CLV gate" in html
-    assert "60-day shadow window" in html
-    assert "disagreement over 15%" in html
+def test_the_shadow_picks_banner_is_gone_and_the_row_honesty_is_not(html):
+    """The banner was removed at the operator's request (2026-08-17): they
+    read this page all day and the caveat had become wallpaper. What must NOT
+    go with it is the honesty that is load-bearing per row — the ? marker on
+    wide disagreements — and the model-quality story on /analytics, which is
+    where trust decisions belong.
+    """
+    assert "These are shadow picks, not advice." not in html
+    assert "disagreement over 15%" in html          # the ? marker's tooltip
+    analytics = Path("static/analytics.html").read_text()
+    assert "never been backtested" in analytics     # the scope banner survives
 
 
 def test_the_suspect_marker_still_marks_wide_disagreements(html):
@@ -166,8 +171,9 @@ def test_the_suspect_marker_still_marks_wide_disagreements(html):
 
 
 def test_the_display_only_captions_survive(html):
-    """Neither formula-FV strip may lose its caption in a layout change."""
-    assert html.count("Nothing here is orderable") >= 2
+    """Shorter now, but the claim itself may not be lost: both formula-FV
+    strips and the EV guard must still say nothing on them is orderable."""
+    assert html.count("nothing here is orderable") >= 3
     assert "display only, nothing here is orderable" in html
 
 
@@ -192,12 +198,12 @@ def test_the_strip_is_display_only(html):
 
 
 def test_the_strip_says_it_is_current_state(html):
-    """It sits next to a retrospective game tape (PR #7). Saying which is which
-    is what makes the pair legible rather than merely non-contradictory — and
-    the two must never be merged into one component that can render both."""
-    assert '"striplbl"' in html or "striplbl" in html
-    strip_label = _block(html, 'class="striplbl"', "</div>")
-    assert ">now" in strip_label.lower() or "now<" in strip_label.lower()
+    """The NOW button carries the label now. It sits next to a retrospective
+    game tape; saying which is which is what keeps the pair legible."""
+    assert "striplbl" in html
+    btn = _block(html, 'class="striplbl', "</button>")
+    assert ">now" in btn.lower()
+    assert "Current state" in btn
 
 
 def test_the_strip_reports_per_game_staleness(html):
@@ -280,6 +286,146 @@ def test_freshness_is_per_row(html):
     """200ms live and 15-minute pregame writers land in the same table."""
     assert ">Age</th>" in html
     assert "age_seconds" in _fn(html, "function ageCls(br){")
+
+
+# --------------------------------------------------------------------- #
+# View modes — NOW is the default, the wall of tables is opt-in
+# --------------------------------------------------------------------- #
+
+
+def test_now_is_the_default_view(html):
+    """The operator's complaint: every future game's ladder stacked under the
+    strip. The page opens on what is live; everything else is one click."""
+    assert 'let VIEW = {mode: "now"};' in html
+    vg = _fn(html, "function viewGames(games){")
+    assert "is_live" in vg, "NOW must be decided by live markets"
+    assert "upcoming" in vg, "with nothing live, NOW falls through to next tip"
+
+
+def test_a_strip_card_filters_to_one_game_and_can_open_a_tab(html):
+    strip = _fn(html, "function renderStrip(){")
+    assert 'data-ev="${e.event_slug}"' in strip
+    assert 'setView' in strip
+    assert 'class="newtab"' in strip and 'target="_blank"' in strip
+    assert '/?game=' in strip
+
+
+def test_the_game_url_param_selects_the_game_and_its_league(html):
+    assert 'new URLSearchParams(location.search).get("game")' in html
+    assert 'VIEW = {mode: "game", ev: QGAME}' in html
+    # the link's league must beat the stored tab, or a shared NBA link opens
+    # an empty WNBA page — but it must not persist
+    assert "LEAGUE = QGAME.split" in html
+
+
+def test_the_strip_still_cannot_reach_the_order_path(html):
+    """Cards navigate now (operator request) — that is a change of role, not
+    of privilege. Nothing on the strip may open a ticket."""
+    strip = _fn(html, "function renderStrip(){")
+    for forbidden in ("openTicket", "sendCell", "PICKS[", "confirmBtn"):
+        assert forbidden not in strip
+
+
+# --------------------------------------------------------------------- #
+# Declutter: what left the page and what it must not take with it
+# --------------------------------------------------------------------- #
+
+
+def test_the_header_pill_is_gone_but_the_autonomous_tripwire_is_not(html):
+    """The pill announced HUMAN_CONFIRM on every load; its one load-bearing
+    job — the autonomous counter that must read 0 forever — survives as a
+    banner that only exists when it fires."""
+    assert "modepill" not in html
+    assert 'id="autoalert"' in html
+    status = _fn(html, "async function loadStatus(){")
+    assert "orders_autonomous" in status
+    assert "autoalert" in status
+
+
+def test_real_orders_live_inside_the_game_they_belong_to(html):
+    """The page-level panel is gone; the game tape answers "what did I do in
+    THIS game". Slug containment does the join, and the cancel flow keeps its
+    two-click arming."""
+    assert 'id="orders"' not in html
+    fn = _fn(html, "async function loadGameOrders(ev){")
+    assert '.includes(ev)' in fn
+    assert "cxbtn" in fn and "SURE?" in fn
+    assert "X-Meridian-Order-Token" in fn
+    # wired from the tape, and refreshed after a send
+    assert "loadGameOrders(d.event_slug)" in html
+    send = _fn(html, "async function sendOrder(){")
+    assert "loadGameOrders(OPEN_GAME)" in send
+
+
+def test_a_failed_exit_is_still_the_loudest_thing_in_the_orders_table(html):
+    fn = _fn(html, "async function loadGameOrders(ev){")
+    assert "FAILED — position is NOT protected" in fn
+
+
+# --------------------------------------------------------------------- #
+# Bankroll is live
+# --------------------------------------------------------------------- #
+
+
+def test_the_bankroll_is_polled_from_the_venue_not_the_stored_reading(html):
+    """The operator was in a trade and the page showed the scheduler's
+    20-minute-old snapshot. refresh=true is the on-demand half of the poller —
+    read-only by construction — and it exists for exactly this moment."""
+    assert '/api/bankroll?refresh=true' in html
+    assert "setInterval(refreshBankroll, 60000)" in html
+    fn = _fn(html, "async function refreshBankroll(){")
+    assert "renderBankroll" in fn
+
+
+def test_one_writer_for_both_bankroll_displays(html):
+    """loadStatus writing the header while the poll wrote the note made the
+    number flap between a fresh read and a 20-minute-old one."""
+    fn = _fn(html, "function renderBankroll(b){")
+    assert "s-bankroll" in fn, "renderBankroll owns the header stat"
+    status = _fn(html, "async function loadStatus(){")
+    assert "s-bankroll" not in status, "loadStatus must not also write it"
+
+
+def test_an_unknown_bankroll_is_said_not_guessed(html):
+    fn = _fn(html, "function renderBankroll(b){")
+    assert "Bankroll unknown" in fn
+
+
+# --------------------------------------------------------------------- #
+# The game chart is an instrument now
+# --------------------------------------------------------------------- #
+
+
+def test_the_chart_has_a_real_time_axis_and_labelled_scales(html):
+    chart = _fn(html, "function gamePath(d){")
+    assert "new Date(p.at).getTime()" in chart, "x must be time, not index"
+    assert "clock(t)" in chart, "time ticks labelled in wall time"
+    for scale in ('text-anchor="end"', "#ffb020", "#4c8dff"):
+        assert scale in chart, "both y scales must be labelled"
+
+
+def test_decisions_are_dots_clustered_when_they_overlap(html):
+    """The model trades pregame, so hundreds of decisions land at the start.
+    One dot per overlap cluster, sized by count; the hover lists a few rounds
+    and says how many more."""
+    chart = _fn(html, "function gamePath(d){")
+    assert "clusters" in chart
+    assert "Math.abs(c.x - m.x) < 10" in chart
+    wire = _fn(html, "function wireGamePath(){")
+    assert "more rounds" in wire
+    assert "click to jump" in wire
+
+
+def test_the_chart_hover_reads_score_margin_and_mid(html):
+    wire = _fn(html, "function wireGamePath(){")
+    for field in ("score", "margin", "mid"):
+        assert field in wire
+
+
+def test_chart_clicks_jump_to_the_round_table(html):
+    wire = _fn(html, "function wireGamePath(){")
+    assert 'getElementById("round-"' in wire
+    assert 'id="round-' in html, "rounds must carry the anchors the chart jumps to"
 
 
 # --------------------------------------------------------------------- #

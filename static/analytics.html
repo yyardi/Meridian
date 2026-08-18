@@ -14,8 +14,15 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);
        font:12px/1.5 var(--mono);font-variant-numeric:tabular-nums}
-  header{display:flex;align-items:center;gap:18px;padding:9px 14px;
-         background:var(--panel);border-bottom:1px solid var(--line)}
+  header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:9px 14px;
+         background:var(--panel);border-bottom:1px solid var(--line);position:sticky;
+         top:0;z-index:9}
+  .stat{display:flex;gap:6px;align-items:baseline}
+  .stat .k{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em}
+  .stat .v{font-size:11.5px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+  .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
+  .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
   .brand{font-weight:700;letter-spacing:.14em}
   .brand span{color:var(--accent)}
   nav a{color:var(--faint);text-decoration:none;margin-right:14px;font-size:11px;
@@ -55,10 +62,19 @@
 </style>
 </head>
 <body>
+<!-- Same bar as the landing page, deliberately — one header, learned once.
+     Only the token box is absent: nothing on this page can place an order. -->
 <header>
   <div class="brand">MERIDIAN</div>
   <div class="lg" id="lgtabs"></div>
-  <nav><a href="/">Live board</a><a href="/picks">Game tape &amp; results</a><a href="/analytics" class="on">Model performance</a></nav>
+  <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
+  <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="Live recorder — legitimately silent between games."><span class="k">live</span><span class="v" id="s-live">—</span></div>
+  <div class="stat" title="Account balance from Polymarket US."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
+  <nav>
+    <a href="/">Picks</a>
+    <a href="/analytics" class="on">Model performance</a>
+  </nav>
 </header>
 
 <div class="wrap">
@@ -159,6 +175,28 @@ function clvChart(d){
    for one of them. */
 const LG_KEY = "meridian.league";
 let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
+
+/* Header stats — the same three signals and the same units as the landing
+   page's header, so the bar reads identically on both. */
+const agef = sec => sec == null ? "—"
+  : sec < 90 ? sec.toFixed(0) + "s"
+  : sec < 5400 ? Math.round(sec/60) + "m"
+  : Math.round(sec/3600) + "h";
+async function loadHeader(){
+  try{
+    const d = await (await fetch("/api/status")).json();
+    $("#s-health").innerHTML =
+      `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
+    $("#s-pregame").textContent = agef(d.pregame_age_seconds);
+    $("#s-pregame").className = "v " + (d.healthy ? "pos" : "neg");
+    $("#s-live").textContent = agef(d.live_age_seconds);
+    const br = d.bankroll;
+    $("#s-bankroll").textContent =
+      br && br.bankroll != null ? "$" + br.bankroll.toFixed(2) : "?";
+  } catch(e){ /* informational */ }
+}
+loadHeader();
+setInterval(loadHeader, 30000);
 
 fetch("/api/leagues").then(r=>r.json()).then(d=>{
   if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
