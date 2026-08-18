@@ -194,17 +194,24 @@ services:
       MERIDIAN_MAX_ORDER_STAKE_USD: ${MERIDIAN_MAX_ORDER_STAKE_USD:-25}
       # BOTH halves of the artifact-root contract, and they only work together
       # (core/paths.py, DATA_DIR_CONTAINER). The volume below puts the host's
-      # root inside the container; this makes `data_dir()` resolve to it. With
-      # the mount alone the default wins and the api reads /app/backups — a
-      # path that does not exist in the image — which is why the model
-      # performance page said "run `python -m core.analytics` first" no matter
-      # how many times the operator ran it.
+      # reports subtree inside the container; this makes `reports_dir()`
+      # resolve to it. With the mount alone the default wins and the api reads
+      # /app/backups — a path that does not exist in the image — which is why
+      # the model performance page said "run `python -m core.analytics` first"
+      # no matter how many times the operator ran it.
       MERIDIAN_DATA_DIR: /data
     volumes:
-      # Read-only on purpose: the api serves artifacts, it never produces
-      # them. `python -m core.analytics` is a host job by construction — it
-      # reads the standby at localhost:5433, which does not exist in here.
-      - ${MERIDIAN_DATA_DIR:-./backups}:/data:ro
+      # reports/ ONLY, not the whole root. The api reads exactly one artifact
+      # (analytics.json) and every file it serves otherwise comes from the
+      # image's own static/. Mounting the root would additionally hand an
+      # unauthenticated service — bound to all interfaces, see the ports note
+      # above — read access to the database dumps in ticks/ and supabase/ for
+      # no benefit at all.
+      #
+      # Read-only on purpose too: the api serves this artifact, it never
+      # produces it. `python -m core.analytics` is a host job by construction —
+      # it reads the standby at localhost:5433, which does not exist in here.
+      - ${MERIDIAN_DATA_DIR:-./backups}/reports:/data/reports:ro
     # --host 0.0.0.0 is the container binding; the ports line above is what
     # keeps it loopback-only on the host.
     command: ["sh", "-c", "alembic upgrade head && uvicorn core.api:app --host 0.0.0.0 --port 8008"]

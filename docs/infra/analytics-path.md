@@ -38,10 +38,18 @@ Compose gives the api container **both** halves of the mount contract:
 
 ```yaml
     environment:
-      MERIDIAN_DATA_DIR: /data          # so data_dir() points AT the mount
+      MERIDIAN_DATA_DIR: /data          # so reports_dir() points AT the mount
     volumes:
-      - ${MERIDIAN_DATA_DIR:-./backups}:/data:ro
+      - ${MERIDIAN_DATA_DIR:-./backups}/reports:/data/reports:ro
 ```
+
+**`reports/` only, not the root.** The api reads exactly one artifact and
+serves every other file from the image's own `static/`. Mounting the whole root
+would additionally give an unauthenticated service — bound to all interfaces so
+the dashboard is reachable over the tailnet — read access to the database dumps
+in `ticks/` and `supabase/`, for no benefit. Inside the container `data_dir()`
+is therefore a root with a single subtree in it, and `ticks_dir()` /
+`supabase_dir()` resolve to paths that do not exist there. That is correct.
 
 The bind alone is not enough, and this is the trap worth remembering: with the
 volume mounted but `MERIDIAN_DATA_DIR` unset inside the container,

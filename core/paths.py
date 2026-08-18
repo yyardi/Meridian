@@ -19,10 +19,20 @@ The rules:
   subtree under the same root — they are outputs, not archives, and can be
   rebuilt from the database at any time.
 
+  **"Generated" does not imply "regenerable", and the distinction is a
+  deletion hazard.** ``reports/`` is safe to clear because every byte of it
+  can be rebuilt by re-running a job. A future subtree holding generated
+  output that carries anything a human typed — an annotated export, a sheet
+  with the operator's reasoning in it — cannot be rebuilt by anything, and a
+  retention rule copied from ``reports/`` on the strength of both being
+  "outputs" would destroy the only irreplaceable thing under this root.
+  Check regenerability per subtree, never by category.
+
 The docker-compose mounts must agree with these paths: the postgres container
 stages dumps at ``/backups`` which compose binds to ``$MERIDIAN_DATA_DIR/ticks``,
-and the api container sees the whole root at ``/data`` with ``MERIDIAN_DATA_DIR``
-set to match, so a file the host wrote resolves to the same path inside it.
+and the api container sees ``reports/`` at ``/data/reports`` with
+``MERIDIAN_DATA_DIR=/data`` set to match, so a file the host wrote resolves to
+the same path inside it.
 Change one, change both — `tests/test_paths.py` pins the contract.
 """
 
@@ -36,18 +46,23 @@ from pathlib import Path
 #: write to this path and the host job picks the files up via `ticks_dir()`.
 BACKUP_DIR_CONTAINER = "/backups"
 
-#: Where an application container sees the whole artifact root.
+#: Where an application container's ``data_dir()`` points.
 #:
-#: The postgres mount above is a *staging* mount: the container writes there
-#: and a host job collects it, so the two sides may name the path differently.
-#: This one is the opposite — the api container must resolve
-#: `analytics_path()` to the **same file** the host-run analytics job wrote.
-#: That only holds if compose does both halves together: bind
-#: ``$MERIDIAN_DATA_DIR`` here *and* set ``MERIDIAN_DATA_DIR`` to this value
-#: inside the container. Bind without the env var and `data_dir()` falls back
-#: to ``/app/backups``, which is not the mount — the exact bug that made the
-#: model-performance page report "run `python -m core.analytics` first"
+#: The postgres mount is a *staging* mount: the container writes there and a
+#: host job collects it, so the two sides may name the path differently. This
+#: one is the opposite — the api container must resolve `analytics_path()` to
+#: the **same file** the host-run analytics job wrote. That only holds if
+#: compose does both halves together: bind the host artifact root's
+#: ``reports/`` at ``<this>/reports`` *and* set ``MERIDIAN_DATA_DIR`` to this
+#: value inside the container. Bind without the env var and `data_dir()` falls
+#: back to ``/app/backups``, which is not the mount — the exact bug that made
+#: the model-performance page report "run `python -m core.analytics` first"
 #: forever, no matter how many times the operator ran it.
+#:
+#: Only ``reports/`` is bound, so inside the api this is a root with exactly
+#: one subtree in it. `ticks_dir()` and `supabase_dir()` resolve to paths that
+#: do not exist there, which is correct: the api has no business reading
+#: database dumps, and it is an unauthenticated service on all interfaces.
 DATA_DIR_CONTAINER = "/data"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent

@@ -120,9 +120,31 @@ def test_compose_gives_the_api_both_halves_of_the_mount():
     compose = yaml.safe_load((REPO / "docker-compose.yml").read_text())
     api = compose["services"]["api"]
 
-    mount = f"${{MERIDIAN_DATA_DIR:-./backups}}:{paths.DATA_DIR_CONTAINER}:ro"
-    assert mount in api["volumes"], "api must see the host artifact root"
+    mount = f"${{MERIDIAN_DATA_DIR:-./backups}}/reports:{paths.DATA_DIR_CONTAINER}/reports:ro"
+    assert mount in api["volumes"], "api must see the host reports subtree"
     assert api["environment"]["MERIDIAN_DATA_DIR"] == paths.DATA_DIR_CONTAINER
 
-    # Read-only: the api serves artifacts and never produces them.
-    assert api["volumes"][0].endswith(":ro")
+    # Read-only: the api serves this artifact and never produces it.
+    assert all(v.endswith(":ro") for v in api["volumes"])
+
+
+def test_the_api_is_given_reports_and_nothing_else():
+    """Least privilege, and not a style preference.
+
+    The api reads exactly one artifact and serves every other file from the
+    image's own `static/`. Mounting the whole root would additionally hand an
+    unauthenticated service — bound to all interfaces so the dashboard is
+    reachable over the tailnet — read access to the database dumps under
+    `ticks/` and `supabase/`, for no benefit whatsoever.
+    """
+    yaml = pytest.importorskip("yaml")
+    compose = yaml.safe_load((REPO / "docker-compose.yml").read_text())
+
+    for volume in compose["services"]["api"]["volumes"]:
+        # rsplit, not split: the host side is `${MERIDIAN_DATA_DIR:-./backups}`
+        # and compose's default-value syntax contains a colon of its own.
+        host_side, container_side, _mode = volume.rsplit(":", 2)
+        assert host_side.endswith("/reports"), (
+            f"api mounts {host_side!r}; it needs reports/ and nothing else"
+        )
+        assert container_side == f"{paths.DATA_DIR_CONTAINER}/reports"
