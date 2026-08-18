@@ -94,3 +94,60 @@ def test_no_page_strips_a_hardcoded_league_slug():
         body = page.read_text()
         assert '"wnba-"' not in body, page.name
         assert "-wnba-/" not in body, page.name
+
+
+def test_an_unrecorded_league_short_circuits_before_the_query(client):
+    """A league with no data must not walk every prediction on record to
+    return nothing.
+
+    Seconds of pointless work is not the real cost — the window is. While that
+    request is in flight the page can still be painted by a slower response for
+    the league the operator just left, so the shorter this is, the less the
+    stale-response guard has to cover. `/api/games` already did this; `/api/picks`
+    is the one with the SEND buttons on it and did not.
+    """
+    body = client.get("/api/picks?league=nba").json()
+    assert body["recorded"] is False
+    assert body["picks"] == []
+    assert body["predicted_at"] is None
+    assert body["empty_state"]
+
+
+def test_every_league_scoped_loader_checks_the_league_before_painting():
+    """The stale-response race, pinned in the pages themselves.
+
+    /api/picks?league=wnba took 3.2s against an unrecorded league answering in
+    2ms, so switching away mid-flight let the slow response land LAST and
+    repaint the picks table under the wrong tab — with live SEND buttons on
+    markets for a league the operator was not looking at. Reproduced in a
+    browser before the fix and again after.
+
+    Every fetch whose URL carries a league must be followed by the guard; a
+    loader added later without one reintroduces the same bug silently.
+    """
+    #: Discovered, not named. A hardcoded page list breaks the moment a page is
+    #: renamed — and, worse, cannot see a NEW page added later without a guard,
+    #: which is the case this test exists for. The property is "every
+    #: league-scoped fetch is guarded", not "these two files are guarded".
+    pages = sorted((REPO / "static").glob("*.html"))
+    assert pages, "no dashboard pages found"
+
+    checked = 0
+    for page in pages:
+        src = page.read_text()
+        lines = src.splitlines()
+        fetches = [
+            n for n, line in enumerate(lines, 1)
+            if "league=${encodeURIComponent(" in line
+        ]
+        if not fetches:
+            continue          # a page with no league-scoped fetch needs no guard
+        checked += 1
+        assert "function stale(league)" in src, f"{page.name} has no guard"
+        for line_no in fetches:
+            window = "\n".join(lines[line_no - 1:line_no + 6])
+            assert "stale(league)" in window, (
+                f"{page.name}:{line_no} fetches a league without a stale check"
+            )
+
+    assert checked, "no page fetches a league — the guard is untested"
