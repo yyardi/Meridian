@@ -112,6 +112,27 @@ above does not change.*
 capture is indistinguishable between arms. The criterion is not met and the
 default remains `v1`.
 
+### Appended 2026-08-18, later: the injury oracle-arm verdict arrived
+
+Builder B's oracle arm (registration and full numbers:
+`docs/math/injury-delta.md`) answered the question this doc left open:
+**do not build injury inputs.** The hindsight oracle — absence from the box
+score, not tradable, the loosest possible upper bound on roster awareness —
+moves ROI by +5.27 pts point-estimate with a game-clustered 95% CI of
+**[−6.63, +16.85], crossing zero** (4,000 resamples, 344 clusters), and the
+oracle also changed the portfolio (308 → 363 bets), so even the point
+estimate mixes exposure with skill. A real point-in-time feed is strictly
+weaker than that oracle. The `ArmParams`/`EventAnchors` hook stays exactly
+as shipped: documented, dormant, consuming nothing. Not recorded as
+"injuries are worthless" — P(>0) = 0.805 is suggestive and the honest state
+is *accruing*, per B's own write-up.
+
+Same-day pattern worth naming (B spotted it): the oracle result, and this
+doc's own PULSE per-$ side finding, both landed as "point estimate one way,
+clustered CI spanning zero, correct action: write it down, build nothing."
+Two independent measurements in that state on one day is what this sample
+size looks like — not a coincidence about the measurements.
+
 Two findings worth as much as the verdict:
 
 1. **The comparison is currently starved, not settled.** The fresh cohort is
