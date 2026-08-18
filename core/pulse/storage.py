@@ -20,9 +20,18 @@ Rows carry the game tape's own join keys — ``event_slug``, ``market_slug``,
 renders (score, period, margin, clock estimate), captured AT DECISION TIME
 from the observation that triggered the decision, so no as-of lateral join is
 needed to render them. ``phase`` marks the seam the tape view labels:
-``in_play`` rows are what "decided in-play" counts. The tape's context chip
-branches on a boolean ``is_live`` — serialisers map ``phase == 'in_play'`` to
-it rather than expecting the view to parse a string.
+``in_play`` rows are what "decided in-play" counts.
+
+The wiring contract for whoever joins this table into ``/api/game``
+(agreed with the tape view's author, 2026-08-18):
+
+* the context chip branches on a boolean ``is_live`` — map
+  ``phase == 'in_play'`` to it in the serialiser; the chip stays dumb;
+* there is no ``note`` column — the chip tolerates a null note; synthesize
+  one from ``reason`` or omit it;
+* ``GameDetail.n_live_decisions`` MUST count these rows (phase !=
+  'pregame', per event) or the deep-dive banner will call a PULSE game
+  pregame-only while rendering its in-play rounds on the same screen.
 
 Prices and frames
 -----------------
