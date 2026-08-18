@@ -46,6 +46,23 @@ LOCAL_URL = "postgresql+psycopg://meridian:meridian@localhost:5433/meridian"
 # own blocks (`money.n_bets`, `clv.n`) where no reader can mistake one for the
 # other. `backtested` says which rows have any validation at all, and the
 # caption says it in words.
+#
+# COMPARING TWO RUNS OF THIS ARTIFACT — read this before treating a difference
+# as a bug. The prediction table grows continuously, so `n_preds` drifts
+# between any two builds minutes apart: 50,481 and 50,535 came out of two runs
+# eight minutes apart on 2026-08-18, and the live table was at 50,629 shortly
+# after. Nothing was wrong.
+#
+# The useful property is that **the counts which drift are precisely the ones
+# that do not enter the metrics.** Every figure here — Brier, ROI, CLV, win
+# rate — is computed from RESOLVED rows only, so a run that gains unresolved
+# predictions reports identical numbers on a larger `n_preds`. Across those two
+# runs `n_resolved` held at 45,841 and every Brier was byte-identical.
+#
+# So: `n_preds` is a liveness number and `n_resolved` is the sample size. A
+# difference in `n_preds` alone is expected and means nothing. If `n_preds` and
+# `n_resolved` ever move TOGETHER, something genuinely resolved and the metrics
+# really did change — that is the case worth investigating.
 
 _TYPE_LABELS = {
     "basketball_team_full_game_total": "total",
