@@ -1013,3 +1013,55 @@ class PendingExit(Base):
         CheckConstraint("outcome in ('YES','NO')", name="ck_pending_exit_outcome"),
         Index("ix_pending_exits_state", "state"),
     )
+
+
+class AccountBalance(Base):
+    """The venue's own answer to "how much money is in the account", per poll.
+
+    Every dollar figure this system computes — Kelly stake, ticket size, the
+    per-order cap — is a fraction of a bankroll, and until 2026-08-17 that
+    bankroll was the literal ``35.68`` typed into ``core/scheduler.py`` on the
+    day someone last looked at the app. The account was at $23.82 by then, so
+    every size on the board was ~50% too large and the error grew silently
+    with every fill. A number that decays without anybody noticing is not a
+    parameter, it is a bug with a decimal point.
+
+    Append-only, one row per poll. The history is the equity curve, and it is
+    also what makes a past sizing decision reproducible: ``bankroll`` stores
+    the derived number that was actually used, next to the raw fields it came
+    from, so "why was this staked at $0.58" is answerable months later.
+    Cheap at any cadence — 20-minute polling is ~26k rows a year.
+    """
+
+    __tablename__ = "account_balances"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: When we asked. Our clock, not the venue's: the venue's ``lastUpdated``
+    #: has been null on every observation so far, so it cannot be the key.
+    observed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+
+    #: ``currentBalance`` — settled cash.
+    cash: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    #: ``buyingPower`` — what the venue says is deployable right now.
+    buying_power: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    #: ``assetNotional`` — open positions marked to market.
+    asset_notional: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    #: ``openOrders`` — cash committed to resting orders.
+    open_orders: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    unsettled_funds: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    pending_credit: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    margin_requirement: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+
+    #: The number sizing actually used — see `core.bankroll.AccountSnapshot`.
+    bankroll: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+
+    #: The venue's payload verbatim. Reparsing a stored body beats re-fetching
+    #: a balance that has since moved.
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+
+    __table_args__ = (
+        Index("ix_account_balances_observed_at", "observed_at"),
+    )
