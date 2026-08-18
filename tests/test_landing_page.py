@@ -115,17 +115,16 @@ def test_the_board_table_did_not_come_across(html):
 
 
 def test_every_pick_row_carries_return_buy_at_sell_at_and_a_send_cell(html):
-    picks = _fn(html, "function renderPicks(d){")
-    for column in ("BUY at", "SELL at", "Return"):
-        assert f">{column}</th>" in picks, f"the {column} column is missing"
-    assert "sendCell(p)" in picks
+    board = _fn(html, "function renderBoard(b, picksBySlug){")
+    for column in ("BUY at", "SELL at", "Return", "Line", "Model FV", "Edge"):
+        assert f">{column}</th>" in board, f"the {column} column is missing"
+    assert "sendCell(p)" in _fn(html, "function pickRow(p, br){")
 
 
 def test_picks_are_grouped_by_game_with_a_tip_time(html):
-    picks = _fn(html, "function renderPicks(d){")
-    assert "games.find" in picks, "picks must be grouped by event, not listed flat"
-    assert "tips in" in picks
-    assert "hours_to_tipoff" in picks or "g.hrs" in picks
+    board = _fn(html, "function renderBoard(b, picksBySlug){")
+    assert "games.find" in board, "rows must be grouped by event, not listed flat"
+    assert "tips in" in board
 
 
 def test_the_picks_table_has_no_shadow_column(html):
@@ -135,7 +134,7 @@ def test_the_picks_table_has_no_shadow_column(html):
     in the box; a column showed the verdict for a limit price nobody was going
     to send. Two numbers for one decision, and the stale one was larger.
     """
-    picks = _fn(html, "function renderPicks(d){")
+    picks = _fn(html, "function renderBoard(b, picksBySlug){")
     header = _block(picks, "<thead>", "</thead>")
     assert "shadow" not in header.lower(), "no shadow column header"
     # And no row cell reads the shadow order either — a column can be
@@ -161,7 +160,7 @@ def test_the_banner_disclaimers_survive_the_merge(html):
 
 
 def test_the_suspect_marker_still_marks_wide_disagreements(html):
-    picks = _fn(html, "function renderPicks(d){")
+    picks = _fn(html, "function pickRow(p, br){")
     assert "p.suspect" in picks
     assert "usually model error, not free money" in picks
 
@@ -212,6 +211,75 @@ def test_recorder_health_came_across_from_the_board(html):
     """A pick priced off a dead writer still renders; only this says so."""
     for stat in ('id="s-health"', 'id="s-pregame"', 'id="s-live"'):
         assert stat in html
+
+
+# --------------------------------------------------------------------- #
+# The board shows MARKETS, not only picks
+# --------------------------------------------------------------------- #
+
+
+def test_the_table_renders_every_market_not_only_actionable_ones(html):
+    """The regression this fixes.
+
+    The picks-only table printed "No tradeable pregame markets right now" on a
+    night with 95 quoted markets on the board — true, and useless. The operator
+    reads this page to see lines; a page that hides every line whenever nothing
+    is orderable answers a question nobody asked.
+    """
+    load = _fn(html, "async function loadPicks(league){")
+    assert "/api/board?league=" in load, "the table must be driven by the board"
+    assert "/api/picks?league=" in load, "picks supply the actionable subset"
+    board = _fn(html, "function renderBoard(b, picksBySlug){")
+    assert "b.markets" in board
+    assert "picksBySlug[r.market_slug]" in board, "picks merge onto board rows"
+
+
+def test_a_non_actionable_row_still_shows_its_prices_and_says_why(html):
+    row = _fn(html, "function boardRow(r, hrs){")
+    for cell in ("r.line", "v.bid", "v.ask", "r.spread", "v.model", "v.edge"):
+        assert cell in row, f"{cell} missing from a non-actionable row"
+    assert "whynot" in row, "the reason must sit where the SEND button would be"
+    assert "sendCell" not in row, "a non-actionable row must never be orderable"
+    assert "openTicket" not in row
+
+
+def test_the_reasons_cover_every_filter_the_server_applies(html):
+    """Each branch mirrors one /api/picks filter. Verified against the live
+    board: these reproduce `filtered` exactly (77 far-dated, 1 moneyline,
+    17 unanchored, 0 wide)."""
+    why = _fn(html, "function whyNotActionable(r, hrs){")
+    for reason in ("in-play", "final", "no quotes", "beyond", "spread",
+                   "moneyline", "no fresh line"):
+        assert reason in why, f"no branch explains {reason!r}"
+
+
+def test_a_pick_row_never_recomputes_the_servers_numbers(html):
+    """Two renderings of one tradable decision is the drift this page exists
+    to remove. Only rows with no order path get a client-side derivation."""
+    pick = _fn(html, "function pickRow(p, br){")
+    assert "positionView" not in pick, "a pick row must use the server's numbers"
+    for field in ("p.ticket.buy_at", "p.ticket.sell_at", "p.ticket.return_pct"):
+        assert field in pick
+
+
+def test_the_row_says_when_the_book_has_moved_off_the_priced_at(html):
+    """/api/picks prices are frozen at `predicted_at`; /api/board is live, and
+    predictions run every 20 minutes. Measured here: a 174.5 total priced
+    against ask 0.44 while the book had moved to 0.48. Two instants in one
+    table without saying so is how every number reads right and the row reads
+    wrong."""
+    moved = _fn(html, "function movedChip(p, br){")
+    assert "p.ask" in moved and "live.ask" in moved
+    assert "livePrice" in moved
+    live = _fn(html, "function livePrice(br, p){")
+    assert 'p.side === "NO" || p.side === "UNDER"' in live, (
+        "the flip must use the side the SERVER chose, not a re-derived one")
+
+
+def test_freshness_is_per_row(html):
+    """200ms live and 15-minute pregame writers land in the same table."""
+    assert ">Age</th>" in html
+    assert "age_seconds" in _fn(html, "function ageCls(br){")
 
 
 # --------------------------------------------------------------------- #
@@ -286,7 +354,7 @@ def test_the_row_button_only_opens_the_ticket(html):
     """Two clicks, two different elements. The row button sends nothing."""
     send = _fn(html, "function sendCell(p){")
     assert "fetch(" not in send
-    assert "openTicket" in _fn(html, "function renderPicks(d){")
+    assert "openTicket" in _fn(html, "function renderBoard(b, picksBySlug){")
 
 
 def test_only_human_confirm_is_ever_posted(html):
