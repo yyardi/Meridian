@@ -46,23 +46,23 @@ the filter.
 
 ## The numbers, as of 2026-08-17
 
-681 activities · 455 fills · 0 unparsed · 291 closed round trips across ~8
-months and several sports. Regenerated after the fill-attribution fix (V22)
+681 activities · 452 hand fills · 3 button fills excluded · 0 unparsed · 289
+closed round trips across ~8 months and several sports, with 2 positions still
+open and therefore unscored. Regenerated after the fill-attribution fix (V22)
 — see the correction note at the foot of this page.
 
 | slice | n | staked | returned | ROI | win rate @ avg entry |
 |---|---|---|---|---|---|
-| **everything** | 291 | $2,404 | $2,222 | **−7.5%** | 51% @ 0.48 |
-| live (in-game) | 174 | $973 | $918 | −5.7% | 52% @ 0.44 |
+| **everything** | 289 | $2,402 | $2,221 | **−7.5%** | 51% @ 0.48 |
+| live (in-game) | 172 | $972 | $917 | −5.7% | 52% @ 0.44 |
 | pregame | 117 | $1,430 | $1,304 | −8.8% | 50% @ 0.51 |
 | moneyline (other sports) | 177 | $1,894 | $1,722 | −9.1% | 47% @ 0.49 |
-| basketball totals · live | 14 | $59 | $89 | +51.5% | 64% @ 0.44 |
-| basketball winner · live | 20 | $82 | $61 | −25.8% | 55% @ 0.41 |
-| basketball spread · live | 5 | $41 | $25 | −39.2% | 40% @ 0.59 |
 
-Slice labels are the venue's own `sportsMarketType`, so `basketball_*` rows
-are WNBA and NBA together and `moneyline`/`totals` are the other sports'
-naming. Reproduce with `python -m core.audit.hand_trades --json`.
+Per-market-type and type×phase slices are deliberately not reproduced here:
+run `python -m core.audit.hand_trades --json` for the full breakdown, which is
+regenerated against live settlement each time. Slice labels there are the
+venue's own `sportsMarketType`, so `basketball_*` covers WNBA and NBA together
+while `moneyline`/`totals` are the other sports' naming.
 
 Fees: the venue's per-execution commission fields are summed and reported
 separately; headline ROI is gross, matching how C11 scored the button record.
@@ -108,7 +108,22 @@ the direction nobody audits.
 **Why it survived a green suite and a published table.** The phantom leg is the
 same price on the opposite side, so it inflates staked and returned by nearly
 equal amounts and leaves ROI roughly intact — it hid in the one number anyone
-checks. And every test built `Fill` objects directly, so nothing exercised the
+checks.
+
+> **Checking whether two runs of this audit agree? Compare counts and
+> composition BEFORE ratios.** Regenerating moved round trips 250 → 289 — a
+> 15% change in what was being averaged — while ROI moved 0.3pp. A ratio sits
+> still across a materially different denominator, so ROI agreeing tells you
+> much less than trip count agreeing, and it is least informative about
+> precisely the attribution errors worth hunting. Two people independently
+> read the near-matching ROI as evidence that two runs agreed. It was not.
+> (Raised by Builder C.)
+>
+> The same trap has a smaller cousin: these numbers are the CLI's, which
+> excludes the system's own button orders. A run passing no exclusion set
+> reports 455 fills / 291 trips against the 452 / 289 here — same ROI to the
+> decimal. Quote the fill count alongside any figure from this page, or two
+> correct runs will look like a disagreement. (Caught by Builder B.) And every test built `Fill` objects directly, so nothing exercised the
 parser. The fixtures now carry both legs, and a redacted `outcomeSide` on the
 selected leg is refused rather than silently scored as a NO position, which
 would invert the row rather than drop it.
