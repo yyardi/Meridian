@@ -42,6 +42,23 @@ asked yet" are different claims and the strip renders first.
 Nothing on the strip is clickable. It has no `openTicket` call, no `PICKS[]`
 entry and no order path, and a test asserts so.
 
+## Two game-context surfaces, deliberately not one
+
+The strip renders **current** state — live score, tip countdown, staleness —
+and is labelled `now`. The game tape reached from a game renders **historical**
+state as of each past decision, under a hard rule that it never reads a
+snapshot later than that decision's `decided_at`.
+
+They are not merged into a shared component, and that is a correctness
+decision rather than a taste one: a component able to render "now" that is in
+scope on the tape can be passed into a decision row, which is exactly the
+lookahead the tape exists to prevent. The server-side test catches it, but the
+cheaper boundary is to not own one component that straddles it.
+
+What *is* shared is the part that should be — `core.live_fv.minutes_remaining`.
+The tape imports it and this strip reads `/api/live-fv`, which is built on it,
+so the two surfaces cannot disagree about what quarter it is at the source.
+
 ## What did not come across
 
 * **The market table**, its filters and its sparklines. That is the deletion.
