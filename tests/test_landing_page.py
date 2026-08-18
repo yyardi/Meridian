@@ -215,8 +215,48 @@ def test_recorder_health_came_across_from_the_board(html):
 
 
 # --------------------------------------------------------------------- #
-# The order path is untouched
+# League switching
 # --------------------------------------------------------------------- #
+
+
+def test_every_league_loader_drops_a_stale_response(html):
+    """A response for a league you switched away from must not be rendered.
+
+    Measured on the live page: `/api/picks?league=wnba` took over three
+    seconds while NBA answered immediately, so switching WNBA -> NBA let the
+    late WNBA response overwrite the NBA view — sixteen WNBA picks under an
+    NBA tab, each with a live SEND button. Everywhere else on this page a
+    stale table is a nuisance; on the picks table it is an order for a game
+    the operator is not looking at.
+    """
+    assert "function stale(league){ return league !== LEAGUE; }" in html
+    for loader in ("function loadPicks(league){",
+                   "function loadGames(league){",
+                   "async function loadEvents(league){"):
+        body = _fn(html, loader)
+        assert "stale(league)" in body, f"{loader} renders stale responses"
+
+
+def test_the_league_has_one_source_of_truth(html):
+    """A copy of the current league is one more thing that can disagree with
+    the tab the operator is looking at."""
+    assert "LEAGUE_NOW" not in html
+    assert "setInterval(() => loadEvents(LEAGUE), 30000)" in html
+
+
+def test_the_strip_does_not_share_a_class_with_the_game_tape(html):
+    """The tape binds clicks with a document-wide querySelectorAll('.gcard').
+
+    Sharing the name would have hung openGame() off every strip card, making
+    a display-only surface clickable — the one thing it must not be — and the
+    CSS (:hover, .on) would have collided too.
+    """
+    strip = _fn(html, "function renderStrip(){")
+    assert "gcard" not in strip, "the strip must not use the tape's class"
+    assert "scard" in strip
+
+
+
 
 
 def test_the_send_flow_still_needs_the_token_header(html):
