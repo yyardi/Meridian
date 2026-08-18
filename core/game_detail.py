@@ -266,6 +266,12 @@ _FINAL_SCORE_SQL = text("""
 #: Games the model actually shadow-traded, newest first. Driven by
 #: `shadow_orders` rather than by the snapshot stream: a game with no decision
 #: in it has nothing for this page to show.
+#: Era filtering (core/era.py) happens in the HAVING clause on the game's
+#: LAST decision — a game belongs to the era it finished deciding in, so one
+#: game's tape is never split across the archive boundary. Both bounds are
+#: nullable: NULL disables that side of the filter, so the same statement
+#: serves "everything" (both NULL), "PULSE era" (since set), and "archive"
+#: (before set).
 _GAMES_SQL = text("""
     SELECT so.event_slug,
            count(*) AS n_trades,
@@ -277,6 +283,8 @@ _GAMES_SQL = text("""
      WHERE so.event_slug IS NOT NULL
        AND so.event_slug LIKE :league_prefix
      GROUP BY so.event_slug
+    HAVING (CAST(:since AS timestamptz) IS NULL OR max(so.decided_at) >= :since)
+       AND (CAST(:before AS timestamptz) IS NULL OR max(so.decided_at) < :before)
      ORDER BY max(so.decided_at) DESC
      LIMIT :limit
 """)
@@ -286,15 +294,18 @@ def _f(value) -> float | None:
     return None if value is None else float(value)
 
 
-def list_games(session, *, league: str, limit: int = 60) -> list[dict]:
+def list_games(session, *, league: str, limit: int = 60,
+               since=None, before=None) -> list[dict]:
     """Games this league's model has shadow-traded, newest decision first.
 
     The league filter is a slug prefix on the event slug
     (``wnba-ny-chi-2026-08-18``), which is how the venue names events and how
-    `core.team_mapping` already parses them.
+    `core.team_mapping` already parses them. ``since``/``before`` are the era
+    bounds — presentation filters, never measurement (see core/era.py).
     """
     rows = session.execute(
-        _GAMES_SQL, {"league_prefix": f"{league}-%", "limit": limit}
+        _GAMES_SQL, {"league_prefix": f"{league}-%", "limit": limit,
+                     "since": since, "before": before}
     ).all()
     return [
         {
