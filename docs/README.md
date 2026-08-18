@@ -42,7 +42,8 @@ The modelling, stated precisely enough to argue with.
 | [clustered-errors.md](math/clustered-errors.md) | Why sample size is games, not rows — and why a faster recorder doesn't help |
 | [write-latency.md](math/write-latency.md) | How fast can we *act*? (our poll loop beats the venue's network cost 7:1) |
 | [calibration-problem.md](math/calibration-problem.md) | ⚠️ **Open problem** — why the model's probabilities carry no signal |
-| [hand-trade-audit.md](math/hand-trade-audit.md) | The human's app trading scored at prices (descriptive — n too small for any verdict) |
+| [hand-trade-audit.md](math/hand-trade-audit.md) | The human's app trading scored at prices (descriptive — n too small for any verdict; numbers corrected 2026-08-17, V22) |
+| [trade-export.md](math/trade-export.md) | Every WNBA fill as a spreadsheet row, with an empty `reason` column for the operator |
 | [research-notes.md](math/research-notes.md) | What the betting-markets literature says, tied to actions here |
 | [performance-targets.md](math/performance-targets.md) | Pre-registered bars for "good", sample sizes, gates before real money |
 
@@ -72,6 +73,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | [local-sync.md](infra/local-sync.md) | Why the local copy could not finish at 837k rows, and what it now omits |
 | [live-fv-strip.md](infra/live-fv-strip.md) | The display-only live fair value on /picks, and the three cases where it refuses to print a number |
 | [live-odds.md](infra/live-odds.md) | ESPN publishes **no** live in-game odds — measured, and what to record instead |
+| [bankroll.md](infra/bankroll.md) | The account balance, read from the venue — and the stale `35.68` it replaced |
 | [fill-watcher.md](infra/fill-watcher.md) | How order fill state comes back from the venue, and the pre-authorized exit rules |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |

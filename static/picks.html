@@ -134,6 +134,11 @@
     right more often than not.
   </div>
 
+  <!-- The account, above the board. Every STAKE below is a fraction of this
+       number, and for weeks it was a literal (35.68) that had stopped being
+       true — so it is shown, with its age, next to the sizes it produces. -->
+  <div class="note" id="bankroll"></div>
+
   <h2>Tonight's pregame picks <span id="hint" class="dimc" style="text-transform:none;letter-spacing:0"></span></h2>
   <div id="picks"></div>
 
@@ -167,8 +172,30 @@ const tagOf = t => t==="total"?"total":t==="spread"?"spread":"winner";
 
 function shortSlug(s){ return s.replace(/^(tsc|asc|aec)-wnba-/,"").replace(/-\d{4}-\d{2}-\d{2}/,""); }
 
+/* The account balance, from the venue. An unknown balance is SAID, never
+   filled in with a plausible number — the failure being fixed here is that a
+   stale constant looked exactly like a live reading on this page. */
+function renderBankroll(b){
+  const el = $("#bankroll");
+  if(!el) return;
+  if(!b || b.bankroll == null){
+    el.innerHTML = '<span class="warnc">Bankroll unknown</span> — the venue balance '
+      + 'could not be read, so every size below is unsized rather than guessed.'
+      + (b && b.unavailable ? ` <span class="dimc">(${b.unavailable})</span>` : "");
+    return;
+  }
+  const mins = Math.round((b.age_seconds||0)/60);
+  const stale = mins >= 60;
+  el.innerHTML = `Bankroll <b>$${b.bankroll.toFixed(2)}</b> ${b.currency||""} `
+    + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · in positions `
+    + `$${(b.asset_notional??0).toFixed(2)} · read `
+    + `<span class="${stale?"warnc":"dimc"}">${mins}m ago</span>`
+    + `</span> — every stake below is a fraction of this.`;
+}
+
 function renderPicks(d){
   const f = d.filtered || {};
+  renderBankroll(d.bankroll);
   $("#hint").textContent =
     ` — next ${d.horizon_hours}h only · ${f.beyond_horizon||0} far-dated and `
     + `${f.spread_too_wide||0} wide-spread markets hidden`;
@@ -338,8 +365,11 @@ function openTicket(p){
     }
 
     const stake = q * price;
+    // The cap the server sends is already the SMALLER of the fat-finger limit
+    // and the account balance, so this refuses a size the money cannot cover
+    // as well as one the policy will not allow.
     if(stake > o.max_stake_usd)
-      return bad(`$${stake.toFixed(2)} — over the $${o.max_stake_usd} cap`);
+      return bad(`$${stake.toFixed(2)} — over the $${o.max_stake_usd} limit`);
     // Sub-cent stakes are real and common here: the default is the 0.01-contract
     // venue minimum, which on a 0.19 contract is $0.0019. Rendering that as
     // "$0.00" reads as free, or as broken. Show enough digits to see the number.

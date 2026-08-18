@@ -17,7 +17,11 @@ The rules:
   without a verified copy, so movers rename and never remove.
 * Generated, regenerable artifacts (``reports/analytics.json``) get their own
   subtree under the same root — they are outputs, not archives, and can be
-  rebuilt from the database at any time.
+  rebuilt from the database at any time. ``exports/`` is the same kind of
+  thing for spreadsheets a human opens (the trade-history export): regenerable
+  from the venue, so not covered by the archive invariant — but see
+  :func:`exports_dir`, because a human annotates those files by hand and an
+  overwrite would eat the annotations.
 
 The docker-compose mounts must agree with these paths: the postgres container
 stages dumps at ``/backups`` which compose binds to ``$MERIDIAN_DATA_DIR/ticks``.
@@ -58,3 +62,16 @@ def supabase_dir() -> Path:
 def reports_dir() -> Path:
     """Regenerable outputs (analytics.json). Not an archive."""
     return data_dir() / "reports"
+
+
+def exports_dir() -> Path:
+    """Spreadsheets a human opens — the trade-history export.
+
+    Regenerable from the venue, so the archive invariant does not apply to the
+    *data*. It does apply to what the human adds: the export ships empty
+    ``reason`` and ``hypothesis_tag`` columns which the operator fills in by
+    hand, and those annotations exist nowhere else. Writers here therefore
+    timestamp their filenames rather than overwriting — see
+    :mod:`core.audit.trade_export`.
+    """
+    return data_dir() / "exports"

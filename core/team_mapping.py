@@ -284,3 +284,50 @@ def orient_for_slug(
                 first_is_home=(found.home_abbrev == parsed.first_espn),
             )
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Human labels
+# --------------------------------------------------------------------------- #
+#
+# These two lived in `core/api.py` until the trade export needed the same
+# labels offline. Copying them would have been the worse failure: the export
+# exists to be annotated and argued with, and a spreadsheet that disagrees with
+# the picks page about which side `-pos-` means is a spreadsheet that teaches
+# the wrong lesson. They are pure functions over a slug, so they belong here
+# with the rest of the slug knowledge, and `core.api` imports them.
+
+
+def human_market(market_slug: str, market_type: str | None, line: float | None) -> str:
+    """Turn a Polymarket slug into something a human can act on.
+
+    ``ny-phx-pos-10pt5`` is unreadable and, worse, invites the wrong reading:
+    it looks like "NY by 10.5" when it means "NY **+**10.5" — NY *getting* the
+    points. Those are opposite bets. The slug's first team is the side the
+    market is quoted from (positional only; it is NOT necessarily the away
+    team), so the label names it explicitly.
+    """
+    parsed = parse_market_slug(market_slug)
+    first = parsed.first_espn.upper() if parsed else "?"
+
+    if (market_type or "").endswith("total"):
+        return f"Total {line:g}" if line is not None else "Total"
+    if (market_type or "").endswith("winner"):
+        return f"{first} to win"
+    if (market_type or "").endswith("spread"):
+        if line is None:
+            return f"{first} spread"
+        # `-pos-` in the slug means the quoted team is GETTING points.
+        sign = "+" if "-pos-" in market_slug else "-"
+        return f"{first} {sign}{abs(line):g}"
+    return market_slug
+
+
+def position_label(market_type: str | None, bet_side: str | None,
+                   human: str) -> str | None:
+    """What position was actually taken, in words."""
+    if bet_side is None:
+        return None
+    if (market_type or "").endswith("total"):
+        return f"{'OVER' if bet_side == 'YES' else 'UNDER'} {human.replace('Total ', '')}"
+    return f"{'BUY' if bet_side == 'YES' else 'SELL'} {human}"

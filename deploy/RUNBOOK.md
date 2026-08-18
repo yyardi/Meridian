@@ -64,8 +64,10 @@ python -m core.feeds.espn_stats --backfill 2020-2026   # rebuild game logs
 python -m core.backfill --coverage-only                # data coverage report
 python -m core.predictions --run                       # predict latest snapshot
 python -m core.resolution --backfill                   # attach outcomes
-python -m core.shadow_run --bankroll 35.68             # shadow orders (places nothing)
+python -m core.bankroll                                # account balance (read-only)
+python -m core.shadow_run                              # shadow orders (places nothing)
 python -m core.backtest --all-fill-models              # backtest
+python -m core.audit.trade_export                      # WNBA fill history -> CSV + xlsx
 ```
 
 ## Migrating off this machine
