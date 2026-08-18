@@ -70,6 +70,55 @@ construction — this was verified, not assumed:
 * `core/backtest/engine.py` engages it only under `availability_mode="report"`;
   `"oracle"` remains the hindsight upper bound and is not tradable.
 
+## The oracle arm: run, and it does NOT clear zero
+
+The `oracle` arm takes absence from the box score — with hindsight, explicitly
+not tradable. It exists to bound the question without waiting for forward data:
+if perfect information moves nothing, no real injury feed can help either.
+
+It moved something. Raw, 2024–2026:
+
+| | `off` | `oracle` | delta |
+|---|---|---|---|
+| bets | 308 | 363 | **+55** |
+| filled | 218 | 246 | +28 |
+| ROI | −2.33% | **+3.16%** | **+5.48 pts** |
+| mean CLV | 1.751 | 1.830 | +0.079 |
+| hit rate | 53.21% | 56.10% | +2.89 pts |
+
+A model that loses becoming a model that wins. **Do not act on that table.**
+
+Two things are wrong with reading it as a result. First, **the denominator
+changed**: the oracle did not re-price 308 bets, it selected 363. Those are two
+different portfolios, so the ROI comparison is not like-for-like — part of the
+gain is exposure, not skill.
+
+Second, and decisive, the sample does not support it. Game-clustered bootstrap
+(C4 — resample **games**, not bets; 4,000 resamples over 344 clusters):
+
+| | |
+|---|---|
+| point estimate | **+5.27 pts** |
+| 95% CI | **[−6.63, +16.85] pts** |
+| crosses zero | **yes** |
+| P(delta > 0) | 0.805 |
+
+**The loosest possible upper bound on roster awareness cannot be distinguished
+from zero.** A real point-in-time injury feed is strictly weaker than hindsight
+— later, noisier, and blind to in-game rest decisions — so it is bounded above
+by an interval that already contains zero.
+
+### What follows
+
+* **Do not build a feature on this.** Anything consuming an injury signal today
+  would be consuming noise with a 20% chance of being the wrong sign.
+* **Do not conclude injuries are worthless either.** P(delta > 0) = 0.805 is
+  suggestive, and the honest state is "accruing".
+* The cheap settlement the oracle was run to provide did not arrive. It
+  narrowed the question rather than closing it: the ceiling is real but
+  unresolved, so this stays registered and accruing rather than becoming a
+  build item.
+
 ## What this cannot answer yet
 
 Whether injury awareness is worth anything. The `oracle` arm — absence taken
