@@ -125,12 +125,29 @@ def test_every_league_scoped_loader_checks_the_league_before_painting():
     Every fetch whose URL carries a league must be followed by the guard; a
     loader added later without one reintroduces the same bug silently.
     """
-    for page in ("picks.html", "index.html"):
-        src = (REPO / "static" / page).read_text()
-        assert "function stale(league)" in src, f"{page} has no guard"
-        for line_no, line in enumerate(src.splitlines(), 1):
-            if "league=${encodeURIComponent(" in line:
-                window = "\n".join(src.splitlines()[line_no - 1:line_no + 6])
-                assert "stale(league)" in window, (
-                    f"{page}:{line_no} fetches a league without a stale check"
-                )
+    #: Discovered, not named. A hardcoded page list breaks the moment a page is
+    #: renamed — and, worse, cannot see a NEW page added later without a guard,
+    #: which is the case this test exists for. The property is "every
+    #: league-scoped fetch is guarded", not "these two files are guarded".
+    pages = sorted((REPO / "static").glob("*.html"))
+    assert pages, "no dashboard pages found"
+
+    checked = 0
+    for page in pages:
+        src = page.read_text()
+        lines = src.splitlines()
+        fetches = [
+            n for n, line in enumerate(lines, 1)
+            if "league=${encodeURIComponent(" in line
+        ]
+        if not fetches:
+            continue          # a page with no league-scoped fetch needs no guard
+        checked += 1
+        assert "function stale(league)" in src, f"{page.name} has no guard"
+        for line_no in fetches:
+            window = "\n".join(lines[line_no - 1:line_no + 6])
+            assert "stale(league)" in window, (
+                f"{page.name}:{line_no} fetches a league without a stale check"
+            )
+
+    assert checked, "no page fetches a league — the guard is untested"
