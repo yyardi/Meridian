@@ -53,6 +53,35 @@ callers size nothing. A fallback constant is exactly the failure this module
 was written to delete — it would be indistinguishable, on screen, from a real
 balance.
 
+Positions, and what "equity" means here (2026-08-18)
+----------------------------------------------------
+The operator held an open position while ``assetNotional`` read 0 — the
+balances payload does not carry positions on this venue. They live at
+``GET /v1/portfolio/positions`` (docs.polymarket.us): a **map** of market slug
+to position, with ``netPositionDecimal`` (signed quantity), ``cost`` (basis)
+and ``cashValue``. The docs disagree with themselves about ``cashValue``: the
+REST page calls it "unrealized PnL", the SDK page "current unrealized value"
+i.e. market value. This module takes the SDK reading AND verifies it whenever
+it can: a position in a market we record is cross-checked against our own book
+mid, and the verdict is logged (``bankroll_cashvalue_semantics``). Until a
+real position has been observed, the reading is provisional and every
+per-position value is clamped to ±quantity — the most a binary contract can
+be worth — so the wrong interpretation cannot mis-state equity by more than
+the position's own size.
+
+Two numbers now leave this module, deliberately distinct:
+
+* ``bankroll`` — **sizing**. Unchanged: ``min(cash, buyingPower)``. Position
+  value is not spendable on the next order, and Kelly is brutally asymmetric
+  to over-betting.
+* ``equity`` — **display**. ``bankroll`` plus the clamped position values:
+  what the account is worth, which is what the operator watching a live trade
+  actually asked for.
+
+A positions read that fails does not fail the balance: the snapshot then says
+``positions_read_ok = False`` and the pages render "positions unread" — an
+unread position book is a different claim from an empty one.
+
     python -m core.bankroll            # print the current balance
     python -m core.bankroll --refresh  # poll the venue and store the reading
 """
@@ -64,7 +93,7 @@ import datetime as dt
 import json
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 
 import structlog
@@ -78,6 +107,14 @@ UTC = dt.timezone.utc
 #: `/v1/portfolio` do **not** exist — they 404 once authenticated, which is how
 #: the old 401s were finally diagnosed. See `scripts/probe_authed_read.py`.
 BALANCES_PATH = "/v1/account/balances"
+
+#: The venue's position book. Same signed-GET client, same read-only property.
+POSITIONS_PATH = "/v1/portfolio/positions"
+
+#: Pagination guard. The venue pages positions like activities (cursor/eof);
+#: one page of 100 has always sufficed for this account.
+POSITIONS_PAGE_LIMIT = 100
+POSITIONS_MAX_PAGES = 10
 
 #: How old a stored reading may be before a reader refuses to use it. The
 #: scheduler's fast leg is 20 minutes and refreshes at the top of every cycle,
@@ -105,6 +142,93 @@ def _dec(value, field: str) -> Decimal:
         raise BankrollUnavailable(f"balance field {field!r} is not a number") from exc
 
 
+def _amount(obj, field: str) -> Decimal:
+    """The venue's Amount objects are ``{"value": "1.23", "currency": "USD"}``;
+    a bare number is tolerated because the docs show both styles."""
+    if obj is None:
+        return ZERO
+    if isinstance(obj, dict):
+        return _dec(obj.get("value"), field)
+    return _dec(obj, field)
+
+
+@dataclass(frozen=True)
+class Position:
+    """One open position, in the venue's own fields.
+
+    ``value`` is the equity contribution: ``cashValue`` under the SDK reading,
+    clamped to ±``quantity`` because a binary contract is worth at most $1 —
+    the clamp bounds the damage of the other documented reading to the
+    position's own size, and the cross-check in :func:`verify_position_value`
+    is what retires the ambiguity with data.
+    """
+
+    market_slug: str
+    quantity: Decimal            # netPositionDecimal; positive = long
+    quantity_available: Decimal
+    cost: Decimal
+    cash_value: Decimal
+    realized: Decimal
+    expired: bool
+    title: str | None = None
+    outcome: str | None = None
+
+    @property
+    def value(self) -> Decimal:
+        cap = abs(self.quantity)
+        return max(-cap, min(self.cash_value, cap))
+
+    def to_dict(self) -> dict:
+        return {
+            "market_slug": self.market_slug,
+            "quantity": float(self.quantity),
+            "quantity_available": float(self.quantity_available),
+            "cost": float(self.cost),
+            "cash_value": float(self.cash_value),
+            "value": float(self.value),
+            "realized": float(self.realized),
+            "expired": self.expired,
+            "title": self.title,
+            "outcome": self.outcome,
+        }
+
+
+def parse_positions(body: dict) -> list[Position]:
+    """Venue payload → positions. The map may be empty; that IS "no positions".
+
+    Observed live 2026-08-18: ``{"positions": {}, "nextCursor": "", "eof":
+    true, "availablePositions": []}`` on a flat account — a dict keyed by
+    market slug, exactly as documented, and unlike ``activities`` (a list).
+    ``availablePositions`` is deprecated per the docs and never read.
+    """
+    posmap = (body or {}).get("positions")
+    if posmap is None:
+        raise BankrollUnavailable(
+            "positions payload carried no 'positions' key; refusing to read "
+            "that as flat")
+    if not isinstance(posmap, dict):
+        raise BankrollUnavailable(
+            f"positions was {type(posmap).__name__}, expected a map of slug "
+            "to position")
+    out = []
+    for slug, p in posmap.items():
+        if not isinstance(p, dict):
+            continue
+        meta = p.get("marketMetadata") or {}
+        out.append(Position(
+            market_slug=str(meta.get("slug") or slug),
+            quantity=_dec(p.get("netPositionDecimal"), "netPositionDecimal"),
+            quantity_available=_dec(p.get("qtyAvailableDecimal"), "qtyAvailableDecimal"),
+            cost=_amount(p.get("cost"), "cost"),
+            cash_value=_amount(p.get("cashValue"), "cashValue"),
+            realized=_amount(p.get("realized"), "realized"),
+            expired=bool(p.get("expired")),
+            title=meta.get("title"),
+            outcome=meta.get("outcome"),
+        ))
+    return out
+
+
 @dataclass(frozen=True)
 class AccountSnapshot:
     """One reading of the account, in the venue's own fields."""
@@ -119,11 +243,29 @@ class AccountSnapshot:
     pending_credit: Decimal
     margin_requirement: Decimal
     raw: dict | None = None
+    positions: tuple[Position, ...] = ()
+    #: False when balances were read but the positions endpoint was not — an
+    #: unread position book is a different claim from an empty one.
+    positions_read_ok: bool = False
 
     @property
     def bankroll(self) -> Decimal:
-        """The number sizing uses. See the module docstring for the choice."""
+        """The number sizing uses. See the module docstring for the choice.
+
+        Deliberately does NOT include position value: it is not spendable on
+        the next order, and this is the input to Kelly.
+        """
         return min(self.cash, self.buying_power)
+
+    @property
+    def positions_value(self) -> Decimal:
+        return sum((p.value for p in self.positions), ZERO)
+
+    @property
+    def equity(self) -> Decimal:
+        """What the account is worth: cash plus the clamped position values.
+        Display only — sizing keeps using ``bankroll``."""
+        return self.bankroll + self.positions_value
 
     @property
     def has_unverified_components(self) -> bool:
@@ -138,6 +280,11 @@ class AccountSnapshot:
     def to_dict(self) -> dict:
         return {
             "bankroll": float(self.bankroll),
+            "equity": float(self.equity),
+            "positions_value": float(self.positions_value),
+            "n_positions": len(self.positions),
+            "positions_read_ok": self.positions_read_ok,
+            "positions": [p.to_dict() for p in self.positions],
             "currency": self.currency,
             "cash": float(self.cash),
             "buying_power": float(self.buying_power),
@@ -205,8 +352,43 @@ def parse_balances(body: dict, *, observed_at: dt.datetime | None = None) -> Acc
     return snapshot
 
 
+def fetch_positions(client) -> list[Position]:
+    """Signed GETs, paginated to ``eof``. Read-only, like everything here.
+
+    Query parameters go through ``params=`` — the signature covers the bare
+    path, and a query string embedded in the path signs the wrong message and
+    401s (observed 2026-08-18).
+    """
+    out: list[Position] = []
+    cursor: str | None = None
+    for _ in range(POSITIONS_MAX_PAGES):
+        params: dict = {"limit": POSITIONS_PAGE_LIMIT}
+        if cursor:
+            params["cursor"] = cursor
+        resp = client.get(POSITIONS_PATH, params=params)
+        if resp.status_code != 200:
+            raise BankrollUnavailable(
+                f"positions HTTP {resp.status_code}: {resp.body_text[:200]}")
+        try:
+            body = json.loads(resp.body_text)
+        except ValueError as exc:
+            raise BankrollUnavailable("positions body was not JSON") from exc
+        out.extend(parse_positions(body))
+        if body.get("eof") or not body.get("nextCursor"):
+            return out
+        cursor = body["nextCursor"]
+    log.warning("bankroll_positions_pages_exhausted", pages=POSITIONS_MAX_PAGES,
+                note="equity may under-count; raising the cap is safe")
+    return out
+
+
 def fetch(client=None) -> AccountSnapshot:
-    """One signed GET. Read-only: the client has no verb but ``get``."""
+    """Two signed GETs. Read-only: the client has no verb but ``get``.
+
+    A positions failure degrades rather than fails: the balance alone is
+    still a true lower bound, and the snapshot says the position book went
+    unread instead of pretending it was empty.
+    """
     owned = client is None
     if owned:
         from core.polymarket.client import PolymarketAuthedClient, USCredentials
@@ -221,10 +403,52 @@ def fetch(client=None) -> AccountSnapshot:
             body = json.loads(resp.body_text)
         except ValueError as exc:
             raise BankrollUnavailable("balances body was not JSON") from exc
-        return parse_balances(body)
+        snapshot = parse_balances(body)
+
+        try:
+            positions = tuple(fetch_positions(client))
+            snapshot = replace(snapshot, positions=positions,
+                               positions_read_ok=True)
+            if positions:
+                log.info("bankroll_positions",
+                         n=len(positions),
+                         positions_value=float(snapshot.positions_value),
+                         equity=float(snapshot.equity))
+        except Exception as exc:
+            log.warning("bankroll_positions_unread", error=str(exc)[:200])
+        return snapshot
     finally:
         if owned:
             client.close()
+
+
+def verify_position_value(position: Position, mid: float) -> str:
+    """Which documented reading of ``cashValue`` fits this observation?
+
+    Called opportunistically from :func:`refresh` for positions in markets we
+    record, where our own book supplies an independent mark. Returns the
+    verdict it logs: ``value`` (SDK reading — cashValue ≈ quantity×mid),
+    ``pnl`` (REST reading — cashValue ≈ quantity×mid − cost), or
+    ``ambiguous``. Observational only; nothing branches on it yet.
+    """
+    q = float(position.quantity)
+    as_value = abs(float(position.cash_value) - q * mid)
+    as_pnl = abs(float(position.cash_value) - (q * mid - float(position.cost)))
+    margin = 0.05 * max(abs(q), 1.0)   # a nickel per contract of slack
+    if as_value + margin < as_pnl:
+        verdict = "value"
+    elif as_pnl + margin < as_value:
+        verdict = "pnl"
+    else:
+        verdict = "ambiguous"
+    log.warning("bankroll_cashvalue_semantics",
+                market_slug=position.market_slug, verdict=verdict,
+                cash_value=float(position.cash_value), mid=mid,
+                residual_as_value=round(as_value, 4),
+                residual_as_pnl=round(as_pnl, 4),
+                note="the docs give both readings; this observation is the "
+                     "evidence that settles it — see the module docstring")
+    return verdict
 
 
 # --------------------------------------------------------------------------- #
@@ -299,9 +523,39 @@ def refresh(Session=None, client=None) -> AccountSnapshot:
     except Exception as exc:
         # A storage failure must not deny a caller a balance it already holds.
         log.error("bankroll_store_failed", error=str(exc)[:200])
+    # Opportunistic, never fatal: any position in a market we record gets its
+    # cashValue checked against our own book, which is the observation that
+    # retires the docs' ambiguity about what the field means.
+    for pos in snapshot.positions:
+        try:
+            mid = _recorded_mid(pos.market_slug, Session)
+            if mid is not None:
+                verify_position_value(pos, mid)
+        except Exception as exc:
+            log.debug("bankroll_semantics_check_skipped",
+                      market_slug=pos.market_slug, error=str(exc)[:120])
     log.info("bankroll_refreshed", bankroll=float(snapshot.bankroll),
+             equity=float(snapshot.equity), n_positions=len(snapshot.positions),
              currency=snapshot.currency)
     return snapshot
+
+
+def _recorded_mid(market_slug: str, Session=None) -> float | None:
+    """Our own newest two-sided quote for a market, or None. Only markets the
+    recorder covers can answer; a hand trade on another sport returns None."""
+    from core.storage import MarketSnapshot
+
+    Session = _sessionmaker(Session)
+    with Session() as session:
+        row = session.scalars(
+            select(MarketSnapshot)
+            .where(MarketSnapshot.market_slug == market_slug)
+            .order_by(MarketSnapshot.captured_at.desc())
+            .limit(1)
+        ).first()
+        if row is None or row.best_bid is None or row.best_ask is None:
+            return None
+        return (float(row.best_bid) + float(row.best_ask)) / 2
 
 
 def current(
@@ -371,8 +625,17 @@ def main() -> int:
     if args.json:
         print(json.dumps(snapshot.to_dict(), indent=2))
     else:
-        print(f"bankroll  ${snapshot.bankroll:,.2f} {snapshot.currency}")
+        print(f"bankroll  ${snapshot.bankroll:,.2f} {snapshot.currency}"
+              f"   equity ${snapshot.equity:,.2f}")
         print(f"  cash          ${snapshot.cash:,.4f}")
+        if snapshot.positions_read_ok:
+            print(f"  positions     ${snapshot.positions_value:,.4f}"
+                  f" ({len(snapshot.positions)} open)")
+            for pos in snapshot.positions:
+                print(f"    {pos.market_slug}  {pos.quantity} @ cost "
+                      f"${pos.cost:,.4f} -> ${pos.value:,.4f}")
+        else:
+            print("  positions     unread")
         print(f"  buying power  ${snapshot.buying_power:,.4f}")
         print(f"  in positions  ${snapshot.asset_notional:,.4f}")
         print(f"  resting       ${snapshot.open_orders:,.4f}")
