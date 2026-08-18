@@ -13,6 +13,7 @@ create a new top-level folder in the repo.
 | `ticks/` | local monthly partition dumps + container staging | `core/retention.py` (monthly), postgres container via the `/backups` mount |
 | `supabase/` | the primary's rolling CSV archives, and the operator's hand-filed exports (`export-20260817/`, `live-archive-20260805/`, `pre-migrate-*.sql`) | `core/retention.py` (rolling) |
 | `reports/` | regenerable outputs (`analytics.json`) — an output, not an archive | `core/analytics.py` |
+| `exports/` | operator-facing exports (the WNBA hand-annotation trade sheet) — generated but **not** regenerable once annotated | `scripts/export_wnba_trades.py` |
 
 **The compose contract**: the postgres container writes dumps at `/backups`
 (`core.paths.BACKUP_DIR_CONTAINER`), which docker-compose binds to
