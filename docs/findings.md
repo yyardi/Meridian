@@ -548,12 +548,19 @@ Four in one day, found by three people:
 | "PR #8 is clean against #5" — cited publicly to justify merge order | merge-tree, run against the branch as it stood | the branch moved; the file count went 3 → 7 | a merge plan built on a stale compatibility claim |
 | "D's `slices` shape wins" — a manager arbitration | both proposals existed when the ruling was drafted | the producer had already superseded both with a consolidation, in a message the arbiter never saw | the renderer rebuilt away from what the producer was actually emitting |
 | three green MERGED badges on a PR stack | each PR did merge | two merged into their own (undeleted) base branches; main never received the work | a production rebuild of an image missing the two changes it existed to ship |
-| a correct claim retracted because a peer's inference arrived after it | the original measurement was right | nothing — the *newer message* was the wrong one | a regenerated doc un-regenerated, on the authority of arrival order |
+| a correct claim retracted because a peer's inference arrived after it | the original measurement was right | nothing — the *newer message* was the wrong one, and the retractor had the data in front of them while the peer did not | a regenerated doc un-regenerated, on the authority of arrival order |
 
 **The root is one thing: treating capture time as if it were use time.** A
 verification is a photograph, not a property. The merge-tree was true *of a
 commit*; the arbitration was true *of a message state*; MERGED was true *of a
 PR object* and silent about main; the retraction treated *newest* as *truest*.
+
+The fourth instance deserves its sting kept, in its author's own words: the
+retractor **had the data in front of them and the peer did not, and still
+deferred**. Proximity to the evidence made them *faster* to abandon a correct
+position — the same root as the other three with the opposite surface
+behaviour. Three acted on stale facts; one discarded a fresh one. Owning the
+measurement is not the same as trusting it.
 
 Three countermeasures, all cheap:
 
