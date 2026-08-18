@@ -91,11 +91,51 @@
   .fillFAILED{color:var(--neg);font-weight:700}
   .fillFILLED{color:var(--pos)} .fillPARTIAL{color:var(--warn)}
   .fillCANCELLED,.fillEXPIRED{color:var(--dim)}
+  /* --- league tabs ------------------------------------------------------ *
+     "MERIDIAN · WNBA" was a hardcoded string on three pages. League is now a
+     parameter end to end (core/leagues.py), and this is its control.        */
+  .lg{display:flex;gap:2px;margin-left:10px}
+  .lgt{font:inherit;font-size:10px;letter-spacing:.09em;padding:3px 9px;border-radius:3px;
+       background:transparent;color:var(--faint);border:1px solid transparent;cursor:pointer}
+  .lgt:hover{color:var(--txt)}
+  .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .lgt.empty{color:var(--faint);opacity:.75}
+
+  /* --- game tape: the per-game deep dive ------------------------------- */
+  .glist{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px;
+         margin-bottom:14px}
+  .gcard{background:var(--panel);border:1px solid var(--line);border-radius:4px;
+         padding:8px 10px;cursor:pointer}
+  .gcard:hover{border-color:#2c3a52;background:#141922}
+  .gcard.on{border-color:var(--accent);background:#131a28}
+  .gcard .gt{font-weight:700;letter-spacing:.05em}
+  .gcard .gm{color:var(--faint);font-size:10px;margin-top:2px}
+  /* The timeline spine. One node per decision instant: the model re-decides
+     the whole ladder each cycle, so a "trade" in isolation is misleading —
+     what it decided is a basket, and the basket is the unit worth reading. */
+  .tl{border-left:2px solid var(--line);margin-left:8px;padding-left:0}
+  .round{position:relative;padding:0 0 4px 18px;margin-bottom:2px}
+  .round::before{content:"";position:absolute;left:-6px;top:7px;width:9px;height:9px;
+                 border-radius:50%;background:var(--faint);border:2px solid var(--bg)}
+  .round.live::before{background:var(--warn)}
+  .rhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:4px 0 3px;
+         font-size:10.5px}
+  .rtime{font-weight:700}
+  .ctxchip{font-size:9.5px;padding:1px 6px;border-radius:2px;background:#161b25;
+           color:var(--dim);border:1px solid var(--line)}
+  .ctxchip.livec{background:#2a1a1a;color:var(--warn);border-color:#3d2a17}
+  .round table{margin-bottom:6px}
+  .round td,.round th{padding:3px 8px}
+  .gpath{background:var(--panel);border:1px solid var(--line);border-radius:4px;
+         padding:10px 12px;margin-bottom:12px}
+  .aftr{border:1px solid #1e2a3d;background:#0e141f;color:var(--dim);padding:7px 10px;
+        border-radius:4px;margin-bottom:10px;font-size:10.5px;line-height:1.55}
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">MERIDIAN<span>·</span>WNBA</div>
+  <div class="brand">MERIDIAN</div>
+  <div class="lg" id="lgtabs"></div>
   <nav>
     <a href="/">Live board</a>
     <a href="/picks" class="on">Picks &amp; results</a>
@@ -156,7 +196,12 @@
   <h2 style="margin-top:24px">Past predictions — what actually happened</h2>
   <div class="kpis" id="rk"></div>
   <div class="note" id="rnote"></div>
-  <div id="results"></div>
+
+  <h2 style="margin-top:24px">Game tape <span class="dimc"
+    style="text-transform:none;letter-spacing:0">· click a game to see every shadow
+    trade in it, in the order the model decided them</span></h2>
+  <div id="glist"></div>
+  <div id="gdetail"></div>
 </div>
 
 <script>
@@ -165,7 +210,10 @@ const pct = (v,d=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d)+"%";
 const num = (v,d=2) => v==null ? "—" : v.toFixed(d);
 const tagOf = t => t==="total"?"total":t==="spread"?"spread":"winner";
 
-function shortSlug(s){ return s.replace(/^(tsc|asc|aec)-wnba-/,"").replace(/-\d{4}-\d{2}-\d{2}/,""); }
+/* Strips the type prefix and ANY league slug, not just wnba — a hardcoded
+   league here silently stopped shortening the moment a second one appeared. */
+function shortSlug(s){ return s.replace(/^(tsc|asc|aec)-[a-z]+-/,"").replace(/-\d{4}-\d{2}-\d{2}/,""); }
+function shortEvent(s){ return (s||"").replace(/^[a-z]+-/,"").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase(); }
 
 function renderPicks(d){
   const f = d.filtered || {};
@@ -188,7 +236,7 @@ function renderPicks(d){
     g.rows.push(p);
   }
   $("#picks").innerHTML = games.map(g => {
-    const nm = (g.ev||"").replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
+    const nm = shortEvent(g.ev);
     const when = new Date(g.start).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"});
     const soon = g.hrs <= 3;
     return `<div style="margin-bottom:6px;margin-top:14px;font-size:11px">
@@ -652,7 +700,7 @@ async function loadLiveTotals(){
         ${(d.gap_highlight*100).toFixed(0)}c. Nothing here is orderable.
       </div>
       ${games.map(g=>{
-        const nm = g.ev.replace("wnba-","").replace(/-\d{4}-\d{2}-\d{2}$/,"").toUpperCase();
+        const nm = shortEvent(g.ev);
         const h = g.rows[0];
         return `<div class="dimc" style="margin:10px 0 4px">${nm} · ${h.score}
             · ${h.period} · ${h.minutes_left.toFixed(1)}min left${
@@ -678,7 +726,6 @@ async function loadLiveTotals(){
 loadLiveTotals();
 setInterval(loadLiveTotals, 15000);
 
-fetch("/api/picks").then(r=>r.json()).then(renderPicks);
 
 fetch("/api/results").then(r=>r.json()).then(d=>{
   const s = d.summary;
@@ -707,26 +754,235 @@ fetch("/api/results").then(r=>r.json()).then(d=>{
       supposed to lose), and direction scores a side, not a bet. Money at price,
       above, is the number that decides anything.`;
 
-  if(!d.results.length){ $("#results").innerHTML='<div class="empty">nothing resolved yet</div>'; return; }
-  $("#results").innerHTML = `<table><thead><tr>
-    <th class="l">Market</th><th class="l">Type</th><th>Line</th><th>Model said</th>
-    <th>Market said</th><th>Settled</th><th class="l">Position taken</th><th>Bet won?</th><th class="l">Ver</th>
-  </tr></thead><tbody>${d.results.slice(0,60).map(r=>`
-    <tr>
-      <td class="l">${r.human||shortSlug(r.market_slug)}</td>
-      <td class="l"><span class="tag ${tagOf(r.type)}">${r.type}</span></td>
-      <td>${r.line==null?"—":r.line.toFixed(1)}</td>
-      <td>${num(r.model)}</td>
-      <td>${r.tradeable?num(r.market):'<span class="dimc">no quote</span>'}</td>
-      <td>${r.settled===1?"YES":"NO"}</td>
-      <td class="l">${r.position||'<span class="dimc">no bet</span>'}</td>
-      <td class="${r.bet_won==null?"":(r.bet_won?"ok":"bad")}">${r.bet_won==null?'<span class="dimc">—</span>':(r.bet_won?"✓":"✗")}</td>
-      <td class="l dimc">${r.model_version}</td>
-    </tr>`).join("")}</tbody></table>
-  <div class="dimc" style="font-size:10.5px">Rows marked "no quote" were logged while a
-  game was already live — they were never tradeable and are excluded from the metrics
-  above. That bug is fixed: predictions are now pregame-only.</div>`;
 });
+
+/* --- game tape: one game, every shadow trade, in decision order ---------- *
+ *
+ * Replaces a flat 60-row table of the most recent resolved predictions. That
+ * table could tell you the model went 3-for-11 and could not tell you what it
+ * was looking at when it decided any of them, which is the only question worth
+ * asking after a bad night.
+ *
+ * The one rule this view exists to keep: everything under a decision is read
+ * AS OF that decision. The server does that bounding (core/game_detail.py);
+ * this file must not undo it by, say, labelling a round with the final score.
+ * The game's own path is rendered separately and explicitly marked as what
+ * happened AFTER — see the note above it.                                   */
+
+const clock = t => new Date(t).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+const day   = t => new Date(t).toLocaleDateString([], {month:"short",day:"numeric"});
+
+function ctxChip(c){
+  // Pregame is the honest, overwhelmingly common answer: the model prices a
+  // game before tip and does not price a running one, so its decisions carry
+  // no score. Saying "pregame" is information; a row of dashes reads as a
+  // broken join.
+  if(!c.is_live) return '<span class="ctxchip">pregame · 0-0</span>';
+  const mins = c.minutes_left==null ? "" :
+    ` · ${c.minutes_left.toFixed(1)}m left${c.minutes_left_is_estimate?" est.":""}`;
+  const marg = c.margin==null ? "" : ` · margin ${c.margin>0?"+":""}${c.margin}`;
+  return `<span class="ctxchip livec" title="${c.note||"game state as of this decision"}">`
+       + `LIVE ${c.score||"—"} · ${c.period||"?"}${marg}${mins}</span>`;
+}
+
+function gamePath(d){
+  // Score margin and the moneyline mid on one time axis. This is context for
+  // the reader, NOT an input to any decision above it — every point here is
+  // later than every decision on the page.
+  const pts = d.timeline.filter(p => p.margin!=null || p.mid!=null);
+  if(pts.length < 3) return "";
+  const W=920,H=150,P={l:34,r:34,t:10,b:16};
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const mgs = pts.map(p=>p.margin).filter(v=>v!=null);
+  const mx = Math.max(6, ...mgs.map(Math.abs));
+  const X = i => P.l + i/(pts.length-1)*iw;
+  const Ym = v => P.t + ih/2 - (v/mx)*(ih/2-4);       // margin, centred on 0
+  const Yp = v => P.t + (1-v)*ih;                      // price 0..1
+
+  let g = `<line x1="${P.l}" y1="${Ym(0)}" x2="${P.l+iw}" y2="${Ym(0)}" stroke="#2a3242"/>`;
+  const seg = (sel, Y, col, w) => {
+    let d="", pen=false;
+    pts.forEach((p,i)=>{ const v=sel(p);
+      if(v==null){ pen=false; return; }
+      d += (pen?"L":"M") + X(i).toFixed(1) + "," + Y(v).toFixed(1); pen=true; });
+    return d ? `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}"/>` : "";
+  };
+  g += seg(p=>p.mid, Yp, "#4c8dff", 1.2);
+  g += seg(p=>p.margin, Ym, "#ffb020", 1.5);
+  // Period boundaries, the only instants the clock is exact.
+  let last=null;
+  pts.forEach((p,i)=>{ if(p.period && p.period!==last){
+    if(last!==null) g += `<line x1="${X(i)}" y1="${P.t}" x2="${X(i)}" y2="${P.t+ih}" `
+      + `stroke="#2a3242" stroke-dasharray="2,3"/>`
+      + `<text x="${X(i)+3}" y="${P.t+9}" fill="#4a5568" font-size="9">${p.period}</text>`;
+    last=p.period; } });
+  g += `<text x="4" y="${Ym(0)-4}" fill="#ffb020" font-size="9">margin ±${mx}</text>`;
+  g += `<text x="${P.l+iw+4}" y="${Yp(0.5)}" fill="#4c8dff" font-size="9">mid</text>`;
+  return `<div class="gpath">
+      <div class="dimc" style="font-size:10px;margin-bottom:4px">
+        ${d.timeline_market} · <span style="color:#ffb020">score margin</span> and
+        <span style="color:#4c8dff">market mid</span>, ${pts.length} points</div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg></div>`;
+}
+
+function renderGame(d){
+  // Group by decision instant. shadow_run re-decides the whole ladder every
+  // cycle, so the unit that was actually decided is the basket, not the rung.
+  const rounds = [];
+  for(const t of d.trades){
+    let r = rounds.find(x => x.at === t.decided_at);
+    if(!r){ r = {at:t.decided_at, ctx:t.context, h:t.hours_to_tipoff, rows:[]}; rounds.push(r); }
+    r.rows.push(t);
+  }
+  rounds.reverse();   // newest decision first: the last thing it thought
+
+  const resolved = d.trades.filter(t => t.pnl_if_filled!=null);
+  const pnl = resolved.reduce((a,t)=>a+t.pnl_if_filled, 0);
+  const won = resolved.filter(t=>t.bet_won).length;
+
+  $("#gdetail").innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="k">Game</div><div class="v">${d.label}</div>
+        <div class="k" style="margin-top:2px">${d.tipoff?day(d.tipoff)+" "+clock(d.tipoff):"—"}
+        ${d.final_score?" · final "+d.final_score:""}</div></div>
+      <div class="kpi"><div class="k">Shadow trades</div><div class="v">${d.n_trades}</div>
+        <div class="k" style="margin-top:2px">${rounds.length} decision rounds</div></div>
+      <div class="kpi"><div class="k">Decided in-play</div>
+        <div class="v ${d.n_live_decisions?"warnc":"dimc"}">${d.n_live_decisions}</div>
+        <div class="k" style="margin-top:2px">the model is pregame-only</div></div>
+      <div class="kpi"><div class="k">P&amp;L if filled</div>
+        <div class="v ${pnl>0?"pos":"neg"}">${pnl>=0?"+":""}$${pnl.toFixed(2)}</div>
+        <div class="k" style="margin-top:2px">${won}/${resolved.length} won ·
+          <b>conditional</b> — never sent</div></div>
+    </div>
+
+    <div class="aftr"><b>P&amp;L if filled is not a return.</b> These orders were
+      decided and never sent, and most of them would have <i>rested</i> on the book —
+      a resting limit fills only when someone crosses it. This is what the bets would
+      have paid <i>had they all filled at their limits</i>, which is the most
+      optimistic fill assumption there is. The backtest's fill model
+      (<code>core/backtest/fills.py</code>) exists because this number needs one.</div>
+
+    ${gamePath(d)}
+    ${d.timeline.length ? `<div class="aftr">The chart above is what happened
+      <b>after</b> these decisions — it was not an input to any of them. Every
+      score and clock reading <i>inside</i> a round below is read as of that
+      round's timestamp.</div>` : ""}
+
+    <div class="tl">${rounds.map(r=>`
+      <div class="round ${r.ctx.is_live?"live":""}">
+        <div class="rhead">
+          <span class="rtime">${day(r.at)} ${clock(r.at)}</span>
+          <span class="dimc">${r.h==null?"":(r.h>=0?`${r.h.toFixed(1)}h before tip`:`${(-r.h).toFixed(1)}h after tip`)}</span>
+          ${ctxChip(r.ctx)}
+          <span class="dimc">${r.rows.length} rung${r.rows.length>1?"s":""}</span>
+          ${r.ctx.age_seconds!=null && r.ctx.age_seconds>900
+            ? `<span class="dimc" title="how stale the quote behind this reading was">quote ${Math.round(r.ctx.age_seconds/60)}m old</span>` : ""}
+        </div>
+        <table><thead><tr>
+          <th class="l">Position</th><th class="l">Type</th>
+          <th class="dimc">Bid</th><th class="dimc">Ask</th><th class="dimc">Spr</th>
+          <th>Model FV</th><th>Edge</th><th>Limit</th><th>Size</th>
+          <th class="l">Order</th><th>Settled</th><th>Won?</th><th>P&amp;L if filled</th>
+        </tr></thead><tbody>${r.rows.map(t=>`
+          <tr>
+            <td class="l">${t.position||t.human}</td>
+            <td class="l"><span class="tag ${tagOf(t.type)}">${t.type}</span></td>
+            <td class="dimc">${num(t.bid)}</td>
+            <td class="dimc">${num(t.ask)}</td>
+            <td class="dimc">${t.spread==null?"—":(t.spread*100).toFixed(0)+"¢"}</td>
+            <td>${num(t.model_fv)}</td>
+            <td class="${t.edge>0?"pos":"neg"}">${pct(t.edge)}</td>
+            <td>${num(t.limit_price)}</td>
+            <td>${t.quantity.toFixed(2)}</td>
+            <td class="l"><span class="dimc" title="${t.binding_constraint||""}">${
+              t.would_rest?"REST":"CROSS"}</span></td>
+            <td>${t.resolved_outcome==null?'<span class="dimc">—</span>':(t.resolved_outcome===1?"YES":"NO")}</td>
+            <td class="${t.bet_won==null?"":(t.bet_won?"ok":"bad")}">${
+              t.bet_won==null?'<span class="dimc">—</span>':(t.bet_won?"✓":"✗")}</td>
+            <td class="${t.pnl_if_filled==null?"dimc":(t.pnl_if_filled>0?"pos":"neg")}">${
+              t.pnl_if_filled==null?"—":(t.pnl_if_filled>=0?"+":"")+t.pnl_if_filled.toFixed(2)}</td>
+          </tr>`).join("")}</tbody></table>
+      </div>`).join("")}</div>`;
+  $("#gdetail").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function openGame(slug, card){
+  document.querySelectorAll(".gcard").forEach(c=>c.classList.remove("on"));
+  if(card) card.classList.add("on");
+  $("#gdetail").innerHTML = '<div class="empty">loading game tape…</div>';
+  fetch(`/api/game/${encodeURIComponent(slug)}`)
+    .then(r => r.ok ? r.json() : r.json().then(e=>Promise.reject(e.detail||r.status)))
+    .then(renderGame)
+    .catch(e => { $("#gdetail").innerHTML = `<div class="empty">${e}</div>`; });
+}
+
+/* --- league tabs -------------------------------------------------------- *
+ * The header read a hardcoded "MERIDIAN · WNBA" on every page. League is a
+ * parameter now, all the way down to the queries (core/leagues.py), and the
+ * choice is remembered per browser so the three pages agree with each other.
+ *
+ * A league with no data gets an honest empty state, never a blank table: an
+ * empty board and a broken board look identical, and only one of them is fine.
+ */
+const LG_KEY = "meridian.league";
+let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
+
+function mountLeagueTabs(onChange){
+  return fetch("/api/leagues").then(r=>r.json()).then(d=>{
+    if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
+    const el = document.getElementById("lgtabs");
+    if(el) el.innerHTML = d.leagues.map(l =>
+      `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
+               data-lg="${l.slug}"
+               title="${l.recorded?"":l.empty_state}">${l.name}</button>`).join("");
+    document.querySelectorAll(".lgt").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        if(b.dataset.lg === LEAGUE) return;
+        LEAGUE = b.dataset.lg;
+        localStorage.setItem(LG_KEY, LEAGUE);
+        document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
+        onChange(LEAGUE);
+      });
+    });
+    return LEAGUE;
+  });
+}
+
+function loadGames(league){
+  fetch(`/api/games?league=${encodeURIComponent(league)}`).then(r=>r.json()).then(d=>{
+    $("#gdetail").innerHTML = "";
+    if(!d.games.length){
+      $("#glist").innerHTML = `<div class="empty">${d.empty_state}</div>`;
+      return;
+    }
+    $("#glist").innerHTML = `<div class="glist">${d.games.map(g=>`
+      <div class="gcard" data-slug="${g.event_slug}">
+        <div class="gt">${g.label}</div>
+        <div class="gm">${day(g.last_decision)} · ${g.n_trades} shadow trades ·
+          ${g.n_resolved?g.n_resolved+" resolved":'<span class="warnc">unresolved</span>'}</div>
+      </div>`).join("")}</div>`;
+    document.querySelectorAll(".gcard").forEach(c=>{
+      c.addEventListener("click", ()=>openGame(c.dataset.slug, c));
+    });
+  });
+}
+
+function loadPicks(league){
+  fetch(`/api/picks?league=${encodeURIComponent(league)}`)
+    .then(r=>r.json())
+    .then(d => {
+      if(d.recorded === false){
+        $("#hint").textContent = "";
+        $("#picks").innerHTML = `<div class="empty">${d.empty_state}</div>`;
+        return;
+      }
+      renderPicks(d);
+    });
+}
+
+mountLeagueTabs(lg => { loadPicks(lg); loadGames(lg); })
+  .then(lg => { loadPicks(lg); loadGames(lg); });
 </script>
 </body>
 </html>

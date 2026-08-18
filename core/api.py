@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 
 from core import heartbeat
 from core.board import FINISHED, IN_PLAY, latest_snapshot_per_market, market_state
+from core.game_detail import build_game_detail, list_games
 from core.executor import (
     VENUE_MAX_PRICE,
     VENUE_MIN_PRICE,
@@ -45,6 +46,13 @@ from core.polymarket.client import (
     OrderSubmissionError,
     PolymarketOrderClient,
     USCredentials,
+)
+from core.leagues import (
+    LEAGUES,
+    UnknownLeagueError,
+    default_league,
+    get_league,
+    league_of_slug,
 )
 from core.ratelimit import TokenBucket
 from core.storage import (
@@ -605,13 +613,27 @@ def _live_board(s, *, as_of: dt.datetime, include_finished: bool):
 
 
 @app.get("/api/board")
-def board(include_finished: bool = False) -> dict:
-    """Latest snapshot of every market still on the board, with its prediction."""
+def board(include_finished: bool = False, league: str | None = None) -> dict:
+    """Latest snapshot of every market still on the board, with its prediction.
+
+    ``league`` filters on the slug prefix the venue itself uses. Filtered here
+    rather than in the query because the board reads the newest snapshot per
+    market and the league is a property of the slug, not of a column — see
+    `core/leagues.py` for why the mapping is an explicit table.
+    """
+    lg = _league_or_400(league)
     now = dt.datetime.now(UTC)
     with _Session() as s:
         snaps = _live_board(s, as_of=now, include_finished=include_finished)
+        snaps = [
+            x for x in snaps
+            if league_of_slug(x.event_slug or x.market_slug) is not None
+            and league_of_slug(x.event_slug or x.market_slug).slug == lg.slug
+        ]
         if not snaps:
-            return {"captured_at": None, "markets": []}
+            return {"captured_at": None, "markets": [], "league": lg.slug,
+                    "league_name": lg.name, "recorded": lg.recorded,
+                    "empty_state": lg.empty_state}
         latest = max(snap.captured_at for snap in snaps)
 
         pred_time = s.scalar(select(func.max(Prediction.predicted_at)))
@@ -677,6 +699,10 @@ def board(include_finished: bool = False) -> dict:
     return {
         "captured_at": latest.isoformat(),
         "predicted_at": pred_time.isoformat() if pred_time else None,
+        "league": lg.slug,
+        "league_name": lg.name,
+        "recorded": lg.recorded,
+        "empty_state": lg.empty_state,
         "markets": rows,
     }
 
@@ -708,19 +734,23 @@ def history(market_slug: str, limit: int = 60) -> dict:
 
 
 @app.get("/api/events")
-def events() -> dict:
+def events(league: str | None = None) -> dict:
     """Games being tracked, each from its own latest snapshot.
 
     Had the same defect as `/api/board`: grouping the single newest instant
     meant the sidebar listed only whichever game the live recorder had just
     written, so a full slate rendered as one game.
     """
+    lg = _league_or_400(league)
     now = dt.datetime.now(UTC)
     with _Session() as s:
         snaps = _live_board(s, as_of=now, include_finished=False)
 
     grouped: dict[str, dict] = {}
     for snap in snaps:
+        found = league_of_slug(snap.event_slug or snap.market_slug)
+        if found is None or found.slug != lg.slug:
+            continue
         slug = snap.event_slug or "?"
         e = grouped.setdefault(slug, {
             "event_slug": slug,
@@ -752,7 +782,9 @@ def events() -> dict:
                 "age_seconds": round((now - e["oldest"]).total_seconds(), 1),
             }
             for e in out
-        ]
+        ],
+        "league": lg.slug,
+        "league_name": lg.name,
     }
 
 
@@ -767,7 +799,8 @@ MAX_TRADEABLE_SPREAD = 0.06
 
 @app.get("/api/picks")
 def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
-          include_illiquid: bool = False) -> dict:
+          include_illiquid: bool = False,
+          league: str | None = None) -> dict:
     """Actionable pregame picks, ordered by tipoff.
 
     Four filters, all empirical:
@@ -785,12 +818,17 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         deserving of it.
 
     `include_illiquid=true` relaxes the spread filter only; the market-type and
-    actionability gates are not overridable from a URL.
+    actionability gates are not overridable from a URL. `league` filters on the
+    venue's own slug prefix (`core/leagues.py`) and is not a gate — it selects
+    which board you are looking at.
     """
+    lg = _league_or_400(league)
     with _Session() as s:
         pred_time = s.scalar(select(func.max(Prediction.predicted_at)))
         if pred_time is None:
-            return {"picks": [], "predicted_at": None}
+            return {"picks": [], "predicted_at": None, "league": lg.slug,
+                    "league_name": lg.name, "recorded": lg.recorded,
+                    "empty_state": lg.empty_state}
         preds = s.scalars(
             select(Prediction).where(Prediction.predicted_at == pred_time)
         ).all()
@@ -805,8 +843,21 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
 
     now = dt.datetime.now(UTC)
     out, filtered_far, filtered_wide = [], 0, 0
-    filtered_untradable = filtered_unanchored = 0
+    filtered_untradable = filtered_unanchored = filtered_unknown_league = 0
     for p in preds:
+        # League first: everything below is per-board bookkeeping, and counting
+        # another league's filtered rows into this board's tallies would make
+        # the "N far-dated hidden" hint describe games that were never here.
+        found = league_of_slug(p.event_slug or p.market_slug)
+        if found is None:
+            # A slug we cannot place in any league. Counted, not swallowed:
+            # this is exactly the silent-empty-board failure `core/leagues.py`
+            # is written to avoid, and a rising number here means the venue
+            # changed its slug format.
+            filtered_unknown_league += 1
+            continue
+        if found.slug != lg.slug:
+            continue
         start = starts.get(p.market_slug)
         if start is None or start <= now:      # pregame only
             continue
@@ -937,11 +988,16 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
     return {
         "predicted_at": pred_time.isoformat(),
         "horizon_hours": horizon_hours,
+        "league": lg.slug,
+        "league_name": lg.name,
+        "recorded": lg.recorded,
+        "empty_state": lg.empty_state,
         "filtered": {
             "beyond_horizon": filtered_far,
             "spread_too_wide": filtered_wide,
             "market_not_traded": filtered_untradable,
             "no_book_line_yet": filtered_unanchored,
+            "unknown_league": filtered_unknown_league,
         },
         "picks": out,
     }
@@ -1812,6 +1868,186 @@ def live_totals_fv() -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# Leagues, and the per-game deep dive
+# --------------------------------------------------------------------------- #
+
+
+@app.get("/api/leagues")
+def leagues() -> dict:
+    """The league tabs, and what to say when one has no data.
+
+    The header used to read a hardcoded "MERIDIAN · WNBA". League is now a
+    parameter end to end (`core/leagues.py`), so a second league is a table
+    entry and a tab rather than a search-and-replace across three pages.
+    """
+    return {
+        "default": default_league().slug,
+        "leagues": [
+            {
+                "slug": lg.slug,
+                "name": lg.name,
+                "recorded": lg.recorded,
+                "empty_state": lg.empty_state,
+            }
+            for lg in LEAGUES.values()
+        ],
+    }
+
+
+def _league_or_400(slug: str | None):
+    try:
+        return get_league(slug)
+    except UnknownLeagueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/games")
+def games(league: str | None = None, limit: int = 60) -> dict:
+    """Games this league's model has shadow-traded, newest first.
+
+    Driven by `shadow_orders`: a game the model never decided anything in has
+    nothing for the deep dive to show, and listing it would promise a page
+    that turns out empty.
+    """
+    lg = _league_or_400(league)
+    if not lg.recorded:
+        return {"league": lg.slug, "league_name": lg.name,
+                "recorded": False, "empty_state": lg.empty_state, "games": []}
+
+    with _Session() as s:
+        rows = list_games(s, league=lg.slug, limit=limit)
+    return {
+        "league": lg.slug,
+        "league_name": lg.name,
+        "recorded": True,
+        "empty_state": lg.empty_state,
+        "games": [
+            {
+                "event_slug": g["event_slug"],
+                "label": g["label"],
+                "n_trades": g["n_trades"],
+                "n_resolved": g["n_resolved"],
+                "first_decision": g["first_decision"].isoformat() if g["first_decision"] else None,
+                "last_decision": g["last_decision"].isoformat() if g["last_decision"] else None,
+            }
+            for g in rows
+        ],
+    }
+
+
+@app.get("/api/game/{event_slug}")
+def game(event_slug: str, timeline: bool = True, bucket_seconds: int = 30) -> dict:
+    """One game, every shadow trade, in the order the model decided them.
+
+    Read the two halves of this payload differently, because they sit on
+    opposite sides of the decision boundary:
+
+    * ``trades[].context`` is the game **as of** each decision — the latest
+      snapshot at or before ``decided_at``, never a later one. Attaching the
+      newest score to an old decision would show the model trading a game it
+      had not seen (`core/game_detail.py`).
+    * ``timeline`` is what happened **after**, and is context for the reader
+      only. Nothing in it was an input to any decision on this page.
+
+    ``pnl_if_filled`` is conditional and named for it: these orders were never
+    sent, and most of them would have rested on the book.
+    """
+    lg = league_of_slug(event_slug)
+    if lg is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"no known league in event slug {event_slug!r}",
+        )
+
+    with _Session() as s:
+        detail = build_game_detail(
+            s,
+            event_slug,
+            league=lg.slug,
+            human_label=_human_market,
+            bucket_seconds=max(5, min(bucket_seconds, 600)),
+            with_timeline=timeline,
+        )
+
+    if not detail.trades:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no shadow trades recorded for {event_slug!r}",
+        )
+
+    return {
+        "event_slug": detail.event_slug,
+        "league": detail.league,
+        "league_name": lg.name,
+        "label": detail.label,
+        "tipoff": detail.tipoff.isoformat() if detail.tipoff else None,
+        "final_score": detail.final_score,
+        "n_trades": len(detail.trades),
+        "n_live_decisions": detail.n_live_decisions,
+        "timeline_market": detail.timeline_market,
+        "trades": [
+            {
+                "id": t.shadow_order_id,
+                "decided_at": t.decided_at.isoformat(),
+                "hours_to_tipoff": (
+                    round(t.hours_to_tipoff, 2) if t.hours_to_tipoff is not None else None
+                ),
+                "market_slug": t.market_slug,
+                "human": t.human,
+                "position": _position_label(t.market_type, "YES", t.human),
+                "type": (t.market_type or "").replace(
+                    "basketball_team_full_game_", ""),
+                "line": t.line,
+                "side": t.side,
+                "limit_price": t.limit_price,
+                "quantity": round(t.quantity, 4),
+                "would_rest": t.would_rest,
+                "binding_constraint": t.binding_constraint,
+                "model_fv": t.model_fv,
+                "bid": t.market_bid,
+                "ask": t.market_ask,
+                "spread": round(t.spread, 4) if t.spread is not None else None,
+                "edge": t.edge_net,
+                "context": {
+                    "score": t.context.score,
+                    "margin": t.context.margin,
+                    "period": t.context.period,
+                    "minutes_left": (
+                        round(t.context.minutes_left, 1)
+                        if t.context.minutes_left is not None else None
+                    ),
+                    "minutes_left_is_estimate": t.context.minutes_left_is_estimate,
+                    "is_live": t.context.is_live,
+                    "age_seconds": (
+                        round(t.context.context_age_seconds)
+                        if t.context.context_age_seconds is not None else None
+                    ),
+                    "note": t.context.note,
+                },
+                "resolved_outcome": t.resolved_outcome,
+                "bet_won": t.bet_won,
+                "pnl_if_filled": (
+                    round(t.pnl_if_filled, 4) if t.pnl_if_filled is not None else None
+                ),
+            }
+            for t in detail.trades
+        ],
+        "timeline": [
+            {
+                "at": p.at.isoformat(),
+                "score": p.score,
+                "margin": p.margin,
+                "period": p.period,
+                "bid": p.bid,
+                "ask": p.ask,
+                "mid": round(p.mid, 4) if p.mid is not None else None,
+            }
+            for p in detail.timeline
+        ],
+    }
+
+
 @app.get("/picks")
 def picks_page() -> FileResponse:
     return FileResponse(STATIC / "picks.html")
@@ -1823,13 +2059,43 @@ def analytics() -> dict:
 
     Built by `python -m core.analytics`, not computed here: a walk-forward run
     takes ~17s locally and far longer against a remote database.
+
+    The path comes from `core.paths.analytics_path()` — the same call the
+    writer makes, never a second expression that happens to look the same.
+
+    **The error names the path.** For six weeks this returned a bare "run
+    `python -m core.analytics` first" while the operator was running exactly
+    that, successfully, on the host: the api container had no mount for the
+    artifact root, so writer and reader resolved the same code to different
+    disks. An error that cannot distinguish "never built" from "built where I
+    cannot see it" sends you to re-run a job that already worked.
     """
     import json
-    from core.paths import reports_dir
 
-    path = reports_dir() / "analytics.json"
+    from core.paths import DATA_DIR_CONTAINER, analytics_path, data_dir
+
+    path = analytics_path()
     if not path.exists():
-        return {"error": "run `python -m core.analytics` first"}
+        root = data_dir()
+        if not root.is_dir():
+            # The artifact root itself is missing. Inside a container that
+            # means the compose mount is absent, not that analytics never ran.
+            return {
+                "error": (
+                    f"no artifact root at {root} — nothing has been built here, "
+                    f"and if this is the api container the {DATA_DIR_CONTAINER} "
+                    "mount is missing (see docs/infra/analytics-path.md)"
+                ),
+                "looked_in": str(path),
+                "data_dir": str(root),
+                "data_dir_exists": False,
+            }
+        return {
+            "error": f"no analytics blob at {path} — run `python -m core.analytics`",
+            "looked_in": str(path),
+            "data_dir": str(root),
+            "data_dir_exists": True,
+        }
     return json.loads(path.read_text())
 
 

@@ -18,6 +18,10 @@ create a new top-level folder in the repo.
 (`core.paths.BACKUP_DIR_CONTAINER`), which docker-compose binds to
 `${MERIDIAN_DATA_DIR:-./backups}/ticks`. These two move together or the
 retention job's staging silently breaks — `tests/test_paths.py` pins the pair.
+The api container gets the whole root at `/data`
+(`core.paths.DATA_DIR_CONTAINER`) **plus `MERIDIAN_DATA_DIR=/data`**, so a
+file the host wrote resolves to the same bytes inside it; the bind without the
+env var is the failure documented in [analytics-path.md](analytics-path.md).
 Setting `MERIDIAN_DATA_DIR` therefore requires a container recreate to take
 effect, and it must be set in the shell/`.env` compose reads, not only for
 python.
