@@ -180,6 +180,10 @@
   <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
   <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v" id="s-pregame">—</span></div>
   <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v" id="s-live">—</span></div>
+  <!-- The account, read from the venue every scheduler cycle. It sits in the
+       header because every size on this page is a fraction of it, and a
+       bankroll that has quietly stopped being true is invisible anywhere else. -->
+  <div class="stat" id="s-bankroll-wrap" title="Account balance from Polymarket US. Every stake is a fraction of this."><span class="k">bankroll</span><span class="v num" id="s-bankroll">—</span></div>
   <nav>
     <a href="/" class="on">Picks</a>
     <a href="/analytics">Model performance</a>
@@ -232,6 +236,10 @@
     missing information, not free money. Real edge looks like small gaps that are
     right more often than not.
   </div>
+
+  <!-- Above the picks table and OUTSIDE #picks: the unrecorded-league branch
+       replaces #picks wholesale, and the bankroll is true on every league. -->
+  <div class="note" id="bankroll"></div>
 
   <h2>Tonight's pregame picks <span id="hint" class="dimc" style="text-transform:none;letter-spacing:0"></span></h2>
   <!-- Placeholder, not an empty div: this is the first thing on the landing
@@ -286,6 +294,31 @@ const agef = sec => sec == null ? "—"
   : sec < 90 ? sec.toFixed(0) + "s"
   : sec < 5400 ? Math.round(sec/60) + "m"
   : Math.round(sec/3600) + "h";
+
+/* The account balance, from the venue. An unknown balance is SAID, never
+   filled in with a plausible number — the failure being fixed here is that a
+   stale constant looked exactly like a live reading on this page. */
+function renderBankroll(b){
+  const el = $("#bankroll");
+  if(!el) return;
+  if(!b || b.bankroll == null){
+    el.innerHTML = '<span class="warnc">Bankroll unknown</span> — the venue balance '
+      + 'could not be read, so every size below is unsized rather than guessed.'
+      + (b && b.unavailable ? ` <span class="dimc">(${b.unavailable})</span>` : "");
+    return;
+  }
+  const mins = Math.round((b.age_seconds||0)/60);
+  // `isStale`, not `stale`: this page has a global stale(league) guard, and a
+  // local const of that name would shadow it for the rest of this function.
+  // Harmless today because nothing here calls it — which is exactly how the
+  // .gcard/.scard collision would have gone unnoticed.
+  const isStale = mins >= 60;
+  el.innerHTML = `Bankroll <b>$${b.bankroll.toFixed(2)}</b> ${b.currency||""} `
+    + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · in positions `
+    + `$${(b.asset_notional??0).toFixed(2)} · read `
+    + `<span class="${isStale?"warnc":"dimc"}">${mins}m ago</span>`
+    + `</span> — every stake below is a fraction of this.`;
+}
 
 function renderPicks(d){
   const f = d.filtered || {};
@@ -468,8 +501,11 @@ function openTicket(p){
     }
 
     const stake = q * price;
+    // The cap the server sends is already the SMALLER of the fat-finger limit
+    // and the account balance, so this refuses a size the money cannot cover
+    // as well as one the policy will not allow.
     if(stake > o.max_stake_usd)
-      return bad(`$${stake.toFixed(2)} — over the $${o.max_stake_usd} cap`);
+      return bad(`$${stake.toFixed(2)} — over the $${o.max_stake_usd} limit`);
     // Sub-cent stakes are real and common here: the default is the 0.01-contract
     // venue minimum, which on a 0.19 contract is $0.0019. Rendering that as
     // "$0.00" reads as free, or as broken. Show enough digits to see the number.
@@ -602,6 +638,27 @@ async function loadStatus(){
       `${cnt(c.snapshots)} snapshots · ${cnt(c.book_levels)} book levels · `
       + `${cnt(c.predictions)} predictions · ${cnt(c.shadow_orders)} shadow orders · `
       + `updated ${new Date().toLocaleTimeString()}`;
+    // Unknown reads "?" and turns red — the same word `cnt()` uses above for
+    // a count nobody has measured, and for the same reason. It never falls
+    // back to a number: a plausible balance the venue did not give us is
+    // indistinguishable on screen from a real one, and that is the bug this
+    // whole feature replaced.
+    const br = d.bankroll, brEl = $("#s-bankroll");
+    if (br && br.bankroll != null) {
+      brEl.textContent = "$" + br.bankroll.toFixed(2);
+      const mins = Math.round((br.age_seconds ?? 0) / 60);
+      brEl.className = "v num " + (mins >= 60 ? "neg" : "pos");
+      $("#s-bankroll-wrap").title =
+        `Account balance from Polymarket US: $${br.bankroll.toFixed(2)} `
+        + `(cash $${(br.cash ?? 0).toFixed(2)}, in positions $${(br.asset_notional ?? 0).toFixed(2)}), `
+        + `read ${mins}m ago. Every stake is a fraction of this.`;
+    } else {
+      brEl.textContent = "?";
+      brEl.className = "v num neg";
+      $("#s-bankroll-wrap").title =
+        "The venue balance could not be read: " + ((br && br.unavailable) || "unknown")
+        + ". Nothing is sized against a guessed bankroll.";
+    }
   } catch(e){ /* the pill is informational; a failure here must not break picks */ }
 }
 loadStatus();
@@ -1178,6 +1235,18 @@ function loadPicks(league){
     .then(r=>r.json())
     .then(d => {
       if(stale(league)) return;
+      // After the guard, not before. A stale response does carry a correct
+      // bankroll — the balance is league-invariant — so exempting this one
+      // field would be harmless today. It is still the wrong shape: the
+      // exemption would rest on a property of the DATA that nothing enforces,
+      // and a per-league or per-venue balance would turn it into precisely the
+      // render-whatever-arrives-last bug this guard exists to kill. One rule,
+      // no carve-outs.
+      //
+      // Before the unrecorded-league return, though: the bankroll is a fact
+      // about the ACCOUNT, true on a league we do not record, and the server
+      // sends it on that path for exactly that reason.
+      renderBankroll(d.bankroll);
       if(d.recorded === false){
         $("#hint").textContent = "";
         $("#picks").innerHTML = `<div class="empty">${d.empty_state}</div>`;

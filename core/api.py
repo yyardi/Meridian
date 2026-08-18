@@ -91,7 +91,47 @@ VENUE_MIN_QTY = Decimal("0.01")
 MAX_ORDER_STAKE_USD = Decimal(os.environ.get("MERIDIAN_MAX_ORDER_STAKE_USD", "25"))
 
 
-def _derive_order_terms(pred) -> dict | None:
+def _stake_cap() -> Decimal:
+    """The most one order may stake: the fat-finger cap **or the account**,
+    whichever is smaller.
+
+    The $25 cap was written when the balance was $35. The account has since
+    drifted to $23.82, so the "cap" stopped capping anything — a single ticket
+    could have staked more money than exists, and the first thing the human
+    would have learned about it is a rejection from the venue. A cap that is
+    larger than the bankroll is not a guard, it is decoration.
+
+    An unreadable balance falls back to the configured cap and **not** to a
+    guessed bankroll: the env cap is a stated policy, whereas a made-up balance
+    would be a fabricated fact about the account.
+    """
+    from core.bankroll import BankrollUnavailable, current
+
+    try:
+        return min(MAX_ORDER_STAKE_USD, current().bankroll)
+    except BankrollUnavailable as exc:
+        log.warning("stake_cap_without_bankroll", error=str(exc)[:160],
+                    cap=float(MAX_ORDER_STAKE_USD))
+        return MAX_ORDER_STAKE_USD
+
+
+def _bankroll_block() -> dict | None:
+    """The account balance for display, or ``None`` when it is not known.
+
+    ``None`` is a real answer and the pages render it as such. The alternative
+    — a plausible number standing in for one we could not read — is the exact
+    failure this replaced: `35.68` looked like a balance on every screen for
+    weeks after it stopped being one.
+    """
+    from core.bankroll import BankrollUnavailable, current
+
+    try:
+        return current().to_dict()
+    except BankrollUnavailable as exc:
+        return {"bankroll": None, "unavailable": str(exc)[:160]}
+
+
+def _derive_order_terms(pred, stake_cap: Decimal | None = None) -> dict | None:
     """The order the executor *would* build for this pick, computed on demand.
 
     Why this exists: `shadow_orders` only holds rows the Kelly sizer sized above
@@ -159,7 +199,8 @@ def _derive_order_terms(pred) -> dict | None:
         None if model is None
         else round(1 - model, 4) if is_no else round(model, 4)
     )
-    max_qty = (MAX_ORDER_STAKE_USD / cost).quantize(Decimal("0.01"))
+    cap = _stake_cap() if stake_cap is None else stake_cap
+    max_qty = (cap / cost).quantize(Decimal("0.01"))
     return {
         "supported": True,
         "outcome": OutcomeSide.NO.value if is_no else OutcomeSide.YES.value,
@@ -178,7 +219,10 @@ def _derive_order_terms(pred) -> dict | None:
         "fair_value": fair,
         "min_quantity": float(VENUE_MIN_QTY),
         "max_quantity": float(max_qty),
-        "max_stake_usd": float(MAX_ORDER_STAKE_USD),
+        #: The binding cap, already reduced to the account balance when that is
+        #: the smaller of the two. The ticket shows this number, so the human
+        #: never sees a ceiling their money cannot reach.
+        "max_stake_usd": float(cap),
     }
 
 #: Model and market this close is not a disagreement, so it is not a bet.
@@ -570,6 +614,11 @@ def status() -> dict:
             "shadow_orders": int(n_orders or 0),
         },
         "stream_bytes": int(stream_bytes or 0),
+        #: The account, read from the venue. Every dollar figure on every page
+        #: is a fraction of this, so it belongs next to the freshness signals:
+        #: a bankroll nobody has refreshed is as stale as a recorder nobody has
+        #: restarted, and used to be just as invisible.
+        "bankroll": _bankroll_block(),
     }
     _status_cache["at"] = now_mono
     _status_cache["value"] = value
@@ -829,15 +878,35 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         # unrecorded league still walks every prediction on record and discards
         # all of them — seconds of work to return nothing, and seconds is
         # exactly the window the page's stale-response guard has to cover.
+        #
+        # `bankroll` rides along, as on every other return in this function.
+        # The balance is a fact about the ACCOUNT, so it is true on a league we
+        # do not record, and omitting it makes the page report "unknown" about
+        # a number sitting in the database. It arrives here in the same PR that
+        # defines `_bankroll_block` — adding it when the short-circuit itself
+        # landed would have been a NameError, which is why it waited rather
+        # than being fixed at the point it was found.
         return {"picks": [], "predicted_at": None, "league": lg.slug,
                 "league_name": lg.name, "recorded": False,
-                "empty_state": lg.empty_state}
+                "empty_state": lg.empty_state,
+                "bankroll": _bankroll_block()}
     with _Session() as s:
         pred_time = s.scalar(select(func.max(Prediction.predicted_at)))
         if pred_time is None:
+            # Both the league context and the bankroll survive an empty board,
+            # and for the same reason: they are facts about the account and the
+            # tab, not about tonight's slate. `bankroll` is an ALWAYS-PRESENT
+            # field, not a usually-present one — a consumer reading
+            # `d.bankroll.bankroll` throws on a missing key, and one reading
+            # `d.bankroll?.bankroll` renders nothing at all. The second is this
+            # endpoint's own bug arrived at from the other side: a balance
+            # absent with no explanation is the same failure as a balance that
+            # is quietly wrong. (Found by Builder C, who hit the identical hole
+            # adding the league keys immediately below.)
             return {"picks": [], "predicted_at": None, "league": lg.slug,
                     "league_name": lg.name, "recorded": lg.recorded,
-                    "empty_state": lg.empty_state}
+                    "empty_state": lg.empty_state,
+                    "bankroll": _bankroll_block()}
         preds = s.scalars(
             select(Prediction).where(Prediction.predicted_at == pred_time)
         ).all()
@@ -851,6 +920,9 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         }
 
     now = dt.datetime.now(UTC)
+    # Resolved once per request, not once per row: every ticket on the board is
+    # capped by the same account, and thirty rows must not become thirty reads.
+    stake_cap = _stake_cap()
     out, filtered_far, filtered_wide = [], 0, 0
     filtered_untradable = filtered_unanchored = filtered_unknown_league = 0
     for p in preds:
@@ -894,7 +966,7 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         if mtype == "total":
             side = "OVER" if side == "YES" else "UNDER"
         o = shadow.get(p.market_slug)
-        _order_terms = _derive_order_terms(p)
+        _order_terms = _derive_order_terms(p, stake_cap)
         human = _human_market(p.market_slug, p.sports_market_type, _f(p.line))
         out.append({
             "market_slug": p.market_slug,
@@ -1001,6 +1073,12 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         "league_name": lg.name,
         "recorded": lg.recorded,
         "empty_state": lg.empty_state,
+        #: The account the STAKE column is a fraction of. On the page so that a
+        #: size and the money behind it are never read apart — `null` when the
+        #: balance could not be established, which the page says out loud rather
+        #: than filling in. Same keys as the empty-board return above; the two
+        #: shapes must not drift.
+        "bankroll": _bankroll_block(),
         "filtered": {
             "beyond_horizon": filtered_far,
             "spread_too_wide": filtered_wide,
@@ -1380,13 +1458,15 @@ def submit_order(req: OrderRequest, request: Request) -> dict:
         # differ by 1 - price, so charging the cap against `price` would size a
         # cheap NO five times too small and an expensive one five times too big.
         stake = (cost * req.quantity).quantize(Decimal("0.01"))
-        if stake > MAX_ORDER_STAKE_USD:
+        cap = _stake_cap()
+        if stake > cap:
+            # Which limit bound matters to whoever reads the error: "lower your
+            # size" and "you do not have the money" are different problems.
+            why = ("the account balance" if cap < MAX_ORDER_STAKE_USD
+                   else "the per-order cap (MERIDIAN_MAX_ORDER_STAKE_USD)")
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"stake ${stake} exceeds the ${MAX_ORDER_STAKE_USD} per-order "
-                    "cap (MERIDIAN_MAX_ORDER_STAKE_USD)"
-                ),
+                detail=f"stake ${stake} exceeds ${cap} — {why}",
             )
 
         shadow = s.scalars(
@@ -2055,6 +2135,24 @@ def game(event_slug: str, timeline: bool = True, bucket_seconds: int = 30) -> di
             for p in detail.timeline
         ],
     }
+@app.get("/api/bankroll")
+def bankroll(refresh: bool = False) -> dict:
+    """The account balance. **Read-only** — a GET against a signed GET.
+
+    `refresh=true` polls the venue now instead of serving the stored reading:
+    the on-demand half of the poller, for the moment after a fill when the
+    scheduler's twenty-minute cadence is too slow to trust. It cannot place,
+    modify or cancel anything — `PolymarketAuthedClient` has no verb but `get`.
+    """
+    from core.bankroll import BankrollUnavailable
+    from core.bankroll import refresh as refresh_bankroll
+
+    if not refresh:
+        return _bankroll_block() or {}
+    try:
+        return refresh_bankroll().to_dict()
+    except BankrollUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)[:200]) from exc
 
 
 @app.get("/picks")
