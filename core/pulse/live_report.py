@@ -64,6 +64,7 @@ def settlement_score(*, side: str, entry_price: float, settlement: int) -> tuple
 
 @dataclass
 class LiveReport:
+    version: str
     n_decisions: int
     n_entries: int
     n_entry_fills: int
@@ -93,10 +94,13 @@ class LiveReport:
         return "FAIL"
 
 
-def build_report(session) -> LiveReport:
+def build_report(session) -> dict[str, LiveReport]:
+    """One report PER ESTIMATES VERSION. Never a combined number: v1 and v2
+    are different models, and blending model generations in one performance
+    figure is the exact bug the era-separation work (PR #23) deleted."""
     entries = session.execute(text("""
         SELECT e.id, e.event_slug, e.side, e.limit_price, e.contracts,
-               e.stake_usd, e.filled_at, e.settlement,
+               e.stake_usd, e.filled_at, e.settlement, e.estimates_version,
                x.limit_price AS exit_price, x.filled_at AS exit_filled_at
         FROM pulse_decisions e
         LEFT JOIN LATERAL (
@@ -107,64 +111,89 @@ def build_report(session) -> LiveReport:
         ) x ON TRUE
         WHERE e.action = 'enter'
     """)).all()
-    n_all = session.execute(text("SELECT count(*) FROM pulse_decisions")).scalar() or 0
+    counts = dict(session.execute(text("""
+        SELECT estimates_version, count(*) FROM pulse_decisions
+        GROUP BY estimates_version
+    """)).all())
 
-    trip_roi_by_game: dict[str, list[float]] = defaultdict(list)
-    ride_roi_by_game: dict[str, list[float]] = defaultdict(list)
-    n_entry_fills = n_round_trips = n_rides_settled = 0
-    trip_staked = trip_pnl = ride_staked = ride_returned = 0.0
-    games: set[str] = set()
-
+    by_version: dict[str, list] = defaultdict(list)
     for e in entries:
-        if e.filled_at is None:
-            continue
-        n_entry_fills += 1
-        games.add(e.event_slug)
-        entry_price = float(e.limit_price)
-        contracts = float(e.contracts)
-        side = e.side
-        cost_per_contract = entry_price if side == YES else 1.0 - entry_price
-        if cost_per_contract <= 0 or contracts <= 0:
-            continue
-        if e.exit_filled_at is not None:
-            capture = round_trip_capture(
-                side=side, entry_price=entry_price, exit_price=float(e.exit_price))
-            n_round_trips += 1
-            trip_staked += cost_per_contract * contracts
-            trip_pnl += capture * contracts
-            trip_roi_by_game[e.event_slug].append(capture / cost_per_contract)
-        elif e.settlement is not None:
-            staked, returned = settlement_score(
-                side=side, entry_price=entry_price, settlement=int(e.settlement))
-            n_rides_settled += 1
-            ride_staked += staked * contracts
-            ride_returned += returned * contracts
-            ride_roi_by_game[e.event_slug].append(returned / staked - 1.0)
+        by_version[e.estimates_version].append(e)
 
-    return LiveReport(
-        n_decisions=int(n_all),
-        n_entries=len(entries),
-        n_entry_fills=n_entry_fills,
-        n_round_trips=n_round_trips,
-        n_rides_settled=n_rides_settled,
-        n_games=len(games),
-        trip_staked=trip_staked,
-        trip_pnl=trip_pnl,
-        ride_staked=ride_staked,
-        ride_returned=ride_returned,
-        trip_roi_clustered=clustered_mean(trip_roi_by_game),
-        ride_roi_clustered=clustered_mean(ride_roi_by_game),
-    )
+    out: dict[str, LiveReport] = {}
+    for version, version_entries in by_version.items():
+        trip_roi_by_game: dict[str, list[float]] = defaultdict(list)
+        ride_roi_by_game: dict[str, list[float]] = defaultdict(list)
+        n_entry_fills = n_round_trips = n_rides_settled = 0
+        trip_staked = trip_pnl = ride_staked = ride_returned = 0.0
+        games: set[str] = set()
+
+        for e in version_entries:
+            if e.filled_at is None:
+                continue
+            n_entry_fills += 1
+            games.add(e.event_slug)
+            entry_price = float(e.limit_price)
+            contracts = float(e.contracts)
+            side = e.side
+            cost_per_contract = entry_price if side == YES else 1.0 - entry_price
+            if cost_per_contract <= 0 or contracts <= 0:
+                continue
+            if e.exit_filled_at is not None:
+                capture = round_trip_capture(
+                    side=side, entry_price=entry_price, exit_price=float(e.exit_price))
+                n_round_trips += 1
+                trip_staked += cost_per_contract * contracts
+                trip_pnl += capture * contracts
+                trip_roi_by_game[e.event_slug].append(capture / cost_per_contract)
+            elif e.settlement is not None:
+                staked, returned = settlement_score(
+                    side=side, entry_price=entry_price, settlement=int(e.settlement))
+                n_rides_settled += 1
+                ride_staked += staked * contracts
+                ride_returned += returned * contracts
+                ride_roi_by_game[e.event_slug].append(returned / staked - 1.0)
+
+        out[version] = LiveReport(
+            version=version,
+            n_decisions=int(counts.get(version, 0)),
+            n_entries=len(version_entries),
+            n_entry_fills=n_entry_fills,
+            n_round_trips=n_round_trips,
+            n_rides_settled=n_rides_settled,
+            n_games=len(games),
+            trip_staked=trip_staked,
+            trip_pnl=trip_pnl,
+            ride_staked=ride_staked,
+            ride_returned=ride_returned,
+            trip_roi_clustered=clustered_mean(trip_roi_by_game),
+            ride_roi_clustered=clustered_mean(ride_roi_by_game),
+        )
+    return out
 
 
-def format_report(r: LiveReport) -> str:
+def format_report(reports: dict[str, LiveReport]) -> str:
     out: list[str] = []
     add = out.append
     add("PULSE LIVE RUN — shadow decisions, money at price (C11), by game (C4)")
     add("=" * 78)
     add(f"floors (pre-registered): >= {FLOOR_ENTRY_FILLS} filled entries AND "
-        f">= {FLOOR_GAMES} games")
-    add("")
+        f">= {FLOOR_GAMES} games — applied PER ESTIMATES VERSION")
+    if not reports:
+        add("")
+        add("NO DATA — no decisions recorded. The engine has not run against a")
+        add("live stream, which is different from running and finding nothing.")
+        return "\n".join(out)
+    for version in sorted(reports):
+        add("")
+        add(_format_one(reports[version]))
+    return "\n".join(out)
+
+
+def _format_one(r: LiveReport) -> str:
+    out: list[str] = []
+    add = out.append
+    add(f"[estimates {r.version}]")
     add(f"decisions recorded            : {r.n_decisions:,}")
     add(f"entries decided / filled      : {r.n_entries:,} / {r.n_entry_fills:,}")
     add(f"round trips completed         : {r.n_round_trips:,}")
