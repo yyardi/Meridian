@@ -518,6 +518,21 @@ separates a guard from a decoration.
 Corollary, from the push above: **consistency between two runs of the same check
 is not evidence.** Two agreeing readings tell you about the instrument.
 
+Second corollary, and it cost three rounds to learn: **a confident correction is
+not evidence either.** Writing this entry produced its own small chain of them —
+an inference that two aggregates matching meant two computations agreed (wrong);
+a controlled re-run that appeared to confirm it (wrong, different denominator);
+and a correction to quote the outage duration rather than the data lost (wrong,
+both numbers were in the file, in adjacent columns of the same row). Each was
+offered in good faith by someone with more context than the last, and each was
+believed because it was more confident than what it replaced.
+
+What resolved every one of them was the same move, and it was never scepticism
+about the person: **go to the artifact instead of adjudicating between
+summaries.** Read the row. Run the test against the other tree. Check which
+figure the file actually records. Green can be load-bearing in the wrong
+direction; so can a correction, and a correction arrives with more authority.
+
 ### Design note — the anchor staleness guard (2026-08-05)
 
 A guard built against the B1/B2/B10 shape *before* it costs anything, prompted
