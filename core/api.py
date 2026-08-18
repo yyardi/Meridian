@@ -2090,6 +2090,56 @@ def quote_status() -> dict:
     }
 
 
+@app.get("/api/pulse")
+def pulse_status() -> dict:
+    """PULSE's accruing record, for the Model performance page. Read-only.
+
+    Serializes `core.pulse.live_report.build_report` verbatim — the same
+    contract as `/api/quote`: the registered floors are the module's own
+    constants, the verdict string is the report's own, and this endpoint adds
+    nothing that could disagree with `python -m core.pulse.live_report`.
+    Below the floors the page renders counts and an accruing state, never a
+    performance number.
+    """
+    from core.pulse.live_report import (
+        FLOOR_ENTRY_FILLS,
+        FLOOR_GAMES,
+        build_report,
+    )
+
+    with _Session() as s:
+        r = build_report(s)
+        bounds = s.execute(text(
+            "SELECT min(decided_at), max(decided_at) FROM pulse_decisions"
+        )).one()
+
+    def _cm(cm):
+        return None if cm is None else {
+            "mean": cm.mean, "lo": cm.lo, "hi": cm.hi,
+            "n": cm.n, "n_clusters": cm.n_clusters, "stderr": cm.stderr,
+        }
+
+    return {
+        "floors": {"entry_fills": FLOOR_ENTRY_FILLS, "games": FLOOR_GAMES},
+        "n_decisions": r.n_decisions,
+        "n_entries": r.n_entries,
+        "n_entry_fills": r.n_entry_fills,
+        "n_round_trips": r.n_round_trips,
+        "n_rides_settled": r.n_rides_settled,
+        "n_games": r.n_games,
+        "trip_staked": round(r.trip_staked, 4),
+        "trip_pnl": round(r.trip_pnl, 4),
+        "ride_staked": round(r.ride_staked, 4),
+        "ride_returned": round(r.ride_returned, 4),
+        "trip_roi": _cm(r.trip_roi_clustered),
+        "ride_roi": _cm(r.ride_roi_clustered),
+        "at_floor": r.at_floor,
+        "verdict": r.verdict,
+        "first_decision": bounds[0].isoformat() if bounds[0] else None,
+        "last_decision": bounds[1].isoformat() if bounds[1] else None,
+    }
+
+
 @app.get("/api/leagues")
 def leagues() -> dict:
     """The league tabs, and what to say when one has no data.
@@ -2350,7 +2400,13 @@ def analytics() -> dict:
             "data_dir": str(root),
             "data_dir_exists": True,
         }
-    return json.loads(path.read_text())
+    body = json.loads(path.read_text())
+    # The artifact records no build time of its own, so the file's mtime is
+    # the truth about when it was generated — surfaced so the page can say
+    # "generated 3h ago" instead of presenting a stale record as current.
+    body["generated_age_seconds"] = round(
+        dt.datetime.now(UTC).timestamp() - path.stat().st_mtime, 1)
+    return body
 
 
 @app.get("/quote")
