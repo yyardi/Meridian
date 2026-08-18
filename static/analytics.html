@@ -289,9 +289,20 @@ fetch("/api/analytics").then(r=>r.json()).then(d=>{
   if(d.error){ $("#scope").textContent = d.error; return; }
   const s=d.summary;
 
+  // Era note, not an era filter. This page renders the REGISTERED record
+  // (C11/C14 provenance), which deliberately keeps reading full history —
+  // era separation applies to the operator-facing accruing pages, never to a
+  // registered measurement. What changed is the label: this record is the
+  // pregame ANCHOR model's, and it says so. PULSE-era analytics arrive from
+  // PULSE's own registered producer when its floors fill, never by
+  // re-slicing this one.
   $("#scope").innerHTML = `<b>Scope:</b> ${d.scope_warning}<br>`
     + `<span style="color:var(--faint)">Source: ${d.generated_from}. `
-    + `The live prediction log cannot answer this yet — those games have not finished.</span>`;
+    + `The live prediction log cannot answer this yet — those games have not finished.</span><br>`
+    + `<span style="color:var(--faint)"><b style="color:var(--warn)">Era:</b> this is the `
+    + `pregame ANCHOR model's registered record, full history — the archive era on the `
+    + `landing page. PULSE-era analytics accrue separately under their own registered `
+    + `floors and are never mixed into these numbers.</span>`;
 
   $("#kpis").innerHTML = [
     ["Mean CLV", `<span class="${cls(s.mean_clv)}">${num(s.mean_clv,3)}</span>`, `± ${num(s.clv_stderr,3)} pts · vs OPENING line`],
