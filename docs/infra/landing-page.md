@@ -112,6 +112,21 @@ docker compose up -d --build api
 Without `--build` the container comes back serving the previous dashboard, and
 the natural reading of that is "the merge did not work".
 
+**The analytics fix does not need the rebuild.** The two halves separate
+cleanly, and it is worth knowing which one you are buying:
+
+| What | Needs | Why |
+|---|---|---|
+| Analytics page ([analytics-path.md](analytics-path.md)) | plain `up -d api` | The path fix is a *mount*. The shipped image already routes through `reports_dir()` and already reads `MERIDIAN_DATA_DIR` per call, so the bind alone resolves it. |
+| This page, league tabs, game tape | `up -d --build api` | `static/` is COPY'd into the image, so no amount of recreating shows a page the image does not contain. |
+
+The broken-today half is the cheap one. And note what the expensive one also
+does: `--build` bakes whatever is currently on `main` into the production
+image, so "rebuild the image" and "ship main" are the same action here. That
+is usually fine — the merged trade-sheet work is a script and a module nothing
+in any container runs — but it deserves a glance at `main` first rather than
+being treated as a no-op.
+
 ## Related
 
 * [live-fv-strip.md](live-fv-strip.md) — the display-only fair value below the
