@@ -76,6 +76,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | [landing-page.md](infra/landing-page.md) | Why `/` is the picks page now, what came across from the live board, and what did not |
 | [live-fv-strip.md](infra/live-fv-strip.md) | The display-only live fair value under the picks table, and the three cases where it refuses to print a number |
 | [live-odds.md](infra/live-odds.md) | ESPN publishes **no** live in-game odds — measured, and what to record instead |
+| [bankroll.md](infra/bankroll.md) | The account balance, read from the venue — and the stale `35.68` it replaced |
 | [fill-watcher.md](infra/fill-watcher.md) | How order fill state comes back from the venue, and the pre-authorized exit rules |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |

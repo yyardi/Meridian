@@ -4,6 +4,12 @@
 
 Places nothing. Writes to `shadow_orders` so intentions can later be compared
 against what the market actually did.
+
+Bankroll comes from the venue (`core.bankroll`), never from an argument's
+default. It used to be `35.68` — the balance on the day someone last looked —
+and by 2026-08-17 the account held $23.82, so every shadow size on record from
+that stretch is ~50% too large. `--bankroll` survives for what-if runs only,
+and the number used is written into the log line either way.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from core.bankroll import BankrollUnavailable, current_bankroll
 from core.executor import Executor, ExecutorConfig, OrderSide
 from core.kelly_sizing import BasketLeg, size_game_basket
 from core.storage import Prediction, ShadowOrder, get_engine, get_sessionmaker
@@ -27,7 +34,21 @@ log = structlog.get_logger(__name__)
 UTC = dt.timezone.utc
 
 
-def run(bankroll: float, dry_run: bool = False) -> int:
+def run(bankroll: float | None = None, dry_run: bool = False) -> int:
+    """Size and record the shadow board. `bankroll=None` means "ask the venue".
+
+    An unreadable balance is a **refusal**, not a fallback: sizing against a
+    guessed bankroll writes plausible numbers onto the board, which is worse
+    than an empty board, because nothing about the screen would say so.
+    """
+    if bankroll is None:
+        try:
+            bankroll = current_bankroll()
+        except BankrollUnavailable as exc:
+            log.error("shadow_run_skipped_no_bankroll", error=str(exc),
+                      note="sizing needs the real balance; nothing was written")
+            return 0
+
     Session = get_sessionmaker(get_engine())
     executor = Executor(ExecutorConfig())   # SHADOW + kill switch on
     written = 0
@@ -119,7 +140,9 @@ def run(bankroll: float, dry_run: bool = False) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(prog="meridian-shadow")
-    p.add_argument("--bankroll", type=float, default=35.68)
+    p.add_argument("--bankroll", type=float, default=None,
+                   help="override the venue balance for a what-if run "
+                        "(default: the account's real balance)")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
