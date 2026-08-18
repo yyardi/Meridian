@@ -449,6 +449,90 @@ The countermeasure is not more tests. It is **asserting on outputs rather than o
 exit codes** — predictions written per hour, games on the board, mean shrinkage
 applied — so that "ran fine, produced nothing" is loud.
 
+### The pattern in B11 and the 2026-08-17 cluster — checks pointed next to the property
+
+Distinct from B1/B2/B10 above. Those were computations that were **correct once
+and stopped being correct** when the world changed. These never tested the thing
+they claimed to test, from the first commit. They did not decay; they were born
+green and stayed green.
+
+B11 is the expensive member and it predates the rest. The repo already contains a
+written confession of the pattern, in the test's own docstring
+([`tests/test_schema_roundtrip.py`](../tests/test_schema_roundtrip.py)):
+
+> Both URLs matter and only the second one can regress. `localhost:5433` never
+> contained ':5432/' so it passed vacuously while the rewrite was matching on port
+> alone — and the recorder, which uses the *other* form, spent 23 hours logging
+> `Connection refused` on every tick.
+
+**A test for the right idea, written against an input that could not exercise it.**
+23 hours of outage; the cost was two games of 200ms tick data, which cannot be
+refetched from anywhere.
+
+B11 also demonstrates the **countermeasure**, not only the failure. Its fix did not
+replace the vacuous assertion — it added a second one beside it, on the compose form
+that actually broke:
+
+```python
+    # Exactly what docker-compose gives the live recorder: standard port,
+    # container hostname. This is the one that broke.
+    in_compose = "postgresql+psycopg://meridian:meridian@postgres:5432/meridian"
+```
+
+One vacuous case plus one real. That is the same move as replacing a hardcoded page
+list with a discovery form: keep the case you thought of, and add the one that can
+actually fail.
+
+Then eight more in a single day (2026-08-17/18), found by four people working in
+parallel on unrelated changes:
+
+| what it checked | what it claimed to check | how it stayed green |
+|---|---|---|
+| a fixture hardcoding `aggressorExecution: None` with no `isAggressor` key | that the activities parser books one fill per trade | no test exercised the parser at all; the one fixture touching the shape encoded the belief that was wrong |
+| ROI between two audit runs | that the two computations agreed | the ratio held to the decimal across a 3-fill, 2-trip change in what it was computed over |
+| that writer and reader spell the analytics path identically | that they resolve to the same bytes | they did spell it identically — on two different filesystems. Page broken six weeks, suite green throughout |
+| `/api/picks` on a populated board | that the bankroll block is always present | the empty-board early return was the one path nobody looks at, and it omitted the key entirely |
+| a push, attempted twice | that the push was refused | the check was the unreliable part; one failure was explicitly transient |
+| `localStorage` appears nowhere on the page | that the order token never persists to disk | a proxy that held exactly until the first legitimate durable preference arrived |
+| source sliced "from this function to the next known one" | a property of one function | green until someone inserted a function between them, then red for an unrelated reason |
+| a hardcoded list of two page filenames | that every league-scoped fetch is guarded | asserted a fact about two filenames; structurally blind to a third page added later |
+
+**Green was not merely uninformative in these. It was load-bearing in the wrong
+direction** — each one made somebody confident. The double count survived because
+the ROI looked sane. The hardcoded page list survived because both files existed.
+A check that cannot fail is worse than no check, because no check does not
+reassure anybody.
+
+**The tell, in every case: the assertion was cheap to write because it was about
+text rather than about behaviour.** Spelling, presence, a filename, a substring, a
+run that exited zero. Behaviour is expensive to assert and is the only thing worth
+asserting.
+
+**The countermeasure is one line of process, not more tests: break the thing on
+purpose and watch the check go red.** Every guard added on 2026-08-17 was
+mutation-tested this way, and two were rewritten because of what it showed — the
+page-list check passed with a new unguarded page dropped in, which is the exact
+case it existed to catch. Thirty seconds, and it is the only evidence that
+separates a guard from a decoration.
+
+Corollary, from the push above: **consistency between two runs of the same check
+is not evidence.** Two agreeing readings tell you about the instrument.
+
+Second corollary, and it cost three rounds to learn: **a confident correction is
+not evidence either.** Writing this entry produced its own small chain of them —
+an inference that two aggregates matching meant two computations agreed (wrong);
+a controlled re-run that appeared to confirm it (wrong, different denominator);
+and a correction to quote the outage duration rather than the data lost (wrong,
+both numbers were in the file, in adjacent columns of the same row). Each was
+offered in good faith by someone with more context than the last, and each was
+believed because it was more confident than what it replaced.
+
+What resolved every one of them was the same move, and it was never scepticism
+about the person: **go to the artifact instead of adjudicating between
+summaries.** Read the row. Run the test against the other tree. Check which
+figure the file actually records. Green can be load-bearing in the wrong
+direction; so can a correction, and a correction arrives with more authority.
+
 ### Design note — the anchor staleness guard (2026-08-05)
 
 A guard built against the B1/B2/B10 shape *before* it costs anything, prompted
