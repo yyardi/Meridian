@@ -56,6 +56,26 @@ So the three money columns sum without double counting, and the operator's
 An unknown settlement leaves the lot OPEN and unscored rather than guessing a
 payout — an unscored row is honest, a guessed one is not.
 
+.. warning::
+   **The money columns are NOT confirmed against the venue.** The activities
+   feed carries the venue's own ``realizedPnl``/``cost``/``costBasis`` per
+   fill, and it agrees with neither this FIFO reconstruction nor an
+   average-cost one on more than 3 of 29 rows checked — roughly half the
+   venue's figure on spread markets, within a fee on moneylines.
+
+   Two independently written reconstructions that agree with each other to the
+   cent and both disagree with the venue point at the venue's number having a
+   different *scope per row* — plausibly its realized-to-date on that position
+   rather than the round trip reconstructed here. That is a hypothesis. It is
+   settled by walking one spread market line by line, venue ``cost``/
+   ``costBasis`` against both reconstructions, and it should be done by
+   someone who wrote neither of them.
+
+   Until then: the venue-faithful columns (date, game, market, position, side,
+   price, size) are safe to annotate against — that is what the sheet is for.
+   ``$ in`` / ``$ out`` / ``P&L`` are internally consistent and reconcile with
+   each other, but must not be quoted as the account's realized P&L.
+
 The contract traded is not always the position held
 --------------------------------------------------
 Selling the Under contract is being long the Over. So the sheet carries both:

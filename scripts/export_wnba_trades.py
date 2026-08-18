@@ -366,6 +366,13 @@ def main() -> int:
     print(f"  fees as reported  ${fees:,.2f}   (per-fill, NOT netted into P&L)")
     print(f"  taker fee rebates ${rebates:,.2f}   (account-level, unattributable "
           "to a fill; not in the sheet)")
+    # The caveat prints next to the number, not in a docstring nobody opens:
+    # an unqualified total is what gets quoted, whatever the prose says.
+    print("\n  !! P&L IS NOT CONFIRMED AGAINST THE VENUE. Its own realizedPnl "
+          "agrees with\n     neither this FIFO reconstruction nor an average-cost "
+          "one on >26 of 29 rows\n     checked. Annotate against the venue-faithful "
+          "columns; do not quote the\n     money columns as the account's realized "
+          "P&L until that is settled.")
     if unscored:
         print(f"  !! settlement unknown, left unscored: {', '.join(unscored)}")
     print(f"\n  xlsx  {xlsx}")
