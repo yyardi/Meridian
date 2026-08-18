@@ -1962,6 +1962,95 @@ def live_totals_fv() -> dict:
 # --------------------------------------------------------------------------- #
 
 
+@app.get("/api/quote")
+def quote_status() -> dict:
+    """The QUOTE shadow run, for its page. **Read-only, display only.**
+
+    Three parts, three different truths:
+
+    * ``heartbeat`` — the engine's own beat row, the only thing that says the
+      process is alive. The engine runs in its own container; this API cannot
+      see its memory.
+    * ``quoting`` — what the engine is quoting NOW, reconstructed from the
+      same observations through the same imported code (`Observation`,
+      including its `is_quotable` band). Reconstructed, not read: labelled so
+      on the page. Two renderings of one decision is the drift this repo
+      keeps re-learning about, which is why this reuses the engine's class
+      rather than restating its rules.
+    * ``regimes`` — the pre-registered measurement (docs/math/quote-shadow.md)
+      from `core.quote.report.build_report`, verbatim: floors, counts, and a
+      verdict that stays "NO DATA" until 500 settled fills AND 10 games per
+      regime. The page must render accruing-ness, never invent a verdict.
+    """
+    from core.quote.engine import SERVICE_QUOTE, ShadowQuoter
+    from core.quote.report import FLOOR_FILLS, FLOOR_GAMES, build_report
+
+    now = dt.datetime.now(UTC)
+    with _Session() as s:
+        beats = s.execute(text(
+            "SELECT beat_at, interval_seconds, cycle_seconds, rows_written, "
+            "rows_total, game_live FROM service_heartbeats WHERE service = :svc"
+        ), {"svc": SERVICE_QUOTE}).first()
+
+        # The engine's own observation query, via the engine's own method —
+        # bound as a plain function so no engine (and no writer) is built.
+        observations = ShadowQuoter._observations(None, s)
+
+        recent = s.execute(text("""
+            SELECT market_slug, regime, side, quote_price, mid_at_quote,
+                   mid_at_fill, filled_at, settlement
+            FROM shadow_quote_fills ORDER BY filled_at DESC LIMIT 40
+        """)).all()
+
+        reports = build_report(s)
+
+    hb_age = (now - beats.beat_at).total_seconds() if beats else None
+    quoting = [{
+        "market_slug": ob.market_slug,
+        "regime": "ingame" if ob.is_live else "pregame",
+        "bid": ob.bid, "ask": ob.ask,
+        "spread": round(ob.ask - ob.bid, 4),
+        "age_seconds": round((now - ob.captured_at).total_seconds(), 1),
+    } for ob in observations if ob.is_quotable]
+
+    def _cm(cm):
+        return None if cm is None else {
+            "mean": cm.mean, "lo": cm.lo, "hi": cm.hi,
+            "n": cm.n, "n_clusters": cm.n_clusters, "stderr": cm.stderr,
+        }
+
+    return {
+        "heartbeat": None if not beats else {
+            "age_seconds": round(hb_age, 1),
+            "interval_seconds": float(beats.interval_seconds),
+            "cycle_seconds": _f(beats.cycle_seconds),
+            "fills_last_cycle": beats.rows_written,
+            "fills_total": beats.rows_total,
+            "game_live": beats.game_live,
+            "verdict": heartbeat.verdict(hb_age, float(beats.interval_seconds)),
+        },
+        "quotable_now": len(quoting),
+        "observed_now": len(observations),
+        "quoting": sorted(quoting, key=lambda q: q["market_slug"])[:60],
+        "recent_fills": [{
+            "market_slug": r.market_slug, "regime": r.regime, "side": r.side,
+            "quote_price": _f(r.quote_price), "mid_at_quote": _f(r.mid_at_quote),
+            "mid_at_fill": _f(r.mid_at_fill),
+            "filled_at": r.filled_at.isoformat(),
+            "settlement": r.settlement,
+        } for r in recent],
+        "floors": {"fills": FLOOR_FILLS, "games": FLOOR_GAMES},
+        "regimes": {name: {
+            "n_fills": rep.n_fills, "n_settled": rep.n_settled,
+            "n_games": rep.n_games, "staked": round(rep.staked, 2),
+            "returned": round(rep.returned, 2),
+            "roi": _cm(rep.roi_clustered),
+            "capture": _cm(rep.capture_clustered),
+            "at_floor": rep.at_floor, "verdict": rep.verdict,
+        } for name, rep in sorted(reports.items())},
+    }
+
+
 @app.get("/api/leagues")
 def leagues() -> dict:
     """The league tabs, and what to say when one has no data.
@@ -2216,6 +2305,11 @@ def analytics() -> dict:
             "data_dir_exists": True,
         }
     return json.loads(path.read_text())
+
+
+@app.get("/quote")
+def quote_page() -> FileResponse:
+    return FileResponse(STATIC / "quote.html")
 
 
 @app.get("/analytics")

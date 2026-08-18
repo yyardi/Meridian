@@ -92,6 +92,7 @@
   .newtab{float:right;font-size:10px;color:var(--faint);text-decoration:none;
           padding:0 3px;border-radius:2px;margin:-2px -4px 0 4px}
   .newtab:hover{color:var(--accent);background:#1a2233}
+  .phasechip{font-weight:700;letter-spacing:.06em}
   .gptip{display:none;position:absolute;z-index:20;max-width:240px;background:#0e1218;
          border:1px solid #2a3346;border-radius:4px;padding:7px 9px;font-size:10.5px;
          line-height:1.5;pointer-events:none}
@@ -202,14 +203,19 @@
   <div class="brand">MERIDIAN</div>
   <div class="lg" id="lgtabs"></div>
   <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
-  <div class="stat" title="Pregame recorder — the writer that should never be silent. Stale past 90 min."><span class="k">pregame</span><span class="v" id="s-pregame">—</span></div>
-  <div class="stat" title="Live recorder — legitimately silent between games, so it is informational, not a health check."><span class="k">live</span><span class="v" id="s-live">—</span></div>
+  <!-- These two are DATA AGES — how old each recorder's newest row is — not
+       anything about the games. The operator read "PREGAME 8m / LIVE 0s"
+       during a live game and reasonably asked what they meant; the label now
+       says the unit. -->
+  <div class="stat" title="How old the pregame recorder's newest data is. This writer should never be silent — stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games — informational, not a health check."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
   <!-- The account, read from the venue every scheduler cycle. It sits in the
        header because every size on this page is a fraction of it, and a
        bankroll that has quietly stopped being true is invisible anywhere else. -->
   <div class="stat" id="s-bankroll-wrap" title="Account balance from Polymarket US, re-read from the venue every 60s."><span class="k">bankroll</span><span class="v num" id="s-bankroll">—</span></div>
   <nav>
     <a href="/" class="on">Picks</a>
+    <a href="/quote">QUOTE</a>
     <a href="/analytics">Model performance</a>
   </nav>
   <div id="tokwrap">
@@ -341,11 +347,35 @@ function renderBankroll(b){
     return;
   }
   const secs = b.age_seconds ?? 0;
-  if(el) el.innerHTML = `Bankroll <b>$${b.bankroll.toFixed(2)}</b> `
-    + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · positions `
-    + `$${(b.asset_notional??0).toFixed(2)} · ${agef(secs)} ago</span>`;
+  /* Positions come from /v1/portfolio/positions now — the balances payload
+     kept reading $0 in positions while the operator was in a live trade.
+     `equity` is cash + clamped position values; `bankroll` (sizing) is still
+     cash alone. "positions unread" is a different claim from "$0.00": the
+     first means the endpoint failed, the second that the account is flat. */
+  const posTxt = b.positions_read_ok === false
+    ? '<span class="warnc">positions unread</span>'
+    : `positions $${(b.positions_value??0).toFixed(2)}`
+      + ((b.n_positions??0) ? ` (${b.n_positions} open)` : "");
+  if(el){
+    let rows = "";
+    if((b.positions||[]).length){
+      rows = `<table style="margin-top:6px"><thead><tr>
+        <th class="l">Position</th><th>Qty</th><th>Cost</th><th>Value</th>
+        <th>Realized</th></tr></thead><tbody>${b.positions.map(pn=>`
+        <tr>
+          <td class="l">${pn.title||shortSlug(pn.market_slug)}${pn.outcome?` <span class="dimc">${pn.outcome}</span>`:""}</td>
+          <td>${pn.quantity.toFixed(2)}</td>
+          <td>$${pn.cost.toFixed(2)}</td>
+          <td class="${pn.value>=pn.cost?"pos":"neg"}">$${pn.value.toFixed(2)}</td>
+          <td class="dimc">$${pn.realized.toFixed(2)}</td>
+        </tr>`).join("")}</tbody></table>`;
+    }
+    el.innerHTML = `Bankroll <b>$${((b.equity??b.bankroll)).toFixed(2)}</b> `
+      + `<span class="dimc">· cash $${(b.cash??0).toFixed(2)} · ${posTxt}`
+      + ` · ${agef(secs)} ago</span>${rows}`;
+  }
   if(st){
-    st.textContent = "$" + b.bankroll.toFixed(2);
+    st.textContent = "$" + (b.equity??b.bankroll).toFixed(2);
     st.className = "v num " + (secs >= 3600 ? "neg" : "pos");
   }
 }
@@ -1284,16 +1314,22 @@ const clock = t => new Date(t).toLocaleTimeString([], {hour:"2-digit",minute:"2-
 const day   = t => new Date(t).toLocaleDateString([], {month:"short",day:"numeric"});
 
 function ctxChip(c){
-  // Pregame is the honest, overwhelmingly common answer: the model prices a
-  // game before tip and does not price a running one, so its decisions carry
-  // no score. Saying "pregame" is information; a row of dashes reads as a
-  // broken join.
-  if(!c.is_live) return '<span class="ctxchip">pregame · 0-0</span>';
+  // Every round is labelled PREGAME or IN-PLAY in words, loudly — the
+  // CHI-SEA confusion was a reader scanning 90 rounds of tables and not
+  // being able to tell which side of tip any of them sat on. Pregame is the
+  // honest, overwhelmingly common answer: the model prices a game before tip
+  // and does not price a running one, so its decisions carry no score.
+  //
+  // SEAM: when the live PULSE tape lands (Builder C), its decisions join this
+  // same view and this same chip — an in-play PULSE decision is c.is_live
+  // with a real score, and needs no new rendering. Keep this the one place a
+  // round's phase is turned into words.
+  if(!c.is_live) return '<span class="ctxchip phasechip">PREGAME</span>';
   const mins = c.minutes_left==null ? "" :
     ` · ${c.minutes_left.toFixed(1)}m left${c.minutes_left_is_estimate?" est.":""}`;
   const marg = c.margin==null ? "" : ` · margin ${c.margin>0?"+":""}${c.margin}`;
-  return `<span class="ctxchip livec" title="${c.note||"game state as of this decision"}">`
-       + `LIVE ${c.score||"—"} · ${c.period||"?"}${marg}${mins}</span>`;
+  return `<span class="ctxchip livec phasechip" title="${c.note||"game state as of this decision"}">`
+       + `IN-PLAY ${c.score||"—"} · ${c.period||"?"}${marg}${mins}</span>`;
 }
 
 function gamePath(d){
@@ -1512,13 +1548,19 @@ function renderGame(d){
         <div class="k" style="margin-top:2px">${rounds.length} decision rounds</div></div>
       <div class="kpi"><div class="k">Decided in-play</div>
         <div class="v ${d.n_live_decisions?"warnc":"dimc"}">${d.n_live_decisions}</div>
-        <div class="k" style="margin-top:2px">the model is pregame-only</div></div>
+        <div class="k" style="margin-top:2px">${d.n_live_decisions
+          ? "rounds below marked IN-PLAY"
+          : "every decision below was made before tip"}</div></div>
       <div class="kpi" title="Not a return. These orders were decided and never sent; most would have RESTED, and a resting limit fills only when someone crosses it. This is what the bets pay if every one fills at its limit — the most optimistic fill assumption there is.">
         <div class="k">P&amp;L if filled</div>
         <div class="v ${pnl>0?"pos":"neg"}">${pnl>=0?"+":""}$${pnl.toFixed(2)}</div>
         <div class="k" style="margin-top:2px">${won}/${resolved.length} won ·
           <b>conditional</b> — never sent · hover</div></div>
     </div>
+
+    ${d.n_live_decisions ? "" : `<div class="dimc" style="font-size:11px;margin:2px 0 8px">
+      The model was <b>pregame-only</b> for this game: all ${d.n_trades} shadow
+      trades were decided before tip, none during play.</div>`}
 
     ${gamePath(d)}
 

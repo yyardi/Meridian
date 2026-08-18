@@ -126,12 +126,17 @@ def test_non_numeric_field_raises():
 # ------------------------------------------------------------------ #
 
 
-def test_fetch_uses_the_verified_path():
+def test_fetch_uses_the_verified_paths():
+    """Two reads now: balances, then positions. The stub answers only the
+    balances path, so the positions read fails here — which must degrade the
+    snapshot (positions unread), never the balance."""
     import json
     client = _Client(_Resp(200, json.dumps(LIVE_SHAPE)))
     snap = bk.fetch(client)
-    assert client.calls == ["/v1/account/balances"]
+    assert client.calls[0] == "/v1/account/balances"
+    assert bk.POSITIONS_PATH in client.calls
     assert snap.bankroll == Decimal("23.8204")
+    assert snap.positions_read_ok is False
 
 
 def test_non_200_is_unavailable_never_a_number():
