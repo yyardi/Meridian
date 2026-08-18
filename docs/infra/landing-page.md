@@ -98,6 +98,20 @@ NBA view: sixteen WNBA picks under an NBA tab, each with a live SEND button.
 Elsewhere a stale table is a nuisance; on the picks table it is an order for a
 game the operator is not looking at.
 
+## Deploying it needs `--build`
+
+The Dockerfile does `COPY static ./static`, so this page is baked into the
+image rather than mounted. The api service is `build: .`, and a plain
+`docker compose up -d api` recreates the container from the **existing**
+image — it does not rebuild. So after this merges:
+
+```
+docker compose up -d --build api
+```
+
+Without `--build` the container comes back serving the previous dashboard, and
+the natural reading of that is "the merge did not work".
+
 ## Related
 
 * [live-fv-strip.md](live-fv-strip.md) — the display-only fair value below the
