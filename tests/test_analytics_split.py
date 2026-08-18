@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from core.analytics import CAPTION, _backtest_money, _brier, by_market_type
+from core.analytics import CAPTION, _backtest_money, by_market_type
 
 TYPES = ("total", "winner", "spread")
 PHASES = ("pregame", "ingame")
@@ -71,14 +71,24 @@ class _Result:
 
 
 class _FakeSession:
-    """Returns the two row shapes `_prediction_rows` asks for, in order."""
+    """Returns the single aggregate `_prediction_rows` now asks for.
 
-    def __init__(self, counts, resolved):
-        self._queues = [counts, resolved]
+    It previously queued TWO row shapes because the producer issued two
+    queries. Popping a queue would mask a regression to that design — the
+    second pop would simply return the counts again — so this asserts the
+    single-query contract instead of tolerating either.
+    """
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = 0
 
     def execute(self, _stmt):
-        payload = self._queues.pop(0)
-        return _Rows(payload)
+        self.calls += 1
+        assert self.calls == 1, (
+            f"the producer issued {self.calls} queries; it must issue one "
+            "(two passes over market_snapshots is the memory bug)")
+        return _Rows(self.rows)
 
 
 @dataclass
@@ -89,16 +99,24 @@ class _Rows:
         return self.rows
 
 
-def _session(counts=None, resolved=None):
+def _session(rows=None, **_legacy):
+    """The producer now issues ONE aggregate returning seven columns.
+
+    It used to issue two — counts, then ~96k raw predictions squared in Python
+    — which is the shape this fake modelled before the memory fix. The
+    `**_legacy` swallow keeps old call sites honest rather than silently
+    passing a row set that is never read.
+    """
+    assert not _legacy, (
+        f"stale two-query fake: {sorted(_legacy)}; the producer is one query now")
     return _FakeSession(
-        counts if counts is not None else [
-            ("basketball_team_full_game_total", "pregame", 50481, 45841, 54),
-            ("basketball_team_full_game_winner", "pregame", 11636, 10000, 60),
-            ("basketball_team_full_game_spread", "ingame", 84, 84, 5),
-        ],
-        resolved if resolved is not None else [
-            ("basketball_team_full_game_total", "pregame", 0.6, 0.5, 1),
-            ("basketball_team_full_game_total", "pregame", 0.4, 0.5, 0),
+        rows if rows is not None else [
+            # type, phase, n_preds, n_resolved, n_games, brier_model, brier_market
+            ("basketball_team_full_game_total", "pregame", 50481, 45841, 54,
+             0.2181, 0.2063),
+            ("basketball_team_full_game_winner", "pregame", 11636, 10000, 60,
+             0.2400, 0.2300),
+            ("basketball_team_full_game_spread", "ingame", 84, 84, 5, None, None),
         ],
     )
 
@@ -148,7 +166,7 @@ def test_the_backtested_row_warns_that_money_is_a_different_sample():
 def test_every_type_and_phase_is_emitted_even_at_zero():
     """Zero-bet rows are emitted, not omitted, so the table does not reshape
     between runs and an absence stays legible."""
-    block = by_market_type(_session(counts=[], resolved=[]), _Result())
+    block = by_market_type(_session(rows=[]), _Result())
     assert [(r["type"], r["phase"]) for r in block["rows"]] == [
         (t, p) for t in TYPES for p in PHASES
     ]
@@ -167,7 +185,7 @@ def test_every_row_has_the_full_key_set():
 def test_missing_metrics_are_null_never_zero():
     """A null means "no data"; 0.0 means "measured zero". Rendering them the
     same would present an unmeasured row as a break-even one."""
-    block = by_market_type(_session(counts=[], resolved=[]), _Result())
+    block = by_market_type(_session(rows=[]), _Result())
     for row in block["rows"]:
         if not row["backtested"]:
             assert row["money"] is None and row["clv"] is None
@@ -177,8 +195,8 @@ def test_missing_metrics_are_null_never_zero():
 def test_an_unknown_market_type_does_not_become_a_row():
     """A new venue type must not silently land in the totals row."""
     block = by_market_type(
-        _session(counts=[("basketball_team_first_half_total", "pregame", 9, 9, 2)],
-                 resolved=[]),
+        _session(rows=[("basketball_team_first_half_total", "pregame",
+                        9, 9, 2, None, None)]),
         _Result())
     assert all(r["n_preds"] == 0 for r in block["rows"])
 
@@ -188,11 +206,11 @@ def test_an_unknown_market_type_does_not_become_a_row():
 # ------------------------------------------------------------------ #
 
 
-def test_brier_is_mean_squared_error_and_lower_is_better():
-    assert _brier([(1.0, 1), (0.0, 0)]) == 0.0          # perfect
-    assert _brier([(0.0, 1), (1.0, 0)]) == 1.0          # exactly wrong
-    assert _brier([(0.5, 1), (0.5, 0)]) == 0.25         # uninformative
-    assert _brier([]) is None
+# The Brier means are computed by Postgres now (`avg(power(p - outcome, 2))`),
+# so there is no Python helper left to unit-test. That the SQL uses the
+# mean-squared-error expression — and that nulls survive as nulls rather than
+# becoming a perfect 0.0 — is pinned in tests/test_analytics_memory.py, which
+# needs no database and so actually runs.
 
 
 def test_caption_states_the_brier_direction():

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import ast
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from core import analytics
@@ -57,17 +58,24 @@ _AGG_ROWS = [
 ]
 
 
+@dataclass
 class _Metrics:
-    n_bets = n_filled = n_wins = n_resolved = 0
-    total_pnl = total_staked = total_fees = 0.0
-    clv_points: list[float] = []
-    n_with_closing_line = 0
+    n_bets: int = 0
+    n_filled: int = 0
+    n_wins: int = 0
+    n_resolved: int = 0
+    total_pnl: float = 0.0
+    total_staked: float = 0.0
+    total_fees: float = 0.0
+    clv_points: list[float] = field(default_factory=list)
+    n_with_closing_line: int = 0
     hit_rate = roi = mean_clv = clv_stderr = None
 
 
+@dataclass
 class _Result:
-    metrics = _Metrics()
-    bets: list = []
+    metrics: _Metrics = field(default_factory=_Metrics)
+    bets: list = field(default_factory=list)
 
 
 # ------------------------------------------------------------------ #
