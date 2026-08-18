@@ -22,6 +22,13 @@
         padding:3px 8px;border-radius:3px}
   nav a.on{color:var(--txt);background:#1a1f2b}
   nav a:hover{color:var(--txt)}
+  /* --- league tabs (core/leagues.py) ------------------------------------ */
+  .lg{display:flex;gap:2px;margin-left:10px}
+  .lgt{font:inherit;font-size:10px;letter-spacing:.09em;padding:3px 9px;border-radius:3px;
+       background:transparent;color:var(--faint);border:1px solid transparent;cursor:pointer}
+  .lgt:hover{color:var(--txt)}
+  .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .lgt.empty{color:var(--faint);opacity:.75}
   .wrap{padding:14px;max-width:1500px}
   .banner{border:1px solid #3d2a17;background:#221708;color:var(--warn);
           padding:9px 12px;border-radius:4px;margin-bottom:14px;font-size:11px}
@@ -49,8 +56,9 @@
 </head>
 <body>
 <header>
-  <div class="brand">MERIDIAN<span>·</span>WNBA</div>
-  <nav><a href="/">Live board</a><a href="/picks">Picks &amp; results</a><a href="/analytics" class="on">Model performance</a></nav>
+  <div class="brand">MERIDIAN</div>
+  <div class="lg" id="lgtabs"></div>
+  <nav><a href="/">Live board</a><a href="/picks">Game tape &amp; results</a><a href="/analytics" class="on">Model performance</a></nav>
 </header>
 
 <div class="wrap">
@@ -144,6 +152,41 @@ function clvChart(d){
   return `<svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>`;
 }
 
+/* League tabs. The analytics blob is a single walk-forward over the league the
+   model is fitted on — there is no per-league backtest, and pretending there
+   is would be the worst kind of empty state: one that looks computed. So the
+   tab switches the *page's* league and says plainly that this page has numbers
+   for one of them. */
+const LG_KEY = "meridian.league";
+let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
+
+fetch("/api/leagues").then(r=>r.json()).then(d=>{
+  if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
+  const el = document.getElementById("lgtabs");
+  if(el) el.innerHTML = d.leagues.map(l =>
+    `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
+             data-lg="${l.slug}">${l.name}</button>`).join("");
+  const byslug = Object.fromEntries(d.leagues.map(l=>[l.slug,l]));
+  const paint = () => {
+    document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
+    const lg = byslug[LEAGUE];
+    if(lg && !lg.recorded){
+      $("#scope").textContent = lg.empty_state;
+      $("#kpis").innerHTML = ""; $("#cards").innerHTML = "";
+    } else {
+      load();
+    }
+  };
+  document.querySelectorAll(".lgt").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      if(b.dataset.lg === LEAGUE) return;
+      LEAGUE = b.dataset.lg; localStorage.setItem(LG_KEY, LEAGUE); paint();
+    });
+  });
+  paint();
+});
+
+function load(){
 fetch("/api/analytics").then(r=>r.json()).then(d=>{
   if(d.error){ $("#scope").textContent = d.error; return; }
   const s=d.summary;
@@ -233,6 +276,7 @@ fetch("/api/analytics").then(r=>r.json()).then(d=>{
         pair to measure CLV against. Nothing validates the other two.</div>
     </div>`;
 });
+}
 </script>
 </body>
 </html>

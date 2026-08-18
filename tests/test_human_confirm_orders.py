@@ -34,7 +34,11 @@ from core.storage import PlacedOrder, get_engine, get_sessionmaker
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 8, 4, 18, 0, tzinfo=UTC)
 
-TEST_SLUG = "test-human-confirm-market"
+# A well-formed WNBA market slug, not a free-form label. /api/picks is
+# per-league since the dashboard gained league tabs, so a slug with no league
+# is on no board at all — and `_human_market` parses the teams out of it, so
+# they have to be real ones. The 2099 date keeps it clear of real data.
+TEST_SLUG = "tsc-wnba-sea-tor-2099-06-01"
 
 _Session = get_sessionmaker(get_engine())
 
