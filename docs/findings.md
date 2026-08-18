@@ -533,6 +533,46 @@ summaries.** Read the row. Run the test against the other tree. Check which
 figure the file actually records. Green can be load-bearing in the wrong
 direction; so can a correction, and a correction arrives with more authority.
 
+### Facts that expired — the 2026-08-18 cluster
+
+A third family, distinct from both above. B1/B2/B10 were computations that
+decayed. The born-green checks never tested anything. These were **verifications
+that were genuinely true when captured and acted on after they expired** — the
+check was real, the fact was right, and the world moved between the reading and
+the use.
+
+Four in one day, found by three people:
+
+| the expired fact | true when captured | what changed under it | what acting on it would have cost |
+|---|---|---|---|
+| "PR #8 is clean against #5" — cited publicly to justify merge order | merge-tree, run against the branch as it stood | the branch moved; the file count went 3 → 7 | a merge plan built on a stale compatibility claim |
+| "D's `slices` shape wins" — a manager arbitration | both proposals existed when the ruling was drafted | the producer had already superseded both with a consolidation, in a message the arbiter never saw | the renderer rebuilt away from what the producer was actually emitting |
+| three green MERGED badges on a PR stack | each PR did merge | two merged into their own (undeleted) base branches; main never received the work | a production rebuild of an image missing the two changes it existed to ship |
+| a correct claim retracted because a peer's inference arrived after it | the original measurement was right | nothing — the *newer message* was the wrong one | a regenerated doc un-regenerated, on the authority of arrival order |
+
+**The root is one thing: treating capture time as if it were use time.** A
+verification is a photograph, not a property. The merge-tree was true *of a
+commit*; the arbitration was true *of a message state*; MERGED was true *of a
+PR object* and silent about main; the retraction treated *newest* as *truest*.
+
+Three countermeasures, all cheap:
+
+1. **Cite what a check was run against.** "Clean vs #5" expires invisibly;
+   "clean vs 4b73ea0" announces its own staleness the moment either side moves.
+2. **When a relay and a direct message disagree, the direct message from the
+   party who owns the artifact is the newer fact** — and arrival order is not
+   supersession order. The manager's ruling arrived last and was the oldest
+   claim in the exchange.
+3. **The artifact settles it in one command, and it is never scepticism about
+   the person.** `git merge-base --is-ancestor` answered the MERGED badges;
+   one grep of the served container answered "is it in production"; reading
+   the emitted JSON answered which shape the producer holds. Every dispute
+   above survived exactly as long as it was argued from summaries.
+
+The stacked-PR instance also has a mechanical fix: **delete branches on merge.**
+GitHub retargets a stacked PR only when its base branch is deleted; the badges
+pointed at dead ends precisely because the bases stayed alive.
+
 ### Design note — the anchor staleness guard (2026-08-05)
 
 A guard built against the B1/B2/B10 shape *before* it costs anything, prompted
