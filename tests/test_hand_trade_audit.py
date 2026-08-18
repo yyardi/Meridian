@@ -164,10 +164,20 @@ def test_phase_is_decided_by_first_entry_vs_game_start():
 
 
 def _activity(*, oid, side, outcome, px, shares, slug="m1", manual=True):
+    """A trade where WE are the passive side.
+
+    This fixture used to set ``aggressorExecution: None`` with no
+    ``isAggressor`` key, encoding the belief that the feed nulls the
+    counterparty. It does not — both executions are always present — and a
+    fixture built to that shape is precisely why the double-count survived a
+    green suite. It now carries ``isAggressor`` and a populated counterparty,
+    so anything reading the wrong side shows up here.
+    """
     return {
         "type": "ACTIVITY_TYPE_TRADE",
         "trade": {
             "marketSlug": slug,
+            "isAggressor": False,          # ours is the passive execution
             "market": {"sportsMarketType": "basketball_team_full_game_total",
                        "gameStartTime": "2026-08-06T23:00:00Z"},
             "passiveExecution": {
@@ -182,7 +192,20 @@ def _activity(*, oid, side, outcome, px, shares, slug="m1", manual=True):
                 "transactTime": "2026-08-06T22:10:00.000000000Z",
                 "commissionNotionalCollected": {"value": "0.01"},
             },
-            "aggressorExecution": None,
+            # The counterparty, always present. Deliberately given a venue
+            # order id that would blow up the exclusion tests if it were ever
+            # read as ours.
+            "aggressorExecution": {
+                "order": {
+                    "id": "COUNTERPARTY", "side": "ORDER_SIDE_BUY",
+                    "outcomeSide": outcome,
+                    "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_AUTOMATED",
+                },
+                "lastPx": {"value": str(px)},
+                "lastShares": str(shares),
+                "transactTime": "2026-08-06T22:10:00.000000000Z",
+                "commissionNotionalCollected": {"value": "-0.01"},
+            },
         },
     }
 
@@ -219,7 +242,7 @@ def test_unparsed_activity_is_counted_never_guessed():
 
 
 def test_parse_real_shape_smoke():
-    """The observed 2026-08-07 shape parses: SELL YES 20 @ 0.25, MANUAL."""
+    """A realistic trade parses to exactly ONE fill: SELL YES 20 @ 0.25."""
     raw = _activity(oid="BQ8WS4B8CBA1", side="ORDER_SIDE_SELL",
                     outcome="OUTCOME_SIDE_YES", px="0.2500", shares="20.0000")
     fills, resolution, ok = parse_activity(raw)
@@ -228,3 +251,105 @@ def test_parse_real_shape_smoke():
     assert not f.is_buy and f.outcome_yes and f.manual
     assert f.yes_price == Decimal("0.25") and f.shares == Decimal("20.0000")
     assert f.yes_delta == Decimal("-20.0000")
+
+
+# ------------------------------------------------------------------ #
+# Whose execution is whose — the two-sided feed
+# ------------------------------------------------------------------ #
+#
+# The helpers above build Fill objects directly, so none of them exercise
+# parse_activity, which is where the account's numbers were actually being
+# corrupted: the feed sends BOTH counterparties of every trade and the parser
+# took both, booking a phantom offsetting fill against every real one. These
+# drive raw activities instead.
+
+
+def _two_sided(*, is_aggressor, slug="m1", price="0.4800", qty=12):
+    """A trade shaped like the live feed: both executions present, same price,
+    opposite order sides. Observed on 455 of 455 trades, 2026-08-17."""
+    def _ex(order_id, side, commission):
+        return {
+            "lastPx": {"value": price, "currency": "USD"},
+            "lastShares": qty,
+            "transactTime": "2026-08-06T22:00:00.000000Z",
+            "commissionNotionalCollected": {"value": commission, "currency": "USD"},
+            "order": {
+                "id": order_id, "side": side, "outcomeSide": "OUTCOME_SIDE_YES",
+                "marketSlug": slug,
+                "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_MANUAL",
+            },
+        }
+    return {
+        "type": "ACTIVITY_TYPE_TRADE",
+        "trade": {
+            "marketSlug": slug,
+            "isAggressor": is_aggressor,
+            "aggressorExecution": _ex("OURS_AGG", "ORDER_SIDE_BUY", "0.18"),
+            "passiveExecution": _ex("THEIRS", "ORDER_SIDE_SELL", "-0.04"),
+        },
+    }
+
+
+def test_exactly_one_fill_per_trade_never_both_counterparties():
+    """The regression. Both executions are present; only ours is scored."""
+    fills, _, ok = parse_activity(_two_sided(is_aggressor=True))
+    assert ok and len(fills) == 1
+    assert fills[0].venue_order_id == "OURS_AGG"
+    assert fills[0].is_buy is True
+
+
+def test_is_aggressor_false_selects_the_passive_execution():
+    fills, _, ok = parse_activity(_two_sided(is_aggressor=False))
+    assert ok and len(fills) == 1
+    assert fills[0].venue_order_id == "THEIRS"      # ours in this trade
+    assert fills[0].is_buy is False
+    # Commission follows the side too: the aggressor pays, the passive earns.
+    assert fills[0].commission == Decimal("-0.04")
+
+
+def test_a_two_sided_trade_does_not_net_itself_to_zero():
+    """What the bug did to the arithmetic. Taking both counterparties books
+    +12 and −12 in one market: an episode that opens and closes on a single
+    trade, stakes real dollars, and settles break-even — which is not a win,
+    so it dilutes the win rate while inflating stake."""
+    fills, _, _ = parse_activity(_two_sided(is_aggressor=True))
+    assert sum(f.yes_delta for f in fills) == Decimal("12")
+    closed, open_ = build_round_trips(fills, [], _no_settlement)
+    assert closed == []                  # one fill opens a position, closes none
+    assert len(open_) == 1 and open_[0].contracts == Decimal("12")
+
+
+def test_missing_is_aggressor_fails_loudly_rather_than_guessing():
+    """A wrong side is a wrong sign, not a missing value, so an unattributable
+    trade is reported as unparsed instead of resolved by coin flip."""
+    raw = _two_sided(is_aggressor=True)
+    del raw["trade"]["isAggressor"]
+    assert parse_activity(raw) == ([], None, False)
+    raw["trade"]["isAggressor"] = "true"          # string, not bool
+    assert parse_activity(raw) == ([], None, False)
+
+
+def test_missing_our_execution_is_unparsed():
+    raw = _two_sided(is_aggressor=True)
+    raw["trade"]["aggressorExecution"] = None
+    assert parse_activity(raw) == ([], None, False)
+
+
+def test_redacted_outcome_side_is_refused_not_read_as_no():
+    """The venue redacts outcomeSide on the counterparty's leg (365 of 455
+    trades) and never on ours. A substring check for "OUTCOME" accepts
+    OUTCOME_SIDE_UNSPECIFIED, which then fails `endswith("_YES")` and scores as
+    a NO position — the position inverted rather than dropped. So a redacted
+    outcome on the leg `isAggressor` picked means the SELECTION is wrong, and
+    the trade must be refused rather than silently flipped."""
+    raw = _two_sided(is_aggressor=True)
+    raw["trade"]["aggressorExecution"]["order"]["outcomeSide"] = "OUTCOME_SIDE_UNSPECIFIED"
+    assert parse_activity(raw) == ([], None, False)
+
+
+def test_a_redacted_counterparty_leg_is_simply_not_looked_at():
+    """The normal live shape: theirs redacted, ours intact, and we score ours."""
+    raw = _two_sided(is_aggressor=True)
+    raw["trade"]["passiveExecution"]["order"]["outcomeSide"] = "OUTCOME_SIDE_UNSPECIFIED"
+    fills, _, ok = parse_activity(raw)
+    assert ok and len(fills) == 1 and fills[0].outcome_yes is True

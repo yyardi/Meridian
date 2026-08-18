@@ -24,6 +24,42 @@ entry price:
   per-execution commission fields are summed and shown as reported; headline
   ROI is gross, matching how C11's numbers were scored.
 
+Whose execution is whose (verified live 2026-08-17)
+---------------------------------------------------
+A trade record carries **both** counterparties: ``aggressorExecution`` and
+``passiveExecution`` are both present on 455 of 455 trades in the full account
+history, and each pair is the same price on opposite order sides. Exactly one
+is ours and ``trade.isAggressor`` says which (397 True / 58 False). Confirmed
+against our own ``orders`` table: of the five venue order ids this system has
+placed, three land on the ``isAggressor``-selected side and zero on the other.
+
+This module previously walked both keys, on the belief that "the feed nulls
+the side that is not ours". It does not, so every real fill was booked against
+a phantom offsetting one. Measured over the same history, that read the
+account's hand trading as **26% win rate and −4.5% ROI** where the truth is
+**51% and −7.5%** — a bug that flattered the record by three points, which is
+the direction nobody goes looking. Stake was inflated 79% and fees were
+understated, because the counterparty's maker rebates netted against our taker
+fees. ``isAggressor`` is now required: absent or non-boolean fails loudly
+rather than guessing, since a wrong side is a wrong sign, not a missing value.
+
+The published table in ``docs/math/hand-trade-audit.md`` was produced by the
+two-sided path but barely moved by it, and the reason is worth keeping: the
+phantom leg is the same price on the opposite side, so it inflates staked and
+returned by nearly equal amounts and leaves ROI close to correct. That is
+exactly why this survived — it hid in the one number anyone checks.
+
+That the table saw counterparty rows is visible in the module's own note about
+fills marked AUTOMATIC across NBA/IPL/EPL/ATP: on this account only 3 of OUR
+fills are not marked MANUAL (all WNBA, all one day), against 392 on the
+counterparty legs, spanning exactly the leagues that note found puzzling. It
+also reports 477 fills for a window containing 410 trades, which is only
+possible by taking some second legs. The distortion was small then and large
+now (-4.5% vs -7.5% over full history), which points to the feed widening from
+partial to universal two-sidedness — the best-supported reading, not a proven
+one: this module and that doc landed in one squashed commit, so there is no
+earlier revision to check against.
+
 Round-trip reconstruction
 -------------------------
 Every execution becomes a signed YES-exposure delta: +q for (BUY, YES) and
@@ -44,7 +80,8 @@ same attribution rule the fill watcher lives by: never by market, price, size,
 or timing similarity, because the human trades the same markets at similar
 prices. The venue's ``manualOrderIndicator`` is recorded per fill as a
 cross-check but is deliberately not the filter; our own order ids are the
-stronger claim.
+stronger claim. (It is read from OUR execution only — see below; read from
+both counterparties it describes the other account.)
 
     python -m core.audit.hand_trades              # text report
     python -m core.audit.hand_trades --json       # machine-readable
@@ -156,38 +193,52 @@ def parse_activity(raw: dict) -> tuple[list[Fill], Resolution | None, bool]:
 
     trade = raw.get("trade") or {}
     market = trade.get("market") or {}
-    fills: list[Fill] = []
-    saw_execution = False
-    for side_key in ("aggressorExecution", "passiveExecution"):
-        ex = trade.get(side_key)
-        if not isinstance(ex, dict):
-            continue                 # the feed nulls the side that is not ours
-        saw_execution = True
-        order = ex.get("order") or {}
-        oid = order.get("id")
-        px = _dec(((ex.get("lastPx") or {}).get("value")))
-        shares = _dec(ex.get("lastShares"))
-        at = _parse_ts(ex.get("transactTime"))
-        side = str(order.get("side") or "")
-        outcome = str(order.get("outcomeSide") or "")
-        if not oid or px is None or shares is None or at is None \
-                or "SIDE" not in side or "OUTCOME" not in outcome:
-            return fills, None, False
-        fills.append(Fill(
-            market_slug=str(trade.get("marketSlug") or order.get("marketSlug") or ""),
-            market_type=market.get("sportsMarketType"),
-            game_start=_parse_ts(market.get("gameStartTime")),
-            at=at,
-            venue_order_id=str(oid),
-            is_buy="BUY" in side,
-            outcome_yes=outcome.endswith("_YES"),
-            yes_price=px,
-            shares=shares,
-            manual="MANUAL_ORDER_INDICATOR_MANUAL" == order.get("manualOrderIndicator"),
-            commission=_dec(((ex.get("commissionNotionalCollected") or {}).get("value")))
-            or ZERO,
-        ))
-    return fills, None, saw_execution
+
+    # A trade record carries BOTH counterparties. Exactly one is ours, and
+    # `isAggressor` says which; anything else here double-counts. Absent or
+    # non-boolean means we cannot attribute the trade at all, which is a loud
+    # failure rather than a guess: guessing picks the counterparty half the
+    # time, and a wrong side is a wrong sign, not a missing value.
+    is_aggressor = trade.get("isAggressor")
+    if not isinstance(is_aggressor, bool):
+        return [], None, False
+    ex = trade.get("aggressorExecution" if is_aggressor else "passiveExecution")
+    if not isinstance(ex, dict):
+        return [], None, False
+
+    order = ex.get("order") or {}
+    oid = order.get("id")
+    px = _dec(((ex.get("lastPx") or {}).get("value")))
+    shares = _dec(ex.get("lastShares"))
+    at = _parse_ts(ex.get("transactTime"))
+    side = str(order.get("side") or "")
+    outcome = str(order.get("outcomeSide") or "")
+    # The outcome side must be explicitly YES or NO. A substring check for
+    # "OUTCOME" also accepts OUTCOME_SIDE_UNSPECIFIED, which then fails
+    # `endswith("_YES")` and is silently scored as a NO position — the position
+    # INVERTED, not dropped. The venue redacts this field on the counterparty's
+    # leg (365 of 455 trades) and never on ours (0 of 455), so the check
+    # doubles as a check on `isAggressor` itself: if it ever selects a leg with
+    # a redacted outcome, the selection is wrong and must not be scored.
+    # (Found independently by Builder B on the same feed.)
+    if not oid or px is None or shares is None or at is None \
+            or "SIDE" not in side \
+            or outcome not in ("OUTCOME_SIDE_YES", "OUTCOME_SIDE_NO"):
+        return [], None, False
+    return [Fill(
+        market_slug=str(trade.get("marketSlug") or order.get("marketSlug") or ""),
+        market_type=market.get("sportsMarketType"),
+        game_start=_parse_ts(market.get("gameStartTime")),
+        at=at,
+        venue_order_id=str(oid),
+        is_buy="BUY" in side,
+        outcome_yes=outcome.endswith("_YES"),
+        yes_price=px,
+        shares=shares,
+        manual="MANUAL_ORDER_INDICATOR_MANUAL" == order.get("manualOrderIndicator"),
+        commission=_dec(((ex.get("commissionNotionalCollected") or {}).get("value")))
+        or ZERO,
+    )], None, True
 
 
 # --------------------------------------------------------------------------- #
@@ -483,13 +534,14 @@ def run_audit(activities: list[dict], excluded_ids: set[str],
                 excluded += 1
                 continue
             if not f.manual:
-                # Kept, and correctly so. The exclusion rule is venue id, not
-                # this flag: 28 fills marked AUTOMATIC were observed spanning
-                # May–August across NBA/IPL/EPL/ATP — months before this
-                # system could place an order — so the indicator marks some
-                # app flow, not machine trading, and is recorded here only as
-                # context. If this count ever grows in step with button
-                # orders, THEN revisit the exclusion set.
+                # Kept, and correctly so: the exclusion rule is venue order id,
+                # not this flag. The puzzle this comment used to record —
+                # fills marked AUTOMATIC across NBA/IPL/EPL/ATP, months before
+                # this system could place an order — was an artifact of the
+                # two-sided parse. Measured on the full history: 3 of OUR fills
+                # are not marked MANUAL (all WNBA, all 2026-08-07), against 392
+                # on the counterparty legs, spanning exactly those leagues. Now that only our own execution is read, the flag
+                # means what it says. Still not the filter; still context.
                 non_manual_kept += 1
             fills.append(f)
 

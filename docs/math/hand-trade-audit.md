@@ -34,24 +34,35 @@ Exclusion of the system's own button orders is by **venue order id only**,
 matched against the `orders` table — the fill watcher's attribution rule.
 Never by market/price/size similarity: the human trades the same markets at
 similar prices. The venue's `manualOrderIndicator` is recorded but is *not*
-the filter — 28 obvious hand fills (May–August, NBA/IPL/EPL/ATP, months before
-this system could place an order) carry `AUTOMATIC`, so the flag marks some
-app flow, not machine trading.
+the filter.
 
-## The numbers, as of 2026-08-07
+> The earlier version of this note reported "28 obvious hand fills
+> (May–August, NBA/IPL/EPL/ATP) carry `AUTOMATIC`, so the flag marks some app
+> flow". That observation was an artifact of the double-count corrected below:
+> those rows were the **counterparty's**. Measured over the full history, 3 of
+> *our* fills are not marked `MANUAL` — all WNBA, all on 2026-08-07 — against
+> 392 on the counterparty legs, spanning exactly the leagues that puzzled the
+> original note. Venue order id remains the filter, for the reason above.
 
-619 activities · 477 hand fills · 3 button fills excluded · 250 closed round
-trips across ~7 months and several sports.
+## The numbers, as of 2026-08-17
+
+681 activities · 452 hand fills · 3 button fills excluded · 0 unparsed · 289
+closed round trips across ~8 months and several sports, with 2 positions still
+open and therefore unscored. Regenerated after the fill-attribution fix (V22)
+— see the correction note at the foot of this page.
 
 | slice | n | staked | returned | ROI | win rate @ avg entry |
 |---|---|---|---|---|---|
-| **everything** | 250 | $2,313 | $2,147 | **−7.2%** | 48% @ 0.48 |
-| live (in-game) | 146 | $894 | $836 | −6.5% | 50% @ 0.44 |
-| pregame | 104 | $1,420 | $1,311 | −7.6% | 45% @ 0.50 |
-| moneyline (all sports) | 168 | $1,905 | $1,749 | −8.2% | 47% @ 0.49 |
-| totals · live | 31 | $140 | $153 | +9.4% | 68% @ 0.50 |
-| WNBA totals · live | 9 | $59 | $86 | +47.2% | 67% @ 0.53 |
-| WNBA winner · live | 7 | $41 | $22 | −46.9% | 43% @ 0.44 |
+| **everything** | 289 | $2,402 | $2,221 | **−7.5%** | 51% @ 0.48 |
+| live (in-game) | 172 | $972 | $917 | −5.7% | 52% @ 0.44 |
+| pregame | 117 | $1,430 | $1,304 | −8.8% | 50% @ 0.51 |
+| moneyline (other sports) | 177 | $1,894 | $1,722 | −9.1% | 47% @ 0.49 |
+
+Per-market-type and type×phase slices are deliberately not reproduced here:
+run `python -m core.audit.hand_trades --json` for the full breakdown, which is
+regenerated against live settlement each time. Slice labels there are the
+venue's own `sportsMarketType`, so `basketball_*` covers WNBA and NBA together
+while `moneyline`/`totals` are the other sports' naming.
 
 Fees: the venue's per-execution commission fields are summed and reported
 separately; headline ROI is gross, matching how C11 scored the button record.
@@ -72,3 +83,65 @@ does not say what will happen.
 * The feed shows only this account's side of each trade; a truncated feed
   (`MAX_PAGES`) would be reported loudly — the full history currently fits in
   7 pages.
+
+---
+
+## Correction, 2026-08-17 (V22)
+
+**Every number above changed.** `parse_activity` walked both
+`aggressorExecution` and `passiveExecution`, on the belief that "the feed nulls
+the side that is not ours". It does not: both legs are present on 455 of 455
+trades and they are the two counterparties of one trade — same price, opposite
+side. Every real fill was therefore booked against a phantom offsetting one.
+
+`trade.isAggressor` selects ours (397 True / 58 False). Three independent
+confirmations: of the five venue order ids this system has placed, three land
+on the selected leg and zero on the other; the venue redacts `outcomeSide` on
+the counterparty leg (365 of 455) and never on ours (0 of 455); and two
+separately written reconstructions — this module's and the WNBA trade sheet's
+FIFO one — agree to the cent on the WNBA slice.
+
+What it cost, full history: ROI read **−4.5%** where the truth is **−7.5%**,
+and win rate **26%** against **51%**. The error flattered the record, which is
+the direction nobody audits.
+
+**Why it survived a green suite and a published table.** The phantom leg is the
+same price on the opposite side, so it inflates staked and returned by nearly
+equal amounts and leaves ROI roughly intact — it hid in the one number anyone
+checks.
+
+> **Checking whether two runs of this audit agree? Compare counts and
+> composition BEFORE ratios.** Regenerating moved round trips 250 → 289 — a
+> 15% change in what was being averaged — while ROI moved 0.3pp. A ratio sits
+> still across a materially different denominator, so ROI agreeing tells you
+> much less than trip count agreeing, and it is least informative about
+> precisely the attribution errors worth hunting. Two people independently
+> read the near-matching ROI as evidence that two runs agreed. It was not.
+> (Raised by Builder C.)
+>
+> **On this feed the pattern is three-for-three, and it is worth stating as a
+> rule.** Each time, the summary number survived and the composition moved:
+>
+> | error | what stayed put | what actually moved |
+> |---|---|---|
+> | the double count | net exposure per trade (phantom leg is equal and opposite) | fills 452 → 910 |
+> | wrong exclusion set | ROI, −7.5% to the decimal | fills 452 → 455, trips 289 → 291 |
+> | the venue's `realizedPnl` | the total | per-row attribution, >26 of 29 rows |
+>
+> So: **on this feed, check counts and composition — never the ratio.** An
+> invariant that holds under the error is not a check, and this data produces
+> them repeatedly. Quote the fill count alongside any figure from this page,
+> or two correct runs will look like a disagreement. (Pattern identified by
+> Builder B, who caught the second one.) And every test built `Fill` objects directly, so nothing exercised the
+parser. The fixtures now carry both legs, and a redacted `outcomeSide` on the
+selected leg is refused rather than silently scored as a NO position, which
+would invert the row rather than drop it.
+
+The previously published table (250 trips, −7.2%, 48% @ 0.48) was mildly
+affected rather than badly wrong, for the same cancelling reason. Its fill
+count — 477 over a window containing 410 trades — is only reachable by taking
+some second legs, so that run did double-count, just not universally. The
+distortion being small then and large now suggests the feed widened from
+partial to universal two-sidedness; that is the best-supported reading and not
+a proven one, since this module and this page landed in a single squashed
+commit and no earlier revision exists to check.
