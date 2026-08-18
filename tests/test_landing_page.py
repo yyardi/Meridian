@@ -43,9 +43,31 @@ def client():
 
 
 def _block(html: str, start: str, end: str) -> str:
-    """The source of one function, so a guard can be scoped to it."""
+    """The text between two markers, for guards that span more than a function."""
     i = html.index(start)
     return html[i:html.index(end, i)]
+
+
+def _fn(html: str, signature: str) -> str:
+    """The body of exactly one function, found by matching its braces.
+
+    The obvious version — slice from this function to the next known one —
+    silently grows whenever somebody inserts a function between the two, and
+    then a guard scoped to *this* function starts scanning *theirs*. Three
+    branches are landing on this page in sequence (bankroll, league tabs, game
+    tape); every one of them inserts. A brace match cannot be widened by a
+    neighbour.
+    """
+    i = html.index(signature)
+    depth, j = 0, html.index("{", i)
+    for k in range(j, len(html)):
+        if html[k] == "{":
+            depth += 1
+        elif html[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return html[i:k + 1]
+    raise AssertionError(f"unbalanced braces after {signature!r}")
 
 
 # --------------------------------------------------------------------- #
@@ -93,14 +115,14 @@ def test_the_board_table_did_not_come_across(html):
 
 
 def test_every_pick_row_carries_return_buy_at_sell_at_and_a_send_cell(html):
-    picks = _block(html, "function renderPicks(d){", "human-confirmed order path")
+    picks = _fn(html, "function renderPicks(d){")
     for column in ("BUY at", "SELL at", "Return"):
         assert f">{column}</th>" in picks, f"the {column} column is missing"
     assert "sendCell(p)" in picks
 
 
 def test_picks_are_grouped_by_game_with_a_tip_time(html):
-    picks = _block(html, "function renderPicks(d){", "human-confirmed order path")
+    picks = _fn(html, "function renderPicks(d){")
     assert "games.find" in picks, "picks must be grouped by event, not listed flat"
     assert "tips in" in picks
     assert "hours_to_tipoff" in picks or "g.hrs" in picks
@@ -113,7 +135,7 @@ def test_the_picks_table_has_no_shadow_column(html):
     in the box; a column showed the verdict for a limit price nobody was going
     to send. Two numbers for one decision, and the stale one was larger.
     """
-    picks = _block(html, "function renderPicks(d){", "human-confirmed order path")
+    picks = _fn(html, "function renderPicks(d){")
     header = _block(picks, "<thead>", "</thead>")
     assert "shadow" not in header.lower(), "no shadow column header"
     # And no row cell reads the shadow order either — a column can be
@@ -139,7 +161,7 @@ def test_the_banner_disclaimers_survive_the_merge(html):
 
 
 def test_the_suspect_marker_still_marks_wide_disagreements(html):
-    picks = _block(html, "function renderPicks(d){", "human-confirmed order path")
+    picks = _fn(html, "function renderPicks(d){")
     assert "p.suspect" in picks
     assert "usually model error, not free money" in picks
 
@@ -157,7 +179,7 @@ def test_the_display_only_captions_survive(html):
 
 def test_the_page_has_a_game_context_strip(html):
     assert 'id="strip"' in html
-    strip = _block(html, "function renderStrip(){", "async function loadEvents")
+    strip = _fn(html, "function renderStrip(){")
     assert "is_live" in strip
     assert "tips in" in strip
     assert "ctx.score" in strip, "a running game must show its score"
@@ -165,7 +187,7 @@ def test_the_page_has_a_game_context_strip(html):
 
 def test_the_strip_is_display_only(html):
     """It frames the picks. It is not a market table and cannot become one."""
-    strip = _block(html, "function renderStrip(){", "async function loadEvents")
+    strip = _fn(html, "function renderStrip(){")
     for forbidden in ("openTicket", "sendCell", "PICKS[", "confirmBtn", "onclick"):
         assert forbidden not in strip, f"{forbidden} must not appear in the strip"
 
@@ -181,7 +203,7 @@ def test_the_strip_says_it_is_current_state(html):
 
 def test_the_strip_reports_per_game_staleness(html):
     """A 15-minute-old pregame quote must not look as fresh as a 200ms one."""
-    strip = _block(html, "function renderStrip(){", "async function loadEvents")
+    strip = _fn(html, "function renderStrip(){")
     assert "age_seconds" in strip
     assert "agef(" in strip
 
@@ -222,13 +244,13 @@ def test_the_send_flow_still_needs_the_token_header(html):
 
 def test_the_row_button_only_opens_the_ticket(html):
     """Two clicks, two different elements. The row button sends nothing."""
-    send = _block(html, "function sendCell(p){", "let PENDING")
+    send = _fn(html, "function sendCell(p){")
     assert "fetch(" not in send
-    assert "openTicket" in _block(html, "renderPicks", "function sendCell")
+    assert "openTicket" in _fn(html, "function renderPicks(d){")
 
 
 def test_only_human_confirm_is_ever_posted(html):
     """The page has one mode and cannot express another."""
-    body = _block(html, "async function sendOrder()", "function markRow(")
+    body = _fn(html, "async function sendOrder(){")
     assert 'mode: "HUMAN_CONFIRM"' in body
     assert "AUTONOMOUS" not in body
