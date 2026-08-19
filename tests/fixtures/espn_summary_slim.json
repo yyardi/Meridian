@@ -1,0 +1,3391 @@
+{
+ "header": {
+  "id": "401857152",
+  "season": {
+   "year": 2026,
+   "current": true,
+   "type": 2
+  },
+  "competitions": [
+   {
+    "id": "401857152",
+    "date": "2026-08-18T23:00Z",
+    "status": {
+     "type": {
+      "id": "3",
+      "name": "STATUS_FINAL",
+      "state": "post",
+      "completed": true,
+      "description": "Final",
+      "detail": "Final",
+      "shortDetail": "Final"
+     }
+    },
+    "competitors": [
+     {
+      "homeAway": "home",
+      "score": "85",
+      "team": {
+       "id": "18",
+       "abbreviation": "CON"
+      }
+     },
+     {
+      "homeAway": "away",
+      "score": "77",
+      "team": {
+       "id": "6",
+       "abbreviation": "LA"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "boxscore": {
+  "teams": [
+   {
+    "team": {
+     "id": "6",
+     "uid": "s:40~l:59~t:6",
+     "slug": "los-angeles-sparks",
+     "location": "Los Angeles",
+     "name": "Sparks",
+     "abbreviation": "LA",
+     "displayName": "Los Angeles Sparks",
+     "shortDisplayName": "Sparks",
+     "color": "552583",
+     "alternateColor": "fdb927",
+     "logo": "https://a.espncdn.com/i/teamlogos/wnba/500/la.png"
+    },
+    "statistics": [
+     {
+      "name": "fieldGoalsMade-fieldGoalsAttempted",
+      "displayValue": "29-64",
+      "label": "FG"
+     },
+     {
+      "name": "fieldGoalPct",
+      "displayValue": "45",
+      "abbreviation": "FG%",
+      "label": "Field Goal %"
+     },
+     {
+      "name": "threePointFieldGoalsMade-threePointFieldGoalsAttempted",
+      "displayValue": "2-16",
+      "label": "3PT"
+     },
+     {
+      "name": "threePointFieldGoalPct",
+      "displayValue": "13",
+      "abbreviation": "3P%",
+      "label": "Three Point %"
+     },
+     {
+      "name": "freeThrowsMade-freeThrowsAttempted",
+      "displayValue": "17-23",
+      "label": "FT"
+     },
+     {
+      "name": "freeThrowPct",
+      "displayValue": "74",
+      "abbreviation": "FT%",
+      "label": "Free Throw %"
+     },
+     {
+      "name": "totalRebounds",
+      "displayValue": "29",
+      "abbreviation": "REB",
+      "label": "Rebounds"
+     },
+     {
+      "name": "offensiveRebounds",
+      "displayValue": "10",
+      "abbreviation": "OR",
+      "label": "Offensive Rebounds"
+     },
+     {
+      "name": "defensiveRebounds",
+      "displayValue": "19",
+      "abbreviation": "DR",
+      "label": "Defensive Rebounds"
+     },
+     {
+      "name": "assists",
+      "displayValue": "18",
+      "abbreviation": "AST",
+      "label": "Assists"
+     },
+     {
+      "name": "steals",
+      "displayValue": "12",
+      "abbreviation": "STL",
+      "label": "Steals"
+     },
+     {
+      "name": "blocks",
+      "displayValue": "4",
+      "abbreviation": "BLK",
+      "label": "Blocks"
+     },
+     {
+      "name": "turnovers",
+      "displayValue": "16",
+      "abbreviation": "TO",
+      "label": "Turnovers"
+     },
+     {
+      "name": "teamTurnovers",
+      "displayValue": "0",
+      "abbreviation": "TTO",
+      "label": "Team Turnovers"
+     },
+     {
+      "name": "totalTurnovers",
+      "displayValue": "16",
+      "abbreviation": "ToTO",
+      "label": "Total Turnovers"
+     },
+     {
+      "name": "technicalFouls",
+      "displayValue": "2",
+      "abbreviation": "TECH",
+      "label": "Technical Fouls"
+     },
+     {
+      "name": "totalTechnicalFouls",
+      "displayValue": "2",
+      "abbreviation": "TECH",
+      "label": "Total Technical Fouls"
+     },
+     {
+      "name": "flagrantFouls",
+      "displayValue": "0",
+      "abbreviation": "FLAG",
+      "label": "Flagrant Fouls"
+     },
+     {
+      "name": "turnoverPoints",
+      "displayValue": "21",
+      "abbreviation": "Points Conceded Off Turnovers",
+      "label": "Points Conceded Off Turnovers"
+     },
+     {
+      "name": "fastBreakPoints",
+      "displayValue": "9",
+      "abbreviation": "FBPs",
+      "label": "Fast Break Points"
+     },
+     {
+      "name": "pointsInPaint",
+      "displayValue": "48",
+      "abbreviation": "PIP",
+      "label": "Points in Paint"
+     },
+     {
+      "name": "fouls",
+      "displayValue": "15",
+      "abbreviation": "PF",
+      "label": "Fouls"
+     },
+     {
+      "name": "largestLead",
+      "displayValue": "0",
+      "abbreviation": "LL",
+      "label": "Largest Lead"
+     },
+     {
+      "name": "leadChanges",
+      "displayValue": "0",
+      "abbreviation": "LC",
+      "label": "Lead Changes"
+     },
+     {
+      "name": "leadPercentage",
+      "displayValue": "0",
+      "abbreviation": "LPCT",
+      "label": "Percent Led"
+     }
+    ],
+    "displayOrder": 1,
+    "homeAway": "away"
+   },
+   {
+    "team": {
+     "id": "18",
+     "uid": "s:40~l:59~t:18",
+     "slug": "connecticut-sun",
+     "location": "Connecticut",
+     "name": "Sun",
+     "abbreviation": "CON",
+     "displayName": "Connecticut Sun",
+     "shortDisplayName": "Sun",
+     "color": "f05023",
+     "alternateColor": "0a2240",
+     "logo": "https://a.espncdn.com/i/teamlogos/wnba/500/con.png"
+    },
+    "statistics": [
+     {
+      "name": "fieldGoalsMade-fieldGoalsAttempted",
+      "displayValue": "36-71",
+      "label": "FG"
+     },
+     {
+      "name": "fieldGoalPct",
+      "displayValue": "51",
+      "abbreviation": "FG%",
+      "label": "Field Goal %"
+     },
+     {
+      "name": "threePointFieldGoalsMade-threePointFieldGoalsAttempted",
+      "displayValue": "4-12",
+      "label": "3PT"
+     },
+     {
+      "name": "threePointFieldGoalPct",
+      "displayValue": "33",
+      "abbreviation": "3P%",
+      "label": "Three Point %"
+     },
+     {
+      "name": "freeThrowsMade-freeThrowsAttempted",
+      "displayValue": "9-11",
+      "label": "FT"
+     },
+     {
+      "name": "freeThrowPct",
+      "displayValue": "82",
+      "abbreviation": "FT%",
+      "label": "Free Throw %"
+     },
+     {
+      "name": "totalRebounds",
+      "displayValue": "33",
+      "abbreviation": "REB",
+      "label": "Rebounds"
+     },
+     {
+      "name": "offensiveRebounds",
+      "displayValue": "10",
+      "abbreviation": "OR",
+      "label": "Offensive Rebounds"
+     },
+     {
+      "name": "defensiveRebounds",
+      "displayValue": "23",
+      "abbreviation": "DR",
+      "label": "Defensive Rebounds"
+     },
+     {
+      "name": "assists",
+      "displayValue": "23",
+      "abbreviation": "AST",
+      "label": "Assists"
+     },
+     {
+      "name": "steals",
+      "displayValue": "12",
+      "abbreviation": "STL",
+      "label": "Steals"
+     },
+     {
+      "name": "blocks",
+      "displayValue": "3",
+      "abbreviation": "BLK",
+      "label": "Blocks"
+     },
+     {
+      "name": "turnovers",
+      "displayValue": "17",
+      "abbreviation": "TO",
+      "label": "Turnovers"
+     },
+     {
+      "name": "teamTurnovers",
+      "displayValue": "1",
+      "abbreviation": "TTO",
+      "label": "Team Turnovers"
+     },
+     {
+      "name": "totalTurnovers",
+      "displayValue": "18",
+      "abbreviation": "ToTO",
+      "label": "Total Turnovers"
+     },
+     {
+      "name": "technicalFouls",
+      "displayValue": "0",
+      "abbreviation": "TECH",
+      "label": "Technical Fouls"
+     },
+     {
+      "name": "totalTechnicalFouls",
+      "displayValue": "0",
+      "abbreviation": "TECH",
+      "label": "Total Technical Fouls"
+     },
+     {
+      "name": "flagrantFouls",
+      "displayValue": "0",
+      "abbreviation": "FLAG",
+      "label": "Flagrant Fouls"
+     },
+     {
+      "name": "turnoverPoints",
+      "displayValue": "21",
+      "abbreviation": "Points Conceded Off Turnovers",
+      "label": "Points Conceded Off Turnovers"
+     },
+     {
+      "name": "fastBreakPoints",
+      "displayValue": "23",
+      "abbreviation": "FBPs",
+      "label": "Fast Break Points"
+     },
+     {
+      "name": "pointsInPaint",
+      "displayValue": "54",
+      "abbreviation": "PIP",
+      "label": "Points in Paint"
+     },
+     {
+      "name": "fouls",
+      "displayValue": "19",
+      "abbreviation": "PF",
+      "label": "Fouls"
+     },
+     {
+      "name": "largestLead",
+      "displayValue": "21",
+      "abbreviation": "LL",
+      "label": "Largest Lead"
+     },
+     {
+      "name": "leadChanges",
+      "displayValue": "0",
+      "abbreviation": "LC",
+      "label": "Lead Changes"
+     },
+     {
+      "name": "leadPercentage",
+      "displayValue": "99",
+      "abbreviation": "LPCT",
+      "label": "Percent Led"
+     }
+    ],
+    "displayOrder": 2,
+    "homeAway": "home"
+   }
+  ],
+  "players": [
+   {
+    "team": {
+     "id": "6",
+     "uid": "s:40~l:59~t:6",
+     "slug": "los-angeles-sparks",
+     "location": "Los Angeles",
+     "name": "Sparks",
+     "abbreviation": "LA",
+     "displayName": "Los Angeles Sparks",
+     "shortDisplayName": "Sparks",
+     "color": "552583",
+     "alternateColor": "fdb927",
+     "logo": "https://a.espncdn.com/i/teamlogos/wnba/500/la.png"
+    },
+    "statistics": [
+     {
+      "names": [
+       "MIN",
+       "PTS",
+       "FG",
+       "3PT",
+       "FT",
+       "REB",
+       "AST",
+       "TO",
+       "STL",
+       "BLK",
+       "OREB",
+       "DREB",
+       "PF",
+       "+/-"
+      ],
+      "keys": [
+       "minutes",
+       "points",
+       "fieldGoalsMade-fieldGoalsAttempted",
+       "threePointFieldGoalsMade-threePointFieldGoalsAttempted",
+       "freeThrowsMade-freeThrowsAttempted",
+       "rebounds",
+       "assists",
+       "turnovers",
+       "steals",
+       "blocks",
+       "offensiveRebounds",
+       "defensiveRebounds",
+       "fouls",
+       "plusMinus"
+      ],
+      "labels": [
+       "MIN",
+       "PTS",
+       "FG",
+       "3PT",
+       "FT",
+       "REB",
+       "AST",
+       "TO",
+       "STL",
+       "BLK",
+       "OREB",
+       "DREB",
+       "PF",
+       "+/-"
+      ],
+      "descriptions": [
+       "Minutes",
+       "Points",
+       "Field Goals Made/Attempted",
+       "3-Point Field Goals Made/Attempted",
+       "Free Throws Made/Attempted",
+       "Rebounds",
+       "Assists",
+       "Turnovers",
+       "Steals",
+       "Blocks",
+       "Offensive Rebounds",
+       "Defensive Rebounds",
+       "Personal Fouls",
+       "Teams net points while player is on the court."
+      ],
+      "athletes": [
+       {
+        "active": false,
+        "athlete": {
+         "id": "1068",
+         "uid": "s:40~l:59~a:1068",
+         "guid": "759b52cb-27bf-059a-9407-ea76a87edb14",
+         "displayName": "Nneka Ogwumike",
+         "shortName": "N. Ogwumike",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/1068/nneka-ogwumike",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/1068.png",
+          "alt": "Nneka Ogwumike"
+         },
+         "jersey": "30",
+         "position": {
+          "name": "Forward",
+          "displayName": "Forward",
+          "abbreviation": "F"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "30",
+         "18",
+         "8-15",
+         "0-3",
+         "2-2",
+         "7",
+         "1",
+         "1",
+         "0",
+         "0",
+         "0",
+         "7",
+         "1",
+         "-9"
+        ]
+       },
+       {
+        "active": false,
+        "athlete": {
+         "id": "2566106",
+         "uid": "s:40~l:59~a:2566106",
+         "guid": "a69b3a04-2e2f-42bf-6ef5-0b8260cc09bb",
+         "displayName": "Dearica Hamby",
+         "shortName": "D. Hamby",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/2566106/dearica-hamby",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/2566106.png",
+          "alt": "Dearica Hamby"
+         },
+         "jersey": "5",
+         "position": {
+          "name": "Forward",
+          "displayName": "Forward",
+          "abbreviation": "F"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "28",
+         "15",
+         "5-14",
+         "0-1",
+         "5-6",
+         "5",
+         "3",
+         "4",
+         "1",
+         "1",
+         "2",
+         "3",
+         "2",
+         "-6"
+        ]
+       },
+       {
+        "active": false,
+        "athlete": {
+         "id": "3146151",
+         "uid": "s:40~l:59~a:3146151",
+         "guid": "3bcbeadc-7ef5-ea77-1b70-2392df149627",
+         "displayName": "Ariel Atkins",
+         "shortName": "A. Atkins",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/3146151/ariel-atkins",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/3146151.png",
+          "alt": "Ariel Atkins"
+         },
+         "jersey": "7",
+         "position": {
+          "name": "Guard",
+          "displayName": "Guard",
+          "abbreviation": "G"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "26",
+         "9",
+         "2-5",
+         "1-4",
+         "4-4",
+         "2",
+         "2",
+         "1",
+         "2",
+         "0",
+         "1",
+         "1",
+         "3",
+         "-14"
+        ]
+       },
+       {
+        "active": true,
+        "athlete": {
+         "id": "4398764",
+         "uid": "s:40~l:59~a:4398764",
+         "guid": "f3042c82-faad-5d6f-5e5c-6c7930590621",
+         "displayName": "Rae Burrell",
+         "shortName": "R. Burrell",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/4398764/rae-burrell",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4398764.png",
+          "alt": "Rae Burrell"
+         },
+         "jersey": "12",
+         "position": {
+          "name": "Guard",
+          "displayName": "Guard",
+          "abbreviation": "G"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "30",
+         "19",
+         "7-12",
+         "1-3",
+         "4-6",
+         "1",
+         "6",
+         "3",
+         "0",
+         "2",
+         "1",
+         "0",
+         "1",
+         "-11"
+        ]
+       },
+       {
+        "active": false,
+        "athlete": {
+         "id": "4565515",
+         "uid": "s:40~l:59~a:4565515",
+         "guid": "4c0311d4-ad53-31ee-a45d-682bd25e8eb9",
+         "displayName": "Tonie Morgan",
+         "shortName": "T. Morgan",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/4565515/tonie-morgan",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4565515.png",
+          "alt": "Tonie Morgan"
+         },
+         "position": {
+          "name": "Guard",
+          "displayName": "Guard",
+          "abbreviation": "G"
+         },
+         "jersey": "4"
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "20",
+         "8",
+         "4-5",
+         "0-0",
+         "0-0",
+         "0",
+         "0",
+         "3",
+         "3",
+         "0",
+         "0",
+         "0",
+         "2",
+         "-14"
+        ]
+       },
+       {
+        "active": true,
+        "athlete": {
+         "id": "2284331",
+         "uid": "s:40~l:59~a:2284331",
+         "guid": "3f0f0fd1-a675-9e8b-5b93-94cec5318060",
+         "displayName": "Emma Cannon",
+         "shortName": "E. Cannon",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/2284331/emma-cannon",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/2284331.png",
+          "alt": "Emma Cannon"
+         },
+         "jersey": "32",
+         "position": {
+          "name": "Forward",
+          "displayName": "Forward",
+          "abbreviation": "F"
+         }
+        },
+        "starter": false,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "6",
+         "4",
+         "1-2",
+         "0-1",
+         "2-3",
+         "1",
+         "0",
+         "2",
+         "1",
+         "0",
+         "1",
+         "0",
+         "3",
+         "+2"
+        ]
+       }
+      ],
+      "totals": [
+       "",
+       "77",
+       "29-64",
+       "2-16",
+       "17-23",
+       "29",
+       "18",
+       "16",
+       "12",
+       "4",
+       "10",
+       "19",
+       "15",
+       ""
+      ]
+     }
+    ],
+    "displayOrder": 1
+   },
+   {
+    "team": {
+     "id": "18",
+     "uid": "s:40~l:59~t:18",
+     "slug": "connecticut-sun",
+     "location": "Connecticut",
+     "name": "Sun",
+     "abbreviation": "CON",
+     "displayName": "Connecticut Sun",
+     "shortDisplayName": "Sun",
+     "color": "f05023",
+     "alternateColor": "0a2240",
+     "logo": "https://a.espncdn.com/i/teamlogos/wnba/500/con.png"
+    },
+    "statistics": [
+     {
+      "names": [
+       "MIN",
+       "PTS",
+       "FG",
+       "3PT",
+       "FT",
+       "REB",
+       "AST",
+       "TO",
+       "STL",
+       "BLK",
+       "OREB",
+       "DREB",
+       "PF",
+       "+/-"
+      ],
+      "keys": [
+       "minutes",
+       "points",
+       "fieldGoalsMade-fieldGoalsAttempted",
+       "threePointFieldGoalsMade-threePointFieldGoalsAttempted",
+       "freeThrowsMade-freeThrowsAttempted",
+       "rebounds",
+       "assists",
+       "turnovers",
+       "steals",
+       "blocks",
+       "offensiveRebounds",
+       "defensiveRebounds",
+       "fouls",
+       "plusMinus"
+      ],
+      "labels": [
+       "MIN",
+       "PTS",
+       "FG",
+       "3PT",
+       "FT",
+       "REB",
+       "AST",
+       "TO",
+       "STL",
+       "BLK",
+       "OREB",
+       "DREB",
+       "PF",
+       "+/-"
+      ],
+      "descriptions": [
+       "Minutes",
+       "Points",
+       "Field Goals Made/Attempted",
+       "3-Point Field Goals Made/Attempted",
+       "Free Throws Made/Attempted",
+       "Rebounds",
+       "Assists",
+       "Turnovers",
+       "Steals",
+       "Blocks",
+       "Offensive Rebounds",
+       "Defensive Rebounds",
+       "Personal Fouls",
+       "Teams net points while player is on the court."
+      ],
+      "athletes": [
+       {
+        "active": true,
+        "athlete": {
+         "id": "4433635",
+         "uid": "s:40~l:59~a:4433635",
+         "guid": "aa42d38c-ef50-3eb6-85e8-409671e7b517",
+         "displayName": "Diamond Miller",
+         "shortName": "D. Miller",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/4433635/diamond-miller",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4433635.png",
+          "alt": "Diamond Miller"
+         },
+         "jersey": "1",
+         "position": {
+          "name": "Forward",
+          "displayName": "Forward",
+          "abbreviation": "F"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "29",
+         "13",
+         "6-11",
+         "1-2",
+         "0-1",
+         "3",
+         "1",
+         "1",
+         "1",
+         "0",
+         "0",
+         "3",
+         "4",
+         "+11"
+        ]
+       },
+       {
+        "active": true,
+        "athlete": {
+         "id": "4398966",
+         "uid": "s:40~l:59~a:4398966",
+         "guid": "808db7f8-1fd0-9331-db1f-e9dba41e61ab",
+         "displayName": "Olivia Nelson-Ododa",
+         "shortName": "O. Nelson-Ododa",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/4398966/olivia-nelson-ododa",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4398966.png",
+          "alt": "Olivia Nelson-Ododa"
+         },
+         "jersey": "10",
+         "position": {
+          "name": "Center",
+          "displayName": "Center",
+          "abbreviation": "C"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "29",
+         "18",
+         "7-11",
+         "0-0",
+         "4-4",
+         "11",
+         "1",
+         "5",
+         "1",
+         "2",
+         "4",
+         "7",
+         "3",
+         "+9"
+        ]
+       },
+       {
+        "active": false,
+        "athlete": {
+         "id": "3922628",
+         "uid": "s:40~l:59~a:3922628",
+         "guid": "27bec061-e73e-a474-7423-44597e74cce5",
+         "displayName": "Kennedy Burke",
+         "shortName": "K. Burke",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/3922628/kennedy-burke",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/3922628.png",
+          "alt": "Kennedy Burke"
+         },
+         "jersey": "25",
+         "position": {
+          "name": "Guard",
+          "displayName": "Guard",
+          "abbreviation": "G"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "26",
+         "17",
+         "7-12",
+         "3-4",
+         "0-0",
+         "4",
+         "1",
+         "2",
+         "1",
+         "0",
+         "1",
+         "3",
+         "2",
+         "+7"
+        ]
+       },
+       {
+        "active": true,
+        "athlete": {
+         "id": "4703609",
+         "uid": "s:40~l:59~a:4703609",
+         "guid": "ffe45994-90cb-3f4b-bdaf-9c030d327caa",
+         "displayName": "Charlisse Leger-Walker",
+         "shortName": "C. Leger-Walker",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/4703609/charlisse-leger-walker",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4703609.png",
+          "alt": "Charlisse Leger-Walker"
+         },
+         "jersey": "4",
+         "position": {
+          "name": "Guard",
+          "displayName": "Guard",
+          "abbreviation": "G"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "31",
+         "7",
+         "2-4",
+         "0-0",
+         "3-3",
+         "8",
+         "6",
+         "2",
+         "1",
+         "1",
+         "1",
+         "7",
+         "2",
+         "+6"
+        ]
+       },
+       {
+        "active": true,
+        "athlete": {
+         "id": "5208981",
+         "uid": "s:40~l:59~a:5208981",
+         "guid": "9d9d26db-061d-39a8-81cd-f49f20ca6fe3",
+         "displayName": "Leila Lacan",
+         "shortName": "L. Lacan",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/5208981/leila-lacan",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/5208981.png",
+          "alt": "Leila Lacan"
+         },
+         "jersey": "47",
+         "position": {
+          "name": "Guard",
+          "displayName": "Guard",
+          "abbreviation": "G"
+         }
+        },
+        "starter": true,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "29",
+         "7",
+         "3-9",
+         "0-1",
+         "1-1",
+         "0",
+         "10",
+         "2",
+         "1",
+         "0",
+         "0",
+         "0",
+         "4",
+         "+4"
+        ]
+       },
+       {
+        "active": false,
+        "athlete": {
+         "id": "5105732",
+         "uid": "s:40~l:59~a:5105732",
+         "guid": "7b77ac68-882f-3528-bac4-1d90a16ed61d",
+         "displayName": "Raegan Beers",
+         "shortName": "R. Beers",
+         "links": [
+          {
+           "rel": [
+            "playercard",
+            "desktop",
+            "athlete"
+           ],
+           "href": "https://www.espn.com/wnba/player/_/id/5105732/raegan-beers",
+           "text": "Player Card"
+          }
+         ],
+         "headshot": {
+          "href": "https://a.espncdn.com/i/headshots/wnba/players/full/5105732.png",
+          "alt": "Raegan Beers"
+         },
+         "jersey": "15",
+         "position": {
+          "name": "Forward",
+          "displayName": "Forward",
+          "abbreviation": "F"
+         }
+        },
+        "starter": false,
+        "didNotPlay": false,
+        "reason": "COACH'S DECISION",
+        "ejected": false,
+        "stats": [
+         "14",
+         "8",
+         "4-5",
+         "0-0",
+         "0-0",
+         "2",
+         "1",
+         "1",
+         "2",
+         "0",
+         "1",
+         "1",
+         "2",
+         "+4"
+        ]
+       }
+      ],
+      "totals": [
+       "",
+       "85",
+       "36-71",
+       "4-12",
+       "9-11",
+       "33",
+       "23",
+       "17",
+       "12",
+       "3",
+       "10",
+       "23",
+       "19",
+       ""
+      ]
+     }
+    ],
+    "displayOrder": 2
+   }
+  ]
+ },
+ "plays": [
+  {
+   "id": "4018571524",
+   "sequenceNumber": "4",
+   "type": {
+    "id": "615",
+    "text": "Jumpball"
+   },
+   "text": "Dearica Hamby vs. Olivia Nelson-Ododa (Kennedy Burke gains possession)",
+   "awayScore": 0,
+   "homeScore": 0,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "10:00"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398966"
+     }
+    },
+    {
+     "athlete": {
+      "id": "2566106"
+     }
+    },
+    {
+     "athlete": {
+      "id": "3922628"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:03:31Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Jump Ball"
+  },
+  {
+   "id": "4018571527",
+   "sequenceNumber": "7",
+   "type": {
+    "id": "128",
+    "text": "Driving Finger Roll Layup"
+   },
+   "text": "Leila Lacan makes 2-foot two point shot (Olivia Nelson-Ododa assists)",
+   "awayScore": 0,
+   "homeScore": 2,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "9:45"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "5208981"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4398966"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:03:43Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 28,
+    "y": 1
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "4018571529",
+   "sequenceNumber": "9",
+   "type": {
+    "id": "110",
+    "text": "Driving Layup Shot"
+   },
+   "text": "Rae Burrell makes driving layup (Dearica Hamby assists)",
+   "awayScore": 2,
+   "homeScore": 2,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "9:30"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398764"
+     }
+    },
+    {
+     "athlete": {
+      "id": "2566106"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:03:57Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 29,
+    "y": 2
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715211",
+   "sequenceNumber": "11",
+   "type": {
+    "id": "131",
+    "text": "Pullup Jump Shot"
+   },
+   "text": "Leila Lacan misses 12-foot pullup jump shot",
+   "awayScore": 2,
+   "homeScore": 2,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "9:17"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "5208981"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:04:11Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 15,
+    "y": 6
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "Missed FG"
+  },
+  {
+   "id": "40185715212",
+   "sequenceNumber": "12",
+   "type": {
+    "id": "156",
+    "text": "Offensive Rebound"
+   },
+   "text": "Olivia Nelson-Ododa offensive rebound",
+   "awayScore": 2,
+   "homeScore": 2,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "9:15"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398966"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:04:13Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 15,
+    "y": 6
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Rebound"
+  },
+  {
+   "id": "40185715213",
+   "sequenceNumber": "13",
+   "type": {
+    "id": "44",
+    "text": "Shooting Foul"
+   },
+   "text": "Tonie Morgan shooting foul",
+   "awayScore": 2,
+   "homeScore": 2,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "9:12"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4565515"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:04:18Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 29,
+    "y": 0
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Foul"
+  },
+  {
+   "id": "40185715215",
+   "sequenceNumber": "15",
+   "type": {
+    "id": "98",
+    "text": "Free Throw - 1 of 2"
+   },
+   "text": "Charlisse Leger-Walker makes free throw 1 of 2",
+   "awayScore": 2,
+   "homeScore": 3,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "9:12"
+   },
+   "scoringPlay": true,
+   "scoreValue": 1,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:04:41Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 1,
+   "shortDescription": "+1 Point"
+  },
+  {
+   "id": "40185715216",
+   "sequenceNumber": "16",
+   "type": {
+    "id": "99",
+    "text": "Free Throw - 2 of 2"
+   },
+   "text": "Charlisse Leger-Walker makes free throw 2 of 2",
+   "awayScore": 2,
+   "homeScore": 4,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "9:12"
+   },
+   "scoringPlay": true,
+   "scoreValue": 1,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:04:52Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 1,
+   "shortDescription": "+1 Point"
+  },
+  {
+   "id": "40185715217",
+   "sequenceNumber": "17",
+   "type": {
+    "id": "92",
+    "text": "Jump Shot"
+   },
+   "text": "Ariel Atkins misses 25-foot three point jumper",
+   "awayScore": 2,
+   "homeScore": 4,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "8:55"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "3146151"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:05:11Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 11,
+    "y": 21
+   },
+   "pointsAttempted": 3,
+   "shortDescription": "Missed 3PT"
+  },
+  {
+   "id": "40185715218",
+   "sequenceNumber": "18",
+   "type": {
+    "id": "155",
+    "text": "Defensive Rebound"
+   },
+   "text": "Olivia Nelson-Ododa defensive rebound",
+   "awayScore": 2,
+   "homeScore": 4,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "8:53"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398966"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:05:13Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 11,
+    "y": 21
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Rebound"
+  },
+  {
+   "id": "40185715219",
+   "sequenceNumber": "19",
+   "type": {
+    "id": "132",
+    "text": "Step Back Jump Shot"
+   },
+   "text": "Diamond Miller makes 26-foot three point step back jumpshot",
+   "awayScore": 2,
+   "homeScore": 7,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "8:44"
+   },
+   "scoringPlay": true,
+   "scoreValue": 3,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4433635"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:05:20Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 36,
+    "y": 24
+   },
+   "pointsAttempted": 3,
+   "shortDescription": "+3 Points"
+  },
+  {
+   "id": "40185715220",
+   "sequenceNumber": "20",
+   "type": {
+    "id": "131",
+    "text": "Pullup Jump Shot"
+   },
+   "text": "Rae Burrell makes 6-foot pullup jump shot",
+   "awayScore": 4,
+   "homeScore": 7,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "8:29"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398764"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:05:36Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 31,
+    "y": 3
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715221",
+   "sequenceNumber": "21",
+   "type": {
+    "id": "145",
+    "text": "Driving Floating Bank Jump Shot"
+   },
+   "text": "Olivia Nelson-Ododa makes 3-foot two point shot",
+   "awayScore": 4,
+   "homeScore": 9,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "8:06"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398966"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:05:58Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 25,
+    "y": 3
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715222",
+   "sequenceNumber": "22",
+   "type": {
+    "id": "110",
+    "text": "Driving Layup Shot"
+   },
+   "text": "Rae Burrell misses driving layup",
+   "awayScore": 4,
+   "homeScore": 9,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "7:45"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398764"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:06:19Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 23,
+    "y": 1
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "Missed FG"
+  },
+  {
+   "id": "40185715224",
+   "sequenceNumber": "24",
+   "type": {
+    "id": "155",
+    "text": "Defensive Rebound"
+   },
+   "text": "Charlisse Leger-Walker defensive rebound",
+   "awayScore": 4,
+   "homeScore": 9,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "7:40"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:06:24Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 23,
+    "y": 1
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Rebound"
+  },
+  {
+   "id": "40185715225",
+   "sequenceNumber": "25",
+   "type": {
+    "id": "146",
+    "text": "Running Pullup Jump Shot"
+   },
+   "text": "Diamond Miller makes 16-foot running pullup jump shot (Charlisse Leger-Walker assists)",
+   "awayScore": 4,
+   "homeScore": 11,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "7:38"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4433635"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:06:27Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 19,
+    "y": 15
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715227",
+   "sequenceNumber": "27",
+   "type": {
+    "id": "92",
+    "text": "Jump Shot"
+   },
+   "text": "Nneka Ogwumike misses 23-foot three point jumper",
+   "awayScore": 4,
+   "homeScore": 11,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "7:20"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "1068"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:06:45Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 48,
+    "y": 2
+   },
+   "pointsAttempted": 3,
+   "shortDescription": "Missed 3PT"
+  },
+  {
+   "id": "40185715228",
+   "sequenceNumber": "28",
+   "type": {
+    "id": "156",
+    "text": "Offensive Rebound"
+   },
+   "text": "Ariel Atkins offensive rebound",
+   "awayScore": 4,
+   "homeScore": 11,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "7:18"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "3146151"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:06:47Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 48,
+    "y": 2
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Rebound"
+  },
+  {
+   "id": "40185715229",
+   "sequenceNumber": "29",
+   "type": {
+    "id": "125",
+    "text": "Layup Shot Putback"
+   },
+   "text": "Ariel Atkins makes two point shot",
+   "awayScore": 6,
+   "homeScore": 11,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "7:16"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "3146151"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:06:53Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 25,
+    "y": 0
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715232",
+   "sequenceNumber": "32",
+   "type": {
+    "id": "92",
+    "text": "Jump Shot"
+   },
+   "text": "Olivia Nelson-Ododa makes 14-foot jumper (Leila Lacan assists)",
+   "awayScore": 6,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "6:55"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398966"
+     }
+    },
+    {
+     "athlete": {
+      "id": "5208981"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:07:35Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 26,
+    "y": 14
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715234",
+   "sequenceNumber": "34",
+   "type": {
+    "id": "44",
+    "text": "Shooting Foul"
+   },
+   "text": "Diamond Miller shooting foul",
+   "awayScore": 6,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "6:44"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4433635"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:07:52Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 28,
+    "y": 2
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Foul"
+  },
+  {
+   "id": "40185715236",
+   "sequenceNumber": "36",
+   "type": {
+    "id": "98",
+    "text": "Free Throw - 1 of 2"
+   },
+   "text": "Rae Burrell makes free throw 1 of 2",
+   "awayScore": 7,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "6:44"
+   },
+   "scoringPlay": true,
+   "scoreValue": 1,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398764"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:08:18Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 1,
+   "shortDescription": "+1 Point"
+  },
+  {
+   "id": "40185715237",
+   "sequenceNumber": "37",
+   "type": {
+    "id": "99",
+    "text": "Free Throw - 2 of 2"
+   },
+   "text": "Rae Burrell makes free throw 2 of 2",
+   "awayScore": 8,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "6:44"
+   },
+   "scoringPlay": true,
+   "scoreValue": 1,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398764"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:08:31Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 1,
+   "shortDescription": "+1 Point"
+  },
+  {
+   "id": "40185715238",
+   "sequenceNumber": "38",
+   "type": {
+    "id": "90",
+    "text": "Out of Bounds - Bad Pass Turnover"
+   },
+   "text": "Charlisse Leger-Walker out of bounds bad pass turnover",
+   "awayScore": 8,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "6:33"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:08:46Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 34,
+    "y": 5
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Turnover"
+  },
+  {
+   "id": "40185715239",
+   "sequenceNumber": "39",
+   "type": {
+    "id": "120",
+    "text": "Turnaround Hook Shot"
+   },
+   "text": "Dearica Hamby misses 6-foot two point shot",
+   "awayScore": 8,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "6:08"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "2566106"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:09:17Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 22,
+    "y": 6
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "Missed FG"
+  },
+  {
+   "id": "40185715240",
+   "sequenceNumber": "40",
+   "type": {
+    "id": "155",
+    "text": "Defensive Rebound"
+   },
+   "text": "Charlisse Leger-Walker defensive rebound",
+   "awayScore": 8,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "6:06"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:09:19Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 22,
+    "y": 6
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Rebound"
+  },
+  {
+   "id": "40185715241",
+   "sequenceNumber": "41",
+   "type": {
+    "id": "132",
+    "text": "Step Back Jump Shot"
+   },
+   "text": "Kennedy Burke misses 15-foot step back jumpshot",
+   "awayScore": 8,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:59"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "3922628"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:09:26Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 39,
+    "y": 5
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "Missed FG"
+  },
+  {
+   "id": "40185715242",
+   "sequenceNumber": "42",
+   "type": {
+    "id": "155",
+    "text": "Defensive Rebound"
+   },
+   "text": "Dearica Hamby defensive rebound",
+   "awayScore": 8,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:53"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "2566106"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:09:32Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 39,
+    "y": 5
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Rebound"
+  },
+  {
+   "id": "40185715243",
+   "sequenceNumber": "43",
+   "type": {
+    "id": "63",
+    "text": "Lost Ball Turnover"
+   },
+   "text": "Tonie Morgan lost ball turnover (Kennedy Burke steals)",
+   "awayScore": 8,
+   "homeScore": 13,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:46"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4565515"
+     }
+    },
+    {
+     "athlete": {
+      "id": "3922628"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:09:39Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 9,
+    "y": 22
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Turnover"
+  },
+  {
+   "id": "40185715245",
+   "sequenceNumber": "45",
+   "type": {
+    "id": "109",
+    "text": "Running Layup Shot"
+   },
+   "text": "Charlisse Leger-Walker makes running layup (Kennedy Burke assists)",
+   "awayScore": 8,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:41"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    },
+    {
+     "athlete": {
+      "id": "3922628"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:09:43Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 23,
+    "y": 1
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715246",
+   "sequenceNumber": "46",
+   "type": {
+    "id": "128",
+    "text": "Driving Finger Roll Layup"
+   },
+   "text": "Dearica Hamby makes 2-foot two point shot",
+   "awayScore": 10,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:27"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "2566106"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:09:58Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 27,
+    "y": 2
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715247",
+   "sequenceNumber": "47",
+   "type": {
+    "id": "584",
+    "text": "Substitution"
+   },
+   "text": "Raegan Beers enters the game for Charlisse Leger-Walker",
+   "awayScore": 10,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:11"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "5105732"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4703609"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:10:28Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Substitution"
+  },
+  {
+   "id": "40185715248",
+   "sequenceNumber": "48",
+   "type": {
+    "id": "584",
+    "text": "Substitution"
+   },
+   "text": "Saniya Rivers enters the game for Olivia Nelson-Ododa",
+   "awayScore": 10,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:11"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4433514"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4398966"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:10:28Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Substitution"
+  },
+  {
+   "id": "40185715249",
+   "sequenceNumber": "49",
+   "type": {
+    "id": "584",
+    "text": "Substitution"
+   },
+   "text": "Kate Martin enters the game for Ariel Atkins",
+   "awayScore": 10,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:11"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4398907"
+     }
+    },
+    {
+     "athlete": {
+      "id": "3146151"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:10:28Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Substitution"
+  },
+  {
+   "id": "40185715250",
+   "sequenceNumber": "50",
+   "type": {
+    "id": "584",
+    "text": "Substitution"
+   },
+   "text": "Chance Gray enters the game for Tonie Morgan",
+   "awayScore": 10,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:11"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "5105729"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4565515"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:10:28Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Substitution"
+  },
+  {
+   "id": "40185715255",
+   "sequenceNumber": "55",
+   "type": {
+    "id": "615",
+    "text": "Jumpball"
+   },
+   "text": "Dearica Hamby vs. Kennedy Burke (Kate Martin gains possession)",
+   "awayScore": 10,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:11"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "2566106"
+     }
+    },
+    {
+     "athlete": {
+      "id": "3922628"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4398907"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:11:03Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Jump Ball"
+  },
+  {
+   "id": "40185715266",
+   "sequenceNumber": "66",
+   "type": {
+    "id": "63",
+    "text": "Lost Ball Turnover"
+   },
+   "text": "Kennedy Burke lost ball turnover (Tonie Morgan steals)",
+   "awayScore": 10,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "5:11"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "3922628"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4565515"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:10:04Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": 28,
+    "y": 20
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Turnover"
+  },
+  {
+   "id": "40185715258",
+   "sequenceNumber": "58",
+   "type": {
+    "id": "144",
+    "text": "Driving Floating Jump Shot"
+   },
+   "text": "Dearica Hamby makes 2-foot driving floating jump shot (Kate Martin assists)",
+   "awayScore": 12,
+   "homeScore": 15,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "4:57"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "6"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "2566106"
+     }
+    },
+    {
+     "athlete": {
+      "id": "4398907"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:11:04Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 25,
+    "y": 2
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715259",
+   "sequenceNumber": "59",
+   "type": {
+    "id": "128",
+    "text": "Driving Finger Roll Layup"
+   },
+   "text": "Saniya Rivers makes 5-foot two point shot",
+   "awayScore": 12,
+   "homeScore": 17,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "4:47"
+   },
+   "scoringPlay": true,
+   "scoreValue": 2,
+   "team": {
+    "id": "18"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "4433514"
+     }
+    }
+   ],
+   "wallclock": "2026-08-18T23:11:09Z",
+   "shootingPlay": true,
+   "coordinate": {
+    "x": 21,
+    "y": 3
+   },
+   "pointsAttempted": 2,
+   "shortDescription": "+2 Points"
+  },
+  {
+   "id": "40185715261",
+   "sequenceNumber": "61",
+   "type": {
+    "id": "19",
+    "text": "Official Timeout"
+   },
+   "text": "Official timeout",
+   "awayScore": 12,
+   "homeScore": 17,
+   "period": {
+    "number": 1,
+    "displayValue": "1st Quarter"
+   },
+   "clock": {
+    "displayValue": "4:39"
+   },
+   "scoringPlay": false,
+   "scoreValue": 0,
+   "wallclock": "2026-08-18T23:11:29Z",
+   "shootingPlay": false,
+   "coordinate": {
+    "x": -214748340,
+    "y": -214748365
+   },
+   "pointsAttempted": 0,
+   "shortDescription": "Timeout"
+  }
+ ],
+ "winprobability": [
+  {
+   "homeWinPercentage": 0.462,
+   "tiePercentage": 0.0,
+   "playId": "4018571524"
+  },
+  {
+   "homeWinPercentage": 0.478,
+   "tiePercentage": 0.0,
+   "playId": "4018571527"
+  },
+  {
+   "homeWinPercentage": 0.462,
+   "tiePercentage": 0.0,
+   "playId": "4018571529"
+  },
+  {
+   "homeWinPercentage": 0.436,
+   "tiePercentage": 0.0,
+   "playId": "40185715211"
+  },
+  {
+   "homeWinPercentage": 0.463,
+   "tiePercentage": 0.0,
+   "playId": "40185715212"
+  },
+  {
+   "homeWinPercentage": 0.497,
+   "tiePercentage": 0.0,
+   "playId": "40185715213"
+  },
+  {
+   "homeWinPercentage": 0.507,
+   "tiePercentage": 0.0,
+   "playId": "40185715215"
+  },
+  {
+   "homeWinPercentage": 0.482,
+   "tiePercentage": 0.0,
+   "playId": "40185715216"
+  },
+  {
+   "homeWinPercentage": 0.506,
+   "tiePercentage": 0.0,
+   "playId": "40185715217"
+  },
+  {
+   "homeWinPercentage": 0.514,
+   "tiePercentage": 0.0,
+   "playId": "40185715218"
+  }
+ ],
+ "injuries": [
+  {
+   "team": {
+    "id": "18",
+    "uid": "s:40~l:59~t:18",
+    "displayName": "Connecticut Sun",
+    "abbreviation": "CON",
+    "links": [
+     {
+      "href": "https://www.espn.com/wnba/team/_/name/con/connecticut-sun",
+      "text": "Clubhouse"
+     },
+     {
+      "href": "https://www.espn.com/wnba/team/schedule/_/name/con",
+      "text": "Schedule"
+     }
+    ],
+    "logo": "https://a.espncdn.com/i/teamlogos/wnba/500/con.png",
+    "logos": [
+     {
+      "href": "https://a.espncdn.com/i/teamlogos/wnba/500/con.png",
+      "width": 500,
+      "height": 500,
+      "alt": "",
+      "rel": [
+       "full",
+       "default"
+      ],
+      "lastUpdated": "2025-08-10T19:43Z"
+     },
+     {
+      "href": "https://a.espncdn.com/i/teamlogos/wnba/500-dark/con.png",
+      "width": 500,
+      "height": 500,
+      "alt": "",
+      "rel": [
+       "full",
+       "dark"
+      ],
+      "lastUpdated": "2025-08-10T19:44Z"
+     }
+    ]
+   },
+   "injuries": [
+    {
+     "status": "Out",
+     "date": "2026-08-18T22:21Z",
+     "athlete": {
+      "id": "4433412",
+      "uid": "s:40~l:59~a:4433412",
+      "guid": "eba67921-6ad6-3f9c-bf1c-0e2a9703d911",
+      "lastName": "Van Lith",
+      "fullName": "Hailey Van Lith",
+      "displayName": "Hailey Van Lith",
+      "shortName": "H. Van Lith",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/4433412/hailey-van-lith",
+        "text": "Player Card"
+       }
+      ],
+      "headshot": {
+       "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4433412.png",
+       "alt": "Hailey Van Lith"
+      },
+      "jersey": "2",
+      "position": {
+       "name": "Guard",
+       "displayName": "Guard",
+       "abbreviation": "G"
+      },
+      "collegeAthlete": {
+       "$ref": "http://sports.core.api.espn.pvt/v2/sports/basketball/leagues/womens-college-basketball/athletes/4433412?lang=en&region=us"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OUT",
+       "abbreviation": "OUT",
+       "displayDescription": "Out"
+      },
+      "type": "Coach's Decision",
+      "returnDate": "2026-08-20"
+     }
+    },
+    {
+     "status": "Out",
+     "date": "2026-08-18T22:19Z",
+     "athlete": {
+      "id": "4433792",
+      "uid": "s:40~l:59~a:4433792",
+      "guid": "cf20effc-99d1-388d-9c5f-45671adbae34",
+      "lastName": "Marshall",
+      "fullName": "Rayah Marshall",
+      "displayName": "Rayah Marshall",
+      "shortName": "R. Marshall",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/4433792/rayah-marshall",
+        "text": "Player Card"
+       }
+      ],
+      "headshot": {
+       "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4433792.png",
+       "alt": "Rayah Marshall"
+      },
+      "jersey": "13",
+      "position": {
+       "name": "Center",
+       "displayName": "Center",
+       "abbreviation": "C"
+      },
+      "collegeAthlete": {
+       "$ref": "http://sports.core.api.espn.pvt/v2/sports/basketball/leagues/womens-college-basketball/athletes/4433792?lang=en&region=us"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OUT",
+       "abbreviation": "OUT",
+       "displayDescription": "Out"
+      },
+      "type": "Coach's Decision",
+      "returnDate": "2026-08-20"
+     }
+    },
+    {
+     "status": "Out",
+     "date": "2026-08-18T17:24Z",
+     "athlete": {
+      "id": "4433408",
+      "uid": "s:40~l:59~a:4433408",
+      "guid": "60595614-8481-3d6c-98be-1a1ee34424cf",
+      "lastName": "Edwards",
+      "fullName": "Aaliyah Edwards",
+      "displayName": "Aaliyah Edwards",
+      "shortName": "A. Edwards",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/4433408/aaliyah-edwards",
+        "text": "Player Card"
+       }
+      ],
+      "headshot": {
+       "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4433408.png",
+       "alt": "Aaliyah Edwards"
+      },
+      "jersey": "8",
+      "position": {
+       "name": "Forward",
+       "displayName": "Forward",
+       "abbreviation": "F"
+      },
+      "collegeAthlete": {
+       "$ref": "http://sports.core.api.espn.pvt/v2/sports/basketball/leagues/womens-college-basketball/athletes/4433408?lang=en&region=us"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OUT",
+       "abbreviation": "OUT",
+       "displayDescription": "Out"
+      },
+      "type": "Ankle",
+      "returnDate": "2026-08-20"
+     }
+    },
+    {
+     "status": "Out",
+     "date": "2026-08-18T17:17Z",
+     "athlete": {
+      "id": "2490553",
+      "uid": "s:40~l:59~a:2490553",
+      "guid": "40e7dc87-4f73-696a-7dd3-6953d9f8ae79",
+      "lastName": "Griner",
+      "fullName": "Brittney Griner",
+      "displayName": "Brittney Griner",
+      "shortName": "B. Griner",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/2490553/brittney-griner",
+        "text": "Player Card"
+       }
+      ],
+      "headshot": {
+       "href": "https://a.espncdn.com/i/headshots/wnba/players/full/2490553.png",
+       "alt": "Brittney Griner"
+      },
+      "jersey": "42",
+      "position": {
+       "name": "Center",
+       "displayName": "Center",
+       "abbreviation": "C"
+      },
+      "collegeAthlete": {
+       "$ref": "http://sports.core.api.espn.pvt/v2/sports/basketball/leagues/womens-college-basketball/athletes/12372?lang=en&region=us"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OUT",
+       "abbreviation": "OUT",
+       "displayDescription": "Out"
+      },
+      "type": "Knee",
+      "side": "Left",
+      "returnDate": "2026-08-20"
+     }
+    },
+    {
+     "status": "Out",
+     "date": "2026-07-31T17:11Z",
+     "athlete": {
+      "id": "4329370",
+      "uid": "s:40~l:59~a:4329370",
+      "guid": "36001251-1c98-194b-805b-b6d11ac6bb91",
+      "lastName": "Kliundikova",
+      "fullName": "Maria Kliundikova",
+      "displayName": "Maria Kliundikova",
+      "shortName": "M. Kliundikova",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/4329370/maria-kliundikova",
+        "text": "Player Card"
+       }
+      ],
+      "position": {
+       "name": "Forward",
+       "displayName": "Forward",
+       "abbreviation": "F"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OFS",
+       "abbreviation": "OFS",
+       "displayDescription": "OFS"
+      },
+      "type": "Not Injury Related",
+      "returnDate": "2027-05-01"
+     }
+    }
+   ]
+  },
+  {
+   "team": {
+    "id": "6",
+    "uid": "s:40~l:59~t:6",
+    "displayName": "Los Angeles Sparks",
+    "abbreviation": "LA",
+    "links": [
+     {
+      "href": "https://www.espn.com/wnba/team/_/name/la/los-angeles-sparks",
+      "text": "Clubhouse"
+     },
+     {
+      "href": "https://www.espn.com/wnba/team/schedule/_/name/la",
+      "text": "Schedule"
+     }
+    ],
+    "logo": "https://a.espncdn.com/i/teamlogos/wnba/500/la.png",
+    "logos": [
+     {
+      "href": "https://a.espncdn.com/i/teamlogos/wnba/500/la.png",
+      "width": 500,
+      "height": 500,
+      "alt": "",
+      "rel": [
+       "full",
+       "default"
+      ],
+      "lastUpdated": "2023-05-10T21:43Z"
+     },
+     {
+      "href": "https://a.espncdn.com/i/teamlogos/wnba/500-dark/la.png",
+      "width": 500,
+      "height": 500,
+      "alt": "",
+      "rel": [
+       "full",
+       "dark"
+      ],
+      "lastUpdated": "2023-05-10T21:45Z"
+     }
+    ]
+   },
+   "injuries": [
+    {
+     "status": "Out",
+     "date": "2026-08-18T21:11Z",
+     "athlete": {
+      "id": "5274110",
+      "uid": "s:40~l:59~a:5274110",
+      "guid": "6ef764cb-eec3-39b9-880e-05920b32a1bb",
+      "lastName": "Akoa Makani",
+      "fullName": "Monique Akoa Makani",
+      "displayName": "Monique Akoa Makani",
+      "shortName": "M. Akoa Makani",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/5274110/monique-akoa-makani",
+        "text": "Player Card"
+       }
+      ],
+      "headshot": {
+       "href": "https://a.espncdn.com/i/headshots/wnba/players/full/5274110.png",
+       "alt": "Monique Akoa Makani"
+      },
+      "jersey": "1",
+      "position": {
+       "name": "Guard",
+       "displayName": "Guard",
+       "abbreviation": "G"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OUT",
+       "abbreviation": "OUT",
+       "displayDescription": "Out"
+      },
+      "type": "Ankle",
+      "side": "Right",
+      "returnDate": "2026-08-20"
+     }
+    },
+    {
+     "status": "Out",
+     "date": "2026-08-18T21:07Z",
+     "athlete": {
+      "id": "2491214",
+      "uid": "s:40~l:59~a:2491214",
+      "guid": "10a2cf09-7845-e376-c86e-0fa06cbdd524",
+      "lastName": "Wheeler",
+      "fullName": "Erica Wheeler",
+      "displayName": "Erica Wheeler",
+      "shortName": "E. Wheeler",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/2491214/erica-wheeler",
+        "text": "Player Card"
+       }
+      ],
+      "headshot": {
+       "href": "https://a.espncdn.com/i/headshots/wnba/players/full/2491214.png",
+       "alt": "Erica Wheeler"
+      },
+      "jersey": "17",
+      "position": {
+       "name": "Guard",
+       "displayName": "Guard",
+       "abbreviation": "G"
+      },
+      "collegeAthlete": {
+       "$ref": "http://sports.core.api.espn.pvt/v2/sports/basketball/leagues/womens-college-basketball/athletes/12307?lang=en&region=us"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OUT",
+       "abbreviation": "OUT",
+       "displayDescription": "Out"
+      },
+      "type": "Ankle",
+      "returnDate": "2026-08-20"
+     }
+    },
+    {
+     "status": "Out",
+     "date": "2026-08-18T21:07Z",
+     "athlete": {
+      "id": "4433404",
+      "uid": "s:40~l:59~a:4433404",
+      "guid": "a476e0ef-dad6-3c94-b251-dc9cbb1bf8af",
+      "lastName": "Brink",
+      "fullName": "Cameron Brink",
+      "displayName": "Cameron Brink",
+      "shortName": "C. Brink",
+      "links": [
+       {
+        "rel": [
+         "playercard",
+         "desktop",
+         "athlete"
+        ],
+        "href": "https://www.espn.com/wnba/player/_/id/4433404/cameron-brink",
+        "text": "Player Card"
+       }
+      ],
+      "headshot": {
+       "href": "https://a.espncdn.com/i/headshots/wnba/players/full/4433404.png",
+       "alt": "Cameron Brink"
+      },
+      "jersey": "22",
+      "position": {
+       "name": "Forward",
+       "displayName": "Forward",
+       "abbreviation": "F"
+      },
+      "collegeAthlete": {
+       "$ref": "http://sports.core.api.espn.pvt/v2/sports/basketball/leagues/womens-college-basketball/athletes/4433404?lang=en&region=us"
+      },
+      "status": {
+       "id": "1",
+       "name": "Active",
+       "type": "active",
+       "abbreviation": "Active"
+      }
+     },
+     "type": {
+      "id": "4",
+      "name": "INJURY_STATUS_OUT",
+      "description": "out",
+      "abbreviation": "O"
+     },
+     "details": {
+      "fantasyStatus": {
+       "description": "OUT",
+       "abbreviation": "OUT",
+       "displayDescription": "Out"
+      },
+      "type": "Ribs",
+      "side": "Right",
+      "returnDate": "2026-08-20"
+     }
+    }
+   ]
+  }
+ ]
+}
