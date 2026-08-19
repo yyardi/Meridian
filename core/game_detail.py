@@ -277,9 +277,17 @@ _GAMES_SQL = text("""
            count(*) AS n_trades,
            min(so.decided_at) AS first_decision,
            max(so.decided_at) AS last_decision,
-           count(p.resolved_outcome) AS n_resolved
+           count(p.resolved_outcome) AS n_resolved,
+           max(ts.tipoff) AS tipoff
       FROM shadow_orders so
       LEFT JOIN predictions p ON p.id = so.prediction_id
+      -- The game's own start, from our snapshots: predictions do not carry
+      -- it (checked, not assumed — the first draft of this join aggregated a
+      -- column that does not exist).
+      LEFT JOIN (SELECT event_slug, max(game_start_time) AS tipoff
+                   FROM market_snapshots
+                  WHERE game_start_time IS NOT NULL
+                  GROUP BY event_slug) ts ON ts.event_slug = so.event_slug
      WHERE so.event_slug IS NOT NULL
        AND so.event_slug LIKE :league_prefix
      GROUP BY so.event_slug
@@ -315,6 +323,12 @@ def list_games(session, *, league: str, limit: int = 60,
             "n_resolved": r.n_resolved,
             "first_decision": r.first_decision,
             "last_decision": r.last_decision,
+            #: The GAME's own start. The card dates itself by this, not by the
+            #: first shadow trade — pregame trades land the night before, and
+            #: a card wearing yesterday's date read as a played game with
+            #: stuck trades ("GSV didn't play yesterday?", operator,
+            #: 2026-08-19).
+            "tipoff": r.tipoff.isoformat() if r.tipoff else None,
         }
         for r in rows
     ]
