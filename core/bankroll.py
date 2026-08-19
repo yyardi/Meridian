@@ -200,6 +200,27 @@ class Position:
         }
 
 
+def position_from_dict(d: dict) -> Position:
+    """Inverse of :meth:`Position.to_dict`, for reading a stored snapshot back.
+
+    Lives beside `to_dict` deliberately: they are one contract, and the bug
+    this exists to prevent (B13) was a serialisation pair that silently
+    disagreed. `value` and `unrealized` are recomputed from the stored inputs
+    rather than read back, so a stored row cannot carry an inconsistent pair.
+    """
+    return Position(
+        market_slug=str(d.get("market_slug") or ""),
+        quantity=_dec(d.get("quantity"), "quantity"),
+        quantity_available=_dec(d.get("quantity_available"), "quantity_available"),
+        cost=_dec(d.get("cost"), "cost"),
+        cash_value=_dec(d.get("cash_value"), "cash_value"),
+        realized=_dec(d.get("realized"), "realized"),
+        expired=bool(d.get("expired")),
+        title=d.get("title"),
+        outcome=d.get("outcome"),
+    )
+
+
 def parse_positions(body: dict) -> list[Position]:
     """Venue payload → positions. The map may be empty; that IS "no positions".
 
@@ -489,6 +510,11 @@ def record(snapshot: AccountSnapshot, Session=None) -> int:
             margin_requirement=snapshot.margin_requirement,
             bankroll=snapshot.bankroll,
             raw=snapshot.raw,
+            # Persisted, because `current()` prefers a fresh stored row and a
+            # snapshot that loses these comes back claiming the positions read
+            # FAILED rather than that it was never stored. See B13.
+            positions=[p.to_dict() for p in snapshot.positions],
+            positions_read_ok=snapshot.positions_read_ok,
         )
         session.add(row)
         session.commit()
@@ -520,6 +546,8 @@ def latest(Session=None) -> AccountSnapshot | None:
             pending_credit=row.pending_credit,
             margin_requirement=row.margin_requirement,
             raw=row.raw,
+            positions=tuple(position_from_dict(d) for d in (row.positions or [])),
+            positions_read_ok=bool(row.positions_read_ok),
         )
 
 
