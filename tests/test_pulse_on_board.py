@@ -128,8 +128,8 @@ def test_a_pulse_row_can_never_become_an_order(html):
     import re
 
     row = _fn(html, "function boardRow(r, hrs){")
-    code = re.sub(r"/\*.*?\*/", "", row, flags=re.S)
-    code = re.sub(r"^\s*//.*$", "", code, flags=re.M)
+    code = re.sub(r"/\*.*?\*/", "", row, flags=re.DOTALL)
+    code = re.sub(r"^\s*//.*$", "", code, flags=re.MULTILINE)
     for forbidden in ("sendCell", "openTicket", "PICKS[", "sendbtn"):
         assert forbidden not in code, f"{forbidden} reachable from a PULSE row"
 
