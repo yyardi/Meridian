@@ -55,6 +55,19 @@
            padding:1px 5px;border-radius:2px;font-weight:700;
            background:#171c26;color:#7c879b}
   .moved{font-size:9.5px;color:var(--warn);cursor:help;font-weight:700}
+  /* PULSE-decorated in-play rows: alive, not greyed — and visually distinct
+     from ANCHOR rows so the phase is never ambiguous. Purple is the tape's
+     in-play family. */
+  tr.pulserow td{opacity:.92}
+  .pubadge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.08em;
+           padding:1px 5px;border-radius:2px;background:#2a1f33;color:#c08bff;
+           cursor:help;margin-right:4px}
+  .pufv{color:#c08bff}
+  .puchip{font-size:9.5px;letter-spacing:.03em;border-radius:3px;padding:1px 7px;
+          cursor:help;white-space:nowrap;border:1px solid transparent}
+  .puENTER{background:#10261c;color:#3fd48f;border-color:#1d3d2c}
+  .puEXIT{background:#2a161a;color:#ff7b80;border-color:#3d2126}
+  .puHOLD{background:#171c26;color:#7c879b;border-color:#242c3a}
   .whynot{font-size:9.5px;letter-spacing:.04em;color:var(--faint);cursor:help;
           border:1px solid var(--line);border-radius:3px;padding:1px 6px;
           display:inline-block;white-space:nowrap}
@@ -639,6 +652,41 @@ function ageCls(br){
 /* A market with no order behind it. Same columns, greyed, reason where the
    button would be — visible, and visibly not orderable. */
 function boardRow(r, hrs){
+  /* An in-play row with a fresh PULSE estimate is not a dead row. The
+     pregame model is correctly silent in play — but PULSE is deciding one
+     table away, and the operator watching a live game was seeing dashes
+     while the model thought. Those rows now wear PULSE's numbers, labelled
+     PULSE, from the same rows the deep-dive tape reads.
+
+     What must stay true: nothing here becomes an order. No order-path
+     function is reachable from this branch, pinned by test — PULSE is
+     shadow structurally and its board presence is display only. */
+  const pu = r.is_live ? PULSE_LATEST[r.market_slug] : null;
+  if(pu && pu.fair_value != null){
+    // One derivation on the page: the same positionView the ANCHOR rows use,
+    // fed PULSE's YES-frame fv against the CURRENT book. This edge is gross,
+    // at the touch, now — deliberately NOT PULSE's own edge_net, which was
+    // net of fees at ITS limit at decision time; that number stays in the
+    // chip tooltip under its own name.
+    const v = positionView({...r, model: pu.fair_value});
+    const label = shortSlug(r.market_slug);
+    const chipCls = pu.action === "enter" ? "puENTER" : pu.action === "exit" ? "puEXIT" : "puHOLD";
+    return `<tr class="pulserow">
+      <td class="l"><span class="pubadge" title="Estimate from PULSE, the live in-game model — not the pregame model. Display only; nothing PULSE shows here can be sent.">PULSE</span> ${v
+        ? `<span class="side sideOff">${v.side}</span> <span class="dimc">${label}</span>`
+        : `<span class="dimc">${label}</span>`}</td>
+      <td class="num">${r.line==null?'<span class="dimc">—</span>':r.line.toFixed(1)}</td>
+      <td class="dimc">—</td><td class="dimc">—</td><td class="dimc">—</td>
+      <td class="dimc">—</td><td class="dimc">—</td>
+      <td class="dimc">${v?num(v.bid):num(r.bid)}</td>
+      <td class="dimc">${v?num(v.ask):num(r.ask)}</td>
+      <td class="dimc">${r.spread==null?"—":(r.spread*100).toFixed(0)+"¢"}</td>
+      <td class="num pufv" title="PULSE fair value (YES frame flipped to the shown side), decided ${agef(pu.age_seconds)} ago">${v?num(v.model):num(pu.fair_value)}</td>
+      <td class="num ${v&&v.edge>0?"pos":"neg"}" title="PULSE FV against the CURRENT touch, gross — not PULSE's own edge_net, which was net of fees at its limit at decision time (${pu.edge_net==null?"—":pct(pu.edge_net)})">${v?pct(v.edge):"—"}</td>
+      <td class="num ${ageCls(r)}" title="age of the live quote for this market">${agef(r.age_seconds)}</td>
+      <td><span class="puchip ${chipCls}" title="PULSE's last decision on this market: ${pu.action.toUpperCase()} ${pu.side} @ ${num(pu.limit_price)} · its own net edge ${pu.edge_net==null?"—":pct(pu.edge_net)} · ${pu.score||""} ${pu.period||""} · decided ${agef(pu.age_seconds)} ago. Shadow — never sent.">${pu.action.toUpperCase()} ${pu.side} @${num(pu.limit_price)} · ${agef(pu.age_seconds)}</span></td>
+    </tr>`;
+  }
   const v = positionView(r);
   const [why, explain] = whyNotActionable(r, hrs);
   // The slug already encodes the rung; the line has its own column now, so
@@ -955,6 +1003,24 @@ let EVENTS = [], LIVE_CTX = {}, PICK_EVENTS = null;
    refetching. */
 let VIEW = {mode: "now"};
 let LAST_BOARD = null, LAST_PICKS_BYSLUG = null;
+
+/* Latest PULSE decision per market, keyed by slug — the board's in-play rows
+   read this. Refreshed on its own light 10s cycle: PULSE decides every few
+   seconds during a game, and re-rendering from the cached board with fresh
+   estimates is cheap, while refetching the whole board is not. */
+let PULSE_LATEST = {};
+
+async function loadPulseLatest(league){
+  try{
+    const r = await fetch(`/api/pulse/latest?league=${encodeURIComponent(league)}`);
+    if(!r.ok) return;
+    const d = await r.json();
+    if(stale(league)) return;
+    PULSE_LATEST = d.markets || {};
+    if(LAST_BOARD) renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
+  } catch(e){ /* display only; the board stands without it */ }
+}
+setInterval(() => loadPulseLatest(LEAGUE), 10000);
 
 const QGAME = new URLSearchParams(location.search).get("game");
 if(QGAME) VIEW = {mode: "game", ev: QGAME};
@@ -1774,6 +1840,7 @@ async function loadPicks(league){
     [board, picks] = await Promise.all([
       fetch(`/api/board?league=${encodeURIComponent(league)}`).then(r=>r.json()),
       fetch(`/api/picks?league=${encodeURIComponent(league)}`).then(r=>r.json()),
+      loadPulseLatest(league),   // fills PULSE_LATEST before the first render
     ]);
   } catch(e){ return; }
   if(stale(league)) return;

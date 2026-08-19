@@ -2090,6 +2090,63 @@ def quote_status() -> dict:
     }
 
 
+#: A PULSE estimate older than this does not paint the board. The engine
+#: cycles every 1s and decides every few seconds during a live game, so ten
+#: minutes of silence means the game ended or the engine stopped — either
+#: way, a stale FV on a live row is worse than a dash.
+PULSE_LATEST_MAX_AGE_SECONDS = 600.0
+
+
+@app.get("/api/pulse/latest")
+def pulse_latest(league: str | None = None) -> dict:
+    """The newest PULSE decision per market, for the board's in-play rows.
+
+    Read-only, display only — the same rows the deep-dive tape reads, one per
+    market, so the operator watching a live game sees what the model is
+    thinking instead of a dead board. Serves recent decisions only
+    (`PULSE_LATEST_MAX_AGE_SECONDS`); no decision logic lives here, and
+    nothing served here can become an order — the page pins that.
+
+    `fair_value` is the YES-frame probability (the board's Model FV column's
+    own frame). `edge_net` is PULSE's edge at ITS limit in the position's
+    cost frame, net of fees — a different quantity from anything the page
+    derives against the current touch, and labelled as such there.
+    """
+    lg = _league_or_400(league)
+    with _Session() as s:
+        rows = s.execute(text("""
+            SELECT DISTINCT ON (market_slug)
+                   market_slug, event_slug, decided_at, phase, action, side,
+                   limit_price, fair_value, edge_net, market_bid, market_ask,
+                   score, period, strategy
+              FROM pulse_decisions
+             WHERE event_slug LIKE :prefix
+               AND decided_at > now() - make_interval(secs => :max_age)
+             ORDER BY market_slug, decided_at DESC
+        """), {"prefix": f"{lg.slug}-%",
+               "max_age": PULSE_LATEST_MAX_AGE_SECONDS}).all()
+    now = dt.datetime.now(UTC)
+    return {
+        "league": lg.slug,
+        "max_age_seconds": PULSE_LATEST_MAX_AGE_SECONDS,
+        "markets": {r.market_slug: {
+            "decided_at": r.decided_at.isoformat(),
+            "age_seconds": round((now - r.decided_at).total_seconds(), 1),
+            "phase": r.phase,
+            "action": r.action,
+            "side": r.side,
+            "limit_price": _f(r.limit_price),
+            "fair_value": _f(r.fair_value),
+            "edge_net": _f(r.edge_net),
+            "bid_at_decision": _f(r.market_bid),
+            "ask_at_decision": _f(r.market_ask),
+            "score": r.score,
+            "period": r.period,
+            "strategy": r.strategy,
+        } for r in rows},
+    }
+
+
 @app.get("/api/pulse")
 def pulse_status() -> dict:
     """PULSE's accruing record, for the Model performance page. Read-only.
