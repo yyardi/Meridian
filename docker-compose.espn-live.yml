@@ -1,0 +1,32 @@
+# The signal-side recorder, as a compose OVERLAY:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.espn-live.yml up -d espn-live-recorder
+#
+# Design and endpoint receipts: docs/infra/signal-side.md. Records ESPN's
+# live boxscore + play-by-play + win probability + injuries block into five
+# point-in-time tables (first_seen_at = our observation instant, always).
+# Starts archiving the moment it deploys, before any model consumes a byte —
+# every recorded game is a future replay game.
+#
+# No credentials exist to mount: ESPN is unauthenticated. This service reads
+# ESPN and writes only its own tables + one heartbeat. Deploy stays
+# operator-gated between slates, the house rule.
+services:
+  espn-live-recorder:
+    build: .
+    container_name: meridian-espn-live-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # LOCAL, like every recorder: signals join the tick stream in replays,
+      # so they live in the same database.
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      # ESPN is its own host with its own budget — no draw on Polymarket's
+      # 20 req/s. Steady state: scoreboard/30s + summary/10s per live game
+      # ≈ 0.24 req/s of this 3 with a two-game slate.
+      ESPN_RPS: "3"
+    # alembic upgrade first: the signal tables are newer than a long-running
+    # deployment may have. Concurrent upgrades are safe (advisory lock).
+    command: ["sh", "-c", "alembic upgrade head && python -m core.feeds.espn_live_recorder"]
