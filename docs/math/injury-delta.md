@@ -70,6 +70,43 @@ construction — this was verified, not assumed:
 * `core/backtest/engine.py` engages it only under `availability_mode="report"`;
   `"oracle"` remains the hindsight upper bound and is not tradable.
 
+## The real A/B, after the backfill (2026-08-19)
+
+The data gap below is closed: `core.feeds.espn_stats --season 2026` wrote 104
+rows, `max(game_date)` moved 2026-07-31 → 2026-08-18, and the injury-window
+overlap went **0 → 48 games**. So the arm can now fire, and it does.
+
+| | `off` | `report` | delta |
+|---|---|---|---|
+| bets | 340 | 345 | +5 |
+| filled | 231 | 235 | +4 |
+| ROI | −3.94% | −4.03% | **−0.09 pts** |
+| mean CLV | 1.766 | 1.766 | **0.000** |
+| hit rate | 52.38% | 52.34% | −0.04 pts |
+| bet sequence identical | — | — | **no** |
+
+**The arm engaged on 18 bets** of 235 filled. That is the number that governs
+what can be said, and it is far below any floor in
+`docs/math/performance-targets.md`. The ROI delta is −0.09 points: not an
+improvement, not a measurable harm, and computed over a comparison where 327
+of 345 bets are byte-identical between arms.
+
+So: **no verdict, and the direction is mildly unhelpful.** This is consistent
+with the oracle result below — if perfect hindsight cannot clear zero, real
+reports on 18 bets were never going to.
+
+Note the control moved too: `off` ROI is −3.94% here against −2.33% in the
+pre-backfill table, because the backfill added 2026 August games and the sample
+grew 308 → 340 bets. The baseline is not a fixed number; quoting a delta
+without its denominator would hide that.
+
+### What would change this
+
+More overlap, which now accrues automatically — the parser fix means every
+future game lands with injury data already collected. This stays **registered
+and accruing**, and is worth re-running at ~10× the affected-bet count rather
+than on any calendar.
+
 ## The oracle arm: run, and it does NOT clear zero
 
 The `oracle` arm takes absence from the box score — with hindsight, explicitly
