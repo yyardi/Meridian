@@ -68,6 +68,13 @@
   .puENTER{background:#10261c;color:#3fd48f;border-color:#1d3d2c}
   .puEXIT{background:#2a161a;color:#ff7b80;border-color:#3d2126}
   .puHOLD{background:#171c26;color:#7c879b;border-color:#242c3a}
+  tr.pulsepos td{border-left:none}
+  tr.pulsepos td:first-child{border-left:2px solid #c08bff;padding-left:8px}
+  .feeditem{cursor:pointer;padding:1px 3px;border-radius:3px}
+  .feeditem:hover{background:#1a1f2b}
+  @keyframes pufl{from{background:#2a1f33}to{background:transparent}}
+  .puflash{animation:pufl 1.2s ease-out}
+  tr.puflash td{animation:pufl 1.2s ease-out}
   .whynot{font-size:9.5px;letter-spacing:.04em;color:var(--faint);cursor:help;
           border:1px solid var(--line);border-radius:3px;padding:1px 6px;
           display:inline-block;white-space:nowrap}
@@ -287,6 +294,12 @@
   </div>
   <div class="strip" id="strip"><div class="stripempty">loading games…</div></div>
 </div>
+
+<!-- PULSE activity feed: the last enters/exits across all live games,
+     newest first — the "how do I know what's going on" surface. Rendered
+     from the same /api/pulse/latest payload as the rows; display only. -->
+<div id="pulsefeed" style="display:none;border-bottom:1px solid var(--line);background:#0d1016;
+     padding:5px 14px;font-size:10.5px;white-space:nowrap;overflow-x:auto"></div>
 
 <div class="wrap">
   <!-- The shadow-picks banner used to live here. Removed at the operator's
@@ -661,30 +674,64 @@ function boardRow(r, hrs){
      What must stay true: nothing here becomes an order. No order-path
      function is reachable from this branch, pinned by test — PULSE is
      shadow structurally and its board presence is display only. */
-  const pu = r.is_live ? PULSE_LATEST[r.market_slug] : null;
-  if(pu && pu.fair_value != null){
+  const pu0 = r.is_live ? PULSE_LATEST[r.market_slug] : null;
+  const pu = pu0 && pu0.fair_value != null ? pu0 : null;
+  const pos = r.is_live ? PULSE_POSITIONS[r.market_slug] : null;
+  /* A position decorates the row even when the estimate has aged out of the
+     freshness window — the game goes quiet, the engine stops thinking, but
+     "the model is IN this market at X" stays true until the exit fills or
+     settlement lands. Found live: two open positions rendered as dead rows
+     because this branch was gated on estimate freshness. */
+  if(pu || pos){
+    // Flash when a NEW decision lands on a visible row — the poll compares
+    // decided_at against the last seen one per market.
+    const isNew = pu && PULSE_SEEN[r.market_slug] !== undefined
+               && PULSE_SEEN[r.market_slug] !== pu.decided_at;
+    if(pu) PULSE_SEEN[r.market_slug] = pu.decided_at;
     // One derivation on the page: the same positionView the ANCHOR rows use,
     // fed PULSE's YES-frame fv against the CURRENT book. This edge is gross,
     // at the touch, now — deliberately NOT PULSE's own edge_net, which was
     // net of fees at ITS limit at decision time; that number stays in the
     // chip tooltip under its own name.
-    const v = positionView({...r, model: pu.fair_value});
+    const v = pu ? positionView({...r, model: pu.fair_value}) : null;
     const label = shortSlug(r.market_slug);
-    const chipCls = pu.action === "enter" ? "puENTER" : pu.action === "exit" ? "puEXIT" : "puHOLD";
-    return `<tr class="pulserow">
+    const chipCls = !pu ? "" : pu.action === "enter" ? "puENTER" : pu.action === "exit" ? "puEXIT" : "puHOLD";
+
+    /* Open shadow position: the five columns that are dashes on every other
+       in-play row carry it — entry, resting exit, unrealized, size, stake.
+       Unrealized uses the ENGINE's own arithmetic (core/pulse/live.py:751):
+       every stored price is YES frame, so per contract it is mid − entry for
+       a yes position and entry − mid for a no. Mid is the CURRENT board mid;
+       no mid means unrealized is "—", never a guess. */
+    let posCells = `<td class="dimc">—</td><td class="dimc">—</td><td class="dimc">—</td>
+      <td class="dimc">—</td><td class="dimc">—</td>`;
+    if(pos){
+      const mid = (r.bid != null && r.ask != null) ? (r.bid + r.ask) / 2 : null;
+      const upl = mid == null ? null
+        : (pos.side === "yes" ? mid - pos.entry_price : pos.entry_price - mid)
+          * (pos.contracts || 0);
+      posCells = `
+        <td class="num" title="PULSE's entry, YES frame — a no position cost 1 − this">${num(pos.entry_price)}</td>
+        <td class="num" title="${pos.exit_limit==null?"no exit resting":"the resting exit's limit, YES frame"}">${pos.exit_limit==null?'<span class="dimc">no rest</span>':num(pos.exit_limit)}</td>
+        <td class="num ${upl==null?"dimc":upl>=0?"pos":"neg"}" title="unrealized vs the current board mid, per the engine's own frame arithmetic — shadow dollars, nothing is held">${upl==null?"—":(upl>=0?"+$":"−$")+Math.abs(upl).toFixed(2)}</td>
+        <td class="num">${num(pos.contracts,2)}</td>
+        <td class="num">$${(pos.stake_usd??0).toFixed(2)}</td>`;
+    }
+    return `<tr class="pulserow ${pos?"pulsepos":""} ${isNew?"puflash":""}">
       <td class="l"><span class="pubadge" title="Estimate from PULSE, the live in-game model — not the pregame model. Display only; nothing PULSE shows here can be sent.">PULSE</span> ${v
         ? `<span class="side sideOff">${v.side}</span> <span class="dimc">${label}</span>`
         : `<span class="dimc">${label}</span>`}</td>
       <td class="num">${r.line==null?'<span class="dimc">—</span>':r.line.toFixed(1)}</td>
-      <td class="dimc">—</td><td class="dimc">—</td><td class="dimc">—</td>
-      <td class="dimc">—</td><td class="dimc">—</td>
+      ${posCells}
       <td class="dimc">${v?num(v.bid):num(r.bid)}</td>
       <td class="dimc">${v?num(v.ask):num(r.ask)}</td>
       <td class="dimc">${r.spread==null?"—":(r.spread*100).toFixed(0)+"¢"}</td>
-      <td class="num pufv" title="PULSE fair value (YES frame flipped to the shown side), decided ${agef(pu.age_seconds)} ago">${v?num(v.model):num(pu.fair_value)}</td>
-      <td class="num ${v&&v.edge>0?"pos":"neg"}" title="PULSE FV against the CURRENT touch, gross — not PULSE's own edge_net, which was net of fees at its limit at decision time (${pu.edge_net==null?"—":pct(pu.edge_net)})">${v?pct(v.edge):"—"}</td>
+      <td class="num pufv" title="${pu?`PULSE fair value (YES frame flipped to the shown side), decided ${agef(pu.age_seconds)} ago`:"no fresh PULSE estimate"}">${pu?(v?num(v.model):num(pu.fair_value)):"—"}</td>
+      <td class="num ${v&&v.edge>0?"pos":v?"neg":"dimc"}" title="${pu?`PULSE FV against the CURRENT touch, gross — not PULSE's own edge_net, which was net of fees at its limit at decision time (${pu.edge_net==null?"—":pct(pu.edge_net)})`:"no fresh PULSE estimate"}">${v?pct(v.edge):"—"}</td>
       <td class="num ${ageCls(r)}" title="age of the live quote for this market">${agef(r.age_seconds)}</td>
-      <td><span class="puchip ${chipCls}" title="PULSE's last decision on this market: ${pu.action.toUpperCase()} ${pu.side} @ ${num(pu.limit_price)} · its own net edge ${pu.edge_net==null?"—":pct(pu.edge_net)} · ${pu.score||""} ${pu.period||""} · decided ${agef(pu.age_seconds)} ago. Shadow — never sent.">${pu.action.toUpperCase()} ${pu.side} @${num(pu.limit_price)} · ${agef(pu.age_seconds)}</span></td>
+      <td>${pu
+        ? `<span class="puchip ${chipCls}" title="PULSE's last decision on this market: ${pu.action.toUpperCase()} ${pu.side} @ ${num(pu.limit_price)} · its own net edge ${pu.edge_net==null?"—":pct(pu.edge_net)} · ${pu.score||""} ${pu.period||""} · decided ${agef(pu.age_seconds)} ago. Shadow — never sent.">${pu.action.toUpperCase()} ${pu.side} @${num(pu.limit_price)} · ${agef(pu.age_seconds)}</span>`
+        : `<span class="puchip puHOLD" title="PULSE holds this position (entered ${pos?new Date(pos.entered_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):""}) but has not re-estimated inside the freshness window — the game is quiet or the engine has moved on. Shadow — never sent.">position open · quiet</span>`}</td>
     </tr>`;
   }
   const v = positionView(r);
@@ -1009,6 +1056,12 @@ let LAST_BOARD = null, LAST_PICKS_BYSLUG = null;
    seconds during a game, and re-rendering from the cached board with fresh
    estimates is cheap, while refetching the whole board is not. */
 let PULSE_LATEST = {};
+let PULSE_POSITIONS = {};
+let PULSE_FEED = [];
+//: decided_at last seen per market — a newer one flashes the row.
+let PULSE_SEEN = {};
+//: newest feed id already rendered — anything above it flashes.
+let FEED_SEEN = 0;
 
 async function loadPulseLatest(league){
   try{
@@ -1017,10 +1070,39 @@ async function loadPulseLatest(league){
     const d = await r.json();
     if(stale(league)) return;
     PULSE_LATEST = d.markets || {};
+    PULSE_POSITIONS = d.positions || {};
+    PULSE_FEED = d.feed || [];
+    renderPulseFeed();
     if(LAST_BOARD) renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
   } catch(e){ /* display only; the board stands without it */ }
 }
 setInterval(() => loadPulseLatest(LEAGUE), 10000);
+
+/* The activity feed: newest first, one line per enter/exit, flash on new.
+   An exit names its entry (entry_id), so the 02:32:34 ENTER -> 02:32:38 EXIT
+   stop-reprice sequence reads as one story rather than two events. Clicking
+   an item filters the board to that game — navigation, never an order. */
+function renderPulseFeed(){
+  const el = document.getElementById("pulsefeed");
+  if(!el) return;
+  if(!PULSE_FEED.length){ el.style.display = "none"; return; }
+  const newest = Math.max(...PULSE_FEED.map(f=>f.id));
+  el.style.display = "block";
+  el.innerHTML = `<span class="pubadge" style="margin-right:8px">PULSE</span>` +
+    PULSE_FEED.slice(0, 12).map(f => {
+      const ev = shortEvent(f.event_slug);
+      const label = f.type === "winner" ? "ML" : `${f.type} ${shortSlug(f.market_slug).split("-").pop()}`;
+      const cls = f.action === "enter" ? "puENTER" : "puEXIT";
+      const fresh = FEED_SEEN && f.id > FEED_SEEN;
+      return `<span class="feeditem ${fresh?"puflash":""}" data-ev="${f.event_slug}"
+        title="${f.action.toUpperCase()} ${f.side} @ ${num(f.limit_price)} (YES frame) · ${f.contracts??""} contracts${f.reason?" · "+f.reason:""}${f.entry_id?" · exit for entry #"+f.entry_id:""}${f.filled?" · filled":" · resting"}">
+        <span class="puchip ${cls}">${f.action.toUpperCase()}</span>
+        ${ev} ${label} @ ${num(f.limit_price)} · <span class="dimc">${agef(f.age_seconds)}</span></span>`;
+    }).join('<span class="dimc" style="margin:0 7px">·</span>');
+  FEED_SEEN = Math.max(FEED_SEEN, newest);
+  el.querySelectorAll(".feeditem").forEach(i =>
+    i.addEventListener("click", () => setView({mode:"game", ev: i.dataset.ev})));
+}
 
 const QGAME = new URLSearchParams(location.search).get("game");
 if(QGAME) VIEW = {mode: "game", ev: QGAME};
