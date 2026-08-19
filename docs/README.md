@@ -82,6 +82,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | [bankroll.md](infra/bankroll.md) | The account balance, read from the venue — and the stale `35.68` it replaced |
 | [fill-watcher.md](infra/fill-watcher.md) | How order fill state comes back from the venue, and the pre-authorized exit rules |
 | [architecture.md](infra/architecture.md) | How the pieces fit together |
+| [aws-migration.md](infra/aws-migration.md) | Moving the stack to EC2: the click list, the row-count verification, and what the cutover actually is |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |
 | [data-sources.md](infra/data-sources.md) | Every external API, verified |
 
