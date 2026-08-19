@@ -2125,6 +2125,45 @@ def pulse_latest(league: str | None = None) -> dict:
              ORDER BY market_slug, decided_at DESC
         """), {"prefix": f"{lg.slug}-%",
                "max_age": PULSE_LATEST_MAX_AGE_SECONDS}).all()
+
+        # Open shadow positions: a filled entry, unsettled, with no filled
+        # exit. The resting exit (unfilled, not withdrawn) rides along so the
+        # row can show what protects the position. Frames per the table's own
+        # docstring: every price YES frame, `no` costs 1 − limit_price, and
+        # entry/exit subtract directly.
+        positions = s.execute(text("""
+            SELECT e.market_slug, e.event_slug, e.side,
+                   e.limit_price AS entry_price, e.contracts, e.stake_usd,
+                   e.filled_at, e.decided_at,
+                   x.limit_price AS exit_limit, x.filled_at AS exit_filled_at
+              FROM pulse_decisions e
+              LEFT JOIN LATERAL (
+                    SELECT limit_price, filled_at FROM pulse_decisions
+                     WHERE entry_id = e.id AND action = 'exit'
+                       AND withdrawn_at IS NULL
+                     ORDER BY decided_at DESC LIMIT 1
+              ) x ON true
+             WHERE e.event_slug LIKE :prefix
+               AND e.action = 'enter'
+               AND e.filled_at IS NOT NULL
+               AND e.settlement IS NULL
+               AND (x.filled_at IS NULL)
+        """), {"prefix": f"{lg.slug}-%"}).all()
+
+        # The activity feed: recent enters/exits across all games, newest
+        # first. Window is a whole game (3h) rather than the estimate window —
+        # the feed is the story so far, not the current thought.
+        feed = s.execute(text("""
+            SELECT decided_at, event_slug, market_slug, sports_market_type,
+                   strategy, action, side, limit_price, contracts, reason,
+                   entry_id, id, filled_at
+              FROM pulse_decisions
+             WHERE event_slug LIKE :prefix
+               AND action IN ('enter', 'exit')
+               AND decided_at > now() - interval '3 hours'
+             ORDER BY decided_at DESC
+             LIMIT 30
+        """), {"prefix": f"{lg.slug}-%"}).all()
     now = dt.datetime.now(UTC)
     return {
         "league": lg.slug,
@@ -2144,6 +2183,30 @@ def pulse_latest(league: str | None = None) -> dict:
             "period": r.period,
             "strategy": r.strategy,
         } for r in rows},
+        "positions": {r.market_slug: {
+            "side": r.side,
+            "entry_price": _f(r.entry_price),          # YES frame
+            "contracts": _f(r.contracts),
+            "stake_usd": _f(r.stake_usd),
+            "entered_at": r.filled_at.isoformat(),
+            "exit_limit": _f(r.exit_limit),            # YES frame; null = no rest
+        } for r in positions},
+        "feed": [{
+            "id": r.id,
+            "decided_at": r.decided_at.isoformat(),
+            "age_seconds": round((now - r.decided_at).total_seconds(), 1),
+            "event_slug": r.event_slug,
+            "market_slug": r.market_slug,
+            "type": (r.sports_market_type or "").replace(
+                "basketball_team_full_game_", ""),
+            "action": r.action,
+            "side": r.side,
+            "limit_price": _f(r.limit_price),
+            "contracts": _f(r.contracts),
+            "reason": r.reason,
+            "entry_id": r.entry_id,
+            "filled": r.filled_at is not None,
+        } for r in feed],
     }
 
 

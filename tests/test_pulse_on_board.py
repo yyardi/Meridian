@@ -68,6 +68,47 @@ def pulse_rows(Session):
                         'in_play', :action, 'yes', 0.55, 1, 0.55, false,
                         :fv, 0.021, 0.54, 0.58, '40-38', 'Q3')
             """), {"at": at, "slug": slug, "action": action, "fv": fv})
+        # An open position: filled entry + resting (unfilled) exit — the
+        # operator's real 02:32:34 ENTER -> 02:32:38 EXIT-reprice story.
+        eid = s.execute(text("""
+            INSERT INTO pulse_decisions
+                (decided_at, event_slug, market_slug, sports_market_type,
+                 strategy, phase, action, side, limit_price, contracts,
+                 stake_usd, minutes_left_is_estimate, filled_at)
+            VALUES (:at, 'wnba-pobtest-9999-01-01', 'aec-wnba-pobtest-3', 'winner',
+                    'winner', 'in_play', 'enter', 'no', 0.36, 2.0,
+                    1.28, false, :at)
+            RETURNING id
+        """), {"at": now - dt.timedelta(minutes=2)}).scalar()
+        s.execute(text("""
+            INSERT INTO pulse_decisions
+                (decided_at, event_slug, market_slug, sports_market_type,
+                 strategy, phase, action, side, limit_price, contracts,
+                 stake_usd, minutes_left_is_estimate, entry_id, reason)
+            VALUES (:at, 'wnba-pobtest-9999-01-01', 'aec-wnba-pobtest-3', 'winner',
+                    'winner', 'in_play', 'exit', 'no', 0.31, 2.0,
+                    0, false, :eid, 'stop repriced to the touch')
+        """), {"at": now - dt.timedelta(minutes=1, seconds=56), "eid": eid})
+        # A CLOSED position (exit filled) — must not appear in positions.
+        eid2 = s.execute(text("""
+            INSERT INTO pulse_decisions
+                (decided_at, event_slug, market_slug, sports_market_type,
+                 strategy, phase, action, side, limit_price, contracts,
+                 stake_usd, minutes_left_is_estimate, filled_at)
+            VALUES (:at, 'wnba-pobtest-9999-01-01', 'aec-wnba-pobtest-4', 'winner',
+                    'winner', 'in_play', 'enter', 'yes', 0.50, 1.0,
+                    0.50, false, :at)
+            RETURNING id
+        """), {"at": now - dt.timedelta(minutes=3)}).scalar()
+        s.execute(text("""
+            INSERT INTO pulse_decisions
+                (decided_at, event_slug, market_slug, sports_market_type,
+                 strategy, phase, action, side, limit_price, contracts,
+                 stake_usd, minutes_left_is_estimate, entry_id, filled_at)
+            VALUES (:at, 'wnba-pobtest-9999-01-01', 'aec-wnba-pobtest-4', 'winner',
+                    'winner', 'in_play', 'exit', 'yes', 0.55, 1.0,
+                    0, false, :eid, :at)
+        """), {"at": now - dt.timedelta(minutes=1), "eid": eid2})
         s.commit()
     yield
     with Session() as s:
@@ -97,6 +138,26 @@ def test_the_endpoint_is_league_scoped_and_get_only(client, pulse_rows):
     assert "tsc-wnba-pobtest-1" not in d["markets"]
     routes = {r.path: r.methods for r in app.routes if hasattr(r, "methods")}
     assert routes.get("/api/pulse/latest") == {"GET"}
+
+
+def test_open_positions_are_served_and_closed_ones_are_not(client, pulse_rows):
+    d = client.get("/api/pulse/latest?league=wnba").json()
+    pos = d["positions"]
+    assert "aec-wnba-pobtest-3" in pos, "filled entry + resting exit = open"
+    p3 = pos["aec-wnba-pobtest-3"]
+    assert p3["side"] == "no" and p3["entry_price"] == 0.36
+    assert p3["exit_limit"] == 0.31, "the resting exit's limit rides along"
+    assert "aec-wnba-pobtest-4" not in pos, "a filled exit closes the position"
+
+
+def test_the_feed_tells_the_enter_exit_story_newest_first(client, pulse_rows):
+    d = client.get("/api/pulse/latest?league=wnba").json()
+    feed = [f for f in d["feed"] if "pobtest-3" in f["market_slug"]]
+    assert [f["action"] for f in feed] == ["exit", "enter"], "newest first"
+    ex = feed[0]
+    assert ex["entry_id"] is not None, "the exit names its entry — one story"
+    assert ex["reason"] == "stop repriced to the touch"
+    assert ex["filled"] is False, "a resting exit says so"
 
 
 # ------------------------------------------------------------------ #
@@ -151,6 +212,47 @@ def test_the_action_chip_carries_action_side_price_and_age(html):
     for piece in ("pu.action.toUpperCase()", "pu.side", "num(pu.limit_price)",
                   "agef(pu.age_seconds)"):
         assert piece in row
+
+
+def test_a_position_row_fills_the_dead_columns_with_the_engines_frame(html):
+    """Entry, resting exit, unrealized, size, stake go where every other
+    in-play row shows dashes. Unrealized uses the ENGINE's own arithmetic
+    (yes: mid − entry; no: entry − mid, YES frame throughout) — the page
+    invents no frame math of its own."""
+    row = _fn(html, "function boardRow(r, hrs){")
+    assert "PULSE_POSITIONS[r.market_slug]" in row
+    assert 'pos.side === "yes" ? mid - pos.entry_price : pos.entry_price - mid' in row
+    assert "pos.exit_limit" in row
+    assert "pulsepos" in row, "position rows carry the accent"
+    assert "shadow dollars" in row, "unrealized is labelled as never held"
+
+
+def test_the_feed_is_navigation_never_an_order(html):
+    import re
+
+    fn = _fn(html, "function renderPulseFeed(){")
+    code = re.sub(r"/\*.*?\*/", "", fn, flags=re.DOTALL)
+    for forbidden in ("sendCell", "openTicket", "PICKS[", "sendbtn"):
+        assert forbidden not in code
+    assert "setView" in fn, "clicking an item filters the board to its game"
+    assert "entry_id" in fn, "an exit names its entry so the story reads"
+
+
+def test_a_position_outlives_the_estimate_window(html):
+    """Found live: two open positions rendered as dead rows because the PULSE
+    branch was gated on estimate freshness. The game goes quiet and the
+    engine stops re-estimating, but "the model is IN this market at X" stays
+    true until the exit fills or settlement lands."""
+    row = _fn(html, "function boardRow(r, hrs){")
+    assert "if(pu || pos){" in row, "position alone must decorate the row"
+    assert "position open · quiet" in row, (
+        "a position without a fresh estimate says so instead of vanishing")
+
+
+def test_new_decisions_flash(html):
+    row = _fn(html, "function boardRow(r, hrs){")
+    assert "PULSE_SEEN" in row and "puflash" in row
+    assert "@keyframes pufl" in html
 
 
 def test_estimates_refresh_without_refetching_the_board(html):
