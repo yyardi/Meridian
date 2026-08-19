@@ -30,6 +30,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    text,
     UniqueConstraint,
     func,
 )
@@ -1061,6 +1062,25 @@ class AccountBalance(Base):
     #: The venue's payload verbatim. Reparsing a stored body beats re-fetching
     #: a balance that has since moved.
     raw: Mapped[dict | None] = mapped_column(JSONB)
+
+    #: Open positions at this reading, and whether they were actually read.
+    #:
+    #: These exist because the round trip was lossy without them, and lossy in
+    #: the worst direction. `AccountSnapshot` grew `positions`/`positions_read_ok`
+    #: when equity display was added, but `record()` did not persist them and
+    #: `latest()` did not reconstruct them — so a stored snapshot came back with
+    #: `positions=()` and `positions_read_ok=False`, which does not mean "no
+    #: positions", it means **"the read failed"**. The poller logged a real
+    #: $3.60 position while the page rendered "positions unread" in red, in the
+    #: same minute, because `current()` prefers the fresh stored row.
+    #:
+    #: `positions_read_ok` is stored rather than derived from `positions` being
+    #: empty, because an empty book and an unread book are different facts and
+    #: the whole display turns on telling them apart.
+    positions: Mapped[list | None] = mapped_column(JSONB)
+    positions_read_ok: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
     __table_args__ = (
         Index("ix_account_balances_observed_at", "observed_at"),
