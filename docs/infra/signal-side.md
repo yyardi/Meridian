@@ -1,6 +1,11 @@
-# The signal side — design (Phase 1)
+# The signal side — design (Phase 1) and build (Phase 2)
 
-**Status: DESIGN, nothing built.** PULSE today sees score, period, an
+**Status: BUILT (Phase 2, 2026-08-19), recording awaits operator deploy.**
+Design approved by the manager as written; the Phase 2 appendix at the
+bottom records what shipped and the registration. Original design below,
+unedited.
+
+**Status at design time: DESIGN, nothing built.** PULSE today sees score, period, an
 estimated clock, tempo-from-score, and price. This designs the feed that
 lets it see the game: live boxscore, play-by-play, who is on the floor, and
 the pregame injury context — recorded point-in-time first, consumed by a
@@ -173,3 +178,38 @@ Phase 2 scope if approved: the recorder + the five tables + signals 1-3 as
 pure functions with tests, registration doc, compose overlay, and the live
 checklist run on the first slate the operator deploys against. Signals 4-6
 accrue raw material from day one and ship as functions later.
+
+---
+
+## Phase 2 — shipped 2026-08-19
+
+* **Recorder**: `core/feeds/espn_live_recorder.py`, service
+  `espn_live_recorder`, overlay `docker-compose.espn-live.yml`. The
+  heartbeat beats EVERY cycle — `rows_written=0, game_live=False` overnight
+  is IDLE, not DEAD; /api/status judges every service that has ever beaten
+  (the B11 rule), so skipping idle beats would read the whole header STALE.
+* **Tables**: migration `a9b4e6d13f75` — plays (append-only by ESPN play
+  id), box snapshots (one per poll; carries `season_type` from the NESTED
+  spelling, the #25 trap, and `clock_source` so header-vs-play clock
+  provenance is queryable), player snapshots (60s), win probability
+  (append-only), injury observations (unique per game/athlete/status —
+  on-change-only structurally, and RECORD-ONLY per B's delivered oracle
+  verdict).
+* **Signals 1-3**: `core/pulse/signals.py`, pure functions; the loaders put
+  `first_seen_at <= t` in the SQL, not in caller discipline. No
+  materialization — one resolution of each quantity, ever (the
+  analytics-path lesson, docs/infra/analytics-path.md, inverted).
+* **Clock integration contract** (agreed with the tape view's author): when
+  the exact clock reaches the FV path it flips
+  `minutes_left_is_estimate=False` on the EXISTING field — never a parallel
+  exact-clock field. The UI's "est." labels and OT rendering then correct
+  themselves with zero UI changes.
+* **The #25 guard**: a live game whose summary parses to zero rows logs
+  `espn_live_empty_payload` at ERROR level — the quiet-failure shape made
+  loud. On the first-live-game checklist alongside the five questions above,
+  answered by `python -m core.feeds.espn_live_recorder --checklist`.
+* **Registration of accruing rows**: the five tables are observations, not
+  measurements — no verdict is ever computed from them directly. Any model
+  consumption is PULSE v3 behind §(d)'s replay gate, with per-row
+  `estimates_version` labelling. No existing gate changed. Recording starts
+  the moment the operator runs the overlay; the archive is the deliverable.
