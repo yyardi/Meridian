@@ -75,6 +75,10 @@
   @keyframes pufl{from{background:#2a1f33}to{background:transparent}}
   .puflash{animation:pufl 1.2s ease-out}
   tr.puflash td{animation:pufl 1.2s ease-out}
+  .gchip{display:inline-block;font-size:9px;letter-spacing:.05em;padding:1px 6px;
+         border-radius:2px;margin-left:5px;vertical-align:1px}
+  .gcUP{background:#16243a;color:#8fb8ff;border:1px solid #2c4a7a}
+  .gcFIN{background:#171c26;color:#7c879b;border:1px solid #242c3a}
   .whynot{font-size:9.5px;letter-spacing:.04em;color:var(--faint);cursor:help;
           border:1px solid var(--line);border-radius:3px;padding:1px 6px;
           display:inline-block;white-space:nowrap}
@@ -1005,13 +1009,18 @@ async function loadStatus(){
     $("#s-pregame").className = "v " + (d.healthy ? "pos" : "neg");
     $("#s-live").textContent = agef(d.live_age_seconds);
 
-    // Counts are planner estimates, and postgres reports reltuples = -1 for a
-    // table it has never analysed. That is "unknown", not a negative count —
-    // the old board printed "-1 snapshots", which reads as a broken counter.
+    // Counts are planner estimates, and postgres reports reltuples = -1 for
+    // a table it has never analysed — which is this database's state since
+    // the supabase-exit import. The old word here read as an error; the state
+    // is "postgres has no estimate yet", which a maintenance ANALYZE fixes.
+    // (Checked against pg_class before wording this — the first guess was
+    // that the fast analytics pass skipped the counts, and it does not: that
+    // pass never touches /api/status.)
     const c = d.counts || {};
-    const cnt = v => v == null || v < 0 ? "unknown"
+    const cnt = v => v == null || v < 0
+      ? '<span title="postgres has no row estimate for this table yet (never analysed since the import) — a maintenance ANALYZE fixes it; an exact count would blow the statement timeout">not analysed</span>'
       : (d.counts_estimated ? "~" : "") + v.toLocaleString();
-    $("#foot").textContent =
+    $("#foot").innerHTML =
       `${cnt(c.snapshots)} snapshots · ${cnt(c.book_levels)} book levels · `
       + `${cnt(c.predictions)} predictions · ${cnt(c.shadow_orders)} shadow orders · `
       + `updated ${new Date().toLocaleTimeString()}`;
@@ -1890,12 +1899,35 @@ function loadGames(league){
         : `<div class="empty">${d.empty_state}</div>`;
       return;
     }
-    $("#glist").innerHTML = `<div class="glist">${d.games.map(g=>`
+    /* Cards date themselves by the GAME, not by the first shadow trade —
+       pregame trades land the night before, and a card wearing yesterday's
+       date read as a played game with stuck trades ("GSV didn't play
+       yesterday?"). Three states, three different chips — and unresolved-
+       because-future must never wear the stuck-warning colour:
+         upcoming — tip is ahead; trades are pregame and resolve after
+         live    — the strip's events say this game is on now
+         final   — tip has passed and the game is not live               */
+    const now = Date.now();
+    $("#glist").innerHTML = `<div class="glist">${d.games.map(g=>{
+      const tip = g.tipoff ? new Date(g.tipoff) : null;
+      const live = EVENTS.some(e => e.event_slug === g.event_slug && e.is_live);
+      const state = live ? "live" : (tip && tip.getTime() > now) ? "upcoming"
+                  : tip ? "final" : "unknown";
+      const chip = state === "live" ? '<span class="livedot">● LIVE</span>'
+        : state === "upcoming"
+          ? `<span class="gchip gcUP" title="tips ${tip.toLocaleString([],{weekday:"short",hour:"2-digit",minute:"2-digit"})}">upcoming · tips in ${((tip.getTime()-now)/3.6e6).toFixed(1)}h</span>`
+        : state === "final" ? '<span class="gchip gcFIN">final</span>'
+        : '<span class="gchip gcFIN" title="no recorded tip time for this game">no tip time</span>';
+      const trades = state === "upcoming"
+        ? `${g.n_trades} pregame trades <span class="dimc">· resolve after the game</span>`
+        : `${g.n_trades} shadow trades · ${g.n_resolved
+            ? g.n_resolved + " resolved"
+            : '<span class="warnc" title="the game has been played and nothing has resolved — this IS worth a look">unresolved</span>'}`;
+      return `
       <div class="gcard" data-slug="${g.event_slug}">
-        <div class="gt">${g.label}</div>
-        <div class="gm">${day(g.last_decision)} · ${g.n_trades} shadow trades ·
-          ${g.n_resolved?g.n_resolved+" resolved":'<span class="warnc">unresolved</span>'}</div>
-      </div>`).join("")}</div>`;
+        <div class="gt">${g.label} ${chip}</div>
+        <div class="gm">${tip ? day(tip) : day(g.last_decision) + " (last trade)"} · ${trades}</div>
+      </div>`;}).join("")}</div>`;
     document.querySelectorAll(".gcard").forEach(c=>{
       c.addEventListener("click", ()=>openGame(c.dataset.slug, c));
     });

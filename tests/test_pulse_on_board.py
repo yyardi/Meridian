@@ -260,3 +260,78 @@ def test_estimates_refresh_without_refetching_the_board(html):
     assert "stale(league)" in fn, "the league guard covers this loader too"
     assert "renderBoard(LAST_BOARD" in fn, "re-render from cache, not refetch"
     assert "setInterval(() => loadPulseLatest(LEAGUE), 10000)" in html
+
+
+# ------------------------------------------------------------------ #
+# Tape cards date themselves by the game, not the first trade
+# ------------------------------------------------------------------ #
+
+
+def test_the_games_list_carries_the_games_own_tipoff(client, Session, monkeypatch):
+    """Pregame trades land the night before; a card dated by its first trade
+    wore yesterday's date and read as a played game with stuck trades
+    ("GSV didn't play yesterday?", operator, 2026-08-19).
+
+    Seeded, not data-dependent: a shadow order decided well before its
+    game's tip (decided now, tip in 10h — post-era-boundary so the pulse-era
+    list carries it), with the tip on a snapshot — the confusing shape."""
+    # The suite's per-run database has no pulse decisions, so the pulse era
+    # has not started there and era=pulse is empty BY DESIGN. Pin the
+    # boundary behind the seed so the era contains it.
+    monkeypatch.setenv("MERIDIAN_ERA_BOUNDARY",
+                       (dt.datetime.now(UTC) - dt.timedelta(days=1)).isoformat())
+    tip = dt.datetime.now(UTC) + dt.timedelta(hours=10)
+    with Session() as s:
+        s.execute(text("DELETE FROM shadow_orders WHERE market_slug LIKE '%pobtip%'"))
+        s.execute(text("DELETE FROM market_snapshots WHERE market_slug LIKE '%pobtip%'"))
+        s.execute(text("""
+            INSERT INTO shadow_orders (decided_at, idempotency_key, market_slug,
+                event_slug, side, limit_price, quantity, would_rest, mode)
+            VALUES (now(), 'pobtip-1', 'tsc-wnba-pobtip-1',
+                    'wnba-pobtip-9999-01-02', 'BUY_YES', 0.5, 1, true, 'SHADOW')
+        """))
+        s.execute(text("""
+            INSERT INTO market_snapshots (captured_at, market_slug, event_slug,
+                game_start_time, is_live)
+            VALUES (now(), 'tsc-wnba-pobtip-1', 'wnba-pobtip-9999-01-02', :tip, false)
+        """), {"tip": tip})
+        s.commit()
+    try:
+        d = client.get("/api/games?league=wnba&era=pulse").json()
+        g = next(x for x in d["games"] if x["event_slug"] == "wnba-pobtip-9999-01-02")
+        assert g["tipoff"] is not None
+        got = dt.datetime.fromisoformat(g["tipoff"])
+        assert abs((got - tip).total_seconds()) < 2, (
+            "the card's date must be the GAME's tip, not the trade's night")
+    finally:
+        with Session() as s:
+            s.execute(text("DELETE FROM shadow_orders WHERE market_slug LIKE '%pobtip%'"))
+            s.execute(text("DELETE FROM market_snapshots WHERE market_slug LIKE '%pobtip%'"))
+            s.commit()
+
+
+def test_card_states_are_three_and_future_unresolved_is_not_a_warning():
+    html = Path("static/index.html").read_text()
+    for state in ("upcoming · tips in", ">final<", "● LIVE"):
+        assert state in html, f"missing card state {state!r}"
+    # unresolved-because-future must not wear the stuck-warning colour
+    assert "pregame trades" in html and "resolve after the game" in html
+    assert "nothing has resolved — this IS worth a look" in html, (
+        "played-and-unresolved keeps the warning, with words")
+    # dated by the game
+    assert "day(tip)" in html or "${tip ? day(tip)" in html
+
+
+def test_the_footer_names_the_actual_state_not_an_error():
+    html = Path("static/index.html").read_text()
+    assert ">not analysed</span>" in html
+    import re
+
+    code = re.sub(r"/\*.*?\*/", "", _fn(html, "async function loadStatus(){"),
+                  flags=re.DOTALL)
+    code = re.sub(r"^\s*//.*$", "", code, flags=re.MULTILINE)
+    assert '"unknown"' not in code, (
+        "the word that read as an error is gone from the counts (comments "
+        "stripped — the un-stripped version tripped on prose describing the "
+        "old behaviour, fourth instance of the pattern)")
+    assert "ANALYZE fixes it" in html, "the tooltip says what fixes the state"

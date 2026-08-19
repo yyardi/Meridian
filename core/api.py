@@ -2324,6 +2324,7 @@ def games(league: str | None = None, limit: int = 60, era: str = "pulse") -> dic
                 "n_resolved": g["n_resolved"],
                 "first_decision": g["first_decision"].isoformat() if g["first_decision"] else None,
                 "last_decision": g["last_decision"].isoformat() if g["last_decision"] else None,
+                "tipoff": g["tipoff"],
             }
             for g in rows
         ],
