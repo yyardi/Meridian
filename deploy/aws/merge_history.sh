@@ -61,7 +61,33 @@ TABLES=(
   "predictions|market_slug,predicted_at,model_version,config_hash||"
   "shadow_orders|idempotency_key||"
   "orders|idempotency_key||"
+  # --- added 2026-08-20 after an information_schema audit found the first
+  # --- list was hand-written and short. See ANTIJOIN below for why these
+  # --- five do not use ON CONFLICT.
+  "pending_exits|entry_order_id||"
+  "retention_log|partition_name||"
+  "pulse_decisions|market_slug,decided_at,action||"
+  "shadow_quote_fills|market_slug,quoted_at,side||"
+  "account_balances|observed_at||"
 )
+
+#: Tables merged by anti-join rather than ON CONFLICT.
+#:
+#: ON CONFLICT (cols) REQUIRES a unique index on exactly those columns. These
+#: tables have none beyond the primary key `id`, so the obvious
+#: `ON CONFLICT (market_slug, decided_at, action)` does not fall back to
+#: something reasonable — it raises "no unique or exclusion constraint matching
+#: the ON CONFLICT specification" and the merge stops.
+#:
+#: The alternative would be creating unique indexes on the live database to
+#: suit the merge. That is a schema change to production, invisible to
+#: core/storage/models.py, made to satisfy a tool. `WHERE NOT EXISTS` has
+#: identical semantics — the live row wins — and needs nothing.
+#:
+#: `DISTINCT ON` is the price of the swap: ON CONFLICT deduplicates the STAGED
+#: set as a side effect (the second colliding row simply does nothing), and an
+#: anti-join does not. Without it, duplicates inside history would both insert.
+ANTIJOIN="pending_exits retention_log pulse_decisions shadow_quote_fills account_balances"
 
 # --------------------------------------------------------------------------- #
 log "0/6  preconditions"
@@ -94,6 +120,54 @@ S2=$(DC exec -T postgres psql -U meridian -d postgres -At -c "select pg_database
 [[ "$S1" == "$S2" ]] || die "$SRC_DB grew $(( S2 - S1 )) bytes in 15s — still restoring."
 echo "  $SRC_DB stable at $(( S2 / 1024 / 1024 )) MB, no restore statements active"
 echo "  mode: $MODE"
+
+# --------------------------------------------------------------------------- #
+log "0b/6  schema audit — does the table list still cover the source?"
+# --------------------------------------------------------------------------- #
+# THE BUG THIS EXISTS FOR. The first version of TABLES was hand-written from
+# the Supabase importer's list and never diffed against the source. It was
+# short by five: pulse_decisions, shadow_quote_fills, account_balances,
+# pending_exits, retention_log. The merge reported clean receipts for fifteen
+# tables and silently carried none of the other five, so PULSE's first three
+# nights were absent from production and the era boundary computed a day late.
+#
+# A hand-written list is the same class of bug one level up: it is correct until
+# someone adds a table and forgets to extend it. So the script diffs itself
+# against the source rather than trusting that anyone remembered.
+EXCLUDED_REASON=(
+  "alembic_version|migration state; the live database's own is authoritative"
+  "service_heartbeats|live beats are current — merging stale ones asserts writers are dead"
+  "espn_live_box_snapshots|server-side signal capture is authoritative"
+  "espn_live_player_snapshots|server-side signal capture is authoritative"
+  "espn_live_plays|server-side signal capture is authoritative"
+  "espn_live_win_probability|server-side signal capture is authoritative"
+  "espn_live_injury_observations|server-side signal capture is authoritative"
+)
+covered=""
+for spec in "${TABLES[@]}"; do
+  IFS='|' read -r t _ _ _ <<< "$spec"; covered="$covered $t"
+done
+for spec in "${EXCLUDED_REASON[@]}"; do
+  covered="$covered ${spec%%|*}"
+done
+
+unaccounted=""
+while read -r t; do
+  [[ -z "$t" ]] && continue
+  # Partitions arrive through their parent.
+  [[ "$t" == *_default || "$t" == *_y20[0-9][0-9]m[0-9][0-9] ]] && continue
+  [[ " $covered " == *" $t "* ]] || unaccounted="$unaccounted $t"
+done < <(SRC -At -c "select tablename from pg_tables where schemaname='public' order by 1")
+
+if [[ -n "$unaccounted" ]]; then
+  die "tables in $SRC_DB that this script neither merges nor excludes:$unaccounted
+
+Add each to TABLES (with its natural key) or to EXCLUDED_REASON (with the
+reason). Refusing rather than merging a subset: a partial merge reports clean
+receipts for what it did carry, which is exactly how the first run lost five
+tables without anyone noticing."
+fi
+echo "  every table in $SRC_DB is either merged or excluded with a reason"
 
 # --------------------------------------------------------------------------- #
 log "1/6  staging schema (dropped and rebuilt; base tables untouched)"
@@ -137,8 +211,23 @@ merge_one() {   # $1 table  $2 natural-key cols  $3 select-list  $4 from-clause
                       where table_schema='public' and table_name='$tbl'
                         and column_name <> 'id'" | tr -d '\r')
   if [[ "$MODE" == "--yes" ]]; then
-    DST -c "INSERT INTO public.$tbl ($cols) SELECT $sel $src
-            ON CONFLICT ($keys) DO NOTHING;" >/dev/null
+    if [[ " $ANTIJOIN " == *" $tbl "* ]]; then
+      # Same rule as ON CONFLICT — the live row wins — expressed without
+      # requiring a unique index that does not exist.
+      local pred=""
+      local IFS_SAVE="$IFS"; IFS=','
+      for k in $keys; do
+        pred="${pred:+$pred AND }p.$k IS NOT DISTINCT FROM s.$k"
+      done
+      IFS="$IFS_SAVE"
+      DST -c "INSERT INTO public.$tbl ($cols)
+              SELECT $sel FROM (SELECT DISTINCT ON ($keys) * FROM $STAGE.$tbl
+                                ORDER BY $keys, id) s
+               WHERE NOT EXISTS (SELECT 1 FROM public.$tbl p WHERE $pred);" >/dev/null
+    else
+      DST -c "INSERT INTO public.$tbl ($cols) SELECT $sel $src
+              ON CONFLICT ($keys) DO NOTHING;" >/dev/null
+    fi
     after=$(DST -At -c "select count(*) from public.$tbl" | tr -d '\r')
     inserted=$(( after - before ))
   else
