@@ -154,11 +154,11 @@ looked complete.
 
 ## Two live bugs folded in from the first migration
 
-* **`migrate.sh` defaulted to the old account's bucket**
-  (`meridian-backups-298030125776`). It exists, it just is not ours, so the
-  failure read as a credentials problem. Now `meridian-backups-623955527388`,
-  and the runbook was corrected to match — a script and a doc disagreeing about
-  a bucket name is what caused this.
+* **`migrate.sh` defaulted to a PREVIOUS account's bucket.** It exists, it just
+  was not ours, so the failure read as a credentials problem. There is now no
+  default at all: `MERIDIAN_S3_BUCKET` is required. That removes the
+  stale-default trap and, separately, keeps an AWS account id — which is what a
+  bucket name embeds — out of a public repository.
 * **`provision.sh` used `sudo -u meridian --preserve-env=HOME`**, which keeps
   `HOME=/root`. The docker CLI looks for plugins under `$HOME/.docker/cli-plugins`,
   so `compose` vanishes and the error surfaces as `unknown flag: --env-file`
