@@ -17,3 +17,8 @@ odds_backfill*.log
 recorder-logs/
 reports/
 backups/
+
+# Local, per-operator infrastructure addresses. The repo is public and carries
+# the shape of the infrastructure, never its addresses.
+.meridian-server
+.meridian-aws

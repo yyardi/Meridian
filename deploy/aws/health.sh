@@ -10,7 +10,29 @@
 # cron or a shell prompt as-is.
 set -euo pipefail
 
-HOST="${MERIDIAN_SERVER:-100.60.80.165}"
+# The address is NOT in this file. This repo is public, and a public repo
+# should carry the SHAPE of the infrastructure and never its addresses.
+# Resolution order, most explicit first:
+#   1. MERIDIAN_SERVER=...           (one-off, or a CI secret)
+#   2. ~/.meridian-server            (one line: the IP or hostname)
+# The file keeps the operator's muscle-memory command to two words without
+# putting the address anywhere git can see it.
+HOST="${MERIDIAN_SERVER:-}"
+if [[ -z "$HOST" && -f "$HOME/.meridian-server" ]]; then
+  HOST=$(tr -d '[:space:]' < "$HOME/.meridian-server")
+fi
+if [[ -z "$HOST" ]]; then
+  cat >&2 <<'MSG'
+No server address.
+
+  echo <server-ip> > ~/.meridian-server      # once, then `deploy/aws/health.sh`
+  MERIDIAN_SERVER=<server-ip> deploy/aws/health.sh   # or one-off
+
+The real address lives in the AWS console and the operator's local notes,
+never in this repository.
+MSG
+  exit 2
+fi
 KEY="${MERIDIAN_SSH_KEY:-$HOME/.ssh/meridian-aws.pem}"
 USER="${MERIDIAN_SSH_USER:-ubuntu}"
 REMOTE="${MERIDIAN_HOME:-/opt/meridian}"

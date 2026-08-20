@@ -6,12 +6,25 @@ stays intact and recording until parity is proven across a full slate.
 
 ## What already exists (created 2026-08-19, us-east-1)
 
+**This repository is public. It carries the *shape* of the infrastructure and
+never its addresses.** Every `<placeholder>` below is a real value that lives in
+the AWS console and the operator's local notes — not in git, not in a script
+default, not in a commit message.
+
 | | |
 |---|---|
-| key pair | `meridian` → `~/.ssh/meridian-aws.pem` |
-| security group | `sg-0af95dedc2bd41b07` — SSH from the operator's IP /32 only |
-| S3 bucket | `meridian-backups-623955527388` |
-| VPC | `vpc-06554dfe029f2cf6a` (default) |
+| key pair | `meridian` → `~/.ssh/meridian-aws.pem` (local filename, not a secret) |
+| security group | `<security-group-id>` — SSH from the operator's IP /32 only |
+| S3 bucket | `<backups-bucket>` |
+| VPC | `<vpc-id>` (the account's default) |
+| instance address | `<server-ip>` |
+
+Set them once, locally:
+
+```bash
+echo '<server-ip>' > ~/.meridian-server     # deploy/aws/health.sh reads this
+export MERIDIAN_S3_BUCKET='<backups-bucket>'  # deploy/aws/migrate.sh requires it
+```
 
 ## Cost, priced from the AWS Price List API on 2026-08-19
 
@@ -68,10 +81,10 @@ which stops the recorder, mid-slate, and unrecorded ticks are unrecoverable.
 | AMI | Ubuntu 22.04 LTS or 24.04 LTS (x86_64) |
 | type | **m7i.xlarge** |
 | key pair | `meridian` |
-| VPC | `vpc-06554dfe029f2cf6a` (default) |
-| security group | `sg-0af95dedc2bd41b07` |
+| VPC | `<vpc-id>` (the account's default) |
+| security group | `<security-group-id>` |
 | storage | **100 GB gp3**, 3000 IOPS, 125 MB/s (defaults) |
-| IAM role | one with `s3:GetObject` on `meridian-backups-623955527388` |
+| IAM role | one with `s3:GetObject` on `<backups-bucket>` |
 
 The IAM role is the only item not yet created. Without it, step 4's restore
 cannot pull the dump and you would have to scp a multi-GB file over the
