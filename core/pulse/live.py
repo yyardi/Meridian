@@ -490,7 +490,7 @@ class PulseEngine:
                     if form is not None:
                         matchup_sigma = form.sigma
                         totals_mu_v2 = blended_total_anchor(totals_mu, form)
-                        log.info("pulse_v2_form", event=e,
+                        log.info("pulse_v2_form", event_slug=e,
                                  sigma=round(form.sigma, 3),
                                  sigma_multiplier=round(form.sigma_multiplier, 3),
                                  form_total=round(form.form_total, 1),
