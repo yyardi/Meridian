@@ -128,6 +128,19 @@ class ShadowTrade:
     #: 1 = the market settled YES, 0 = NO, None = not resolved yet.
     resolved_outcome: int | None
 
+    #: Which model decided this row. The tape carries two and never blends
+    #: them: ANCHOR rows come from shadow_orders (always BUY the YES side),
+    #: PULSE rows from pulse_decisions (either side, with a lifecycle).
+    model: str = "anchor"
+    #: PULSE only: 'enter' | 'exit' | 'hold'. None on ANCHOR rows.
+    action: str | None = None
+    #: PULSE only: did the simulated fill rule trigger for this row.
+    filled: bool = False
+    #: PULSE only: settled P&L computed by the ENGINE's own scoring
+    #: (round_trip_capture / settlement_score from core.pulse.live_report) at
+    #: build time — never re-derived here. None = not scoreable yet.
+    pnl_scored: float | None = None
+
     @property
     def spread(self) -> float | None:
         if self.market_bid is None or self.market_ask is None:
@@ -136,10 +149,17 @@ class ShadowTrade:
 
     @property
     def bet_won(self) -> bool | None:
-        """Shadow orders are always BUY on the market's YES side
-        (`core/shadow_run.py`), so the bet wins exactly when it settles YES."""
+        """ANCHOR shadow orders are always BUY on the market's YES side
+        (`core/shadow_run.py`), so those win exactly when settling YES. A
+        PULSE row's side is its own: yes wins on 1, no wins on 0 — and only
+        entries are bets (an exit or hold has no win to score)."""
         if self.resolved_outcome is None:
             return None
+        if self.model == "pulse":
+            if self.action != "enter":
+                return None
+            won = self.resolved_outcome == 1
+            return won if self.side == "yes" else not won
         return self.resolved_outcome == 1
 
     @property
@@ -150,6 +170,8 @@ class ShadowTrade:
         a resting limit fills only when someone crosses it; treating this as
         realised P&L would credit the strategy with every fill it never got.
         """
+        if self.model == "pulse":
+            return self.pnl_scored
         if self.resolved_outcome is None:
             return None
         per_contract = (1.0 - self.limit_price) if self.bet_won else -self.limit_price
@@ -189,7 +211,19 @@ class GameDetail:
 
     @property
     def n_live_decisions(self) -> int:
+        """The contract in core/pulse/storage.py: PULSE rows with a non-
+        pregame phase arrive here as context.is_live and MUST be counted, or
+        the banner calls a PULSE game pregame-only while rendering its
+        in-play rounds on the same screen."""
         return sum(1 for t in self.trades if t.context.is_live)
+
+    @property
+    def n_anchor(self) -> int:
+        return sum(1 for t in self.trades if t.model == "anchor")
+
+    @property
+    def n_pulse(self) -> int:
+        return sum(1 for t in self.trades if t.model == "pulse")
 
 
 # --------------------------------------------------------------------- #
@@ -394,6 +428,96 @@ def _context_for(
     )
 
 
+#: PULSE rows for one game, with the filled exit joined per entry so the
+#: engine's own round-trip scoring can run at build time. The context columns
+#: ride the row itself — the engine recorded its own view at decision time,
+#: which IS the as-of rule, no lateral needed (core/pulse/storage.py).
+_PULSE_SQL = text("""
+    SELECT d.id, d.decided_at, d.market_slug, d.sports_market_type, d.line,
+           d.side, d.action, d.limit_price, d.contracts, d.fair_value,
+           d.market_bid, d.market_ask, d.edge_net, d.phase, d.score, d.margin,
+           d.period, d.minutes_left, d.minutes_left_is_estimate, d.reason,
+           d.filled_at, d.settlement,
+           x.limit_price AS exit_price, x.filled_at AS exit_filled_at
+      FROM pulse_decisions d
+      LEFT JOIN LATERAL (
+            SELECT limit_price, filled_at FROM pulse_decisions
+             WHERE entry_id = d.id AND action = 'exit'
+               AND filled_at IS NOT NULL
+             ORDER BY filled_at DESC LIMIT 1
+      ) x ON true
+     WHERE d.event_slug = :event_slug
+     ORDER BY d.decided_at
+""")
+
+
+def _pulse_trades(session, event_slug: str, *, tipoff, human_label) -> list[ShadowTrade]:
+    """pulse_decisions -> the tape's row shape, per the recorded contract.
+
+    Scoring is the ENGINE's, imported: a filled entry whose exit filled is a
+    round trip (`round_trip_capture`); a filled entry that settled unexited
+    is a ride (`settlement_score`); everything else — unfilled entries,
+    exits, holds — carries no P&L of its own. Same split as
+    core.pulse.live_report, so the tape can never disagree with the report.
+    """
+    from core.pulse.live_report import round_trip_capture, settlement_score
+
+    rows = session.execute(_PULSE_SQL, {"event_slug": event_slug}).all()
+    out: list[ShadowTrade] = []
+    for r in rows:
+        limit = float(r.limit_price)
+        contracts = float(r.contracts or 0)
+        pnl = None
+        resolved = r.settlement
+        if r.action == "enter" and r.filled_at is not None:
+            if r.exit_filled_at is not None:
+                pnl = round_trip_capture(
+                    side=r.side, entry_price=limit,
+                    exit_price=float(r.exit_price)) * contracts
+            elif r.settlement is not None:
+                staked, returned = settlement_score(
+                    side=r.side, entry_price=limit, settlement=int(r.settlement))
+                pnl = (returned - staked) * contracts
+        hours = None
+        if tipoff is not None:
+            hours = (tipoff - r.decided_at).total_seconds() / 3600.0
+        out.append(ShadowTrade(
+            shadow_order_id=r.id,
+            decided_at=r.decided_at,
+            market_slug=r.market_slug,
+            human=human_label(r.market_slug, r.sports_market_type, _f(r.line)),
+            market_type=r.sports_market_type,
+            line=_f(r.line),
+            side=r.side,
+            limit_price=limit,
+            quantity=contracts,
+            would_rest=True,      # every PULSE order rests; the action says the rest
+            binding_constraint=None,
+            model_fv=_f(r.fair_value),
+            market_bid=_f(r.market_bid),
+            market_ask=_f(r.market_ask),
+            edge_net=_f(r.edge_net),
+            hours_to_tipoff=hours,
+            context=TradeContext(
+                score=r.score,
+                margin=r.margin,
+                period=r.period,
+                minutes_left=_f(r.minutes_left),
+                minutes_left_is_estimate=bool(r.minutes_left_is_estimate),
+                # The contract: the serializer maps phase -> boolean is_live.
+                is_live=(r.phase != "pregame"),
+                context_age_seconds=None,   # the engine's own reading, not a join
+                note=r.reason,
+            ),
+            resolved_outcome=int(resolved) if resolved is not None else None,
+            model="pulse",
+            action=r.action,
+            filled=r.filled_at is not None,
+            pnl_scored=pnl,
+        ))
+    return out
+
+
 def build_game_detail(
     session,
     event_slug: str,
@@ -472,6 +596,13 @@ def build_game_detail(
                     ask=_f(p.best_ask),
                 )
             )
+
+    # PULSE's rounds join the same tape, per the contract in
+    # core/pulse/storage.py. Sorted into one chronology; the model field on
+    # every row is what keeps the two from ever blending in a round.
+    trades.extend(_pulse_trades(session, event_slug,
+                                tipoff=tipoff, human_label=human_label))
+    trades.sort(key=lambda t: t.decided_at)
 
     return GameDetail(
         event_slug=event_slug,
