@@ -15,7 +15,10 @@ INSTANCE_IP="${1:-}"
 MODE="${2:-}"
 [[ -n "$INSTANCE_IP" ]] || { echo "usage: $0 <instance-ip> [--dump-only|--verify-only]" >&2; exit 2; }
 
-BUCKET="${MERIDIAN_S3_BUCKET:-meridian-backups-298030125776}"
+# The bucket lives in the CURRENT account. The first default here named the
+# old account's bucket and the migration failed on a bucket that exists but
+# is not ours — an access error that reads like a credentials problem.
+BUCKET="${MERIDIAN_S3_BUCKET:-meridian-backups-623955527388}"
 KEY_PATH="${MERIDIAN_SSH_KEY:-$HOME/.ssh/meridian-aws.pem}"
 SSH_USER="${MERIDIAN_SSH_USER:-ubuntu}"
 LOCAL_PG="${MERIDIAN_PG_CONTAINER:-meridian-postgres}"
