@@ -104,6 +104,54 @@ docker compose exec -T postgres psql -U meridian -d postgres \
 Do that **after** the receipts have been read, not as the last line of a script
 whose output nobody has looked at yet.
 
+## The run of 2026-08-20, and the two bugs the dry run caught
+
+| table | before | staged | inserted | after |
+|---|---|---|---|---|
+| market_snapshots | 719,131 | 16,030,825 | **16,030,825** | 16,749,956 |
+| book_levels | 392,144 | 8,714,534 | **8,582,514** | 8,974,658 |
+| predictions | 115 | 120,628 | 120,628 | 120,743 |
+| kalshi_snapshots | 0 | 285,772 | 285,772 | 285,772 |
+| sportsbook_odds | 290 | 18,116 | 18,116 | 18,406 |
+| shadow_orders | 0 | 14,189 | 14,189 | 14,189 |
+| team_game_logs | 12 | 3,402 | 3,390 | 3,402 |
+| player_game_logs | 153 | 19,507 | 19,354 | 19,507 |
+| resolved_outcomes | 0 | 2,202 | 2,202 | 2,202 |
+| kalshi_games | 11 | 52 | 41 | 52 |
+| orders | 0 | 5 | 5 | 5 |
+
+Snapshot remap: **16,030,825 of 16,030,825 mapped, 0 orphans.**
+
+**`market_snapshots` had zero conflicts** — 719,131 + 16,030,825 lands exactly on
+16,749,956. The server's first-night capture and the laptop's history are
+disjoint windows, so the server-wins rule never had to fire on the big table. It
+did fire on the small ones: 12 `team_game_logs`, 153 `player_game_logs` and 11
+`kalshi_games` rows were skipped, each one a server row that stayed.
+
+**`book_levels` skipped 132,020, and every one is accounted for.** It is not
+overlap with the server: it is 11,479 groups of duplicate
+`(snapshot_id, side, level_index)` *within history's own data*, and the excess
+sums to exactly 132,020. `ON CONFLICT DO NOTHING` kept one of each.
+
+### Both bugs were found by the dry run, and both were silent
+
+**`COPY <partitioned table> TO STDOUT` is rejected outright.** `market_snapshots`
+and `book_levels` are partitioned, so both staged **0 rows** — and the script did
+not stop. It printed a clean receipts table reading `market_snapshots 719131 →
+719131`. Run with `--yes`, that is a merge that reports success and contains
+none of the 16M snapshots it exists to move. Fixed with the
+`COPY (SELECT * FROM ...)` variant, plus an abort when the source has rows and
+staging has none.
+
+**The remap was built before the parent merge.** It could therefore only match
+snapshots that *already* existed in live, so every genuinely new history
+snapshot would have orphaned its levels — the first dry run reported
+`mapped: 0`, `orphaned: 8,714,534`. Merging `market_snapshots` first and
+building the remap after took it to 16,030,825 mapped and 0 orphans.
+
+Neither bug would have raised an error. Both would have produced a merge that
+looked complete.
+
 ## Two live bugs folded in from the first migration
 
 * **`migrate.sh` defaulted to the old account's bucket**
