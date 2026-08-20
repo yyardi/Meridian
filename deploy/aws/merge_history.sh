@@ -122,6 +122,66 @@ echo "  $SRC_DB stable at $(( S2 / 1024 / 1024 )) MB, no restore statements acti
 echo "  mode: $MODE"
 
 # --------------------------------------------------------------------------- #
+log "0c/6  foreign-key audit — which id links would be carried over raw?"
+# --------------------------------------------------------------------------- #
+# THE SECOND DEFECT THIS SCRIPT SHIPPED. book_levels.snapshot_id got an explicit
+# remap and every OTHER foreign key was inserted straight from the history id
+# space. The two databases number independently, so those ids landed pointing at
+# whatever occupied the same number in live. Measured after the first run:
+# 10,507 shadow_orders pointed at no prediction and 3,808 pointed at a REAL
+# prediction for a DIFFERENT market. core/game_detail.py reads resolved_outcome
+# through that join, so the first group rendered "unresolved" and the second
+# rendered another market's result as this trade's.
+#
+# A dangling id is visibly wrong. A mismatched one is plausible and wrong, which
+# is how it survived a merge that printed clean receipts.
+#
+# So the script no longer trusts that someone remembered: it asks the catalogue
+# which columns are foreign keys and refuses if any of them is neither remapped
+# nor explicitly declared safe.
+FK_REMAPPED="book_levels.snapshot_id"          # handled in step 4/5
+FK_DECLARED_SAFE=""                            # add with a reason, never blank
+
+fk_unhandled=""
+while IFS='|' read -r tbl col; do
+  [[ -z "$tbl" ]] && continue
+  # Only tables this merge actually carries.
+  [[ " $(for spec in "${TABLES[@]}"; do IFS='|' read -r t _ _ _ <<< "$spec"; printf '%s ' "$t"; done) " == *" $tbl "* ]] || continue
+  ref="$tbl.$col"
+  [[ " $FK_REMAPPED $FK_DECLARED_SAFE " == *" $ref "* ]] || fk_unhandled="$fk_unhandled $ref"
+# BY CONVENTION, NOT BY CONSTRAINT — and this correction is the whole point.
+# The first version of this audit asked pg_constraint for contype='f'. Only
+# pending_exits HAS declared foreign keys; shadow_orders.prediction_id,
+# orders.prediction_id, orders.shadow_order_id and book_levels.snapshot_id
+# carry none. So the guard written to catch this defect could not see the four
+# columns that caused it, and passed cleanly on the exact bug it exists for.
+#
+# Local row ids are integer columns named *_id. External identifiers
+# (espn_game_id, team_id, athlete_id, market_id) are text and are stable across
+# databases — they must NOT be remapped, and the integer filter excludes them.
+done < <(SRC -At -F'|' -c "
+  select table_name, column_name
+    from information_schema.columns
+   where table_schema = 'public'
+     and column_name like '%\_id'
+     and column_name <> 'id'
+     and data_type in ('bigint','integer')
+   order by 1,2")
+
+if [[ -n "$fk_unhandled" ]]; then
+  die "foreign keys that would be carried over as RAW HISTORY IDS:$fk_unhandled
+
+Each must be remapped through its parent's natural key, or added to
+FK_DECLARED_SAFE with the reason it is safe. Carrying an id between databases
+that number independently does not fail loudly — it points at a real row that
+is the wrong row. That is what put 3,808 shadow_orders on another market's
+prediction after the first run.
+
+To repair rows a previous run already inserted: deploy/aws/repair_fk_links.sh"
+fi
+echo "  every foreign key is remapped or declared safe"
+
+# --------------------------------------------------------------------------- #
 log "0b/6  schema audit — does the table list still cover the source?"
 # --------------------------------------------------------------------------- #
 # THE BUG THIS EXISTS FOR. The first version of TABLES was hand-written from
