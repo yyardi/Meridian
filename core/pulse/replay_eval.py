@@ -561,6 +561,355 @@ def format_comparison(cohorts: dict[str, CohortResult]) -> str:
 
 
 # --------------------------------------------------------------------- #
+# v3: the signal-consuming arm (protocol: docs/math/pulse-v3-protocol.md)
+# --------------------------------------------------------------------- #
+#
+# v3a is v1's OWN formulas fed the venue's own clock from the signal-side
+# archive — nothing else may differ (the protocol's one-input-per-gate rule).
+# The exploratory arms the protocol names (v3b pace-totals, v3c splits-sigma)
+# are NOT implemented here: their model forms are not registered, and
+# building them from a loose sentence would be exactly the
+# "written from hunches" failure the protocol exists to prevent. The report
+# says so out loud rather than leaving a silent gap.
+
+#: Protocol floors, fixed in docs/math/pulse-v3-protocol.md before any data.
+FLOOR_V3_GAMES = 10
+FLOOR_V3_POINTS = 3000
+#: A clock reading older than this at the tick falls back to v1's estimator
+#: FOR THAT TICK (counted): a dead recorder degrades v3 to v1, never
+#: poisons it.
+V3_CLOCK_STALENESS_SECONDS = 60.0
+
+
+@dataclass
+class SignalData:
+    """One joined game's signal streams, prefetched and time-ordered."""
+
+    espn_game_id: str
+    #: Slug's first team is ESPN's home side — the WP frame conversion.
+    first_is_home: bool
+    #: (first_seen_at, period, clock_seconds), ordered by first_seen_at.
+    clock_rows: list
+    #: (first_seen_at, home_win_pct), ordered by first_seen_at.
+    wp_rows: list
+
+
+def resolve_signal_games(Session, events: list[EventData]
+                         ) -> tuple[dict[str, SignalData], int]:
+    """event_slug -> SignalData for unambiguously joined games.
+
+    The join is the registered one: slug team codes -> ESPN abbrevs
+    (core.team_mapping), matched against the box snapshots' home/away team
+    ids via team_game_logs' id->abbrev map, date within a day. Anything
+    ambiguous is EXCLUDED and counted — never guessed. Returns
+    (joined, n_excluded)."""
+    from core.team_mapping import parse_event_slug
+
+    with Session() as s:
+        abbrev_of = dict(s.execute(text("""
+            SELECT DISTINCT team_id, team_abbrev FROM team_game_logs
+        """)).all())
+        games = s.execute(text("""
+            SELECT DISTINCT ON (espn_game_id)
+                   espn_game_id, home_team_id, away_team_id,
+                   min(first_seen_at) OVER (PARTITION BY espn_game_id) AS first_seen
+            FROM espn_live_box_snapshots
+            WHERE home_team_id IS NOT NULL AND away_team_id IS NOT NULL
+            ORDER BY espn_game_id, first_seen_at DESC
+        """)).all()
+
+    candidates = []
+    for g in games:
+        home = abbrev_of.get(g.home_team_id)
+        away = abbrev_of.get(g.away_team_id)
+        if home and away:
+            candidates.append((g.espn_game_id, home, away,
+                               (g.first_seen + ET_OFFSET_FOR_JOIN).date()))
+
+    out: dict[str, SignalData] = {}
+    excluded = 0
+    for data in events:
+        abbrevs = event_team_abbrevs(data.event_slug)
+        parsed = parse_event_slug(data.event_slug)
+        if abbrevs is None or parsed is None:
+            continue                   # not a signal-cohort candidate at all
+        matches = [
+            (gid, home) for gid, home, away, gdate in candidates
+            if {home, away} == {abbrevs[0], abbrevs[1]}
+            and abs((gdate - parsed.local_date).days) <= 1
+        ]
+        if not matches:
+            continue
+        if len(matches) > 1:
+            excluded += 1
+            log.warning("v3_join_ambiguous", slug=data.event_slug,
+                        candidates=[m[0] for m in matches])
+            continue
+        gid, home_abbrev = matches[0]
+        with Session() as s:
+            clock_rows = s.execute(text("""
+                SELECT first_seen_at, period, clock_seconds
+                FROM espn_live_box_snapshots
+                WHERE espn_game_id = :g
+                  AND period IS NOT NULL AND clock_seconds IS NOT NULL
+                ORDER BY first_seen_at
+            """), {"g": gid}).all()
+            wp_rows = s.execute(text("""
+                SELECT first_seen_at, home_win_pct
+                FROM espn_live_win_probability
+                WHERE espn_game_id = :g AND home_win_pct IS NOT NULL
+                ORDER BY first_seen_at
+            """), {"g": gid}).all()
+        out[data.event_slug] = SignalData(
+            espn_game_id=gid,
+            first_is_home=(home_abbrev == abbrevs[0]),
+            clock_rows=clock_rows,
+            wp_rows=wp_rows,
+        )
+    return out, excluded
+
+
+#: Scoreboard/box dates are US Eastern; in-season EDT = UTC-4 (the recorder's
+#: own convention, restated here for the join only).
+ET_OFFSET_FOR_JOIN = dt.timedelta(hours=-4)
+
+
+class _SeriesPointer:
+    """Newest row with first_seen_at <= t, over a time-ordered series —
+    the point-in-time bound as a pointer, never a per-tick query."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self._i = -1
+
+    def at(self, t):
+        while self._i + 1 < len(self._rows) and self._rows[self._i + 1][0] <= t:
+            self._i += 1
+        return self._rows[self._i] if self._i >= 0 else None
+
+
+@dataclass
+class V3Result:
+    n_events_with_signals: int = 0
+    n_join_excluded: int = 0
+    n_points: int = 0
+    brier_v1: float = 0.0
+    brier_v3: float = 0.0
+    brier_diff_by_game: dict[str, list[float]] = field(default_factory=dict)
+    #: Ticks v1 must suppress (clock unusable) but v3a prices.
+    coverage_ticks: int = 0
+    coverage_brier_sum: float = 0.0
+    #: OT ticks neither arm prices (no registered OT model — stated, counted).
+    ot_ticks_unpriced: int = 0
+    fallback_ticks: int = 0
+    #: (estimated − exact) minutes at ticks where both clocks exist.
+    clock_disagreement: list[float] = field(default_factory=list)
+    #: ESPN's own WP at matched winner-market ticks, and both arms there.
+    wp_points: int = 0
+    wp_brier_espn: float = 0.0
+    wp_brier_v1: float = 0.0
+    wp_brier_v3: float = 0.0
+    sim: dict[str, SimResult] = field(default_factory=dict)
+    roi_by_game: dict[str, dict[str, list[float]]] = field(default_factory=dict)
+
+    @property
+    def at_floor(self) -> bool:
+        return (len(self.brier_diff_by_game) >= FLOOR_V3_GAMES
+                and self.n_points >= FLOOR_V3_POINTS)
+
+    @property
+    def verdict(self) -> str:
+        if not self.at_floor:
+            return "NO DATA"
+        cm = clustered_mean(self.brier_diff_by_game)
+        if cm is None:
+            return "NO DATA"
+        if cm.mean > 0 and cm.lo > 0:
+            return "PASS (go-live question goes to the operator)"
+        return "FAIL"
+
+
+def evaluate_v3(Session, *, limit: int | None = None) -> V3Result:
+    """v1 vs v3a over signal-covered games — the registered comparison."""
+    from core.pulse.signals import exact_clock
+    from strategies.wnba_totals.config import CONFIG
+
+    events = load_events(Session, limit=limit)
+    signals, excluded = resolve_signal_games(Session, events)
+    r = V3Result(n_join_excluded=excluded)
+    r.sim = {"v1": SimResult(), "v3": SimResult()}
+    r.roi_by_game = {"v1": defaultdict(list), "v3": defaultdict(list)}
+
+    for data in events:
+        sig = signals.get(data.event_slug)
+        if sig is None:
+            continue
+        r.n_events_with_signals += 1
+        v1_params, _ = arm_params(data)     # v3a uses v1's constants, only
+        ev = data.event_slug                # the clock may differ (protocol)
+        game_diffs: list[float] = []
+
+        for mtype, line, ticks in data.markets.values():
+            outcome = market_outcome(mtype, line, data.final_score)
+            if outcome is None:
+                continue
+            clock_ptr = _SeriesPointer(sig.clock_rows)
+            wp_ptr = _SeriesPointer(sig.wp_rows)
+            fvs1: list[float | None] = []
+            fvs3: list[float | None] = []
+            for tick in ticks:
+                pair = parse_score(tick.score)
+                started = data.period_starts.get(tick.period or "")
+                seconds_in = ((tick.at - started).total_seconds()
+                              if started is not None else 0.0)
+                v1_clock = minutes_remaining(
+                    tick.period, seconds_into_period=max(seconds_in, 0.0))
+
+                clock_row = clock_ptr.at(tick.at)
+                exact = None
+                if clock_row is not None:
+                    staleness = (tick.at - clock_row[0]).total_seconds()
+                    if staleness <= V3_CLOCK_STALENESS_SECONDS:
+                        exact = exact_clock(int(clock_row[1]),
+                                            float(clock_row[2]),
+                                            staleness_seconds=staleness)
+
+                if pair is None:
+                    fvs1.append(None)
+                    fvs3.append(None)
+                    continue
+                margin, total = pair[0] - pair[1], pair[0] + pair[1]
+                common = {"market_type": mtype, "line": line, "margin": margin,
+                          "total_so_far": total,
+                          "winner_mid": data.winner_mid}
+
+                f1 = (estimate_fv(**common,
+                                  minutes_left=v1_clock.minutes_left,
+                                  params=v1_params)
+                      if v1_clock.usable else None)
+
+                # v3a: the exact clock when fresh and in regulation; v1's
+                # estimator otherwise (fallback, counted). OT: no registered
+                # model — v3a abstains too, and the count says how much OT
+                # pricing would be worth registering.
+                if exact is not None and not exact.is_overtime:
+                    f3 = estimate_fv(**common,
+                                     minutes_left=exact.minutes_left,
+                                     params=v1_params)
+                elif exact is not None and exact.is_overtime:
+                    f3 = None
+                    r.ot_ticks_unpriced += 1
+                elif v1_clock.usable:
+                    f3 = estimate_fv(**common,
+                                     minutes_left=v1_clock.minutes_left,
+                                     params=v1_params)
+                    r.fallback_ticks += 1
+                else:
+                    f3 = None
+                fvs1.append(f1)
+                fvs3.append(f3)
+
+                if f1 is not None and f3 is not None:
+                    b1 = (f1 - outcome) ** 2
+                    b3 = (f3 - outcome) ** 2
+                    r.brier_v1 += b1
+                    r.brier_v3 += b3
+                    r.n_points += 1
+                    game_diffs.append(b1 - b3)
+                if f1 is None and f3 is not None:
+                    r.coverage_ticks += 1
+                    r.coverage_brier_sum += (f3 - outcome) ** 2
+                if (exact is not None and not exact.is_overtime
+                        and v1_clock.usable):
+                    r.clock_disagreement.append(
+                        v1_clock.minutes_left - exact.minutes_left)
+                if (mtype == MARKET_WINNER and f1 is not None
+                        and f3 is not None):
+                    wp_row = wp_ptr.at(tick.at)
+                    if wp_row is not None:
+                        p_home = float(wp_row[1])
+                        p_first = p_home if sig.first_is_home else 1.0 - p_home
+                        r.wp_points += 1
+                        r.wp_brier_espn += (p_first - outcome) ** 2
+                        r.wp_brier_v1 += (f1 - outcome) ** 2
+                        r.wp_brier_v3 += (f3 - outcome) ** 2
+
+            for arm_name, fvs in (("v1", fvs1), ("v3", fvs3)):
+                sim = simulate_market(ticks, fvs, outcome,
+                                      min_edge=CONFIG.min_edge_threshold)
+                agg = r.sim[arm_name]
+                agg.n_entries += sim.n_entries
+                agg.n_entry_fills += sim.n_entry_fills
+                agg.n_round_trips += sim.n_round_trips
+                agg.n_rides += sim.n_rides
+                agg.rois.extend(sim.rois)
+                if sim.rois:
+                    r.roi_by_game[arm_name][ev].extend(sim.rois)
+
+        if game_diffs:
+            r.brier_diff_by_game[ev] = game_diffs
+    return r
+
+
+def format_v3(r: V3Result) -> str:
+    out: list[str] = []
+    add = out.append
+    add("PULSE v1 vs v3a (exact clock) — signal-covered games only")
+    add("=" * 78)
+    add("Protocol: docs/math/pulse-v3-protocol.md, registered 2026-08-20 at")
+    add(f"n=2 signal games. Floors: >= {FLOOR_V3_GAMES} games AND >= "
+        f"{FLOOR_V3_POINTS:,} paired points. Positive diff favours v3a.")
+    add("v3b (pace-totals) and v3c (splits-sigma) are NOT implemented: their")
+    add("model forms are unregistered, and this eval will not invent them.")
+    add("")
+    add(f"signal-covered games          : {r.n_events_with_signals}"
+        + (f"   (join-excluded: {r.n_join_excluded})" if r.n_join_excluded else ""))
+    add(f"paired calibration points     : {r.n_points:,}")
+    if r.n_points:
+        add(f"Brier v1: {r.brier_v1 / r.n_points:.5f}   "
+            f"Brier v3a: {r.brier_v3 / r.n_points:.5f}")
+        cm = clustered_mean(r.brier_diff_by_game)
+        if cm is not None:
+            add(f"paired diff (v1−v3a), clustered: {cm.mean:+.5f}  "
+                f"95% CI [{cm.lo:+.5f}, {cm.hi:+.5f}]  (G={cm.n_clusters})")
+    add(f"coverage gain (v1 suppressed, v3a priced): {r.coverage_ticks:,} ticks"
+        + (f", Brier {r.coverage_brier_sum / r.coverage_ticks:.5f}"
+           if r.coverage_ticks else ""))
+    add(f"OT ticks unpriced by both (no registered OT model): "
+        f"{r.ot_ticks_unpriced:,}")
+    add(f"stale-clock fallback ticks    : {r.fallback_ticks:,}")
+    if r.clock_disagreement:
+        s = sorted(r.clock_disagreement)
+        n = len(s)
+        add(f"clock disagreement (est−exact minutes): n={n:,}  "
+            f"p50={s[n // 2]:+.2f}  p90={s[int(n * 0.9)]:+.2f}  "
+            f"max={max(s, key=abs):+.2f}")
+    if r.wp_points:
+        add(f"ESPN WP reference (matched winner ticks, n={r.wp_points:,}): "
+            f"espn {r.wp_brier_espn / r.wp_points:.5f} | "
+            f"v1 {r.wp_brier_v1 / r.wp_points:.5f} | "
+            f"v3a {r.wp_brier_v3 / r.wp_points:.5f}")
+    for arm in ("v1", "v3"):
+        s = r.sim[arm]
+        n_g = len(r.roi_by_game[arm])
+        line = (f"[{arm}] entries {s.n_entries:,} | fills {s.n_entry_fills:,} "
+                f"| trips {s.n_round_trips:,} | rides {s.n_rides:,} "
+                f"| games {n_g}")
+        cm = clustered_mean(r.roi_by_game[arm])
+        if cm is not None and r.at_floor:
+            line += f" | per-$ {cm.mean:+.4f} [{cm.lo:+.4f}, {cm.hi:+.4f}]"
+        elif cm is not None:
+            line += " | BELOW FLOORS — counts only"
+        add(line)
+    add("")
+    add(f"VERDICT: {r.verdict}"
+        + ("" if r.at_floor else
+           f" — floors are {FLOOR_V3_GAMES} games / {FLOOR_V3_POINTS:,} "
+           "points. Counts only; accruing is the honest state."))
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------- #
 # Refit modes (print; constants move only by hand, with the doc)
 # --------------------------------------------------------------------- #
 
@@ -623,6 +972,9 @@ def main() -> int:
                         help="cap the number of events (smoke runs)")
     parser.add_argument("--fit-blend", action="store_true")
     parser.add_argument("--league-baseline", action="store_true")
+    parser.add_argument("--v3", action="store_true",
+                        help="v1 vs v3a (exact clock) over signal-covered "
+                             "games — docs/math/pulse-v3-protocol.md")
     parser.add_argument("--json", dest="json_path", default=None)
     args = parser.parse_args()
 
@@ -632,6 +984,9 @@ def main() -> int:
         return 0
     if args.fit_blend:
         print(fit_blend(Session))
+        return 0
+    if args.v3:
+        print(format_v3(evaluate_v3(Session, limit=args.limit)))
         return 0
 
     cohorts = evaluate(Session, limit=args.limit)
