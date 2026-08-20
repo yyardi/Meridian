@@ -137,8 +137,12 @@ log "7/7  build and start the stack"
 # --build is not optional: Dockerfile COPYs core/ and static/ into the image,
 # so a plain `up -d` would serve whatever the last build contained.
 cd "$REPO_DIR"
-sudo -u "$SERVICE_USER" --preserve-env=HOME \
-  docker compose --env-file .env up -d --build
+# -H, not --preserve-env=HOME. Keeping the invoking user's HOME leaves
+# HOME=/root, and the docker CLI looks for plugins under $HOME/.docker/cli-plugins
+# — so `compose` is simply not found and the error surfaces as the baffling
+# "unknown flag: --env-file" rather than "no such subcommand". -H sets HOME to
+# the target user's own. This bit us live.
+sudo -H -u "$SERVICE_USER" docker compose --env-file .env up -d --build
 
 echo
 docker compose --env-file .env ps
