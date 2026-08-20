@@ -10,7 +10,7 @@ stays intact and recording until parity is proven across a full slate.
 |---|---|
 | key pair | `meridian` → `~/.ssh/meridian-aws.pem` |
 | security group | `sg-0af95dedc2bd41b07` — SSH from the operator's IP /32 only |
-| S3 bucket | `meridian-backups-298030125776` |
+| S3 bucket | `meridian-backups-623955527388` |
 | VPC | `vpc-06554dfe029f2cf6a` (default) |
 
 ## Cost, priced from the AWS Price List API on 2026-08-19
@@ -71,7 +71,7 @@ which stops the recorder, mid-slate, and unrecorded ticks are unrecoverable.
 | VPC | `vpc-06554dfe029f2cf6a` (default) |
 | security group | `sg-0af95dedc2bd41b07` |
 | storage | **100 GB gp3**, 3000 IOPS, 125 MB/s (defaults) |
-| IAM role | one with `s3:GetObject` on `meridian-backups-298030125776` |
+| IAM role | one with `s3:GetObject` on `meridian-backups-623955527388` |
 
 The IAM role is the only item not yet created. Without it, step 4's restore
 cannot pull the dump and you would have to scp a multi-GB file over the
