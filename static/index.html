@@ -1760,8 +1760,12 @@ function renderGame(d){
   // cycle, so the unit that was actually decided is the basket, not the rung.
   const rounds = [];
   for(const t of d.trades){
-    let r = rounds.find(x => x.at === t.decided_at);
-    if(!r){ r = {at:t.decided_at, ctx:t.context, h:t.hours_to_tipoff, rows:[]}; rounds.push(r); }
+    // The group key carries the MODEL as well as the instant — two models'
+    // decisions never share a round, even at the same timestamp. Same
+    // never-blend rule as everywhere two records meet on this dashboard.
+    const model = t.model || "anchor";
+    let r = rounds.find(x => x.at === t.decided_at && x.model === model);
+    if(!r){ r = {at:t.decided_at, model, ctx:t.context, h:t.hours_to_tipoff, rows:[]}; rounds.push(r); }
     r.rows.push(t);
   }
   rounds.reverse();   // newest decision first: the last thing it thought
@@ -1776,7 +1780,8 @@ function renderGame(d){
         <div class="k" style="margin-top:2px">${d.tipoff?day(d.tipoff)+" "+clock(d.tipoff):"—"}
         ${d.final_score?" · final "+d.final_score:""}</div></div>
       <div class="kpi"><div class="k">Shadow trades</div><div class="v">${d.n_trades}</div>
-        <div class="k" style="margin-top:2px">${rounds.length} decision rounds</div></div>
+        <div class="k" style="margin-top:2px">${rounds.length} rounds${
+          d.n_pulse ? ` · ${d.n_anchor} ANCHOR + ${d.n_pulse} PULSE` : ""}</div></div>
       <div class="kpi"><div class="k">Decided in-play</div>
         <div class="v ${d.n_live_decisions?"warnc":"dimc"}">${d.n_live_decisions}</div>
         <div class="k" style="margin-top:2px">${d.n_live_decisions
@@ -1804,6 +1809,7 @@ function renderGame(d){
     <div class="tl">${rounds.map((r,ri)=>`
       <div class="round ${r.ctx.is_live?"live":""}" id="round-${rounds.length-1-ri}">
         <div class="rhead">
+          ${r.model === "pulse" ? '<span class="pubadge" title="Decided by PULSE, the live in-game model. Shadow — never sent.">PULSE</span>' : ""}
           <span class="rtime">${day(r.at)} ${clock(r.at)}</span>
           <span class="dimc">${r.h==null?"":(r.h>=0?`${r.h.toFixed(1)}h before tip`:`${(-r.h).toFixed(1)}h after tip`)}</span>
           ${ctxChip(r.ctx)}
@@ -1827,8 +1833,9 @@ function renderGame(d){
             <td class="${t.edge>0?"pos":"neg"}">${pct(t.edge)}</td>
             <td>${num(t.limit_price)}</td>
             <td>${t.quantity.toFixed(2)}</td>
-            <td class="l"><span class="dimc" title="${t.binding_constraint||""}">${
-              t.would_rest?"REST":"CROSS"}</span></td>
+            <td class="l">${t.model === "pulse"
+              ? `<span class="puchip ${t.action==="enter"?"puENTER":t.action==="exit"?"puEXIT":"puHOLD"}" title="${t.filled?"the simulated fill rule triggered":"rested unfilled"}${t.context&&t.context.note?" · "+t.context.note:""}">${t.action.toUpperCase()}${t.filled?" ·f":""}</span>`
+              : `<span class="dimc" title="${t.binding_constraint||""}">${t.would_rest?"REST":"CROSS"}</span>`}</td>
             <td>${t.resolved_outcome==null?'<span class="dimc">—</span>':(t.resolved_outcome===1?"YES":"NO")}</td>
             <td class="${t.bet_won==null?"":(t.bet_won?"ok":"bad")}">${
               t.bet_won==null?'<span class="dimc">—</span>':(t.bet_won?"✓":"✗")}</td>

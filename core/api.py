@@ -2379,6 +2379,8 @@ def game(event_slug: str, timeline: bool = True, bucket_seconds: int = 30) -> di
         "tipoff": detail.tipoff.isoformat() if detail.tipoff else None,
         "final_score": detail.final_score,
         "n_trades": len(detail.trades),
+        "n_anchor": detail.n_anchor,
+        "n_pulse": detail.n_pulse,
         "n_live_decisions": detail.n_live_decisions,
         "timeline_market": detail.timeline_market,
         "trades": [
@@ -2390,7 +2392,12 @@ def game(event_slug: str, timeline: bool = True, bucket_seconds: int = 30) -> di
                 ),
                 "market_slug": t.market_slug,
                 "human": t.human,
-                "position": _position_label(t.market_type, "YES", t.human),
+                # ANCHOR shadow orders are always the YES side; a PULSE row's
+                # side is its own and the label must say which.
+                "position": _position_label(
+                    t.market_type,
+                    "YES" if t.model == "anchor" or t.side == "yes" else "NO",
+                    t.human),
                 "type": (t.market_type or "").replace(
                     "basketball_team_full_game_", ""),
                 "line": t.line,
@@ -2399,6 +2406,9 @@ def game(event_slug: str, timeline: bool = True, bucket_seconds: int = 30) -> di
                 "quantity": round(t.quantity, 4),
                 "would_rest": t.would_rest,
                 "binding_constraint": t.binding_constraint,
+                "model": t.model,
+                "action": t.action,
+                "filled": t.filled,
                 "model_fv": t.model_fv,
                 "bid": t.market_bid,
                 "ask": t.market_ask,
