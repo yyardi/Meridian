@@ -30,6 +30,12 @@ OK, WARN, DEAD = "OK  ", "WARN", "DEAD"
 #: any automatic deletion: tick data is unrecoverable, cleanup is a human call.
 MIN_DISK_FREE_GB = 20.0
 
+#: Percentage-used ceiling for the server volume. The AWS runbook promises this
+#: alarm, and it is a different question from MIN_DISK_FREE_GB: 20 GB free is
+#: comfortable on the laptop's 1 TB and nearly full on the server's 100 GB.
+#: A ratio travels between machines; an absolute does not.
+MAX_DISK_USED_PCT = 80.0
+
 
 
 def local_url() -> str:
@@ -415,6 +421,32 @@ def check_disk() -> list[Check]:
                   + ("" if status == OK else
                      f" — under {MIN_DISK_FREE_GB:.0f} GB; time to archive "
                      "(retention is the known outstanding item)"))]
+
+
+def check_disk_headroom(path: str | None = None) -> list[Check]:
+    """Disk as a PERCENTAGE, which is the number that travels between machines.
+
+    `check_disk` warns below an absolute floor, and that floor was chosen for
+    a laptop: 20 GB free is comfortable on 1 TB and nearly full on the server's
+    100 GB volume. Both are reported, because "12% free" and "11 GB free" fail
+    to alarm in opposite situations.
+
+    A full disk stops postgres, which stops the recorder, mid-slate — and
+    unrecorded ticks are the one loss this project cannot undo. Hence a
+    ratio warning with room to act rather than a last-gigabyte one.
+    """
+    path = path or os.environ.get("MERIDIAN_DISK_PATH", "/")
+    try:
+        total, used, free = shutil.disk_usage(path)
+    except Exception as exc:
+        return [Check(WARN, "disk headroom", f"could not stat {path}: {str(exc)[:50]}")]
+    pct = 100.0 * used / total if total else 0.0
+    status = OK if pct < MAX_DISK_USED_PCT else WARN
+    detail = (f"{pct:.0f}% used ({free / 1e9:.0f} GB free of {total / 1e9:.0f} GB)")
+    if status != OK:
+        detail += (f" — over {MAX_DISK_USED_PCT:.0f}%; a full disk stops postgres "
+                   "and the recorder mid-slate")
+    return [Check(status, "disk headroom", detail)]
 
 
 def check_local_pg_size() -> list[Check]:

@@ -15,10 +15,16 @@ INSTANCE_IP="${1:-}"
 MODE="${2:-}"
 [[ -n "$INSTANCE_IP" ]] || { echo "usage: $0 <instance-ip> [--dump-only|--verify-only]" >&2; exit 2; }
 
-# The bucket lives in the CURRENT account. The first default here named the
-# old account's bucket and the migration failed on a bucket that exists but
-# is not ours — an access error that reads like a credentials problem.
-BUCKET="${MERIDIAN_S3_BUCKET:-meridian-backups-623955527388}"
+# No default, deliberately. A bucket name embeds the AWS account id, and this
+# repo is public. It also went wrong the other way once: the default here named
+# a PREVIOUS account's bucket, which exists but is not ours, so the migration
+# failed with an access error that read like a credentials problem. Requiring
+# the value removes both the leak and the stale-default trap.
+BUCKET="${MERIDIAN_S3_BUCKET:-}"
+if [[ -z "$BUCKET" ]]; then
+  echo "set MERIDIAN_S3_BUCKET=<backups-bucket> (see docs/infra/aws-migration.md)" >&2
+  exit 2
+fi
 KEY_PATH="${MERIDIAN_SSH_KEY:-$HOME/.ssh/meridian-aws.pem}"
 SSH_USER="${MERIDIAN_SSH_USER:-ubuntu}"
 LOCAL_PG="${MERIDIAN_PG_CONTAINER:-meridian-postgres}"
