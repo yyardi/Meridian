@@ -7,7 +7,13 @@ stays intact and recording until parity is proven across a full slate.
 ## What already exists (created 2026-08-19, us-east-1)
 
 **This repository is public. It carries the *shape* of the infrastructure and
-never its addresses.** Every `<placeholder>` below is a real value that lives in
+never its addresses.**
+
+The address is an **Elastic IP**. That is not only tidiness: a stop/start
+releases an ephemeral public IP and EC2 assigns a new one, which from outside
+AWS is indistinguishable from a dead host. That cost a builder forty minutes of
+probing a retired address on 2026-08-20 while the box was healthy the whole
+time. An EIP is free while attached. Every `<placeholder>` below is a real value that lives in
 the AWS console and the operator's local notes — not in git, not in a script
 default, not in a commit message.
 
@@ -17,7 +23,7 @@ default, not in a commit message.
 | security group | `<security-group-id>` — SSH from the operator's IP /32 only |
 | S3 bucket | `<backups-bucket>` |
 | VPC | `<vpc-id>` (the account's default) |
-| instance address | `<server-ip>` |
+| instance address | `<server-ip>` — an **Elastic IP**, so it survives stop/start |
 
 Set them once, locally:
 
@@ -26,26 +32,58 @@ echo '<server-ip>' > ~/.meridian-server     # deploy/aws/health.sh reads this
 export MERIDIAN_S3_BUCKET='<backups-bucket>'  # deploy/aws/migrate.sh requires it
 ```
 
-## Cost, priced from the AWS Price List API on 2026-08-19
+## Cost and instance size — what is deployed, and the resize path
 
-| item | rate | monthly |
-|---|---|---|
-| **m7i.xlarge** (4 vCPU, 16 GiB) | $0.2016/hr | **$147.17** |
-| 100 GB gp3 | $0.08/GB-mo | **$8.00** |
-| S3 (a few GB, occasional) | $0.023/GB-mo | pennies |
-| | | **≈ $155/mo** |
+**Deployed: `m7i.large`.** Chosen deliberately for economy, with 4 GB of swap
+as insurance and "resize if strained" as the plan. `m7i.xlarge` is the resize
+path, not a spec this deployment is failing to meet.
 
-`t3.xlarge` is $0.1664/hr (**$121.47/mo**) for the same 4 vCPU / 16 GiB and is
-tempting. **Take m7i anyway.** t3 is burstable: baseline is 40% of its vCPUs,
-and this is a 24/7 workload with a 200ms writer, a postgres, and eight
-containers. Burst credits deplete under exactly that profile, and the failure
-mode is a recorder that quietly falls behind mid-slate rather than one that
-stops — the hardest kind to notice. $26/mo is not the place to economise.
+Priced from the AWS Price List API (2026-08-19 / 2026-08-20):
 
-**When the credits run out**, this is a permanently-on instance, which is the
-textbook case for a 1-year Compute Savings Plan (~30–40% off on-demand). Worth
-revisiting then, not now — committing before the workload has settled is how
-you end up paying for a shape you have grown out of.
+| | vCPU | RAM | rate | monthly |
+|---|---|---|---|---|
+| **`m7i.large`** — deployed | 2 | 8 GiB | $0.1008/hr | **$73.58** |
+| `m7i.xlarge` — resize path | 4 | 16 GiB | $0.2016/hr | $147.17 |
+| 100 GB gp3 | | | $0.08/GB-mo | $8.00 |
+| S3 (occasional) | | | $0.023/GB-mo | pennies |
+
+So **≈ $82/mo as deployed**, against ≈ $155 on the larger box. Exactly half the
+compute for exactly half the price — the family scales linearly, verified
+rather than assumed.
+
+### The measured trade-off
+
+Observed on the running instance, mid-season, eleven containers up:
+
+| | |
+|---|---|
+| memory | 7.6 GiB total, **5.9 GiB available** |
+| swap | 4 GB configured, **8 KiB used** |
+| disk | 42% used |
+
+Swap essentially untouched is the number that matters: there is no memory
+pressure in steady state, which is what makes the economy choice defensible.
+
+**Where the smaller box bites is bursts, not steady state.** A 16.7M-row export
+or a heavy eval query has half the page cache to work with, and 8 GiB is where
+that starts to matter. The standing rule that came out of it: **analysis
+queries run against a locally restored dump, never against production.** That
+is good practice on any size of box and load-bearing on this one.
+
+### `t3.xlarge` is still the wrong economy
+
+It is $0.1664/hr for 4 vCPU / 16 GiB and looks like the best of both. It is
+burstable at a 40% baseline against a 24/7 workload with a 200ms writer, and a
+credit-depleted t3 *falls behind* rather than stopping — the hardest failure to
+notice. If more headroom is wanted, `m7i.xlarge` is the answer, not `t3`.
+
+### When credits run out
+
+A permanently-on instance is the textbook case for a 1-year Compute Savings
+Plan (~30-40% off on-demand). Worth revisiting then — committing before the
+workload has settled is how you pay for a shape you have grown out of. Resize
+first if it is going to be resized; the commitment should describe the box you
+end up with.
 
 ## Disk: 100 GB is right, and it is not generous
 
@@ -79,7 +117,7 @@ which stops the recorder, mid-slate, and unrecorded ticks are unrecoverable.
 | field | value |
 |---|---|
 | AMI | Ubuntu 22.04 LTS or 24.04 LTS (x86_64) |
-| type | **m7i.xlarge** |
+| type | **m7i.large** (see above; `m7i.xlarge` is the resize path) |
 | key pair | `meridian` |
 | VPC | `<vpc-id>` (the account's default) |
 | security group | `<security-group-id>` |
