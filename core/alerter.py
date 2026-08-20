@@ -294,7 +294,8 @@ class Alerter:
             with get_sessionmaker(get_engine())() as s:
                 gate = gate_status(s)
             out.append(
-                f"Kalshi gate: {gate['matched_games']}/{gate['required']} matched games"
+                f"Kalshi gate: {gate.get('comparable_games', gate.get('matched_games', '?'))}"
+                f"/{gate['required']} comparable games"
                 + (" — GATE MET" if gate["gate_met"] else "")
             )
         except Exception as exc:
