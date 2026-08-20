@@ -131,7 +131,39 @@ install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_DIR"/{ticks,supabase,rep
 echo "  artifact root: $DATA_DIR"
 
 # --------------------------------------------------------------------------- #
-log "7/7  build and start the stack"
+log "7/8  health venv (small, on the HOST — see the runbook for why)"
+# --------------------------------------------------------------------------- #
+# scripts/ is deliberately not in the container image, and health.py's whole
+# reason for existing is to see what a container CANNOT: `docker compose ps`
+# and the host's disk. Running it inside a container would need the docker
+# socket mounted in, which hands root-equivalent host access to a container on
+# a box holding the venue secret key — too much privilege for a status
+# command.
+#
+# So it runs on the host, in its own venv. The dependency list below was found
+# by RUNNING it, not by reading imports: healthchecks.py's own imports are just
+# httpx and sqlalchemy, but it lazily imports core.storage (dotenv) and
+# core.heartbeat (structlog) partway through a run. Reading the top of one file
+# under-counted, and the failure arrived three checks in. Measured size: 63 MB.
+if [[ ! -x "$REPO_DIR/.venv-health/bin/python" ]]; then
+  if [[ $PKG == apt ]]; then
+    apt-get install -y -qq python3-venv python3-pip
+  else
+    dnf install -y -q python3 python3-pip
+  fi
+  sudo -H -u "$SERVICE_USER" python3 -m venv "$REPO_DIR/.venv-health"
+  sudo -H -u "$SERVICE_USER" "$REPO_DIR/.venv-health/bin/pip" install -q --upgrade pip
+  sudo -H -u "$SERVICE_USER" "$REPO_DIR/.venv-health/bin/pip" install -q \
+    'httpx>=0.27' 'sqlalchemy>=2.0' 'psycopg[binary]>=3.1' 'python-dotenv>=1.0' \
+    'structlog>=24.1'
+fi
+sudo -H -u "$SERVICE_USER" "$REPO_DIR/.venv-health/bin/python" \
+  -c 'import httpx, sqlalchemy, psycopg, dotenv, structlog' \
+  || die "health venv is missing a dependency"
+echo "  $REPO_DIR/.venv-health ready"
+
+# --------------------------------------------------------------------------- #
+log "8/8  build and start the stack"
 # --------------------------------------------------------------------------- #
 # COMPOSE_FILE in .env selects the stack (base + quote + pulse + espn-live).
 # --build is not optional: Dockerfile COPYs core/ and static/ into the image,

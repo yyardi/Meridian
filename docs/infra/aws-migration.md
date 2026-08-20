@@ -216,6 +216,65 @@ reports `-1`. That list is deliberately explicit rather than `all tables` — a
 table added later should force a deliberate edit here rather than silently not
 being checked.
 
+## The morning health check
+
+```bash
+deploy/aws/health.sh          # from the laptop, checks the server
+```
+
+Same groups, same colours, same `Verdict:` line as running `scripts/health.py`
+on the box. Exit code is the script's — 0 for OK or DEGRADED, 1 for DEAD — so
+it drops into a cron or a shell prompt unchanged.
+
+### It runs on the host, not in a container — and that was a decision
+
+`scripts/` is deliberately not in the container image, so there were two ways
+to run it. The host won, for a reason in the script's own docstring: it exists
+to check **what a container cannot see** — `docker compose ps` and the host's
+disk. Running it inside a container would need the docker socket mounted in,
+which hands root-equivalent host access to a container on a box holding the
+venue secret key. Too much privilege for a status command.
+
+So `provision.sh` creates `/opt/meridian/.venv-health`: **63 MB**, five
+packages. That dependency list was found by *running* it, not by reading
+imports — `healthchecks.py` imports only `httpx` and `sqlalchemy` at the top,
+then lazily imports `core.storage` (dotenv) and `core.heartbeat` (structlog)
+partway through a run, so the failure arrived three checks in.
+
+### Three things that only showed up when it was run
+
+* **`.env` must be read inside the `sudo`.** It is `0600` and owned by
+  `meridian`; the first version grepped it in the invoking shell as `ubuntu`,
+  got "Permission denied", and would have run every database check against no
+  `DATABASE_URL`.
+* **`PYTHONPATH` is required, not defensive.** Python puts the *script's*
+  directory on `sys.path` — `scripts/` — never the working directory, so
+  `scripts/health.py` cannot see `./core` however you `cd`. Without it the run
+  dies on `No module named 'core'` before the first check.
+* **`"${EMPTY[@]}"` under `set -u` aborts on bash 3.2**, which is what macOS
+  ships and what this wrapper runs on. The ssh options are built as one array
+  that is never empty.
+
+### The laptop after cutover
+
+Running `scripts/health.py` on the retired laptop prints one line rather than a
+wall of red:
+
+```
+local stack retired — production is the server; run deploy/aws/health.sh
+Verdict: ALL GOOD — nothing is expected to run here
+```
+
+Every container stopped **on the laptop** is a state, not an outage. The same
+condition on the server is still an emergency and still exits 1 — the calm path
+is deliberately one-sided, and a test pins that asymmetry.
+
+**Known consequence of the cutover, not yet solved:** `tests/conftest.py`
+creates a per-run database in a local postgres at `localhost:5433`, so with the
+laptop stack down **the test suite cannot run there**. A throwaway
+`docker run --rm -p 5433:5432 postgres:16-alpine` with the `meridian` user is
+enough, and does not touch the retired stack's volume.
+
 ## What is not covered here
 
 * **Backups of the instance's own database.** The laptop was its own backup by
