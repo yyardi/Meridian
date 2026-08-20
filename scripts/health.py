@@ -3,7 +3,25 @@
 
 Run it before every game night:
 
-    .venv/bin/python scripts/health.py
+    .venv/bin/python scripts/health.py          # wherever the stack lives
+    deploy/aws/health.sh                        # from the laptop, checks the server
+
+Two machines, one script
+------------------------
+Production moved to EC2, and a health surface that still checks the laptop is
+worse than none: the operator ran this after cutover and got a wall of red
+describing a machine that had been deliberately retired. Red that means
+"working as intended" trains people to ignore red.
+
+So the script knows where it is. On the **server** it drops the macOS
+sleep-guard check (there is no lid to close), adds uptime, and warns on disk as
+a *percentage* — the runbook's 80% promise, which is the number that travels
+between a 1 TB laptop and a 100 GB volume. On the **laptop**, if every
+container is stopped, it says so in one line instead of eight DEADs.
+
+Detection is `sys.platform` with `--server` / `--laptop` overrides, because a
+guess about which machine you are on should be overridable by someone who
+knows.
 
 Why this exists: the dashboard reads Supabase only, and the 200ms tick recorder
 writes locally. On 2026-08-03 that recorder was dead for 23 hours while the
@@ -18,7 +36,9 @@ This script adds only what a container cannot see: docker ps and pmset.
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
+import shutil
 import subprocess
 import sys
 
@@ -30,6 +50,7 @@ from core.healthchecks import (
     check_app_heartbeats,
     check_book_lines,
     check_disk,
+    check_disk_headroom,
     check_espn,
     check_fill_watcher,
     check_local_pg_size,
@@ -66,6 +87,12 @@ def check_containers() -> list[Check]:
         line.split(maxsplit=1)[0]: line.split(maxsplit=1)[1]
         for line in out.strip().splitlines() if line.strip()
     }
+    #: How many of the expected containers are actually up. main() uses this to
+    #: tell "the stack is broken" from "the stack was deliberately stopped".
+    check_containers.up_count = sum(
+        1 for n in expected if (running.get(n) or "").startswith("Up")
+    )
+    check_containers.expected_count = len(expected)
     checks = []
     for name, what in expected.items():
         status_text = running.get(name)
@@ -112,21 +139,97 @@ def check_sleep_guard() -> list[Check]:
     return [Check(OK, "sleep guard", "caffeinate active, on AC power")]
 
 
+def detect_environment(argv_flag: str | None) -> str:
+    """'server' or 'laptop'. Explicit flag wins over the guess."""
+    if argv_flag:
+        return argv_flag
+    return "laptop" if sys.platform == "darwin" else "server"
+
+
+def check_uptime() -> list[Check]:
+    """The server replacement for the sleep guard.
+
+    A Mac sleeping is a hole in an unrecoverable stream; an EC2 instance has no
+    lid, so the equivalent question is "did this box reboot without anyone
+    noticing, and did the stack come back?". Compose services are
+    `restart: unless-stopped` and docker is enabled at boot, so a recent reboot
+    is not itself a fault — an unexplained one is worth seeing.
+    """
+    try:
+        with open("/proc/uptime") as fh:
+            seconds = float(fh.read().split()[0])
+    except Exception as exc:
+        return [Check(WARN, "uptime", f"could not read /proc/uptime: {str(exc)[:40]}")]
+    hours = seconds / 3600.0
+    if hours < 1.0:
+        return [Check(WARN, "uptime",
+                      f"up {seconds / 60:.0f} min — recent reboot; confirm the "
+                      "stack came back and no slate was missed")]
+    if hours < 24:
+        return [Check(OK, "uptime", f"up {hours:.1f} h")]
+    return [Check(OK, "uptime", f"up {hours / 24:.1f} days")]
+
+
+def check_docker_enabled() -> list[Check]:
+    """Docker enabled at boot is what makes `restart: unless-stopped` mean
+    anything after a reboot. Without it the stack simply does not return."""
+    if not shutil.which("systemctl"):
+        return []
+    out = subprocess.run(["systemctl", "is-enabled", "docker"],
+                         capture_output=True, text=True, timeout=15,
+                         check=False).stdout.strip()
+    if out == "enabled":
+        return [Check(OK, "docker at boot", "enabled")]
+    return [Check(WARN, "docker at boot",
+                  f"{out or 'unknown'} — the stack will NOT return after a reboot")]
+
+
+RETIRED_NOTE = (
+    "local stack retired — production is the server; "
+    "run deploy/aws/health.sh"
+)
+
+
 def main() -> int:
-    games, live = todays_games()
+    parser = argparse.ArgumentParser(prog="meridian-health")
+    env = parser.add_mutually_exclusive_group()
+    env.add_argument("--server", dest="env", action="store_const", const="server",
+                     help="force the server profile (skip macOS checks)")
+    env.add_argument("--laptop", dest="env", action="store_const", const="laptop",
+                     help="force the laptop profile")
+    args = parser.parse_args()
+    where = detect_environment(args.env)
 
     stamp = dt.datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-    print(f"\n\033[1mMERIDIAN HEALTH\033[0m  {stamp}")
+    print(f"\n\033[1mMERIDIAN HEALTH\033[0m  {stamp}  \033[2m({where})\033[0m")
     print("=" * 72)
 
+    containers = check_containers()
+    up = getattr(check_containers, "up_count", None)
+
+    # A deliberately stopped laptop stack is not an outage, and eight DEAD lines
+    # saying so is how red stops meaning anything. Nothing is up AND we are on
+    # the retired machine: say it once, calmly, and point at the real one.
+    if where == "laptop" and up == 0:
+        print(f"\n\033[33m{RETIRED_NOTE}\033[0m")
+        print("\n" + "=" * 72)
+        print("Verdict: \033[32mALL GOOD\033[0m — nothing is expected to run here\n")
+        return 0
+
+    games, live = todays_games()
     print("\n\033[1mToday's games\033[0m")
     print("\n".join(games) if games else "  none scheduled")
     if live:
         print("  \033[33m>> A GAME IS LIVE — the tick recorder must be writing.\033[0m")
 
+    if where == "server":
+        host = check_uptime() + check_docker_enabled() + check_disk_headroom() + check_disk()
+    else:
+        host = check_sleep_guard() + check_disk()
+
     groups: list[tuple[str, list[Check]]] = [
-        ("Host", check_sleep_guard() + check_disk()),
-        ("Containers", check_containers()),
+        ("Host", host),
+        ("Containers", containers),
         ("Data feeds", check_espn() + check_book_lines()),
         ("Heartbeats", check_app_heartbeats()),
         ("Databases", check_primary_db(live) + check_local_ticks(live)
