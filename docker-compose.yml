@@ -149,6 +149,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      POLYMARKET_KEY_ID: ${POLYMARKET_KEY_ID:-}
+      POLYMARKET_SECRET_KEY: ${POLYMARKET_SECRET_KEY:-}
       # Local postgres is the primary since the 2026-08-17 Supabase exit. A
       # future remote (AWS) is one env var: set MERIDIAN_DATABASE_URL.
       DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
