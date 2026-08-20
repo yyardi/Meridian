@@ -101,3 +101,40 @@ with the archive size at run time.
 
 *Registered 2026-08-20, at n=2 signal-covered games. Results append below
 this line, never above it.*
+
+## First run — 2026-08-20, n=2, NO DATA (the protocol working)
+
+The eval shipped the same day (built after the manager's go; the machinery
+is tested and waiting for game 10). Run off-prod against the restored
+`meridian_eval` copy plus a delta pull of the signal tables. Verbatim:
+
+```
+signal-covered games          : 2
+paired calibration points     : 6,370
+Brier v1: 0.15590   Brier v3a: 0.12732
+paired diff (v1−v3a), clustered: +0.02858  95% CI [-0.58893, +0.64609]  (G=2)
+coverage gain (v1 suppressed, v3a priced): 6,456 ticks, Brier 0.10792
+OT ticks unpriced by both (no registered OT model): 0
+stale-clock fallback ticks    : 18
+clock disagreement (est−exact minutes): n=6,352  p50=-1.04  p90=+0.00  max=-6.58
+ESPN WP reference (matched winner ticks, n=437): espn 0.03863 | v1 0.01808 | v3a 0.01921
+[v1] entries 157 | fills 67 | trips 62 | rides 5 | games 2 | BELOW FLOORS
+[v3] entries 126 | fills 87 | trips 72 | rides 15 | games 2 | BELOW FLOORS
+
+VERDICT: NO DATA
+```
+
+NO DATA is the verdict and the CI at G=2 is honestly enormous — nothing
+here gates anything. Two diagnostics are worth recording at any n:
+
+* **The coverage hole is half the tape.** 6,456 ticks — as many as the
+  paired set — are ticks v1 must suppress (saturated estimator) while the
+  venue clock lets v3a price, and v3a's calibration there (0.108) is fine.
+  Whatever the eventual paired verdict, the exact clock's main value may be
+  the ticks v1 cannot price at all, which the paired Brier cannot see by
+  construction.
+* **The estimator's bias is now a number**: the wall-clock interpolation
+  runs a median 1.04 minutes FAST (max 6.6) against the venue clock —
+  the long-suspected direction, measured for the first time.
+
+Rerun on every +5 signal-covered games, per the runbook.

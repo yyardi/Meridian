@@ -279,5 +279,7 @@ def event_team_abbrevs(event_slug: str) -> tuple[str, str] | None:
         return (to_espn_abbrev(parsed.first_polymarket),
                 to_espn_abbrev(parsed.second_polymarket))
     except UnknownTeamError:
-        log.warning("pulse_form_unknown_team", event=event_slug)
+        # NOTE: structlog's first positional IS `event` — passing an `event=`
+        # kwarg raises TypeError inside the handler (found by test, 2026-08-20).
+        log.warning("pulse_form_unknown_team", slug=event_slug)
         return None
