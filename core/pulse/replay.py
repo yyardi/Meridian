@@ -49,11 +49,11 @@ import argparse
 import datetime as dt
 import logging
 import sys
-from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from core.storage import MarketSnapshot, get_engine, get_sessionmaker
@@ -216,10 +216,8 @@ class GameReplay:
         return len(self.fills) / len(placed) if placed else None
 
 
-def load_ticks(
-    session: Session, *, event_slug: str, live_only: bool = True
-) -> list[Tick]:
-    """Every recorded tick for one game, oldest first.
+def _tick_stmt(*, event_slug: str, live_only: bool = True):
+    """The one tick query, shared by the list and streaming readers.
 
     Ordered by `captured_at` then `market_slug` so a replay is deterministic:
     ties are common at 200ms and Postgres returns them in physical order, which
@@ -244,9 +242,38 @@ def load_ticks(
     )
     if live_only:
         stmt = stmt.where(MarketSnapshot.is_live.is_(True))
+    return stmt
 
-    return [
-        Tick(
+
+def load_ticks(
+    session: Session, *, event_slug: str, live_only: bool = True
+) -> list[Tick]:
+    """Every recorded tick for one game, oldest first, as a list.
+
+    Prefer `stream_ticks` when the ticks are consumed once — this materialises
+    a whole game. It is still bounded per game rather than per archive, and the
+    raw rows are streamed underneath so both copies never coexist.
+    """
+    return list(_stream(session, _tick_stmt(event_slug=event_slug,
+                                            live_only=live_only)))
+
+
+#: Rows fetched per round trip when streaming. Large enough that the per-batch
+#: overhead is irrelevant, small enough that the client buffer stays a few MB.
+TICK_BATCH = 10_000
+
+
+def _stream(session: Session, stmt) -> Iterator[Tick]:
+    """Yield Ticks in batches instead of buffering the whole result.
+
+    `session.execute(stmt).all()` holds the raw rows AND the Tick objects built
+    from them in memory at the same time — two copies of a game's history at
+    peak. `yield_per` fetches in chunks and lets each batch be freed as it is
+    consumed, so the raw side of that pair stays bounded at TICK_BATCH rows.
+    """
+    result = session.execute(stmt, execution_options={"yield_per": TICK_BATCH})
+    for r in result:
+        yield Tick(
             captured_at=r.captured_at,
             event_slug=r.event_slug,
             market_slug=r.market_slug,
@@ -258,11 +285,23 @@ def load_ticks(
             score=r.event_score,
             period=r.event_period,
         )
-        for r in session.execute(stmt).all()
-    ]
 
 
-def replay_game(ticks: list[Tick], strategy, *, event_slug: str) -> GameReplay:
+def stream_ticks(
+    session: Session, *, event_slug: str, live_only: bool = True
+) -> Iterator[Tick]:
+    """`load_ticks` without the list. Use this when the ticks are consumed
+    exactly once — `replay_game` iterates them a single time, so a whole game
+    never needs to exist in memory at all.
+
+    Callers that iterate twice (a second arm, a span computed up front) must
+    use `load_ticks`; a generator consumed twice yields nothing the second
+    time, silently.
+    """
+    return _stream(session, _tick_stmt(event_slug=event_slug, live_only=live_only))
+
+
+def replay_game(ticks, strategy, *, event_slug: str) -> GameReplay:
     """Feed `ticks` to `strategy` one at a time, resolving fills honestly.
 
     `strategy` is any object with `on_tick(tick, ctx)`. Fills are checked
@@ -302,17 +341,24 @@ def replay_game(ticks: list[Tick], strategy, *, event_slug: str) -> GameReplay:
 
 
 def available_games(session: Session, *, min_ticks: int = 1) -> list[tuple[str, int]]:
-    """(event_slug, tick count) for games with live data, richest first."""
-    counts: dict[str, int] = defaultdict(int)
-    for slug, in session.execute(
-        select(MarketSnapshot.event_slug).where(MarketSnapshot.is_live.is_(True))
-    ).all():
-        if slug:
-            counts[slug] += 1
-    return sorted(
-        ((k, v) for k, v in counts.items() if v >= min_ticks),
-        key=lambda kv: -kv[1],
-    )
+    """(event_slug, tick count) for games with live data, richest first.
+
+    COUNTED IN SQL. This used to `SELECT event_slug ... .all()` and tally the
+    rows in a Python defaultdict — materialising every live row in the archive
+    to produce one number per game. At 16.75M rows that is several GB, and it
+    ran once per replay process: three concurrent replays took the operator's
+    laptop to 23GB of swap on 2026-08-18. The database returns the 56 rows it
+    was always being asked for.
+    """
+    rows = session.execute(
+        select(MarketSnapshot.event_slug, func.count())
+        .where(MarketSnapshot.is_live.is_(True),
+               MarketSnapshot.event_slug.isnot(None))
+        .group_by(MarketSnapshot.event_slug)
+        .having(func.count() >= min_ticks)
+        .order_by(func.count().desc())
+    ).all()
+    return [(slug, int(n)) for slug, n in rows]
 
 
 def replay_all(
@@ -326,7 +372,9 @@ def replay_all(
     """
     out: list[GameReplay] = []
     for event_slug, _ in available_games(session, min_ticks=min_ticks):
-        ticks = load_ticks(session, event_slug=event_slug)
+        # STREAMED, not listed: replay_game iterates once, so a whole game's
+        # history never needs to exist in memory here.
+        ticks = stream_ticks(session, event_slug=event_slug)
         out.append(replay_game(ticks, strategy_factory(), event_slug=event_slug))
     return out
 
