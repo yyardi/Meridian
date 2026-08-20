@@ -39,6 +39,36 @@ Full picture: [docs/STATUS.md](docs/STATUS.md) · what to build next:
 
 ---
 
+## Running on AWS (production since 2026-08-20)
+
+The whole stack runs 24/7 on one EC2 box (`meridian-host`, us-east-1) — the
+laptop is a cold backup. Full details: `docs/infra/aws-migration.md`.
+
+Day-to-day commands (from any terminal with the key at `~/.ssh/meridian-aws.pem`):
+
+```bash
+# health: 11 lines of "Up" = good
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@100.60.80.165 \
+  "cd /opt/meridian && sudo -H -u meridian docker compose ps"
+
+# dashboard: open the tunnel, then browse http://localhost:8009
+ssh -i ~/.ssh/meridian-aws.pem -L 8009:localhost:8008 -N ubuntu@100.60.80.165
+
+# deploy merged code
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@100.60.80.165 \
+  "cd /opt/meridian && sudo -H -u meridian git pull && \
+   sudo -H -u meridian docker compose --env-file .env up -d --build"
+```
+
+Nothing is exposed to the internet: SSH from the operator's IP only, dashboard
+over the tunnel, secrets live only in `/opt/meridian/.env` (copied by hand,
+never in git). Phone alerts come from the server's alerter. Backups land in
+S3 (`meridian-backups-623955527388`).
+
+**Laptop fallback:** the sections below describe running the stack locally.
+That is now the emergency/backup mode — `docker compose up -d` from this
+directory revives it, data intact through 2026-08-20.
+
 ## Start everything
 
 **One terminal tab per thing, each left open.** Every tab shows its own logs and
