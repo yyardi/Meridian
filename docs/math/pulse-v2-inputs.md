@@ -147,3 +147,40 @@ Two findings worth as much as the verdict:
    (15s sampling, unit size, no Kelly, floors met only in one cohort), but
    the first evidence either way, and it does not scream edge. The live
    shadow run's own tape remains the registered measurement.
+
+## Replay results — 2026-08-20, restored data, off-prod (the rerun)
+
+Run against a narrow COPY of the production tables restored into a local
+`meridian_eval` database (the approved off-prod path; 16,752,256 snapshot
+rows verified equal to the server's live count). The backfill is fully
+effective: **every one of the 48 evaluable games is fresh-form** — the stale
+cohort is empty.
+
+**Blend refit at n=48** (was n=6): `w* = 1.000` again — v4-only RMSE 13.37
+beats form-only 13.94. The original verdict was not a small-sample artifact;
+`W_BLEND` stays 1.0, now with real backing.
+
+```
+[fresh-form]  games: 48   calibration points: 130,901
+  Brier v1: 0.19940   Brier v2: 0.19912
+  paired diff (v1−v2), clustered: +0.00028  95% CI [-0.00017, +0.00073]  (G=48)  -> no separation
+  [v1] entries 4,158 | fills 2,377 | trips 2,196 | rides 181 | games 48 | per-$ -0.0129 [-0.0373, +0.0115]
+  [v2] entries 4,178 | fills 2,378 | trips 2,197 | rides 181 | games 48 | per-$ -0.0142 [-0.0388, +0.0105]
+```
+
+**Verdict: criterion not met at a real sample — v2 stays offline, and this
+is no longer a starvation story.** The +0.0003 Brier lean toward v2
+reproduced exactly from the first run, but the CI includes zero at 48 games
+and 130,901 paired points. The per-matchup sigma is not worthless — it is
+unproven at a sample eight times the first one, which is a different and
+stronger statement than last time. The flag stays at `v1`.
+
+**The now-floor-qualified side finding deserves its own line**: the
+registered PULSE trading rule at unit size measures **−1.29¢ per dollar,
+95% CI [−3.73, +1.15], over 48 games and 2,377 simulated fills — above both
+registered floors for the first time.** The center is negative and the fill
+rule's optimism means losses are the trustworthy direction. This does not
+gate anything (the live shadow tape is the registered measurement, and unit
+size is not Kelly), but as a prior on the rule the live engine is running
+tonight, it argues for patience with the accruing tape rather than
+excitement about it.
