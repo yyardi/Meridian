@@ -61,7 +61,33 @@ TABLES=(
   "predictions|market_slug,predicted_at,model_version,config_hash||"
   "shadow_orders|idempotency_key||"
   "orders|idempotency_key||"
+  # --- added 2026-08-20 after an information_schema audit found the first
+  # --- list was hand-written and short. See ANTIJOIN below for why these
+  # --- five do not use ON CONFLICT.
+  "pending_exits|entry_order_id||"
+  "retention_log|partition_name||"
+  "pulse_decisions|market_slug,decided_at,action||"
+  "shadow_quote_fills|market_slug,quoted_at,side||"
+  "account_balances|observed_at||"
 )
+
+#: Tables merged by anti-join rather than ON CONFLICT.
+#:
+#: ON CONFLICT (cols) REQUIRES a unique index on exactly those columns. These
+#: tables have none beyond the primary key `id`, so the obvious
+#: `ON CONFLICT (market_slug, decided_at, action)` does not fall back to
+#: something reasonable — it raises "no unique or exclusion constraint matching
+#: the ON CONFLICT specification" and the merge stops.
+#:
+#: The alternative would be creating unique indexes on the live database to
+#: suit the merge. That is a schema change to production, invisible to
+#: core/storage/models.py, made to satisfy a tool. `WHERE NOT EXISTS` has
+#: identical semantics — the live row wins — and needs nothing.
+#:
+#: `DISTINCT ON` is the price of the swap: ON CONFLICT deduplicates the STAGED
+#: set as a side effect (the second colliding row simply does nothing), and an
+#: anti-join does not. Without it, duplicates inside history would both insert.
+ANTIJOIN="pending_exits retention_log pulse_decisions shadow_quote_fills account_balances"
 
 # --------------------------------------------------------------------------- #
 log "0/6  preconditions"
@@ -96,6 +122,135 @@ echo "  $SRC_DB stable at $(( S2 / 1024 / 1024 )) MB, no restore statements acti
 echo "  mode: $MODE"
 
 # --------------------------------------------------------------------------- #
+log "0c/6  foreign-key audit — which id links would be carried over raw?"
+# --------------------------------------------------------------------------- #
+# THE SECOND DEFECT THIS SCRIPT SHIPPED. book_levels.snapshot_id got an explicit
+# remap and every OTHER foreign key was inserted straight from the history id
+# space. The two databases number independently, so those ids landed pointing at
+# whatever occupied the same number in live. Measured after the first run:
+# 10,507 shadow_orders pointed at no prediction and 3,808 pointed at a REAL
+# prediction for a DIFFERENT market. core/game_detail.py reads resolved_outcome
+# through that join, so the first group rendered "unresolved" and the second
+# rendered another market's result as this trade's.
+#
+# A dangling id is visibly wrong. A mismatched one is plausible and wrong, which
+# is how it survived a merge that printed clean receipts.
+#
+# So the script no longer trusts that someone remembered: it asks the catalogue
+# which columns are foreign keys and refuses if any of them is neither remapped
+# nor explicitly declared safe.
+# child | fk column | parent table | parent's natural key
+#
+# Every local id link, one row each. The first version of this script hardcoded
+# book_levels and carried the other six raw; this table exists so that adding a
+# table with an id link is a line here rather than a silent defect.
+#
+# Read it as: "child.fk points at parent.id, and the only durable way to find
+# that parent in the other database is its natural key."
+FK_REMAP=(
+  "book_levels|snapshot_id|market_snapshots|market_slug,captured_at"
+  "shadow_orders|prediction_id|predictions|market_slug,predicted_at,model_version,config_hash"
+  "orders|prediction_id|predictions|market_slug,predicted_at,model_version,config_hash"
+  "orders|shadow_order_id|shadow_orders|idempotency_key"
+  "pending_exits|entry_order_id|orders|idempotency_key"
+  "pending_exits|submitted_order_id|orders|idempotency_key"
+  # Self-referential: an exit points at the entry it closes.
+  "pulse_decisions|entry_id|pulse_decisions|market_slug,decided_at,action"
+)
+FK_REMAPPED=""
+for spec in "${FK_REMAP[@]}"; do
+  IFS='|' read -r c col _ _ <<< "$spec"; FK_REMAPPED="$FK_REMAPPED $c.$col"
+done
+FK_DECLARED_SAFE=""                            # add with a reason, never blank
+
+fk_unhandled=""
+while IFS='|' read -r tbl col; do
+  [[ -z "$tbl" ]] && continue
+  # Only tables this merge actually carries.
+  [[ " $(for spec in "${TABLES[@]}"; do IFS='|' read -r t _ _ _ <<< "$spec"; printf '%s ' "$t"; done) " == *" $tbl "* ]] || continue
+  ref="$tbl.$col"
+  [[ " $FK_REMAPPED $FK_DECLARED_SAFE " == *" $ref "* ]] || fk_unhandled="$fk_unhandled $ref"
+# BY CONVENTION, NOT BY CONSTRAINT — and this correction is the whole point.
+# The first version of this audit asked pg_constraint for contype='f'. Only
+# pending_exits HAS declared foreign keys; shadow_orders.prediction_id,
+# orders.prediction_id, orders.shadow_order_id and book_levels.snapshot_id
+# carry none. So the guard written to catch this defect could not see the four
+# columns that caused it, and passed cleanly on the exact bug it exists for.
+#
+# Local row ids are integer columns named *_id. External identifiers
+# (espn_game_id, team_id, athlete_id, market_id) are text and are stable across
+# databases — they must NOT be remapped, and the integer filter excludes them.
+done < <(SRC -At -F'|' -c "
+  select table_name, column_name
+    from information_schema.columns
+   where table_schema = 'public'
+     and column_name like '%\_id'
+     and column_name <> 'id'
+     and data_type in ('bigint','integer')
+   order by 1,2")
+
+if [[ -n "$fk_unhandled" ]]; then
+  die "foreign keys that would be carried over as RAW HISTORY IDS:$fk_unhandled
+
+Each must be remapped through its parent's natural key, or added to
+FK_DECLARED_SAFE with the reason it is safe. Carrying an id between databases
+that number independently does not fail loudly — it points at a real row that
+is the wrong row. That is what put 3,808 shadow_orders on another market's
+prediction after the first run.
+
+To repair rows a previous run already inserted: deploy/aws/repair_fk_links.sh"
+fi
+echo "  every foreign key is remapped or declared safe"
+
+# --------------------------------------------------------------------------- #
+log "0b/6  schema audit — does the table list still cover the source?"
+# --------------------------------------------------------------------------- #
+# THE BUG THIS EXISTS FOR. The first version of TABLES was hand-written from
+# the Supabase importer's list and never diffed against the source. It was
+# short by five: pulse_decisions, shadow_quote_fills, account_balances,
+# pending_exits, retention_log. The merge reported clean receipts for fifteen
+# tables and silently carried none of the other five, so PULSE's first three
+# nights were absent from production and the era boundary computed a day late.
+#
+# A hand-written list is the same class of bug one level up: it is correct until
+# someone adds a table and forgets to extend it. So the script diffs itself
+# against the source rather than trusting that anyone remembered.
+EXCLUDED_REASON=(
+  "alembic_version|migration state; the live database's own is authoritative"
+  "service_heartbeats|live beats are current — merging stale ones asserts writers are dead"
+  "espn_live_box_snapshots|server-side signal capture is authoritative"
+  "espn_live_player_snapshots|server-side signal capture is authoritative"
+  "espn_live_plays|server-side signal capture is authoritative"
+  "espn_live_win_probability|server-side signal capture is authoritative"
+  "espn_live_injury_observations|server-side signal capture is authoritative"
+)
+covered=""
+for spec in "${TABLES[@]}"; do
+  IFS='|' read -r t _ _ _ <<< "$spec"; covered="$covered $t"
+done
+for spec in "${EXCLUDED_REASON[@]}"; do
+  covered="$covered ${spec%%|*}"
+done
+
+unaccounted=""
+while read -r t; do
+  [[ -z "$t" ]] && continue
+  # Partitions arrive through their parent.
+  [[ "$t" == *_default || "$t" == *_y20[0-9][0-9]m[0-9][0-9] ]] && continue
+  [[ " $covered " == *" $t "* ]] || unaccounted="$unaccounted $t"
+done < <(SRC -At -c "select tablename from pg_tables where schemaname='public' order by 1")
+
+if [[ -n "$unaccounted" ]]; then
+  die "tables in $SRC_DB that this script neither merges nor excludes:$unaccounted
+
+Add each to TABLES (with its natural key) or to EXCLUDED_REASON (with the
+reason). Refusing rather than merging a subset: a partial merge reports clean
+receipts for what it did carry, which is exactly how the first run lost five
+tables without anyone noticing."
+fi
+echo "  every table in $SRC_DB is either merged or excluded with a reason"
+
+# --------------------------------------------------------------------------- #
 log "1/6  staging schema (dropped and rebuilt; base tables untouched)"
 # --------------------------------------------------------------------------- #
 DST -c "DROP SCHEMA IF EXISTS $STAGE CASCADE; CREATE SCHEMA $STAGE;" >/dev/null
@@ -128,6 +283,34 @@ done
 printf '\n%-22s %12s %12s %12s %12s\n' TABLE BEFORE STAGED INSERTED AFTER
 FAIL=0
 
+build_remap() {   # $1 parent table  $2 parent natural key cols
+  local parent="$1" pkeys="$2" name="remap_$1" on=""
+  DST -At -c "select to_regclass('$STAGE.$name') is not null" | grep -q t && return 0
+  DST -At -c "select to_regclass('$STAGE.$parent') is not null" | grep -q t || return 1
+  local IFS_SAVE="$IFS"; IFS=','
+  # PLAIN EQUALITY, not IS NOT DISTINCT FROM. The NULL-safe operator cannot use
+  # an index, so this join fell back to a nested loop: 121k staged predictions
+  # against 128k live ones ran for eighteen minutes and was still going when I
+  # cancelled it, while `uq_prediction_market_time_model` — the exact index it
+  # needed — sat unused beside it.
+  #
+  # Equality is also the correct semantics here: a natural key with a NULL in
+  # it identifies nothing, so a row it cannot match is a row that SHOULD stay
+  # unmapped rather than matching another NULL.
+  for k in $pkeys; do on="${on:+$on AND }lp.$k = hp.$k"; done
+  IFS="$IFS_SAVE"
+  # Index BEFORE the join, every time. The 33-minute lesson.
+  DST -c "
+    CREATE INDEX IF NOT EXISTS ${name}_src ON $STAGE.$parent ($(echo "$pkeys"));
+    ANALYZE $STAGE.$parent;
+    CREATE TABLE $STAGE.$name AS
+      SELECT hp.id AS old_id, lp.id AS new_id
+        FROM $STAGE.$parent hp JOIN public.$parent lp ON $on;
+    CREATE UNIQUE INDEX ON $STAGE.$name (old_id);
+    ANALYZE $STAGE.$name;" >/dev/null
+  return 0
+}
+
 merge_one() {   # $1 table  $2 natural-key cols  $3 select-list  $4 from-clause
   local tbl="$1" keys="$2" sel="$3" src="$4" before staged after inserted cols
   before=$(DST -At -c "select count(*) from public.$tbl" | tr -d '\r')
@@ -137,8 +320,34 @@ merge_one() {   # $1 table  $2 natural-key cols  $3 select-list  $4 from-clause
                       where table_schema='public' and table_name='$tbl'
                         and column_name <> 'id'" | tr -d '\r')
   if [[ "$MODE" == "--yes" ]]; then
-    DST -c "INSERT INTO public.$tbl ($cols) SELECT $sel $src
-            ON CONFLICT ($keys) DO NOTHING;" >/dev/null
+    if [[ " $ANTIJOIN " == *" $tbl "* ]]; then
+      # Same rule as ON CONFLICT — the live row wins — expressed without
+      # requiring a unique index that does not exist.
+      local pred=""
+      local IFS_SAVE="$IFS"; IFS=','
+      for k in $keys; do
+        pred="${pred:+$pred AND }p.$k IS NOT DISTINCT FROM s.$k"
+      done
+      IFS="$IFS_SAVE"
+      # DISTINCT ON is applied over the CALLER'S from-clause, not a subselect
+      # of its own. The first version built `FROM $STAGE.$tbl s` internally and
+      # silently discarded $src — so a remap LEFT JOIN vanished while the select
+      # list still referenced it, and postgres reported "missing FROM-clause
+      # entry for table r_entry_order_id". A function that takes a from-clause
+      # and then ignores it is a trap for its own caller.
+      local skeys=""
+      local IFS_SAVE2="$IFS"; IFS=','
+      for k in $keys; do skeys="${skeys:+$skeys, }s.$k"; done
+      IFS="$IFS_SAVE2"
+      DST -c "INSERT INTO public.$tbl ($cols)
+              SELECT DISTINCT ON ($skeys) $sel
+                $src
+               WHERE NOT EXISTS (SELECT 1 FROM public.$tbl p WHERE $pred)
+               ORDER BY $skeys;" >/dev/null
+    else
+      DST -c "INSERT INTO public.$tbl ($cols) SELECT $sel $src
+              ON CONFLICT ($keys) DO NOTHING;" >/dev/null
+    fi
     after=$(DST -At -c "select count(*) from public.$tbl" | tr -d '\r')
     inserted=$(( after - before ))
   else
@@ -159,11 +368,28 @@ for spec in "${TABLES[@]}"; do
   IFS='|' read -r tbl keys link parent <<< "$spec"
   [[ -n "$link" ]] && continue          # book_levels: needs the remap first
   DST -At -c "select to_regclass('$STAGE.$tbl') is not null" | grep -q t || continue
-  sel=$(DST -At -c "select string_agg('s.'||quote_ident(column_name), ', ' order by ordinal_position)
-                      from information_schema.columns
-                     where table_schema='public' and table_name='$tbl'
-                       and column_name <> 'id'" | tr -d '\r')
-  merge_one "$tbl" "$keys" "$sel" "FROM $STAGE.$tbl s"
+  # FK columns are rewritten HERE, inside the INSERT's SELECT — not by an
+  # UPDATE afterwards. A post-insert remap cannot work for a column with a
+  # declared foreign key: the insert is refused before the fix can run.
+  # pending_exits proved it, and it is the only table with a real FK, which is
+  # why the flaw survived until a live run.
+  src="FROM $STAGE.$tbl s"
+  declare -A remap_of=()
+  for fk in "${FK_REMAP[@]}"; do
+    IFS='|' read -r fchild fcol fparent fpkeys <<< "$fk"
+    [[ "$fchild" == "$tbl" ]] || continue
+    build_remap "$fparent" "$fpkeys" || continue
+    src="$src LEFT JOIN $STAGE.remap_$fparent r_$fcol ON r_$fcol.old_id = s.$fcol"
+    remap_of[$fcol]="r_$fcol.new_id"
+  done
+  sel=""
+  while read -r c; do
+    [[ -z "$c" ]] && continue
+    sel="${sel:+$sel, }${remap_of[$c]:-s.$(printf '%s' "$c")}"
+  done < <(DST -At -c "select column_name from information_schema.columns
+                        where table_schema='public' and table_name='$tbl'
+                          and column_name <> 'id' order by ordinal_position")
+  merge_one "$tbl" "$keys" "$sel" "$src"
 done
 
 # --------------------------------------------------------------------------- #
