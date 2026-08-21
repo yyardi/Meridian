@@ -128,7 +128,10 @@ def test_scoring_is_the_engines_not_rederived(client, game_rows):
     trip = by[("aec-wnba-pittest-2", "enter")]
     want = round_trip_capture(side="no", entry_price=0.40, exit_price=0.30) * 2.0
     assert trip["pnl_if_filled"] == pytest.approx(want)
-    assert trip["bet_won"] is False, "settlement is null; the trip P&L stands alone"
+    # None, not False: the market has not settled, so there is no win verdict
+    # — the round-trip P&L stands alone, independent of settlement. The first
+    # draft asserted False and was wrong about its own comment.
+    assert trip["bet_won"] is None
 
     ride = by[("tsc-wnba-pittest-3", "enter")]
     staked, returned = settlement_score(side="yes", entry_price=0.60, settlement=1)
