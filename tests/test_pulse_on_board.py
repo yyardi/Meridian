@@ -256,10 +256,17 @@ def test_new_decisions_flash(html):
 
 
 def test_estimates_refresh_without_refetching_the_board(html):
+    """Superseded in place by the live-board heartbeat: estimates still
+    refresh every 10s from cache, but the board itself now ALSO refetches on
+    the same beat when anything is live (60s idle). The property this test
+    holds is unchanged — a pulse estimate must never require a board
+    refetch to paint — the schedule just moved into boardHeartbeat."""
     fn = _fn(html, "async function loadPulseLatest(league){")
     assert "stale(league)" in fn, "the league guard covers this loader too"
     assert "renderBoard(LAST_BOARD" in fn, "re-render from cache, not refetch"
-    assert "setInterval(() => loadPulseLatest(LEAGUE), 10000)" in html
+    hb = _fn(html, "async function boardHeartbeat(){")
+    assert "loadPulseLatest(LEAGUE)" in hb, "estimates ride every beat"
+    assert "setInterval(boardHeartbeat, 10000)" in html
 
 
 # ------------------------------------------------------------------ #
