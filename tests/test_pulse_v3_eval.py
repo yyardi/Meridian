@@ -26,12 +26,18 @@ from core.pulse import replay_eval as re_
 from core.storage import get_engine, get_sessionmaker
 
 UTC = dt.timezone.utc
-EVENT = "wnba-ny-chi-2026-08-19"
 GAME = "990001"
 
 _Session = get_sessionmaker(get_engine())
 
 NOW = dt.datetime.now(UTC)
+
+#: The event slug's date is DERIVED from the same clock the seeded signal
+#: rows use, because the join matches them within ±1 ET day. The first
+#: version hardcoded "2026-08-19" and went red the day the calendar moved
+#: past the window — an environment-dependent test in the wall-clock coat
+#: (the vacuous-check family; caught by A running it on a later day).
+EVENT = f"wnba-ny-chi-{(NOW + re_.ET_OFFSET_FOR_JOIN).date():%Y-%m-%d}"
 
 
 @pytest.fixture(autouse=True)
