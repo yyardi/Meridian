@@ -727,6 +727,13 @@ def board(include_finished: bool = False, league: str | None = None) -> dict:
                 # fresh as a 200ms live one.
                 "captured_at": snap.captured_at.isoformat(),
                 "age_seconds": round((now - snap.captured_at).total_seconds(), 1),
+                #: Which writer produced this quote: the pregame sweeper (15min
+                #: cycle, book_tier NULL) or the live recorder's tier (200ms
+                #: price / near / deep). The AGE column's tooltip names it, so
+                #: an 8s row and a 12m row are never silently the same kind of
+                #: fresh — both recorders share one table and the newest row
+                #: wins; this says which one that was.
+                "source": snap.book_tier or "pregame",
                 "pricing_state": _pricing_state(snap, p, as_of=now),
                 "game_start": snap.game_start_time.isoformat() if snap.game_start_time else None,
                 "shadow": (
