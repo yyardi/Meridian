@@ -259,8 +259,28 @@ def load_ticks(
 
 
 #: Rows fetched per round trip when streaming. Large enough that the per-batch
-#: overhead is irrelevant, small enough that the client buffer stays a few MB.
+#: overhead is irrelevant, small enough that the client buffer stays small.
 TICK_BATCH = 10_000
+
+# MEASURED PEAK RSS, 2026-08-18, against 16,752,288 rows across 56 games in a
+# throwaway postgres — production scale. Each mode in its own process, sampled
+# every 100ms under a 1200MB ceiling.
+#
+#   baseline (interpreter + sqlalchemy + psycopg)    56 MB
+#   available_games, OLD                          >1200 MB  KILLED, still rising
+#   available_games, NEW                             63 MB  (+7 over baseline)
+#   one game listed   (299,148 ticks)               244 MB  (+188)
+#   one game streamed (299,148 ticks)                82 MB  (+26)
+#
+# I HAD ESTIMATED ~5MB STREAMED AND ~50-186MB LISTED. The streamed figure was
+# roughly five times too low: I counted the Tick objects in a batch and ignored
+# the interpreter baseline, the driver's own buffers and allocator overhead.
+# Estimating memory from object sizes alone systematically understates it.
+#
+# AND THESE ARE A FLOOR, NOT A CEILING. The benchmark rows repeat a handful of
+# identical slug strings, which CPython interns — real archives carry a distinct
+# slug per market, so the listed path costs more in production than 244MB. The
+# real incident reached 11.6GB with three concurrent processes on real data.
 
 
 def _stream(session: Session, stmt) -> Iterator[Tick]:
