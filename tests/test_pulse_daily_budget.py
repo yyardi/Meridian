@@ -1,4 +1,13 @@
-"""The daily-budget release: the 2026-08-20 starvation, pinned.
+"""The daily budget: live-mode release-on-return, and shadow annotate-not-bind.
+
+LIVE MODE (enforce_caps=True): the 2026-08-20 starvation, pinned — the
+release-on-return fix. SHADOW MODE (the default, operator decision
+2026-08-21): exposure caps never shrink or block; rows carry full desired
+size plus the live-faithful capped size as annotation.
+
+Original module docstring follows.
+
+The daily-budget release: the 2026-08-20 starvation, pinned.
 
 What happened: the in-memory daily exposure counter accumulated gross entry
 stakes and never released money. The day's first game (ind-dal, 9 entries,
@@ -75,10 +84,13 @@ def _snap(s, *, slug, event, bid, ask, at, score="55-45"):
     s.commit()
 
 
-def _engine():
+def _engine(enforce_caps=True):
+    """enforce_caps=True is the LIVE-mode arm these budget tests pin; the
+    shadow default (annotate, never bind) has its own tests below."""
     eng = PulseEngine(
         _Session,
         settle_every_seconds=10 ** 9,
+        enforce_caps=enforce_caps,
         bankroll_reader=lambda: BANKROLL,
         settlement_lookup=lambda slug: None,
     )
@@ -194,3 +206,57 @@ def test_sized_zero_is_loud_now():
     first = eng._sized_zero_logged[SLUG_B]
     eng.cycle()                              # within the throttle window
     assert eng._sized_zero_logged[SLUG_B] == first
+
+
+# --------------------------------------------------------------------- #
+# Shadow semantics (the default): caps annotate, never bind
+# --------------------------------------------------------------------- #
+
+
+def test_shadow_mode_records_full_intent_when_the_daily_cap_would_block():
+    """The Wednesday shape under the new semantics: the budget is exhausted,
+    and the entry STILL lands — full desired size, cap label, capped size 0.
+    Two games of model intent can never again be silently discarded."""
+    eng = _engine(enforce_caps=False)
+    eng._note_daily_stake(DAILY_CAP, NOW)              # budget fully consumed
+    with _Session() as s:
+        _snap(s, slug=SLUG_B, event=EVENT_B, bid=0.60, ask=0.62,
+              at=NOW - dt.timedelta(seconds=10))
+    eng.cycle()
+    enters = _enters(SLUG_B)
+    assert len(enters) == 1, "shadow mode must never block on an exposure cap"
+    r = enters[0]
+    # Full desired fractional-Kelly size: raw f* = 0.2856/0.40 = 0.714,
+    # quarter-Kelly x $25 = $4.46.
+    assert float(r.stake_usd) == pytest.approx(0.714 * 0.25 * BANKROLL, rel=1e-2)
+    assert r.binding_constraint in ("max_daily_exposure_pct",
+                                    "below_minimum_trade_qty")
+    assert r.capped_stake_usd is not None
+    assert float(r.capped_stake_usd) == pytest.approx(0.0)
+
+
+def test_shadow_mode_annotates_a_shrinking_cap_and_keeps_desired_size():
+    """Uncapped path: at this bankroll the position cap (5%) would shrink a
+    $4.46 desire to $1.25 — shadow records $4.46 with the $1.25 annotation."""
+    eng = _engine(enforce_caps=False)
+    with _Session() as s:
+        _snap(s, slug=SLUG_A, event=EVENT_A, bid=0.60, ask=0.62,
+              at=NOW - dt.timedelta(seconds=10))
+    eng.cycle()
+    r = _enters(SLUG_A)[0]
+    assert float(r.stake_usd) == pytest.approx(0.714 * 0.25 * BANKROLL, rel=1e-2)
+    assert r.binding_constraint == "max_position_size_pct"
+    assert float(r.capped_stake_usd) == pytest.approx(ENTRY_STAKE)
+    assert float(r.capped_contracts) == pytest.approx(ENTRY_STAKE / 0.60, rel=1e-3)
+
+
+def test_shadow_mode_still_refuses_what_the_model_does_not_want():
+    """No edge is a model opinion, not a cap: shadow refuses it too."""
+    eng = _engine(enforce_caps=False)
+    with _Session() as s:
+        # Trailing badly: fv ~0.11 vs mid 0.61 -> edge on NO side...
+        # so use a book where NEITHER side clears the threshold: fv ~ mid.
+        _snap(s, slug=SLUG_A, event=EVENT_A, bid=0.88, ask=0.90,
+              at=NOW - dt.timedelta(seconds=10))
+    eng.cycle()
+    assert _enters(SLUG_A) == []
