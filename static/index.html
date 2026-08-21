@@ -70,6 +70,10 @@
   .puHOLD{background:#171c26;color:#7c879b;border-color:#242c3a}
   tr.pulsepos td{border-left:none}
   tr.pulsepos td:first-child{border-left:2px solid #c08bff;padding-left:8px}
+  .pgtoggle{cursor:pointer;color:var(--faint);font-size:10.5px;padding:4px 0;
+            user-select:none}
+  .pgtoggle:hover{color:var(--txt)}
+  .livetrade table{margin-bottom:8px}
   .feeditem{cursor:pointer;padding:1px 3px;border-radius:3px}
   .feeditem:hover{background:#1a1f2b}
   @keyframes pufl{from{background:#2a1f33}to{background:transparent}}
@@ -576,7 +580,42 @@ function renderBoard(b, picksBySlug){
     const tip = hrs == null ? "" : hrs <= 0 ? "underway"
       : `tips in <span class="${hrs <= 3 ? "warnc" : "dimc"}">${hrs.toFixed(1)}h</span>`;
     const acts = g.rows.filter(r => picksBySlug[r.market_slug]).length;
+    const isLiveGame = g.rows.some(r => r.is_live);
 
+    const header = `<div style="margin-bottom:6px;margin-top:14px;font-size:11px">
+        <b>${shortEvent(g.ev)}</b> <span class="dimc">· ${when} · ${tip} ·
+        ${g.rows.length} markets${acts ? ` · <span class="pickc">${acts} actionable</span>` : ""}</span>
+      </div>`;
+
+    /* A LIVE game's section is the model's live trading, not the pregame
+       ladder (operator: "why would I want to see the pregame thoughts during
+       a live game"). The full picks/markets table survives behind a toggle —
+       history the moment the ball is up, one click away, never deleted. */
+    if(isLiveGame){
+      const open = OPEN_PREGAME.has(g.ev);
+      return header + liveTradingSection(g)
+        + `<div class="pgtoggle" data-ev="${g.ev}">${open ? "▾" : "▸"} pregame picks &
+             full market ladder (${g.rows.length} markets)</div>`
+        + (open ? gameTable(g, hrs, picksBySlug) : "");
+    }
+    return header + gameTable(g, hrs, picksBySlug);
+  }).join("");
+
+  document.querySelectorAll(".pgtoggle").forEach(el =>
+    el.addEventListener("click", () => {
+      const ev = el.dataset.ev;
+      OPEN_PREGAME.has(ev) ? OPEN_PREGAME.delete(ev) : OPEN_PREGAME.add(ev);
+      renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
+    }));
+
+  document.querySelectorAll(".sendbtn[data-key]").forEach(b2 => {
+    b2.addEventListener("click", () => openTicket(PICKS[b2.dataset.key]));
+  });
+}
+
+/* The classic per-game table: every market, picks decorated. Pregame games
+   show it directly; live games keep it behind the toggle. */
+function gameTable(g, hrs, picksBySlug){
     // Actionable rows first — the reason to open the page — then by edge.
     const ordered = g.rows.slice().sort((a, c) => {
       const pa = !!picksBySlug[a.market_slug], pc = !!picksBySlug[c.market_slug];
@@ -585,11 +624,7 @@ function renderBoard(b, picksBySlug){
       return ec - ea;
     });
 
-    return `<div style="margin-bottom:6px;margin-top:14px;font-size:11px">
-        <b>${shortEvent(g.ev)}</b> <span class="dimc">· ${when} · ${tip} ·
-        ${g.rows.length} markets${acts ? ` · <span class="pickc">${acts} actionable</span>` : ""}</span>
-      </div>
-      <table><thead><tr>
+    return `<table><thead><tr>
         <th class="l">Position</th><th>Line</th><th>BUY at</th><th>SELL at</th><th>Return</th>
         <th>Size</th><th>Stake</th>
         <th class="dimc">Bid</th><th class="dimc">Ask</th><th class="dimc">Spr</th>
@@ -602,11 +637,117 @@ function renderBoard(b, picksBySlug){
         // priced against.
         return p ? pickRow(p, r) : boardRow(r, hrs);
       }).join("")}</tbody></table>`;
-  }).join("");
+}
 
-  document.querySelectorAll(".sendbtn[data-key]").forEach(b2 => {
-    b2.addEventListener("click", () => openTicket(PICKS[b2.dataset.key]));
+//: Live games whose pregame table the operator has re-opened. Survives
+//: re-renders; resets on reload — a fresh page starts collapsed, by design.
+const OPEN_PREGAME = new Set();
+
+/* One arithmetic for every PULSE P&L on this page, the ENGINE's own frame
+   rule (core/pulse/live.py:751 — every stored price YES frame): capture per
+   contract from a to b is b−a for a yes position and a−b for a no. Used with
+   b = exit for closed trades and b = current mid for open ones. */
+function puCapture(side, a, b){
+  return side === "yes" ? b - a : a - b;
+}
+
+/* The live-trading section: what the model is DOING about this game.
+   Positions first, then entries/exits as rows with running P&L, then the
+   holds summarized in one line — never itemized (61 HOLD ladder rows were
+   the noise the operator asked to stop seeing). Display only: nothing here
+   can become an order. */
+function liveTradingSection(g){
+  const ev = g.ev;
+  const midOf = slug => {
+    const r = g.rows.find(x => x.market_slug === slug);
+    return r && r.bid != null && r.ask != null ? (r.bid + r.ask) / 2 : null;
+  };
+
+  // Open positions, prominent.
+  const posRows = Object.entries(PULSE_POSITIONS)
+    .filter(([slug]) => slug.includes(ev.replace(/^[a-z]+-/, "")) || slug.includes(ev))
+    .map(([slug, p]) => {
+      const mid = midOf(slug);
+      const upl = mid == null ? null : puCapture(p.side, p.entry_price, mid) * (p.contracts || 0);
+      return {slug, p, upl};
+    });
+
+  // Entries and exits, newest first, exits joined to their entries so a
+  // closed trade is one story with a settled capture.
+  const feed = PULSE_FEED.filter(f => f.event_slug === ev);
+  const entries = {};
+  for(const f of feed) if(f.action === "enter") entries[f.id] = f;
+  const closedBy = {};
+  for(const f of feed) if(f.action === "exit" && f.filled && f.entry_id != null)
+    closedBy[f.entry_id] = f;
+
+  let realized = 0;
+  const tradeRows = feed.map(f => {
+    let status, pnl = null;
+    if(f.action === "enter"){
+      const ex = closedBy[f.id];
+      if(ex){ status = "exited";
+        pnl = puCapture(f.side, f.limit_price, ex.limit_price) * (f.contracts || 0);
+        realized += pnl;
+      }
+      else if(f.withdrawn) status = "withdrawn";
+      else if(f.filled){ status = "open";
+        const mid = midOf(f.market_slug);
+        pnl = mid == null ? null : puCapture(f.side, f.limit_price, mid) * (f.contracts || 0);
+      }
+      else status = "resting";
+    } else {
+      status = f.withdrawn ? "withdrawn" : f.filled ? "filled" : "resting";
+    }
+    return {f, status, pnl};
   });
+  const unrealized = posRows.reduce((a, r) => a + (r.upl || 0), 0);
+
+  // Holds summarized: the estimates map is per-market and includes holds.
+  const watching = Object.entries(PULSE_LATEST)
+    .filter(([slug]) => (LAST_BOARD.markets||[]).some(r => r.market_slug === slug && r.event_slug === ev)).length;
+
+  const money = v => v == null ? "—" : (v >= 0 ? "+$" : "−$") + Math.abs(v).toFixed(2);
+  return `<div class="livetrade">
+    ${posRows.length ? `<table><thead><tr>
+      <th class="l">Open position</th><th class="l">Side</th><th>Entry</th>
+      <th>Exit resting</th><th>Mid now</th><th>Size</th><th>Stake</th>
+      <th title="the engine's frame arithmetic vs the current mid — shadow dollars, nothing is held">Unrealized</th>
+    </tr></thead><tbody>${posRows.map(({slug, p, upl}) => `
+      <tr class="pulsepos">
+        <td class="l"><span class="pubadge">PULSE</span> ${shortSlug(slug)}</td>
+        <td class="l">${p.side}</td>
+        <td class="num">${num(p.entry_price)}</td>
+        <td class="num">${p.exit_limit == null ? '<span class="dimc">no rest</span>' : num(p.exit_limit)}</td>
+        <td class="num dimc">${num(midOf(slug))}</td>
+        <td class="num">${num(p.contracts, 2)}</td>
+        <td class="num">$${(p.stake_usd ?? 0).toFixed(2)}</td>
+        <td class="num ${upl == null ? "dimc" : upl >= 0 ? "pos" : "neg"}">${money(upl)}</td>
+      </tr>`).join("")}</tbody></table>` : ""}
+
+    ${tradeRows.length ? `<table><thead><tr>
+      <th class="l">Time</th><th class="l">Market</th><th class="l">Action</th>
+      <th class="l">Side</th><th>Limit</th><th>Size</th><th class="l">Status</th>
+      <th title="exited trades: the engine's round-trip capture. Open: unrealized vs current mid. Shadow dollars.">P&amp;L</th>
+    </tr></thead><tbody>${tradeRows.map(({f, status, pnl}) => `
+      <tr>
+        <td class="l dimc">${clock(f.decided_at)}</td>
+        <td class="l">${shortSlug(f.market_slug)}</td>
+        <td class="l"><span class="puchip ${f.action === "enter" ? "puENTER" : "puEXIT"}"
+          title="${f.reason || ""}">${f.action.toUpperCase()}</span></td>
+        <td class="l">${f.side}</td>
+        <td class="num">${num(f.limit_price)}</td>
+        <td class="num">${num(f.contracts, 2)}</td>
+        <td class="l ${status === "withdrawn" ? "dimc" : status === "open" ? "pickc" : ""}">${status}</td>
+        <td class="num ${pnl == null ? "dimc" : pnl >= 0 ? "pos" : "neg"}">${money(pnl)}</td>
+      </tr>`).join("")}</tbody></table>`
+    : '<div class="dimc" style="font-size:10.5px;padding:6px 0">no entries or exits yet this game</div>'}
+
+    <div class="dimc" style="font-size:10.5px;margin:4px 0 8px">
+      watching ${watching} markets (holds summarized, not itemized) ·
+      realized ${money(realized)} · unrealized ${money(unrealized)} ·
+      shadow — nothing is sent</div>
+  </div>`;
 }
 
 /* The live quote for a pick, in the pick's own frame.
@@ -1120,23 +1261,76 @@ setInterval(boardHeartbeat, 10000);
    stop-reprice sequence reads as one story rather than two events. Clicking
    an item filters the board to that game — navigation, never an order. */
 function renderPulseFeed(){
+  /* THE RIBBON IS THE MODEL'S READ OF EACH LIVE GAME, not its trade log —
+     the operator found trade chips uninterpretable in the moment ("why would
+     I want to see the pregame thoughts during a live game" era of feedback).
+     Trades moved into the game's own body (liveTradingSection); this strip
+     answers "what does the model think the game IS": win probability and
+     projected winner from the ML fair value, the engine's own projected
+     total against the closest-to-the-money main line, current score and
+     clock. Everything shown is PULSE's recorded estimate, serialized — the
+     one derivation here is picking which board line to compare against.
+     Clicking a card filters the board to that game. Display only. */
   const el = document.getElementById("pulsefeed");
   if(!el) return;
-  if(!PULSE_FEED.length){ el.style.display = "none"; return; }
-  const newest = Math.max(...PULSE_FEED.map(f=>f.id));
+  const byEvent = {};
+  for(const [slug, m] of Object.entries(PULSE_LATEST)){
+    const ev = m.event_slug;
+    if(!ev) continue;
+    (byEvent[ev] = byEvent[ev] || []).push({slug, ...m});
+  }
+  const events = Object.keys(byEvent);
+  if(!events.length){ el.style.display = "none"; return; }
   el.style.display = "block";
-  el.innerHTML = `<span class="pubadge" style="margin-right:8px">PULSE</span>` +
-    PULSE_FEED.slice(0, 12).map(f => {
-      const ev = shortEvent(f.event_slug);
-      const label = f.type === "winner" ? "ML" : `${f.type} ${shortSlug(f.market_slug).split("-").pop()}`;
-      const cls = f.action === "enter" ? "puENTER" : "puEXIT";
-      const fresh = FEED_SEEN && f.id > FEED_SEEN;
-      return `<span class="feeditem ${fresh?"puflash":""}" data-ev="${f.event_slug}"
-        title="${f.action.toUpperCase()} ${f.side} @ ${num(f.limit_price)} (YES frame) · ${f.contracts??""} contracts${f.reason?" · "+f.reason:""}${f.entry_id?" · exit for entry #"+f.entry_id:""}${f.filled?" · filled":" · resting"}">
-        <span class="puchip ${cls}">${f.action.toUpperCase()}</span>
-        ${ev} ${label} @ ${num(f.limit_price)} · <span class="dimc">${agef(f.age_seconds)}</span></span>`;
-    }).join('<span class="dimc" style="margin:0 7px">·</span>');
-  FEED_SEEN = Math.max(FEED_SEEN, newest);
+
+  el.innerHTML = `<span class="pubadge" style="margin-right:8px"
+      title="PULSE's live read of each game — estimates, not trades. The trading log lives in each game's section below.">PULSE</span>`
+    + events.map(ev => {
+    const rows = byEvent[ev];
+    const fresh = rows.slice().sort((a,b) => a.age_seconds - b.age_seconds)[0];
+    const teams = shortEvent(ev).split("-");
+
+    // Win probability: the ML market's YES-frame fair value = P(first team).
+    const ml = rows.find(r => r.strategy === "winner" && r.fair_value != null);
+    let wp = "";
+    if(ml){
+      const p1 = ml.fair_value;
+      const lead = p1 >= 0.5 ? teams[0] : teams[1] || teams[0];
+      const pct1 = Math.round((p1 >= 0.5 ? p1 : 1 - p1) * 100);
+      wp = `<b>${lead}</b> ${pct1}%`;
+    }
+
+    // Projected total: the engine's own projection (freshest total row that
+    // carries one), against the board's closest-to-the-money total line.
+    const tot = rows.filter(r => r.strategy === "total" && r.projected_total != null)
+                    .sort((a,b) => a.age_seconds - b.age_seconds)[0];
+    let proj = "";
+    if(tot){
+      let mainLine = null, best = 1;
+      for(const r of (LAST_BOARD ? LAST_BOARD.markets : [])){
+        if(r.event_slug !== ev || r.line == null || r.bid == null || r.ask == null) continue;
+        if((r.type || "") !== "total") continue;
+        const d = Math.abs((r.bid + r.ask) / 2 - 0.5);
+        if(d < best){ best = d; mainLine = r.line; }
+      }
+      proj = `proj total <b>${tot.projected_total.toFixed(1)}</b>${
+        tot.total_sigma != null ? `<span class="dimc">±${tot.total_sigma.toFixed(1)}</span>` : ""}${
+        mainLine != null ? ` <span class="dimc">vs ${mainLine.toFixed(1)}</span>` : ""}`;
+    }
+
+    const marg = fresh && fresh.margin != null
+      ? ` · <span class="${fresh.margin > 0 ? "pos" : fresh.margin < 0 ? "neg" : "dimc"}">${fresh.margin > 0 ? "+" : ""}${fresh.margin}</span>` : "";
+    const clockTxt = fresh
+      ? `${fresh.score || ""} ${fresh.period || ""}${fresh.minutes_left != null
+          ? ` · ${fresh.minutes_left.toFixed(1)}m${fresh.minutes_left_is_estimate ? " est." : ""}` : ""}`
+      : "";
+
+    return `<span class="feeditem" data-ev="${ev}"
+      title="PULSE's live estimates for this game, ${fresh ? agef(fresh.age_seconds) : "—"} old. Click for the game's trading log and ladder.">
+      <b>${shortEvent(ev)}</b> <span class="dimc">${clockTxt}${marg}</span>
+      ${wp ? " · " + wp : ""}${proj ? " · " + proj : ""}</span>`;
+  }).join('<span class="dimc" style="margin:0 9px">·</span>');
+
   el.querySelectorAll(".feeditem").forEach(i =>
     i.addEventListener("click", () => setView({mode:"game", ev: i.dataset.ev})));
 }
