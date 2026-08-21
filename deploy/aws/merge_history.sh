@@ -283,6 +283,34 @@ done
 printf '\n%-22s %12s %12s %12s %12s\n' TABLE BEFORE STAGED INSERTED AFTER
 FAIL=0
 
+build_remap() {   # $1 parent table  $2 parent natural key cols
+  local parent="$1" pkeys="$2" name="remap_$1" on=""
+  DST -At -c "select to_regclass('$STAGE.$name') is not null" | grep -q t && return 0
+  DST -At -c "select to_regclass('$STAGE.$parent') is not null" | grep -q t || return 1
+  local IFS_SAVE="$IFS"; IFS=','
+  # PLAIN EQUALITY, not IS NOT DISTINCT FROM. The NULL-safe operator cannot use
+  # an index, so this join fell back to a nested loop: 121k staged predictions
+  # against 128k live ones ran for eighteen minutes and was still going when I
+  # cancelled it, while `uq_prediction_market_time_model` — the exact index it
+  # needed — sat unused beside it.
+  #
+  # Equality is also the correct semantics here: a natural key with a NULL in
+  # it identifies nothing, so a row it cannot match is a row that SHOULD stay
+  # unmapped rather than matching another NULL.
+  for k in $pkeys; do on="${on:+$on AND }lp.$k = hp.$k"; done
+  IFS="$IFS_SAVE"
+  # Index BEFORE the join, every time. The 33-minute lesson.
+  DST -c "
+    CREATE INDEX IF NOT EXISTS ${name}_src ON $STAGE.$parent ($(echo "$pkeys"));
+    ANALYZE $STAGE.$parent;
+    CREATE TABLE $STAGE.$name AS
+      SELECT hp.id AS old_id, lp.id AS new_id
+        FROM $STAGE.$parent hp JOIN public.$parent lp ON $on;
+    CREATE UNIQUE INDEX ON $STAGE.$name (old_id);
+    ANALYZE $STAGE.$name;" >/dev/null
+  return 0
+}
+
 merge_one() {   # $1 table  $2 natural-key cols  $3 select-list  $4 from-clause
   local tbl="$1" keys="$2" sel="$3" src="$4" before staged after inserted cols
   before=$(DST -At -c "select count(*) from public.$tbl" | tr -d '\r')
@@ -301,10 +329,21 @@ merge_one() {   # $1 table  $2 natural-key cols  $3 select-list  $4 from-clause
         pred="${pred:+$pred AND }p.$k IS NOT DISTINCT FROM s.$k"
       done
       IFS="$IFS_SAVE"
+      # DISTINCT ON is applied over the CALLER'S from-clause, not a subselect
+      # of its own. The first version built `FROM $STAGE.$tbl s` internally and
+      # silently discarded $src — so a remap LEFT JOIN vanished while the select
+      # list still referenced it, and postgres reported "missing FROM-clause
+      # entry for table r_entry_order_id". A function that takes a from-clause
+      # and then ignores it is a trap for its own caller.
+      local skeys=""
+      local IFS_SAVE2="$IFS"; IFS=','
+      for k in $keys; do skeys="${skeys:+$skeys, }s.$k"; done
+      IFS="$IFS_SAVE2"
       DST -c "INSERT INTO public.$tbl ($cols)
-              SELECT $sel FROM (SELECT DISTINCT ON ($keys) * FROM $STAGE.$tbl
-                                ORDER BY $keys, id) s
-               WHERE NOT EXISTS (SELECT 1 FROM public.$tbl p WHERE $pred);" >/dev/null
+              SELECT DISTINCT ON ($skeys) $sel
+                $src
+               WHERE NOT EXISTS (SELECT 1 FROM public.$tbl p WHERE $pred)
+               ORDER BY $skeys;" >/dev/null
     else
       DST -c "INSERT INTO public.$tbl ($cols) SELECT $sel $src
               ON CONFLICT ($keys) DO NOTHING;" >/dev/null
@@ -329,11 +368,28 @@ for spec in "${TABLES[@]}"; do
   IFS='|' read -r tbl keys link parent <<< "$spec"
   [[ -n "$link" ]] && continue          # book_levels: needs the remap first
   DST -At -c "select to_regclass('$STAGE.$tbl') is not null" | grep -q t || continue
-  sel=$(DST -At -c "select string_agg('s.'||quote_ident(column_name), ', ' order by ordinal_position)
-                      from information_schema.columns
-                     where table_schema='public' and table_name='$tbl'
-                       and column_name <> 'id'" | tr -d '\r')
-  merge_one "$tbl" "$keys" "$sel" "FROM $STAGE.$tbl s"
+  # FK columns are rewritten HERE, inside the INSERT's SELECT — not by an
+  # UPDATE afterwards. A post-insert remap cannot work for a column with a
+  # declared foreign key: the insert is refused before the fix can run.
+  # pending_exits proved it, and it is the only table with a real FK, which is
+  # why the flaw survived until a live run.
+  src="FROM $STAGE.$tbl s"
+  declare -A remap_of=()
+  for fk in "${FK_REMAP[@]}"; do
+    IFS='|' read -r fchild fcol fparent fpkeys <<< "$fk"
+    [[ "$fchild" == "$tbl" ]] || continue
+    build_remap "$fparent" "$fpkeys" || continue
+    src="$src LEFT JOIN $STAGE.remap_$fparent r_$fcol ON r_$fcol.old_id = s.$fcol"
+    remap_of[$fcol]="r_$fcol.new_id"
+  done
+  sel=""
+  while read -r c; do
+    [[ -z "$c" ]] && continue
+    sel="${sel:+$sel, }${remap_of[$c]:-s.$(printf '%s' "$c")}"
+  done < <(DST -At -c "select column_name from information_schema.columns
+                        where table_schema='public' and table_name='$tbl'
+                          and column_name <> 'id' order by ordinal_position")
+  merge_one "$tbl" "$keys" "$sel" "$src"
 done
 
 # --------------------------------------------------------------------------- #
@@ -397,53 +453,6 @@ if DST -At -c "select to_regclass('$STAGE.snap_remap') is not null" | grep -q t;
 fi
 
 [[ $FAIL -eq 0 ]] || die "a table lost rows — this merge only ever inserts"
-
-# --------------------------------------------------------------------------- #
-log "5b/6  remap every carried id link through its parent's natural key"
-# --------------------------------------------------------------------------- #
-# AFTER the inserts, never before. A remap built first can only match parents
-# that ALREADY existed in live, so every genuinely new parent orphans its
-# children — that is what produced "mapped: 0" on the first dry run.
-#
-# Rows are located by the CHILD's own natural key, so this only ever touches
-# rows this merge inserted or that already matched; a live-native row whose fk
-# is already correct is left alone by the IS DISTINCT FROM guard.
-if [[ "$MODE" == "--yes" ]]; then
-  for spec in "${FK_REMAP[@]}"; do
-    IFS='|' read -r child col parent pkeys <<< "$spec"
-    DST -At -c "select to_regclass('$STAGE.$child') is not null" | grep -q t || continue
-
-    ckeys=""
-    for s2 in "${TABLES[@]}"; do
-      IFS='|' read -r t k _ _ <<< "$s2"
-      [[ "$t" == "$child" ]] && ckeys="$k"
-    done
-    [[ -n "$ckeys" ]] || die "$child has an fk to remap but no natural key in TABLES"
-
-    # history child --(its stored fk)--> history parent --(natural key)--> live id
-    on_child=""; IFS=',' read -ra CK <<< "$ckeys"
-    for k in "${CK[@]}"; do on_child="${on_child:+$on_child AND }c.$k IS NOT DISTINCT FROM h.$k"; done
-    on_parent=""; IFS=',' read -ra PK <<< "$pkeys"
-    for k in "${PK[@]}"; do on_parent="${on_parent:+$on_parent AND }lp.$k IS NOT DISTINCT FROM hp.$k"; done
-
-    before_bad=$(DST -At -c "select count(*) from public.$child c
-                              left join public.$parent p on p.id = c.$col
-                             where c.$col is not null and p.id is null" | tr -d '\r')
-    DST -c "
-      UPDATE public.$child c SET $col = lp.id
-        FROM $STAGE.$child h
-        JOIN $STAGE.$parent hp ON hp.id = h.$col
-        JOIN public.$parent lp ON $on_parent
-       WHERE $on_child AND c.$col IS DISTINCT FROM lp.id;" >/dev/null
-    after_bad=$(DST -At -c "select count(*) from public.$child c
-                             left join public.$parent p on p.id = c.$col
-                            where c.$col is not null and p.id is null" | tr -d '\r')
-    printf '  %-34s dangling %s -> %s\n' "$child.$col" "$before_bad" "$after_bad"
-    [[ "$after_bad" -le "$before_bad" ]] || die "$child.$col got WORSE — stopping"
-  done
-else
-  echo "  skipped (dry run) — remap counts are only measurable on a real run"
-fi
 
 # --------------------------------------------------------------------------- #
 log "6/6  sequences above the new maxima"
