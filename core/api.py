@@ -2125,7 +2125,9 @@ def pulse_latest(league: str | None = None) -> dict:
             SELECT DISTINCT ON (market_slug)
                    market_slug, event_slug, decided_at, phase, action, side,
                    limit_price, fair_value, edge_net, market_bid, market_ask,
-                   score, period, strategy
+                   score, period, strategy, line, margin, minutes_left,
+                   minutes_left_is_estimate, total_so_far, projected_total,
+                   total_sigma
               FROM pulse_decisions
              WHERE event_slug LIKE :prefix
                AND decided_at > now() - make_interval(secs => :max_age)
@@ -2163,7 +2165,7 @@ def pulse_latest(league: str | None = None) -> dict:
         feed = s.execute(text("""
             SELECT decided_at, event_slug, market_slug, sports_market_type,
                    strategy, action, side, limit_price, contracts, reason,
-                   entry_id, id, filled_at
+                   entry_id, id, filled_at, withdrawn_at
               FROM pulse_decisions
              WHERE event_slug LIKE :prefix
                AND action IN ('enter', 'exit')
@@ -2176,6 +2178,7 @@ def pulse_latest(league: str | None = None) -> dict:
         "league": lg.slug,
         "max_age_seconds": PULSE_LATEST_MAX_AGE_SECONDS,
         "markets": {r.market_slug: {
+            "event_slug": r.event_slug,
             "decided_at": r.decided_at.isoformat(),
             "age_seconds": round((now - r.decided_at).total_seconds(), 1),
             "phase": r.phase,
@@ -2189,6 +2192,16 @@ def pulse_latest(league: str | None = None) -> dict:
             "score": r.score,
             "period": r.period,
             "strategy": r.strategy,
+            "line": _f(r.line),
+            "margin": r.margin,
+            "minutes_left": _f(r.minutes_left),
+            "minutes_left_is_estimate": bool(r.minutes_left_is_estimate),
+            # The engine's own projections, recorded per decision — the
+            # ribbon's "what the model thinks the game IS". Serialized, never
+            # derived here.
+            "total_so_far": r.total_so_far,
+            "projected_total": _f(r.projected_total),
+            "total_sigma": _f(r.total_sigma),
         } for r in rows},
         "positions": {r.market_slug: {
             "side": r.side,
@@ -2213,6 +2226,7 @@ def pulse_latest(league: str | None = None) -> dict:
             "reason": r.reason,
             "entry_id": r.entry_id,
             "filled": r.filled_at is not None,
+            "withdrawn": r.withdrawn_at is not None,
         } for r in feed],
     }
 
