@@ -115,7 +115,9 @@ def test_the_board_table_did_not_come_across(html):
 
 
 def test_every_pick_row_carries_return_buy_at_sell_at_and_a_send_cell(html):
-    board = _fn(html, "function renderBoard(b, picksBySlug){")
+    # The table markup moved from renderBoard into gameTable when live games
+    # got the trading view (live-view restructure) — same columns, new home.
+    board = _fn(html, "function gameTable(g, hrs, picksBySlug){")
     for column in ("BUY at", "SELL at", "Return", "Line", "Model FV", "Edge"):
         assert f">{column}</th>" in board, f"the {column} column is missing"
     assert "sendCell(p)" in _fn(html, "function pickRow(p, br){")
@@ -134,7 +136,7 @@ def test_the_picks_table_has_no_shadow_column(html):
     in the box; a column showed the verdict for a limit price nobody was going
     to send. Two numbers for one decision, and the stale one was larger.
     """
-    picks = _fn(html, "function renderBoard(b, picksBySlug){")
+    picks = _fn(html, "function gameTable(g, hrs, picksBySlug){")
     header = _block(picks, "<thead>", "</thead>")
     assert "shadow" not in header.lower(), "no shadow column header"
     # And no row cell reads the shadow order either — a column can be
