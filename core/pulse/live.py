@@ -176,6 +176,10 @@ MAX_SPREAD = 0.15
 #: Bankroll readings older than this refuse entries (the scheduler's poller
 #: writes every ~20 minutes; see core/bankroll.py).
 BANKROLL_MAX_AGE_SECONDS = 1800.0
+#: A live market whose edge sizes to ZERO warns at most this often per
+#: market — the 2026-08-20 starvation was invisible precisely because this
+#: skip was silent.
+SIZED_ZERO_LOG_SECONDS = 300.0
 
 
 def spread_fair_value(
@@ -372,6 +376,8 @@ class PulseEngine:
         self._last_settle = float("-inf")
         self._daily_day: dt.date | None = None
         self._daily_staked = 0.0
+        #: market -> monotonic instant of the last sized-to-zero warning.
+        self._sized_zero_logged: dict[str, float] = {}
         self._heartbeat = hb.Heartbeat(sessionmaker, SERVICE_PULSE)
         self._stop = threading.Event()
 
@@ -678,6 +684,17 @@ class PulseEngine:
             self._daily_staked = 0.0
         self._daily_staked += stake
 
+    def _release_daily_stake(self, stake: float) -> None:
+        """Money came back — an unfilled entry stood down, or a position
+        closed. The daily brake meters COMMITTED money, not money-ever;
+        without this release the day's FIRST game permanently exhausts the
+        budget (20% of a ~$19 bankroll is ~$3.84) and every later same-UTC-day
+        game sizes to zero in silence — measured on the 2026-08-20 slate,
+        where ind-dal's nine entries starved the 02:00Z pair to ZERO rows.
+        Rides to settlement are deliberately never released: that money is
+        gone until the market pays."""
+        self._daily_staked = max(self._daily_staked - stake, 0.0)
+
     def _daily_exposure(self, now: dt.datetime) -> float:
         if self._daily_day != now.date():
             return 0.0
@@ -755,6 +772,7 @@ class PulseEngine:
                  entry=pos.entry_price, exit=pos.exit_order.limit_price,
                  capture_per_contract=round(capture, 4),
                  held_seconds=round((ob.captured_at - pos.opened_at).total_seconds(), 1))
+        self._release_daily_stake(pos.stake_usd)   # position closed, money back
         state.position = None          # flat again — the market may be re-entered
 
     def _manage_position(self, session, state: MarketState, ob: Observation,
@@ -810,6 +828,7 @@ class PulseEngine:
         if fv is None or not est.clock.usable or edge <= 0:
             self._withdraw(session, order.decision_id, at=ob.captured_at)
             result.withdrawals += 1
+            self._release_daily_stake(state.entry_stake)   # money never left
             state.entry_order = None
             state.entry_stake = 0.0
             log.info("pulse_entry_withdrawn", market=ob.market_slug,
@@ -852,6 +871,18 @@ class PulseEngine:
             minimum_trade_qty=ob.min_trade_qty or 0.01,
         )
         if not sized.is_tradeable:
+            # The 2026-08-20 lesson: a live market with real edge sized to
+            # zero used to skip in total silence, and a whole slate produced
+            # zero rows before anyone knew where to look. Loud, throttled.
+            last = self._sized_zero_logged.get(ob.market_slug, float("-inf"))
+            if time.monotonic() - last >= SIZED_ZERO_LOG_SECONDS:
+                self._sized_zero_logged[ob.market_slug] = time.monotonic()
+                log.warning(
+                    "pulse_entry_sized_zero", market=ob.market_slug,
+                    constraint=sized.binding_constraint.value,
+                    edge_net=round(sized.edge_net, 4),
+                    daily_staked=round(self._daily_staked, 2),
+                    bankroll=round(bankroll, 2))
             return
 
         row = self._decision_row(
@@ -936,6 +967,7 @@ class PulseEngine:
             if state.entry_order is not None and unseen > ENTRY_UNSEEN_WITHDRAW_SECONDS:
                 self._withdraw(session, state.entry_order.decision_id)
                 result.withdrawals += 1
+                self._release_daily_stake(state.entry_stake)   # money never left
                 state.entry_order = None
                 state.entry_stake = 0.0
                 log.info("pulse_entry_withdrawn", market=slug, reason="stream gone")
