@@ -214,6 +214,52 @@ def test_the_action_chip_carries_action_side_price_and_age(html):
         assert piece in row
 
 
+# ------------------------------------------------------------------ #
+# The live view: body = what the model is doing; ribbon = what it thinks
+# ------------------------------------------------------------------ #
+
+
+def test_a_live_game_shows_trading_not_the_pregame_ladder(html):
+    board = _fn(html, "function renderBoard(b, picksBySlug){")
+    assert "isLiveGame" in board and "liveTradingSection(g)" in board
+    assert "pgtoggle" in board, "the pregame table survives behind a toggle"
+    assert "OPEN_PREGAME" in board, "the toggle remembers per game"
+
+
+def test_the_trading_section_scores_with_one_arithmetic(html):
+    """puCapture is the ENGINE's frame rule, used for both closed captures
+    (b = exit) and open unrealized (b = mid) — one derivation, two uses."""
+    sec = _fn(html, "function liveTradingSection(g){")
+    assert sec.count("puCapture(") >= 3
+    cap = _fn(html, "function puCapture(side, a, b){")
+    assert 'side === "yes" ? b - a : a - b' in cap
+
+
+def test_holds_are_summarized_never_itemized(html):
+    sec = _fn(html, "function liveTradingSection(g){")
+    assert "holds summarized, not itemized" in sec
+    assert '"hold"' not in sec, "no hold rows render in the trading table"
+
+
+def test_the_trading_section_cannot_order(html):
+    import re
+
+    sec = _fn(html, "function liveTradingSection(g){")
+    code = re.sub(r"/\*.*?\*/", "", sec, flags=re.DOTALL)
+    for forbidden in ("sendCell", "openTicket", "PICKS[", "sendbtn"):
+        assert forbidden not in code
+    assert "nothing is sent" in sec
+
+
+def test_the_ribbon_summary_reads_the_engines_projections(html):
+    fn = _fn(html, "function renderPulseFeed(){")
+    assert "projected_total" in fn and "total_sigma" in fn
+    assert 'strategy === "winner"' in fn, "WP comes from the ML fair value"
+    # the one client-side choice is WHICH line to compare against — closest
+    # to the money — and nothing else is derived
+    assert "Math.abs((r.bid + r.ask) / 2 - 0.5)" in fn
+
+
 def test_a_position_row_fills_the_dead_columns_with_the_engines_frame(html):
     """Entry, resting exit, unrealized, size, stake go where every other
     in-play row shows dashes. Unrealized uses the ENGINE's own arithmetic
@@ -227,15 +273,24 @@ def test_a_position_row_fills_the_dead_columns_with_the_engines_frame(html):
     assert "shadow dollars" in row, "unrealized is labelled as never held"
 
 
-def test_the_feed_is_navigation_never_an_order(html):
+def test_the_ribbon_is_navigation_never_an_order(html):
+    """Superseded by the live-view restructure (operator request): the ribbon
+    is now the model's READ of each live game — WP, projected winner,
+    projected total vs the main line — and the trade log moved into each
+    game's own body. The invariants carried over: navigation only, never an
+    order, and the entry->exit story (entry_id) now lives in
+    liveTradingSection where the trades render."""
     import re
 
     fn = _fn(html, "function renderPulseFeed(){")
     code = re.sub(r"/\*.*?\*/", "", fn, flags=re.DOTALL)
     for forbidden in ("sendCell", "openTicket", "PICKS[", "sendbtn"):
         assert forbidden not in code
-    assert "setView" in fn, "clicking an item filters the board to its game"
-    assert "entry_id" in fn, "an exit names its entry so the story reads"
+    assert "setView" in fn, "clicking a card filters the board to its game"
+    assert "fair_value" in fn and "projected_total" in fn, (
+        "the ribbon renders estimates, not trades")
+    body = _fn(html, "function liveTradingSection(g){")
+    assert "entry_id" in body, "the entry->exit story moved into the body"
 
 
 def test_a_position_outlives_the_estimate_window(html):
