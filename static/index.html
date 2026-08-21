@@ -535,7 +535,9 @@ function renderBoard(b, picksBySlug){
     return;
   }
   const nPicks = Object.keys(picksBySlug).length;
-  $("#hint").textContent = ` — ${rows.length} markets · ${nPicks} actionable`;
+  const liveN = rows.filter(r => r.is_live).length;
+  $("#hint").textContent = ` — ${rows.length} markets · ${nPicks} actionable · ${
+    liveN ? `${liveN} live · refreshing 10s` : "refreshing 60s"} · as of ${new Date().toLocaleTimeString()}`;
 
   const now = Date.now();
   const games = [];
@@ -654,7 +656,7 @@ function pickRow(p, br){
     <td class="dimc">${(p.spread*100).toFixed(0)}¢</td>
     <td class="dimc">${num(p.model)}</td>
     <td class="dimc">${pct(p.edge)}${p.suspect?' <span class="warnc" title="disagreement over 15% — usually model error, not free money">?</span>':""}${movedChip(p, br)}</td>
-    <td class="num ${ageCls(br)}" title="age of the live quote for this market">${br?agef(br.age_seconds):"—"}</td>
+    <td class="num ${ageCls(br)}" title="${br?`quote from the ${br.source||"pregame"} writer`:"no board row for this market"}">${br?agef(br.age_seconds):"—"}</td>
     <td>${sendCell(p)}</td>
   </tr>`;
 }
@@ -732,7 +734,7 @@ function boardRow(r, hrs){
       <td class="dimc">${r.spread==null?"—":(r.spread*100).toFixed(0)+"¢"}</td>
       <td class="num pufv" title="${pu?`PULSE fair value (YES frame flipped to the shown side), decided ${agef(pu.age_seconds)} ago`:"no fresh PULSE estimate"}">${pu?(v?num(v.model):num(pu.fair_value)):"—"}</td>
       <td class="num ${v&&v.edge>0?"pos":v?"neg":"dimc"}" title="${pu?`PULSE FV against the CURRENT touch, gross — not PULSE's own edge_net, which was net of fees at its limit at decision time (${pu.edge_net==null?"—":pct(pu.edge_net)})`:"no fresh PULSE estimate"}">${v?pct(v.edge):"—"}</td>
-      <td class="num ${ageCls(r)}" title="age of the live quote for this market">${agef(r.age_seconds)}</td>
+      <td class="num ${ageCls(r)}" title="quote from the ${r.source||"pregame"} writer — pregame sweeps every 15m, live tiers run 200ms-10s. The age is the truth about which you are looking at.">${agef(r.age_seconds)}</td>
       <td>${pu
         ? `<span class="puchip ${chipCls}" title="PULSE's last decision on this market: ${pu.action.toUpperCase()} ${pu.side} @ ${num(pu.limit_price)} · its own net edge ${pu.edge_net==null?"—":pct(pu.edge_net)} · ${pu.score||""} ${pu.period||""} · decided ${agef(pu.age_seconds)} ago. Shadow — never sent.">${pu.action.toUpperCase()} ${pu.side} @${num(pu.limit_price)} · ${agef(pu.age_seconds)}</span>`
         : `<span class="puchip puHOLD" title="PULSE holds this position (entered ${pos?new Date(pos.entered_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):""}) but has not re-estimated inside the freshness window — the game is quiet or the engine has moved on. Shadow — never sent.">position open · quiet</span>`}</td>
@@ -755,7 +757,7 @@ function boardRow(r, hrs){
     <td class="dimc">${r.spread==null?"—":(r.spread*100).toFixed(0)+"¢"}</td>
     <td class="dimc">${v?num(v.model):num(r.model)}</td>
     <td class="dimc">${v?pct(v.edge):"—"}</td>
-    <td class="num ${ageCls(r)}" title="age of the live quote for this market">${agef(r.age_seconds)}</td>
+    <td class="num ${ageCls(r)}" title="quote from the ${r.source||"pregame"} writer — pregame sweeps every 15m, live tiers run 200ms-10s. The age is the truth about which you are looking at.">${agef(r.age_seconds)}</td>
     <td><span class="whynot" title="${explain.replace(/"/g,"&quot;")}">${why}</span></td>
   </tr>`;
 }
@@ -1085,7 +1087,33 @@ async function loadPulseLatest(league){
     if(LAST_BOARD) renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
   } catch(e){ /* display only; the board stands without it */ }
 }
-setInterval(() => loadPulseLatest(LEAGUE), 10000);
+/* THE BOARD ITSELF IS LIVE NOW. One heartbeat: every 10s the PULSE
+   estimates refresh; the full board+picks refetch on the same beat whenever
+   anything is live, and every 6th beat (60s) otherwise — pregame books drift
+   on a 15-minute recorder cycle, so a quiet minute of staleness is honest
+   while a live game's minute is not.
+
+   This closes the actual mechanism behind "nothing live — showing next to
+   tip" printing during a live game: the data was seconds-fresh server-side
+   the whole time (verified on production: 2,691 rows/60s for the live game),
+   but loadPicks ran once at page load and never again — the table and its
+   hint were a photograph. The fix is cadence, not a data merge: both
+   recorders already write one table and the newest row already wins. */
+let BOARD_INFLIGHT = false;
+let IDLE_BEATS = 0;
+
+async function boardHeartbeat(){
+  loadPulseLatest(LEAGUE);
+  const anyLive = (LAST_BOARD && (LAST_BOARD.markets||[]).some(r => r.is_live))
+               || EVENTS.some(e => e.is_live);
+  IDLE_BEATS = anyLive ? 0 : IDLE_BEATS + 1;
+  if((anyLive || IDLE_BEATS >= 6) && !BOARD_INFLIGHT){
+    if(!anyLive) IDLE_BEATS = 0;
+    BOARD_INFLIGHT = true;
+    try { await loadPicks(LEAGUE); } finally { BOARD_INFLIGHT = false; }
+  }
+}
+setInterval(boardHeartbeat, 10000);
 
 /* The activity feed: newest first, one line per enter/exit, flash on new.
    An exit names its entry (entry_id), so the 02:32:34 ENTER -> 02:32:38 EXIT
