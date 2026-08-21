@@ -139,7 +139,28 @@ log "0c/6  foreign-key audit — which id links would be carried over raw?"
 # So the script no longer trusts that someone remembered: it asks the catalogue
 # which columns are foreign keys and refuses if any of them is neither remapped
 # nor explicitly declared safe.
-FK_REMAPPED="book_levels.snapshot_id"          # handled in step 4/5
+# child | fk column | parent table | parent's natural key
+#
+# Every local id link, one row each. The first version of this script hardcoded
+# book_levels and carried the other six raw; this table exists so that adding a
+# table with an id link is a line here rather than a silent defect.
+#
+# Read it as: "child.fk points at parent.id, and the only durable way to find
+# that parent in the other database is its natural key."
+FK_REMAP=(
+  "book_levels|snapshot_id|market_snapshots|market_slug,captured_at"
+  "shadow_orders|prediction_id|predictions|market_slug,predicted_at,model_version,config_hash"
+  "orders|prediction_id|predictions|market_slug,predicted_at,model_version,config_hash"
+  "orders|shadow_order_id|shadow_orders|idempotency_key"
+  "pending_exits|entry_order_id|orders|idempotency_key"
+  "pending_exits|submitted_order_id|orders|idempotency_key"
+  # Self-referential: an exit points at the entry it closes.
+  "pulse_decisions|entry_id|pulse_decisions|market_slug,decided_at,action"
+)
+FK_REMAPPED=""
+for spec in "${FK_REMAP[@]}"; do
+  IFS='|' read -r c col _ _ <<< "$spec"; FK_REMAPPED="$FK_REMAPPED $c.$col"
+done
 FK_DECLARED_SAFE=""                            # add with a reason, never blank
 
 fk_unhandled=""
@@ -376,6 +397,53 @@ if DST -At -c "select to_regclass('$STAGE.snap_remap') is not null" | grep -q t;
 fi
 
 [[ $FAIL -eq 0 ]] || die "a table lost rows — this merge only ever inserts"
+
+# --------------------------------------------------------------------------- #
+log "5b/6  remap every carried id link through its parent's natural key"
+# --------------------------------------------------------------------------- #
+# AFTER the inserts, never before. A remap built first can only match parents
+# that ALREADY existed in live, so every genuinely new parent orphans its
+# children — that is what produced "mapped: 0" on the first dry run.
+#
+# Rows are located by the CHILD's own natural key, so this only ever touches
+# rows this merge inserted or that already matched; a live-native row whose fk
+# is already correct is left alone by the IS DISTINCT FROM guard.
+if [[ "$MODE" == "--yes" ]]; then
+  for spec in "${FK_REMAP[@]}"; do
+    IFS='|' read -r child col parent pkeys <<< "$spec"
+    DST -At -c "select to_regclass('$STAGE.$child') is not null" | grep -q t || continue
+
+    ckeys=""
+    for s2 in "${TABLES[@]}"; do
+      IFS='|' read -r t k _ _ <<< "$s2"
+      [[ "$t" == "$child" ]] && ckeys="$k"
+    done
+    [[ -n "$ckeys" ]] || die "$child has an fk to remap but no natural key in TABLES"
+
+    # history child --(its stored fk)--> history parent --(natural key)--> live id
+    on_child=""; IFS=',' read -ra CK <<< "$ckeys"
+    for k in "${CK[@]}"; do on_child="${on_child:+$on_child AND }c.$k IS NOT DISTINCT FROM h.$k"; done
+    on_parent=""; IFS=',' read -ra PK <<< "$pkeys"
+    for k in "${PK[@]}"; do on_parent="${on_parent:+$on_parent AND }lp.$k IS NOT DISTINCT FROM hp.$k"; done
+
+    before_bad=$(DST -At -c "select count(*) from public.$child c
+                              left join public.$parent p on p.id = c.$col
+                             where c.$col is not null and p.id is null" | tr -d '\r')
+    DST -c "
+      UPDATE public.$child c SET $col = lp.id
+        FROM $STAGE.$child h
+        JOIN $STAGE.$parent hp ON hp.id = h.$col
+        JOIN public.$parent lp ON $on_parent
+       WHERE $on_child AND c.$col IS DISTINCT FROM lp.id;" >/dev/null
+    after_bad=$(DST -At -c "select count(*) from public.$child c
+                             left join public.$parent p on p.id = c.$col
+                            where c.$col is not null and p.id is null" | tr -d '\r')
+    printf '  %-34s dangling %s -> %s\n' "$child.$col" "$before_bad" "$after_bad"
+    [[ "$after_bad" -le "$before_bad" ]] || die "$child.$col got WORSE — stopping"
+  done
+else
+  echo "  skipped (dry run) — remap counts are only measurable on a real run"
+fi
 
 # --------------------------------------------------------------------------- #
 log "6/6  sequences above the new maxima"
