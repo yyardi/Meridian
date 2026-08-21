@@ -140,3 +140,34 @@ the tape view's seam.
 
 *Registered 2026-08-18, before the first cycle. Results append below this
 line, never above it.*
+
+## 2026-08-21 — SIZING SEMANTICS CHANGED MID-ACCRUAL (operator decision)
+
+Any analysis of the tape MUST split on this date. Rows decided before the
+2026-08-21 pre-tip deploy carry LIVE-FAITHFUL sizing: exposure caps
+(position / game / daily / absolute-dollar) shrank or blocked entries, and
+on 2026-08-20 the daily cap — which then never released returned money —
+silently blocked TWO ENTIRE GAMES of decisions (the 02:00Z pair; zero rows;
+PR #48's receipts).
+
+Rows decided after the deploy carry SHADOW sizing: `contracts`/`stake_usd`
+are the model's full desired fractional-Kelly size; exposure caps never
+shrink or block. When a cap WOULD have bound in live mode, the row says so —
+`binding_constraint` holds the cap's label and `capped_stake_usd` /
+`capped_contracts` hold the live-faithful size (0 = the cap would have
+blocked entirely; NULL = no cap would have bound). Model-intent gates (no
+edge, edge under threshold) and venue realities (min bankroll, venue minimum
+quantity on the desired size) still refuse; the per-event position-count cap
+(3) still binds as a tape-sanity control.
+
+Approximation, stated: the capped annotation is evaluated against the SHADOW
+book's exposure. It is exact until the first moment a cap binds and the
+books diverge; after that it approximates what a live book would have
+carried. The live-faithful subset is therefore indicative, not a replay —
+a true live replay recomputes from the tape.
+
+Live-mode enforcement is one env flip (`MERIDIAN_PULSE_ENFORCE_CAPS=1`),
+under which the release-on-return fix (money returns to the daily budget on
+entry withdrawal and exit fill; rides stay held) governs the committed-money
+counter. The same release logic runs in shadow mode too, keeping the
+annotations' daily-cap reference honest.
