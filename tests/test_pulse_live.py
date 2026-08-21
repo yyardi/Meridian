@@ -158,11 +158,17 @@ def test_an_enter_decision_carries_the_full_game_context():
     assert float(r.limit_price) == 0.60              # joins the touch, maker
     assert 0.85 < float(r.fair_value) < 0.92
     assert float(r.edge_net) > 0.20
-    # The size, against the REAL bankroll, with its binding constraint.
+    # The size, against the REAL bankroll — SHADOW semantics (operator
+    # decision 2026-08-21): full desired fractional-Kelly size on the row
+    # (raw f* 0.714 x quarter-Kelly x $200 = $35.70), with the cap that
+    # WOULD have bound in live mode as annotation: label + capped size
+    # ($5, max_position_dollars).
     assert float(r.bankroll_usd) == 200.0
-    assert float(r.stake_usd) == pytest.approx(5.0)  # max_position_dollars cap
-    assert float(r.contracts) == pytest.approx(5.0 / 0.60, rel=1e-3)
+    assert float(r.stake_usd) == pytest.approx(0.714 * 0.25 * 200.0, rel=1e-2)
+    assert float(r.contracts) == pytest.approx(float(r.stake_usd) / 0.60, rel=1e-3)
     assert r.binding_constraint == "max_position_dollars"
+    assert float(r.capped_stake_usd) == pytest.approx(5.0)
+    assert float(r.capped_contracts) == pytest.approx(5.0 / 0.60, rel=1e-3)
     assert r.filled_at is None and r.withdrawn_at is None
 
 

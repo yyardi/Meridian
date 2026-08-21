@@ -82,7 +82,7 @@ from sqlalchemy import text
 
 from core import heartbeat as hb
 from core.bankroll import BankrollUnavailable
-from core.kelly_sizing import size_position
+from core.kelly_sizing import Constraint, size_position
 from core.live_fv import DEFAULT_SIGMA, Clock, fair_value, minutes_remaining, parse_score
 from core.live_totals_fv import over_probability, project_total, remaining_sigma
 from core.pulse.storage import (
@@ -180,6 +180,20 @@ BANKROLL_MAX_AGE_SECONDS = 1800.0
 #: market — the 2026-08-20 starvation was invisible precisely because this
 #: skip was silent.
 SIZED_ZERO_LOG_SECONDS = 300.0
+#: Shadow sizing semantics (operator decision, 2026-08-21): exposure caps
+#: ANNOTATE, never bind — see _maybe_enter. "1" restores live-faithful
+#: enforcement (the future live mode; release-on-return still governs the
+#: committed-money counter either way).
+DEFAULT_ENFORCE_CAPS = os.environ.get("MERIDIAN_PULSE_ENFORCE_CAPS", "0") == "1"
+#: The exposure caps — the constraints that annotate rather than bind in
+#: shadow. Model-intent gates (no edge / under threshold) and venue realities
+#: (min bankroll, min trade qty on the DESIRED size) are deliberately absent.
+_EXPOSURE_CAPS = frozenset({
+    Constraint.MAX_POSITION_PCT,
+    Constraint.MAX_GAME_PCT,
+    Constraint.MAX_DAILY_PCT,
+    Constraint.MAX_DOLLARS,
+})
 
 
 def spread_fair_value(
@@ -351,6 +365,7 @@ class PulseEngine:
         max_open_per_event: int = DEFAULT_MAX_OPEN_PER_EVENT,
         sigma: float = DEFAULT_SIGMA,
         estimates_version: str = DEFAULT_ESTIMATES_VERSION,
+        enforce_caps: bool = DEFAULT_ENFORCE_CAPS,
         settlement_lookup=None,
         bankroll_reader=None,
     ) -> None:
@@ -363,6 +378,11 @@ class PulseEngine:
         self.max_open_per_event = max_open_per_event
         self.sigma = sigma
         self.estimates_version = estimates_version
+        self.enforce_caps = enforce_caps
+        from strategies.wnba_totals.config import CONFIG
+        #: The fractional-Kelly haircut the desired size uses — the config's
+        #: own, so shadow intent and live sizing share one definition.
+        self._kelly_fraction = CONFIG.kelly_fraction
         #: slug -> 0|1|None. Production asks the PUBLIC gateway; tests inject.
         self._settlement_lookup = settlement_lookup or self._venue_settlement
         #: () -> float|None. Production reads stored account_balances rows and
@@ -606,6 +626,7 @@ class PulseEngine:
         action: str, side: str, limit_price: float, contracts: float,
         stake_usd: float, bankroll: float | None, binding: str | None,
         reason: str | None, entry_id: int | None, edge_net: float | None,
+        capped_stake: float | None = None, capped_contracts: float | None = None,
     ) -> PulseDecision:
         from decimal import Decimal as D
 
@@ -643,6 +664,8 @@ class PulseEngine:
             fair_value=dec(est.fair_value),
             edge_net=dec(edge_net),
             estimates_version=est.version,
+            capped_stake_usd=dec(capped_stake),
+            capped_contracts=dec(capped_contracts),
         )
 
     def _withdraw(self, session, decision_id: int, at: dt.datetime | None = None) -> None:
@@ -860,6 +883,7 @@ class PulseEngine:
         if not (0.01 <= cost <= 0.99):
             return
 
+        min_qty = ob.min_trade_qty or 0.01
         sized = size_position(
             probability=probability,
             price=cost,
@@ -868,9 +892,45 @@ class PulseEngine:
             game_exposure_used=dollars_open / bankroll if bankroll > 0 else 1.0,
             daily_exposure_used=self._daily_exposure(ob.captured_at) / bankroll
             if bankroll > 0 else 1.0,
-            minimum_trade_qty=ob.min_trade_qty or 0.01,
+            minimum_trade_qty=min_qty,
         )
-        if not sized.is_tradeable:
+
+        # SHADOW SIZING SEMANTICS (operator decision, 2026-08-21): with zero
+        # real dollars at stake, the shadow tape's whole purpose is the
+        # complete record of the model's intent — and on 2026-08-20 the
+        # daily cap silently discarded two entire games of exactly that.
+        # In shadow mode (enforce_caps=False, the default), exposure caps
+        # ANNOTATE instead of bind: the row carries the full desired
+        # fractional-Kelly size, plus the live-faithful capped size in
+        # capped_* when a cap would have bound (0 = would have blocked).
+        # Model-intent gates (no edge, edge under threshold) and venue
+        # realities (min bankroll, min trade qty on the DESIRED size) still
+        # refuse — a cap is not a model opinion, but those are.
+        entry_contracts = sized.contracts
+        entry_stake = sized.dollars
+        capped_stake = capped_contracts = None
+        binding = sized.binding_constraint
+
+        if not self.enforce_caps:
+            if binding in (Constraint.NEGATIVE_EDGE, Constraint.MIN_EDGE):
+                return                 # the model does not want this trade
+            desired_stake = sized.kelly_fraction_raw * self._kelly_fraction * bankroll
+            desired_contracts = desired_stake / cost if cost > 0 else 0.0
+            if binding == Constraint.MIN_BANKROLL or desired_contracts < min_qty:
+                pass                   # venue reality: fall through to the loud log
+            elif binding in _EXPOSURE_CAPS:
+                entry_contracts, entry_stake = desired_contracts, desired_stake
+                capped_stake, capped_contracts = sized.dollars, sized.contracts
+            elif binding == Constraint.BELOW_MIN_TRADE_QTY:
+                # The CAPPED size fell under the venue minimum but the
+                # desired size did not — a cap block in disguise (the exact
+                # 2026-08-20 shape once day_room hit zero).
+                entry_contracts, entry_stake = desired_contracts, desired_stake
+                capped_stake, capped_contracts = 0.0, 0.0
+            else:                      # KELLY: caps did not bind; sizes agree
+                entry_contracts, entry_stake = desired_contracts, desired_stake
+
+        if entry_contracts < min_qty or entry_stake <= 0:
             # The 2026-08-20 lesson: a live market with real edge sized to
             # zero used to skip in total silence, and a whole slate produced
             # zero rows before anyone knew where to look. Loud, throttled.
@@ -879,7 +939,7 @@ class PulseEngine:
                 self._sized_zero_logged[ob.market_slug] = time.monotonic()
                 log.warning(
                     "pulse_entry_sized_zero", market=ob.market_slug,
-                    constraint=sized.binding_constraint.value,
+                    constraint=binding.value,
                     edge_net=round(sized.edge_net, 4),
                     daily_staked=round(self._daily_staked, 2),
                     bankroll=round(bankroll, 2))
@@ -887,26 +947,28 @@ class PulseEngine:
 
         row = self._decision_row(
             ob, est, action=ENTER, side=side, limit_price=limit,
-            contracts=sized.contracts, stake_usd=sized.dollars,
-            bankroll=bankroll, binding=sized.binding_constraint.value,
+            contracts=entry_contracts, stake_usd=entry_stake,
+            bankroll=bankroll, binding=binding.value,
             reason=None, entry_id=None, edge_net=sized.edge_net,
+            capped_stake=capped_stake, capped_contracts=capped_contracts,
         )
         session.add(row)
         session.flush()
         result.decisions += 1
         result.entries += 1
         state.entry_order = RestingOrder(
-            decision_id=row.id, limit_price=limit, contracts=sized.contracts,
+            decision_id=row.id, limit_price=limit, contracts=entry_contracts,
             buys_yes=(side == YES), placed_at=ob.captured_at,
         )
         state.entry_side = side
         state.entry_strategy = est.strategy
-        state.entry_stake = sized.dollars
-        self._note_daily_stake(sized.dollars, ob.captured_at)
+        state.entry_stake = entry_stake
+        self._note_daily_stake(entry_stake, ob.captured_at)
         log.info("pulse_entry_rested", market=ob.market_slug, side=side,
-                 limit=limit, contracts=round(sized.contracts, 2),
-                 stake=round(sized.dollars, 2), fv=round(fv, 4),
-                 edge_net=round(sized.edge_net, 4), strategy=est.strategy)
+                 limit=limit, contracts=round(entry_contracts, 2),
+                 stake=round(entry_stake, 2), fv=round(fv, 4),
+                 edge_net=round(sized.edge_net, 4), strategy=est.strategy,
+                 capped_stake=None if capped_stake is None else round(capped_stake, 2))
 
     # ---- one cycle -------------------------------------------------------- #
 

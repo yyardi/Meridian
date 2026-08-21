@@ -134,6 +134,18 @@ class PulseDecision(Base):
     #: (core/bankroll.py — stored readings only, the engine never fetches).
     bankroll_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     binding_constraint: Mapped[str | None] = mapped_column(String(40))
+    #: SHADOW SIZING SEMANTICS (operator decision, 2026-08-21): in shadow
+    #: mode, exposure caps never shrink or block a decision — `contracts`/
+    #: `stake_usd` carry the model's FULL desired (fractional-Kelly) size,
+    #: and when a cap WOULD have bound in live mode these two carry the
+    #: live-faithful capped size (0 when the cap would have blocked
+    #: entirely, as the 2026-08-20 daily cap did for two whole games).
+    #: NULL = no cap would have bound. The live-faithful subset is these
+    #: columns, filterable; caps are evaluated against the shadow book's
+    #: exposure (an approximation once sizes diverge — see
+    #: docs/math/pulse-live.md's dated note).
+    capped_stake_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    capped_contracts: Mapped[Decimal | None] = mapped_column(Qty)
     reason: Mapped[str | None] = mapped_column(String(200))
     #: For exit/hold rows: the id of the entry decision they belong to.
     entry_id: Mapped[int | None] = mapped_column(BigInteger)
