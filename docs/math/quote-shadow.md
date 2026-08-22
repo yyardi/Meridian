@@ -128,3 +128,20 @@ QUOTE's in-game arm is dead twice — once static (C13), once requoting
 Observation, not verdict (registered-scope note): the pregame regime
 remains below its fill floor (307 recorded / 277 settled of 500; 12 games)
 and continues accruing. Nothing here reads on it.
+
+## 2026-08-22 — PAUSED by operator
+
+`quote-engine` stopped on the server the same day the ingame verdict landed;
+all data retained. Rationale: focus exclusively on PULSE — one thing at a
+time, mastered. Standing state as of the pause:
+
+* The **ingame FAIL stands** (previous row) and is the v1 baseline: any
+  future market-making work registers as a NEW strategy measured against
+  it, not as a resumption of this run.
+* The **pregame accrual is suspended incomplete** at 307 recorded / 277
+  settled of the 500-fill floor (12 games). No verdict was reached and none
+  may be inferred from a parked accrual; if the run ever resumes, the count
+  continues — it does not restart.
+* The `/quote` page continues to render the recorded state (its data is the
+  database, not the engine); its heartbeat will read the stopped engine
+  honestly.
