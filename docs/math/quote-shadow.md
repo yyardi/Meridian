@@ -83,3 +83,48 @@ another session's uncommitted work when this shipped, so to avoid sweeping
 
 *Registered 2026-08-09, before the first cycle. Results append below this
 line, never above it.*
+
+## 2026-08-19 — accruing (recorded retroactively with the verdict row below)
+
+First status read after the engine's first full slates: ingame 927 fills /
+1 settled game, pregame 19 / 1 — both regimes NO DATA, counts only
+(rendered on /quote from 2026-08-18 onward with the "accruing — no verdict
+yet" chip).
+
+## 2026-08-22 — INGAME VERDICT: FAIL (registered floors crossed)
+
+Verbatim from `python -m core.quote.report`, run against production
+2026-08-22 04:47Z:
+
+```
+[ingame]
+  fills recorded / settled     : 17,032 / 15,614
+  distinct games (settled)     : 12
+  staked -> returned           : $7,566.95 -> $7,486.00
+  per-fill ROI, clustered      : -0.0287  95% CI [-0.0825, +0.0251]  (G=12)
+  net capture at fill (static-study mark): -1.60c [-1.69, -1.50]
+  VERDICT: FAIL
+```
+
+Both floors crossed (15,614 settled ≥ 500; 12 games ≥ 10). The report's
+registered rule prints FAIL: at floor and not PASS (primary ROI mean is
+negative and its clustered CI does not exclude zero in QUOTE's favour —
+it spans zero, which under the registered implementation is a FAIL, not a
+suspension of judgment).
+
+**The question this engine was built to answer is answered.** Requoting
+was the one behaviour the static study could not price. Against C13's
+static in-game −2.74¢/fill, the 5s-requoting quoter captures −1.60¢
+[−1.69, −1.50] — **requoting recovered ~1.1¢/fill: real, measurable, and
+insufficient.** The residual −1.6¢ is the adverse-selection floor at 5s
+reaction latency, and its CI excludes zero decisively.
+
+The optimism caveat cuts the right way: the fill rule undercounts exactly
+the fills that hurt, so the true in-game number is likely WORSE than
+−1.60¢. A FAIL under a flattering fill model is the trustworthy kind.
+QUOTE's in-game arm is dead twice — once static (C13), once requoting
+(this row) — and stays unbuilt as a strategy.
+
+Observation, not verdict (registered-scope note): the pregame regime
+remains below its fill floor (307 recorded / 277 settled of 500; 12 games)
+and continues accruing. Nothing here reads on it.
