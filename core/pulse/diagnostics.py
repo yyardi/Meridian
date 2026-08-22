@@ -257,7 +257,7 @@ def _print(r: dict) -> None:
           f"({f['fill_rate']:.0%}) · {f['entries_never_filled']} never filled")
     print(f"        of the filled: {f['entries_with_filled_exit']} exited, "
           f"{f['rode_to_settlement']} rode to settlement")
-    print(f"\nEXIT ANATOMY (filled entries, money at price)")
+    print("\nEXIT ANATOMY (filled entries, money at price)")
     print(f"   {'path':<22}{'n':>4}{'staked':>10}{'returned':>10}{'net':>9}{'ROI':>9}")
     for p in r["exit_anatomy"]["paths"]:
         roi = "n/a" if p["roi"] is None else f"{p['roi']:+.1%}"
