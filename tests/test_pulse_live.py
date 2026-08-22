@@ -182,13 +182,30 @@ def test_no_bankroll_reading_means_no_entries():
     assert _rows() == []
 
 
-def test_the_per_event_position_cap_binds():
+def test_the_per_event_position_cap_annotates_in_shadow_and_binds_in_live():
+    """Operator follow-up 2026-08-22: full intent within games too. Shadow —
+    the market past the count cap still enters, at full size, labelled
+    'max_open_per_event' with capped size 0 (live would not have entered).
+    Live mode — the cap blocks before sizing, as always."""
     with _Session() as s:
         _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=10))
         _snap(s, slug=SLUG + "-sp", mtype=pl.MARKET_SPREAD, line=7.5,
               bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=10))
     eng = _engine(max_open_per_event=1)
     eng.cycle()
+    enters = _rows(ENTER)
+    assert len(enters) == 2
+    capped = [r for r in enters if r.binding_constraint == "max_open_per_event"]
+    assert len(capped) == 1
+    assert float(capped[0].capped_stake_usd) == pytest.approx(0.0)
+    assert float(capped[0].stake_usd) > 0
+
+    with _Session() as s:
+        s.execute(text("delete from pulse_decisions where market_slug like :m"),
+                  {"m": SLUG + "%"})
+        s.commit()
+    eng_live = _engine(max_open_per_event=1, enforce_caps=True)
+    eng_live.cycle()
     assert len(_rows(ENTER)) == 1
 
 

@@ -171,3 +171,16 @@ under which the release-on-return fix (money returns to the daily budget on
 entry withdrawal and exit fill; rides stay held) governs the committed-money
 counter. The same release logic runs in shadow mode too, keeping the
 annotations' daily-cap reference honest.
+
+### 2026-08-22 addendum: the count cap annotates too
+
+Operator follow-up to the 2026-08-21 semantics change: the per-event
+position-count cap (3) now also annotates rather than binds in shadow mode —
+the market past the cap enters at full desired size with
+`binding_constraint = 'max_open_per_event'` and capped size 0 (live blocks
+before sizing, so the live-faithful size is zero regardless of what the
+dollar caps would have said; the count label wins as the stronger
+statement). Live mode blocks outright, unchanged. With this, every
+exposure-shaped control in the shadow engine is annotate-only: the tape is
+the model's full intent, and "what live would have done" is a filter, not a
+gap.

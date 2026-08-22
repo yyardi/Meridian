@@ -871,7 +871,15 @@ class PulseEngine:
         if not (MIN_MID <= mid <= MAX_MID) or ob.spread > MAX_SPREAD:
             return
         n_open, dollars_open = self._event_exposure(ob.event_slug)
-        if n_open >= self.max_open_per_event:
+        # The per-event count cap: in live mode it blocks outright (before
+        # sizing, as always). In shadow mode it ANNOTATES like the dollar
+        # caps (operator follow-up, 2026-08-22): the entry lands at full
+        # desired size with 'max_open_per_event' as the label and capped
+        # size 0 — live would not have entered at all. Full intent within
+        # games too: on a 9-rung ladder the 4th in-band market is exactly
+        # the intent the tape used to discard.
+        count_capped = n_open >= self.max_open_per_event
+        if count_capped and self.enforce_caps:
             return
 
         side = YES if fv > mid else NO
@@ -909,15 +917,23 @@ class PulseEngine:
         entry_contracts = sized.contracts
         entry_stake = sized.dollars
         capped_stake = capped_contracts = None
-        binding = sized.binding_constraint
+        binding_label = sized.binding_constraint.value
 
         if not self.enforce_caps:
+            binding = sized.binding_constraint
             if binding in (Constraint.NEGATIVE_EDGE, Constraint.MIN_EDGE):
                 return                 # the model does not want this trade
             desired_stake = sized.kelly_fraction_raw * self._kelly_fraction * bankroll
             desired_contracts = desired_stake / cost if cost > 0 else 0.0
             if binding == Constraint.MIN_BANKROLL or desired_contracts < min_qty:
                 pass                   # venue reality: fall through to the loud log
+            elif count_capped:
+                # The strongest statement wins: live blocks BEFORE sizing on
+                # the count cap, so whatever the dollar caps said, the
+                # live-faithful size is zero.
+                entry_contracts, entry_stake = desired_contracts, desired_stake
+                capped_stake, capped_contracts = 0.0, 0.0
+                binding_label = "max_open_per_event"
             elif binding in _EXPOSURE_CAPS:
                 entry_contracts, entry_stake = desired_contracts, desired_stake
                 capped_stake, capped_contracts = sized.dollars, sized.contracts
@@ -939,7 +955,7 @@ class PulseEngine:
                 self._sized_zero_logged[ob.market_slug] = time.monotonic()
                 log.warning(
                     "pulse_entry_sized_zero", market=ob.market_slug,
-                    constraint=binding.value,
+                    constraint=binding_label,
                     edge_net=round(sized.edge_net, 4),
                     daily_staked=round(self._daily_staked, 2),
                     bankroll=round(bankroll, 2))
@@ -948,7 +964,7 @@ class PulseEngine:
         row = self._decision_row(
             ob, est, action=ENTER, side=side, limit_price=limit,
             contracts=entry_contracts, stake_usd=entry_stake,
-            bankroll=bankroll, binding=binding.value,
+            bankroll=bankroll, binding=binding_label,
             reason=None, entry_id=None, edge_net=sized.edge_net,
             capped_stake=capped_stake, capped_contracts=capped_contracts,
         )
