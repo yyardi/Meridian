@@ -223,3 +223,66 @@ request.
 Caveats inherited: post-change cap annotations were evaluated against the
 shadow book (the stated approximation), so the post-change live-faithful
 subset is indicative, exact until the first cap divergence per day.
+
+## 2026-08-23, later — RULING AMENDED after D's audit; verdict unchanged: NO DATA
+
+D's corrected facts, accepted: the floor counts FILLED entries (336 pooled,
+not 575 decided), and the regime boundary is a TIMESTAMP — first annotated
+entry 2026-08-21 23:33:26.867748Z — not annotation-presence (21 post-change
+entries carry NULL because no cap bound; a presence marker misfiles them
+into the pre-change era). The boundary correction does NOT alter the
+population filter above: a NULL annotation means "live would have entered
+exactly so" in both eras, which is why NULL rows belong to the registered
+population regardless of era. It alters only era-split bookkeeping, D's
+decomposition of which is adopted: (a) caps-bound era 26 filled / 7 games;
+(c) post-change live-faithful 26 filled / 4 games; (b) post-change
+full-intent 310 filled / 6 games.
+
+**The verdict question, answered from the registration text.** The floors
+row reads: "≥ 100 filled entries AND ≥ 10 distinct games with a fill.
+Below either, counts only." The only basis that reaches 100 filled is the
+POOLED mixed-semantics tape (336) — and the 2026-08-21 dated note above
+commands: "Any analysis of the tape MUST split on this date." Pooling
+full-intent rows with live-faithful rows into one scored series is
+precisely the analysis that note forbids. The registered live-faithful
+series — which MAY pool across the date, because the population filter
+removes exactly what changed (which rows exist and at what size; the per-$
+metric is size-invariant) — holds 52 filled. Every honest reading lands in
+the same place: **NO DATA. The floor has not been validly reached by any
+population the registration covers.** No verdict tonight, and that is the
+registration working, not failing: the candidate numbers have now been seen
+by three parties, which is exactly the contamination the floor exists to
+make irrelevant.
+
+**Forward, two series:**
+
+1. The **registered live-faithful series continues accruing** (52/100
+   filled, 10 games) unchanged. Post-change it accrues slowly by nature —
+   full-intent sizing means most entries carry a binding annotation — and
+   that is fine; slow honest accrual beats fast contaminated accrual.
+2. The **full-intent series gets the fresh registration below**, gating
+   ONLY on games played after its registration date. The six existing
+   full-intent games (310 fills, and a seen +8.5¢/$ that flatters them)
+   are DESCRIPTIVE CONTEXT PERMANENTLY — they can never enter the gate,
+   because their numbers have been seen. Discarding six good-looking games
+   from the gate is the price of having peeked; the registration pays it
+   without complaint.
+
+## Full-intent series — registration (2026-08-23, before its games exist)
+
+* **Population**: all entries with `decided_at` after 2026-08-23 12:00Z
+  (this registration's timestamp precedes every eligible game; the six
+  prior full-intent games are excluded above). Full-intent sizing
+  semantics as deployed 2026-08-21; per-row `estimates_version` labelling
+  applies as everywhere.
+* **Metric**: identical to the parent registration — per-$ round-trip
+  capture clustered by game (C4), rides at settlement (C11) reported
+  separately, fill-rule optimism caveat doubled on trips.
+* **Floors**: ≥ 100 filled entries AND ≥ 10 distinct games with a fill,
+  counted STRICTLY from the population above. Below either: counts only.
+* **PASS** (reopens a question, authorises nothing): clustered round-trip
+  capture > 0 with the 95% CI excluding zero at floor, at the same time as
+  the ride leg not being measurably worse than flat. **FAIL**: floor met,
+  CI at or below zero. Anything else NO DATA.
+* No metric may be added after data accrues; results append below the
+  results line of this document with dated rows, as ever.
