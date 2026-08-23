@@ -214,3 +214,33 @@ def test_wp_frame_conversion_respects_orientation():
     p_home = 0.83
     assert (p_home if sig_home.first_is_home else 1 - p_home) == pytest.approx(0.83)
     assert (p_home if sig_away.first_is_home else 1 - p_home) == pytest.approx(0.17)
+
+
+def test_verdict_implements_both_registered_clauses():
+    """The registration's PASS is Brier-CI-excludes-zero AND trading not
+    measurably worse. The first implementation checked only Brier — pinned
+    here after the gap was found at the first at-floor read."""
+    def result(brier_lo, trading_hi):
+        r = re_.V3Result(n_points=re_.FLOOR_V3_POINTS)
+        for g in range(re_.FLOOR_V3_GAMES + 1):
+            r.brier_diff_by_game[f"g{g}"] = [0.03 + (0.0 if g else 0.0)]
+        # force the brier CI by making values identical => CI [v, v]
+        for g in r.brier_diff_by_game:
+            r.brier_diff_by_game[g] = [brier_lo]
+        r.roi_by_game = {"v1": {}, "v3": {}}
+        for g in range(re_.FLOOR_V3_GAMES + 1):
+            r.roi_by_game["v1"][f"g{g}"] = [0.0]
+            r.roi_by_game["v3"][f"g{g}"] = [trading_hi]
+        return r
+
+    # Clause 1 fails: brier diff at/below zero.
+    assert result(brier_lo=-0.01, trading_hi=0.0).verdict == "FAIL"
+    # Clause 1 passes, clause 2 fails: trading measurably worse (identical
+    # negative diffs => CI [d, d] entirely below zero).
+    v = result(brier_lo=0.03, trading_hi=-0.05).verdict
+    assert v.startswith("FAIL") and "second clause" in v
+    # Both pass.
+    assert result(brier_lo=0.03, trading_hi=0.0).verdict.startswith("PASS")
+    # Below floor stays NO DATA regardless.
+    empty = re_.V3Result()
+    assert empty.verdict == "NO DATA"
