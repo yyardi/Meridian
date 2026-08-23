@@ -286,3 +286,50 @@ make irrelevant.
   CI at or below zero. Anything else NO DATA.
 * No metric may be added after data accrues; results append below the
   results line of this document with dated rows, as ever.
+
+## 2026-08-23 — THE v3 REGIME (registered BEFORE the deploy it governs)
+
+Operator decision: the live engine's estimates flip to v3. This note is
+written before the deploy, so the third semantics change of this tape is
+deliberate where the first was a bug and the second was a rescue.
+
+**Population marker**: rows with `estimates_version = 'v3'`, which begin at
+the deploy instant (target: before 19:30Z 2026-08-23, ahead of the Sunday
+slate). Per-row honesty as ever — a tick where the venue clock is missing
+or stale (>60s) prices with the v1 estimator and its row says `v1`; the
+engine mode is not the row label.
+
+**What changes**: `minutes_left` comes from the venue's own clock (the
+signal archive's `espn_live_box_snapshots`, resolved per event by the same
+team-mapping join the replay eval registered), so
+`minutes_left_is_estimate = False` on v3 rows — every "est." label on the
+tape and UI corrects itself per the standing seam contract. The
+coverage region — late-quarter ticks where the wall-clock estimator
+saturates and v1 must abstain — is now PRICED live. Overtime remains
+unpriced: no OT model is registered, and the venue clock does not change
+that.
+
+**What does NOT change, stated so nobody re-derives it**: sizing semantics
+are untouched by an estimates flip. The live-faithful registered series
+and the freshly-registered full-intent series both CONTINUE uninterrupted
+across this boundary — their populations are defined by sizing annotations
+and timestamps, not by which estimator priced a row. Scoring already
+splits by `estimates_version`, so v1-priced and v3-priced rows never blend
+in a performance number.
+
+**What v3 consumes from the signal archive — one field, said plainly**:
+the venue CLOCK (period + seconds remaining, from the box snapshots).
+Nothing else. Recorded but UNCONSUMED, so nobody later assumes the model
+sees more than it does: team shooting splits, per-player box lines (foul
+trouble, minutes, on/off raw material), substitution and every other play
+event, pace/possession counts, ESPN's own win probability (benchmark
+only), and the injuries block (record-only by B's oracle verdict). Each of
+those enters the model only through its own future registration — v3d
+(entry discipline, registered 2026-08-23) being the first candidate, and
+it consumes no new field either.
+
+**Basis for the flip**: the v3a at-floor read (docs/math/pulse-v3-protocol.md,
+2026-08-23): calibration PASS at floor on both registered clauses, with
+the trading caution recorded there and addressed separately by the v3d
+registration — the flip adopts the better BELIEFS; it changes no entry
+rule.
