@@ -187,3 +187,40 @@ def test_live_join_and_clock_reader():
         # Staleness bound: nothing fresh enough -> absent, caller falls back.
         none = sig.latest_venue_clocks(s, [GAME], max_staleness_seconds=1.0)
     assert none == {}
+
+
+def test_v3_fallback_is_loud_and_names_the_reason():
+    """The 2026-08-23 lesson: a fallback discoverable only by counting
+    version labels is a silent failure. no-join and no-fresh-clock each
+    warn, throttled per game."""
+    with _Session() as s:
+        _snap(s, ago=10)
+        s.commit()
+    eng = _engine(espn_game_id=None)               # join failed
+    eng.cycle()
+    assert (EVENT, "no_join") in eng._v3_fallback_logged
+    first = eng._v3_fallback_logged[(EVENT, "no_join")]
+    eng.cycle()                                    # throttled
+    assert eng._v3_fallback_logged[(EVENT, "no_join")] == first
+
+    with _Session() as s:
+        _box(s, ago=120)                           # stale reading only
+        s.commit()
+    eng2 = _engine()                               # join fine, clock stale
+    eng2.cycle()
+    assert (EVENT, "no_fresh_clock") in eng2._v3_fallback_logged
+
+
+def test_unknown_estimates_version_screams_and_prices_v1_labeled():
+    """The deploy-skew guard: a new flag on an old image must never run
+    silent again. Unknown version -> error-level scream (throttled), rows
+    keep landing honestly labeled v1."""
+    with _Session() as s:
+        _snap(s, ago=10)
+        s.commit()
+    eng = _engine(version="v9")                    # this code knows no v9
+    eng.cycle()
+    assert ("__engine__", "unknown_version") in eng._v3_fallback_logged
+    rows = _enters()
+    assert len(rows) == 1
+    assert rows[0].estimates_version == "v1"       # honest rows throughout
