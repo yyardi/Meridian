@@ -134,7 +134,15 @@ ESTIMATES_V2 = "v2"
 #: (>60s) falls back to the wall-clock estimator and the row says 'v1'.
 #: Overtime stays unpriced (no registered OT model).
 ESTIMATES_V3 = "v3"
+#: Every version this code KNOWS. A configured version outside this set is
+#: the 2026-08-23 deploy-skew bug (a new flag riding an old image): the
+#: engine keeps running v1-labeled — honest rows — but screams at error
+#: level, throttled, so the skew can never again be discovered only by
+#: someone counting version labels in the tape.
+KNOWN_ESTIMATES_VERSIONS = (ESTIMATES_V1, ESTIMATES_V2, ESTIMATES_V3)
 DEFAULT_ESTIMATES_VERSION = os.environ.get("MERIDIAN_PULSE_ESTIMATES", ESTIMATES_V1)
+#: Fallback/skew log throttle.
+V3_FALLBACK_LOG_SECONDS = 300.0
 #: Venue-clock staleness bound for v3 — the same 60s the replay eval
 #: registered; a dead recorder degrades v3 to v1, never poisons it.
 VENUE_CLOCK_STALENESS_SECONDS = 60.0
@@ -404,6 +412,10 @@ class PulseEngine:
         self._anchors: dict[str, EventAnchors] = {}
         #: event_slug -> freshest venue clock, reloaded each cycle (v3 mode).
         self._venue_clocks: dict = {}
+        #: (event_slug, reason) -> monotonic instant of the last fallback
+        #: warning — the 2026-08-23 lesson: a silent fallback is only ever
+        #: found by someone counting version labels.
+        self._v3_fallback_logged: dict[tuple[str, str], float] = {}
         self._period_starts: dict[tuple[str, str], dt.datetime] = {}
         self._period_starts_loaded = False
         self._last_anchor_refresh = float("-inf")
@@ -588,6 +600,21 @@ class PulseEngine:
         v3_clock_used = False
         if self.estimates_version == ESTIMATES_V3:
             exact = self._venue_clocks.get(ob.event_slug)
+            if exact is None:
+                # LOUD fallback (the 2026-08-23 lesson): name the reason,
+                # throttled per game — never discoverable only by counting
+                # version labels in the tape.
+                reason = ("no_join"
+                          if anchors.espn_game_id is None else "no_fresh_clock")
+                key = (ob.event_slug, reason)
+                last = self._v3_fallback_logged.get(key, float("-inf"))
+                if time.monotonic() - last >= V3_FALLBACK_LOG_SECONDS:
+                    self._v3_fallback_logged[key] = time.monotonic()
+                    log.warning("pulse_v3_fallback", slug=ob.event_slug,
+                                reason=reason,
+                                espn_game_id=anchors.espn_game_id,
+                                note="pricing v1-labeled until the venue "
+                                     "clock is available")
             if exact is not None:
                 v3_clock_used = True
                 if exact.is_overtime:
@@ -1033,6 +1060,19 @@ class PulseEngine:
     def cycle(self) -> CycleResult:
         """One pass over every live market. Public so tests drive it."""
         result = CycleResult()
+        if self.estimates_version not in KNOWN_ESTIMATES_VERSIONS:
+            # Deploy skew (2026-08-23): a new flag on an old image ran a
+            # whole game silently v1-labeled. Unknown version => keep
+            # running honestly (v1-labeled rows) but SCREAM, throttled.
+            key = ("__engine__", "unknown_version")
+            last = self._v3_fallback_logged.get(key, float("-inf"))
+            if time.monotonic() - last >= 60.0:
+                self._v3_fallback_logged[key] = time.monotonic()
+                log.error("pulse_estimates_version_unknown",
+                          configured=self.estimates_version,
+                          known=list(KNOWN_ESTIMATES_VERSIONS),
+                          note="flag/image skew? engine prices v1-labeled "
+                               "until redeployed with matching code")
         with self._Session() as session:
             if not self._period_starts_loaded:
                 self._load_period_starts(session)
@@ -1165,6 +1205,8 @@ class PulseEngine:
         log.info("pulse_engine_started",
                  interval_seconds=self.interval_seconds,
                  profit_target=self.profit_target,
+                 estimates_version=self.estimates_version,
+                 version_known=self.estimates_version in KNOWN_ESTIMATES_VERSIONS,
                  note="shadow only — no order exists behind anything this writes")
         while not self._stop.is_set():
             started = time.monotonic()
