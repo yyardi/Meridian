@@ -559,3 +559,37 @@ def test_the_model_and_the_migration_agree():
         assert row.phase == IN_PLAY
         assert float(row.limit_price) == 0.60
         assert row.created_at is not None            # server default fired
+
+
+def test_report_population_ruling_live_faithful_vs_full_intent():
+    """The 2026-08-23 ruling: the registered population excludes cap-blocked
+    intents (capped_stake_usd = 0); shrunk (>0) and uncapped (NULL) entries
+    stay in. The full-intent view carries the blocked ones — and renders
+    with NO verdict language, structurally."""
+    from decimal import Decimal
+
+    from core.pulse import live_report as prr
+    from core.pulse.storage import IN_PLAY
+    with _Session() as s:
+        for i, capped in enumerate((None, Decimal("1.25"), Decimal("0"))):
+            s.add(PulseDecision(
+                decided_at=NOW - dt.timedelta(hours=6),
+                event_slug=EVENT, market_slug=f"{SLUG}-pop{i}",
+                sports_market_type=pl.MARKET_WINNER, strategy="winner",
+                phase=IN_PLAY, action=ENTER, side=YES,
+                limit_price=Decimal("0.60"), contracts=Decimal("1"),
+                stake_usd=Decimal("0.60"), minutes_left_is_estimate=True,
+                filled_at=NOW - dt.timedelta(hours=5), settlement=1,
+                capped_stake_usd=capped,
+            ))
+        s.commit()
+    with _Session() as s:
+        faithful = prr.build_report(s, population="live_faithful")["v1"]
+        full = prr.build_report(s, population="full_intent")["v1"]
+    assert faithful.n_entry_fills == 2       # NULL and >0 stay; =0 excluded
+    assert full.n_entry_fills == 3
+    text_full = prr.format_report({"v1": full}, registered=False)
+    assert "VERDICT" not in text_full
+    assert "DESCRIPTIVE ONLY" in text_full
+    text_reg = prr.format_report({"v1": faithful})
+    assert "VERDICT" in text_reg
