@@ -94,11 +94,32 @@ class LiveReport:
         return "FAIL"
 
 
-def build_report(session) -> dict[str, LiveReport]:
+def build_report(session, *, population: str = "live_faithful"
+                 ) -> dict[str, LiveReport]:
     """One report PER ESTIMATES VERSION. Never a combined number: v1 and v2
     are different models, and blending model generations in one performance
-    figure is the exact bug the era-separation work (PR #23) deleted."""
-    entries = session.execute(text("""
+    figure is the exact bug the era-separation work (PR #23) deleted.
+
+    ``population`` — the 2026-08-23 ruling on the mid-accrual sizing change
+    (docs/math/pulse-live.md, dated ruling): the registered per-$ metric is
+    SIZE-INVARIANT per fill (capture/cost per contract; fills are
+    price-based), so the 2026-08-21 shadow-sizing change altered the
+    POPULATION, not the metric. The registered continuous population is
+    ``live_faithful``: every pre-change entry (live-faithful by
+    construction) plus post-change entries live would have made
+    (``capped_stake_usd IS NULL`` — no cap bound — or ``> 0`` — live entered
+    smaller, same per-$ outcome). Post-change cap-blocked intents
+    (``capped_stake_usd = 0``) belong only to ``full_intent``, which is a
+    SEPARATE labelled accrual starting 2026-08-21, never the registered
+    number. The live-faithful subset is indicative post-change (caps were
+    evaluated against the shadow book — the stated approximation).
+    """
+    pop_filter = {
+        "live_faithful": ("AND (e.capped_stake_usd IS NULL "
+                          "OR e.capped_stake_usd > 0)"),
+        "full_intent": "",
+    }[population]
+    entries = session.execute(text(f"""
         SELECT e.id, e.event_slug, e.side, e.limit_price, e.contracts,
                e.stake_usd, e.filled_at, e.settlement, e.estimates_version,
                x.limit_price AS exit_price, x.filled_at AS exit_filled_at
@@ -109,7 +130,7 @@ def build_report(session) -> dict[str, LiveReport]:
                 AND filled_at IS NOT NULL
               ORDER BY filled_at LIMIT 1
         ) x ON TRUE
-        WHERE e.action = 'enter'
+        WHERE e.action = 'enter' {pop_filter}
     """)).all()
     counts = dict(session.execute(text("""
         SELECT estimates_version, count(*) FROM pulse_decisions
@@ -172,7 +193,11 @@ def build_report(session) -> dict[str, LiveReport]:
     return out
 
 
-def format_report(reports: dict[str, LiveReport]) -> str:
+def format_report(reports: dict[str, LiveReport], *,
+                  registered: bool = True) -> str:
+    """``registered=False`` renders the full-intent view: same numbers, but
+    VERDICT language is structurally absent — no verdict may attach to a
+    population the registration does not cover (the 2026-08-23 ruling)."""
     out: list[str] = []
     add = out.append
     add("PULSE LIVE RUN — shadow decisions, money at price (C11), by game (C4)")
@@ -186,11 +211,11 @@ def format_report(reports: dict[str, LiveReport]) -> str:
         return "\n".join(out)
     for version in sorted(reports):
         add("")
-        add(_format_one(reports[version]))
+        add(_format_one(reports[version], registered=registered))
     return "\n".join(out)
 
 
-def _format_one(r: LiveReport) -> str:
+def _format_one(r: LiveReport, *, registered: bool = True) -> str:
     out: list[str] = []
     add = out.append
     add(f"[estimates {r.version}]")
@@ -201,9 +226,14 @@ def _format_one(r: LiveReport) -> str:
     add(f"distinct games with a fill    : {r.n_games}")
     if not r.at_floor:
         add("")
-        add(f"VERDICT: NO DATA — floors are {FLOOR_ENTRY_FILLS} filled entries / "
-            f"{FLOOR_GAMES} games. Counts only; no performance number is printed")
-        add("below a floor, and that is the registration, not shyness.")
+        if registered:
+            add(f"VERDICT: NO DATA — floors are {FLOOR_ENTRY_FILLS} filled "
+                f"entries / {FLOOR_GAMES} games. Counts only; no performance "
+                "number is printed")
+            add("below a floor, and that is the registration, not shyness.")
+        else:
+            add("DESCRIPTIVE ONLY — full-intent population, outside the")
+            add("registration; below the reference floors besides. Counts only.")
         return "\n".join(out)
     add("")
     add(f"[round trips]  staked ${r.trip_staked:,.2f}  pnl ${r.trip_pnl:+,.2f}")
@@ -217,7 +247,13 @@ def _format_one(r: LiveReport) -> str:
         add(f"  ROI, clustered              : {cm.mean:+.4f}  "
             f"95% CI [{cm.lo:+.4f}, {cm.hi:+.4f}]  (G={cm.n_clusters})")
     add("")
-    add(f"VERDICT: {r.verdict}")
+    if registered:
+        add(f"VERDICT: {r.verdict}")
+    else:
+        add("DESCRIPTIVE ONLY — full-intent population, outside the")
+        add("registration; no verdict attaches (2026-08-23 ruling). A")
+        add("gate-eligible full-intent series needs its own registration")
+        add("with fresh floors dated from 2026-08-21.")
     add("")
     add("Fill-rule caveat, doubled: a round trip needed TWO optimistic fills.")
     add("Losses are trustworthy; profits are upper bounds and authorise nothing.")
@@ -229,7 +265,14 @@ def main() -> int:
 
     Session = get_sessionmaker(get_engine())
     with Session() as s:
-        print(format_report(build_report(s)))
+        print("REGISTERED VIEW — live-faithful population "
+              "(the 2026-08-23 ruling; docs/math/pulse-live.md)")
+        print(format_report(build_report(s, population="live_faithful")))
+        print()
+        print("FULL-INTENT VIEW — separate labelled accrual since 2026-08-21;")
+        print("NOT the registered number, includes cap-blocked intents:")
+        print(format_report(build_report(s, population="full_intent"),
+                            registered=False))
     return 0
 
 
