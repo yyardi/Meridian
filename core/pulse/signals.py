@@ -252,3 +252,76 @@ def plays_before(session, espn_game_id: str, *, at: dt.datetime | None = None):
           AND first_seen_at <= coalesce(:at, now())
         ORDER BY sequence
     """), {"g": espn_game_id, "at": at}).all()
+
+
+# --------------------------------------------------------------------- #
+# Live consumption (the v3 regime): the venue clock, and only the clock
+# --------------------------------------------------------------------- #
+
+#: ET offset for the join's date check (in-season EDT). Restated from the
+#: recorder rather than imported — importing the recorder module would drag
+#: its HTTP client into the engine's import graph for one constant.
+_ET_OFFSET = dt.timedelta(hours=-4)
+
+
+def resolve_espn_game(session, event_slug: str) -> str | None:
+    """Unambiguous espn_game_id for an event, or None — the replay eval's
+    registered join (team abbrevs via team_mapping + date within a day),
+    applied live. Ambiguity refuses; the engine then prices v1.
+    """
+    from sqlalchemy import text as _text
+
+    from core.pulse.team_form import event_team_abbrevs
+    from core.team_mapping import parse_event_slug
+
+    abbrevs = event_team_abbrevs(event_slug)
+    parsed = parse_event_slug(event_slug)
+    if abbrevs is None or parsed is None:
+        return None
+    abbrev_of = dict(session.execute(_text(
+        "SELECT DISTINCT team_id, team_abbrev FROM team_game_logs")).all())
+    games = session.execute(_text("""
+        SELECT DISTINCT ON (espn_game_id)
+               espn_game_id, home_team_id, away_team_id,
+               min(first_seen_at) OVER (PARTITION BY espn_game_id) AS first_seen
+        FROM espn_live_box_snapshots
+        WHERE first_seen_at > now() - interval '24 hours'
+          AND home_team_id IS NOT NULL AND away_team_id IS NOT NULL
+        ORDER BY espn_game_id, first_seen_at DESC
+    """)).all()
+    matches = [
+        g.espn_game_id for g in games
+        if {abbrev_of.get(g.home_team_id), abbrev_of.get(g.away_team_id)}
+        == {abbrevs[0], abbrevs[1]}
+        and abs(((g.first_seen + _ET_OFFSET).date()
+                 - parsed.local_date).days) <= 1
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def latest_venue_clocks(
+    session, espn_game_ids: list[str], *, max_staleness_seconds: float = 60.0,
+) -> dict[str, ExactClock]:
+    """Freshest venue clock per game, one query — the engine's per-cycle
+    read. A game with no reading fresher than the staleness bound is simply
+    absent, and the caller falls back to the estimator (row labelled v1)."""
+    from sqlalchemy import text as _text
+
+    if not espn_game_ids:
+        return {}
+    rows = session.execute(_text("""
+        SELECT DISTINCT ON (espn_game_id)
+               espn_game_id, period, clock_seconds, first_seen_at
+        FROM espn_live_box_snapshots
+        WHERE espn_game_id = ANY(:ids)
+          AND period IS NOT NULL AND clock_seconds IS NOT NULL
+          AND first_seen_at > now() - make_interval(secs => :age)
+        ORDER BY espn_game_id, first_seen_at DESC
+    """), {"ids": espn_game_ids, "age": max_staleness_seconds}).all()
+    now = dt.datetime.now(dt.timezone.utc)
+    return {
+        r.espn_game_id: exact_clock(
+            int(r.period), float(r.clock_seconds),
+            staleness_seconds=max((now - r.first_seen_at).total_seconds(), 0.0))
+        for r in rows
+    }

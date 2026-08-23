@@ -128,7 +128,16 @@ MARKET_SPREAD = "basketball_team_full_game_spread"
 #: era-separation lesson).
 ESTIMATES_V1 = "v1"
 ESTIMATES_V2 = "v2"
+#: v3 (the 2026-08-23 regime, registered in docs/math/pulse-live.md before
+#: its deploy): v1's constants with `minutes_left` from the VENUE CLOCK —
+#: the one signal-archive field the model consumes. Missing/stale clock
+#: (>60s) falls back to the wall-clock estimator and the row says 'v1'.
+#: Overtime stays unpriced (no registered OT model).
+ESTIMATES_V3 = "v3"
 DEFAULT_ESTIMATES_VERSION = os.environ.get("MERIDIAN_PULSE_ESTIMATES", ESTIMATES_V1)
+#: Venue-clock staleness bound for v3 — the same 60s the replay eval
+#: registered; a dead recorder degrades v3 to v1, never poisons it.
+VENUE_CLOCK_STALENESS_SECONDS = 60.0
 
 #: Cycle cadence. The tick stream is 200ms; 1s reads every market's newest
 #: tick without re-walking the stream, and the fill rule is endpoint-based
@@ -342,6 +351,9 @@ class EventAnchors:
     #: v2 inputs (core/pulse/team_form.py), None when form refused or v1 mode.
     matchup_sigma: float | None = None
     totals_mu_v2: float | None = None
+    #: v3 input: the event's ESPN game id (the replay eval's registered
+    #: join, applied live). None = unresolvable, and the event prices v1.
+    espn_game_id: str | None = None
 
 
 # --------------------------------------------------------------------- #
@@ -390,6 +402,8 @@ class PulseEngine:
         self._bankroll_reader = bankroll_reader or self._stored_bankroll
         self._markets: dict[str, MarketState] = {}
         self._anchors: dict[str, EventAnchors] = {}
+        #: event_slug -> freshest venue clock, reloaded each cycle (v3 mode).
+        self._venue_clocks: dict = {}
         self._period_starts: dict[tuple[str, str], dt.datetime] = {}
         self._period_starts_loaded = False
         self._last_anchor_refresh = float("-inf")
@@ -461,11 +475,13 @@ class PulseEngine:
         are re-queried, at most every ANCHOR_REFRESH_SECONDS.
         """
         want_v2 = self.estimates_version == ESTIMATES_V2
+        want_v3 = self.estimates_version == ESTIMATES_V3
         missing = [e for e in events
                    if e not in self._anchors
                    or self._anchors[e].winner_mid is None
                    or self._anchors[e].totals_mu is None
-                   or (want_v2 and self._anchors[e].matchup_sigma is None)]
+                   or (want_v2 and self._anchors[e].matchup_sigma is None)
+                   or (want_v3 and self._anchors[e].espn_game_id is None)]
         if not missing:
             return
         if time.monotonic() - self._last_anchor_refresh < ANCHOR_REFRESH_SECONDS:
@@ -521,11 +537,19 @@ class PulseEngine:
                                  sigma_multiplier=round(form.sigma_multiplier, 3),
                                  form_total=round(form.form_total, 1),
                                  staleness_days=round(form.staleness_days, 1))
+            espn_game_id = prior.espn_game_id
+            if want_v3 and espn_game_id is None:
+                from core.pulse.signals import resolve_espn_game
+                espn_game_id = resolve_espn_game(session, e)
+                if espn_game_id is not None:
+                    log.info("pulse_v3_game_resolved", slug=e,
+                             espn_game_id=espn_game_id)
             self._anchors[e] = EventAnchors(
                 winner_mid=winner_mid,
                 totals_mu=totals_mu,
                 matchup_sigma=matchup_sigma,
                 totals_mu_v2=totals_mu_v2,
+                espn_game_id=espn_game_id,
             )
 
     def _stored_bankroll(self) -> float | None:
@@ -557,6 +581,24 @@ class PulseEngine:
     def _estimate(self, ob: Observation) -> Estimate:
         anchors = self._anchors.get(ob.event_slug, EventAnchors())
         clock = self._clock_for(ob)
+        # The v3 regime: the venue clock replaces the estimator when a fresh
+        # reading exists. is_estimate=False on the EXISTING field (the seam
+        # contract); OT and ended-regulation abstain — no OT model is
+        # registered and the venue clock does not change that.
+        v3_clock_used = False
+        if self.estimates_version == ESTIMATES_V3:
+            exact = self._venue_clocks.get(ob.event_slug)
+            if exact is not None:
+                v3_clock_used = True
+                if exact.is_overtime:
+                    clock = Clock(0.0, False,
+                                  "overtime — venue clock; no registered OT model",
+                                  usable=False)
+                elif exact.minutes_left <= 0:
+                    clock = Clock(0.0, False, "regulation ended (venue clock)",
+                                  usable=False)
+                else:
+                    clock = Clock(exact.minutes_left, False, None)
         pair = parse_score(ob.event_score)
         margin = None if pair is None else pair[0] - pair[1]
         total_so_far = None if pair is None else pair[0] + pair[1]
@@ -566,9 +608,9 @@ class PulseEngine:
         fv = projected = sigma_t = None
         note = clock.note
 
-        # v2 inputs, where the form allowed them; the version label records
-        # what actually priced the number, not what mode the engine ran in.
-        version = ESTIMATES_V1
+        # v2/v3 inputs, where available; the version label records what
+        # actually priced the number, not what mode the engine ran in.
+        version = ESTIMATES_V3 if v3_clock_used else ESTIMATES_V1
         sigma = self.sigma
         totals_mu = anchors.totals_mu
         if self.estimates_version == ESTIMATES_V2:
@@ -1002,6 +1044,18 @@ class PulseEngine:
                     (ob.event_slug, ob.event_period or ""), ob.captured_at)
 
             self._refresh_anchors(session, {ob.event_slug for ob in observations})
+
+            self._venue_clocks = {}
+            if self.estimates_version == ESTIMATES_V3 and observations:
+                ids = {a.espn_game_id: e for e, a in self._anchors.items()
+                       if a.espn_game_id is not None}
+                if ids:
+                    from core.pulse.signals import latest_venue_clocks
+                    clocks = latest_venue_clocks(
+                        session, list(ids),
+                        max_staleness_seconds=VENUE_CLOCK_STALENESS_SECONDS)
+                    self._venue_clocks = {ids[g]: ck for g, ck in clocks.items()}
+
             bankroll = self._bankroll_reader() if observations else None
 
             seen: set[str] = set()

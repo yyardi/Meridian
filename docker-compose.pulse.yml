@@ -28,6 +28,10 @@ services:
       # LOCAL, like the live recorder and the quote engine: the 200ms tick
       # stream this loop decides on never leaves this machine.
       DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      # The v3 regime (operator decision 2026-08-23; registration in
+      # docs/math/pulse-live.md predates this deploy): estimates consume the
+      # venue clock from the signal archive — one field, nothing else.
+      MERIDIAN_PULSE_ESTIMATES: "v3"
       MERIDIAN_PULSE_INTERVAL_SECONDS: "1"
       MERIDIAN_PULSE_SETTLE_EVERY_SECONDS: "600"
       MERIDIAN_PULSE_PROFIT_TARGET: "0.05"
