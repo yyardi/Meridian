@@ -138,3 +138,60 @@ here gates anything. Two diagnostics are worth recording at any n:
   the long-suspected direction, measured for the first time.
 
 Rerun on every +5 signal-covered games, per the runbook.
+
+## First at-floor read — 2026-08-23, n=11: VERDICT PASS (by hairs, both clauses)
+
+All three of the night's games recorded; both floors cleared (11 ≥ 10 games,
+31,955 ≥ 3,000 paired points). Run off-prod on the restored copy. Verbatim:
+
+```
+signal-covered games          : 11
+paired calibration points     : 31,955
+Brier v1: 0.17910   Brier v3a: 0.14088
+paired diff (v1−v3a), clustered: +0.03821  95% CI [+0.00006, +0.07637]  (G=11)
+coverage gain (v1 suppressed, v3a priced): 34,080 ticks, Brier 0.12815
+stale-clock fallback ticks    : 43
+clock disagreement (est−exact minutes): n=31,912  p50=-0.90  max=-8.50
+ESPN WP reference (matched winner ticks, n=2,370): espn 0.09324 | v1 0.11494 | v3a 0.11719
+[v1] entries 978 | fills 515 | trips 466 | rides 49 | per-$ -0.0447 [-0.0969, +0.0076]
+[v3] entries 842 | fills 602 | trips 520 | rides 82 | per-$ -0.0930 [-0.1445, -0.0416]
+paired trading diff (v3a−v1), game means: -0.0622  95% CI [-0.1285, +0.0041]
+
+VERDICT: PASS (go-live question goes to the operator)
+```
+
+**Implementation disclosure, before the verdict is read**: the shipped
+verdict property checked only the Brier clause; the registration's second
+clause ("money-at-price not measurably worse") was unimplemented. Fixed at
+this read — the paired trading diff is now computed, printed, and gated on —
+and the verdict on this data is unchanged by the fix. The gap and fix are in
+the same PR as this row.
+
+**The two-sided reading, stated plainly:**
+
+* **Clause 1 (calibration): met, barely.** The paired Brier CI's lower
+  bound is +0.00006 — six hundred-thousandths above zero. The point
+  estimate is substantial (+0.038, a 21% Brier reduction) and reproduces
+  the n=2 direction, but the interval essentially touches zero. A PASS by
+  the registered letter; nobody should read it as emphatic.
+* **Clause 2 (trading): met, barely, from the other side.** v3a's own
+  trading is decisively negative (−9.3¢/$ CI excluding zero) and the
+  paired diff's point estimate is −6.2¢/$ worse than v1; its CI reaches
+  zero at +0.41¢. "Not measurably worse" holds by the registered letter.
+* **The diagnostics explain the tension.** The coverage region — 34,080
+  ticks v1 cannot price, MORE than the whole paired set — is where v3a's
+  extra trades live (602 fills vs 515, 82 rides vs 49), and late-game maker
+  fills are the most adversely selected fills there are. The exact clock
+  makes the model's BELIEFS better everywhere; the registered naive entry
+  rule then walks those better beliefs into the endgame's worst
+  microstructure. Better sight, same legs.
+* ESPN's reference WP beats both arms on matched late-game winner ticks at
+  this n (0.093 vs 0.115/0.117) — flipped from the n=2 read; matched ticks
+  are heavily endgame; not gate-relevant, recorded for honesty.
+
+**What PASS means here**: the go-live question goes to the operator, per
+the registration — for the ESTIMATES. The trading diagnostics
+independently say the coverage region needs its own entry discipline
+before anyone celebrates: that is the next registration's subject
+(protocol §arms — one input per gate), designed from these numbers, not
+ahead of them.

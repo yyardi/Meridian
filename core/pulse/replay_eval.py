@@ -718,15 +718,38 @@ class V3Result:
                 and self.n_points >= FLOOR_V3_POINTS)
 
     @property
+    def trading_diff(self):
+        """Paired per-game trading diff (v3a − v1), game means, clustered —
+        the registered criterion's SECOND clause ('money-at-price not
+        measurably worse'). Games where both arms scored at least one leg."""
+        diffs = {}
+        for ev in set(self.roi_by_game.get("v1", {})) & set(
+                self.roi_by_game.get("v3", {})):
+            v1 = self.roi_by_game["v1"][ev]
+            v3 = self.roi_by_game["v3"][ev]
+            diffs[ev] = [sum(v3) / len(v3) - sum(v1) / len(v1)]
+        return clustered_mean(diffs)
+
+    @property
     def verdict(self) -> str:
+        """BOTH registered clauses (docs/math/pulse-v3-protocol.md): the
+        paired Brier CI excludes zero in v3a's favour, AND money-at-price is
+        not measurably worse (the paired trading diff's CI does not sit
+        entirely below zero). The first shipped implementation checked only
+        the Brier clause — found and fixed at the first at-floor read, with
+        the verdict unchanged on that data."""
         if not self.at_floor:
             return "NO DATA"
         cm = clustered_mean(self.brier_diff_by_game)
         if cm is None:
             return "NO DATA"
-        if cm.mean > 0 and cm.lo > 0:
-            return "PASS (go-live question goes to the operator)"
-        return "FAIL"
+        if not (cm.mean > 0 and cm.lo > 0):
+            return "FAIL"
+        td = self.trading_diff
+        if td is not None and td.hi < 0:
+            return ("FAIL (calibration better, but money-at-price is "
+                    "measurably worse — the registration's second clause)")
+        return "PASS (go-live question goes to the operator)"
 
 
 def evaluate_v3(Session, *, limit: int | None = None) -> V3Result:
@@ -901,6 +924,11 @@ def format_v3(r: V3Result) -> str:
         elif cm is not None:
             line += " | BELOW FLOORS — counts only"
         add(line)
+    td = r.trading_diff
+    if td is not None and r.at_floor:
+        add(f"paired trading diff (v3a−v1), game means: {td.mean:+.4f}  "
+            f"95% CI [{td.lo:+.4f}, {td.hi:+.4f}]  (G={td.n_clusters}) — "
+            "the second registered clause")
     add("")
     add(f"VERDICT: {r.verdict}"
         + ("" if r.at_floor else

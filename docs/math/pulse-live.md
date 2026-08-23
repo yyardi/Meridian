@@ -184,3 +184,42 @@ statement). Live mode blocks outright, unchanged. With this, every
 exposure-shaped control in the shadow engine is annotate-only: the tape is
 the model's full intent, and "what live would have done" is a filter, not a
 gap.
+
+## 2026-08-23 — RULING: the registered quantity across the sizing change
+
+Both tape floors appeared crossed on raw counts (575 entries / 12 games).
+The ruling, as registration owner, on what the 2026-08-21 semantics change
+did to the registered measurement:
+
+**The metric survived; the population did not.** The registered per-$
+metric (capture/cost per contract; rides at settlement) is SIZE-INVARIANT
+per fill — fills are price-based and per-fill outcomes do not depend on
+contracts. So the semantics change cannot bias the metric. What it changed
+is WHICH entries exist: post-change, the tape contains entries live sizing
+would have blocked.
+
+**The registered continuous population is the live-faithful subset**: every
+pre-change entry (live-faithful by construction) plus post-change entries
+where no cap bound (`capped_stake_usd IS NULL`) or the cap merely shrank
+(`> 0` — live entered smaller; identical per-$ outcome). Cap-blocked
+intents (`capped_stake_usd = 0`) are excluded from the registered series.
+`core/pulse/live_report.py` implements this as its default population; the
+full-intent view renders WITHOUT verdict language, structurally.
+
+**Registered verdict under the ruling: NO DATA — the floor is NOT crossed.**
+The live-faithful population holds **52 filled entries of the 100 floor**
+(10 games). The 575-entry count that appeared to cross was the full-intent
+tape. The registered accrual continues; no verdict attaches at 52/100.
+
+**The full-intent series** (from 2026-08-21, its own dated start) is
+descriptive: 336 fills / 12 games, round-trip capture +8.5¢/$
+[+6.4, +10.6] (G=7), rides small and negative. Two reasons no one may act
+on it: it is outside the registration, and the fill rule's optimism is
+doubled on round trips — that +8.5¢ is an upper bound of upper bounds. If
+the operator wants the full-intent tape gate-eligible, it takes a NEW
+registration with fresh floors dated from 2026-08-21 — appendable here on
+request.
+
+Caveats inherited: post-change cap annotations were evaluated against the
+shadow book (the stated approximation), so the post-change live-faithful
+subset is indicative, exact until the first cap divergence per day.
