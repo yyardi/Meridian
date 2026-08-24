@@ -1,6 +1,6 @@
 # Moneyline and spread — the first pregame baseline
 
-> **SUPERSEDED, 2026-08-21 — the moneyline figures below were optimistic.**
+> **SUPERSEDED, 2026-08-24 — the moneyline figures below were optimistic.**
 > Entries were priced at the book's **de-vigged** probability, which is its
 > belief, not its offer. Nobody can transact there. Charging the real price
 > moves the moneyline from **+0.85% to roughly −2.7%** — a sign change, because
