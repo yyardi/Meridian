@@ -75,6 +75,9 @@
   .pgtoggle:hover{color:var(--txt)}
   .livetrade table{margin-bottom:8px}
   .feeditem{cursor:pointer;padding:1px 3px;border-radius:3px}
+  .fi-big{font-size:12.5px;line-height:1.7}
+  .fi-big b{font-size:13px}
+  .fi-num{margin-left:8px;white-space:nowrap}
   .feeditem:hover{background:#1a1f2b}
   @keyframes pufl{from{background:#2a1f33}to{background:transparent}}
   .puflash{animation:pufl 1.2s ease-out}
@@ -327,18 +330,8 @@
        tonight" — the opposite of what it means. -->
   <div id="picks"><div class="empty">loading picks…</div></div>
 
-  <h2 style="margin-top:24px">Live moneylines — formula FV
-    <span class="dimc" style="text-transform:none;letter-spacing:0">·
-      display only, nothing here is orderable</span></h2>
-  <div id="livefv"></div>
 
-  <h2 style="margin-top:24px">Open positions — EV guard <span class="dimc" style="text-transform:none;letter-spacing:0">· formula FV, unvalidated</span></h2>
-  <div id="evguard"></div>
 
-  <h2 style="margin-top:24px">Live totals — formula FV
-    <span class="dimc" style="text-transform:none;letter-spacing:0">·
-      display only, nothing here is orderable</span></h2>
-  <div id="livetot"></div>
 
   <!-- Era separation (operator request, 2026-08-18): everything below this
        toggle is HISTORY, and history now has two eras. PULSE (default) is
@@ -728,17 +721,18 @@ function liveTradingSection(g){
     ${tradeRows.length ? `<table><thead><tr>
       <th class="l">Time</th><th class="l">Market</th><th class="l">Action</th>
       <th class="l">Side</th><th>Limit</th><th>Size</th><th class="l">Status</th>
+      <th class="l">Reason</th>
       <th title="exited trades: the engine's round-trip capture. Open: unrealized vs current mid. Shadow dollars.">P&amp;L</th>
     </tr></thead><tbody>${tradeRows.map(({f, status, pnl}) => `
       <tr>
         <td class="l dimc">${clock(f.decided_at)}</td>
         <td class="l">${shortSlug(f.market_slug)}</td>
-        <td class="l"><span class="puchip ${f.action === "enter" ? "puENTER" : "puEXIT"}"
-          title="${f.reason || ""}">${f.action.toUpperCase()}</span></td>
+        <td class="l"><span class="puchip ${f.action === "enter" ? "puENTER" : "puEXIT"}">${f.action.toUpperCase()}</span></td>
         <td class="l">${f.side}</td>
         <td class="num">${num(f.limit_price)}</td>
         <td class="num">${num(f.contracts, 2)}</td>
         <td class="l ${status === "withdrawn" ? "dimc" : status === "open" ? "pickc" : ""}">${status}</td>
+        <td class="l dimc" style="font-size:10px">${f.reason || ""}</td>
         <td class="num ${pnl == null ? "dimc" : pnl >= 0 ? "pos" : "neg"}">${money(pnl)}</td>
       </tr>`).join("")}</tbody></table>`
     : '<div class="dimc" style="font-size:10.5px;padding:6px 0">no entries or exits yet this game</div>'}
@@ -1224,6 +1218,7 @@ async function loadPulseLatest(league){
     PULSE_LATEST = d.markets || {};
     PULSE_POSITIONS = d.positions || {};
     PULSE_FEED = d.feed || [];
+    rebuildLiveCtx();
     renderPulseFeed();
     if(LAST_BOARD) renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
   } catch(e){ /* display only; the board stands without it */ }
@@ -1313,9 +1308,12 @@ function renderPulseFeed(){
         const d = Math.abs((r.bid + r.ask) / 2 - 0.5);
         if(d < best){ best = d; mainLine = r.line; }
       }
+      const d = mainLine != null ? tot.projected_total - mainLine : null;
       proj = `proj total <b>${tot.projected_total.toFixed(1)}</b>${
         tot.total_sigma != null ? `<span class="dimc">±${tot.total_sigma.toFixed(1)}</span>` : ""}${
-        mainLine != null ? ` <span class="dimc">vs ${mainLine.toFixed(1)}</span>` : ""}`;
+        mainLine != null ? ` <span class="dimc">line ${mainLine.toFixed(1)}</span>
+          <span class="${Math.abs(d) < 2 ? "dimc" : d > 0 ? "pos" : "neg"}"
+            title="projection minus the closest-to-the-money line — where the model sits vs the market">${d > 0 ? "+" : ""}${d.toFixed(1)}</span>` : ""}`;
     }
 
     const marg = fresh && fresh.margin != null
@@ -1325,11 +1323,27 @@ function renderPulseFeed(){
           ? ` · ${fresh.minutes_left.toFixed(1)}m${fresh.minutes_left_is_estimate ? " est." : ""}` : ""}`
       : "";
 
-    return `<span class="feeditem" data-ev="${ev}"
-      title="PULSE's live estimates for this game, ${fresh ? agef(fresh.age_seconds) : "—"} old. Click for the game's trading log and ladder.">
+    /* Deltas vs the market, where a market number exists — this strip is a
+       judgment surface ("see if I agree with the model or if we're wrong"),
+       and agreement is only checkable against the market's own number. */
+    let wpDelta = "";
+    if(ml && LAST_BOARD){
+      // ml is a spread-copy carrying its own slug — identity lookups against
+      // PULSE_LATEST never match a copy (found by the splice test rendering
+      // no delta where one belonged).
+      const mkt = (LAST_BOARD.markets||[]).find(r => r.market_slug === ml.slug);
+      if(mkt && mkt.bid != null && mkt.ask != null){
+        const d = (ml.fair_value - (mkt.bid + mkt.ask) / 2) * 100;
+        wpDelta = ` <span class="${Math.abs(d) < 3 ? "dimc" : d > 0 ? "pos" : "neg"}"
+          title="PULSE's win probability minus the market's mid, in points — where the model disagrees with the price">${d > 0 ? "+" : ""}${d.toFixed(0)}pt vs mkt</span>`;
+      }
+    }
+    return `<span class="feeditem fi-big" data-ev="${ev}"
+      title="PULSE's live estimates, ${fresh ? agef(fresh.age_seconds) : "—"} old. No margin projection exists — the win curve prices direction, not distance — so no projected final score is shown rather than inventing one. Click for the game's trading log and ladder.">
       <b>${shortEvent(ev)}</b> <span class="dimc">${clockTxt}${marg}</span>
-      ${wp ? " · " + wp : ""}${proj ? " · " + proj : ""}</span>`;
-  }).join('<span class="dimc" style="margin:0 9px">·</span>');
+      ${wp ? `<span class="fi-num">${wp}${wpDelta}</span>` : ""}
+      ${proj ? `<span class="fi-num">${proj}</span>` : ""}</span>`;
+  }).join('<span class="dimc" style="margin:0 11px">·</span>');
 
   el.querySelectorAll(".feeditem").forEach(i =>
     i.addEventListener("click", () => setView({mode:"game", ev: i.dataset.ev})));
@@ -1532,43 +1546,12 @@ async function loadGameOrders(ev){
    styled like a FAILED exit) and PRICE NOISE — FV INTACT (#11 guard: price
    dropped but FV holds, so averaging-down has an honest signal). There is
    deliberately no button in this table: nothing here can sell. */
-async function loadEVGuard(){
-  try{
-    const d = await (await fetch("/api/ev-guard")).json();
-    const el = $("#evguard");
-    if(!d.rows || !d.rows.length){
-      el.innerHTML = '<div class="empty">no open button positions</div>'; return;
-    }
-    const vcell = r => {
-      if(r.verdict === "EDGE_GONE")
-        return `<span class="fillFAILED">${r.message} — the formula's reason to hold is gone</span>`;
-      if(r.verdict === "PRICE_NOISE")
-        return `<span class="fillPARTIAL">${r.message}</span>`;
-      if(r.verdict === "INTACT")
-        return `<span class="fillFILLED">${r.message}</span>`;
-      return `<span class="dimc">${r.message}</span>`;
-    };
-    el.innerHTML = `
-      <div class="dimc" style="font-size:10.5px;margin-bottom:6px"
-           title="EDGE GONE pushes to the phone once per crossing; recovery pushes an all-clear.">
-        ${d.caption} · nothing here is orderable</div>
-      <table><thead><tr>
-        <th class="l">Market</th><th class="l">Side</th><th>Qty</th>
-        <th>Entry</th><th>FV now</th><th>Mid now</th><th class="l">Verdict</th>
-      </tr></thead><tbody>${d.rows.map(r=>`
-        <tr>
-          <td class="l">${shortSlug(r.market_slug)}</td>
-          <td class="l">${r.outcome}</td>
-          <td>${r.filled_quantity.toFixed(2)}</td>
-          <td>${num(r.entry_cost)}</td>
-          <td>${r.fv==null?'<span class="dimc">—</span>':num(r.fv)}</td>
-          <td>${r.mid==null?'<span class="dimc">—</span>':num(r.mid)}</td>
-          <td class="l">${vcell(r)}</td>
-        </tr>`).join("")}</tbody></table>`;
-  } catch(e){ /* informational panel; must not break picks */ }
-}
-loadEVGuard();
-setInterval(loadEVGuard, 20000);
+/* The EV-guard, live-FV and live-totals page fragments are GONE (operator:
+   three half-views of the same data). Their content lives in the two tables:
+   PULSE's estimates decorate every live market row in the lines table, and
+   open positions are rows in the trading table. The /api endpoints behind
+   them still exist for any other consumer; this page just stopped being
+   three windows onto one model. */
 
 // ---------------------------------------------------------------------------
 // Live formula fair value. DISPLAY ONLY.
@@ -1579,52 +1562,23 @@ setInterval(loadEVGuard, 20000);
 // hypothesis #16 passed its pre-registered gate using exactly this formula's
 // team-blind ancestor and then inverted under a confound check.
 // ---------------------------------------------------------------------------
-async function loadLiveFV(){
-  try{
-    const d = await (await fetch("/api/live-fv")).json();
-    // The context strip reads its scores from here rather than fetching the
-    // same endpoint a second time. Rebuilt before the early return below, so
-    // a slate with no live game clears the strip instead of leaving a stale
-    // score frozen on it.
-    LIVE_CTX = {};
-    for(const r of (d.rows || [])){
-      if(!LIVE_CTX[r.event_slug]) LIVE_CTX[r.event_slug] = r;
-    }
-    renderStrip();
-    const el = $("#livefv");
-    if(!d.rows || !d.rows.length){
-      el.innerHTML = '<div class="empty">no live moneylines right now</div>';
-      return;
-    }
-    const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
-    el.innerHTML = `
-      <div class="dimc" style="font-size:10.5px;margin-bottom:6px"
-           title="P = Φ((margin + pregame edge × t/40) / (σ√t)), σ=${d.sigma} fitted from 787 games. Minutes left is interpolated from wall clock — the venue publishes no game clock — so it is wrong whenever the clock stops. Gap coloured past ${(d.gap_highlight*100).toFixed(0)}c.">
-        ${d.caption} · hover for the formula · nothing here is orderable</div>
-      <table><thead><tr>
-        <th class="l">Market</th><th class="l">Per</th><th>Score</th><th>Marg</th>
-        <th>Min left</th><th>Pregame</th><th>FV</th><th>Bid</th><th>Ask</th>
-        <th>Gap</th><th class="l">Note</th>
-      </tr></thead><tbody>${d.rows.map(r=>`
-        <tr>
-          <td class="l">${r.label||shortSlug(r.market_slug)}</td>
-          <td class="l dimc">${r.period}</td>
-          <td>${r.score}</td>
-          <td class="${r.margin>0?"pos":r.margin<0?"neg":"dimc"}">${r.margin>0?"+":""}${r.margin}</td>
-          <td>${r.minutes_left.toFixed(1)}${r.minutes_left_is_estimate
-                ? '<span class="dimc" title="interpolated from wall clock; the venue publishes no game clock"> est.</span>'
-                : ''}</td>
-          <td class="dimc">${num(r.pregame_price)}</td>
-          <td>${r.fair_value==null?'<span class="dimc">—</span>':num(r.fair_value)}</td>
-          <td class="dimc">${num(r.bid)}</td>
-          <td class="dimc">${num(r.ask)}</td>
-          <td class="${r.highlight?(r.gap>0?"pos":"neg"):"dimc"}">${gp(r.gap)}</td>
-          <td class="l dimc">${r.note||""}</td>
-        </tr>`).join("")}</tbody></table>`;
-  } catch(e){ /* informational panel; must not break picks */ }
+/* LIVE_CTX (the game strip's scores) now reads PULSE's estimates — the
+   deleted live-FV loader used to populate it as a side effect. One source:
+   the freshest estimate per event, which also carries the clock. */
+function rebuildLiveCtx(){
+  LIVE_CTX = {};
+  for(const m of Object.values(PULSE_LATEST)){
+    const ev = m.event_slug;
+    if(!ev || m.score == null) continue;
+    const cur = LIVE_CTX[ev];
+    if(!cur || m.age_seconds < cur.age_seconds)
+      LIVE_CTX[ev] = {score: m.score, period: m.period,
+                      minutes_left: m.minutes_left,
+                      minutes_left_is_estimate: m.minutes_left_is_estimate,
+                      age_seconds: m.age_seconds, event_slug: ev};
+  }
+  renderStrip();
 }
-loadLiveFV();
-setInterval(loadLiveFV, 15000);
 
 // ---------------------------------------------------------------------------
 // Live TOTALS formula FV. DISPLAY ONLY — same rules as the moneyline strip:
@@ -1632,51 +1586,7 @@ setInterval(loadLiveFV, 15000);
 // hand-trade audit's single measured-positive pocket (live totals, +9.4%,
 // n=31, descriptive), where what was missing was a number, not a button.
 // ---------------------------------------------------------------------------
-async function loadLiveTotals(){
-  try{
-    const d = await (await fetch("/api/live-totals-fv")).json();
-    const el = $("#livetot");
-    if(!d.rows || !d.rows.length){
-      el.innerHTML = '<div class="empty">no live totals rungs right now</div>';
-      return;
-    }
-    const gp = (v,d2=1) => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(d2)+"c";
-    const games = [];
-    for(const r of d.rows){
-      let g = games.find(x=>x.ev===r.event_slug);
-      if(!g){ g={ev:r.event_slug, rows:[]}; games.push(g); }
-      g.rows.push(r);
-    }
-    el.innerHTML = `
-      <div class="dimc" style="font-size:10.5px;margin-bottom:6px"
-           title="Projection = pregame v4 total moved by a FRACTION of scoring's divergence from its expected pace (coefficient 1.32 at Q1 decaying to 1.00 — raw pace is never extrapolated). σ is the fitted per-period totals residual (15.9 / 13.0 / 9.7), not the win curve's margin σ. Minutes left is interpolated — no game clock is published. Gap coloured past ${(d.gap_highlight*100).toFixed(0)}c.">
-        ${d.caption} · hover for the formula · nothing here is orderable</div>
-      ${games.map(g=>{
-        const nm = shortEvent(g.ev);
-        const h = g.rows[0];
-        return `<div class="dimc" style="margin:10px 0 4px">${nm} · ${h.score}
-            · ${h.period} · ${h.minutes_left.toFixed(1)}min left${
-            h.minutes_left_is_estimate?' <span title="interpolated; no game clock is published">est.</span>':''}
-            · scored ${h.total_so_far} · pregame ${h.pregame_mu==null?"—":h.pregame_mu}
-            → projected <b>${h.projected_total==null?"—":h.projected_total}</b>
-            ${h.sigma==null?"":`(&sigma; ${h.sigma})`}</div>
-          <table><thead><tr>
-            <th class="l">Line</th><th>FV</th><th>Bid</th><th>Ask</th><th>Gap</th>
-            <th class="l">Note</th>
-          </tr></thead><tbody>${g.rows.map(r=>`
-            <tr>
-              <td class="l">${r.line.toFixed(1)}</td>
-              <td>${r.fair_value==null?'<span class="dimc">—</span>':num(r.fair_value)}</td>
-              <td class="dimc">${num(r.bid)}</td>
-              <td class="dimc">${num(r.ask)}</td>
-              <td class="${r.highlight?(r.gap>0?"pos":"neg"):"dimc"}">${gp(r.gap)}</td>
-              <td class="l dimc">${r.note||""}</td>
-            </tr>`).join("")}</tbody></table>`;
-      }).join("")}`;
-  } catch(e){ /* informational panel; must not break picks */ }
-}
-loadLiveTotals();
-setInterval(loadLiveTotals, 15000);
+
 
 
 /* Which era history renders. "pulse" is the clean slate the operator asked
