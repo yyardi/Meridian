@@ -279,9 +279,9 @@ def write_sheet(workbook: Path, rows: list[list], *, label: str) -> dict:
     # availability flag active says v4, and an unflagged winner row prices
     # identically to v3 and therefore says v3. Without this note the operator
     # would reasonably read the mixture as corruption and file it as one.
-    ws.append(["'brain' is per ROW, not per game — a game can show v3 and v4 "
-               "rows together. The label records what priced that row; an "
-               "unflagged winner prices as v3 even under v4."])
+    ws.append([("'brain' is per ROW, not per game — a game can show v3 and v4 "
+                "rows together. The label records what priced that row; an "
+                "unflagged winner prices as v3 even under v4.")])
     ws["A2"].font = Font(italic=True)
     ws.append([h for h, _ in COLUMNS])
     for cell in ws[3]:
