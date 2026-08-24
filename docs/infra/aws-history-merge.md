@@ -164,3 +164,43 @@ looked complete.
   so `compose` vanishes and the error surfaces as `unknown flag: --env-file`
   rather than "no such subcommand". Now `sudo -H -u meridian`, verified working
   on the live instance.
+
+## Partition swap verification on a live server
+
+`retention.migrate` renames each tick table to `*_preswap`, builds a partitioned
+parent, copies the rows in, and then checks its work before dropping the old
+table. The original check compared raw row counts:
+
+    count(market_snapshots) == count(market_snapshots_preswap)
+
+That is only true if nothing writes during the swap — a laptop-era assumption.
+On the server the 200ms recorder never stops, so the parent is legitimately
+larger the moment the copy commits, the check raises, and both tables are kept.
+The swap was correct; the verification was measuring a quantity that cannot
+hold still.
+
+The check now compares at the **id boundary**: `max(id)` of the `*_preswap`
+table is the high-water mark at swap time, every row at or below it must be
+present in the parent, and everything above it arrived afterwards. Ids come
+from a sequence and only increase, so no post-swap row can land below the
+boundary — which is what makes equality there a proof rather than a
+coincidence.
+
+### Receipts from the live swap (2026-08-21, off-slate)
+
+| table | preswap rows | boundary id | parent rows ≤ boundary | post-swap writes |
+|---|---|---|---|---|
+| `market_snapshots` | 17,795,882 | 97,950,927 | 17,795,882 (exact) | 228 |
+| `book_levels` | 9,624,430 | 18,363,023 | 9,624,430 (exact) | 4,872 |
+
+Count equality at the boundary is a strong argument, not a proof, so it was
+confirmed by anti-join — for each preswap row, does a row with that id exist in
+the parent?
+
+    select (select count(*) from market_snapshots_preswap p
+              where not exists (select 1 from market_snapshots m where m.id = p.id)),
+           (select count(*) from book_levels_preswap p
+              where not exists (select 1 from book_levels b where b.id = p.id))
+
+Result: **0 and 0** — no pre-swap row is missing from either parent. This is the
+gating evidence for dropping the `*_preswap` tables.

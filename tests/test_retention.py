@@ -190,3 +190,56 @@ def test_book_levels_partitioned_and_unique_constraint_survives(clean_rows):
             "where snapshot_id = :s group by 1"), {"s": sid}).one()
     assert part == "book_levels_y2026m08"
     assert n == 1
+
+
+# ------------------------------------------------------------------ #
+# Swap verification (live-table semantics)
+# ------------------------------------------------------------------ #
+
+
+def _swap_fixture(conn, preswap_ids, parent_ids):
+    """Two throwaway tables shaped like a parent and its *_preswap sibling."""
+    conn.execute(text("drop table if exists vs_parent, vs_parent_preswap"))
+    conn.execute(text("create table vs_parent (id bigint primary key)"))
+    conn.execute(text("create table vs_parent_preswap (id bigint primary key)"))
+    for tbl, ids in (("vs_parent_preswap", preswap_ids), ("vs_parent", parent_ids)):
+        if ids:
+            vals = ",".join(f"({i})" for i in ids)
+            conn.execute(text(f"insert into {tbl} (id) values {vals}"))
+
+
+@pytest.mark.parametrize(
+    "post_swap_writes", [0, 5], ids=["quiesced", "live_writer"]
+)
+def test_verify_swap_ignores_rows_written_after_the_swap(post_swap_writes):
+    """The regression this replaces: on a live server the recorder keeps
+    writing, so the parent is legitimately LARGER than *_preswap. The old
+    `count == count` check called that corruption and refused to clean up."""
+    from core.retention import verify_swap
+
+    engine = get_engine()
+    preswap = list(range(1, 101))
+    parent = preswap + [100 + i for i in range(1, post_swap_writes + 1)]
+    with engine.begin() as conn:
+        _swap_fixture(conn, preswap, parent)
+        rows, written_after = verify_swap(conn, "vs_parent")
+        conn.execute(text("drop table vs_parent, vs_parent_preswap"))
+
+    assert rows == 100
+    assert written_after == post_swap_writes
+
+
+def test_verify_swap_still_catches_a_row_that_did_not_survive():
+    """The check must not have been loosened into uselessness: a row missing
+    from BELOW the boundary is real data loss and must still raise."""
+    from core.retention import verify_swap
+
+    engine = get_engine()
+    preswap = list(range(1, 101))
+    parent = [i for i in preswap if i != 42] + [101, 102]  # 42 lost, 2 new
+    with engine.begin() as conn:
+        _swap_fixture(conn, preswap, parent)
+        with pytest.raises(RuntimeError, match="BOTH TABLES KEPT"):
+            verify_swap(conn, "vs_parent")
+    with engine.begin() as conn:
+        conn.execute(text("drop table vs_parent, vs_parent_preswap"))
