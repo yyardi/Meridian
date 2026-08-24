@@ -59,6 +59,7 @@ Assumptions, stated because they are load-bearing
 from __future__ import annotations
 
 import argparse
+import json
 import dataclasses
 import datetime as dt
 import logging
@@ -258,8 +259,15 @@ class MoneylineResult:
 
 def _ml_and_spread_for_game(
     session: Session, espn_game_id: str
-) -> tuple[float | None, float | None, float | None]:
-    """(de-vigged P(home) from the moneyline, home spread line, spread price).
+) -> tuple[float | None, float | None, float | None, float | None, float | None]:
+    """(de-vigged P(home), raw home price, raw away price, spread line, spread price).
+
+    The de-vigged probability and the raw prices are BOTH returned because they
+    answer different questions. The de-vigged number is the book's belief, and
+    the model is scored against it. The raw prices are the book's offer, and
+    that is what a bet actually costs. Collapsing the two — pricing entries at
+    the de-vigged number — silently removes the ~4.3% overround and turns a
+    breakeven market into a profitable-looking one.
 
     Live providers are excluded — a line set during the game reflects the score
     so far. Consensus is the median across the remaining books.
@@ -276,7 +284,7 @@ def _ml_and_spread_for_game(
         if not _is_live_provider(r.provider_name)
     ]
     if not rows:
-        return None, None, None
+        return None, None, None, None, None
 
     p_home = None
     pairs = [
@@ -284,21 +292,27 @@ def _ml_and_spread_for_game(
         for r in rows
         if r.home_moneyline is not None and r.away_moneyline is not None
     ]
+    raw_home = raw_away = None
     if pairs:
         probs = []
+        raw_h: list[float] = []
+        raw_a: list[float] = []
         for home_odds, away_odds in pairs:
-            devigged = devig_two_sided(
-                american_to_price(home_odds), american_to_price(away_odds)
-            )
+            ph, pa = american_to_price(home_odds), american_to_price(away_odds)
+            devigged = devig_two_sided(ph, pa)
             if devigged is not None:
                 probs.append(devigged[0])
+                raw_h.append(ph)
+                raw_a.append(pa)
         if probs:
             p_home = sorted(probs)[len(probs) // 2]
+            raw_home = sorted(raw_h)[len(raw_h) // 2]
+            raw_away = sorted(raw_a)[len(raw_a) // 2]
 
     spreads = [float(r.spread) for r in rows if r.spread is not None]
     spread_line = sorted(spreads)[len(spreads) // 2] if spreads else None
     spread_price = american_to_price(DEFAULT_TWO_WAY_ODDS)
-    return p_home, spread_line, spread_price
+    return p_home, raw_home, raw_away, spread_line, spread_price
 
 
 def run_backtest(
@@ -335,7 +349,8 @@ def run_backtest(
             result.games_insufficient_features += 1
             continue
 
-        p_home_book, spread_line, spread_price = _ml_and_spread_for_game(
+        (p_home_book, raw_home_price, raw_away_price,
+         spread_line, spread_price) = _ml_and_spread_for_game(
             session, row.espn_game_id
         )
         if p_home_book is None and spread_line is None:
@@ -348,12 +363,16 @@ def run_backtest(
         margin = home_pts - away_pts
         sigma_margin = projection.sigma * MARGIN_SIGMA_RATIO
 
-        if MARKET_ML in cfg.markets and p_home_book is not None:
+        if (MARKET_ML in cfg.markets and p_home_book is not None
+                and raw_home_price is not None and raw_away_price is not None):
             p_model = prob_home_win(projection.projected_margin, sigma_margin)
             bet = _maybe_bet(
                 row=row, market=MARKET_ML, line=None,
                 p_model_home=p_model, p_book_home=p_home_book,
-                price_home=p_home_book, price_away=1.0 - p_home_book,
+                # The OFFER, not the belief. Falling back to the de-vigged
+                # number when a raw pair is missing would reintroduce the free
+                # entry for exactly those games, so the bet is skipped instead.
+                price_home=raw_home_price, price_away=raw_away_price,
                 home_won=margin > 0, min_edge=cfg.min_edge,
             )
             if bet is not None:
@@ -431,3 +450,56 @@ def _maybe_bet(
         pnl=pnl_for_contract(price, won),
         fee=fee_per_contract(price, is_maker=False),
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """The CLI this module's docstring has always advertised.
+
+    It was documented but never wired: there was no `__main__` guard, so
+    `python -m core.backtest.moneyline` imported the module, ran nothing, and
+    exited 0 — a silent success that looks exactly like a successful run.
+    """
+    ap = argparse.ArgumentParser(description="Walk-forward moneyline/spread backtest.")
+    ap.add_argument("--start", type=int, default=2024, help="first season")
+    ap.add_argument("--end", type=int, default=2026, help="last season")
+    ap.add_argument("--min-edge", type=float, default=0.03,
+                    help="minimum |model - book| in probability")
+    ap.add_argument("--json", action="store_true", help="emit raw JSON")
+    args = ap.parse_args(argv)
+
+    from core.storage import get_sessionmaker
+
+    cfg = MoneylineConfig(
+        start_season=args.start, end_season=args.end, min_edge=args.min_edge
+    )
+    Session = get_sessionmaker()
+    with Session() as session:
+        result = run_backtest(session=session, config=cfg)
+
+    payload = {
+        "seasons": [args.start, args.end],
+        "min_edge": args.min_edge,
+        "games_considered": result.games_considered,
+        "games_no_odds": result.games_no_odds,
+        "games_insufficient_features": result.games_insufficient_features,
+        "markets": {m: s.as_dict() for m, s in result.summaries.items()},
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print(f"seasons {args.start}-{args.end}  min_edge {args.min_edge}  "
+          f"games {result.games_considered}")
+    for market, summary in result.summaries.items():
+        d = summary.as_dict()
+        ci = d["roi_ci95_game_clustered"]
+        ci_s = "n/a" if ci is None else f"[{ci[0]:+.2%}, {ci[1]:+.2%}]"
+        roi_s = "n/a" if d["roi"] is None else f"{d['roi']:+.2%}"
+        print(f"  {market:10} n={d['bets']:<5} ROI {roi_s:>8}  CI95 {ci_s:<20} "
+              f"hit {d['hit_rate']} @ entry {d['entry_cost_stake_weighted']}")
+    print(f"  CLV: {CLV_UNAVAILABLE}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
