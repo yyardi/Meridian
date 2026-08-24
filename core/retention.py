@@ -231,6 +231,49 @@ _BOOK_INDEXES = [
 ]
 
 
+def verify_swap(conn, parent: str) -> tuple[int, int]:
+    """Confirm every pre-swap row survived into the partitioned parent.
+
+    Returns ``(preswap_rows, post_swap_writes)``. Raises RuntimeError,
+    leaving both tables in place, if any row at or below the swap boundary
+    is missing from the parent.
+    """
+    # COMPARE AT THE ID BOUNDARY, not on total counts.
+    #
+    # The original check was `count(parent) == count(parent_preswap)`,
+    # which is a laptop-era assumption: it only holds if nothing writes
+    # during the swap. On the server the 200ms recorder never stops, so
+    # the partitioned parent legitimately grows between the copy and the
+    # count and the two totals CANNOT match. The first live run failed
+    # here and kept both tables; the swap was fine, the check was wrong.
+    # Measured on that pair afterwards: the parent held 228 more
+    # market_snapshots and 4,872 more book_levels than the boundary,
+    # every one of them a write that arrived after the swap.
+    #
+    # `max(id)` of the preswap table is the high-water mark at swap
+    # time. Every row at or below it must be present in the parent;
+    # everything above it is a write that arrived afterwards. Ids come
+    # from a sequence and only ever increase, so no post-swap row can
+    # land at or below the boundary — which makes count equality there
+    # a genuine proof of completeness rather than a coincidence.
+    old_n, at_or_below, total = conn.execute(text(
+        f"select (select count(*) from {parent}_preswap), "
+        f"(select count(*) from {parent} where id <= "
+        f"  (select max(id) from {parent}_preswap)), "
+        f"(select count(*) from {parent})"
+    )).one()
+    if at_or_below != old_n:
+        raise RuntimeError(
+            f"{parent}: {at_or_below} rows at or below the swap "
+            f"boundary vs {old_n} in {parent}_preswap — BOTH TABLES "
+            f"KEPT ({parent} and {parent}_preswap); do not drop "
+            "anything by hand"
+        )
+    log.info("partition_swap_verified", parent=parent,
+             preswap_rows=old_n, post_swap_writes=total - at_or_below)
+    return old_n, total - at_or_below
+
+
 def migrate(engine, *, now: dt.datetime | None = None) -> dict:
     """Convert both tables to monthly partitioning, in one transaction.
 
@@ -303,16 +346,7 @@ def migrate(engine, *, now: dt.datetime | None = None) -> dict:
     # leaves both tables inspectable side by side.
     with engine.begin() as conn:
         for parent in PARENTS:
-            new_n, old_n = conn.execute(text(
-                f"select (select count(*) from {parent}), "
-                f"(select count(*) from {parent}_preswap)"
-            )).one()
-            if new_n != old_n:
-                raise RuntimeError(
-                    f"{parent}: partitioned copy has {new_n} rows vs "
-                    f"{old_n} original — BOTH TABLES KEPT ({parent} and "
-                    f"{parent}_preswap); do not drop anything by hand"
-                )
+            verify_swap(conn, parent)
         for parent in PARENTS:
             conn.execute(text(f"drop table {parent}_preswap"))
         log.info("preswap_tables_dropped_after_exact_count_match")
