@@ -335,7 +335,7 @@ MARKET_WINNER = "basketball_team_full_game_winner"
 #: ANCHOR — pregame, hold to settlement.
 #:
 #: **The moneyline exclusion below is not supported by the evidence it cites.**
-#: Re-scored 2026-08-21; full working in docs/math/moneyline-unbarring.md. It is
+#: Re-scored 2026-08-24; full working in docs/math/moneyline-unbarring.md. It is
 #: still in force only because lifting it awaits operator authorization — the
 #: reasoning is retracted here so nobody re-derives confidence from it.
 #:
