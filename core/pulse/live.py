@@ -134,12 +134,18 @@ ESTIMATES_V2 = "v2"
 #: (>60s) falls back to the wall-clock estimator and the row says 'v1'.
 #: Overtime stays unpriced (no registered OT model).
 ESTIMATES_V3 = "v3"
+#: v4 (the bundle, docs/math/pulse-v4-bundle.md, registered 2026-08-24
+#: before this build): v3's clock + pace/efficiency-decomposed totals +
+#: availability-flag sigma widening. Runs are annotation-only. Per-component
+#: fallbacks degrade toward v3 behaviour, loudly.
+ESTIMATES_V4 = "v4"
 #: Every version this code KNOWS. A configured version outside this set is
 #: the 2026-08-23 deploy-skew bug (a new flag riding an old image): the
 #: engine keeps running v1-labeled — honest rows — but screams at error
 #: level, throttled, so the skew can never again be discovered only by
 #: someone counting version labels in the tape.
-KNOWN_ESTIMATES_VERSIONS = (ESTIMATES_V1, ESTIMATES_V2, ESTIMATES_V3)
+KNOWN_ESTIMATES_VERSIONS = (ESTIMATES_V1, ESTIMATES_V2, ESTIMATES_V3,
+                            ESTIMATES_V4)
 DEFAULT_ESTIMATES_VERSION = os.environ.get("MERIDIAN_PULSE_ESTIMATES", ESTIMATES_V1)
 #: Fallback/skew log throttle.
 V3_FALLBACK_LOG_SECONDS = 300.0
@@ -362,6 +368,9 @@ class EventAnchors:
     #: v3 input: the event's ESPN game id (the replay eval's registered
     #: join, applied live). None = unresolvable, and the event prices v1.
     espn_game_id: str | None = None
+    #: v4 input: expected possessions per side per minute (recent-form
+    #: pace, league fallback). None only in pre-v4 modes.
+    poss_rate_exp: float | None = None
 
 
 # --------------------------------------------------------------------- #
@@ -410,8 +419,12 @@ class PulseEngine:
         self._bankroll_reader = bankroll_reader or self._stored_bankroll
         self._markets: dict[str, MarketState] = {}
         self._anchors: dict[str, EventAnchors] = {}
-        #: event_slug -> freshest venue clock, reloaded each cycle (v3 mode).
+        #: event_slug -> freshest venue clock, reloaded each cycle (v3/v4).
         self._venue_clocks: dict = {}
+        #: event_slug -> {clock, possessions_per_side} (v4 mode).
+        self._box_states: dict = {}
+        #: event_slug -> AvailabilityFlags (v4 mode).
+        self._event_flags: dict = {}
         #: (event_slug, reason) -> monotonic instant of the last fallback
         #: warning — the 2026-08-23 lesson: a silent fallback is only ever
         #: found by someone counting version labels.
@@ -487,13 +500,15 @@ class PulseEngine:
         are re-queried, at most every ANCHOR_REFRESH_SECONDS.
         """
         want_v2 = self.estimates_version == ESTIMATES_V2
-        want_v3 = self.estimates_version == ESTIMATES_V3
+        want_v3 = self.estimates_version in (ESTIMATES_V3, ESTIMATES_V4)
+        want_v4 = self.estimates_version == ESTIMATES_V4
         missing = [e for e in events
                    if e not in self._anchors
                    or self._anchors[e].winner_mid is None
                    or self._anchors[e].totals_mu is None
                    or (want_v2 and self._anchors[e].matchup_sigma is None)
-                   or (want_v3 and self._anchors[e].espn_game_id is None)]
+                   or (want_v3 and self._anchors[e].espn_game_id is None)
+                   or (want_v4 and self._anchors[e].poss_rate_exp is None)]
         if not missing:
             return
         if time.monotonic() - self._last_anchor_refresh < ANCHOR_REFRESH_SECONDS:
@@ -556,13 +571,40 @@ class PulseEngine:
                 if espn_game_id is not None:
                     log.info("pulse_v3_game_resolved", slug=e,
                              espn_game_id=espn_game_id)
+            poss_rate_exp = prior.poss_rate_exp
+            if want_v4 and poss_rate_exp is None:
+                poss_rate_exp = self._pace_prior(session, e)
             self._anchors[e] = EventAnchors(
                 winner_mid=winner_mid,
                 totals_mu=totals_mu,
                 matchup_sigma=matchup_sigma,
                 totals_mu_v2=totals_mu_v2,
                 espn_game_id=espn_game_id,
+                poss_rate_exp=poss_rate_exp,
             )
+
+    def _pace_prior(self, session, event_slug: str) -> float | None:
+        """Expected possessions per side per minute: recent-form pace
+        (point-in-time), league average as the stated fallback."""
+        from sqlalchemy import text as _text
+
+        from core.pulse.team_form import event_team_abbrevs, matchup_form
+        abbrevs = event_team_abbrevs(event_slug)
+        if abbrevs is not None:
+            form = matchup_form(session, first_abbrev=abbrevs[0],
+                                second_abbrev=abbrevs[1],
+                                as_of=dt.datetime.now(UTC))
+            if (form is not None and form.first.possessions
+                    and form.second.possessions):
+                return (form.first.possessions
+                        + form.second.possessions) / 2.0 / 40.0
+        league = session.execute(_text("""
+            SELECT avg(fga - oreb + turnovers + 0.44 * fta) / 40.0
+            FROM team_game_logs
+            WHERE is_completed AND fga IS NOT NULL AND oreb IS NOT NULL
+              AND turnovers IS NOT NULL AND fta IS NOT NULL
+        """)).scalar()
+        return float(league) if league else None
 
     def _stored_bankroll(self) -> float | None:
         """The newest stored account reading, never a fetch, never a default.
@@ -598,7 +640,7 @@ class PulseEngine:
         # contract); OT and ended-regulation abstain — no OT model is
         # registered and the venue clock does not change that.
         v3_clock_used = False
-        if self.estimates_version == ESTIMATES_V3:
+        if self.estimates_version in (ESTIMATES_V3, ESTIMATES_V4):
             exact = self._venue_clocks.get(ob.event_slug)
             if exact is None:
                 # LOUD fallback (the 2026-08-23 lesson): name the reason,
@@ -635,11 +677,18 @@ class PulseEngine:
         fv = projected = sigma_t = None
         note = clock.note
 
-        # v2/v3 inputs, where available; the version label records what
+        # v2/v3/v4 inputs, where available; the version label records what
         # actually priced the number, not what mode the engine ran in.
         version = ESTIMATES_V3 if v3_clock_used else ESTIMATES_V1
         sigma = self.sigma
         totals_mu = anchors.totals_mu
+        if self.estimates_version == ESTIMATES_V4:
+            # Availability flags widen uncertainty (never direction) — the
+            # registered consumption of fouls/on-off/ejections.
+            flags = self._event_flags.get(ob.event_slug)
+            if flags is not None and flags.any_active:
+                sigma = sigma * flags.sigma_factor
+                version = ESTIMATES_V4
         if self.estimates_version == ESTIMATES_V2:
             if (strategy in (STRAT_WINNER, STRAT_SPREAD)
                     and anchors.matchup_sigma is not None):
@@ -663,9 +712,36 @@ class PulseEngine:
                 note = "no v4 pregame ladder — no anchor" if ob.line is not None else note
             else:
                 elapsed = REGULATION_MINUTES - clock.minutes_left
-                projected = project_total(
-                    pregame_mu=totals_mu, total_so_far=total_so_far,
-                    elapsed_minutes=elapsed)
+                projected = None
+                if self.estimates_version == ESTIMATES_V4 and v3_clock_used:
+                    # The bundle's pace/efficiency projection; totals sigma
+                    # stays the fitted per-period table by registration.
+                    from core.pulse.signals import projected_total_v4
+                    state = self._box_states.get(ob.event_slug) or {}
+                    poss = state.get("possessions_per_side")
+                    if poss and anchors.poss_rate_exp:
+                        projected = projected_total_v4(
+                            total_so_far=total_so_far,
+                            possessions_so_far=poss,
+                            elapsed_minutes=elapsed,
+                            minutes_left=clock.minutes_left,
+                            pregame_mu=totals_mu,
+                            poss_rate_expected=anchors.poss_rate_exp)
+                    if projected is not None:
+                        version = ESTIMATES_V4
+                    else:
+                        key = (ob.event_slug, "no_box_counts")
+                        last = self._v3_fallback_logged.get(key, float("-inf"))
+                        if time.monotonic() - last >= V3_FALLBACK_LOG_SECONDS:
+                            self._v3_fallback_logged[key] = time.monotonic()
+                            log.warning("pulse_v4_fallback",
+                                        slug=ob.event_slug,
+                                        reason="no_box_counts",
+                                        note="totals pricing v3-style")
+                if projected is None:
+                    projected = project_total(
+                        pregame_mu=totals_mu, total_so_far=total_so_far,
+                        elapsed_minutes=elapsed)
                 sigma_t = remaining_sigma(elapsed)
                 fv = over_probability(projected_total=projected,
                                       line=ob.line, sigma=sigma_t)
@@ -1086,10 +1162,34 @@ class PulseEngine:
             self._refresh_anchors(session, {ob.event_slug for ob in observations})
 
             self._venue_clocks = {}
-            if self.estimates_version == ESTIMATES_V3 and observations:
+            self._box_states = {}
+            self._event_flags = {}
+            if (self.estimates_version in (ESTIMATES_V3, ESTIMATES_V4)
+                    and observations):
                 ids = {a.espn_game_id: e for e, a in self._anchors.items()
                        if a.espn_game_id is not None}
-                if ids:
+                if ids and self.estimates_version == ESTIMATES_V4:
+                    from core.pulse.signals import (
+                        availability_flags,
+                        latest_box_states,
+                        latest_player_rows,
+                        substitution_plays,
+                    )
+                    states = latest_box_states(
+                        session, list(ids),
+                        max_staleness_seconds=VENUE_CLOCK_STALENESS_SECONDS)
+                    players = latest_player_rows(session, list(ids))
+                    for gid, state in states.items():
+                        ev = ids[gid]
+                        self._venue_clocks[ev] = state["clock"]
+                        self._box_states[ev] = state
+                        rows = players.get(gid)
+                        if rows:
+                            subs = substitution_plays(session, gid)
+                            self._event_flags[ev] = availability_flags(
+                                player_rows=rows, sub_plays=subs,
+                                period=state["clock"].period)
+                elif ids:
                     from core.pulse.signals import latest_venue_clocks
                     clocks = latest_venue_clocks(
                         session, list(ids),
