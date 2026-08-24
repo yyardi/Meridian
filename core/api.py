@@ -958,6 +958,7 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
     stake_cap = _stake_cap(allow_fetch=False)
     out, filtered_far, filtered_wide = [], 0, 0
     filtered_untradable = filtered_unanchored = filtered_unknown_league = 0
+    filtered_no_tipoff = 0
     for p in preds:
         # League first: everything below is per-board bookkeeping, and counting
         # another league's filtered rows into this board's tallies would make
@@ -973,7 +974,14 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         if found.slug != lg.slug:
             continue
         start = starts.get(p.market_slug)
-        if start is None or start <= now:      # pregame only
+        if start is None:
+            # No snapshot row for this market has ever carried a tipoff —
+            # futures/series markets by design, or a recording gap. Counted:
+            # this skip was silent, and a rising number here is the only way
+            # to see a slate vanishing from the board.
+            filtered_no_tipoff += 1
+            continue
+        if start <= now:                       # pregame only
             continue
         hours = (start - now).total_seconds() / 3600
         if hours > horizon_hours:
@@ -1117,6 +1125,7 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
             "spread_too_wide": filtered_wide,
             "market_not_traded": filtered_untradable,
             "no_book_line_yet": filtered_unanchored,
+            "no_tipoff_recorded": filtered_no_tipoff,
             "unknown_league": filtered_unknown_league,
         },
         "picks": out,
