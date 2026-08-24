@@ -91,7 +91,7 @@ VENUE_MIN_QTY = Decimal("0.01")
 MAX_ORDER_STAKE_USD = Decimal(os.environ.get("MERIDIAN_MAX_ORDER_STAKE_USD", "25"))
 
 
-def _stake_cap() -> Decimal:
+def _stake_cap(allow_fetch: bool = True) -> Decimal:
     """The most one order may stake: the fat-finger cap **or the account**,
     whichever is smaller.
 
@@ -108,14 +108,17 @@ def _stake_cap() -> Decimal:
     from core.bankroll import BankrollUnavailable, current
 
     try:
-        return min(MAX_ORDER_STAKE_USD, current().bankroll)
+        return min(MAX_ORDER_STAKE_USD, current(
+            allow_fetch=allow_fetch,
+            max_age_seconds=1800.0 if allow_fetch else 86400.0,
+        ).bankroll)
     except BankrollUnavailable as exc:
         log.warning("stake_cap_without_bankroll", error=str(exc)[:160],
                     cap=float(MAX_ORDER_STAKE_USD))
         return MAX_ORDER_STAKE_USD
 
 
-def _bankroll_block() -> dict | None:
+def _bankroll_block(allow_fetch: bool = True) -> dict | None:
     """The account balance for display, or ``None`` when it is not known.
 
     ``None`` is a real answer and the pages render it as such. The alternative
@@ -126,7 +129,14 @@ def _bankroll_block() -> dict | None:
     from core.bankroll import BankrollUnavailable, current
 
     try:
-        return current().to_dict()
+        # Display reads take the stored reading up to a day old — its age is
+        # rendered honestly, and the page's own 60s refresh poll keeps it
+        # genuinely fresh. Blocking a page-load GET on a synchronous venue
+        # round-trip was ~1.4s of the measured 8.5s /api/picks load.
+        return current(
+            allow_fetch=allow_fetch,
+            max_age_seconds=1800.0 if allow_fetch else 86400.0,
+        ).to_dict()
     except BankrollUnavailable as exc:
         return {"bankroll": None, "unavailable": str(exc)[:160]}
 
@@ -618,7 +628,7 @@ def status() -> dict:
         #: is a fraction of this, so it belongs next to the freshness signals:
         #: a bankroll nobody has refreshed is as stale as a recorder nobody has
         #: restarted, and used to be just as invisible.
-        "bankroll": _bankroll_block(),
+        "bankroll": _bankroll_block(allow_fetch=False),
     }
     _status_cache["at"] = now_mono
     _status_cache["value"] = value
@@ -896,7 +906,7 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         return {"picks": [], "predicted_at": None, "league": lg.slug,
                 "league_name": lg.name, "recorded": False,
                 "empty_state": lg.empty_state,
-                "bankroll": _bankroll_block()}
+                "bankroll": _bankroll_block(allow_fetch=False)}
     with _Session() as s:
         pred_time = s.scalar(select(func.max(Prediction.predicted_at)))
         if pred_time is None:
@@ -913,23 +923,39 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
             return {"picks": [], "predicted_at": None, "league": lg.slug,
                     "league_name": lg.name, "recorded": lg.recorded,
                     "empty_state": lg.empty_state,
-                    "bankroll": _bankroll_block()}
+                    "bankroll": _bankroll_block(allow_fetch=False)}
         preds = s.scalars(
             select(Prediction).where(Prediction.predicted_at == pred_time)
         ).all()
         shadow = {o.market_slug: o for o in s.scalars(select(ShadowOrder)).all()}
+        # Bounded to the prediction set's own slugs. The unbounded version
+        # GROUP BYed every market ever recorded — harmless at 3k pregame rows,
+        # 7 seconds once the 200ms recorder had written millions. Measured on
+        # the mirror: /api/picks 8.5s -> sub-second with this and the
+        # stored-bankroll change below.
+        pred_slugs = list({p.market_slug for p in preds})
+        # LIMIT 1 per slug via LATERAL, not max()-GROUP BY: a market that
+        # went live carries millions of 200ms rows and the aggregate reads
+        # every one (1.1s measured even bounded). The tip is constant per
+        # market in practice; any non-null row answers in ~2ms.
         starts = {
-            slug: start for slug, start in s.execute(
-                select(MarketSnapshot.market_slug,
-                       func.max(MarketSnapshot.game_start_time))
-                .group_by(MarketSnapshot.market_slug)
-            ).all()
-        }
+            r.market_slug: r.tipoff for r in s.execute(text("""
+                SELECT slugs.slug AS market_slug, ts.tipoff
+                  FROM unnest(CAST(:slugs AS text[])) AS slugs(slug)
+                  JOIN LATERAL (
+                        SELECT game_start_time AS tipoff
+                          FROM market_snapshots ms
+                         WHERE ms.market_slug = slugs.slug
+                           AND ms.game_start_time IS NOT NULL
+                         LIMIT 1
+                  ) ts ON true
+            """), {"slugs": pred_slugs}).all()
+        } if pred_slugs else {}
 
     now = dt.datetime.now(UTC)
     # Resolved once per request, not once per row: every ticket on the board is
     # capped by the same account, and thirty rows must not become thirty reads.
-    stake_cap = _stake_cap()
+    stake_cap = _stake_cap(allow_fetch=False)
     out, filtered_far, filtered_wide = [], 0, 0
     filtered_untradable = filtered_unanchored = filtered_unknown_league = 0
     for p in preds:
@@ -1085,7 +1111,7 @@ def picks(horizon_hours: float = DEFAULT_PICK_HORIZON_HOURS,
         #: balance could not be established, which the page says out loud rather
         #: than filling in. Same keys as the empty-board return above; the two
         #: shapes must not drift.
-        "bankroll": _bankroll_block(),
+        "bankroll": _bankroll_block(allow_fetch=False),
         "filtered": {
             "beyond_horizon": filtered_far,
             "spread_too_wide": filtered_wide,
@@ -1130,7 +1156,8 @@ def _era_window(s, era: str):
 
 
 @app.get("/api/results")
-def results(limit: int = 2000, era: str = "pulse") -> dict:
+def results(limit: int = 2000, era: str = "pulse",
+            include_rows: bool = False) -> dict:
     """Resolved live predictions — what the model called, and what happened.
 
     **`direction_rate_DIAGNOSTIC` is not performance and is reported only as a
@@ -1244,7 +1271,12 @@ def results(limit: int = 2000, era: str = "pulse") -> dict:
 
     return {
         **era_meta,
-        "results": out,
+        # The summary is computed over the full window regardless; the rows
+        # themselves ship only on request. The page renders KPIs and an era
+        # message — shipping 2,000 serialized predictions (700KB, measured)
+        # on every load bought nothing anyone displayed.
+        "results": out if include_rows else [],
+        "n_rows_computed": len(out),
         "summary": {
             "rows": len(out),
             "n_games": len(games),

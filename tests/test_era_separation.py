@@ -122,7 +122,7 @@ def two_eras(Session, monkeypatch):
 
 
 def test_results_default_to_the_pulse_era(client, two_eras):
-    d = client.get("/api/results?limit=5000").json()
+    d = client.get("/api/results?limit=5000&include_rows=true").json()
     slugs = {r["market_slug"] for r in d["results"]}
     assert "tsc-eratest-new" in slugs
     assert "tsc-eratest-old" not in slugs, "the archive leaked into the default view"
@@ -130,7 +130,7 @@ def test_results_default_to_the_pulse_era(client, two_eras):
 
 
 def test_the_archive_shows_the_old_era_and_only_it(client, two_eras):
-    d = client.get("/api/results?era=archive&limit=5000").json()
+    d = client.get("/api/results?era=archive&limit=5000&include_rows=true").json()
     slugs = {r["market_slug"] for r in d["results"]}
     assert "tsc-eratest-old" in slugs
     assert "tsc-eratest-new" not in slugs, "eras mixed — the one forbidden state"
