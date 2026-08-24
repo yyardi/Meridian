@@ -28,10 +28,12 @@ services:
       # LOCAL, like the live recorder and the quote engine: the 200ms tick
       # stream this loop decides on never leaves this machine.
       DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
-      # The v3 regime (operator decision 2026-08-23; registration in
-      # docs/math/pulse-live.md predates this deploy): estimates consume the
-      # venue clock from the signal archive — one field, nothing else.
-      MERIDIAN_PULSE_ESTIMATES: "v3"
+      # The v4 bundle (operator priority override 2026-08-24; registration
+      # docs/math/pulse-v4-bundle.md predates this build): clock + pace/
+      # efficiency totals + availability-flag sigma widening. Verify the
+      # ARTIFACT at deploy (import a v4 symbol in the running container) —
+      # the 2026-08-23 skew lesson.
+      MERIDIAN_PULSE_ESTIMATES: "v4"
       MERIDIAN_PULSE_INTERVAL_SECONDS: "1"
       MERIDIAN_PULSE_SETTLE_EVERY_SECONDS: "600"
       MERIDIAN_PULSE_PROFIT_TARGET: "0.05"
