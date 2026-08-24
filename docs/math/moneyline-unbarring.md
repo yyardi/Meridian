@@ -37,8 +37,26 @@ fails when the call site is reverted; the helper-level test alone does not.
 ## The two claims the exclusion rested on
 
 **Claim 1 — the market forecasts margin better than we do (MAE 9.65 vs 10.19).**
-Stands. Untouched by any of this, and it correctly predicts what the re-score
-found: no edge on the moneyline.
+The comparison is real, but **it does not isolate the moneyline, and I was
+wrong to record it as an ML-specific caution.** The operator caught this.
+
+The moneyline is `prob_home_win(projected_margin, sigma)`; the spread is
+`prob_cover(projected_margin, threshold, sigma)`. Same projection, same sigma —
+verified at `core/backtest/moneyline.py:368` and `:398`. **The moneyline is the
+spread at line 0.** A margin estimate worse than the market's therefore indicts
+both markets by exactly the same amount, and the spread sat in `ANCHOR_MARKETS`
+the entire time.
+
+So the MAE could never have been the reason the moneyline *alone* was barred.
+It is an argument that proves too much: applied consistently it excludes the
+spread as well. Set it aside and what remains is the hit-rate statistic — the
+C11 error below. The exclusion was not a strong claim plus a weak one; it was
+one incoherent claim with a respectable-sounding one draped over it.
+
+This also settles what looked like two competing findings. ANCHOR pregame
+already failed under measured fills (C14, −23.2% clustered) **with the spread
+in the set throughout**. "Our margin estimate is weak" and "the pregame spread
+trades lost money" are the same finding seen twice, not a contradiction.
 
 **Claim 2 — "33.4% hit rate, entire 95% interval below the 0.524 breakeven."**
 This is the C11 category error, and the number reproduces exactly:
@@ -82,24 +100,73 @@ Three things, in order of importance:
 3. **Neither is proven either way.** Every CI on both markets crosses zero.
    These are two unproven markets, not a good one and a bad one.
 
+## Where the margin gap lives — diagnostic, not a gate
+
+`python -m core.backtest.margin_quality`. If our margin were competitive in
+close games and hopeless in blowouts, that would be a different animal from
+uniformly behind — and close games are the regime actually traded. 826 games,
+2024–2026, bootstrapped on the **paired** per-game difference.
+
+Overall: ours 10.21, market 9.50, **delta +0.71, CI [+0.39, +1.03]**. The gap is
+real.
+
+| bucket (ex-ante, known before tip) | n | ours | market | delta | CI95 |
+|---|---|---|---|---|---|
+| expected close (0–3) | 154 | 9.11 | 8.79 | +0.31 | [−0.36, +1.02] |
+| expected 3–7 | 316 | 10.76 | 9.95 | +0.81 | [+0.26, +1.36] |
+| expected 7–12 | 254 | 10.54 | 9.68 | +0.86 | [+0.32, +1.43] |
+| expected 12+ | 102 | 9.31 | 8.73 | +0.59 | [−0.26, +1.46] |
+
+Post-hoc, by actual margin, the point estimates rise monotonically: +0.44
+(0–3), +0.49 (4–9), +0.76 (10–19), **+1.40 (20+)**.
+
+**The tempting read is wrong.** Two buckets clear zero and two do not, which
+looks like concentration — but that is not the test. A small bucket has a wide
+interval, so "not significant" often means "not enough games". Concentration is
+a claim about the *difference between* buckets, so the difference is what must
+be resampled:
+
+| comparison | difference | CI95 | verdict |
+|---|---|---|---|
+| expected close → expected 3–7 | +0.50 | [−0.35, +1.32] | not distinguishable |
+| expected close → expected 7–12 | +0.55 | [−0.32, +1.41] | not distinguishable |
+| expected close → expected 12+ | +0.27 | [−0.81, +1.34] | not distinguishable |
+| actual close → actual 10–19 | +0.32 | [−0.62, +1.29] | not distinguishable |
+| actual close → actual 20+ | +0.96 | [−0.18, +2.10] | not distinguishable |
+
+**No between-bucket difference is distinguishable from zero.** The point
+estimates order the way the hypothesis predicts — smallest in close games,
+largest in blowouts — and that ordering is consistent with a real effect this
+sample is too small to resolve. It is equally consistent with noise. The honest
+answer to "uniform or concentrated?" is **the data cannot tell yet**, and the
+closest thing to a lead is `actual close → actual 20+` (+0.96, upper CI +2.10,
+lower −0.18), which is worth re-running as the sample grows.
+
+What must NOT be done with this: gate anything on the post-hoc split. You do
+not know at tip time whether a game will be close. Only the ex-ante buckets are
+knowable in advance, and none of those differences clears zero either.
+
 ## The verdict
 
 The bar is not defensible **as a relative judgment**. It permits the market
 that scores worse and refuses the one that scores better, on evidence that
 cannot distinguish them. That asymmetry is an artifact of which market got
-audited, not a finding about either.
+audited, not a finding about either — and with the MAE argument set aside as
+proving too much, there is no remaining claim that separates the two.
 
 That is the whole argument for lifting it. It is deliberately not the argument
 the dispatch requesting this work assumed — that the exclusion was "half a
-measurement error" and the moneyline is therefore fine. Half of it *is* a
-measurement error, and correcting that error still leaves the moneyline
-unprofitable in every sample here. Anyone reading this as a green light has
-read it backwards.
+measurement error" and the moneyline is therefore fine. Correcting the error
+still leaves the moneyline unprofitable in every sample here. Anyone reading
+this as a green light has read it backwards.
 
-The MAE result is the standing caution and belongs in the record: our margin
-estimate is worse than the market's, which is a real reason to expect the
-moneyline to be hard. That is why it gets its own scored series rather than a
-free pass.
+**The standing caution is about the margin projection, not about the
+moneyline.** Our margin estimate is measurably worse than the market's
+(+0.71, CI [+0.39, +1.03]), and *every margin-derived market inherits that* —
+the moneyline and the spread equally, because they are the same projection at
+two thresholds. It is a caution on the whole ANCHOR margin family. Recording it
+against the moneyline alone is what let an incoherent bar look justified for as
+long as it did, and it is the specific mistake this document exists to undo.
 
 ## Pre-registration — moneyline as its own scored series
 
@@ -124,6 +191,16 @@ Not yet live: the change to `ANCHOR_MARKETS` awaits operator authorization.
 * **Not a success criterion**: a positive point estimate with an interval
   crossing zero. That is where both markets already sit and it justifies
   nothing.
+* **Margin-quality caution, applying to the whole margin family**: the
+  projection behind both markets is measurably worse than the market's. Re-run
+  `core.backtest.margin_quality` at each read. If the gap closes, both markets
+  improve together; if it widens, both degrade together. It is not evidence
+  about one of them.
+* **Provenance**: the incoherence in the original exclusion — that a margin-MAE
+  argument cannot single out the moneyline when the spread shares the
+  projection — was identified by the operator, not by this codebase's own
+  review, and not by the builder who wrote the re-score and repeated the MAE as
+  an ML-specific caution before being corrected.
 
 ## What this does not touch
 
