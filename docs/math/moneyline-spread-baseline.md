@@ -1,8 +1,15 @@
 # Moneyline and spread — the first pregame baseline
 
-```bash
-python -m core.backtest.moneyline
-```
+> **SUPERSEDED, 2026-08-21 — the moneyline figures below were optimistic.**
+> Entries were priced at the book's **de-vigged** probability, which is its
+> belief, not its offer. Nobody can transact there. Charging the real price
+> moves the moneyline from **+0.85% to roughly −2.7%** — a sign change, because
+> the WNBA moneyline overround (median 1.0427, ~2.1 points on one side) is
+> larger than the edge being reported. The spread figures are unaffected: that
+> market was already priced at a vig-included −110.
+>
+> Corrected numbers and the reason the bug survived review:
+> [moneyline-unbarring.md](moneyline-unbarring.md).
 
 Totals had a walk-forward backtest; the operator's primary market did not.
 This is that measurement, on the only basis the data honestly supports.
@@ -13,15 +20,21 @@ This is that measurement, on the only basis the data honestly supports.
 
 | market | bets | games | ROI | 95% CI (game-clustered) | hit rate @ entry cost |
 |---|---|---|---|---|---|
-| moneyline | 624 | 624 | +0.85% | **[−7.9%, +9.9%]** | 40.87% @ 0.405 |
+| moneyline | 624 | 624 | ~~+0.85%~~ **−2.66%** | **[−10.8%, +5.6%]** | 41.17% @ 0.4229 |
 | spread | 638 | 638 | −3.95% | **[−11.1%, +3.5%]** | 50.31% @ 0.524 |
+
+*(Moneyline row restated at the offer price on the current sample, n=668; the
+sample grew from 787 to 843 games with the ESPN backfill. The spread row is as
+originally measured.)*
 
 **Both intervals cross zero.** Neither market is a measured edge and neither is
 a measured loser. That is the headline, and it is a *baseline*, not a verdict.
 
-Read the hit rates only beside their entry costs (C11). Moneyline hits 40.87%
-against a 0.405 breakeven and spread hits 50.31% against 0.524 — both land
-almost exactly on their own breakeven, which is what an ROI near zero means.
+Read the hit rates only beside their entry costs (C11). Both land close to
+their own breakeven, which is what an ROI near zero means — but note that the
+moneyline only *appeared* to clear its breakeven while the breakeven itself was
+understated by the missing vig. A hit rate compared against a price you cannot
+pay is the same category error in a new place.
 
 ## CLV is absent on purpose
 
