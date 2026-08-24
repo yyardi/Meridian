@@ -334,17 +334,38 @@ MARKET_WINNER = "basketball_team_full_game_winner"
 
 #: ANCHOR — pregame, hold to settlement.
 #:
-#: The moneyline is excluded on measured evidence: 2024-2026, the model hits
-#: 33.4% on raw selection and 25.0% after market shrinkage, with the entire 95%
-#: interval [0.178, 0.339] below the 0.524 breakeven. Not a marginal loser, a
-#: decisive one. See docs/math/market-shrinkage.md.
+#: **The moneyline exclusion below is not supported by the evidence it cites.**
+#: Re-scored 2026-08-21; full working in docs/math/moneyline-unbarring.md. It is
+#: still in force only because lifting it awaits operator authorization — the
+#: reasoning is retracted here so nobody re-derives confidence from it.
 #:
-#: **What that evidence is actually about.** It measures our ability to
-#: *forecast a winner from team ratings better than the market can*, pregame.
-#: The market's margin MAE (9.65) beats ours (10.19), so betting our
-#: disagreement loses. It says nothing about a market whose edge comes from
-#: reacting faster than the venue reprices — a completely different claim,
-#: tested against different data.
+#: Cited claim 1: "33.4% hit rate, entire 95% interval below the 0.524
+#: breakeven." The hit rate is real and reproduces at a 0.25 edge threshold
+#: (n=66) — but 0.524 is the breakeven of a -110 two-way market and those
+#: entries cost **0.3495**. A 33.3% hit rate on 0.35 tickets is roughly
+#: breakeven, not a decisive loss. C11: a hit rate benchmarked against a price
+#: the portfolio never paid.
+#:
+#: Cited claim 2: "the market's margin MAE (9.65) beats ours (10.19)." True,
+#: and it **cannot single out the moneyline**. ML is
+#: `prob_home_win(projected_margin, sigma)` and SPREAD is
+#: `prob_cover(projected_margin, threshold, sigma)` — the same projection, the
+#: moneyline being the spread at line 0. A weak margin estimate indicts both
+#: equally, and MARKET_SPREAD has been in this set the whole time. The argument
+#: proves too much. (Caught by the operator.)
+#:
+#: Money frame, entries at the OFFER rather than the de-vigged belief:
+#:
+#:     moneyline  n=668  ROI -2.66%  CI [-10.84%, +5.59%]  hit 41.2% @ 0.4229
+#:     spread     n=682  ROI -4.27%  CI [-11.26%, +3.29%]  hit 50.2% @ 0.5238
+#:
+#: Both negative, both crossing zero, neither proven — and the market this set
+#: PERMITS scores worse than the one it REFUSES. Note this does not make the
+#: moneyline a good trade; it is not one on this evidence. It makes the
+#: asymmetry an artifact of which market got audited.
+#:
+#: The standing caution is on the margin projection itself and applies to every
+#: margin-derived market here, not to the moneyline specifically.
 ANCHOR_MARKETS = frozenset({MARKET_TOTAL, MARKET_SPREAD})
 
 #: PULSE — in-game. **Undecided, deliberately.**
