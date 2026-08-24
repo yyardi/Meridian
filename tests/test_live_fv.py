@@ -65,20 +65,18 @@ def test_the_serialised_row_carries_no_order_or_size_fields():
     assert not keys & {"order", "quantity", "size", "ticket", "intent", "side"}
 
 
-def test_the_strip_markup_has_no_ticket_handler():
-    """The picks page opens tickets from other tables; not from this one.
-
-    The page moved to `static/index.html` when the live board and the picks
-    page were merged into one landing page; the guard did not move with it,
-    so it is repointed here.
-    """
+def test_the_fv_strip_no_longer_renders_on_the_page():
+    """The page's live-FV strip was deleted in the two-table redesign — the
+    lines table carries PULSE's live FV instead. The ENDPOINT and this
+    module's own no-order-path discipline (tested above) are unchanged; what
+    this pins now is that the deleted consumer stays deleted rather than
+    creeping back as a third view of the same data."""
     from pathlib import Path
 
     html = Path("static/index.html").read_text()
-    start = html.index("async function loadLiveFV")
-    block = html[start:html.index("setInterval(loadLiveFV", start)]
-    for forbidden in ("openTicket", "sendCell", "PICKS[", "confirmBtn"):
-        assert forbidden not in block, f"{forbidden} must not appear in the FV strip"
+    assert "loadLiveFV" not in html
+    assert "loadLiveTotals" not in html
+    assert "loadEVGuard" not in html
 
 
 # --------------------------------------------------------------------- #
