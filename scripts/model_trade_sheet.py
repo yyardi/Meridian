@@ -273,8 +273,18 @@ def write_sheet(workbook: Path, rows: list[list], *, label: str) -> dict:
 
     ws.append([f"MODEL TRADES — descriptive only, no verdict. Source: {label}"])
     ws["A1"].font = Font(bold=True, italic=True)
+    # A MIXED 'brain' COLUMN WITHIN ONE GAME IS THE DESIGN, NOT A BUG. The
+    # label records what priced THAT row: from v4 on, a totals row priced by
+    # the pace/efficiency decomposition says v4, a winner row with an
+    # availability flag active says v4, and an unflagged winner row prices
+    # identically to v3 and therefore says v3. Without this note the operator
+    # would reasonably read the mixture as corruption and file it as one.
+    ws.append(["'brain' is per ROW, not per game — a game can show v3 and v4 "
+               "rows together. The label records what priced that row; an "
+               "unflagged winner prices as v3 even under v4."])
+    ws["A2"].font = Font(italic=True)
     ws.append([h for h, _ in COLUMNS])
-    for cell in ws[2]:
+    for cell in ws[3]:
         cell.font = Font(bold=True)
         cell.alignment = Alignment(vertical="top", wrap_text=True)
     for i, (_, width) in enumerate(COLUMNS, start=1):
@@ -282,7 +292,7 @@ def write_sheet(workbook: Path, rows: list[list], *, label: str) -> dict:
     for row in rows:
         ws.append(row)
     why_col = get_column_letter([h for h, _ in COLUMNS].index("WHY — the model's reasoning") + 1)
-    for r in range(3, ws.max_row + 1):
+    for r in range(4, ws.max_row + 1):
         ws[f"{why_col}{r}"].alignment = Alignment(vertical="top", wrap_text=True)
 
     wb.save(workbook)
