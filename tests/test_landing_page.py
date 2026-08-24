@@ -173,10 +173,12 @@ def test_the_suspect_marker_still_marks_wide_disagreements(html):
 
 
 def test_the_display_only_captions_survive(html):
-    """Shorter now, but the claim itself may not be lost: both formula-FV
-    strips and the EV guard must still say nothing on them is orderable."""
-    assert html.count("nothing here is orderable") >= 3
-    assert "display only, nothing here is orderable" in html
+    """The formula-FV strips and EV guard are DELETED (two-table redesign,
+    operator request) — their captions went with them, by design. The claim
+    that matters survives on the surfaces that remain: every PULSE surface
+    says nothing on it can be sent."""
+    assert "nothing is sent" in html
+    assert "Shadow — never sent" in html
 
 
 # --------------------------------------------------------------------- #

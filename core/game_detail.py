@@ -316,12 +316,22 @@ _GAMES_SQL = text("""
       FROM shadow_orders so
       LEFT JOIN predictions p ON p.id = so.prediction_id
       -- The game's own start, from our snapshots: predictions do not carry
-      -- it (checked, not assumed — the first draft of this join aggregated a
-      -- column that does not exist).
-      LEFT JOIN (SELECT event_slug, max(game_start_time) AS tipoff
-                   FROM market_snapshots
-                  WHERE game_start_time IS NOT NULL
-                  GROUP BY event_slug) ts ON ts.event_slug = so.event_slug
+      -- it. A LATERAL bounded per event, not a GROUP BY over the whole
+      -- snapshots table — the unbounded form cost 2.9s once the 200ms
+      -- recorder had written millions of rows (measured on the mirror;
+      -- sub-100ms after).
+      -- LIMIT 1, not max(): a live event holds millions of 200ms rows and
+      -- max() reads them all (6.5s measured); the tip is the venue's
+      -- schedule and constant per event in practice, so any non-null row
+      -- answers (2ms measured). A revised tip would be picked up by
+      -- whichever row the index yields — acceptable for a card label.
+      LEFT JOIN LATERAL (
+            SELECT game_start_time AS tipoff
+              FROM market_snapshots ms
+             WHERE ms.event_slug = so.event_slug
+               AND ms.game_start_time IS NOT NULL
+             LIMIT 1
+      ) ts ON true
      WHERE so.event_slug IS NOT NULL
        AND so.event_slug LIKE :league_prefix
      GROUP BY so.event_slug
