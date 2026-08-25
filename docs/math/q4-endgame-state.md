@@ -167,3 +167,102 @@ fail this one.
 ---
 
 *Registered 2026-08-25. Results append below this line, never above it.*
+
+## AMENDMENT — 2026-08-25, before any real data
+
+**The registered primary was replaced. NOTHING REAL HAS BEEN COMPUTED**, then or
+now: the change was forced by the harness failing its own mutation test on
+**synthetic** data during commissioning.
+
+**This is appended, and the original primary above is untouched.** An amendment's
+legitimacy depends entirely on a reader being able to see exactly what changed
+and why, so the unwinnable gate stays visible above rather than being quietly
+replaced. The header still reads NOTHING COMPUTED because that remains true of
+real data — synthetic commissioning is not the test.
+
+### Why the registered primary was withdrawn — the research agent's words, verbatim
+
+> the harness's own mutation test failed the registered primary before any real
+> data was touched. With one shared binary outcome per game, the game-clustered
+> paired-Brier CI cannot detect even an injected k=1.2 possession effect at 60
+> synthetic games (diff +0.049, CI [−0.007, +0.105]), and a k=1.0 effect is
+> detected in 0 of 6 sims at the real G=17. The registered gate was unwinnable —
+> "the mirror image of a check that cannot fail" — so running it would have
+> produced a guaranteed non-PASS that says nothing about states, only about the
+> metric's variance. The instrument failed commissioning; no real data touched.
+
+The phrase to keep is **"the mirror image of a check that cannot fail."** A gate
+that cannot pass is the same defect as a check that cannot fail, and it fails the
+same way — by producing a confident-looking result that is a property of the
+instrument rather than of the world. `findings.md` §3 has the other half.
+
+### The amended primary, verbatim
+
+> (arms, cohort, floors, LOGO, disclosure all unchanged): the possession
+> coefficient a in the deployable arm's full-sample offset fit, game-clustered
+> 95% Wald CI. PASS = excludes zero. bonus/timeout coefficients secondary,
+> reported beside it. The held-out LOGO Brier diff survives as a DESCRIPTIVE
+> calibration line, never gating. Named-casualty clause re-maps unchanged in
+> spirit: ceiling possession CI excludes zero while deployable's does not =>
+> "the possession leg is an F8 casualty," verbatim. Mutation criteria for the
+> amended primary, asserted before the real run: null reads CI covering zero;
+> k=1.2 at G=60 recovered; power probe at G=17 k=1.0 printed with the verdict.
+
+### The additional clause, verbatim
+
+Added by the manager; the research agent is aware of it and it forms part of the
+amendment.
+
+> if the possession coefficient CI excludes zero while the descriptive Brier
+> line shows no calibration improvement, the verdict states that explicitly and
+> reads "informative, not yet demonstrated to improve calibration" — same family
+> as #16/#19 — NOT as a clean PASS.
+
+Its recorded reason, also verbatim:
+
+> the amended primary changes the QUESTION as well as the power (Brier asks
+> "predicts better", the coefficient asks "carries information conditional on
+> base"), and #20's stated purpose is exit quality, for which calibration is the
+> practically relevant quantity.
+
+This is the same device as the named-casualty clause and as #19's money clause:
+**the words the verdict must use are fixed before anyone knows whether they will
+be needed.** Three rows now carry one, which makes it a house pattern rather
+than a per-row flourish.
+
+### Why this amendment is legitimate, and how to tell
+
+Stated explicitly rather than left to inference, because the distinction is the
+whole point:
+
+> the gate changed before any real number existed, driven by a synthetic
+> commissioning failure, with the replacement's mutation criteria fixed in
+> advance. A future reader must be able to distinguish that from amending a gate
+> that produced an inconvenient result — which is the failure this ledger exists
+> to prevent.
+
+The three properties a reader can check on this page, without trusting anyone:
+
+1. **No real number existed** when the gate changed. The failing evidence is
+   synthetic — injected effects at G=60 and G=17, not cohort ticks.
+2. **The reason is a commissioning failure of the instrument**, not a
+   disappointing result from it. The old gate could not have passed under *any*
+   real data, which is why it was withdrawn rather than tightened.
+3. **The replacement's mutation criteria were fixed in advance** and are written
+   above: null covers zero, k=1.2 at G=60 recovered, and the G=17 k=1.0 power
+   probe printed *with the verdict* rather than reported only if convenient.
+
+An amendment lacking all three is the failure mode this ledger exists to
+prevent, and it looks superficially identical from a distance.
+
+### What did not change
+
+Arms, cohort, floors, leave-one-game-out fitting, and the disclosure paragraph
+are **unchanged**. The named-casualty clause re-maps to the coefficient and
+keeps its exact required words. The original primary remains above, withdrawn
+rather than deleted.
+
+---
+
+*Amended 2026-08-25, before any real data. Results still append below this line,
+never above it.*
