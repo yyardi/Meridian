@@ -535,6 +535,33 @@ summaries.** Read the row. Run the test against the other tree. Check which
 figure the file actually records. Green can be load-bearing in the wrong
 direction; so can a correction, and a correction arrives with more authority.
 
+Third corollary, from a cluster of five on 2026-08-25: **the danger zone is the
+thing you're not concentrating on while concentrating hard.** Every one of the
+five happened while the person was actively being careful about something
+*adjacent*:
+
+| the error | what the person was being careful about at that moment |
+|---|---|
+| appended a result **above** a registration page's own "never above this line" marker | enforcing that same append-only rule on someone else's stale index line |
+| repeated a substring test that matched its own docstring | had fixed that identical bug, in another file, two hours earlier |
+| relayed "the pre-declared money clause has saved us twice" — #16 had no money clause at all | insisting that the ledger's claims must survive being checked |
+| asserted a ledger row's column count from memory | telling a peer to verify against artifacts rather than memory |
+| handed off "1.1–2.1s for the picks endpoint" — localhost not production, and a warm-up curve quoted as a range | a session otherwise spent on measurement discipline |
+
+**Citing a rule feels like applying it, and it is the opposite posture.** Quoting
+one puts you in the seat of the judge, where the rule is a thing *other* work is
+measured against; applying it puts your own artifact in the dock. The confidence
+is what suppresses the check — it feels redundant to someone who has just
+recited the rule — so the exposure is highest in the minutes *after* invoking
+it, not in ignorance of it.
+
+This is the same move as the countermeasure above, one level up. "Break it on
+purpose" works because it converts a claim about text into a claim about
+behaviour; **"check yourself too" is unactionable, and naming the location is
+not.** The usable form: when you have just cited a rule, invoked a prior lesson,
+or relayed someone else's claim, treat that as the trigger to check your own
+artifact against it — never as evidence that you already did.
+
 ### Facts that expired — the 2026-08-18 cluster
 
 A third family, distinct from both above. B1/B2/B10 were computations that
