@@ -333,3 +333,15 @@ it consumes no new field either.
 the trading caution recorded there and addressed separately by the v3d
 registration — the flip adopts the better BELIEFS; it changes no entry
 rule.
+
+## 2026-08-24 — STOP RULE CHANGED: the #9 EV stop (deploys with PR #67's rebuild)
+
+Registered first (docs/math/pulse-ev-stop.md), built second, per the
+standing order. From the deploy: the stop fires when FAIR VALUE falls to
+the position's entry price (edge exhaustion, ledger #9's own sentence, no
+tunable) instead of waiting for 10¢ of believed-lost value past the entry
+(the sunk-cost-anchored rule). Per-row regime marker: exit `reason` reads
+'ev_stop' under the new rule, 'fv_adverse' under the old — the tape
+self-describes. Mechanical reversion is one env flip
+(MERIDIAN_PULSE_STOP_RULE=adverse). Sizing populations untouched; the
+round-trip series' rule regime splits on the reason column.

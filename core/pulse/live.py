@@ -165,7 +165,15 @@ DEFAULT_SETTLE_EVERY_SECONDS = float(
 DEFAULT_PROFIT_TARGET = float(os.environ.get("MERIDIAN_PULSE_PROFIT_TARGET", "0.05"))
 #: If the model's own estimate moves against the position by this much from
 #: the entry price, the exit reprices to the touch (a cut, still a limit).
+#: Used only under the 'adverse' stop rule (the pre-#9 behaviour).
 DEFAULT_STOP_ADVERSE = float(os.environ.get("MERIDIAN_PULSE_STOP_ADVERSE", "0.10"))
+#: Which stop rule runs (docs/math/pulse-ev-stop.md): 'ev' — ledger #9,
+#: exit when fair value falls to your price (edge exhaustion, no tunable) —
+#: or 'adverse', the prior sunk-cost-anchored rule. The env flip IS the
+#: registered mechanical reversion path.
+STOP_RULE_EV = "ev"
+STOP_RULE_ADVERSE = "adverse"
+DEFAULT_STOP_RULE = os.environ.get("MERIDIAN_PULSE_STOP_RULE", STOP_RULE_EV)
 #: While a position is open, a hold row is emitted at most this often — the
 #: in-game trail on the tape without a row per tick.
 DEFAULT_HOLD_LOG_SECONDS = float(os.environ.get("MERIDIAN_PULSE_HOLD_LOG_SECONDS", "60"))
@@ -390,6 +398,7 @@ class PulseEngine:
         settle_every_seconds: float = DEFAULT_SETTLE_EVERY_SECONDS,
         profit_target: float = DEFAULT_PROFIT_TARGET,
         stop_adverse: float = DEFAULT_STOP_ADVERSE,
+        stop_rule: str = DEFAULT_STOP_RULE,
         hold_log_seconds: float = DEFAULT_HOLD_LOG_SECONDS,
         max_open_per_event: int = DEFAULT_MAX_OPEN_PER_EVENT,
         sigma: float = DEFAULT_SIGMA,
@@ -403,6 +412,7 @@ class PulseEngine:
         self.settle_every_seconds = settle_every_seconds
         self.profit_target = profit_target
         self.stop_adverse = stop_adverse
+        self.stop_rule = stop_rule
         self.hold_log_seconds = hold_log_seconds
         self.max_open_per_event = max_open_per_event
         self.sigma = sigma
@@ -948,20 +958,29 @@ class PulseEngine:
         pos = state.position
         if pos is None:
             return
-        # Stop: the model's own estimate crossed back through the entry by the
-        # buffer. Only when the estimate is currently trustworthy — a dead
-        # clock does not get to panic a position (fills stay price-based).
+        # Stop rules (docs/math/pulse-ev-stop.md, registered 2026-08-24).
+        # 'ev' (the default, ledger #9): exit when FAIR VALUE falls to your
+        # price — edge exhaustion, sunk-cost-free; the trigger is the
+        # ledger's own sentence and has no tunable. 'adverse' (the prior
+        # rule, kept for mechanical reversion on a FAIL at floor): fire only
+        # after FV moves stop_adverse through the entry. Either way, only
+        # when the estimate is currently trustworthy — a dead clock does not
+        # get to panic a position (fills stay price-based).
         if (not pos.exit_is_stop and est.fair_value is not None
                 and est.clock.usable):
             adverse = (pos.entry_price - est.fair_value if pos.side == YES
                        else est.fair_value - pos.entry_price)
-            if adverse >= self.stop_adverse:
+            if self.stop_rule == STOP_RULE_EV:
+                fire, reason = adverse >= 0.0, "ev_stop"
+            else:
+                fire, reason = adverse >= self.stop_adverse, "fv_adverse"
+            if fire:
                 if pos.exit_order is not None:
                     self._withdraw(session, pos.exit_order.decision_id,
                                    at=ob.captured_at)
                     result.withdrawals += 1
                 self._place_exit(session, state, ob, est,
-                                 reason="fv_adverse", stop=True, result=result)
+                                 reason=reason, stop=True, result=result)
                 return
         # Throttled hold trail.
         if time.monotonic() - pos.last_hold_monotonic >= self.hold_log_seconds:
