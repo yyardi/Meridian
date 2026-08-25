@@ -119,33 +119,6 @@ model feature, not a strategy.
 
 ---
 
-## The rule that came out of #16 and #19 — declare the money test IN ADVANCE
-
-**A gate answers the question it was written to answer, and that question is
-never "should we trade this".** Two hypotheses have now passed their stated
-terms and been untradable, for entirely different reasons:
-
-* **#16** passed at +6.84¢ against a team-blind base rate and **inverted to
-  −2.20¢** against a team-aware anchor. The signal was an artifact of the
-  baseline.
-* **#19** passed with k = +2.54 [+0.41, +4.66] — and the two regressors
-  correlate at **r = 0.973**, with the mid's own coefficient spanning zero. The
-  signal is a near-duplicate of the price. Its pre-declared money clause came
-  back **−14.3%**, with disagreements ≥5¢ favouring the market.
-
-In both cases the statistical gate passed and the money said no. What made that
-visible rather than arguable is the same design in both: **the trading test was
-written down before the data run, and computed only on PASS.**
-
-That ordering is the whole mechanism. A trading rule designed after seeing
-k = +2.54 has every temptation to pick the threshold that flatters it, and no
-way to prove it did not. Fixed first, the −14.3% is a result. Fixed afterwards,
-it would have been an argument.
-
-**So: any hypothesis whose PASS would tempt someone to trade it carries a money
-clause declared in the same breath as the gate.** It costs one paragraph at
-registration time and it has now saved us twice.
-
 ## The rule that came out of #16 and #15
 
 Both landed on the same mistake, and it is now a standing rule:
@@ -163,6 +136,44 @@ So: **any future row of the form "the market disagrees with a historical
 frequency" must carry the anchoring check inside its gate, written before it
 runs.** Adding it afterwards is how a pre-registration becomes decoration.
 Same error family as C4, C5 and C11 in [findings.md](findings.md).
+
+## The second rule out of #16 — declare the money test IN ADVANCE
+
+*The rule above is about what a gate compares against. This one is about what
+a gate cannot tell you at all — #16 taught both lessons, from opposite ends.*
+
+**A gate answers the question it was written to answer, and that question is
+never "should we trade this".** Two rows have now passed their stated terms and
+been untradable, for entirely unrelated reasons:
+
+* **#16** passed at +6.84¢ against a team-blind base rate and **inverted to
+  −2.20¢** against a team-aware anchor. The signal was an artifact of the
+  baseline.
+* **#19** passed with k = +2.54 [+0.41, +4.66] — and the two regressors
+  correlate at **r = 0.973**, with the mid's own coefficient spanning zero. The
+  signal is a near-duplicate of the price. Its money clause read **−14.3%**,
+  with disagreements ≥5¢ favouring the market.
+
+**But the two were caught by different things, and the difference is the point.**
+
+#16 had **no second clause**. What caught it was a confound check run *after*
+the +6.84¢ was on the page, by an analyst who chose to run it — and
+[math/win-curve.md](math/win-curve.md) says so plainly, closing with the
+instruction that any future row of that shape "needs the same anchoring check
+written into its gate *before* it runs". #16 is a near-miss we recorded
+honestly, not a save. Nothing in the process compelled that check; had it gone
+unrun, a −2.20¢ edge would have been sitting in the ledger marked PASS.
+
+#19 is the **first row where that instruction was actually followed.** The
+money clause was fixed in the registration text, before the data run, computed
+only on PASS. That ordering is the whole mechanism: a trading rule designed
+after seeing k = +2.54 has every temptation to pick the threshold that flatters
+it and no way to prove it did not. Fixed first, the −14.3% is a result. Fixed
+afterwards, it would have been an argument.
+
+**So: any hypothesis whose PASS would tempt someone to trade it carries a money
+clause declared in the same breath as the gate.** It costs one paragraph at
+registration time. It has been applied once, and #16 is the reason it exists.
 
 ## Notes on specific rows
 
