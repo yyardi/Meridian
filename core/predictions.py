@@ -33,13 +33,14 @@ import argparse
 import datetime as dt
 import logging
 import sys
-from decimal import Decimal
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from core.board import is_pregame, latest_snapshot_per_market, snapshot_age_seconds
+from core.feeds.espn_client import ESPNClient
 from core.storage import (
     MarketSnapshot,
     Prediction,
@@ -47,8 +48,6 @@ from core.storage import (
     get_engine,
     get_sessionmaker,
 )
-from core.board import is_pregame, latest_snapshot_per_market, snapshot_age_seconds
-from core.feeds.espn_client import ESPNClient
 from core.team_mapping import (
     UnknownTeamError,
     orient_for_slug,
@@ -60,16 +59,15 @@ from strategies.wnba_totals.model.fair_value import (
     MARKET_SPREAD,
     MARKET_TOTAL,
     MARKET_WINNER,
-    estimate_market_slope,
-    read_cached_slope,
-    shrink_to_market,
-    store_slope,
-    MODEL_VERSION,
     STRATEGY,
     Projection,
+    estimate_market_slope,
     estimate_totals_distribution,
     predict_market,
     project,
+    read_cached_slope,
+    shrink_to_market,
+    store_slope,
     to_decimal,
 )
 from strategies.wnba_totals.model.features import build_matchup_features
@@ -121,6 +119,7 @@ class PredictionStats:
         self.stale_anchors = 0
         self.suppressed_by_stale_anchor = 0
         self.actionable_predictions = 0
+        self.damped_ladders = 0
         self.errors = 0
 
     @property
@@ -430,6 +429,8 @@ class PredictionLogger:
                 if row is not None:
                     rows.append(row)
 
+            stats.damped_ladders = _apply_ladder_damping(rows)
+
             # ON CONFLICT DO NOTHING makes a rerun against the same snapshot
             # idempotent (same guarantee the recorder has).
             written = 0
@@ -627,6 +628,57 @@ class PredictionLogger:
             ),
             confidence_notes=notes,
         )
+
+
+#: The damped ladder's sigma — the PUBLISHED finals-residual sd (the
+#: elapsed-0 row of core/live_totals_fv.TOTALS_ANCHORS, fitted 2026-08-07,
+#: predating the bucket test entirely). Pinned equal to that table by test;
+#: if the table is ever refit, the divergence is a registration decision,
+#: never a silent drift. docs/math/ladder-sigma-damping.md.
+DAMPED_LADDER_SIGMA = 19.00
+
+
+def _apply_ladder_damping(rows: list[Prediction]) -> int:
+    """The activated damping arm (ruling 2026-08-25): re-price each totals
+    ladder at DAMPED_LADDER_SIGMA while preserving the ladder's own implied
+    mean — written BESIDE the undamped probability, replacing nothing. The
+    gate compares the two columns against settlement per bucket.
+
+    Mechanism-based, per the ruling: the ladder's emergent effective sigma
+    (~20.75 measured) exceeds the published outcome residual (19.00);
+    excess sigma inflates tail-rung mass mechanically. This pass removes
+    exactly that excess and claims nothing else. Returns ladders damped.
+    """
+    from collections import defaultdict
+
+    from scipy import stats as scipy_stats
+
+    from strategies.wnba_totals.model.curve_fit import fit_ladder
+
+    ladders: dict[str, list[Prediction]] = defaultdict(list)
+    for r in rows:
+        if (r.sports_market_type == MARKET_TOTAL and r.line is not None
+                and r.model_probability is not None and r.event_slug):
+            ladders[r.event_slug].append(r)
+
+    damped = 0
+    for group in ladders.values():
+        if len(group) < 3:            # a ladder needs shape before a fit
+            continue
+        points = sorted((float(r.line), float(r.model_probability))
+                        for r in group)
+        fit = fit_ladder(points)
+        if not (fit.ok and fit.implied_mean is not None):
+            continue
+        for r in group:
+            p = float(1.0 - scipy_stats.norm.cdf(
+                (float(r.line) - fit.implied_mean) / DAMPED_LADDER_SIGMA))
+            r.damped_probability = to_decimal(min(max(p, 1e-6), 1 - 1e-6))
+        damped += 1
+    if damped:
+        log.info("ladder_damping_applied", ladders=damped,
+                 sigma=DAMPED_LADDER_SIGMA)
+    return damped
 
 
 def _configure_logging() -> None:
