@@ -336,6 +336,7 @@ def simulate_market(
     *, min_edge: float, profit_target: float = DEFAULT_PROFIT_TARGET,
     stop_adverse: float = DEFAULT_STOP_ADVERSE,
     stop_rule: str = "adverse",
+    entry_ok: list[bool] | None = None,
 ) -> SimResult:
     """The engine's registered decision rule on one market's tick tape.
 
@@ -343,6 +344,13 @@ def simulate_market(
     contracts. Kept deliberately parallel to `core/pulse/live.py` — if the
     rules there change, this must change with them (the registration pins
     both).
+
+    `entry_ok` is the v3d entry discipline
+    (docs/math/pulse-v3d-entry-discipline.md): when given, NEW entries are
+    considered only at ticks where it is True. Everything else — resting
+    orders filling or withdrawing, exits, stops, rides — keeps operating
+    everywhere, because an open position is always managed; only entry
+    eligibility is gated. None = no discipline (every other arm).
     """
     r = SimResult()
     entry_price: float | None = None
@@ -406,6 +414,8 @@ def simulate_market(
             continue
 
         # flat: consider entering
+        if entry_ok is not None and not entry_ok[i]:
+            continue
         if fv is None:
             continue
         if not (0.05 <= mid <= 0.95) or (tick.ask - tick.bid) > 0.15:
@@ -652,8 +662,15 @@ def resolve_signal_games(Session, events: list[EventData]
             continue
         gid, home_abbrev = matches[0]
         with Session() as s:
+            # The count columns ride along for the v4 arm: the LIVE engine
+            # reads clock and possession counts from the same box row under
+            # the same staleness bound (latest_box_states), so the eval must
+            # too. Positions 0-2 are unchanged — the v3/EV-stop consumers
+            # index positionally and see nothing new.
             clock_rows = s.execute(text("""
-                SELECT first_seen_at, period, clock_seconds
+                SELECT first_seen_at, period, clock_seconds,
+                       home_fga, home_oreb, home_turnovers, home_fta,
+                       away_fga, away_oreb, away_turnovers, away_fta
                 FROM espn_live_box_snapshots
                 WHERE espn_game_id = :g
                   AND period IS NOT NULL AND clock_seconds IS NOT NULL
@@ -1037,6 +1054,600 @@ def evaluate_ev_stop(Session, *, limit: int | None = None) -> str:
 
 
 # --------------------------------------------------------------------- #
+# v4 / v3d / v4d: the bundle, the entry discipline, and their composition
+# --------------------------------------------------------------------- #
+#
+# Registrations: docs/math/pulse-v4-bundle.md (v4, v4d, and the ablation —
+# 2026-08-24 16:20Z) and docs/math/pulse-v3d-entry-discipline.md (v3d —
+# 2026-08-23 12:00Z). One walk computes every arm on the same ticks:
+#
+#   v1    the estimator-clock baseline (v3d's registered comparator)
+#   v3    the incumbent: v1's formulas + the venue clock (the live regime)
+#   v4    the bundle: v3's clock + pace/eff-decomposed totals + availability
+#         sigma widening; scoring runs enter NO fair value (annotation only)
+#   v3d   v3's estimates, entries gated to where v1's Clock.usable holds
+#   v4d   v4's estimates under the same entry gate (the composition)
+#
+# plus the two registered ablation arms (v4 minus pace decomposition, v4
+# minus flag widening), whose paired marginals print only once the v4 gate
+# resolves — the registration runs the ablation AFTER the verdict, not
+# beside it.
+#
+# All arms consume TOP-OF-BOOK ticks only. No deep-tier book rows (sampled
+# ~150x slower than the near tier) enter any arm — a cadence mismatch that
+# coarse manufactures volatility by construction, so it is excluded by
+# construction.
+
+#: The registrations' timestamps — each arm's floors count only games first
+#: recorded after its own instant; earlier games print as labelled backtest.
+V4_REGISTERED_AT = "2026-08-24T16:20:00+00:00"
+V3D_REGISTERED_AT = "2026-08-23T12:00:00+00:00"
+FLOOR_V4_GAMES = 10
+FLOOR_V4_POINTS = 3000
+FLOOR_V3D_GAMES = 10
+FLOOR_V3D_FILLS = 100
+#: latest_player_rows' own staleness bound, mirrored point-in-time: an
+#: athlete whose newest snapshot is older than this at the tick is invisible,
+#: exactly as the live read would make them.
+PLAYER_ROW_STALENESS_SECONDS = 180.0
+
+F8_AUDIT_STATEMENT = """\
+F8 audit (registered duty, n=16 games; feed lag p50 36.4s, price move 100%
+complete by feed time): event-REACTIVE logic — anything that must beat the
+tape to a discrete event — cannot work at this feed. Per-component verdict
+on everything the bundle consumes:
+  venue clock         STATE — remaining time is still true at any lag; no
+                      race against the tape exists.
+  box possession cnts STATE — cumulative counts; pace is a property of the
+                      game so far, not of any single event.
+  shooting splits     STATE — cumulative observed efficiency (the bundle's
+                      ppp measurement), not a hot-hand trigger.
+  availability flags  STATE — fouls accumulate, ejections are permanent,
+                      on/off-floor persists between substitutions; the
+                      sigma widening prices a lasting condition, never the
+                      moment it began.
+  scoring runs        REACTIVE IF EVER TRADED — a run is a discrete event
+                      whose price move completes before we see it, which
+                      is exactly why runs enter NO fair value here
+                      (annotation only). Any future run-based ENTRY rule
+                      is structurally dead at this feed; its registration
+                      would have to clear F8 before its merits.
+No consumed component is event-reactive; the one reactive signal in the
+inventory is quarantined to annotation. Separately and deliberately: the
+fade family (#1/#2) is dead on its own registered gate numbers, not on F8
+— a fade WANTS the move complete before entry, so a faster feed would not
+revive it. The latency bound and the merits verdicts are independent
+findings; neither implies the other."""
+
+
+class _PlayerPointer:
+    """Latest player-box row per athlete knowable at t, with the live read's
+    own 180s staleness applied per athlete — a stale athlete vanishes."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self._i = -1
+        self._latest: dict = {}
+
+    def at(self, t):
+        while (self._i + 1 < len(self._rows)
+               and self._rows[self._i + 1].first_seen_at <= t):
+            self._i += 1
+            r = self._rows[self._i]
+            self._latest[r.athlete_id] = r
+        return [r for r in self._latest.values()
+                if (t - r.first_seen_at).total_seconds()
+                <= PLAYER_ROW_STALENESS_SECONDS]
+
+
+class _SubPointer:
+    """Substitution plays knowable at t, ordered by sequence for the
+    on-floor walk. Knowability is first_seen_at; ESPN sometimes backfills
+    earlier sequences in later batches, so the accumulated prefix is
+    re-sorted by sequence when it grows (the live read's ORDER BY)."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self._i = -1
+        self._acc: list = []
+        self._dirty = False
+
+    def at(self, t):
+        while (self._i + 1 < len(self._rows)
+               and self._rows[self._i + 1].first_seen_at <= t):
+            self._i += 1
+            self._acc.append(self._rows[self._i])
+            self._dirty = True
+        if self._dirty:
+            self._acc.sort(key=lambda r: r.sequence)
+            self._dirty = False
+        return self._acc
+
+
+def _poss_per_side(clock_row) -> float | None:
+    """Possessions per side from a box row's counts; None when any count is
+    missing (the fallback is counted, never silent)."""
+    from core.pulse.signals import possessions
+
+    vals = (clock_row.home_fga, clock_row.home_oreb, clock_row.home_turnovers,
+            clock_row.home_fta, clock_row.away_fga, clock_row.away_oreb,
+            clock_row.away_turnovers, clock_row.away_fta)
+    if any(v is None for v in vals):
+        return None
+    return (possessions(fga=clock_row.home_fga, oreb=clock_row.home_oreb,
+                        turnovers=clock_row.home_turnovers,
+                        fta=clock_row.home_fta)
+            + possessions(fga=clock_row.away_fga, oreb=clock_row.away_oreb,
+                          turnovers=clock_row.away_turnovers,
+                          fta=clock_row.away_fta)) / 2.0
+
+
+def _poss_rate_prior(Session, data: EventData, first_live) -> float | None:
+    """Expected possessions per side per minute — the live engine's
+    _pace_prior, point-in-time: recent-form pace when the form has it,
+    league average over games COMPLETED BEFORE this game otherwise (the
+    live query is unbounded because live IS the present; the eval must not
+    let a later season's pace leak backward)."""
+    form = data.form
+    if (form is not None and form.first.possessions
+            and form.second.possessions):
+        return (form.first.possessions + form.second.possessions) / 2.0 / 40.0
+    if first_live is None:
+        return None
+    with Session() as s:
+        v = s.execute(text("""
+            SELECT avg(fga - oreb + turnovers + 0.44 * fta) / 40.0
+            FROM team_game_logs
+            WHERE is_completed AND game_date < :cut
+              AND fga IS NOT NULL AND oreb IS NOT NULL
+              AND turnovers IS NOT NULL AND fta IS NOT NULL
+        """), {"cut": first_live}).scalar()
+    return float(v) if v else None
+
+
+@dataclass
+class V4GameRead:
+    """One signal-covered game's numbers for every arm — cohort assignment
+    (gate vs backtest, per arm) happens at aggregation, not here."""
+
+    event_slug: str
+    first_seen: dt.datetime | None
+    n_points: int = 0                  # paired v3/v4 calibration points
+    brier_v3: float = 0.0
+    brier_v4: float = 0.0
+    diffs_v3_v4: list[float] = field(default_factory=list)
+    #: Ablation marginals, (ablated − v4) per point: positive = the removed
+    #: component was helping.
+    diffs_no_pace: list[float] = field(default_factory=list)
+    diffs_no_flags: list[float] = field(default_factory=list)
+    rois: dict[str, list[float]] = field(
+        default_factory=lambda: defaultdict(list))
+    entries: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    fills: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    trips: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    rides: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    pace_fallback_ticks: int = 0       # venue clock fresh but no box counts
+    flag_widened_points: int = 0       # winner/spread points priced widened
+    ot_ticks: int = 0
+    clock_fallback_ticks: int = 0
+
+
+@dataclass
+class V4Result:
+    reads: list[V4GameRead] = field(default_factory=list)
+    n_join_excluded: int = 0
+
+    @staticmethod
+    def _after(reads, iso: str):
+        cut = dt.datetime.fromisoformat(iso)
+        return [r for r in reads if r.first_seen is not None
+                and r.first_seen > cut]
+
+    @property
+    def v4_gate(self) -> list[V4GameRead]:
+        return self._after(self.reads, V4_REGISTERED_AT)
+
+    @property
+    def v3d_gate(self) -> list[V4GameRead]:
+        return self._after(self.reads, V3D_REGISTERED_AT)
+
+
+def paired_trading(reads: list[V4GameRead], arm_a: str, arm_b: str):
+    """Clustered (arm_a − arm_b) per-game trading diff, game means, over
+    games where BOTH arms scored a leg — the v3a read's machinery, with its
+    caveat inherited: a game where the disciplined arm never entered
+    contributes nothing here, which is why each arm's own per-$ CI prints
+    beside every paired diff."""
+    diffs = {}
+    for r in reads:
+        a, b = r.rois.get(arm_a), r.rois.get(arm_b)
+        if a and b:
+            diffs[r.event_slug] = [sum(a) / len(a) - sum(b) / len(b)]
+    return clustered_mean(diffs)
+
+
+def own_roi(reads: list[V4GameRead], arm: str):
+    per_game = {r.event_slug: r.rois[arm] for r in reads if r.rois.get(arm)}
+    return clustered_mean(per_game)
+
+
+def paired_brier(reads: list[V4GameRead], attr: str = "diffs_v3_v4"):
+    per_game = {r.event_slug: getattr(r, attr)
+                for r in reads if getattr(r, attr)}
+    return clustered_mean(per_game)
+
+
+def v4_at_floor(gate: list[V4GameRead]) -> bool:
+    scored = [r for r in gate if r.n_points > 0]
+    return (len(scored) >= FLOOR_V4_GAMES
+            and sum(r.n_points for r in scored) >= FLOOR_V4_POINTS)
+
+
+def v4_verdict(gate: list[V4GameRead]) -> str:
+    """Both registered clauses (docs/math/pulse-v4-bundle.md): the paired
+    Brier CI (v3 − v4) excludes zero in v4's favour, AND v4's
+    money-at-price is not measurably worse than v3's."""
+    if not v4_at_floor(gate):
+        return "NO DATA"
+    cm = paired_brier(gate)
+    if cm is None or not (cm.mean > 0 and cm.lo > 0):
+        return "FAIL"
+    td = paired_trading(gate, "v4", "v3")
+    if td is not None and td.hi < 0:
+        return ("FAIL (calibration better, but money-at-price is measurably "
+                "worse — the registration's second clause)")
+    return "PASS (go-live question goes to the operator)"
+
+
+def v3d_at_floor(gate: list[V4GameRead]) -> bool:
+    fills = sum(r.fills.get("v3d", 0) for r in gate)
+    return len(gate) >= FLOOR_V3D_GAMES and fills >= FLOOR_V3D_FILLS
+
+
+def v3d_verdict(gate: list[V4GameRead]) -> str:
+    """The registered asymmetric gate, read literally
+    (docs/math/pulse-v3d-entry-discipline.md): PASS when the paired
+    (v3d − v1) CI excludes zero in v3d's favour, OR includes zero while
+    v3d's own per-$ CI also includes zero (the bleeding measurably stopped).
+    FAIL when v3d is measurably worse than v1. Anything else NO DATA —
+    including the shape the text does not cover (paired inconclusive while
+    v3d's own per-$ is entirely POSITIVE), which is flagged out loud rather
+    than reinterpreted in v3d's favour."""
+    if not v3d_at_floor(gate):
+        return "NO DATA"
+    td = paired_trading(gate, "v3d", "v1")
+    if td is None:
+        return "NO DATA"
+    if td.mean > 0 and td.lo > 0:
+        return "PASS (reopens the trading question; authorises nothing)"
+    if td.hi < 0:
+        return "FAIL"
+    own = own_roi(gate, "v3d")
+    if own is not None and own.lo <= 0 <= own.hi:
+        return ("PASS (paired diff inconclusive, own per-$ not measurably "
+                "negative — the registered asymmetric clause)")
+    if own is not None and own.lo > 0:
+        return ("NO DATA — own per-$ entirely positive with an inconclusive "
+                "paired read is a shape the registration text does not "
+                "cover; flagged for the manager, not reinterpreted")
+    return "NO DATA"
+
+
+def evaluate_v4(Session, *, limit: int | None = None) -> V4Result:
+    """Every arm over the signal-covered games, one walk, one tick tape."""
+    from core.pulse.signals import (
+        availability_flags,
+        exact_clock,
+        projected_total_v4,
+    )
+    from strategies.wnba_totals.config import CONFIG
+
+    events = load_events(Session, limit=limit)
+    signals, excluded = resolve_signal_games(Session, events)
+    result = V4Result(n_join_excluded=excluded)
+
+    for data in events:
+        sig = signals.get(data.event_slug)
+        if sig is None:
+            continue
+        first_seen = sig.clock_rows[0][0] if sig.clock_rows else None
+        v1p, _ = arm_params(data)
+        poss_rate_exp = _poss_rate_prior(Session, data, first_seen)
+        with Session() as s:
+            player_rows = s.execute(text("""
+                SELECT athlete_id, team_id, minutes, fouls, starter, ejected,
+                       first_seen_at
+                FROM espn_live_player_snapshots
+                WHERE espn_game_id = :g
+                ORDER BY first_seen_at
+            """), {"g": sig.espn_game_id}).all()
+            sub_rows = s.execute(text("""
+                SELECT first_seen_at, sequence, type_text,
+                       athlete_id_1, athlete_id_2
+                FROM espn_live_plays
+                WHERE espn_game_id = :g AND type_text = 'Substitution'
+                ORDER BY first_seen_at, sequence
+            """), {"g": sig.espn_game_id}).all()
+
+        read = V4GameRead(event_slug=data.event_slug, first_seen=first_seen)
+        for mtype, line, ticks in data.markets.values():
+            outcome = market_outcome(mtype, line, data.final_score)
+            if outcome is None:
+                continue
+            clock_ptr = _SeriesPointer(sig.clock_rows)
+            player_ptr = _PlayerPointer(player_rows)
+            sub_ptr = _SubPointer(sub_rows)
+            fvs: dict[str, list[float | None]] = {
+                a: [] for a in ("v1", "v3", "v4", "v4-nopace", "v4-noflags")}
+            entry_mask: list[bool] = []
+
+            for tick in ticks:
+                pair = parse_score(tick.score)
+                started = data.period_starts.get(tick.period or "")
+                seconds_in = ((tick.at - started).total_seconds()
+                              if started is not None else 0.0)
+                v1_clock = minutes_remaining(
+                    tick.period, seconds_into_period=max(seconds_in, 0.0))
+                entry_mask.append(v1_clock.usable)
+
+                clock_row = clock_ptr.at(tick.at)
+                exact = None
+                if clock_row is not None:
+                    staleness = (tick.at - clock_row[0]).total_seconds()
+                    if staleness <= V3_CLOCK_STALENESS_SECONDS:
+                        exact = exact_clock(int(clock_row[1]),
+                                            float(clock_row[2]),
+                                            staleness_seconds=staleness)
+
+                def emit(f1=None, f3=None, f4=None, f4np=None, f4nf=None,
+                         _out=fvs):
+                    _out["v1"].append(f1)
+                    _out["v3"].append(f3)
+                    _out["v4"].append(f4)
+                    _out["v4-nopace"].append(f4np)
+                    _out["v4-noflags"].append(f4nf)
+
+                if pair is None:
+                    emit()
+                    continue
+                margin, total = pair[0] - pair[1], pair[0] + pair[1]
+                common = {"market_type": mtype, "line": line,
+                          "margin": margin, "total_so_far": total,
+                          "winner_mid": data.winner_mid}
+                f1 = (estimate_fv(**common,
+                                  minutes_left=v1_clock.minutes_left,
+                                  params=v1p)
+                      if v1_clock.usable else None)
+
+                # The v3-family clock: fresh venue reading, else v1's
+                # estimator (counted), OT abstains — the v3a construction.
+                if exact is not None and exact.is_overtime:
+                    read.ot_ticks += 1
+                    emit(f1=f1)
+                    continue
+                if exact is not None:
+                    minutes_left, venue = exact.minutes_left, True
+                elif v1_clock.usable:
+                    minutes_left, venue = v1_clock.minutes_left, False
+                    read.clock_fallback_ticks += 1
+                else:
+                    emit(f1=f1)
+                    continue
+
+                f3 = estimate_fv(**common, minutes_left=minutes_left,
+                                 params=v1p)
+
+                # Availability flags exist only when the box read is fresh —
+                # the live engine computes them from the same cycle's box
+                # state, so no venue clock means no flags, never stale ones.
+                flags = None
+                if venue and mtype in (MARKET_WINNER, MARKET_SPREAD):
+                    rows_now = player_ptr.at(tick.at)
+                    if rows_now:
+                        flags = availability_flags(
+                            player_rows=rows_now,
+                            sub_plays=sub_ptr.at(tick.at),
+                            period=exact.period)
+
+                if mtype in (MARKET_WINNER, MARKET_SPREAD):
+                    widened = flags is not None and flags.any_active
+                    if widened:
+                        p4 = ArmParams(name="v4",
+                                       sigma=v1p.sigma * flags.sigma_factor,
+                                       totals_mu=v1p.totals_mu)
+                        f4 = estimate_fv(**common, minutes_left=minutes_left,
+                                         params=p4)
+                        if f4 is not None:
+                            read.flag_widened_points += 1
+                    else:
+                        f4 = f3
+                    f4np, f4nf = f4, f3    # pace ablation is a totals change
+                else:                       # MARKET_TOTAL
+                    f4 = None
+                    if venue and line is not None and v1p.totals_mu is not None:
+                        elapsed = REGULATION_MINUTES - minutes_left
+                        poss = _poss_per_side(clock_row)
+                        projected = None
+                        if poss and poss_rate_exp:
+                            projected = projected_total_v4(
+                                total_so_far=total,
+                                possessions_so_far=poss,
+                                elapsed_minutes=elapsed,
+                                minutes_left=minutes_left,
+                                pregame_mu=v1p.totals_mu,
+                                poss_rate_expected=poss_rate_exp)
+                        if projected is not None:
+                            f4 = over_probability(
+                                projected_total=projected, line=line,
+                                sigma=remaining_sigma(elapsed))
+                        else:
+                            read.pace_fallback_ticks += 1
+                    if f4 is None:
+                        f4 = f3            # the loud-counted v3-style fallback
+                    f4np, f4nf = f3, f4    # flags ablation is a margin change
+
+                emit(f1=f1, f3=f3, f4=f4, f4np=f4np, f4nf=f4nf)
+                if f3 is not None and f4 is not None:
+                    b3, b4 = (f3 - outcome) ** 2, (f4 - outcome) ** 2
+                    read.brier_v3 += b3
+                    read.brier_v4 += b4
+                    read.n_points += 1
+                    read.diffs_v3_v4.append(b3 - b4)
+                    if f4np is not None:
+                        read.diffs_no_pace.append((f4np - outcome) ** 2 - b4)
+                    if f4nf is not None:
+                        read.diffs_no_flags.append((f4nf - outcome) ** 2 - b4)
+
+            sims = {a: simulate_market(ticks, fvs[a], outcome,
+                                       min_edge=CONFIG.min_edge_threshold)
+                    for a in fvs}
+            sims["v3d"] = simulate_market(ticks, fvs["v3"], outcome,
+                                          min_edge=CONFIG.min_edge_threshold,
+                                          entry_ok=entry_mask)
+            sims["v4d"] = simulate_market(ticks, fvs["v4"], outcome,
+                                          min_edge=CONFIG.min_edge_threshold,
+                                          entry_ok=entry_mask)
+            for arm, sim in sims.items():
+                read.entries[arm] += sim.n_entries
+                read.fills[arm] += sim.n_entry_fills
+                read.trips[arm] += sim.n_round_trips
+                read.rides[arm] += sim.n_rides
+                if sim.rois:
+                    read.rois[arm].extend(sim.rois)
+        result.reads.append(read)
+    return result
+
+
+def _fmt_cm(cm, digits: int = 4) -> str:
+    return (f"{cm.mean:+.{digits}f} [{cm.lo:+.{digits}f}, "
+            f"{cm.hi:+.{digits}f}] G={cm.n_clusters}")
+
+
+def format_v4(r: V4Result) -> str:
+    out: list[str] = []
+    add = out.append
+    add("PULSE v4 bundle vs v3 incumbent — plus v3d discipline and the v4d "
+        "composition")
+    add("=" * 78)
+    add("Registrations: docs/math/pulse-v4-bundle.md (2026-08-24 16:20Z),")
+    add("docs/math/pulse-v3d-entry-discipline.md (2026-08-23 12:00Z). Each")
+    add("arm gates only on games first recorded after ITS OWN registration;")
+    add("earlier games print as labelled backtest, never gating.")
+    add("")
+    add(F8_AUDIT_STATEMENT)
+    add("")
+    add(f"signal-covered games: {len(r.reads)}"
+        + (f"   (join-excluded: {r.n_join_excluded})"
+           if r.n_join_excluded else ""))
+
+    def cohort_block(label: str, reads: list[V4GameRead]) -> None:
+        n_pts = sum(x.n_points for x in reads)
+        add(f"\n[{label}]  games: {len(reads)}   paired points: {n_pts:,}")
+        if not reads:
+            return
+        diag = (sum(x.pace_fallback_ticks for x in reads),
+                sum(x.flag_widened_points for x in reads),
+                sum(x.clock_fallback_ticks for x in reads),
+                sum(x.ot_ticks for x in reads))
+        add(f"  diagnostics: pace-fallback ticks {diag[0]:,} | flag-widened "
+            f"points {diag[1]:,} | clock-fallback {diag[2]:,} | OT unpriced "
+            f"{diag[3]:,}")
+        if n_pts:
+            b3 = sum(x.brier_v3 for x in reads) / n_pts
+            b4 = sum(x.brier_v4 for x in reads) / n_pts
+            add(f"  Brier v3: {b3:.5f}   Brier v4: {b4:.5f}")
+            cm = paired_brier(reads)
+            if cm is not None:
+                add(f"  paired diff (v3−v4), clustered: {_fmt_cm(cm, 5)}  "
+                    "(positive favours v4)")
+        for arm in ("v1", "v3", "v4", "v3d", "v4d"):
+            e = sum(x.entries.get(arm, 0) for x in reads)
+            fl = sum(x.fills.get(arm, 0) for x in reads)
+            tr = sum(x.trips.get(arm, 0) for x in reads)
+            ri = sum(x.rides.get(arm, 0) for x in reads)
+            n_g = sum(1 for x in reads if x.rois.get(arm))
+            line = (f"  [{arm}] entries {e:,} | fills {fl:,} | trips {tr:,} "
+                    f"| rides {ri:,} | games {n_g}")
+            cm = own_roi(reads, arm)
+            if cm is not None:
+                line += f" | per-$ {_fmt_cm(cm)}"
+            add(line)
+
+    # ---- v4: gate cohort, verdict, ablation ---- #
+    gate4 = r.v4_gate
+    cohort_block("v4 GATE — first recorded after 2026-08-24 16:20Z", gate4)
+    td = paired_trading(gate4, "v4", "v3")
+    if td is not None:
+        add(f"  paired trading diff (v4−v3), game means: {_fmt_cm(td)} — "
+            "the second clause")
+    verdict4 = v4_verdict(gate4)
+    add(f"  VERDICT v4: {verdict4}"
+        + ("" if v4_at_floor(gate4) else
+           f" — floors are {FLOOR_V4_GAMES} games / {FLOOR_V4_POINTS:,} "
+           "points, post-registration only. Counts accrue."))
+    if v4_at_floor(gate4):
+        add("  ablation (registered; runs once the gate resolves — paired "
+            "marginal, positive = component helps):")
+        for attr, name in (("diffs_no_pace", "pace/eff decomposition"),
+                           ("diffs_no_flags", "availability widening")):
+            cm = paired_brier(gate4, attr)
+            arm = ("v4-nopace" if attr == "diffs_no_pace" else "v4-noflags")
+            tda = paired_trading(gate4, arm, "v4")
+            line = f"    remove {name}: Brier marginal "
+            line += _fmt_cm(cm, 5) if cm is not None else "n/a"
+            if tda is not None:
+                add(line + f" | trading (ablated−v4) {_fmt_cm(tda)}")
+            else:
+                add(line)
+    else:
+        add("  ablation: registered to run after the gate resolves — "
+            "nothing printed below floor, by design.")
+
+    # ---- v3d: its own gate, its own comparator (v1) ---- #
+    gate3d = r.v3d_gate
+    fills3d = sum(x.fills.get("v3d", 0) for x in gate3d)
+    add(f"\n[v3d GATE — first recorded after 2026-08-23 12:00Z]  "
+        f"games: {len(gate3d)}   v3d fills: {fills3d:,}")
+    td1 = paired_trading(gate3d, "v3d", "v1")
+    if td1 is not None:
+        add(f"  paired trading diff (v3d−v1), game means: {_fmt_cm(td1)} — "
+            "the registered gate")
+    td3 = paired_trading(gate3d, "v3d", "v3")
+    if td3 is not None:
+        add(f"  paired trading diff (v3d−v3a), game means: {_fmt_cm(td3)} — "
+            "what the discipline recovered")
+    add("  Brier consistency: v3d prices with v3a's estimate list, the same "
+        "object — identical by construction, as registered.")
+    verdict3d = v3d_verdict(gate3d)
+    add(f"  VERDICT v3d: {verdict3d}"
+        + ("" if v3d_at_floor(gate3d) else
+           f" — floors are {FLOOR_V3D_GAMES} games / {FLOOR_V3D_FILLS} v3d "
+           "fills, post-registration only. Counts accrue."))
+
+    # ---- v4d: the composition — no floors of its own ---- #
+    tdc = paired_trading(gate4, "v4d", "v3")
+    add("\n[v4d — composition, reads on v4's gate games, no separate floors]")
+    if tdc is not None:
+        add(f"  paired trading diff (v4d−v3), game means: {_fmt_cm(tdc)}"
+            + (f"   (v4's own: {_fmt_cm(td)})" if td is not None else ""))
+    add("  live-eligibility: BOTH parents must PASS and v4d's read must not "
+        "be worse than v4's.")
+    add(f"  parents now: v4 {verdict4.split(' ')[0]} / v3d "
+        f"{verdict3d.split(' ')[0]}")
+
+    # ---- backtests: labelled, never gating ---- #
+    gate_ids = {id(x) for x in gate4}
+    pre4 = [x for x in r.reads if id(x) not in gate_ids]
+    if pre4:
+        cohort_block("v4 BACKTEST — pre-registration, never gates", pre4)
+        tdb = paired_trading(pre4, "v4", "v3")
+        if tdb is not None:
+            add(f"  paired trading diff (v4−v3): {_fmt_cm(tdb)}  "
+                "(BACKTEST — never gates)")
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------- #
 # Refit modes (print; constants move only by hand, with the doc)
 # --------------------------------------------------------------------- #
 
@@ -1105,6 +1716,13 @@ def main() -> int:
     parser.add_argument("--ev-stop", dest="ev_stop", action="store_true",
                         help="paired old-stop vs EV-stop trading comparison "
                              "— docs/math/pulse-ev-stop.md")
+    parser.add_argument("--v4", "--v3d", "--v4d", dest="v4",
+                        action="store_true",
+                        help="v4 bundle vs v3 incumbent, v3d entry "
+                             "discipline, and the v4d composition — one "
+                             "report, all three arms (v4d is registered to "
+                             "print beside its parents in every run) — "
+                             "docs/math/pulse-v4-bundle.md")
     parser.add_argument("--json", dest="json_path", default=None)
     args = parser.parse_args()
 
@@ -1120,6 +1738,9 @@ def main() -> int:
         return 0
     if args.ev_stop:
         print(evaluate_ev_stop(Session, limit=args.limit))
+        return 0
+    if args.v4:
+        print(format_v4(evaluate_v4(Session, limit=args.limit)))
         return 0
 
     cohorts = evaluate(Session, limit=args.limit)
