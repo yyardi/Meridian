@@ -535,9 +535,9 @@ summaries.** Read the row. Run the test against the other tree. Check which
 figure the file actually records. Green can be load-bearing in the wrong
 direction; so can a correction, and a correction arrives with more authority.
 
-Third corollary, from a cluster of five on 2026-08-25: **the danger zone is the
+Third corollary, from a cluster of six on 2026-08-25: **the danger zone is the
 thing you're not concentrating on while concentrating hard.** Every one of the
-five happened while the person was actively being careful about something
+six happened while the person was actively being careful about something
 *adjacent*:
 
 | the error | what the person was being careful about at that moment |
@@ -547,6 +547,16 @@ five happened while the person was actively being careful about something
 | relayed "the pre-declared money clause has saved us twice" — #16 had no money clause at all | insisting that the ledger's claims must survive being checked |
 | asserted a ledger row's column count from memory | telling a peer to verify against artifacts rather than memory |
 | handed off "1.1–2.1s for the picks endpoint" — localhost not production, and a warm-up curve quoted as a range | a session otherwise spent on measurement discipline |
+| trusted `grep -c` reporting 1 of 2 for a phrase that wrapped differently in the two places | checking, character by character, that a registration's clause had not drifted |
+
+**The sixth is the one that generalises furthest**, because the unreliable part
+was not a memory but an *instrument*. `grep -c` counts matching **lines**, not
+occurrences; the phrase being verified wrapped after a different word in each of
+its two places, so a correct page reported as half-missing. The near-miss was
+not failing to check — the check ran — it was that a red result from a
+mis-chosen tool nearly caused an edit to a file that was already right. That is
+the first corollary above, arriving from the other direction: *two agreeing
+readings tell you about the instrument*, and so does one disagreeing reading.
 
 **Citing a rule feels like applying it, and it is the opposite posture.** Quoting
 one puts you in the seat of the judge, where the rule is a thing *other* work is
