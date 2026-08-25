@@ -30,9 +30,9 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
-    text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -696,6 +696,13 @@ class Prediction(Base):
     line: Mapped[Decimal | None] = mapped_column(Points)
 
     model_probability: Mapped[Decimal | None] = mapped_column(Price)
+    #: The ladder-sigma-damped probability, written BESIDE the undamped
+    #: (docs/math/ladder-sigma-damping.md, activation ruling 2026-08-25):
+    #: the same ladder re-priced at the published finals-residual sigma
+    #: (19.00) with its own implied mean preserved. NULL before activation,
+    #: on non-totals rows, and where the ladder was too thin to fit.
+    #: Nothing reads this for decisions; the bucket-calibration gate does.
+    damped_probability: Mapped[Decimal | None] = mapped_column(Price)
     model_fair_value: Mapped[Decimal | None] = mapped_column(Price)
     market_bid: Mapped[Decimal | None] = mapped_column(Price)
     market_ask: Mapped[Decimal | None] = mapped_column(Price)
