@@ -535,9 +535,9 @@ summaries.** Read the row. Run the test against the other tree. Check which
 figure the file actually records. Green can be load-bearing in the wrong
 direction; so can a correction, and a correction arrives with more authority.
 
-Third corollary, from a cluster of six on 2026-08-25: **the danger zone is the
+Third corollary, from a cluster of eight on 2026-08-25: **the danger zone is the
 thing you're not concentrating on while concentrating hard.** Every one of the
-six happened while the person was actively being careful about something
+eight happened while the person was actively being careful about something
 *adjacent*:
 
 | the error | what the person was being careful about at that moment |
@@ -548,6 +548,8 @@ six happened while the person was actively being careful about something
 | asserted a ledger row's column count from memory | telling a peer to verify against artifacts rather than memory |
 | handed off "1.1–2.1s for the picks endpoint" — localhost not production, and a warm-up curve quoted as a range | a session otherwise spent on measurement discipline |
 | trusted `grep -c` reporting 1 of 2 for a phrase that wrapped differently in the two places | checking, character by character, that a registration's clause had not drifted |
+| relayed three attrition causes as measured findings; all three were pre-run speculation and the audit refuted every one | being careful about the attrition rate itself, and not about whether its stated causes had been measured |
+| concluded that two feed-lag figures contradicted, and that the wrong one was mine; they were a 2-game pilot and a 16-game full run converging | refusing to edit either page, because both sat in uneditable registration blocks |
 
 **The sixth is the one that generalises furthest**, because the unreliable part
 was not a memory but an *instrument*. `grep -c` counts matching **lines**, not
@@ -557,6 +559,24 @@ not failing to check — the check ran — it was that a red result from a
 mis-chosen tool nearly caused an edit to a file that was already right. That is
 the first corollary above, arriving from the other direction: *two agreeing
 readings tell you about the instrument*, and so does one disagreeing reading.
+
+**The seventh travelled furthest, because the person was a relay.** The other
+six damaged one artifact each. An unmeasured claim passed along reaches everyone
+downstream at once — and it arrives carrying the **relayer's** credibility rather
+than the speculator's, so the people best placed to doubt it are the least
+likely to. Relaying is the one posture where the danger zone has a blast radius.
+**Say what a claim's evidentiary status was when you received it**, especially
+when passing it on costs you nothing.
+
+**The eighth runs the other way, and is the hardest to see.** The first seven
+are false negatives — a real defect missed. This one is a **false positive**: a
+conclusion that an error existed, and was the concluder's own, when the two
+figures were simply a pilot and a full run converging under 8× the data. "Assume
+it is mine" is a good prior and it is why people catch things; here it answered
+a question nobody had established was open. **The frame was the error** — "which
+of these two is wrong" was asked, "do these measure the same sample" was not. A
+self-blame prior is invisible as a failure mode, because its output looks like
+diligence and nobody pushes back on someone claiming their own mistake.
 
 **Citing a rule feels like applying it, and it is the opposite posture.** Quoting
 one puts you in the seat of the judge, where the rule is a thing *other* work is
