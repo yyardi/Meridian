@@ -110,3 +110,33 @@ mechanism, with the evidentiary basis recorded as follows.**
 
 Deployment of the shadow arm awaits the manager's word, as everything
 does.
+
+## 2026-08-25 — pre-gate context: the recent-window regime (research F5)
+
+Recorded 2026-08-25, arm built (PR #71), **gate not yet at floor — no
+damped row has been scored.** The whole value of this note is that it is
+on the record BEFORE the first gate read. From the research agent's F5
+run, relayed by the manager:
+
+* The full-2026 finals residual measures **19.07** on F5's fit —
+  consistent with the published 19.00 this registration's factor uses.
+* The recent regime has come down hard: **sd(actual − closing book total)
+  = 14.46 over 66 games since 2026-07-28**, and the ladder-sigma test
+  failed in that window with tails RICH, not cheap.
+
+**The prediction this context makes, stated before the gate**: damping
+20.75 → 19.00 narrows the model's tails, but if the live regime is really
+~14.46, the corrected ladder may STILL be fat relative to what is
+happening now. A gate result of "damped measurably better but still not
+calibrated" is the outcome this context expects — neither a surprise nor
+a licence to damp further.
+
+**Why this is written in advance, two reasons**: (1) whoever reads the
+first gate result should meet the regime shift here, not discover it
+afterward and wonder whether the design accounted for it; (2) if anyone
+later argues for a second damping step toward 14.46, this note is the
+record that 14.46 was a RECENT-WINDOW measurement known before the gate
+read — adopting it would be a fitted-to-regime choice requiring its own
+independent justification. The stated limit above already forbids further
+damping without a new mechanism; this note closes the "we didn't know"
+route around it.
