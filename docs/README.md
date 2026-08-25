@@ -31,6 +31,7 @@ The modelling, stated precisely enough to argue with.
 | [market-shrinkage.md](math/market-shrinkage.md) | Why the moneyline loses, and why recalibration was the wrong fix |
 | [venue-gap.md](math/venue-gap.md) | Is Polymarket mispriced against Kalshi? (**the founding question — FAILED** at pregame resolution: 0.00¢ median gap, 36 games, 3.6× the gate) |
 | [ladder-sigma.md](math/ladder-sigma.md) | Is Polymarket's ladder too narrow? (hypothesis, unproven) |
+| [espn-wp-vs-price.md](math/espn-wp-vs-price.md) | Does ESPN's win probability beat the live price? (REGISTERED 2026-08-25, nothing computed) |
 | [news-windows.md](math/news-windows.md) | Does the thin venue lag the books on news? (no data yet) |
 | [adverse-selection.md](math/adverse-selection.md) | Does the spread survive being filled? (**FAILED** — −2.66¢ per filled quote; QUOTE stays unbuilt) |
 | [run-overreaction.md](math/run-overreaction.md) | Do prices overshoot scoring runs? (**FAILED** — prices reprice, they don't panic) |
