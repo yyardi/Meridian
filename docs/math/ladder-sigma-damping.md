@@ -66,3 +66,47 @@ stays.
 ---
 
 *Registered 2026-08-24. Results (or parking) append below this line.*
+
+## 2026-08-25 — D's re-run, the non-replication, and the activation ruling
+
+**The re-run's numbers, recorded first** (69 games vs the original 56,
+second reference price as a declared sensitivity arm): the calibration
+FAIL is confirmed at the gate — but the tail-bucket sign reversal that
+motivated this registration DOES NOT REPLICATE. The <0.30 bucket moved
+from −13.8pp [−22.5, −5.2] to **−5.9pp [−13.3, +1.5] — spanning zero.**
+D's original flag ("an opposite effect, not decay") described a
+small-sample artifact that did not survive the larger sample. This ledger
+exists to carry exactly that kind of reversal.
+
+**Ruling (registration owner, from the text): ACTIVATE — on the
+mechanism, with the evidentiary basis recorded as follows.**
+
+* The literal activation condition ("D's re-run confirms the FAIL") is
+  met. But the ruling does not rest on the letter: it rests on what the
+  registration actually claims. The damping was never justified by the
+  −13.8pp — deliberately: its factor (19.00/20.75) derives from two
+  published constants measuring a MECHANICAL defect, a distribution wider
+  than the outcomes it prices. That defect's evidence is the constants
+  themselves, and it is exactly as real today as before the re-run. The
+  bucket test was the alarm, never the evidence; a quieter alarm does not
+  repair a known parameter error.
+* The manager's stated risk — "damping against a marginal miss risks
+  fixing noise" — applies to a factor FITTED to the miss. This factor
+  ingests nothing from either bucket result, which is why the
+  non-replication changes no number in the rule. The independent-constants
+  design was chosen for precisely this contingency, before it happened.
+* **The honest evidentiary label, on the record**: the damping activates
+  on a mechanism argument (published sigma excess), NOT on strong
+  empirical evidence of a tail artifact — the tail-specific evidence is
+  now a CI spanning zero. A future reader should weigh the gate's outcome
+  accordingly.
+* Activation is low-stakes by construction: the damped ladder runs BESIDE
+  the undamped in the prediction log's shadow, per-row marked; nothing is
+  replaced. Parking (option 2) would leave a known parameter error
+  unmeasured because its alarm got quieter — the gate exists to arbitrate
+  exactly this, and it keeps its full authority: if damped calibration is
+  not measurably better at floor, the damping dies per the stated limit,
+  and no second mechanism inherits this registration.
+
+Deployment of the shadow arm awaits the manager's word, as everything
+does.
