@@ -592,6 +592,46 @@ not.** The usable form: when you have just cited a rule, invoked a prior lesson,
 or relayed someone else's claim, treat that as the trigger to check your own
 artifact against it — never as evidence that you already did.
 
+#### Replacement behaviours, because knowing the pattern is not enough
+
+The `grep -c` trap above recurred **within the hour**, on this very page, twenty
+minutes after the paragraph documenting it was written, by the person who wrote
+it. That is the useful datum: **the countermeasure cannot be knowledge.** The
+pattern is already taught here and it did not help. What was missing was a
+different default tool.
+
+Measured against this file, where the target phrase wraps across a newline:
+
+| command | result | why |
+|---|---|---|
+| `grep -c "$P" f` | **0** ✗ | counts matching **lines**, and the phrase spans two |
+| `grep -o "$P" f \| wc -l` | **0** ✗ | fixes lines-vs-occurrences, **does not fix wrapping** |
+| `tr '\n' ' ' < f \| grep -o "$P" \| wc -l` | **1** ✓ | newlines removed first |
+| `python3 -c "import re;print(re.sub(r'\s+',' ',open('f').read()).count('$P'))"` | **1** ✓ | whitespace normalised first |
+
+**The intuitive fix is the one that fails.** Reaching for `grep -o | wc -l`
+corrects the wrong half of the problem and returns the same confident zero. Any
+phrase longer than a few words in wrapped prose must have its whitespace
+normalised *before* it is counted — there is no flag on `grep` that does this.
+
+**`grep -c` also exits non-zero when it finds nothing**, which silently breaks
+`&&` chains. Verified:
+
+```
+( grep -c "zzz" f.txt && cat > out.txt <<'X'
+content
+X
+echo "written" )
+  → prints 0, then "written"; out.txt WAS NEVER CREATED
+```
+
+The chain died at the `grep`, so the write never ran — and the trailing `echo`
+still fired, because a command on its own line after a heredoc terminator is not
+part of the preceding chain. **The confirmation reported on itself rather than on
+the artifact.** Confirm by measuring the thing (`wc -c < out.txt`), never by
+echoing a literal, and keep a search out of a `&&` chain that has side effects
+after it.
+
 ### Facts that expired — the 2026-08-18 cluster
 
 A third family, distinct from both above. B1/B2/B10 were computations that
