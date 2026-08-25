@@ -287,9 +287,10 @@ def test_an_exit_fill_closes_the_position_and_the_market_rolls():
 
 
 def test_adverse_fv_moves_the_exit_to_the_touch_as_a_limit():
-    """The stop is the model's own estimate crossing back through the entry.
-    The old exit is withdrawn (and says so), the new one rests at the touch —
-    still a limit; nothing ever crosses the spread."""
+    """Under the DEFAULT rule (the #9 EV stop), the model's estimate merely
+    reaching the entry price fires the stop: the old exit is withdrawn (and
+    says so), the new one rests at the touch — still a limit; nothing ever
+    crosses the spread. reason='ev_stop' marks the rule regime per row."""
     with _Session() as s:
         _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=10))
     eng = _engine()
@@ -305,9 +306,60 @@ def test_adverse_fv_moves_the_exit_to_the_touch_as_a_limit():
     assert len(exits) == 2
     assert exits[0].withdrawn_at is not None         # the target stood down
     stop = exits[1]
-    assert stop.reason == "fv_adverse"
+    assert stop.reason == "ev_stop"                  # the #9 rule, default
     assert float(stop.limit_price) == pytest.approx(0.34)   # the current ask
     assert stop.filled_at is None
+
+
+def test_the_ev_stop_fires_at_edge_exhaustion_not_before():
+    """fv just above entry: hold. fv at/below entry: stop, reason ev_stop.
+    The trigger is the ledger's sentence — no threshold exists."""
+    with _Session() as s:
+        _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=12))
+    eng = _engine()
+    eng.cycle()
+    with _Session() as s:
+        _snap(s, bid=0.55, ask=0.59, at=NOW - dt.timedelta(seconds=8))
+    eng.cycle()                                      # filled at 0.60
+    # margin +4 at ~10 min: fv ~0.68 > entry 0.60 -> edge remains, no stop.
+    with _Session() as s:
+        _snap(s, bid=0.55, ask=0.59, score="52-48",
+              at=NOW - dt.timedelta(seconds=5))
+    eng.cycle()
+    assert len(_rows(EXIT)) == 1                     # only the profit target
+    # margin -2: fv ~0.41 <= entry -> edge exhausted -> stop fires.
+    with _Session() as s:
+        _snap(s, bid=0.38, ask=0.42, score="49-51",
+              at=NOW - dt.timedelta(seconds=2))
+    eng.cycle()
+    exits = _rows(EXIT)
+    assert len(exits) == 2 and exits[1].reason == "ev_stop"
+
+
+def test_the_adverse_rule_survives_behind_the_reversion_flag():
+    """MERIDIAN_PULSE_STOP_RULE=adverse is the registered mechanical
+    reversion: the old 10-cent behaviour, reason fv_adverse."""
+    with _Session() as s:
+        _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=12))
+    eng = _engine(stop_rule=pl.STOP_RULE_ADVERSE)
+    eng.cycle()
+    with _Session() as s:
+        _snap(s, bid=0.55, ask=0.59, at=NOW - dt.timedelta(seconds=8))
+    eng.cycle()
+    # fv ~0.55 (margin +1): adverse 0.05 < 0.10 -> old rule holds where the
+    # EV rule would have fired.
+    with _Session() as s:
+        _snap(s, bid=0.50, ask=0.54, score="50-49",
+              at=NOW - dt.timedelta(seconds=5))
+    eng.cycle()
+    assert len(_rows(EXIT)) == 1
+    # deep adverse: fires with the OLD reason.
+    with _Session() as s:
+        _snap(s, bid=0.30, ask=0.34, score="45-55",
+              at=NOW - dt.timedelta(seconds=2))
+    eng.cycle()
+    exits = _rows(EXIT)
+    assert len(exits) == 2 and exits[1].reason == "fv_adverse"
 
 
 def test_a_resting_entry_whose_edge_is_gone_stands_down():
@@ -571,13 +623,13 @@ def test_report_population_ruling_live_faithful_vs_full_intent():
     from core.pulse import live_report as prr
     from core.pulse.storage import IN_PLAY
     with _Session() as s:
-        for i, capped in enumerate((None, Decimal("1.25"), Decimal("0"))):
+        for i, capped in enumerate((None, Decimal("1.25"), Decimal(0))):
             s.add(PulseDecision(
                 decided_at=NOW - dt.timedelta(hours=6),
                 event_slug=EVENT, market_slug=f"{SLUG}-pop{i}",
                 sports_market_type=pl.MARKET_WINNER, strategy="winner",
                 phase=IN_PLAY, action=ENTER, side=YES,
-                limit_price=Decimal("0.60"), contracts=Decimal("1"),
+                limit_price=Decimal("0.60"), contracts=Decimal(1),
                 stake_usd=Decimal("0.60"), minutes_left_is_estimate=True,
                 filled_at=NOW - dt.timedelta(hours=5), settlement=1,
                 capped_stake_usd=capped,

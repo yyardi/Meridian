@@ -335,6 +335,7 @@ def simulate_market(
     ticks: list[Tick], fvs: list[float | None], outcome: int,
     *, min_edge: float, profit_target: float = DEFAULT_PROFIT_TARGET,
     stop_adverse: float = DEFAULT_STOP_ADVERSE,
+    stop_rule: str = "adverse",
 ) -> SimResult:
     """The engine's registered decision rule on one market's tick tape.
 
@@ -372,11 +373,15 @@ def simulate_market(
                     position_open = False
                     entry_price = entry_side = exit_price = None
                     continue
-            # stop management
+            # stop management: 'adverse' is the pre-#9 registered rule (kept
+            # as the default so historical arm numbers stay comparable);
+            # 'ev' is ledger #9 — fire the moment fair value falls to the
+            # entry price (docs/math/pulse-ev-stop.md).
             if (not exit_is_stop and fv is not None):
                 adverse = (entry_price - fv if entry_side == "yes"
                            else fv - entry_price)
-                if adverse >= stop_adverse:
+                threshold = 0.0 if stop_rule == "ev" else stop_adverse
+                if adverse >= threshold:
                     exit_price = tick.ask if entry_side == "yes" else tick.bid
                     exit_price = min(max(exit_price, 0.01), 0.99)
                     exit_is_stop = True
@@ -938,6 +943,100 @@ def format_v3(r: V3Result) -> str:
 
 
 # --------------------------------------------------------------------- #
+# The EV stop (ledger #9): paired old-rule vs new-rule trading comparison
+# --------------------------------------------------------------------- #
+
+#: The EV-stop registration's timestamp — its floors count only games first
+#: recorded after this instant (docs/math/pulse-ev-stop.md).
+EV_STOP_REGISTERED_AT = "2026-08-24T23:00:00+00:00"
+FLOOR_EV_GAMES = 10
+FLOOR_EV_FILLS = 100
+
+
+def evaluate_ev_stop(Session, *, limit: int | None = None) -> str:
+    """Same estimates (the v3a arm — the stop comparison is orthogonal to
+    the estimate set by construction), two sims per market differing only
+    in the stop rule; paired per-game trading diff. Post-registration games
+    gate; earlier games print as a labelled backtest, never gating."""
+    from strategies.wnba_totals.config import CONFIG
+
+    events = load_events(Session, limit=limit)
+    signals, _ = resolve_signal_games(Session, events)
+    reg_at = dt.datetime.fromisoformat(EV_STOP_REGISTERED_AT)
+
+    cohorts = {"gate": {"roi": {"adverse": defaultdict(list),
+                                "ev": defaultdict(list)},
+                        "fills": {"adverse": 0, "ev": 0}},
+               "backtest": {"roi": {"adverse": defaultdict(list),
+                                    "ev": defaultdict(list)},
+                            "fills": {"adverse": 0, "ev": 0}}}
+
+    for data in events:
+        sig_data = signals.get(data.event_slug)
+        if sig_data is None:
+            continue
+        first_seen = (sig_data.clock_rows[0][0]
+                      if sig_data.clock_rows else None)
+        cohort = cohorts["gate" if (first_seen is not None
+                                    and first_seen > reg_at) else "backtest"]
+        v1p, _ = arm_params(data)
+        for mtype, line, ticks in data.markets.values():
+            outcome = market_outcome(mtype, line, data.final_score)
+            if outcome is None:
+                continue
+            clock_ptr = _SeriesPointer(sig_data.clock_rows)
+            fvs: list[float | None] = []
+            for tick in ticks:
+                pair = parse_score(tick.score)
+                row = clock_ptr.at(tick.at)
+                if pair is None or row is None:
+                    fvs.append(None)
+                    continue
+                from core.pulse.signals import exact_clock
+                exact = exact_clock(int(row[1]), float(row[2]))
+                if exact.is_overtime or exact.minutes_left <= 0:
+                    fvs.append(None)
+                    continue
+                fvs.append(estimate_fv(
+                    market_type=mtype, line=line, margin=pair[0] - pair[1],
+                    total_so_far=pair[0] + pair[1],
+                    minutes_left=exact.minutes_left,
+                    winner_mid=data.winner_mid, params=v1p))
+            for rule in ("adverse", "ev"):
+                sim = simulate_market(ticks, fvs, outcome,
+                                      min_edge=CONFIG.min_edge_threshold,
+                                      stop_rule=rule)
+                cohort["fills"][rule] += sim.n_entry_fills
+                if sim.rois:
+                    cohort["roi"][rule][data.event_slug].extend(sim.rois)
+
+    out = ["EV STOP (#9) — paired old-rule vs new-rule, registered gate",
+           "=" * 70]
+    for label, c in cohorts.items():
+        n_games = len(set(c["roi"]["adverse"]) | set(c["roi"]["ev"]))
+        diffs = {}
+        for ev in set(c["roi"]["adverse"]) & set(c["roi"]["ev"]):
+            a = c["roi"]["adverse"][ev]
+            e = c["roi"]["ev"][ev]
+            diffs[ev] = [sum(e) / len(e) - sum(a) / len(a)]
+        cm = clustered_mean(diffs)
+        line = (f"[{label}] games {n_games} | fills adverse "
+                f"{c['fills']['adverse']:,} / ev {c['fills']['ev']:,}")
+        at_floor = (label == "gate"
+                    and n_games >= FLOOR_EV_GAMES
+                    and c["fills"]["ev"] >= FLOOR_EV_FILLS)
+        if cm is not None and (at_floor or label == "backtest"):
+            tag = "" if label == "gate" else "  (BACKTEST — never gates)"
+            line += (f" | paired diff (ev−adverse) {cm.mean:+.4f} "
+                     f"[{cm.lo:+.4f}, {cm.hi:+.4f}] G={cm.n_clusters}{tag}")
+        out.append(line)
+        if label == "gate" and not at_floor:
+            out.append(f"  VERDICT: NO DATA — floors {FLOOR_EV_GAMES} "
+                       f"post-registration games / {FLOOR_EV_FILLS} ev fills.")
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------- #
 # Refit modes (print; constants move only by hand, with the doc)
 # --------------------------------------------------------------------- #
 
@@ -1003,6 +1102,9 @@ def main() -> int:
     parser.add_argument("--v3", action="store_true",
                         help="v1 vs v3a (exact clock) over signal-covered "
                              "games — docs/math/pulse-v3-protocol.md")
+    parser.add_argument("--ev-stop", dest="ev_stop", action="store_true",
+                        help="paired old-stop vs EV-stop trading comparison "
+                             "— docs/math/pulse-ev-stop.md")
     parser.add_argument("--json", dest="json_path", default=None)
     args = parser.parse_args()
 
@@ -1015,6 +1117,9 @@ def main() -> int:
         return 0
     if args.v3:
         print(format_v3(evaluate_v3(Session, limit=args.limit)))
+        return 0
+    if args.ev_stop:
+        print(evaluate_ev_stop(Session, limit=args.limit))
         return 0
 
     cohorts = evaluate(Session, limit=args.limit)
