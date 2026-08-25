@@ -31,6 +31,7 @@ The modelling, stated precisely enough to argue with.
 | [market-shrinkage.md](math/market-shrinkage.md) | Why the moneyline loses, and why recalibration was the wrong fix |
 | [venue-gap.md](math/venue-gap.md) | Is Polymarket mispriced against Kalshi? (**the founding question — FAILED** at pregame resolution: 0.00¢ median gap, 36 games, 3.6× the gate) |
 | [ladder-sigma.md](math/ladder-sigma.md) | Is Polymarket's ladder too narrow? (**FAILED** — gated 2026-08-25, 69 games: neither tail's CI excludes zero, in either declared reference-price arm) |
+| [feed-lag.md](math/feed-lag.md) | **The F8 bound** — how far behind the market our ESPN feed is, and what that kills (measured 2026-08-25: p50 36.4s over 16 games; the move is already complete when we learn the play) |
 | [espn-wp-vs-price.md](math/espn-wp-vs-price.md) | Does ESPN's win probability beat the live price? (**PASSED its gate, NOT TRADABLE** — 2026-08-25: k +2.54, but r=0.973 with the mid and the pre-declared money clause reads −14.3%) |
 | [q4-endgame-state.md](math/q4-endgame-state.md) | Does Q4 endgame state (possession, bonus, timeouts) improve win-probability calibration? (REGISTERED 2026-08-25, **amended before any real data** — the original Brier gate was unwinnable; nothing real computed) |
 | [news-windows.md](math/news-windows.md) | Does the thin venue lag the books on news? (no data yet) |
