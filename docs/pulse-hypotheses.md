@@ -114,10 +114,37 @@ model feature, not a strategy.
 | 16 | signal | **Trailing-team live ML underpricing.** In tight games the market prices the trailing team's live win probability below the historical base rate for that game state | *"i took IND to win at 30% when they were down just 5 in a tight game... cashed at 45"* (2026-08-06, real money, +50%) | mean edge > 2¢, 95% CI clustered by game excluding zero, ≥10 games | **PASS on its stated terms — and NOT TRADABLE, 2026-08-07.** 40 obs / 19 games: +6.84¢, CI [+0.84, +12.83]. But the base rate is team-blind and the price is not: **anchored on the pregame price the same states give −2.20¢, CI [−3.90, −0.49]** — the sign flips. The four biggest "edges" are all heavy pregame underdogs. The gate was the wrong question, recorded as passed because it was pre-registered. [math/win-curve.md](math/win-curve.md), correction C12 |
 | 17 | signal | **Tight-game ML reversion to 50/50.** In a tight game (small boxscore margin), a moneyline that has deviated far from 50/50 reverts toward it. | *"won a fourth quarter ml on phx cuz i saw it was extremely tight and phx suddenly dropped to 33 from 50, bought, sold 45... dallas-gsv is tight so deviation shud return to 50/50, buy either side below 35, sell at 50"* (2026-08-08T02:19Z, real money) | Q4, margin ≤3, mid ≤0.35, maker fill, exit at 0.50 or settlement, P&L net of costs, clustered by game; **30 trades / 15 games** — plus a **co-primary anchoring check** | **FAIL — gated, 2026-08-18.** 40 filled trades / 26 games (gate 30/15, met). Mean net P&L **−9.12¢/contract**, CI **[−16.77¢, −1.48¢]** — the interval lies entirely **below** zero, so (1) and (2) both fail. The co-primary fails the same way: pregame-anchored target **−4.16¢**, CI **[−5.81¢, −2.51¢]**. **Only 16 of 40 trades ever reached 0.50**; the other 24 rode to settlement, which is what a sub-0.35 side in a tight Q4 mostly does. Tight games do not revert to a coin flip — a 0.33 price on a tight game is not a mispriced 0.50, it is a price. With #1 (price-move) already dead, **both halves of the reversion family are now dead on pre-registered terms.** First hypothesis judged under the 15-game policy. [math/tight-game-reversion.md](math/tight-game-reversion.md) |
 | 18 | signal | **Boundary deviation vs the live price.** Given the live winner mid at a period boundary, does the margin's deviation from the prorated closing spread carry residual information the price has not already absorbed? | research agent, registered 2026-08-25 before computing | **≥ 15 games**; coefficient on deviation with a 95% CI excluding zero, clustered | **FAIL — gated, 2026-08-25.** 153 observations / 54 games (gate 15, met). Coefficient **+0.054, CI [−0.063, +0.171]** — spans zero, and **every per-boundary CI spans zero** as well. Harness mutation-tested. **The consequence is the interesting part: the reversion is REAL and already PRICED.** Deviations do revert ~15–17% (F1/F6, 797 games), but the live mid already contains that — regressing the outcome on the live price gives a logit coefficient of **0.881**, i.e. the market is doing this arithmetic before we get there. A true signal you cannot trade because you are not the first to see it, which is a different death from #1's (no effect) and #16's (effect inverts under the right anchor). |
-| 19 | signal | **ESPN win probability vs the live price.** Does ESPN's published win probability carry information the winner-market mid does not already hold? | research agent, from a seen v3a diagnostic (ESPN WP beat both arms on matched late winner ticks, n=11) — disclosed in the registration | logistic `outcome ~ logit(mid) + k*logit(espn_wp)`, k's 95% CI clustered by game, **≥ 15 signal-covered joined games**; PASS = CI excludes zero, **either sign**; second clause (money-at-price at the 4.70¢ concession) computed ONLY on PASS and declared in advance | **REGISTERED 2026-08-25, nothing computed.** [math/espn-wp-vs-price.md](math/espn-wp-vs-price.md). Harness mutation-tested (calibrated synthetic must read k≈0) before the real run. The design answers #18's lesson directly: a signal can be real, correctly signed and still add nothing once the price is in the regression, so k — not correlation — is the quantity, and the trading clause is declared separately so a PASS is not read as tradability. |
+| 19 | signal | **ESPN-WP vs live price.** Does ESPN's per-play win probability carry information beyond the winner-market mid? | research agent; motivated by the seen v3a diagnostic (disclosure in the registration) | logistic y ~ logit(mid) + k·logit(espn_wp), k's game-clustered 95% CI, ≥15 settled joined games; money clause on PASS declared in advance | **PASS on stated terms — NOT TRADABLE, 2026-08-25.** 5,847 pairs / 17 games: k +2.54 [+0.41, +4.66]; r(regressors) 0.973 at G=17, mid's joint coefficient spans zero — near-duplicate sources, not free information. Pre-declared money clause: −14.3% [−57, +28]; disagreements ≥5¢ favor the market. Same family as #16: the letter passed, the money said no. Harness mutation-tested. [math/espn-wp-vs-price.md](math/espn-wp-vs-price.md) |
 | 15 | input | **Team-specific lead survival.** Some teams hold leads worse than the league curve; a live model's P(win \| lead, time) should know which | *"dallas isnt great at holding onto leads theyve blown so many"* (2026-08-06) | ungated diagnostic | **MEASURED — effect is not there, 2026-08-07.** Against the team-blind league curve the spread looks like 9.0¢ and DAL looks bad (−0.067). Anchor each team on its **own** win rate and the whole spread collapses to **2.1¢**, DAL to −0.012, MIN to +0.006. The league-curve column was reproducing the standings, not a trait. Dallas loses games; it does not specifically blow leads. [math/win-curve.md](math/win-curve.md) |
 
 ---
+
+## The rule that came out of #16 and #19 — declare the money test IN ADVANCE
+
+**A gate answers the question it was written to answer, and that question is
+never "should we trade this".** Two hypotheses have now passed their stated
+terms and been untradable, for entirely different reasons:
+
+* **#16** passed at +6.84¢ against a team-blind base rate and **inverted to
+  −2.20¢** against a team-aware anchor. The signal was an artifact of the
+  baseline.
+* **#19** passed with k = +2.54 [+0.41, +4.66] — and the two regressors
+  correlate at **r = 0.973**, with the mid's own coefficient spanning zero. The
+  signal is a near-duplicate of the price. Its pre-declared money clause came
+  back **−14.3%**, with disagreements ≥5¢ favouring the market.
+
+In both cases the statistical gate passed and the money said no. What made that
+visible rather than arguable is the same design in both: **the trading test was
+written down before the data run, and computed only on PASS.**
+
+That ordering is the whole mechanism. A trading rule designed after seeing
+k = +2.54 has every temptation to pick the threshold that flatters it, and no
+way to prove it did not. Fixed first, the −14.3% is a result. Fixed afterwards,
+it would have been an argument.
+
+**So: any hypothesis whose PASS would tempt someone to trade it carries a money
+clause declared in the same breath as the gate.** It costs one paragraph at
+registration time and it has now saved us twice.
 
 ## The rule that came out of #16 and #15
 
