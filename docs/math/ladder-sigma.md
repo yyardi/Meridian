@@ -119,3 +119,35 @@ after the fact.
 is real and consistent across 362 ladders; whether it converts to money is
 untested and needs ~35 more games of resolved data. The pre-registered test is
 unchanged.
+
+---
+
+## Reference prices for the 2026-08-25 re-run — DECLARED BEFORE COMPUTING
+
+The registration fixes the buckets (<0.30, >0.70), the floor (n >= 40 games)
+and the direction, but it **never pinned a reference price**. That gap is real:
+"the price" of a totals contract is a choice, and a test whose answer depends
+on an unpinned choice is not yet a finding.
+
+So both arms are written down here **before any number is computed**, and the
+commit that adds this section precedes the commit that adds the verdict. Read
+the git history if you want to check that rather than trust it.
+
+* **Arm A — primary: the LAST pregame two-sided mid.** The last snapshot before
+  `is_live` with both a bid and an ask, priced `(bid + ask) / 2`. This is the
+  research agent's declared choice on the 56-game mirror, kept identical so the
+  two runs are comparable rather than merely both present.
+* **Arm B — sensitivity: the MEDIAN of every pregame two-sided mid** for that
+  market. Arm A rests on a single snapshot and inherits whatever that snapshot
+  was — stale, wide, or mid-drift. The median cannot be moved by one bad quote.
+
+**What each outcome means, also fixed now:** if the arms agree, the verdict does
+not depend on the unpinned choice and the registration's gap did not matter
+here. If they disagree, the verdict is that **this test is not identified
+without pinning a reference price**, and that is the finding — not whichever arm
+reads better.
+
+Sample: **69 resolved-totals games** from the off-prod eval copy (621 totals
+markets, resolved 2026-08-01 to 08-24), against the mirror's 56. Larger and
+overlapping rather than independent, which is stated plainly: this corroborates
+by extending the sample, it does not replicate on disjoint data.
