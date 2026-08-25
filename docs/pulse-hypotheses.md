@@ -176,6 +176,46 @@ afterwards, it would have been an argument.
 clause declared in the same breath as the gate.** It costs one paragraph at
 registration time. It has been applied once, and #16 is the reason it exists.
 
+## Pre-committing the words, not just the number — the #20 device
+
+A gate constrains **which number counts**. #20 added a second kind of
+constraint, and it is worth having as a standing option rather than as one row's
+detail:
+
+> **NAMED-CASUALTY CLAUSE:** if the ceiling arm's paired-diff CI excludes zero
+> in its favor while the deployable arm's does not, the verdict SHALL state
+> "the possession leg is an F8 casualty" in exactly those words — not "further
+> work needed."
+
+**It constrains what we are allowed to *call* the number**, fixed while nobody
+yet knows whether it will fire. The outcome it targets — the information is
+real, and the feed cannot deliver it in time — is the one most likely to be
+written up softly. "Further work needed" is true, costs nothing to say, and
+leaves a dead hypothesis alive in everyone's mental backlog. It is how a closed
+question stays open for months.
+
+The clause is reusable because it names a **mechanism** rather than a row:
+
+> **An F8 casualty** is any signal whose *ceiling* arm — the same variables
+> valued at wallclock, as a physics upper bound — beats its *deployable* arm,
+> which values them at the time we actually learned them. The information is
+> genuine; it arrives after it is worth having. No amount of further data
+> changes this, because the gap is the feed, not the sample.
+
+Any registration whose ceiling and deployable arms can diverge should carry the
+same clause. The pattern to copy is the three parts: **a diagnostic arm that can
+never gate anything**, a **named** failure mode, and the **exact words** the
+verdict must use, all fixed before the run.
+
+> **Deliberately stated without a figure.** The F8 bound's own page does not
+> exist yet, and the repo currently cites its feed-lag p50 two ways — **36.7s**
+> in [math/pulse-reversion-shrink.md](math/pulse-reversion-shrink.md) and
+> **36.4s** in [math/q4-endgame-state.md](math/q4-endgame-state.md). Both sit
+> **above** their pages' results lines and neither may be edited in place. The
+> definition above is written mechanism-only so it does not inherit the
+> disagreement; the F8 write-up is the place to settle which figure is
+> authoritative and to note that two registrations cite it differently.
+
 ## Notes on specific rows
 
 ### 1, 3 and 4 are one mechanism, not three
