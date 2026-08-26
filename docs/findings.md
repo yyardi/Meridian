@@ -706,6 +706,34 @@ was measured. When the distinction between what you counted and what someone wil
 conclude is load-bearing, the distinction goes in the first sentence — the only
 sentence guaranteed to be read by someone deciding what to do next.
 
+#### A frozen subject list answers a question about the past
+
+At 01:52Z on 2026-08-26 a watcher fired **"SLATE DONE — deploy window open."** It
+ran, it exited clean, its data was current. It was wrong: two of three games were
+final and the third had not tipped. The watcher had been armed while only two
+games were live, so its subject list was fixed at arming time and **"all the
+games I know about are done" printed as "the slate is done."**
+
+**The freshness was decorative because the scope was stale.** Polling harder
+would not have helped — every poll asked a correct question about the wrong set.
+The fix is to **re-enumerate the subject list at check time**, not to check more
+often: the replacement requires all events on ESPN's scoreboard to read `post`,
+enumerated fresh on every poll rather than baked in at arming.
+
+**And this is the failure that defeats a completeness guard.** An export taken on
+that signal would have walked the activity feed to `eof` correctly and passed
+[the pinned-export check](../scripts/export_wnba_trades.py) — because that guard
+proves the **read** was complete, and says nothing about whether the **window**
+was. **A complete read of an incomplete window passes every completeness check we
+have.** The sheet would have been missing an entire game's trades and would have
+looked, by every available measure, finished.
+
+So the family is wider than watchers. Any gate, cohort, alert or report whose set
+of subjects was determined earlier than its data — a hardcoded game list, a
+cached market universe, a cohort built before the last slate — is answering a
+question about the moment it was written. **Ask when the SET was decided, not
+just when the values were read.**
+
 #### A lesson is operative only where the work happens
 
 Three times in one evening the thing that actually prevented an error was **a
