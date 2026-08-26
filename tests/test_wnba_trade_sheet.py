@@ -580,3 +580,100 @@ def test_a_flat_dump_does_not_claim_verified_completeness(tmp_path):
     acts, provenance = activities_from_export(f)
     assert len(acts) == 1
     assert "not verifiable" in provenance
+
+# --------------------------------------------------------------------- #
+# `placed by`: attribution is sound only while the SOURCE is current.
+#
+# The label rests on completeness by construction — core/api.py commits the
+# order row BEFORE calling the venue, so every order this system sent has a
+# row and absence really is evidence. That argument dies against a lagging
+# copy of the database, where rows are merely missing.
+#
+# The witness is deliberately NOT max(created_at) of `orders`: this system has
+# placed 5 orders ever, all on 2026-08-07, so a complete and perfectly current
+# table looks nineteen days stale by that measure. An earlier version of this
+# guard made exactly that mistake and would have blanked every post-08-07 row
+# to "unknown" on a sheet where they are correctly "hand".
+# --------------------------------------------------------------------- #
+
+
+_CUR = dt.datetime(2026, 8, 26, 2, 0, tzinfo=UTC)      # a current database
+_LAG = dt.datetime(2026, 8, 20, 4, 13, tzinfo=UTC)     # a lagging mirror
+_FILL = dt.datetime(2026, 8, 25, 23, 30, tzinfo=UTC)   # a fill from tonight
+
+
+@pytest.mark.parametrize(
+    "at, oid, ours, current_through, expect, why",
+    [
+        (_FILL, "A", {"A"}, _CUR, "system", "a known id is ours"),
+        (_FILL, "Z", {"A"}, _CUR, "hand",
+         "current source, id absent -> absence IS evidence (write-before-submit)"),
+        (_FILL, "Z", {"A"}, _LAG, "unknown",
+         "LAGGING source: silence about a newer order carries no information"),
+        (_FILL, "Z", None, None, "unknown", "source unreadable"),
+        (_FILL, "Z", {"A"}, None, "unknown", "source undateable"),
+        (dt.datetime(2026, 8, 7, tzinfo=UTC), "Z", {"A"}, _LAG, "hand",
+         "a fill INSIDE a lagging source's window is still attributable"),
+    ],
+)
+def test_placed_by_claims_only_what_the_source_can_cover(
+    at, oid, ours, current_through, expect, why
+):
+    from scripts.export_wnba_trades import placed_by
+
+    assert placed_by(at, oid, ours, current_through) == expect, why
+
+
+def test_a_sparse_but_current_orders_table_still_attributes():
+    """The correction to my own first fix, pinned so it cannot come back.
+
+    Five ids from 2026-08-07 in a CURRENT database is not nineteen days of
+    blindness — it is a complete record of a system that placed five orders.
+    Tonight's fills are correctly `hand`, not `unknown`.
+    """
+    from scripts.export_wnba_trades import placed_by
+
+    five_old_ids = {f"OLD{i}" for i in range(5)}
+    assert placed_by(_FILL, "NEW", five_old_ids, _CUR) == "hand"
+    # ...and the same table on a lagging copy must NOT claim it.
+    assert placed_by(_FILL, "NEW", five_old_ids, _LAG) == "unknown"
+
+
+def test_currency_witness_is_a_continuously_written_table_not_orders():
+    """Pin WHICH table dates the source, not just what `placed_by` does with it.
+
+    Mutating the witness to `max(created_at) from orders` — the mistake the
+    first version of this guard actually made — left every `placed_by` test
+    green, because those inject the horizon directly and never touch the query.
+    A guard that survives the error it exists to prevent is decoration.
+
+    AST-based, and the docstring is skipped deliberately: the prose above names
+    `max(created_at)` and `orders` in order to explain why they are wrong, so a
+    substring scan would match its own explanation. That exact trap has been
+    hit twice in this repo already.
+    """
+    import ast
+    import inspect
+
+    from scripts import export_wnba_trades
+
+    tree = ast.parse(inspect.getsource(export_wnba_trades))
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "button_order_ids")
+
+    body = fn.body[1:] if (fn.body and isinstance(fn.body[0], ast.Expr)
+                           and isinstance(fn.body[0].value, ast.Constant)) else fn.body
+    sql_text = " ".join(
+        n.value for stmt in body for n in ast.walk(stmt)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    ).lower()
+
+    assert "market_snapshots" in sql_text, (
+        "the currency witness must be a continuously-written table; "
+        f"queries found: {sql_text!r}"
+    )
+    assert "max(created_at) from orders" not in sql_text.replace(" ", " "), (
+        "orders.created_at dates when the table last had something to say, not "
+        "how current the source is — 5 orders from 2026-08-07 in a perfectly "
+        "current database would read as nineteen days of blindness"
+    )

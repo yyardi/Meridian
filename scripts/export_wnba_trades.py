@@ -247,9 +247,41 @@ def settlement_lookup(gateway):
     return lookup
 
 
-def button_order_ids() -> set[str]:
-    """Venue order ids this system placed. Best effort — the sheet is still
-    correct without it, one column just reads "unknown"."""
+def button_order_ids() -> tuple[set[str] | None, dt.datetime | None]:
+    """System-placed venue order ids, and **how current the source is**.
+
+    Attribution rests on a completeness-by-construction argument, not on the
+    set being non-empty: ``core/api.py`` writes the order row and commits it
+    **before** calling the venue (``s.add`` / ``s.commit`` at api.py:1606, submit
+    at :1649), so every order this system sent has a row. Absence of a matching
+    id is therefore evidence the order was not ours, and ``hand`` is a sound
+    label rather than a lucky one.
+
+    **The argument covers accepted orders, not every row.** ``venue_order_id``
+    is written back only after a *successful* submit (api.py:1670), so an
+    ambiguously-failed submission leaves a row with **no id** and is outside
+    this set. If such an order did reach the venue and fill, its fill would
+    carry an id we never recorded and would be labelled ``hand`` — the one case
+    this argument does not cover. Measured 2026-08-26: **5 rows, 5 with ids, 0
+    without**, so the gap is real in principle and empty in practice. It is
+    written here rather than left in a review comment because this docstring is
+    what someone will lean on in a year.
+
+    That argument holds **only if this database is the one those writes went
+    to.** Read against a lagging copy the rows are simply missing, and every
+    system order becomes a hand trade on the operator's own annotation sheet.
+
+    So currency is asserted, not assumed — and the witness is deliberately NOT
+    ``max(created_at)`` of ``orders``. That conflates *when the table last had
+    something to say* with *how current the source is*: this system has placed 5
+    orders ever, all on 2026-08-07, so a complete and perfectly current table
+    looks nineteen days stale by that measure. The witness is instead the
+    highest-frequency writer in the system, ``market_snapshots``, whose horizon
+    bounds how recent ANY of this database's contents are.
+
+    Returns ``(None, None)`` when the source cannot be read or dated at all —
+    the caller must then attribute nothing.
+    """
     try:
         from sqlalchemy import text as sql
 
@@ -259,10 +291,33 @@ def button_order_ids() -> set[str]:
             rows = conn.execute(
                 sql("select venue_order_id from orders where venue_order_id is not null")
             ).all()
-        return {str(r[0]) for r in rows}
+            current_through = conn.execute(
+                sql("select max(captured_at) from market_snapshots")
+            ).scalar()
+        if current_through is None:
+            log.warning("orders_source_undateable")
+            return None, None
+        return {str(r[0]) for r in rows}, current_through
     except Exception as exc:                                      # noqa: BLE001
         log.warning("button_order_ids_unavailable", error=str(exc)[:120])
-        return set()
+        return None, None
+
+
+def placed_by(fill_at: dt.datetime, order_id: str,
+              ours: set[str] | None, source_current_through: dt.datetime | None) -> str:
+    """``system`` | ``hand`` | ``unknown``.
+
+    ``unknown`` only where the source genuinely cannot speak: it was unreadable,
+    or the fill is **newer than anything in the database**, so its silence about
+    that order carries no information.
+    """
+    if ours is None or source_current_through is None:
+        return "unknown"
+    if order_id in ours:
+        return "system"
+    if fill_at > source_current_through:
+        return "unknown"
+    return "hand"
 
 
 # --------------------------------------------------------------------------- #
@@ -373,13 +428,19 @@ def main() -> int:
     with PolymarketGatewayClient() as gateway:
         rows, unscored = build_rows(fills, resolutions, settlement_lookup(gateway))
 
-    ours = button_order_ids()
+    ours, current_through = button_order_ids()
     values = [
         row_values(row,
-                   "system" if row.fill.venue_order_id in ours
-                   else "hand" if ours else "unknown")
+                   placed_by(row.fill.at, row.fill.venue_order_id, ours, current_through))
         for row in rows
     ]
+    unknown = sum(1 for v in values if "unknown" in v)
+    if unknown:
+        print(f"\n  !! {unknown} of {len(values)} rows have placed-by UNKNOWN. The "
+              f"attribution\n     database is current only through {current_through}, "
+              "so its silence about\n     newer orders carries no information. Point "
+              "at a current database to\n     resolve them — they are NOT hand trades "
+              "by default.", file=sys.stderr)
 
     # The operator's local date, not UTC. Run at 19:10 CT on 17 Aug, `now(UTC)`
     # is already the 18th, and a sheet of tonight's trading would be filed under
