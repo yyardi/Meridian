@@ -523,7 +523,9 @@ case it existed to catch. Thirty seconds, and it is the only evidence that
 separates a guard from a decoration.
 
 Corollary, from the push above: **consistency between two runs of the same check
-is not evidence.** Two agreeing readings tell you about the instrument.
+is not evidence.** Two agreeing readings tell you about the instrument. *(This
+one has recurred four times since, under four different causes — it has its own
+section below.)*
 
 Second corollary, and it cost three rounds to learn: **a confident correction is
 not evidence either.** Writing this entry produced its own small chain of them —
@@ -619,6 +621,31 @@ inconsistency is a distinction the system is drawing that you are not, and
 whether that distinction is already written down on our side under a different
 name.
 
+#### Agreement is a property of the instrument, not of the world
+
+Promoted out of corollary status, because it has now arrived **four times from
+four different causes** — a corollary that keeps recurring under unrelated
+mechanisms has stopped being a footnote to one incident:
+
+| the agreement | what it actually measured |
+|---|---|
+| a push attempted twice, refused both times | one failure was explicitly transient — the **check** was the unreliable part |
+| `grep -c` re-run on a wrapped phrase | a deterministic tool returns the same confident zero forever; re-running it is not a second opinion |
+| two independently written P&L reconstructions agreeing **to the cent** while both disagreed with the venue | both were FIFO round-trip; the venue is average-cost per position (V27). A **shared policy**, agreeing with itself |
+| the trade sheet and `hand_trades.py` agreeing to the cent on WNBA | both booked from book mechanics instead of `intent` (V28). A **shared bug**, agreeing with itself |
+
+The last two are the dangerous shape: **independent authorship is not
+independent evidence.** Two people who inherit the same assumption produce two
+implementations that confirm each other and nothing else — and their agreement
+reads as corroboration precisely because the work was done separately.
+
+**What breaks the tie is a different KIND of source, not a second instance of
+the same kind.** The venue's own realized deltas refereed both of the last two;
+neither reconstruction could have refereed the other at any level of care.
+Before treating agreement as evidence, ask what the two readings share — the
+instrument, the assumption, the input, the author's model — and whether anything
+in the comparison could have come out otherwise.
+
 #### Say what KIND of evidence you have, in the headline
 
 An inventory of what a database contains **can only falsify a cohort, never
@@ -651,6 +678,17 @@ one proves only that the assertions present did not fire. So "tests pass" is the
 same headline problem — it names an outcome where the load-bearing fact is
 coverage. Say which behaviour is pinned, or say that the deciding input was
 never in a fixture.
+
+**The pattern is more general than tests, and has now appeared in three
+media.** Fixtures that carried no `intent`; a suite whose greenness was an
+inventory; and a `--activities-json` CLI flag that had existed since the script
+was written and **crashed on the only file anyone would point it at** — its
+existence stood in for its working, so the offline path read as covered for
+months. In all three **the artifact of coverage was present and the coverage was
+not.** When something exists whose purpose is to demonstrate that a case is
+handled — a fixture, a passing suite, a flag, a guard, a doc — that existence is
+the weakest possible evidence that the case is handled, because it is exactly
+what would be there either way.
 
 This is also a distinct species of the "check that cannot fail" above. Every
 earlier instance was a gate too **loose** to reject. This one was a gate that
