@@ -253,10 +253,19 @@ def button_order_ids() -> tuple[set[str] | None, dt.datetime | None]:
     Attribution rests on a completeness-by-construction argument, not on the
     set being non-empty: ``core/api.py`` writes the order row and commits it
     **before** calling the venue (``s.add`` / ``s.commit`` at api.py:1606, submit
-    at :1649, ``venue_order_id`` written back at :1670), so every order this
-    system sent has a row — including ones whose submission errored ambiguously.
-    Absence of a matching id is therefore genuine evidence the order was not
-    ours, and ``hand`` is a sound label rather than a lucky one.
+    at :1649), so every order this system sent has a row. Absence of a matching
+    id is therefore evidence the order was not ours, and ``hand`` is a sound
+    label rather than a lucky one.
+
+    **The argument covers accepted orders, not every row.** ``venue_order_id``
+    is written back only after a *successful* submit (api.py:1670), so an
+    ambiguously-failed submission leaves a row with **no id** and is outside
+    this set. If such an order did reach the venue and fill, its fill would
+    carry an id we never recorded and would be labelled ``hand`` — the one case
+    this argument does not cover. Measured 2026-08-26: **5 rows, 5 with ids, 0
+    without**, so the gap is real in principle and empty in practice. It is
+    written here rather than left in a review comment because this docstring is
+    what someone will lean on in a year.
 
     That argument holds **only if this database is the one those writes went
     to.** Read against a lagging copy the rows are simply missing, and every
