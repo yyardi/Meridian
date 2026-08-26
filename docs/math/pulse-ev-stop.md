@@ -50,3 +50,16 @@ after) as the per-row regime marker. Sizing populations are untouched.
 ---
 
 *Registered 2026-08-24. Results append below this line, never above it.*
+
+## 2026-08-26 — correction: the registration's true instant
+
+The header's "Written 2026-08-24" and the eval's original gate constant
+(2026-08-24T23:00Z) were a conversation-date drift by the author: this
+document's first commit is c375aab, **2026-08-25T23:08:20Z**, merged at
+23:09Z the same night. The error runs in the dangerous direction — the
+2026-08-25 00:00–04:15Z slate would have gated on a registration that did
+not exist while those games were being recorded. `EV_STOP_REGISTERED_AT`
+is corrected to the commit instant. No at-floor number has ever been read
+from the wrong cutoff (the gate cohort printed NO DATA on every run to
+date), so the correction is costless — which is exactly why it happens
+now and not after the first read.

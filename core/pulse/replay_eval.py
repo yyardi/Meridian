@@ -964,8 +964,13 @@ def format_v3(r: V3Result) -> str:
 # --------------------------------------------------------------------- #
 
 #: The EV-stop registration's timestamp — its floors count only games first
-#: recorded after this instant (docs/math/pulse-ev-stop.md).
-EV_STOP_REGISTERED_AT = "2026-08-24T23:00:00+00:00"
+#: recorded after this instant (docs/math/pulse-ev-stop.md). CORRECTED
+#: 2026-08-26: the constant originally said 2026-08-24T23:00Z, a
+#: conversation-date drift — the registration's first commit is
+#: c375aab (2026-08-25T23:08:20Z), and a game cannot gate on a
+#: registration that did not yet exist. Corrected before any at-floor
+#: read; the doc carries the dated note.
+EV_STOP_REGISTERED_AT = "2026-08-25T23:08:20+00:00"
 FLOOR_EV_GAMES = 10
 FLOOR_EV_FILLS = 100
 
