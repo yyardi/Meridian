@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
+import json
 import pytest
 
 from core.audit.wnba_trade_sheet import (
@@ -520,3 +521,62 @@ def test_short_intents_disagree_with_the_mechanical_reading():
         assert mechanical is not economic, (
             f"{intent}: the two readings agree, so a sign bug here is untestable"
         )
+
+
+# --------------------------------------------------------------------- #
+# Building from a PINNED export.
+#
+# The live path guarantees completeness by walking the feed to `eof`. Reading a
+# file bypasses that walk, so the same defect — a sheet silently missing the
+# OLDEST trades — can arrive through a door that never had the guard. These pin
+# the guard on the new door.
+# --------------------------------------------------------------------- #
+
+
+def _envelope(pages):
+    return {"pages": pages, "page_count": len(pages), "fetched_at": "20260825T233057Z"}
+
+
+def _page(n, *, eof, cursor=None):
+    acts = [{"type": "ACTIVITY_TYPE_TRADE", "trade": {"marketSlug": f"m{i}"}}
+            for i in range(n)]
+    p = {"activities": acts, "eof": eof}
+    if cursor:
+        p["nextCursor"] = cursor
+    return p
+
+
+def test_pinned_export_is_read_and_names_its_snapshot(tmp_path):
+    from scripts.export_wnba_trades import activities_from_export
+
+    f = tmp_path / "venue_activities_20260825T233057Z.json"
+    f.write_text(json.dumps(_envelope([_page(2, eof=False, cursor="c1"),
+                                       _page(3, eof=True)])))
+    acts, provenance = activities_from_export(f)
+    assert len(acts) == 5
+    # The sheet must be able to say WHICH snapshot it came from, or it is not
+    # re-gradable against the ledger it was checked against.
+    assert "20260825T233057Z" in provenance and "5 activities" in provenance
+
+
+def test_a_truncated_export_is_refused_not_silently_short(tmp_path):
+    """The failure this guard exists for: a snapshot that never reached eof
+    yields a sheet missing the oldest trades, which looks complete."""
+    from scripts.export_wnba_trades import activities_from_export
+
+    f = tmp_path / "truncated.json"
+    f.write_text(json.dumps(_envelope([_page(2, eof=False, cursor="still-more")])))
+    with pytest.raises(RuntimeError, match="never reached eof"):
+        activities_from_export(f)
+
+
+def test_a_flat_dump_does_not_claim_verified_completeness(tmp_path):
+    """A bare list carries no eof marker, so completeness cannot be checked —
+    the provenance string must say so rather than implying it was."""
+    from scripts.export_wnba_trades import activities_from_export
+
+    f = tmp_path / "flat.json"
+    f.write_text(json.dumps([{"type": "ACTIVITY_TYPE_TRADE"}]))
+    acts, provenance = activities_from_export(f)
+    assert len(acts) == 1
+    assert "not verifiable" in provenance

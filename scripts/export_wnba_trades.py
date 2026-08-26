@@ -146,6 +146,57 @@ def row_values(row: SheetRow, placed_by: str) -> list:
 # --------------------------------------------------------------------------- #
 
 
+def activities_from_export(path: Path) -> tuple[list[dict], str]:
+    """Read a pinned venue export instead of calling the venue.
+
+    Accepts both shapes this project produces:
+
+    * a flat ``[activity, ...]`` list, as :func:`fetch_activities` returns;
+    * the paged envelope ``{"pages": [{"activities": [...], "eof": bool}],
+      "fetched_at": "..."}`` that the venue-export tooling writes to
+      ``backups/exports/``.
+
+    **Completeness is checked, not assumed.** The live path guarantees it by
+    walking to ``eof``; reading a file bypasses that walk entirely, so a
+    truncated snapshot would produce a sheet silently missing the OLDEST trades
+    — the same defect ``fetch_activities`` raises on, arriving through a door
+    that had no guard. A snapshot whose last page never reached eof is refused.
+
+    Returns the activities and a provenance string naming the snapshot, so the
+    sheet can say which pinned artifact it was generated from.
+    """
+    raw = json.loads(path.read_text())
+
+    if isinstance(raw, list):
+        # A flat dump carries no eof marker, so completeness cannot be checked
+        # here. Say so rather than implying it was verified.
+        return ([a for a in raw if isinstance(a, dict)],
+                f"{path.name} (flat dump — completeness not verifiable)")
+
+    if not isinstance(raw, dict) or not isinstance(raw.get("pages"), list):
+        raise RuntimeError(
+            f"{path}: not a venue activities export — expected a list of "
+            "activities or an object with a 'pages' array"
+        )
+
+    pages = raw["pages"]
+    if not pages:
+        raise RuntimeError(f"{path}: export contains no pages")
+
+    last = pages[-1] if isinstance(pages[-1], dict) else {}
+    if not (last.get("eof") or not last.get("nextCursor")):
+        raise RuntimeError(
+            f"{path}: the export never reached eof — its last page still has a "
+            "nextCursor, so the OLDEST trades are missing and any sheet built "
+            "from it would be quietly incomplete. Re-take the export."
+        )
+
+    activities = [a for page in pages if isinstance(page, dict)
+                  for a in (page.get("activities") or []) if isinstance(a, dict)]
+    at = raw.get("fetched_at") or "unknown time"
+    return activities, f"{path.name} ({len(activities)} activities, fetched {at})"
+
+
 def fetch_activities(client) -> list[dict]:
     """Walk the activity feed to eof. Completeness over speed."""
     out: list[dict] = []
@@ -287,8 +338,12 @@ def main() -> int:
                         help="overwrite an existing sheet — DESTROYS any hand "
                              "annotations already in it")
     parser.add_argument("--activities-json", type=Path, default=None,
-                        help="read a cached activities dump instead of calling the "
-                             "venue; for re-running the arithmetic offline")
+                        help="build from a PINNED venue export instead of calling "
+                             "the venue. Takes either a flat activities list or "
+                             "the paged envelope under backups/exports/. Makes the "
+                             "sheet reproducible: the same file always yields the "
+                             "same sheet, so it stays re-gradable against the "
+                             "ledger it was checked against")
     args = parser.parse_args()
 
     import logging
@@ -296,8 +351,9 @@ def main() -> int:
 
     import core.storage  # noqa: F401  loads .env, as every CLI here does
 
+    provenance = None
     if args.activities_json:
-        activities = json.loads(args.activities_json.read_text())
+        activities, provenance = activities_from_export(args.activities_json)
     else:
         from core.polymarket.client import PolymarketAuthedClient, USCredentials
 
@@ -376,6 +432,13 @@ def main() -> int:
           "either.")
     if unscored:
         print(f"  !! settlement unknown, left unscored: {', '.join(unscored)}")
+    if provenance:
+        print(f"\n  built from PINNED EXPORT: {provenance}"
+              "\n  (no venue call — this sheet is reproducible from that file)")
+    else:
+        print("\n  built from a LIVE venue call — not reproducible; pass "
+              "--activities-json\n  with a pinned export if this sheet will be "
+              "annotated or re-graded.")
     print(f"\n  xlsx  {xlsx}")
     print(f"  csv   {csv_path}\n")
     return 0
