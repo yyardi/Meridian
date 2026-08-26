@@ -74,7 +74,7 @@ import math
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import structlog
 from scipy import stats
@@ -1056,16 +1056,37 @@ class PulseEngine:
             return
 
         min_qty = ob.min_trade_qty or 0.01
-        sized = size_position(
-            probability=probability,
-            price=cost,
-            bankroll=bankroll,
-            is_maker=True,
-            game_exposure_used=dollars_open / bankroll if bankroll > 0 else 1.0,
-            daily_exposure_used=self._daily_exposure(ob.captured_at) / bankroll
-            if bankroll > 0 else 1.0,
-            minimum_trade_qty=min_qty,
-        )
+        sizing_args = {
+            "probability": probability,
+            "price": cost,
+            "bankroll": bankroll,
+            "is_maker": True,
+            "game_exposure_used":
+                dollars_open / bankroll if bankroll > 0 else 1.0,
+            "daily_exposure_used":
+                self._daily_exposure(ob.captured_at) / bankroll
+                if bankroll > 0 else 1.0,
+            "minimum_trade_qty": min_qty,
+        }
+        sized = size_position(**sizing_args)
+
+        # SHADOW TAPE AMENDMENT (2026-08-26, operator-directed): min_bankroll
+        # is an ACCOUNT fact, not a model opinion — and on 2026-08-25 a $5
+        # account silenced the whole tape while the model held double-digit-
+        # cent edges on live markets. In shadow the account floor now
+        # annotates like the caps. The re-run below is necessary, not
+        # cosmetic: size_position short-circuits on MIN_BANKROLL BEFORE the
+        # edge gates and Kelly, so the zeroed result knows nothing about
+        # what the model wanted; disabling that one gate lets the intent
+        # gates (which still refuse) and the caps speak. Live mode is
+        # untouched — enforce_caps skips this block and refuses as before.
+        live_blocked_min_bankroll = False
+        if (not self.enforce_caps
+                and sized.binding_constraint == Constraint.MIN_BANKROLL):
+            from strategies.wnba_totals.config import CONFIG as _cfg
+            live_blocked_min_bankroll = True
+            sized = size_position(**sizing_args,
+                                  config=replace(_cfg, min_bankroll=0.0))
 
         # SHADOW SIZING SEMANTICS (operator decision, 2026-08-21): with zero
         # real dollars at stake, the shadow tape's whole purpose is the
@@ -1075,9 +1096,14 @@ class PulseEngine:
         # ANNOTATE instead of bind: the row carries the full desired
         # fractional-Kelly size, plus the live-faithful capped size in
         # capped_* when a cap would have bound (0 = would have blocked).
-        # Model-intent gates (no edge, edge under threshold) and venue
-        # realities (min bankroll, min trade qty on the DESIRED size) still
-        # refuse — a cap is not a model opinion, but those are.
+        # Model-intent gates (no edge, edge under threshold) still refuse —
+        # those ARE model opinions. The market's own minimum quantity, on
+        # the DESIRED size, still refuses — that is a fact about the
+        # market. The account floor (min_bankroll) ANNOTATES as of
+        # 2026-08-26: it is a fact about the account, and a shadow tape
+        # that goes silent because the real account is small records the
+        # account's state, not the model's (the 2026-08-25 five-dollar
+        # night).
         entry_contracts = sized.contracts
         entry_stake = sized.dollars
         capped_stake = capped_contracts = None
@@ -1089,8 +1115,10 @@ class PulseEngine:
                 return                 # the model does not want this trade
             desired_stake = sized.kelly_fraction_raw * self._kelly_fraction * bankroll
             desired_contracts = desired_stake / cost if cost > 0 else 0.0
-            if binding == Constraint.MIN_BANKROLL or desired_contracts < min_qty:
-                pass                   # venue reality: fall through to the loud log
+            if desired_contracts < min_qty:
+                pass                   # venue reality (the market's own
+                #                        minimum, on the DESIRED size):
+                #                        fall through to the loud log
             elif count_capped:
                 # The strongest statement wins: live blocks BEFORE sizing on
                 # the count cap, so whatever the dollar caps said, the
@@ -1098,6 +1126,15 @@ class PulseEngine:
                 entry_contracts, entry_stake = desired_contracts, desired_stake
                 capped_stake, capped_contracts = 0.0, 0.0
                 binding_label = "max_open_per_event"
+            elif live_blocked_min_bankroll:
+                # The account floor: live refuses at sizing, so the
+                # live-faithful size is zero whatever the caps found in the
+                # re-run. The (binding='min_bankroll', capped 0) pair could
+                # not exist on any row before 2026-08-26 — such ticks were
+                # refusals — so the marker IS the regime split.
+                entry_contracts, entry_stake = desired_contracts, desired_stake
+                capped_stake, capped_contracts = 0.0, 0.0
+                binding_label = "min_bankroll"
             elif binding in _EXPOSURE_CAPS:
                 entry_contracts, entry_stake = desired_contracts, desired_stake
                 capped_stake, capped_contracts = sized.dollars, sized.contracts

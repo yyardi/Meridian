@@ -345,3 +345,33 @@ tunable) instead of waiting for 10¢ of believed-lost value past the entry
 self-describes. Mechanical reversion is one env flip
 (MERIDIAN_PULSE_STOP_RULE=adverse). Sizing populations untouched; the
 round-trip series' rule regime splits on the reason column.
+
+## 2026-08-26 — TAPE SEMANTICS: the account floor annotates in shadow (operator-directed)
+
+Measured 2026-08-26 00:16Z, two games live: pulse_decisions in the last
+hour = 0 with the model holding edges up to +12¢ — the operator's account
+had drawn to ~$5, effective bankroll read $1.87 against min_bankroll $10,
+and every entry refused with `pulse_entry_sized_zero
+constraint=min_bankroll`. The loud logging worked; the tape still
+recorded the ACCOUNT'S state, not the model's, which is exactly the
+failure the 2026-08-21 caps decision exists to prevent.
+
+From this deploy, in SHADOW mode only: min_bankroll ANNOTATES like the
+exposure caps. Sizing re-runs with the account floor alone disabled (the
+floor short-circuits before the edge gates, so the re-run is what lets
+the model's own gates speak); the row lands at full desired
+fractional-Kelly size with `binding_constraint='min_bankroll'` and
+`capped_stake_usd=0` — live would have refused before entering anything.
+Unchanged: model-intent gates (no edge, edge under threshold) refuse;
+the market's own minimum quantity ON THE DESIRED SIZE refuses (a fact
+about the market, not the account); live mode
+(MERIDIAN_PULSE_ENFORCE_CAPS=1) refuses exactly as before.
+
+**Regime split marker**: the pair (`binding_constraint='min_bankroll'`,
+`capped_stake_usd=0`) could not exist on any row before this change —
+such ticks were refusals and wrote nothing — so the marker itself
+separates the regimes; no boundary timestamp is needed, though the
+deploy instant will be recorded here when the manager executes it.
+Live-faithful population filters (capped NULL or > 0) already exclude
+these rows by construction — the existing registered populations are
+untouched without amendment.
