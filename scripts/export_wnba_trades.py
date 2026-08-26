@@ -247,9 +247,30 @@ def settlement_lookup(gateway):
     return lookup
 
 
-def button_order_ids() -> set[str]:
-    """Venue order ids this system placed. Best effort — the sheet is still
-    correct without it, one column just reads "unknown"."""
+def button_order_ids() -> tuple[set[str], dt.datetime | None]:
+    """Venue order ids this system placed, and **how far forward that set is
+    good for**.
+
+    Best effort on the ids — the sheet is still correct without them, one column
+    just reads "unknown". The horizon is not optional, and the reason is a
+    defect this function used to have:
+
+    ``placed by`` was computed as *system if the id is known, else hand if we
+    know any ids at all, else unknown*. That treats a NON-EMPTY set as a
+    COMPLETE one. Read against a database that is merely stale, every order the
+    system placed after the last row it holds is absent from the set and gets
+    labelled **hand** — confidently, on the operator's own annotation sheet,
+    whose whole subject is which trades were theirs.
+
+    Measured 2026-08-26: the configured database held **5** order ids, newest
+    **2026-08-07** — nineteen days behind. An EMPTY table would have produced an
+    honest sheet ("unknown" everywhere); five rows was enough to defeat that
+    fallback and far too few to be right. Partial data beat no data into a worse
+    answer, which is the inverse of the usual worry.
+
+    So the caller is given ``max(created_at)`` and must not claim "hand" for any
+    fill after it.
+    """
     try:
         from sqlalchemy import text as sql
 
@@ -259,10 +280,26 @@ def button_order_ids() -> set[str]:
             rows = conn.execute(
                 sql("select venue_order_id from orders where venue_order_id is not null")
             ).all()
-        return {str(r[0]) for r in rows}
+            horizon = conn.execute(sql("select max(created_at) from orders")).scalar()
+        return {str(r[0]) for r in rows}, horizon
     except Exception as exc:                                      # noqa: BLE001
         log.warning("button_order_ids_unavailable", error=str(exc)[:120])
-        return set()
+        return set(), None
+
+
+def placed_by(fill_at: dt.datetime, order_id: str,
+              ours: set[str], horizon: dt.datetime | None) -> str:
+    """``system`` | ``hand`` | ``unknown`` — and ``unknown`` past the horizon.
+
+    A fill later than the newest order row cannot be shown to be ours, so it is
+    not claimed either way. Silence is the correct output of a source that
+    cannot see the period being asked about.
+    """
+    if order_id in ours:
+        return "system"
+    if not ours or horizon is None or fill_at > horizon:
+        return "unknown"
+    return "hand"
 
 
 # --------------------------------------------------------------------------- #
@@ -373,13 +410,17 @@ def main() -> int:
     with PolymarketGatewayClient() as gateway:
         rows, unscored = build_rows(fills, resolutions, settlement_lookup(gateway))
 
-    ours = button_order_ids()
+    ours, horizon = button_order_ids()
     values = [
-        row_values(row,
-                   "system" if row.fill.venue_order_id in ours
-                   else "hand" if ours else "unknown")
+        row_values(row, placed_by(row.fill.at, row.fill.venue_order_id, ours, horizon))
         for row in rows
     ]
+    unknown = sum(1 for v in values if "unknown" in v)
+    if unknown:
+        print(f"\n  !! {unknown} of {len(values)} rows have placed-by UNKNOWN: the "
+              f"orders table\n     ends at {horizon}, so nothing after that can be "
+              "attributed. Point at a\n     current database to resolve them — "
+              "they are NOT hand trades by default.", file=sys.stderr)
 
     # The operator's local date, not UTC. Run at 19:10 CT on 17 Aug, `now(UTC)`
     # is already the 18th, and a sheet of tonight's trading would be filed under
