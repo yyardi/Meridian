@@ -65,3 +65,13 @@ into live estimates only on PASS, as its own dated regime change.
 ---
 
 *Registered 2026-08-24. Results append below this line, never above it.*
+
+## 2026-08-26 — correction: the registration's true instant
+
+The header's "Written 2026-08-24" was a conversation-date drift by the
+author: this document's first commit is c375aab,
+**2026-08-25T23:08:20Z**, merged at 23:09Z the same night. The gate
+therefore counts games first recorded after 2026-08-25T23:08:20Z — the
+2026-08-25 00:00–04:15Z slate was recorded before this registration
+existed and is backtest, never gate. Corrected before the eval arm was
+built or any number read, so no result is touched.
