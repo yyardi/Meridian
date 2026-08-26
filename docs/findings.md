@@ -745,6 +745,52 @@ Two things generalise:
   code was making — it inferred completeness from non-emptiness, and was right
   by luck. Finding the real justification mattered more than the guard did.
 
+#### "Mutation-tested" is a claim about which paths execute
+
+A third species of the check that cannot fail, and the hardest of the three to
+see — because every visible part of it is correct.
+
+A preflight guard was written to refuse an activities export that did not cover
+the trades in the sheet. It compared the export's `fetched_at` against the
+latest fill **in that export**. Every fill necessarily predates the fetch, so
+the comparison held by construction and the branch was unreachable:
+
+```
+latest fill  2026-08-25 01:57:21Z
+export_at    2026-08-25 23:30:57Z
+margin: 1293.6 minutes
+```
+
+**Every one of those 1,293 minutes was the export measuring itself.** The margin
+looked enormous and healthy, which is worse than looking wrong.
+
+**It passed its own mutation test.** The test supplied the two operands
+independently; `main()` derived one from the other. So the mutation was
+reachable through the test and unreachable through the program, and
+*"mutation-tested" was true and meaningless in the same breath.*
+
+Distinguish it from the two already catalogued above:
+
+| species | assertion | deciding input | why it cannot fail |
+|---|---|---|---|
+| loose gate | too weak to reject | present | it accepts everything |
+| absent variable | sharp | **missing from every fixture** | nothing can disagree with it |
+| **unreachable branch** | **sharp** | **present** | the path `main()` takes never reaches it |
+
+**The countermeasure is not more mutation testing.** A claim about coverage is a
+claim about **which paths execute**, and that can only be checked by reading the
+path — never by reading the test. So when reporting one, **name the entry point
+the mutation was reachable through.** "I mutated X and a test went red" is
+compatible with the program never executing X.
+
+The fix was to bound the window with an anchor from **outside** the export — the
+recorder's last live tick — so the comparison has two real operands. And it left
+a **live witness** behind rather than just deleting the defect: a test asserting
+that `export_at >= latest_fill` *always*, derived from one export the way
+`main()` derives it. Most fixes remove a bug and leave nothing that knows it
+existed; if that assertion ever fails, the relationship changed and someone
+should look.
+
 #### A frozen subject list answers a question about the past
 
 At 01:52Z on 2026-08-26 a watcher fired **"SLATE DONE — deploy window open."** It
