@@ -678,64 +678,115 @@ def test_currency_witness_is_a_continuously_written_table_not_orders():
         "current database would read as nineteen days of blindness"
     )
 
-
 # --------------------------------------------------------------------- #
-# Preflight: the sheet's window is the OLDEST of its three sources.
+# Preflight: the window must be bounded by something OUTSIDE the export.
 #
-# `eof` proves the READ was complete; nothing proved the WINDOW was. That gap
-# is what the false SLATE-DONE at 01:52Z on 2026-08-26 nearly drove a sheet
-# through — a complete read of an incomplete window passes every other check
-# here.
+# The first version compared the export's `fetched_at` against the latest fill
+# IN THAT EXPORT. Every fill predates the fetch, so the check could not fail —
+# and it passed its own mutation test only because the test injected the two
+# values independently while main() derived one from the other.
+#
+# So `latest_fill` here is parsed out of a fixture export the way main() does.
+# A test that hands it in as a free parameter cannot detect that class of bug.
 # --------------------------------------------------------------------- #
 
 
 _LIVE_GW = "https://gateway.polymarket.us"
-_FILL_AT = dt.datetime(2026, 8, 26, 3, 40, tzinfo=UTC)
 
 
-def test_preflight_passes_when_every_source_covers_the_fills():
+def _export_with_fill_at(when: dt.datetime, fetched: dt.datetime) -> dict:
+    stamp = when.strftime("%Y-%m-%dT%H:%M:%S.000000000Z")
+    order = {"id": "OURS", "side": "ORDER_SIDE_BUY", "outcomeSide": "OUTCOME_SIDE_YES",
+             "intent": "ORDER_INTENT_BUY_LONG", "marketSlug": MONEY}
+    ex = {"lastPx": {"value": "0.4800"}, "lastShares": 12, "transactTime": stamp,
+          "commissionNotionalCollected": {"value": "0.18"}, "order": order}
+    act = {"type": "ACTIVITY_TYPE_TRADE",
+           "trade": {"marketSlug": MONEY, "isAggressor": True,
+                     "aggressorExecution": ex, "passiveExecution": None}}
+    return {"pages": [{"activities": [act], "eof": True}], "page_count": 1,
+            "fetched_at": fetched.strftime("%Y%m%dT%H%M%SZ")}
+
+
+def _latest_fill_like_main(env: dict, tmp_path) -> tuple[dt.datetime, dt.datetime]:
+    """Derive both operands exactly as main() does, from one file."""
+    from scripts.export_wnba_trades import (
+        _collect, activities_from_export, export_fetched_at,
+    )
+
+    f = tmp_path / "e.json"
+    f.write_text(json.dumps(env))
+    acts, _ = activities_from_export(f)
+    fills, _, _ = _collect(acts)
+    assert fills, "fixture must parse to at least one fill"
+    return max(x.at for x in fills), export_fetched_at(f)
+
+
+def test_the_old_check_could_not_fail_on_the_real_call_path(tmp_path):
+    """Pin the defect itself: export_at >= latest_fill ALWAYS, from one export."""
+    fill_at = dt.datetime(2026, 8, 25, 23, 0, tzinfo=UTC)
+    fetched = dt.datetime(2026, 8, 25, 23, 30, 57, tzinfo=UTC)
+    latest_fill, export_at = _latest_fill_like_main(
+        _export_with_fill_at(fill_at, fetched), tmp_path)
+    assert export_at >= latest_fill, (
+        "if this ever fails the circularity is gone and the old check meant "
+        "something — until then, latest_fill cannot bound its own export"
+    )
+
+
+def test_preflight_refuses_when_the_market_was_live_after_the_export(tmp_path):
+    """The false SLATE-DONE case, with both operands built the way main does."""
     from scripts.export_wnba_trades import preflight
 
-    ok, _ = preflight(_FILL_AT, _FILL_AT + dt.timedelta(minutes=5),
-                      _FILL_AT + dt.timedelta(minutes=5), _LIVE_GW)
+    fetched = dt.datetime(2026, 8, 25, 23, 30, 57, tzinfo=UTC)
+    latest_fill, export_at = _latest_fill_like_main(
+        _export_with_fill_at(dt.datetime(2026, 8, 25, 23, 0, tzinfo=UTC), fetched),
+        tmp_path)
+    # The recorder saw live trading at 04:00Z — after the snapshot.
+    ok, lines = preflight(latest_fill, export_at,
+                          dt.datetime(2026, 8, 26, 4, 0, tzinfo=UTC),
+                          latest_fill, _LIVE_GW)
+    assert not ok
+    assert any("LIVE AFTER THE EXPORT" in l for l in lines)
+
+
+def test_preflight_passes_when_the_export_outlasts_the_market(tmp_path):
+    from scripts.export_wnba_trades import preflight
+
+    fetched = dt.datetime(2026, 8, 26, 4, 30, tzinfo=UTC)
+    latest_fill, export_at = _latest_fill_like_main(
+        _export_with_fill_at(dt.datetime(2026, 8, 26, 3, 50, tzinfo=UTC), fetched),
+        tmp_path)
+    ok, _ = preflight(latest_fill, export_at,
+                      dt.datetime(2026, 8, 26, 4, 12, tzinfo=UTC),
+                      latest_fill, _LIVE_GW)
     assert ok
 
 
-def test_preflight_refuses_an_export_that_ends_before_the_last_fill():
-    """The SLATE-DONE case: a correctly-walked export over too short a window."""
+def test_preflight_refuses_an_unbounded_window():
+    """No external anchor means the window is unbounded — which is what a short
+    sheet looks like. Refuse rather than print a timestamp and hope."""
     from scripts.export_wnba_trades import preflight
 
-    ok, lines = preflight(_FILL_AT, _FILL_AT - dt.timedelta(hours=4),
-                          _FILL_AT, _LIVE_GW)
+    at = dt.datetime(2026, 8, 26, 3, 0, tzinfo=UTC)
+    ok, lines = preflight(at, at, None, at, _LIVE_GW)
     assert not ok
-    assert any("ENDS BEFORE THE LAST FILL" in l for l in lines)
+    assert any("cannot be bounded" in l for l in lines)
 
 
 def test_preflight_refuses_a_redirected_gateway():
-    """A redirected gateway is a mirrored source wearing a live source's name."""
     from scripts.export_wnba_trades import preflight
 
-    ok, lines = preflight(_FILL_AT, _FILL_AT, _FILL_AT, "http://localhost:9999")
+    at = dt.datetime(2026, 8, 26, 3, 0, tzinfo=UTC)
+    ok, lines = preflight(at, at, at, at, "http://localhost:9999")
     assert not ok
     assert any("NOT THE LIVE GATEWAY" in l for l in lines)
 
 
-def test_preflight_refuses_an_undated_export():
-    """A flat dump cannot be bounded, so it cannot be shown to cover anything."""
-    from scripts.export_wnba_trades import preflight
-
-    ok, _ = preflight(_FILL_AT, None, _FILL_AT, _LIVE_GW)
-    assert not ok
-
-
 def test_a_lagging_attribution_db_is_reported_but_not_fatal():
-    """`unknown` is an honest label; a short export is a silent omission.
-
-    The asymmetry is deliberate — one degrades a column, the other loses rows.
-    """
+    """`unknown` degrades a column; a short export drops rows. Different verdicts."""
     from scripts.export_wnba_trades import preflight
 
-    ok, lines = preflight(_FILL_AT, _FILL_AT,
-                          _FILL_AT - dt.timedelta(days=6), _LIVE_GW)
+    at = dt.datetime(2026, 8, 26, 3, 0, tzinfo=UTC)
+    ok, lines = preflight(at, at, at, at - dt.timedelta(days=6), _LIVE_GW)
     assert ok
     assert any("read unknown" in l for l in lines)
