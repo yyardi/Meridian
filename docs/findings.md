@@ -632,6 +632,27 @@ the artifact.** Confirm by measuring the thing (`wc -c < out.txt`), never by
 echoing a literal, and keep a search out of a `&&` chain that has side effects
 after it.
 
+#### A negative result's provenance decides what to do with it
+
+Two failures an hour apart, opposite in kind, requiring opposite countermeasures:
+
+| | a **network** call returns nothing | a **local deterministic** tool returns nothing |
+|---|---|---|
+| status | a **hypothesis** | a **fact** — about the question you actually asked |
+| real modes | create/read lag, eventual consistency, auth blips, rate limits | none; it will say the same thing forever |
+| countermeasure | **retry**, then believe it | **re-read the question**; retrying is worthless |
+
+A `gh pr view` reporting a PR missing was taken as fact on one lookup; the PR
+existed and the read had raced the create. A `grep -c` reporting a phrase absent
+was correct about *lines containing it* and silently wrong about the question
+intended. **One instrument was flaky and read once; the other was perfectly
+reliable and answering something else.**
+
+Retrying the second is the trap, because it returns the same confident zero and
+that agreement reads as corroboration — which is the first corollary above
+arriving a third time: *two agreeing readings tell you about the instrument.*
+**Ask where the negative came from before deciding whether it means anything.**
+
 ### Facts that expired — the 2026-08-18 cluster
 
 A third family, distinct from both above. B1/B2/B10 were computations that
