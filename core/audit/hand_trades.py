@@ -131,8 +131,8 @@ class Fill:
     game_start: dt.datetime | None   # market.gameStartTime
     at: dt.datetime
     venue_order_id: str
-    is_buy: bool                     # ORDER_SIDE_BUY
-    outcome_yes: bool                # OUTCOME_SIDE_YES
+    is_buy: bool                     # from intent: *_BUY_* (NOT ORDER_SIDE_BUY)
+    outcome_yes: bool                # from intent: *_LONG  (NOT OUTCOME_SIDE_YES)
     yes_price: Decimal               # lastPx.value — YES frame (V14)
     shares: Decimal                  # lastShares
     manual: bool                     # manualOrderIndicator == ..._MANUAL
@@ -174,6 +174,17 @@ def _dec(value) -> Decimal | None:
         return None
 
 
+#: The four economic intents on an order we placed (V28). ``side``/
+#: ``outcomeSide`` describe how the order RESTS on the book; these describe what
+#: it DOES. Shared shape with ``core.audit.wnba_trade_sheet._INTENTS``.
+_INTENTS = frozenset({
+    "ORDER_INTENT_BUY_LONG",     # buy YES   → +YES
+    "ORDER_INTENT_SELL_LONG",    # sell YES  → −YES
+    "ORDER_INTENT_BUY_SHORT",    # buy NO    → −YES   (side reads SELL)
+    "ORDER_INTENT_SELL_SHORT",   # sell NO   → +YES   (side reads BUY)
+})
+
+
 def parse_activity(raw: dict) -> tuple[list[Fill], Resolution | None, bool]:
     """One raw activity → (our fills, resolution, parsed_ok).
 
@@ -211,19 +222,23 @@ def parse_activity(raw: dict) -> tuple[list[Fill], Resolution | None, bool]:
     px = _dec(((ex.get("lastPx") or {}).get("value")))
     shares = _dec(ex.get("lastShares"))
     at = _parse_ts(ex.get("transactTime"))
-    side = str(order.get("side") or "")
-    outcome = str(order.get("outcomeSide") or "")
-    # The outcome side must be explicitly YES or NO. A substring check for
-    # "OUTCOME" also accepts OUTCOME_SIDE_UNSPECIFIED, which then fails
-    # `endswith("_YES")` and is silently scored as a NO position — the position
-    # INVERTED, not dropped. The venue redacts this field on the counterparty's
-    # leg (365 of 455 trades) and never on ours (0 of 455), so the check
-    # doubles as a check on `isAggressor` itself: if it ever selects a leg with
-    # a redacted outcome, the selection is wrong and must not be scored.
-    # (Found independently by Builder B on the same feed.)
+    # V28: book from ``intent``, never from ``side``/``outcomeSide``. Those two
+    # are BOOK MECHANICS — a NO buy rests as a YES-side sell, so ``side`` reads
+    # SELL on a purchase. Measured on the 2026-08-25 activities export, the old
+    # (side, outcomeSide) rule agrees with the economics on only 58.3% of our
+    # own legs: 207 of 496 rows invert, all of them SHORT intents (148
+    # BUY_SHORT, 59 SELL_SHORT). The sign flips partially cancel in aggregate,
+    # which is why totals looked plausible while rows lied.
+    #
+    # The refusal below also doubles as a check on ``isAggressor`` itself, the
+    # role the old outcomeSide guard played: our leg carries one of the four
+    # real intents on all 496 trades and NEVER ORDER_INTENT_UNDEFINED, which
+    # appears only on the counterparty's leg. An UNDEFINED here means the leg
+    # selection is wrong, so refusing is correct rather than conservative — a
+    # wrong side is a wrong sign, not a missing value.
+    intent = str(order.get("intent") or "")
     if not oid or px is None or shares is None or at is None \
-            or "SIDE" not in side \
-            or outcome not in ("OUTCOME_SIDE_YES", "OUTCOME_SIDE_NO"):
+            or intent not in _INTENTS:
         return [], None, False
     return [Fill(
         market_slug=str(trade.get("marketSlug") or order.get("marketSlug") or ""),
@@ -231,8 +246,8 @@ def parse_activity(raw: dict) -> tuple[list[Fill], Resolution | None, bool]:
         game_start=_parse_ts(market.get("gameStartTime")),
         at=at,
         venue_order_id=str(oid),
-        is_buy="BUY" in side,
-        outcome_yes=outcome.endswith("_YES"),
+        is_buy="_BUY_" in intent,
+        outcome_yes=intent.endswith("_LONG"),
         yes_price=px,
         shares=shares,
         manual="MANUAL_ORDER_INDICATOR_MANUAL" == order.get("manualOrderIndicator"),

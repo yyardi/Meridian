@@ -245,6 +245,20 @@ def _dec(value) -> Decimal | None:
         return None
 
 
+#: The four economic intents the venue emits on an order we placed. Measured
+#: on 496 trades (2026-08-25 activities export): our own leg — the one selected
+#: by ``isAggressor`` — carries one of these four every time and NEVER
+#: ``ORDER_INTENT_UNDEFINED``. UNDEFINED appears only on the counterparty's leg,
+#: so seeing it on ours means the leg selection is wrong, not that the intent is
+#: unknowable. Refusing is therefore correct, not conservative.
+_INTENTS = frozenset({
+    "ORDER_INTENT_BUY_LONG",     # buy YES      → +YES exposure
+    "ORDER_INTENT_SELL_LONG",    # sell YES     → −YES exposure
+    "ORDER_INTENT_BUY_SHORT",    # buy NO       → −YES exposure  (side reads SELL)
+    "ORDER_INTENT_SELL_SHORT",   # sell NO      → +YES exposure  (side reads BUY)
+})
+
+
 def our_execution(trade: dict) -> dict | None:
     """OUR side of a two-sided trade record — never the counterparty's.
 
@@ -290,19 +304,24 @@ def parse_activity(raw: dict) -> tuple[WnbaFill | None, Resolution | None, bool]
     price = _dec((execution.get("lastPx") or {}).get("value"))
     shares = _dec(execution.get("lastShares"))
     at = _parse_ts(execution.get("transactTime"))
-    side = str(order.get("side") or "")
-    outcome = str(order.get("outcomeSide") or "")
+    # V28: ``side``/``outcomeSide`` are BOOK MECHANICS, not economics. A NO buy
+    # rests as a YES-side sell, so ``side`` reads SELL on a purchase and booking
+    # from it flips the sign on every SHORT row. ``intent`` is the economic
+    # truth and the only field cash reconstruction may use.
+    intent = str(order.get("intent") or "")
     oid = order.get("id")
     if (not oid or price is None or shares is None or at is None
-            or "SIDE" not in side or "OUTCOME" not in outcome):
+            or intent not in _INTENTS):
+        # An unrecognised intent REFUSES rather than falling back to
+        # side/outcomeSide — that fallback is the defect this guard exists for.
         return None, None, False
     return WnbaFill(
         market_slug=slug,
         parsed=parsed,
         at=at,
         venue_order_id=str(oid),
-        is_buy="BUY" in side,
-        outcome_yes=outcome.endswith("_YES"),
+        is_buy="_BUY_" in intent,
+        outcome_yes=intent.endswith("_LONG"),
         yes_price=price,
         shares=shares,
         commission=_dec((execution.get("commissionNotionalCollected") or {})
