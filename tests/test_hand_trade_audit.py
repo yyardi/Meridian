@@ -15,10 +15,12 @@ paid, NO cost = 1 − price. The reconstruction rules under test:
 
 from __future__ import annotations
 
+import pytest
 import datetime as dt
 from decimal import Decimal
 
 from core.audit.hand_trades import (
+
     Fill,
     Resolution,
     build_round_trips,
@@ -26,10 +28,27 @@ from core.audit.hand_trades import (
     run_audit,
 )
 
+
+# The venue pairs book mechanics with economics exactly this way — measured on
+# the 2026-08-25 activities export, all 496 trades. Fixtures derive `intent`
+# from (side, outcome) so a test can never encode a pairing the venue never
+# emits, which is how the sign bug survived: the fixtures carried no intent at
+# all, so nothing could disagree with the mechanical fields.
+_VENUE_INTENT = {
+    ("ORDER_SIDE_BUY", "OUTCOME_SIDE_YES"): "ORDER_INTENT_BUY_LONG",
+    ("ORDER_SIDE_SELL", "OUTCOME_SIDE_YES"): "ORDER_INTENT_SELL_LONG",
+    ("ORDER_SIDE_SELL", "OUTCOME_SIDE_NO"): "ORDER_INTENT_BUY_SHORT",
+    ("ORDER_SIDE_BUY", "OUTCOME_SIDE_NO"): "ORDER_INTENT_SELL_SHORT",
+}
+
+
+def _intent_for(side: str, outcome: str) -> str:
+    return _VENUE_INTENT.get((side, outcome), "ORDER_INTENT_UNDEFINED")
+
+
 UTC = dt.timezone.utc
 T0 = dt.datetime(2026, 8, 6, 22, 0, tzinfo=UTC)
 TIP = dt.datetime(2026, 8, 6, 23, 0, tzinfo=UTC)
-
 
 def _fill(minutes, *, buy, yes, px, shares, slug="m1", oid="H1",
           mtype="basketball_team_full_game_total", start=TIP, manual=True):
@@ -41,15 +60,12 @@ def _fill(minutes, *, buy, yes, px, shares, slug="m1", oid="H1",
         manual=manual, commission=Decimal("0"),
     )
 
-
 def _no_settlement(_slug):
     raise AssertionError("settlement must not be consulted for trade-closed trips")
-
 
 # ------------------------------------------------------------------ #
 # The C11 frame
 # ------------------------------------------------------------------ #
-
 
 def test_yes_round_trip_scored_at_prices():
     """Buy 10 YES at 0.30, sell at 0.50: $3 in, $5 out, +66.7%."""
@@ -65,7 +81,6 @@ def test_yes_round_trip_scored_at_prices():
     assert t.win and t.direction == "YES" and t.closed_by == "trades"
     assert t.entry_cost == Decimal("0.30")
 
-
 def test_no_cost_is_one_minus_price():
     """Buying NO at YES-frame 0.80 stakes 0.20/contract (V14: the venue
     reports every price in the YES frame). Settlement at YES=0 pays the NO
@@ -80,7 +95,6 @@ def test_no_cost_is_one_minus_price():
     assert t.closed_by == "settlement"
     assert t.entry_cost == Decimal("0.20")
 
-
 def test_losing_settlement_returns_zero():
     fills = [_fill(0, buy=True, yes=True, px=0.25, shares=8)]
     resolutions = [Resolution("m1", T0 + dt.timedelta(hours=4))]
@@ -89,11 +103,9 @@ def test_losing_settlement_returns_zero():
     assert t.staked == Decimal("2.0") and t.returned == Decimal("0")
     assert not t.win
 
-
 # ------------------------------------------------------------------ #
 # Episode boundaries
 # ------------------------------------------------------------------ #
-
 
 def test_zero_crossing_splits_into_two_round_trips():
     """Buy 10 YES then sell 15: the sell closes 10 and opens a 5-short."""
@@ -112,7 +124,6 @@ def test_zero_crossing_splits_into_two_round_trips():
     assert short_trip.returned == Decimal("0")       # YES settled 1; short loses
     assert short_trip.closed_by == "settlement"
 
-
 def test_partial_exit_then_settlement_is_mixed():
     fills = [
         _fill(0, buy=True, yes=True, px=0.20, shares=10),
@@ -124,13 +135,11 @@ def test_partial_exit_then_settlement_is_mixed():
     assert t.closed_by == "mixed"
     assert t.returned == Decimal("4") * Decimal("0.35") + Decimal("6")
 
-
 def test_unknown_settlement_leaves_position_open_not_guessed():
     fills = [_fill(0, buy=True, yes=True, px=0.30, shares=10)]
     resolutions = [Resolution("m1", T0 + dt.timedelta(hours=4))]
     closed, open_ = build_round_trips(fills, resolutions, lambda s: None)
     assert closed == [] and len(open_) == 1
-
 
 def test_markets_are_independent():
     fills = [
@@ -142,11 +151,9 @@ def test_markets_are_independent():
     closed, open_ = build_round_trips(fills, [], _no_settlement)
     assert len(closed) == 2 and open_ == []
 
-
 # ------------------------------------------------------------------ #
 # Phase split
 # ------------------------------------------------------------------ #
-
 
 def test_phase_is_decided_by_first_entry_vs_game_start():
     pre = _fill(0, buy=True, yes=True, px=0.30, shares=1)          # 22:00 < 23:00 tip
@@ -157,11 +164,9 @@ def test_phase_is_decided_by_first_entry_vs_game_start():
     phases = {t.market_slug: t.phase for t in closed}
     assert phases == {"m1": "pregame", "m2": "live"}
 
-
 # ------------------------------------------------------------------ #
 # Exclusion and provenance
 # ------------------------------------------------------------------ #
-
 
 def _activity(*, oid, side, outcome, px, shares, slug="m1", manual=True):
     """A trade where WE are the passive side.
@@ -183,6 +188,7 @@ def _activity(*, oid, side, outcome, px, shares, slug="m1", manual=True):
             "passiveExecution": {
                 "order": {
                     "id": oid, "side": side, "outcomeSide": outcome,
+                    "intent": _intent_for(side, outcome),
                     "manualOrderIndicator": (
                         "MANUAL_ORDER_INDICATOR_MANUAL" if manual else
                         "MANUAL_ORDER_INDICATOR_AUTOMATED"),
@@ -199,6 +205,9 @@ def _activity(*, oid, side, outcome, px, shares, slug="m1", manual=True):
                 "order": {
                     "id": "COUNTERPARTY", "side": "ORDER_SIDE_BUY",
                     "outcomeSide": outcome,
+                    # The venue redacts intent on the counterparty's leg: it is
+                    # UNDEFINED on every passive leg in the real export.
+                    "intent": "ORDER_INTENT_UNDEFINED",
                     "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_AUTOMATED",
                 },
                 "lastPx": {"value": str(px)},
@@ -208,7 +217,6 @@ def _activity(*, oid, side, outcome, px, shares, slug="m1", manual=True):
             },
         },
     }
-
 
 def test_button_orders_excluded_by_venue_id_only():
     """The hand fill and the button fill are identical in market, price and
@@ -225,13 +233,11 @@ def test_button_orders_excluded_by_venue_id_only():
     assert prov["button_fills_excluded_by_venue_order_id"] == 1
     assert "DESCRIPTIVE" in prov["kind"], "this report is not allowed a verdict"
 
-
 def test_kept_non_manual_fills_are_counted_loudly():
     acts = [_activity(oid="ODD1", side="ORDER_SIDE_BUY", outcome="OUTCOME_SIDE_YES",
                       px="0.30", shares="1", manual=False)]
     report = run_audit(acts, excluded_ids=set(), settlement_lookup=lambda s: None)
     assert report["provenance"]["kept_fills_not_marked_MANUAL"] == 1
-
 
 def test_unparsed_activity_is_counted_never_guessed():
     acts = [{"type": "ACTIVITY_TYPE_TRADE", "trade": {"passiveExecution": {
@@ -239,7 +245,6 @@ def test_unparsed_activity_is_counted_never_guessed():
     report = run_audit(acts, excluded_ids=set(), settlement_lookup=lambda s: None)
     assert report["provenance"]["unparsed_activities"] == 1
     assert report["provenance"]["hand_fills_scored"] == 0
-
 
 def test_parse_real_shape_smoke():
     """A realistic trade parses to exactly ONE fill: SELL YES 20 @ 0.25."""
@@ -252,7 +257,6 @@ def test_parse_real_shape_smoke():
     assert f.yes_price == Decimal("0.25") and f.shares == Decimal("20.0000")
     assert f.yes_delta == Decimal("-20.0000")
 
-
 # ------------------------------------------------------------------ #
 # Whose execution is whose — the two-sided feed
 # ------------------------------------------------------------------ #
@@ -262,7 +266,6 @@ def test_parse_real_shape_smoke():
 # corrupted: the feed sends BOTH counterparties of every trade and the parser
 # took both, booking a phantom offsetting fill against every real one. These
 # drive raw activities instead.
-
 
 def _two_sided(*, is_aggressor, slug="m1", price="0.4800", qty=12):
     """A trade shaped like the live feed: both executions present, same price,
@@ -275,6 +278,7 @@ def _two_sided(*, is_aggressor, slug="m1", price="0.4800", qty=12):
             "commissionNotionalCollected": {"value": commission, "currency": "USD"},
             "order": {
                 "id": order_id, "side": side, "outcomeSide": "OUTCOME_SIDE_YES",
+                "intent": _intent_for(side, "OUTCOME_SIDE_YES"),
                 "marketSlug": slug,
                 "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_MANUAL",
             },
@@ -289,14 +293,12 @@ def _two_sided(*, is_aggressor, slug="m1", price="0.4800", qty=12):
         },
     }
 
-
 def test_exactly_one_fill_per_trade_never_both_counterparties():
     """The regression. Both executions are present; only ours is scored."""
     fills, _, ok = parse_activity(_two_sided(is_aggressor=True))
     assert ok and len(fills) == 1
     assert fills[0].venue_order_id == "OURS_AGG"
     assert fills[0].is_buy is True
-
 
 def test_is_aggressor_false_selects_the_passive_execution():
     fills, _, ok = parse_activity(_two_sided(is_aggressor=False))
@@ -305,7 +307,6 @@ def test_is_aggressor_false_selects_the_passive_execution():
     assert fills[0].is_buy is False
     # Commission follows the side too: the aggressor pays, the passive earns.
     assert fills[0].commission == Decimal("-0.04")
-
 
 def test_a_two_sided_trade_does_not_net_itself_to_zero():
     """What the bug did to the arithmetic. Taking both counterparties books
@@ -318,7 +319,6 @@ def test_a_two_sided_trade_does_not_net_itself_to_zero():
     assert closed == []                  # one fill opens a position, closes none
     assert len(open_) == 1 and open_[0].contracts == Decimal("12")
 
-
 def test_missing_is_aggressor_fails_loudly_rather_than_guessing():
     """A wrong side is a wrong sign, not a missing value, so an unattributable
     trade is reported as unparsed instead of resolved by coin flip."""
@@ -328,22 +328,35 @@ def test_missing_is_aggressor_fails_loudly_rather_than_guessing():
     raw["trade"]["isAggressor"] = "true"          # string, not bool
     assert parse_activity(raw) == ([], None, False)
 
-
 def test_missing_our_execution_is_unparsed():
     raw = _two_sided(is_aggressor=True)
     raw["trade"]["aggressorExecution"] = None
     assert parse_activity(raw) == ([], None, False)
 
+def test_redacted_intent_on_our_leg_is_refused_not_guessed():
+    """`intent` is the field the sign is computed from (V28), so a redacted one
+    on the leg `isAggressor` picked means the SELECTION is wrong.
 
-def test_redacted_outcome_side_is_refused_not_read_as_no():
-    """The venue redacts outcomeSide on the counterparty's leg (365 of 455
-    trades) and never on ours. A substring check for "OUTCOME" accepts
-    OUTCOME_SIDE_UNSPECIFIED, which then fails `endswith("_YES")` and scores as
-    a NO position — the position inverted rather than dropped. So a redacted
-    outcome on the leg `isAggressor` picked means the SELECTION is wrong, and
-    the trade must be refused rather than silently flipped."""
+    The venue emits ORDER_INTENT_UNDEFINED only on the counterparty's leg —
+    measured on the 2026-08-25 export, our own leg carries one of the four real
+    intents on all 496 trades. Refusing is therefore correct rather than
+    conservative: the alternative is falling back to side/outcomeSide, which is
+    exactly the book-mechanics reading that inverted 207 of those 496 rows.
+    """
     raw = _two_sided(is_aggressor=True)
-    raw["trade"]["aggressorExecution"]["order"]["outcomeSide"] = "OUTCOME_SIDE_UNSPECIFIED"
+    raw["trade"]["aggressorExecution"]["order"]["intent"] = "ORDER_INTENT_UNDEFINED"
+    assert parse_activity(raw) == ([], None, False)
+
+
+def test_book_mechanics_alone_cannot_book_a_fill():
+    """A row carrying only side/outcomeSide — no intent — must refuse.
+
+    This is the shape the fixtures used to have, and it is why the sign bug
+    survived a green suite: nothing in the feed could contradict the mechanical
+    fields because the authoritative one was never present.
+    """
+    raw = _two_sided(is_aggressor=True)
+    del raw["trade"]["aggressorExecution"]["order"]["intent"]
     assert parse_activity(raw) == ([], None, False)
 
 
@@ -353,3 +366,31 @@ def test_a_redacted_counterparty_leg_is_simply_not_looked_at():
     raw["trade"]["passiveExecution"]["order"]["outcomeSide"] = "OUTCOME_SIDE_UNSPECIFIED"
     fills, _, ok = parse_activity(raw)
     assert ok and len(fills) == 1 and fills[0].outcome_yes is True
+
+
+# --------------------------------------------------------------------- #
+# Sign, booked from `intent` (V28). Same defect as the trade sheet's: this
+# module shared the (side, outcomeSide) reading, and the two modules agreeing
+# to the cent on WNBA was evidence about a SHARED ASSUMPTION, not about
+# correctness. Verified against the 2026-08-25 export before changing either.
+# --------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "intent, side, outcome, expect_positive, what",
+    [
+        ("ORDER_INTENT_BUY_LONG", "ORDER_SIDE_BUY", "OUTCOME_SIDE_YES", True, "buy YES"),
+        ("ORDER_INTENT_SELL_LONG", "ORDER_SIDE_SELL", "OUTCOME_SIDE_YES", False, "sell YES"),
+        ("ORDER_INTENT_BUY_SHORT", "ORDER_SIDE_SELL", "OUTCOME_SIDE_NO", False, "buy NO"),
+        ("ORDER_INTENT_SELL_SHORT", "ORDER_SIDE_BUY", "OUTCOME_SIDE_NO", True, "sell NO"),
+    ],
+)
+def test_hand_fill_sign_follows_intent(intent, side, outcome, expect_positive, what):
+    raw = _activity(oid="HAND1", side=side, outcome=outcome, px="0.25", shares="20")
+    raw["trade"]["passiveExecution"]["order"]["intent"] = intent
+    fills, _, ok = parse_activity(raw)
+    assert ok and len(fills) == 1, f"{what} was not parsed"
+    assert (fills[0].yes_delta > 0) is expect_positive, (
+        f"{what} ({intent}) booked {fills[0].yes_delta:+} YES exposure; "
+        f"side={side} reads the opposite because that is where the order RESTS"
+    )
