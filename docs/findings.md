@@ -42,6 +42,10 @@ Measured on the live board, not assumed.
 | V21 | **⚠️ UNVERIFIED — the cancel endpoint.** Built dark as `DELETE /v1/orders/{id}` (REST convention; V19 rules out the read side, and no cancel has ever been sent by this system) | awaiting one live cancel of a 1-share resting order, human-placed and human-clicked | 2026-08-07 | The button records the venue's verbatim response into `orders.cancel_response` plus round-trip and venue-side latency — the **last unmeasured number** in [math/write-latency.md](math/write-latency.md). **After the first live cancel, replace this row with what the venue actually answered.** A 2xx marks the row CANCELLED; anything else changes nothing (an unacknowledged cancel proves nothing; settlement remains the terminal backstop). Cancels stay human-initiated only — no machine path references the verb, pinned in `tests/test_cancel_path.py` |
 | V22 | **V7's MLB result reproduces, and the comparison that produced it was never horizon-matched** | live MLB board 2026-08-07: 50 events / 505 markets, tick **0.005 (58%)**, near-money median spread **1.00¢**, fee 0.06 (100%). But MLB was observed at a median **+27.7h** to tip-off against WNBA's +0.0h, and **no** horizon bucket has data on both sides | 2026-08-07 | V7 stands — MLB is tighter even allowing for horizon, and carries half-cent ticks WNBA does not. What was missing is that spread swings **12×** with time to tip-off on the same board (WNBA: 1.00¢ inside 3h, 12.00¢ at 12–24h), so a far-dated board reads as thin, and thin is what this project buys. [`core/survey.py`](../core/survey.py) now reports every spread per horizon bucket and refuses to imply a comparison when the buckets do not overlap. [infra/board-survey.md](infra/board-survey.md) |
 | V23 | **Polymarket and Kalshi quote the same price to within one tick — and their totals ladders are deliberately staggered a point apart** | **773** line-identical pairs within 60s across **10 games / 61 contracts** (gate MET): median \|gap\| **0.00¢**, **97.2% within one cent**, median signed gap exactly zero in **9 of 10 games**. Disagreement sits 3–6h out (0.50¢) and is **0.00¢ inside 3h**. Both venues list 9 totals rungs at 3-pt spacing; in **7 of 10 games they sit exactly 1.0pt apart** (26 line-identical totals of 90 vs 90). **Full sample 2026-08-10: 36 games (3.6× the gate), 3,651 pairs, lag p50 15.8s** — median \|gap\| **0.0000**, exactly zero in **35 of 36 games** (the 36th −0.005, a half-tick), zero in every horizon bucket; clustered mean \|gap\| 0.29¢ [0.22, 0.36]. Sign persistence 1.0 on **1 signed game of 36** — vacuous | 2026-08-07 / 2026-08-10 | **The founding thesis FAILS at pregame resolution — there is no venue gap to translate**, confirmed at 3.6× the gate. The 10-game power concern below is now moot at n=36. Tradability/fees stay separately registered; the roadmap fork (in-game resolution · another league · abandon the route) is the **operator's decision, queued**. Independently cross-checked twice: ≤0.04¢ magnitude agreement (2026-08-07) and an independent totals preview agreeing at 0.0000 (2026-08-10). `report()` implementation is uncommitted working-tree code — **flag for PR review**. [math/venue-gap.md](math/venue-gap.md) |
+| V24 | **The credits in this account were a taker-fee promo, not the maker rebate** — `ACTIVITY_TYPE_TAKER_FEE_REBATE` = 50% refund of the account's own taker fees per **ET day**, paid ~2 days later | 33 credits, \$11.58 total; 32 of 33 match 50.0% of that ET-day's own taker fees within 2¢ (median ratio 0.500). The one miss is day one at 0.43, consistent with a mid-day start | 2026-08-25 | Promo window **2026-03-29 → 05-10, nothing since**, despite ~\$13 of taker fees paid. **NOT the advertised maker rebate, which remains unobserved.** Current-era taker fees are full price — any cost model assuming a refund applies today is wrong. Closes C7 |
+| V25 | **Combo products (`aec-`) carry self-contradictory encodings in the activities feed** | `side=SELL`/`outcomeSide=NO` alongside `intent=ORDER_INTENT_BUY_SHORT`, and `lastPx` frames that do not reconcile with the position's own `avgPx` | 2026-08-25 | **Do not trust `side`/`outcomeSide`/`lastPx` on combo rows** without a per-product verification. The **before/after position objects are the reliable ledger** |
+| V26 | **`outcomePrices` is a JSON-encoded STRING, not an array** | `'["1","0"]'` — a string whose first character is `[` | 2026-08-25 | **Parse before indexing**, or index 0 is silently a bracket rather than a price. Fails quietly, not loudly |
+| V27 | **The venue's `realizedPnl` is per-position, average-cost, ex-fees** | Fees live in `cost`; `cost − baseCost` = the 0.06·p·(1−p) fee **to the cent** | 2026-08-25 | Any reconstruction using **FIFO or round-trip episodes will disagree per-row and agree in total** — this is a scope difference, not an error in either. **Label the policy on any column named `realizedPnl`.** Resolves the open question parked in `core/audit/wnba_trade_sheet.py` |
 
 ### V10 in detail — the 401 was never a cryptography problem
 
@@ -592,6 +596,28 @@ not.** The usable form: when you have just cited a rule, invoked a prior lesson,
 or relayed someone else's claim, treat that as the trigger to check your own
 artifact against it — never as evidence that you already did.
 
+#### A lesson is operative only where the work happens
+
+Three times in one evening the thing that actually prevented an error was **a
+note attached to the artifact being changed**, not a note attached to the person
+changing it:
+
+* the fade caveat lives in [math/feed-lag.md](math/feed-lag.md), so someone
+  tempted to revive #1/#2 on a feed upgrade meets it *in the page they would
+  have to read anyway* — not in a warning filed elsewhere;
+* F8's provenance paragraph lives in that same page, so the two p50s read as an
+  estimate sharpening rather than a contradiction — the alternative was a
+  correction issued after someone else had already lost time to it;
+* the instruction below to test replacement behaviours sat on the page about to
+  be edited, and it caught a broken countermeasure **before** it shipped — the
+  first time in that whole sequence the pattern was caught in advance rather
+  than after the fact.
+
+**Where a lesson lives determines whether it fires.** The same sentence in a
+message, a commit description, or somebody's memory would have prevented none of
+the three, because none of those are in the path of the work. Put the caveat in
+the artifact a person must open to do the thing the caveat is about.
+
 #### Replacement behaviours, because knowing the pattern is not enough
 
 The `grep -c` trap above recurred **within the hour**, on this very page, twenty
@@ -648,6 +674,15 @@ was a lie I had typed myself.** The commits are 23:47:50Z; 18:47 is CDT.
 Appending a literal `Z` to a format string does not convert anything; it
 relabels. The error was caught only because the `%cI` column carried `-05:00`
 next to a column claiming `Z`, and the two disagreed.
+
+**It has a data-side twin, and that one cost a wrong conclusion.** The
+taker-fee promo behind V24 refunds 50% of a day's own taker fees where "day" is
+an **ET** day. Grouped by UTC day the ratios scatter and the pattern is
+invisible; the first pass concluded the credits were earned on the wrong side of
+the book. Regrouped on ET, 32 of 33 credits land within 2¢ of exactly 50.0%.
+**The boundary was the finding.** Same class as the entries above: when a
+quantity is defined per day, the timezone that defines "day" is part of the
+definition, not a formatting detail.
 
 **Why it matters here beyond tooling:** every timestamp in the archive is UTC,
 while registrations get dated from the local calendar. Between 19:00 CDT and
@@ -824,7 +859,7 @@ Claims made during this project that were wrong, and what is true instead.
 | C4 | "Row-level confidence intervals" on tick data | Rows within a game are not independent | Sample size is **games**. Row-level CI measured at **11% coverage** against a nominal 95%. [math/clustered-errors.md](math/clustered-errors.md) |
 | C5 | "94% hit rate" quoted as performance | The live log includes the no-edge control group by design | Bet win rate on actionable rows only. v2/v3 measured **38.5%** over 5 games |
 | C6 | Moneyline exclusion treated as a general result | It is a **pregame forecasting** result: market margin MAE 9.65 beats ours 10.19 | It says nothing about a latency strategy. `PULSE_MARKETS` is deliberately empty, to be set from PULSE's own measurements |
-| C7 | "The maker earns a rebate of $-0.0125$" stated as fact | The venue advertises a rebate of *25% of the matched taker fee* — a share of fees collected on the other side, not a guaranteed per-contract credit. **Never observed in this account.** The backtest books it as certain and produces the +1.34% headline | Default is now $\Theta_{\text{maker}} = 0$ **in the code, everywhere** (2026-08-05); the rebate is an explicit sensitivity arm (`--assume-maker-rebate`), off by default, until seen on a statement. Measured: stripping it takes +1.34% to **+0.75%** — the arm reproduces +1.34% exactly, so the entire 0.59pp gap was the booked rebate. The maker-only rule is unaffected — it rests on the fee *avoided*. See below |
+| C7 | "The maker earns a rebate of $-0.0125$" stated as fact | The venue advertises a rebate of *25% of the matched taker fee* — a share of fees collected on the other side, not a guaranteed per-contract credit. **Never observed in this account.** The backtest books it as certain and produces the +1.34% headline | Default is now $\Theta_{\text{maker}} = 0$ **in the code, everywhere** (2026-08-05); the rebate is an explicit sensitivity arm (`--assume-maker-rebate`), off by default, until seen on a statement. Measured: stripping it takes +1.34% to **+0.75%** — the arm reproduces +1.34% exactly, so the entire 0.59pp gap was the booked rebate. The maker-only rule is unaffected — it rests on the fee *avoided*. See below. **RESOLVED 2026-08-25 — the observed credits were a 50%-of-own-taker-fees promo (2026-03-29 → 05-10, ended); the advertised maker rebate remains unobserved in this account across its entire history; the zero default was right.** V24 carries the evidence. θ_maker = 0 stays correct everywhere and `--assume-maker-rebate` stays a sensitivity arm for a credit still never observed |
 | C8 | "3 of 9 recorded games have 200ms coverage" / "20 games with tick data" | Two different docs, two different denominators, neither correct. "20" was games with *any* snapshot, mostly pregame-only | Measured 2026-08-04: **20** games with snapshot data, **10** with live ticks, **3** with full 200ms coverage (+1 partial). Gates are written in games and need 10 |
 | C9 | The signing scheme is "Ed25519 or HMAC-SHA512" | Inferred from credential lengths alone, never checked against documentation. Wrong, and sufficient on its own to explain all six 401s | ~~It is **HMAC-SHA256** with five `POLY_*` headers and URL-safe base64.~~ **C9 is itself retracted — see C10.** The original guess was half right |
 | C10 | C9's own replacement: "it is HMAC-SHA256 with five `POLY_*` headers" | Read from the **international CLOB** docs (`clob.polymarket.com`) and applied to a different venue. Never tested against `api.polymarket.us` before being written down as fact — and it was believed *because* it explained the 401s, which explained nothing | Polymarket US is **Ed25519**, three `X-PM-*` headers, millisecond timestamps, no passphrase, no address, no body term. Verified by authenticated 200s. See V10 |
