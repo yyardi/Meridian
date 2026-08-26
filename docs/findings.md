@@ -638,6 +638,30 @@ the research agent," several paragraphs under a headline reading *"#20 is
 probably not blocked."* The headline was dispatched on; the caveat was not read.
 A qualifier below a conclusion protects the author and not the reader.
 
+**The same rule applies to a test suite, and that is not an analogy.** "The
+suite is green" and "the suite tested the field that decides the sign" are
+different claims, and on 2026-08-25 only the first was true: the trade sheet
+booked from book mechanics instead of `intent`, inverting 207 of 496 rows, while
+1,313 tests passed — because **no fixture carried an `intent` at all.** Nothing
+in the suite *could* disagree with the wrong reading.
+
+**A green suite is an inventory of what was checked.** Like any inventory it can
+falsify correctness and never confirm it: a red test proves a defect, a green
+one proves only that the assertions present did not fire. So "tests pass" is the
+same headline problem — it names an outcome where the load-bearing fact is
+coverage. Say which behaviour is pinned, or say that the deciding input was
+never in a fixture.
+
+This is also a distinct species of the "check that cannot fail" above. Every
+earlier instance was a gate too **loose** to reject. This one was a gate that
+never saw the input at all — **not a weak assertion, an absent variable** — and
+it is harder to spot precisely because the assertions that do exist look fine.
+Relatedly: **a total is not a check on a sign.** The inverted rows partially
+cancelled, leaving +\$7.15 against a pinned +\$14.61, so every aggregate looked
+plausible while the rows lied. And two independent modules agreeing to the cent
+was evidence of a **shared assumption**, not of correctness — the first corollary
+above, arriving a fourth time.
+
 So: **put the evidence type in the headline, not below it.** "The tables contain
 17 games" and "the cohort is 17 games" are different claims, and only one of them
 was measured. When the distinction between what you counted and what someone will
