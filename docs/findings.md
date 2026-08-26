@@ -632,6 +632,32 @@ the artifact.** Confirm by measuring the thing (`wc -c < out.txt`), never by
 echoing a literal, and keep a search out of a `&&` chain that has side effects
 after it.
 
+#### `git log` dates are not UTC, whatever you prefix
+
+Checking whether any registration's stated date had drifted from its commit
+instant, the first command run printed `2026-08-25 18:47:50Z` — **and the `Z`
+was a lie I had typed myself.** The commits are 23:47:50Z; 18:47 is CDT.
+
+| form | prints |
+|---|---|
+| `--date=format:'…'` | the **committer's** local time — a `TZ=` prefix does **not** change it |
+| `--date=format-local:'…'` | the **viewer's** local time — CDT here, not UTC |
+| `TZ=UTC git log --date=format-local:'…'` | **true UTC** ✓ |
+| `%cI` | ISO with the real offset (`…T18:47:50-05:00`) — self-describing, hard to misread ✓ |
+
+Appending a literal `Z` to a format string does not convert anything; it
+relabels. The error was caught only because the `%cI` column carried `-05:00`
+next to a column claiming `Z`, and the two disagreed.
+
+**Why it matters here beyond tooling:** every timestamp in the archive is UTC,
+while registrations get dated from the local calendar. Between 19:00 CDT and
+midnight, "today" differs between the two — and live games run in exactly that
+window (00:00–04:15Z). A registration dated from the local day can therefore
+claim to predate ticks recorded before it existed. Verified clean for the
+2026-08-25 registrations, which landed 23:15–23:47Z — **twelve minutes inside
+the boundary.** Date registrations from `date -u`, and cross-check with
+`%cI`. Same family as the ET/UTC clock incidents.
+
 #### A negative result's provenance decides what to do with it
 
 Two failures an hour apart, opposite in kind, requiring opposite countermeasures:
