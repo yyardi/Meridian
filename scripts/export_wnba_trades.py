@@ -315,54 +315,94 @@ def export_fetched_at(path: Path) -> dt.datetime | None:
         return _parse_ts(stamp)
 
 
+def market_live_through() -> dt.datetime | None:
+    """When live market activity was last OBSERVED — an anchor external to the
+    export.
+
+    ``max(captured_at) where is_live`` is the recorder's last live tick, which
+    approximates the newest game's final whistle. It comes from the recorder,
+    not from the activities feed, so comparing it against an export's
+    ``fetched_at`` has **two real operands**.
+
+    That property is the whole point. The first version of this preflight
+    compared the export's timestamp against the latest fill *in that export* —
+    and every fill necessarily predates the fetch, so the check could not fail.
+    It passed its own mutation test only because the test injected the two
+    values independently while the live call path derived one from the other.
+    A short window cannot be detected from inside the window.
+
+    One-sided by nature: if this source is itself behind, it under-reports and
+    cannot prove shortness. It can only ever say "the market was live after your
+    snapshot, so your snapshot is short" — never "your snapshot is complete".
+    """
+    try:
+        from sqlalchemy import text as sql
+
+        from core.storage import get_engine
+
+        with get_engine().connect() as conn:
+            return conn.execute(
+                sql("select max(captured_at) from market_snapshots where is_live")
+            ).scalar()
+    except Exception as exc:                                      # noqa: BLE001
+        log.warning("market_live_through_unavailable", error=str(exc)[:120])
+        return None
+
+
 def preflight(latest_fill: dt.datetime,
               export_at: dt.datetime | None,
+              covers_through: dt.datetime | None,
               attribution_through: dt.datetime | None,
               gateway_url: str) -> tuple[bool, list[str]]:
     """Refuse to build a sheet whose sources cannot cover the trades in it.
 
-    The sheet draws on three sources — the activities export, the settlement
-    endpoint, and the attribution database — and **its window is the OLDEST of
-    them**, not the newest. A leg that predates the trades produces a sheet that
-    is silently short while passing every internal check: the export can walk to
-    ``eof`` correctly over a window that ended too early, and the arithmetic is
-    sound on whatever it was handed.
+    The sheet's window is the **oldest** of its sources, not the newest. A leg
+    that predates the trading produces a sheet that is silently short while
+    passing every internal check: the export walks to ``eof`` correctly over a
+    window that ended too early, and the arithmetic is sound on whatever it was
+    handed. ``eof`` proves the READ; only ``covers_through`` proves the WINDOW.
 
-    That is the failure the false SLATE-DONE nearly caused on 2026-08-26 — a
-    complete read of an incomplete window. ``eof`` proves the read; nothing
-    proved the window until this.
+    ``covers_through`` must come from OUTSIDE the export — the recorder's last
+    live tick, or a caller's explicit ``--covers-through`` claim. Without it the
+    window is unbounded, and an unbounded window is exactly what looks finished.
 
     Returns ``(ok, lines)``. ``ok=False`` means stop, not warn.
     """
     lines: list[str] = []
     ok = True
 
-    lines.append(f"  latest fill in this sheet   {latest_fill}")
+    lines.append(f"  latest fill in this sheet   {latest_fill}   (informational — "
+                 "derived FROM the export, so it cannot bound it)")
 
     if export_at is None:
-        lines.append("  activities export          UNDATED (flat dump) — cannot bound")
+        lines.append("  activities export           UNDATED (flat dump) — cannot bound")
         ok = False
     else:
-        short = export_at < latest_fill
-        lines.append(f"  activities export          {export_at}"
-                     f"{'   *** ENDS BEFORE THE LAST FILL' if short else ''}")
+        lines.append(f"  activities export           {export_at}")
+
+    if covers_through is None:
+        lines.append("  market live through         UNKNOWN — no external anchor, so "
+                     "the window\n                              cannot be bounded. "
+                     "Pass --covers-through to assert it.")
+        ok = False
+    else:
+        short = export_at is not None and covers_through > export_at
+        lines.append(f"  market live through         {covers_through}"
+                     f"{'   *** LIVE AFTER THE EXPORT — it is short' if short else ''}")
         ok &= not short
 
-    # Settlement is read live, so it has no staleness of its own — but the base
-    # URL is env-overridable, and a redirected gateway is a mirrored source
-    # wearing a live source's name.
     live = gateway_url.rstrip("/") == "https://gateway.polymarket.us"
-    lines.append(f"  settlement gateway         {gateway_url}"
+    lines.append(f"  settlement gateway          {gateway_url}"
                  f"{'' if live else '   *** NOT THE LIVE GATEWAY'}")
     ok &= live
 
     if attribution_through is None:
-        lines.append("  attribution database       UNREADABLE — rows will read unknown")
+        lines.append("  attribution database        UNREADABLE — rows will read unknown")
     else:
-        short = attribution_through < latest_fill
-        lines.append(f"  attribution database       {attribution_through}"
-                     f"{'   *** rows after this read unknown' if short else ''}")
-        # Not fatal: `unknown` is an honest label, unlike a short export.
+        lag = attribution_through < latest_fill
+        lines.append(f"  attribution database        {attribution_through}"
+                     f"{'   *** rows after this read unknown' if lag else ''}")
+        # Not fatal: `unknown` degrades a column, a short export drops rows.
 
     return ok, lines
 
@@ -463,7 +503,14 @@ def main() -> int:
                              "sheet reproducible: the same file always yields the "
                              "same sheet, so it stays re-gradable against the "
                              "ledger it was checked against")
+    parser.add_argument("--covers-through", type=dt.datetime.fromisoformat, default=None,
+                        help="ISO instant the caller ASSERTS this export covers "
+                             "through, when no recorder data is available to anchor "
+                             "it. A claim someone makes, rather than one the export "
+                             "makes about itself.")
     args = parser.parse_args()
+    if args.covers_through and args.covers_through.tzinfo is None:
+        args.covers_through = args.covers_through.replace(tzinfo=dt.timezone.utc)
 
     import logging
     logging.basicConfig(format="%(message)s", stream=sys.stderr, level=logging.INFO)
@@ -502,6 +549,7 @@ def main() -> int:
     ok, lines = preflight(
         latest_fill=max(f.at for f in fills),
         export_at=export_fetched_at(args.activities_json) if args.activities_json else None,
+        covers_through=args.covers_through or market_live_through(),
         attribution_through=current_through,
         gateway_url=RECORDER.gateway_base_url,
     )
