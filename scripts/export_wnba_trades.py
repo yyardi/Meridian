@@ -93,7 +93,7 @@ COLUMNS: tuple[tuple[str, int], ...] = (
     ("role", 11),
     ("$ in", 10),
     ("$ out/settled", 14),
-    ("P&L", 10),
+    ("P&L (FIFO)", 12),
     ("closed by", 11),
     ("fees", 8),
     ("placed by", 11),
@@ -365,14 +365,15 @@ def main() -> int:
           f"rows fully closed and scored)")
     print(f"  fees as reported  ${fees:,.2f}   (per-fill, NOT netted into P&L)")
     print(f"  taker fee rebates ${rebates:,.2f}   (account-level, unattributable "
-          "to a fill; not in the sheet)")
+          "to a fill; not in the sheet.\n                     50% of that ET-day's own "
+          "taker fees -- a promo that ENDED 2026-05-10, V24)")
     # The caveat prints next to the number, not in a docstring nobody opens:
     # an unqualified total is what gets quoted, whatever the prose says.
-    print("\n  !! P&L IS NOT CONFIRMED AGAINST THE VENUE. Its own realizedPnl "
-          "agrees with\n     neither this FIFO reconstruction nor an average-cost "
-          "one on >26 of 29 rows\n     checked. Annotate against the venue-faithful "
-          "columns; do not quote the\n     money columns as the account's realized "
-          "P&L until that is settled.")
+    print("\n  !! P&L HERE IS FIFO, PER ROUND TRIP. The venue's own realizedPnl is "
+          "a\n     DIFFERENT POLICY -- per-position, average-cost, ex-fees (V27) -- so "
+          "the two\n     disagree row by row BY CONSTRUCTION and agree in total. A "
+          "row-level\n     mismatch against the venue is expected here, not a bug in "
+          "either.")
     if unscored:
         print(f"  !! settlement unknown, left unscored: {', '.join(unscored)}")
     print(f"\n  xlsx  {xlsx}")
