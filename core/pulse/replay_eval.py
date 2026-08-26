@@ -1653,6 +1653,279 @@ def format_v4(r: V4Result) -> str:
 
 
 # --------------------------------------------------------------------- #
+# Reversion shrink: a calibration arm, NOT a signal
+# --------------------------------------------------------------------- #
+#
+# Registration: docs/math/pulse-reversion-shrink.md. The research agent
+# measured margin deviations reverting toward the pregame expectation
+# (pooled beta −0.171, per-phase at the boundaries below) — and then
+# registered and FAILED the signal version (#18): the market already
+# prices this reversion. This arm therefore claims NO edge and its gate
+# is forbidden from being read as one. The gate is calibration against
+# OUTCOMES: shrinking the deviation by the measured betas must improve
+# Brier against settlement, or the arm dies.
+
+#: The registration's first commit (c375aab) — corrected instant, see the
+#: doc's 2026-08-26 note; games recorded before it are backtest forever.
+REVERSION_SHRINK_REGISTERED_AT = "2026-08-25T23:08:20+00:00"
+FLOOR_SHRINK_GAMES = 10
+FLOOR_SHRINK_POINTS = 3000
+
+#: The measured phase betas, adopted verbatim — nothing is fit here:
+#: (elapsed_minutes, fraction of the deviation expected to revert).
+REVERSION_SHRINK_KNOTS = (
+    (10.0, 0.28), (20.0, 0.157), (30.0, 0.137), (40.0, 0.0))
+
+
+def reversion_shrink_fraction(elapsed_minutes: float) -> float:
+    """s(elapsed): piecewise-linear through the measured boundary points,
+    held at 0.28 before 10' (deviations are small there regardless), forced
+    to 0 at 40' — banked points cannot revert."""
+    import itertools
+
+    knots = REVERSION_SHRINK_KNOTS
+    if elapsed_minutes <= knots[0][0]:
+        return knots[0][1]
+    for (x0, y0), (x1, y1) in itertools.pairwise(knots):
+        if elapsed_minutes <= x1:
+            return y0 + (elapsed_minutes - x0) / (x1 - x0) * (y1 - y0)
+    return 0.0
+
+
+def shrunk_margin_fv(
+    *, market_type: str, line: float | None, margin: int,
+    minutes_left: float, pregame_price: float | None,
+    sigma: float = DEFAULT_SIGMA,
+) -> float | None:
+    """Winner/spread P(YES) with the registered shrink applied to the
+    expected final margin:
+
+        deviation      = margin − E · (elapsed / 40)
+        expected_final = margin + E · (t_left / 40) − s(elapsed) · deviation
+
+    Everything else is the incumbent's own math (same sigma, same frames,
+    same refusals). Totals are untouched by registration — the caller keeps
+    the incumbent's totals estimate; any other market type returns None."""
+    from scipy import stats as _stats
+
+    from core.pulse.win_curve import pregame_margin_from_price
+
+    if market_type not in (MARKET_WINNER, MARKET_SPREAD):
+        return None
+    if pregame_price is None:
+        return None
+    if market_type == MARKET_SPREAD and (
+            line is None or float(line) == int(line)):
+        return None                    # whole-number line: push semantics unverified
+    edge = pregame_margin_from_price(pregame_price, sigma)
+    elapsed = REGULATION_MINUTES - minutes_left
+    deviation = margin - edge * (elapsed / REGULATION_MINUTES)
+    expected = (margin + edge * (minutes_left / REGULATION_MINUTES)
+                - reversion_shrink_fraction(elapsed) * deviation)
+    if market_type == MARKET_SPREAD:
+        expected += line
+    if minutes_left <= 0:
+        return 1.0 if expected > 0 else (0.0 if expected < 0 else 0.5)
+    return float(_stats.norm.cdf(expected / (sigma * math.sqrt(minutes_left))))
+
+
+@dataclass
+class ShrinkGameRead:
+    event_slug: str
+    first_seen: dt.datetime | None
+    #: Paired WINNER/SPREAD points only. Totals are structurally identical
+    #: in both arms, so counting them would pad the floor with
+    #: zero-information pairs; the floor counts points that can differ.
+    n_points: int = 0
+    brier_inc: float = 0.0
+    brier_shr: float = 0.0
+    diffs: list[float] = field(default_factory=list)   # (inc − shr), + favours shrink
+    rois: dict[str, list[float]] = field(
+        default_factory=lambda: defaultdict(list))
+    entries: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    fills: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+
+
+def _shrink_gate(reads: list[ShrinkGameRead]) -> list[ShrinkGameRead]:
+    cut = dt.datetime.fromisoformat(REVERSION_SHRINK_REGISTERED_AT)
+    return [r for r in reads if r.first_seen is not None and r.first_seen > cut]
+
+
+def shrink_at_floor(gate: list[ShrinkGameRead]) -> bool:
+    scored = [r for r in gate if r.n_points > 0]
+    return (len(scored) >= FLOOR_SHRINK_GAMES
+            and sum(r.n_points for r in scored) >= FLOOR_SHRINK_POINTS)
+
+
+def shrink_verdict(gate: list[ShrinkGameRead]) -> str:
+    """The registered criterion family, both clauses: paired Brier
+    (incumbent − shrunk) clustered CI excluding zero in the shrunk arm's
+    favour, AND paired money-at-price not measurably worse. A PASS adopts
+    nothing by itself — live adoption is its own dated regime change."""
+    if not shrink_at_floor(gate):
+        return "NO DATA"
+    cm = clustered_mean({r.event_slug: r.diffs for r in gate if r.diffs})
+    if cm is None or not (cm.mean > 0 and cm.lo > 0):
+        return "FAIL"
+    diffs = {}
+    for r in gate:
+        a, b = r.rois.get("shrunk"), r.rois.get("incumbent")
+        if a and b:
+            diffs[r.event_slug] = [sum(a) / len(a) - sum(b) / len(b)]
+    td = clustered_mean(diffs)
+    if td is not None and td.hi < 0:
+        return ("FAIL (calibration better, but money-at-price is measurably "
+                "worse — the second clause)")
+    return "PASS (live adoption is its own dated regime change)"
+
+
+def evaluate_reversion_shrink(Session, *, limit: int | None = None
+                              ) -> tuple[list[ShrinkGameRead], int]:
+    """Incumbent (the v3a construction) vs incumbent+shrink, one walk."""
+    from core.pulse.signals import exact_clock
+    from strategies.wnba_totals.config import CONFIG
+
+    events = load_events(Session, limit=limit)
+    signals, excluded = resolve_signal_games(Session, events)
+    reads: list[ShrinkGameRead] = []
+
+    for data in events:
+        sig = signals.get(data.event_slug)
+        if sig is None:
+            continue
+        first_seen = sig.clock_rows[0][0] if sig.clock_rows else None
+        v1p, _ = arm_params(data)
+        read = ShrinkGameRead(event_slug=data.event_slug,
+                              first_seen=first_seen)
+        for mtype, line, ticks in data.markets.values():
+            outcome = market_outcome(mtype, line, data.final_score)
+            if outcome is None:
+                continue
+            clock_ptr = _SeriesPointer(sig.clock_rows)
+            fvs_inc: list[float | None] = []
+            fvs_shr: list[float | None] = []
+            for tick in ticks:
+                pair = parse_score(tick.score)
+                started = data.period_starts.get(tick.period or "")
+                seconds_in = ((tick.at - started).total_seconds()
+                              if started is not None else 0.0)
+                v1_clock = minutes_remaining(
+                    tick.period, seconds_into_period=max(seconds_in, 0.0))
+                clock_row = clock_ptr.at(tick.at)
+                exact = None
+                if clock_row is not None:
+                    staleness = (tick.at - clock_row[0]).total_seconds()
+                    if staleness <= V3_CLOCK_STALENESS_SECONDS:
+                        exact = exact_clock(int(clock_row[1]),
+                                            float(clock_row[2]),
+                                            staleness_seconds=staleness)
+                if pair is None or (exact is not None and exact.is_overtime):
+                    fvs_inc.append(None)
+                    fvs_shr.append(None)
+                    continue
+                if exact is not None:
+                    minutes_left = exact.minutes_left
+                elif v1_clock.usable:
+                    minutes_left = v1_clock.minutes_left
+                else:
+                    fvs_inc.append(None)
+                    fvs_shr.append(None)
+                    continue
+                margin, total = pair[0] - pair[1], pair[0] + pair[1]
+                f_inc = estimate_fv(
+                    market_type=mtype, line=line, margin=margin,
+                    total_so_far=total, minutes_left=minutes_left,
+                    winner_mid=data.winner_mid, params=v1p)
+                if mtype == MARKET_TOTAL:
+                    f_shr = f_inc          # untouched by registration
+                else:
+                    f_shr = shrunk_margin_fv(
+                        market_type=mtype, line=line, margin=margin,
+                        minutes_left=minutes_left,
+                        pregame_price=data.winner_mid, sigma=v1p.sigma)
+                fvs_inc.append(f_inc)
+                fvs_shr.append(f_shr)
+                if (mtype != MARKET_TOTAL and f_inc is not None
+                        and f_shr is not None):
+                    b_i = (f_inc - outcome) ** 2
+                    b_s = (f_shr - outcome) ** 2
+                    read.brier_inc += b_i
+                    read.brier_shr += b_s
+                    read.n_points += 1
+                    read.diffs.append(b_i - b_s)
+            for arm, fvs in (("incumbent", fvs_inc), ("shrunk", fvs_shr)):
+                sim = simulate_market(ticks, fvs, outcome,
+                                      min_edge=CONFIG.min_edge_threshold)
+                read.entries[arm] += sim.n_entries
+                read.fills[arm] += sim.n_entry_fills
+                if sim.rois:
+                    read.rois[arm].extend(sim.rois)
+        reads.append(read)
+    return reads, excluded
+
+
+def format_reversion_shrink(reads: list[ShrinkGameRead],
+                            n_join_excluded: int) -> str:
+    out: list[str] = []
+    add = out.append
+    add("REVERSION SHRINK — calibration arm, NOT a signal")
+    add("=" * 70)
+    add("Registration: docs/math/pulse-reversion-shrink.md. The market")
+    add("already prices this reversion (#18 FAIL) — this arm claims NO edge")
+    add("and this gate MUST NOT be read as one. The gate is Brier against")
+    add("OUTCOMES; paired points are winner/spread only (totals are")
+    add("untouched, so counting them would pad the floor with zeros).")
+    add(f"signal-covered games: {len(reads)}"
+        + (f"   (join-excluded: {n_join_excluded})" if n_join_excluded else ""))
+
+    gate = _shrink_gate(reads)
+    gate_ids = {id(r) for r in gate}
+    backtest = [r for r in reads if id(r) not in gate_ids]
+
+    def block(label: str, rs: list[ShrinkGameRead], gating: bool) -> None:
+        n_pts = sum(r.n_points for r in rs)
+        add(f"\n[{label}]  games: {len(rs)}   paired winner/spread points: "
+            f"{n_pts:,}")
+        if not rs or not n_pts:
+            return
+        add(f"  Brier incumbent: {sum(r.brier_inc for r in rs) / n_pts:.5f}"
+            f"   shrunk: {sum(r.brier_shr for r in rs) / n_pts:.5f}")
+        cm = clustered_mean({r.event_slug: r.diffs for r in rs if r.diffs})
+        if cm is not None:
+            add(f"  paired diff (inc−shr), clustered: {_fmt_cm(cm, 5)}  "
+                "(positive favours the shrink)"
+                + ("" if gating else "  (BACKTEST — never gates)"))
+        for arm in ("incumbent", "shrunk"):
+            e = sum(r.entries.get(arm, 0) for r in rs)
+            fl = sum(r.fills.get(arm, 0) for r in rs)
+            n_g = sum(1 for r in rs if r.rois.get(arm))
+            line = f"  [{arm}] entries {e:,} | fills {fl:,} | games {n_g}"
+            cm = clustered_mean(
+                {r.event_slug: r.rois[arm] for r in rs if r.rois.get(arm)})
+            if cm is not None:
+                line += f" | per-$ {_fmt_cm(cm)}"
+            add(line)
+        e_i = sum(r.entries.get("incumbent", 0) for r in rs)
+        e_s = sum(r.entries.get("shrunk", 0) for r in rs)
+        add(f"  registered side-effect check (fewer entries expected): "
+            f"incumbent {e_i:,} -> shrunk {e_s:,}"
+            + ("  as predicted" if e_s < e_i else
+               "  NOT as predicted — worth a look, not a verdict"))
+
+    block(f"GATE — first recorded after {REVERSION_SHRINK_REGISTERED_AT}",
+          gate, True)
+    verdict = shrink_verdict(gate)
+    add(f"  VERDICT: {verdict}"
+        + ("" if shrink_at_floor(gate) else
+           f" — floors are {FLOOR_SHRINK_GAMES} games / "
+           f"{FLOOR_SHRINK_POINTS:,} paired points, post-registration only. "
+           "Counts accrue."))
+    if backtest:
+        block("BACKTEST — pre-registration, never gates", backtest, False)
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------- #
 # Refit modes (print; constants move only by hand, with the doc)
 # --------------------------------------------------------------------- #
 
@@ -1721,6 +1994,12 @@ def main() -> int:
     parser.add_argument("--ev-stop", dest="ev_stop", action="store_true",
                         help="paired old-stop vs EV-stop trading comparison "
                              "— docs/math/pulse-ev-stop.md")
+    parser.add_argument("--reversion-shrink", dest="reversion_shrink",
+                        action="store_true",
+                        help="incumbent vs incumbent+reversion-shrink — a "
+                             "calibration arm, NOT a signal; the gate is "
+                             "Brier against outcomes — "
+                             "docs/math/pulse-reversion-shrink.md")
     parser.add_argument("--v4", "--v3d", "--v4d", dest="v4",
                         action="store_true",
                         help="v4 bundle vs v3 incumbent, v3d entry "
@@ -1746,6 +2025,10 @@ def main() -> int:
         return 0
     if args.v4:
         print(format_v4(evaluate_v4(Session, limit=args.limit)))
+        return 0
+    if args.reversion_shrink:
+        reads, excluded = evaluate_reversion_shrink(Session, limit=args.limit)
+        print(format_reversion_shrink(reads, excluded))
         return 0
 
     cohorts = evaluate(Session, limit=args.limit)
