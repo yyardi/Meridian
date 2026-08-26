@@ -677,3 +677,65 @@ def test_currency_witness_is_a_continuously_written_table_not_orders():
         "how current the source is — 5 orders from 2026-08-07 in a perfectly "
         "current database would read as nineteen days of blindness"
     )
+
+
+# --------------------------------------------------------------------- #
+# Preflight: the sheet's window is the OLDEST of its three sources.
+#
+# `eof` proves the READ was complete; nothing proved the WINDOW was. That gap
+# is what the false SLATE-DONE at 01:52Z on 2026-08-26 nearly drove a sheet
+# through — a complete read of an incomplete window passes every other check
+# here.
+# --------------------------------------------------------------------- #
+
+
+_LIVE_GW = "https://gateway.polymarket.us"
+_FILL_AT = dt.datetime(2026, 8, 26, 3, 40, tzinfo=UTC)
+
+
+def test_preflight_passes_when_every_source_covers_the_fills():
+    from scripts.export_wnba_trades import preflight
+
+    ok, _ = preflight(_FILL_AT, _FILL_AT + dt.timedelta(minutes=5),
+                      _FILL_AT + dt.timedelta(minutes=5), _LIVE_GW)
+    assert ok
+
+
+def test_preflight_refuses_an_export_that_ends_before_the_last_fill():
+    """The SLATE-DONE case: a correctly-walked export over too short a window."""
+    from scripts.export_wnba_trades import preflight
+
+    ok, lines = preflight(_FILL_AT, _FILL_AT - dt.timedelta(hours=4),
+                          _FILL_AT, _LIVE_GW)
+    assert not ok
+    assert any("ENDS BEFORE THE LAST FILL" in l for l in lines)
+
+
+def test_preflight_refuses_a_redirected_gateway():
+    """A redirected gateway is a mirrored source wearing a live source's name."""
+    from scripts.export_wnba_trades import preflight
+
+    ok, lines = preflight(_FILL_AT, _FILL_AT, _FILL_AT, "http://localhost:9999")
+    assert not ok
+    assert any("NOT THE LIVE GATEWAY" in l for l in lines)
+
+
+def test_preflight_refuses_an_undated_export():
+    """A flat dump cannot be bounded, so it cannot be shown to cover anything."""
+    from scripts.export_wnba_trades import preflight
+
+    ok, _ = preflight(_FILL_AT, None, _FILL_AT, _LIVE_GW)
+    assert not ok
+
+
+def test_a_lagging_attribution_db_is_reported_but_not_fatal():
+    """`unknown` is an honest label; a short export is a silent omission.
+
+    The asymmetry is deliberate — one degrades a column, the other loses rows.
+    """
+    from scripts.export_wnba_trades import preflight
+
+    ok, lines = preflight(_FILL_AT, _FILL_AT,
+                          _FILL_AT - dt.timedelta(days=6), _LIVE_GW)
+    assert ok
+    assert any("read unknown" in l for l in lines)
