@@ -706,6 +706,45 @@ was measured. When the distinction between what you counted and what someone wil
 conclude is load-bearing, the distinction goes in the first sentence — the only
 sentence guaranteed to be read by someone deciding what to do next.
 
+#### A table's newest row dates the news, not the source
+
+**Recorded as a reasoning error, not a defect — the bug I thought I had found
+did not exist.** The correction is the useful part.
+
+The sheet labels each fill `system` or `hand` by looking its order id up in the
+`orders` table. Checking that source before a regeneration, I found it held **5
+rows, newest 2026-08-07** — nineteen days back — concluded the source was stale,
+and reasoned that every system order placed since would be silently labelled
+`hand` on the operator's own annotation sheet. I built a guard that refused to
+attribute anything past `max(created_at)`.
+
+**The premise was wrong.** Production held the same 5 rows with the same newest
+timestamp. The table was not nineteen days behind; **this system has placed five
+orders, ever.** A complete, perfectly current table looked stale to me because I
+measured its currency by when it last had something to say.
+
+**The tell was available and I walked past it:** a *complete* table read as
+nineteen days blind. That should have prompted "what would this measure say
+about a source that is current and simply quiet?" — and the answer is that it
+cannot tell those apart, which disqualifies it as a currency measure.
+
+Had the guard merged, it would have blanked every post-08-07 row to `unknown` on
+a sheet where those rows are correctly `hand` — **trading an accurate column for
+an empty one, a worse outcome than the defect it was written to fix.** A guard
+built on a misdiagnosis does not fail safe just because it is conservative.
+
+Two things generalise:
+
+* **Date a source by something continuously written, never by the table you are
+  asking about.** The rewritten check uses `market_snapshots`, the
+  highest-frequency writer in the system, whose horizon bounds how recent
+  *anything* in that database is. Sparse-but-current passes; lagging fails.
+* **Absence needs a positive licence, not an inference.** `hand` is sound here
+  only because `core/api.py` commits the order row *before* calling the venue,
+  so absence is genuine evidence. That argument was never the one the original
+  code was making — it inferred completeness from non-emptiness, and was right
+  by luck. Finding the real justification mattered more than the guard did.
+
 #### A frozen subject list answers a question about the past
 
 At 01:52Z on 2026-08-26 a watcher fired **"SLATE DONE — deploy window open."** It
