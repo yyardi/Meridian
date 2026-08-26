@@ -734,6 +734,20 @@ cached market universe, a cohort built before the last slate — is answering a
 question about the moment it was written. **Ask when the SET was decided, not
 just when the values were read.**
 
+**#95a — the window is the oldest source.** A gate that re-enumerates its cohort
+at read time can still answer about the past: every source table carries its own
+as-of instant, and the effective window of any read is the OLDEST of them.
+"Floor met" is a claim about that window, not about the run time. From the
+incident that produced this entry: **a source described as "complete" is
+describing a moment, and if the description doesn't carry the moment it gets
+read as "current"** — the mirror was "complete... through 00:15Z," the second
+half was load-bearing, and it dropped in relay within the hour; it was 1.1M rows
+behind by the time anyone looked. Countermeasure, mutation-testable: don't just
+print as-of instants — ASSERT the window covers the cohort (refuse to run when
+the tick max predates the newest cohort game's final whistle). The assertion
+form of this rule would have gone red tonight; the printed-timestamp form would
+have been read past, the same way the sentence was.
+
 #### A lesson is operative only where the work happens
 
 Three times in one evening the thing that actually prevented an error was **a
