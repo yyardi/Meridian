@@ -140,3 +140,11 @@ read — adopting it would be a fitted-to-regime choice requiring its own
 independent justification. The stated limit above already forbids further
 damping without a new mechanism; this note closes the "we didn't know"
 route around it.
+
+## 2026-08-26 — correction: the header's written-date
+
+The header's "Written 2026-08-24 ~23:15Z" was a conversation-date drift
+by the author: this document's first commit is 2026-08-25T23:10:42Z. No
+gate consequence — the damping gate counts games priced after ACTIVATION
+DEPLOY, and no damped row exists yet — but the record should not carry a
+registration instant that predates the registration.
