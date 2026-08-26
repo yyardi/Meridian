@@ -178,6 +178,20 @@ def _why(row: dict, exit_row: dict | None, capture: float | None) -> str:
     return "; ".join(parts) + "."
 
 
+def tape_window(tape: Path) -> tuple[str, str] | None:
+    """First and last ``decided_at`` in a tape — the window the sheet covers.
+
+    Stamped into the sheet's own label. A tape is named for the day it was
+    EXPORTED, not the period it covers: ``pulse_decisions_20260825.csv`` was
+    taken at 18:04 CT and its newest decision is 02:02Z that morning, so a
+    reader who takes the filename for the coverage is off by the whole day. The
+    window has to be visible on the artifact, not inferred from its name.
+    """
+    stamps = sorted(r.get("decided_at") or "" for r in csv.DictReader(tape.open()))
+    stamps = [x for x in stamps if x]
+    return (stamps[0][:19], stamps[-1][:19]) if stamps else None
+
+
 def build_rows(tape: Path) -> list[list]:
     rows = list(csv.DictReader(tape.open()))
     entries = [r for r in rows if r.get("action") == "enter"]
@@ -324,11 +338,17 @@ def main() -> int:
     if not rows:
         print("no model entries in that tape — nothing written", file=sys.stderr)
         return 1
-    label = f"{args.tape.name} · {len(rows)} model entries · written {dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%MZ}"
+    window = tape_window(args.tape)
+    covers = f" · covers {window[0]}Z → {window[1]}Z" if window else " · coverage UNKNOWN"
+    label = (f"{args.tape.name} · {len(rows)} model entries{covers}"
+             f" · written {dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%MZ}")
     info = write_sheet(args.workbook, rows, label=label)
 
     filled = sum(1 for r in rows if r[18] == "yes")
     print(f"\n  wrote '{MODEL_SHEET}': {info['rows']} model entries ({filled} filled)")
+    if window:
+        print(f"  tape covers: {window[0]}Z -> {window[1]}Z  "
+              f"(the FILENAME is the export date, not the coverage)")
     print(f"  protected sheets verified unchanged: {', '.join(info['protected'])}")
     print(f"  backup: {info['backup'].name}")
     print(f"  workbook: {args.workbook}\n")
