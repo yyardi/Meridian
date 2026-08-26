@@ -38,6 +38,24 @@ ZERO = Decimal("0")
 
 TOTAL = "tsc-wnba-la-min-2026-08-06-197pt5"
 SPREAD = "asc-wnba-la-wsh-2026-08-15-pos-13pt5"
+
+# The venue pairs book mechanics with economics exactly this way — measured on
+# the 2026-08-25 activities export, all 496 trades. Fixtures derive `intent`
+# from (side, outcome) so a test can never encode a pairing the venue never
+# emits, which is how the sign bug survived: the fixtures carried no intent at
+# all, so nothing could disagree with the mechanical fields.
+_VENUE_INTENT = {
+    ("ORDER_SIDE_BUY", "OUTCOME_SIDE_YES"): "ORDER_INTENT_BUY_LONG",
+    ("ORDER_SIDE_SELL", "OUTCOME_SIDE_YES"): "ORDER_INTENT_SELL_LONG",
+    ("ORDER_SIDE_SELL", "OUTCOME_SIDE_NO"): "ORDER_INTENT_BUY_SHORT",
+    ("ORDER_SIDE_BUY", "OUTCOME_SIDE_NO"): "ORDER_INTENT_SELL_SHORT",
+}
+
+
+def _intent_for(side: str, outcome: str) -> str:
+    return _VENUE_INTENT.get((side, outcome), "ORDER_INTENT_UNDEFINED")
+
+
 MONEY = "aec-wnba-por-phx-2026-08-16"
 
 
@@ -86,6 +104,7 @@ def _two_sided_activity(*, is_aggressor: bool) -> dict:
                 "id": order_id,
                 "side": side,
                 "outcomeSide": "OUTCOME_SIDE_YES",
+                "intent": _intent_for(side, "OUTCOME_SIDE_YES"),
                 "marketSlug": MONEY,
                 "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_MANUAL",
             },
@@ -427,3 +446,77 @@ def test_printed_caveat_contrasts_both_policies() -> None:
         "stale caveat: V27 settled the scope question on 2026-08-25 — the "
         "disagreement is by construction, not an open discrepancy"
     )
+
+
+# --------------------------------------------------------------------- #
+# Sign, booked from `intent` and not from book mechanics.
+#
+# The defect this pins: `side`/`outcomeSide` describe how an order RESTS on the
+# book, and a NO buy rests as a YES-side sell. Booking from them inverted every
+# SHORT row — 207 of 496 of our own legs in the 2026-08-25 export (148
+# BUY_SHORT, 59 SELL_SHORT), which graded out as 25 of 58 WNBA markets carrying
+# an exact sign flip.
+#
+# It survived review because the flips PARTIALLY CANCEL: the sheet total came
+# to +$7.15 against a pinned +$14.61 gross, so the aggregate looked plausible
+# while the rows lied. A total is not a check on a sign — only a per-row or
+# per-market assertion is, which is what these are.
+# --------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "intent, side, outcome, expect_positive, what",
+    [
+        ("ORDER_INTENT_BUY_LONG", "ORDER_SIDE_BUY", "OUTCOME_SIDE_YES", True, "buy YES"),
+        ("ORDER_INTENT_SELL_LONG", "ORDER_SIDE_SELL", "OUTCOME_SIDE_YES", False, "sell YES"),
+        # The two that inverted. Note `side` reads the OPPOSITE of the economics.
+        ("ORDER_INTENT_BUY_SHORT", "ORDER_SIDE_SELL", "OUTCOME_SIDE_NO", False, "buy NO"),
+        ("ORDER_INTENT_SELL_SHORT", "ORDER_SIDE_BUY", "OUTCOME_SIDE_NO", True, "sell NO"),
+    ],
+)
+def test_yes_exposure_follows_intent_not_book_mechanics(
+    intent, side, outcome, expect_positive, what
+):
+    raw = {
+        "type": "ACTIVITY_TYPE_TRADE",
+        "trade": {
+            "marketSlug": MONEY,
+            "isAggressor": True,
+            "aggressorExecution": {
+                "lastPx": {"value": "0.4800"},
+                "lastShares": 12,
+                "transactTime": "2026-08-17T01:08:58.676592684Z",
+                "commissionNotionalCollected": {"value": "0.18"},
+                "order": {"id": "OURS", "side": side, "outcomeSide": outcome,
+                          "intent": intent, "marketSlug": MONEY},
+            },
+            "passiveExecution": {
+                "lastPx": {"value": "0.4800"},
+                "lastShares": 12,
+                "transactTime": "2026-08-17T01:08:58.676592684Z",
+                "commissionNotionalCollected": {"value": "-0.04"},
+                "order": {"id": "THEIRS", "side": "ORDER_SIDE_BUY",
+                          "outcomeSide": "OUTCOME_SIDE_UNSPECIFIED",
+                          "intent": "ORDER_INTENT_UNDEFINED", "marketSlug": MONEY},
+            },
+        },
+    }
+    fill, _, ok = parse_activity(raw)
+    assert ok and fill is not None, f"{what} was not parsed"
+    assert (fill.yes_delta > 0) is expect_positive, (
+        f"{what} ({intent}) booked {fill.yes_delta:+} YES exposure. "
+        f"side={side} says the opposite — that is book mechanics, not economics."
+    )
+
+
+def test_short_intents_disagree_with_the_mechanical_reading():
+    """Guard the guard: if these ever agreed, the test above could not fail."""
+    for intent, side, outcome in [
+        ("ORDER_INTENT_BUY_SHORT", "ORDER_SIDE_SELL", "OUTCOME_SIDE_NO"),
+        ("ORDER_INTENT_SELL_SHORT", "ORDER_SIDE_BUY", "OUTCOME_SIDE_NO"),
+    ]:
+        mechanical = ("BUY" in side) == outcome.endswith("_YES")
+        economic = ("_BUY_" in intent) == intent.endswith("_LONG")
+        assert mechanical is not economic, (
+            f"{intent}: the two readings agree, so a sign bug here is untestable"
+        )
