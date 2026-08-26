@@ -619,6 +619,31 @@ inconsistency is a distinction the system is drawing that you are not, and
 whether that distinction is already written down on our side under a different
 name.
 
+#### Say what KIND of evidence you have, in the headline
+
+An inventory of what a database contains **can only falsify a cohort, never
+confirm one.** Absent data proves absence; present data proves nothing about
+whether the rows satisfy the predicate the cohort is defined by.
+
+Measured on 2026-08-25: the tables held **17** settled games with the required
+ESPN feeds, which was reported as a cohort ≥ the registered floor of 15. The
+cohort is **11**, because in 6 of those games the endgame book went one-sided or
+vanished and there is no two-sided quote in the last 5:00. **No database holds
+quotes the market never made.** The inventory was correct; the inference from it
+was not available.
+
+**The caveat was present and did no work.** The report carried "I haven't
+verified both arms are priceable — that's the cohort construction and belongs to
+the research agent," several paragraphs under a headline reading *"#20 is
+probably not blocked."* The headline was dispatched on; the caveat was not read.
+A qualifier below a conclusion protects the author and not the reader.
+
+So: **put the evidence type in the headline, not below it.** "The tables contain
+17 games" and "the cohort is 17 games" are different claims, and only one of them
+was measured. When the distinction between what you counted and what someone will
+conclude is load-bearing, the distinction goes in the first sentence — the only
+sentence guaranteed to be read by someone deciding what to do next.
+
 #### A lesson is operative only where the work happens
 
 Three times in one evening the thing that actually prevented an error was **a
