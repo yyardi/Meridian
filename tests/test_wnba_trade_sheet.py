@@ -385,3 +385,45 @@ def test_flip_reports_the_position_it_opened_not_the_one_it_closed():
     rows, _ = build_rows([entry, flip], [], _no_settlement)
     assert rows[0].position == "OVER 197.5"
     assert rows[1].role == "EXIT+ENTRY" and rows[1].position == "UNDER 197.5"
+
+
+# --------------------------------------------------------------------- #
+# The money columns must name their convention.
+#
+# V27: the venue's own ``realizedPnl`` is per-position, average-cost, ex-fees.
+# This sheet's money is FIFO per round trip. Two policies over the same fills
+# disagree row by row and agree in total, so an unqualified "P&L" beside a
+# venue field of the same name invites the operator to read a mismatch as an
+# error. The label is the only thing standing between those two readings, and
+# it was previously untested — the suite stayed green through a rename.
+# --------------------------------------------------------------------- #
+
+
+def test_pnl_column_names_its_convention() -> None:
+    from scripts.export_wnba_trades import COLUMNS
+
+    headers = [h for h, _ in COLUMNS]
+    pnl = [h for h in headers if "P&L" in h]
+    assert pnl, f"no P&L column found in {headers}"
+    for h in pnl:
+        assert "FIFO" in h, (
+            f"money column {h!r} does not name its policy. The venue's "
+            "realizedPnl is average-cost per position (V27); an unqualified "
+            "label lets a by-construction row mismatch read as a bug."
+        )
+
+
+def test_printed_caveat_contrasts_both_policies() -> None:
+    """The caveat prints beside the total, where an unqualified number gets read."""
+    import inspect
+
+    from scripts import export_wnba_trades
+
+    src = inspect.getsource(export_wnba_trades)
+    assert "FIFO" in src and "average-cost" in src, (
+        "the printed caveat must name both policies, not just warn vaguely"
+    )
+    assert "NOT CONFIRMED AGAINST THE VENUE" not in src, (
+        "stale caveat: V27 settled the scope question on 2026-08-25 — the "
+        "disagreement is by construction, not an open discrepancy"
+    )

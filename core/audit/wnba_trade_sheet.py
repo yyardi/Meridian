@@ -56,25 +56,27 @@ So the three money columns sum without double counting, and the operator's
 An unknown settlement leaves the lot OPEN and unscored rather than guessing a
 payout — an unscored row is honest, a guessed one is not.
 
-.. warning::
-   **The money columns are NOT confirmed against the venue.** The activities
-   feed carries the venue's own ``realizedPnl``/``cost``/``costBasis`` per
-   fill, and it agrees with neither this FIFO reconstruction nor an
-   average-cost one on more than 3 of 29 rows checked — roughly half the
-   venue's figure on spread markets, within a fee on moneylines.
+.. note::
+   **The money columns are FIFO, per round trip — a different policy from the
+   venue's field of the same name.** The activities feed carries the venue's own
+   ``realizedPnl``, which is **per-position, average-cost, ex-fees** (V27 in
+   ``docs/findings.md``): fees live in ``cost``, and ``cost - baseCost`` is the
+   0.06*p*(1-p) fee to the cent.
 
-   Two independently written reconstructions that agree with each other to the
-   cent and both disagree with the venue point at the venue's number having a
-   different *scope per row* — plausibly its realized-to-date on that position
-   rather than the round trip reconstructed here. That is a hypothesis. It is
-   settled by walking one spread market line by line, venue ``cost``/
-   ``costBasis`` against both reconstructions, and it should be done by
-   someone who wrote neither of them.
+   Two policies over the same fills **disagree row by row and agree in total**.
+   That is arithmetic, not an error in either, and a row-level mismatch against
+   the venue is the expected result rather than a symptom.
 
-   Until then: the venue-faithful columns (date, game, market, position, side,
-   price, size) are safe to annotate against — that is what the sheet is for.
-   ``$ in`` / ``$ out`` / ``P&L`` are internally consistent and reconcile with
-   each other, but must not be quoted as the account's realized P&L.
+   This resolves the question this warning used to park. Earlier text recorded
+   that two independently written reconstructions agreed with each other to the
+   cent and both disagreed with the venue, hypothesised that the venue's number
+   had a different *scope per row*, and asked for someone who wrote neither to
+   settle it. **The hypothesis was right**; the research agent settled it on
+   2026-08-25.
+
+   The venue-faithful columns (date, game, market, position, side, price, size)
+   remain the ones to annotate against. Quote the money columns as **FIFO
+   round-trip P&L**, which is what they are — never unqualified.
 
 The contract traded is not always the position held
 --------------------------------------------------
