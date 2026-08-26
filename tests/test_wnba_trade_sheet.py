@@ -580,3 +580,52 @@ def test_a_flat_dump_does_not_claim_verified_completeness(tmp_path):
     acts, provenance = activities_from_export(f)
     assert len(acts) == 1
     assert "not verifiable" in provenance
+
+
+# --------------------------------------------------------------------- #
+# `placed by` must not claim "hand" past the orders table's horizon.
+#
+# The defect: the label was "system if known, else hand if we know ANY ids,
+# else unknown" — which treats a NON-EMPTY set as a COMPLETE one. Against a
+# merely stale database, every system order placed after its last row reads
+# "hand" on the operator's own annotation sheet. Measured 2026-08-26: the
+# configured DB held 5 ids, newest 2026-08-07, nineteen days back. An EMPTY
+# table would have produced an honest sheet; five rows defeated the fallback.
+# --------------------------------------------------------------------- #
+
+
+_H = dt.datetime(2026, 8, 7, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "at, oid, ours, horizon, expect, why",
+    [
+        (_H, "A", {"A"}, _H, "system", "a known id is ours whenever it appears"),
+        (_H - dt.timedelta(days=1), "Z", {"A"}, _H, "hand",
+         "inside the horizon an unknown id really is not ours"),
+        (_H + dt.timedelta(seconds=1), "Z", {"A"}, _H, "unknown",
+         "ONE SECOND past the horizon the table cannot speak — do not claim hand"),
+        (_H, "Z", set(), None, "unknown", "no ids at all: the old honest fallback"),
+        (_H, "Z", {"A"}, None, "unknown", "ids but no horizon: cannot bound them"),
+    ],
+)
+def test_placed_by_refuses_to_claim_past_its_horizon(
+    at, oid, ours, horizon, expect, why
+):
+    from scripts.export_wnba_trades import placed_by
+
+    assert placed_by(at, oid, ours, horizon) == expect, why
+
+
+def test_a_stale_but_populated_table_is_worse_than_an_empty_one():
+    """The inversion worth pinning: partial data defeats the honest fallback.
+
+    With five ids from nineteen days ago, a fill from tonight must read
+    "unknown" — the same answer an empty table gives — and must NOT read "hand".
+    """
+    from scripts.export_wnba_trades import placed_by
+
+    tonight = dt.datetime(2026, 8, 26, 1, 58, tzinfo=UTC)
+    stale = {"OLD1", "OLD2", "OLD3", "OLD4", "OLD5"}
+    assert placed_by(tonight, "NEW", stale, _H) == "unknown"
+    assert placed_by(tonight, "NEW", set(), None) == "unknown"
