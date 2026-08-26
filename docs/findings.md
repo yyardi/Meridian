@@ -43,9 +43,10 @@ Measured on the live board, not assumed.
 | V22 | **V7's MLB result reproduces, and the comparison that produced it was never horizon-matched** | live MLB board 2026-08-07: 50 events / 505 markets, tick **0.005 (58%)**, near-money median spread **1.00¢**, fee 0.06 (100%). But MLB was observed at a median **+27.7h** to tip-off against WNBA's +0.0h, and **no** horizon bucket has data on both sides | 2026-08-07 | V7 stands — MLB is tighter even allowing for horizon, and carries half-cent ticks WNBA does not. What was missing is that spread swings **12×** with time to tip-off on the same board (WNBA: 1.00¢ inside 3h, 12.00¢ at 12–24h), so a far-dated board reads as thin, and thin is what this project buys. [`core/survey.py`](../core/survey.py) now reports every spread per horizon bucket and refuses to imply a comparison when the buckets do not overlap. [infra/board-survey.md](infra/board-survey.md) |
 | V23 | **Polymarket and Kalshi quote the same price to within one tick — and their totals ladders are deliberately staggered a point apart** | **773** line-identical pairs within 60s across **10 games / 61 contracts** (gate MET): median \|gap\| **0.00¢**, **97.2% within one cent**, median signed gap exactly zero in **9 of 10 games**. Disagreement sits 3–6h out (0.50¢) and is **0.00¢ inside 3h**. Both venues list 9 totals rungs at 3-pt spacing; in **7 of 10 games they sit exactly 1.0pt apart** (26 line-identical totals of 90 vs 90). **Full sample 2026-08-10: 36 games (3.6× the gate), 3,651 pairs, lag p50 15.8s** — median \|gap\| **0.0000**, exactly zero in **35 of 36 games** (the 36th −0.005, a half-tick), zero in every horizon bucket; clustered mean \|gap\| 0.29¢ [0.22, 0.36]. Sign persistence 1.0 on **1 signed game of 36** — vacuous | 2026-08-07 / 2026-08-10 | **The founding thesis FAILS at pregame resolution — there is no venue gap to translate**, confirmed at 3.6× the gate. The 10-game power concern below is now moot at n=36. Tradability/fees stay separately registered; the roadmap fork (in-game resolution · another league · abandon the route) is the **operator's decision, queued**. Independently cross-checked twice: ≤0.04¢ magnitude agreement (2026-08-07) and an independent totals preview agreeing at 0.0000 (2026-08-10). `report()` implementation is uncommitted working-tree code — **flag for PR review**. [math/venue-gap.md](math/venue-gap.md) |
 | V24 | **The credits in this account were a taker-fee promo, not the maker rebate** — `ACTIVITY_TYPE_TAKER_FEE_REBATE` = 50% refund of the account's own taker fees per **ET day**, paid ~2 days later | 33 credits, \$11.58 total; 32 of 33 match 50.0% of that ET-day's own taker fees within 2¢ (median ratio 0.500). The one miss is day one at 0.43, consistent with a mid-day start | 2026-08-25 | Promo window **2026-03-29 → 05-10, nothing since**, despite ~\$13 of taker fees paid. **NOT the advertised maker rebate, which remains unobserved.** Current-era taker fees are full price — any cost model assuming a refund applies today is wrong. Closes C7 |
-| V25 | **Combo products (`aec-`) carry self-contradictory encodings in the activities feed** | `side=SELL`/`outcomeSide=NO` alongside `intent=ORDER_INTENT_BUY_SHORT`, and `lastPx` frames that do not reconcile with the position's own `avgPx` | 2026-08-25 | **Do not trust `side`/`outcomeSide`/`lastPx` on combo rows** without a per-product verification. The **before/after position objects are the reliable ledger** |
+| V25 | **Combo products (`aec-`) carry self-contradictory encodings in the activities feed** | `side=SELL`/`outcomeSide=NO` alongside `intent=ORDER_INTENT_BUY_SHORT`, and `lastPx` frames that do not reconcile with the position's own `avgPx` | 2026-08-25 | **Do not trust `side`/`outcomeSide`/`lastPx` on combo rows** without a per-product verification. The **before/after position objects are the reliable ledger** **⚠️ SUPERSEDED BY V28, 2026-08-26 — the encoding is not contradictory.** Kept visible rather than rewritten: `side`/`outcomeSide` describe book mechanics while `intent` describes economics, which is V14's own placement rule seen from the outside. The mistake is the useful part |
 | V26 | **`outcomePrices` is a JSON-encoded STRING, not an array** | `'["1","0"]'` — a string whose first character is `[` | 2026-08-25 | **Parse before indexing**, or index 0 is silently a bracket rather than a price. Fails quietly, not loudly |
 | V27 | **The venue's `realizedPnl` is per-position, average-cost, ex-fees** | Fees live in `cost`; `cost − baseCost` = the 0.06·p·(1−p) fee **to the cent** | 2026-08-25 | Any reconstruction using **FIFO or round-trip episodes will disagree per-row and agree in total** — this is a scope difference, not an error in either. **Label the policy on any column named `realizedPnl`.** Resolves the open question parked in `core/audit/wnba_trade_sheet.py` |
+| V28 | **`intent` is the economic truth on activities order objects — V25 was wrong, and what it called a venue defect was our own rule.** *"On activities order objects, side/outcomeSide describe book mechanics (a NO buy rests as a YES-side sell); `intent` is the economic truth and the only field cash reconstruction may use."* | *"190/197 resolved markets including 26/26 WNBA reconcile to the venue's own realized deltas under the intent rule."* | 2026-08-26 | **Reconstruct cash from `intent`, never from `side`/`outcomeSide`.** Those two are not in conflict — a NO buy legitimately rests as a YES-side sell at the ask, which is **V14** restated in the feed's vocabulary. **Supersedes V25**, which read the same bytes as a venue defect. Closes the operator's WNBA P&L reconciliation at 26/26 markets, \$0.00 summed gap; the 7 residual rows are all old other-sport combo-era products and are a support question for the venue, not a convention to invent |
 
 ### V10 in detail — the 401 was never a cryptography problem
 
@@ -595,6 +596,28 @@ behaviour; **"check yourself too" is unactionable, and naming the location is
 not.** The usable form: when you have just cited a rule, invoked a prior lesson,
 or relayed someone else's claim, treat that as the trigger to check your own
 artifact against it — never as evidence that you already did.
+
+#### Your own convention, met from the outside, looks like someone else's bug
+
+**V25 → V28** in one night. The activities feed was read as carrying
+"self-contradictory encodings" — `side=SELL`/`outcomeSide=NO` sitting alongside
+`intent=ORDER_INTENT_BUY_SHORT` — and written down as a venue defect with a
+warning not to trust the fields. It is not a defect. `side`/`outcomeSide`
+describe **book mechanics** and `intent` describes **economics**, and a NO buy
+resting as a YES-side sell at the ask is **V14**, this project's own documented
+placement rule, arriving in the feed's vocabulary instead of ours.
+
+Under the corrected reading, 190/197 resolved markets and **26/26 WNBA**
+reconcile to the venue's own realized deltas.
+
+**The tell was the word "contradictory."** Two fields disagreeing is evidence
+they mean different things far more often than it is evidence one is broken —
+and the cost of the wrong reading is asymmetric: calling a venue defect licenses
+inventing a local workaround, while a convention merely has to be learned. Before
+recording an external system as internally inconsistent, check whether the
+inconsistency is a distinction the system is drawing that you are not, and
+whether that distinction is already written down on our side under a different
+name.
 
 #### A lesson is operative only where the work happens
 
