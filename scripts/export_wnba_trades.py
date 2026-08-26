@@ -303,6 +303,70 @@ def button_order_ids() -> tuple[set[str] | None, dt.datetime | None]:
         return None, None
 
 
+def export_fetched_at(path: Path) -> dt.datetime | None:
+    """``fetched_at`` from a pinned export envelope, or None for a flat dump."""
+    raw = json.loads(path.read_text())
+    stamp = raw.get("fetched_at") if isinstance(raw, dict) else None
+    if not stamp:
+        return None
+    try:                              # the venue tooling writes 20260825T233057Z
+        return dt.datetime.strptime(str(stamp), "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.timezone.utc)
+    except ValueError:
+        return _parse_ts(stamp)
+
+
+def preflight(latest_fill: dt.datetime,
+              export_at: dt.datetime | None,
+              attribution_through: dt.datetime | None,
+              gateway_url: str) -> tuple[bool, list[str]]:
+    """Refuse to build a sheet whose sources cannot cover the trades in it.
+
+    The sheet draws on three sources — the activities export, the settlement
+    endpoint, and the attribution database — and **its window is the OLDEST of
+    them**, not the newest. A leg that predates the trades produces a sheet that
+    is silently short while passing every internal check: the export can walk to
+    ``eof`` correctly over a window that ended too early, and the arithmetic is
+    sound on whatever it was handed.
+
+    That is the failure the false SLATE-DONE nearly caused on 2026-08-26 — a
+    complete read of an incomplete window. ``eof`` proves the read; nothing
+    proved the window until this.
+
+    Returns ``(ok, lines)``. ``ok=False`` means stop, not warn.
+    """
+    lines: list[str] = []
+    ok = True
+
+    lines.append(f"  latest fill in this sheet   {latest_fill}")
+
+    if export_at is None:
+        lines.append("  activities export          UNDATED (flat dump) — cannot bound")
+        ok = False
+    else:
+        short = export_at < latest_fill
+        lines.append(f"  activities export          {export_at}"
+                     f"{'   *** ENDS BEFORE THE LAST FILL' if short else ''}")
+        ok &= not short
+
+    # Settlement is read live, so it has no staleness of its own — but the base
+    # URL is env-overridable, and a redirected gateway is a mirrored source
+    # wearing a live source's name.
+    live = gateway_url.rstrip("/") == "https://gateway.polymarket.us"
+    lines.append(f"  settlement gateway         {gateway_url}"
+                 f"{'' if live else '   *** NOT THE LIVE GATEWAY'}")
+    ok &= live
+
+    if attribution_through is None:
+        lines.append("  attribution database       UNREADABLE — rows will read unknown")
+    else:
+        short = attribution_through < latest_fill
+        lines.append(f"  attribution database       {attribution_through}"
+                     f"{'   *** rows after this read unknown' if short else ''}")
+        # Not fatal: `unknown` is an honest label, unlike a short export.
+
+    return ok, lines
+
+
 def placed_by(fill_at: dt.datetime, order_id: str,
               ours: set[str] | None, source_current_through: dt.datetime | None) -> str:
     """``system`` | ``hand`` | ``unknown``.
@@ -429,6 +493,26 @@ def main() -> int:
         rows, unscored = build_rows(fills, resolutions, settlement_lookup(gateway))
 
     ours, current_through = button_order_ids()
+
+    # Preflight: the sheet's window is the OLDEST of its sources. Checked before
+    # anything is written, and fatal rather than advisory for a short export —
+    # a sheet missing a game looks finished.
+    from core.polymarket.client import RECORDER
+
+    ok, lines = preflight(
+        latest_fill=max(f.at for f in fills),
+        export_at=export_fetched_at(args.activities_json) if args.activities_json else None,
+        attribution_through=current_through,
+        gateway_url=RECORDER.gateway_base_url,
+    )
+    print("\n  source coverage:", file=sys.stderr)
+    for line in lines:
+        print(line, file=sys.stderr)
+    if not ok:
+        print("\n  REFUSING to write: a source does not cover the trades in this "
+              "sheet.\n  Re-take the export (or fix the gateway) and re-run. A short "
+              "sheet\n  looks finished, which is worse than no sheet.", file=sys.stderr)
+        return 1
     values = [
         row_values(row,
                    placed_by(row.fill.at, row.fill.venue_order_id, ours, current_through))
