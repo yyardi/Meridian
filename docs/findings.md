@@ -791,6 +791,44 @@ that `export_at >= latest_fill` *always*, derived from one export the way
 existed; if that assertion ever fails, the relationship changed and someone
 should look.
 
+#### Current at the head, holes in the body
+
+`max(captured_at)` answers **"how recent is the newest row"** and is structurally
+blind to **"is anything missing behind it."** Those are different properties and
+we spent a night calling both of them "synced."
+
+Measured 2026-08-26, syncing the local mirror to production. The head sync moved
+707,876 rows, and parity *still* showed production ahead by 719,246 — none of it
+recent:
+
+| day | production | mirror | missing |
+|---|---|---|---|
+| 2026-08-19 | 1,169,267 | 1,069,526 | 99,741 |
+| **2026-08-20** | **1,253,251** | **633,746** | **619,505 (49.4%)** |
+
+**Aug 20 was missing half its ticks, silently, for days.** A freshness check
+would have passed on every one of those days, because the newest row was always
+current — the gap was in the middle.
+
+**This bounds a guard shipped the same night.** The sheet's preflight uses
+`max(captured_at) where is_live` to prove an export is not short. That witness
+is correct for **currency** and proves nothing about **completeness**: a source
+can pass it while missing half a day in the body. The guard's claim is narrow and
+true — *the market was live after your snapshot* — and it should not be read as
+*this source is whole*.
+
+**The countermeasure is a per-day count comparison, not a fresher timestamp.** No
+refinement of the head measurement detects a hole behind it; only comparing the
+distribution against a reference does.
+
+Recorded as a limitation rather than a retraction, and the reason matters: the
+full-history audit after backfill came back **clean on all 27 days** (only the
+day's own live drift), and the most damaged day carried the single game the
+bookless-endgame finding most depended on — re-derived against the repaired
+mirror, **identical per-game tick counts**. The holes were real, bounded, and
+repaired; the check that would have invalidated a result came back clean. What
+survives is the knowledge that our completeness witness never looked.
+
 #### A frozen subject list answers a question about the past
 
 At 01:52Z on 2026-08-26 a watcher fired **"SLATE DONE — deploy window open."** It
