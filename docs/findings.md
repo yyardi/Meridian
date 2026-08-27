@@ -829,6 +829,37 @@ mirror, **identical per-game tick counts**. The holes were real, bounded, and
 repaired; the check that would have invalidated a result came back clean. What
 survives is the knowledge that our completeness witness never looked.
 
+#### A correct document written to an occupied path destroys provenance
+
+Nothing about the content is wrong, and that is the whole problem.
+
+On 2026-08-27 a results write-up for `docs/math/espn-wp-vs-price.md` was drafted
+for landing at that path. The path was already occupied — by the **pre-registration**,
+153 lines, whose own header reads *"REGISTERED 2026-08-25, NOTHING COMPUTED …
+nothing above the results line may be edited after data accrues"*, with the
+result duly appended below that line two days earlier. The draft's numbers were
+right, its verdict identical, its reasoning the same.
+
+**Writing it would have replaced the exam with the answer sheet, and every check
+we have would have passed afterward.** Same k, same r = 0.973, same money
+clause, same PASS-but-not-tradable conclusion. No content comparison, no test,
+no review of the resulting file could have detected the loss — because **what
+dies is not information but ORDERING**, and ordering is the entire evidentiary
+value of a pre-registration. A registration proves the terms preceded the data.
+A file that says the same things, written afterward, proves nothing at all and
+looks identical.
+
+Caught by `ls` before writing, not by review afterward — there is no afterward
+in which it is catchable.
+
+**How to apply.** Read the path before writing it, every time, even when you are
+confident it is new; a write is not an edit and carries no diff to inspect. And
+when a page must be landed after its verdict is known, **say so in the page**:
+name the registration of record and mark the page as the write-up (as the F7
+page does), so a document dated after the result cannot be mistaken for one
+dated before it.
+
+
 #### A frozen subject list answers a question about the past
 
 At 01:52Z on 2026-08-26 a watcher fired **"SLATE DONE — deploy window open."** It
