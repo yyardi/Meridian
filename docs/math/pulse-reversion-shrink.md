@@ -75,3 +75,37 @@ therefore counts games first recorded after 2026-08-25T23:08:20Z — the
 2026-08-25 00:00–04:15Z slate was recorded before this registration
 existed and is backtest, never gate. Corrected before the eval arm was
 built or any number read, so no result is touched.
+
+## 2026-08-27 — pre-gate note: what a flat read would mean
+
+**Written before the gate cohort fills**, so neither outcome can be storytold
+afterwards. Day-one gate read: 4 games / 9,663 paired points against floors of
+10 games / 3,000 points — **NO DATA, the GAMES floor binding while the points
+floor is already met.** Alongside it, an 18-game pre-registration backtest whose
+signs point mildly *against* the shrink: Brier diff **−0.00038** in
+**[−0.00636, +0.00560]**, per-$ **−0.0966** shrunk vs **−0.0825** incumbent.
+
+Named in advance, before the gate cohort fills: **two readings are consistent
+with the day-one backtest.**
+
+1. **The shrink improves calibration and 18 games cannot see it.** The Brier
+   difference sits inside a CI an order of magnitude wider than the effect this
+   arm could plausibly deliver; the per-$ gap sits under CIs wider still.
+   Nothing here is evidence in either direction.
+2. **The pregame-anchor drift term already encodes the reversion pull**, making
+   an explicit shrink largely redundant. Verified in the code rather than
+   argued: `replay_eval.py:1723` computes
+   `expected = margin + edge·(minutes_left/40) − s(elapsed)·deviation`. With
+   `s = 0` — the incumbent — the surviving `edge·(minutes_left/40)` is itself a
+   pull toward pregame expectation. Two implementations of the same physics
+   through different doors.
+
+**A ≈0 paired diff at floor supports (2), and that is a finding about the FV's
+functional form — not a failure of the measured reversion curve**, which stands
+at play resolution across 797 games with every gridpoint's CI excluding zero
+(#18 / F1). **The per-$ lines are money noise at these G and gate nothing.**
+
+This note changes no registered term. It exists so that a flat gate read is
+*informative* rather than disappointing, and so that neither "it works, we just
+can't see it" nor "it does nothing" can be adopted after the fact as though it
+had been the expectation all along.
