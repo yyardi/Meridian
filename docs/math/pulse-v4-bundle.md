@@ -118,3 +118,39 @@ about deployment is a verdict.
 
 *Registered 2026-08-24 ~16:20Z, before the build. Results append below
 this line, never above it.*
+
+## 2026-08-27 — pre-gate note: the Brier sign reverses across the boundary
+
+**Named in advance, before the v4 gate cohort reaches floor.** Day-one read:
+
+```
+backtest (15 pre-registration games)   paired diff (v3−v4)  +0.00578 [-0.00208, +0.01364]   favours v4
+gate      (7 post-registration games)  paired diff (v3−v4)  −0.00578 [-0.01862, +0.00705]   favours v3
+```
+
+**Both CIs comfortably include zero; neither is evidence; the mirrored
+magnitudes are coincidence until shown otherwise.** What is worth naming now is
+that the two cohorts disagree in *direction*, and only one of them can ever
+gate.
+
+**Three readings are consistent with today's numbers. None is privileged.**
+
+- **(a) Noise.** ±0.006 point estimates flipping sign across two small disjoint
+  cohorts is what noise does. *A gate that recovers toward the backtest at floor
+  supports this.*
+- **(b) Cohort composition.** The post-registration week was blowout-heavy (see
+  [bookless-endgames.md](bookless-endgames.md)); if the bundle's inputs earn
+  their keep in competitive games, a decided-heavy week reads against them. The
+  per-game flag-widened and pace-fallback diagnostics are the check — and they
+  are **diagnostics, never gates**.
+- **(c) Development-data optimism — #16's family.** The bundle was designed while
+  the pre-boundary games accrued and their diagnostics were visible.
+  Seen-data-good, unseen-data-flat is the classic in-sample signature. *A gate
+  that stays at or below zero at floor while the backtest stays positive
+  supports this*, and the response is the **already-registered ablation** —
+  which input carries the regression — **never a retune of the bundle against
+  gate data.**
+
+**The registration boundary exists precisely so (c) is distinguishable from
+(a).** This note exists so that no reading can be adopted retroactively as "what
+we always expected."
