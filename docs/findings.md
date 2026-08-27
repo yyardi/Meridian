@@ -522,6 +522,39 @@ page-list check passed with a new unguarded page dropped in, which is the exact
 case it existed to catch. Thirty seconds, and it is the only evidence that
 separates a guard from a decoration.
 
+**A gate that cannot CLOSE.** Two vacuous forms are already in this log: the
+check that cannot fail (above) and the gate that cannot pass (#20's original
+paired-Brier primary, killed at commissioning by its own mutation test). v3d
+exposed a third on 2026-08-27: a gate whose verdicts enumerate PASS and FAIL and
+let a catch-all *"anything else → NO DATA"* absorb the rest, **with no resolution
+condition.** Its true state that day — own trading measurably negative,
+paired-vs-incumbent flat — maps to NO DATA under the registered letter, and would
+map there at ANY sample size: not passing, not failing, never closing.
+**Un-resolvable by any amount of data is a property a gate can have, and nobody
+chooses it** — it falls out of enumerating the interesting outcomes and letting
+`else` hold everything unforeseen.
+
+The tell that found it: **a NO DATA standing at 11 games when both registered
+floors read met.** "Not enough data" could not be the explanation, because there
+was enough data; what was missing was any way for the gate to ever say so. It
+surfaced only because someone refused an inference — *"a second floor must be
+binding"* — and demanded the line instead. Both floors were met; there was no
+second floor.
+
+Two details worth keeping. **The branch that fired was the only one without a
+test** — every other verdict branch had one, which is why two different facts
+could share the string `NO DATA` with nothing objecting: the absent-variable
+shape, where the absent thing is an entire case. And **the deciding quantity was
+never printed**, so the verdict had to be derived by exhausting the branches in
+the source rather than read off the report.
+
+Countermeasure, forward-only: **a registration names the condition under which
+the gate CLOSES, not only the conditions under which it passes or fails.** The
+concrete pattern is a closure clause — *"at 2× floor with the asymmetric clause
+still unmet: FAIL-BY-EXHAUSTION."* v3d's registration stays exactly as written,
+per the no-retrofit rule; its state is carried honestly as a substantive NO DATA
+with the deciding quantity now printed beside its comparator.
+
 Corollary, from the push above: **consistency between two runs of the same check
 is not evidence.** Two agreeing readings tell you about the instrument. *(This
 one has recurred four times since, under four different causes — it has its own
