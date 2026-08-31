@@ -297,9 +297,11 @@ _FINAL_SCORE_SQL = text("""
      LIMIT 1
 """)
 
-#: Games the model actually shadow-traded, newest first. Driven by
-#: `shadow_orders` rather than by the snapshot stream: a game with no decision
-#: in it has nothing for this page to show.
+#: Games the model actually shadow-traded, newest first. Driven by BOTH
+#: decision ledgers — the pregame sizer's `shadow_orders` and PULSE's own
+#: `pulse_decisions` — rather than by the snapshot stream: a game with no
+#: decision in it has nothing for this page to show. Reading only the first
+#: hid every PULSE-traded game the pregame sizer skipped.
 #: Era filtering (core/era.py) happens in the HAVING clause on the game's
 #: LAST decision — a game belongs to the era it finished deciding in, so one
 #: game's tape is never split across the archive boundary. Both bounds are
@@ -313,7 +315,23 @@ _GAMES_SQL = text("""
            max(so.decided_at) AS last_decision,
            count(p.resolved_outcome) AS n_resolved,
            max(ts.tipoff) AS tipoff
-      FROM shadow_orders so
+      FROM (
+             -- The pregame sizer's ledger...
+             SELECT event_slug, decided_at, prediction_id
+               FROM shadow_orders
+             UNION ALL
+             -- ...and PULSE's own. This list was driven by `shadow_orders`
+             -- alone, which made it structurally blind to every game PULSE
+             -- traded and the pregame sizer did not. Measured 2026-08-31:
+             -- 17 games and 8,644 PULSE decisions since 2026-08-25 were
+             -- invisible here, because a $3.67 bankroll sized every pregame
+             -- order to zero and that writer records nothing at zero. A game
+             -- the model decided in has something to show, whichever model
+             -- decided it. `enter`/`exit` only — a `hold` is not a trade.
+             SELECT event_slug, decided_at, NULL::bigint AS prediction_id
+               FROM pulse_decisions
+              WHERE action IN ('enter', 'exit')
+           ) so
       LEFT JOIN predictions p ON p.id = so.prediction_id
       -- The game's own start, from our snapshots: predictions do not carry
       -- it. A LATERAL bounded per event, not a GROUP BY over the whole
