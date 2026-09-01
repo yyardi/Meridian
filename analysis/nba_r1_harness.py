@@ -326,6 +326,60 @@ def load_real(games_path: str, plays_path: str) -> pd.DataFrame:
     return states[["game_id", "season", "t", "m", "e", "y"]]
 
 
+# ------------------------------------------------------------------ ML sensitivity
+# Registered inside R1b as a never-gating labelled sensitivity; executed after
+# the primary read, per its registered never-gating status; ordering disclosed.
+# Nothing in the gate arithmetic above is touched by this section.
+
+
+def devig_home_prob(ml_home: pd.Series, ml_away: pd.Series) -> pd.Series:
+    """American moneylines -> proportional de-vigged home probability."""
+
+    def implied(ml):
+        ml = ml.astype(float)
+        return np.where(ml < 0, -ml / (-ml + 100.0), 100.0 / (ml + 100.0))
+
+    qh, qa = implied(ml_home), implied(ml_away)
+    return pd.Series(qh / (qh + qa), index=ml_home.index)
+
+
+def ml_sensitivity(states: pd.DataFrame, games_path: str) -> None:
+    """R1's original construction: E through the arm's OWN sigma(48) from the
+    de-vigged closing moneyline — the mildly circular form R1b demoted. Run on
+    ML-covered games in the same eval folds; never gating."""
+    g = pd.read_csv(games_path)
+    g = g.dropna(subset=["closing_ml_home", "closing_ml_away"]).copy()
+    g["p0"] = devig_home_prob(g.closing_ml_home, g.closing_ml_away).clip(0.02, 0.98)
+    st = states.merge(g[["game_id", "p0"]], on="game_id")
+    print("\n=== SENSITIVITY — ML inversion (registered never-gating; executed after the")
+    print("    primary read per its registered status; ordering disclosed) ===")
+    print(f"ML-covered states: {len(st)} rows, {st.game_id.nunique()} games, "
+          f"seasons {sorted(st.season.unique())}")
+    rows = []
+    folds = [(s, [x for x in sorted(st.season.unique()) if x < s]) for s in EVAL_SEASONS]
+    if PARTIAL_SEASON in st.season.unique():
+        folds.append((PARTIAL_SEASON, [x for x in sorted(st.season.unique()) if x <= 2022]))
+    for eval_season, train_seasons in folds:
+        train, ev = st[st.season.isin(train_seasons)], st[st.season == eval_season].copy()
+        if len(train) == 0 or len(ev) == 0:
+            print(f"  fold {eval_season}: skipped (train seasons with ML: {train_seasons})")
+            continue
+        s_glob, table = fit_arm_a(train)  # trains on the SPREAD anchor as gated
+        for name, fn in [("a", sigma_phase_table(table)), ("b", sigma_wnba_port), ("c", sigma_flat(2.0))]:
+            e_ml = fn(np.full(len(ev), REG_MINUTES)) * np.sqrt(REG_MINUTES) * norm.ppf(ev.p0.to_numpy(float))
+            p = curve_prob(ev.m.to_numpy(float), ev.t.to_numpy(float), e_ml, fn)
+            ev[f"brier_{name}"] = (p - ev.y.to_numpy(float)) ** 2
+        rows.append(ev)
+    ev = pd.concat(rows, ignore_index=True)
+    seasons = sorted(ev.season.unique())
+    for x, z in [("a", "b"), ("a", "c"), ("b", "c")]:
+        d = ev[f"brier_{x}"] - ev[f"brier_{z}"]
+        cm = clustered_mean({s: d[ev.season == s].tolist() for s in seasons})
+        print(f"  ML-anchored Brier({x})-Brier({z}): {cm.mean:+.5f} [{cm.lo:+.5f}, {cm.hi:+.5f}]  "
+              f"rows={cm.n} seasons={cm.n_clusters}")
+    print("  (sensitivity only — the gate stands on the spread anchor regardless)")
+
+
 # ------------------------------------------------------------------ selftest
 
 
@@ -426,6 +480,8 @@ def main() -> None:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--games", help="pinned games CSV")
     ap.add_argument("--plays", help="pinned plays CSV(.gz)")
+    ap.add_argument("--ml-sensitivity", action="store_true",
+                    help="run the registered never-gating ML-inversion sensitivity")
     args = ap.parse_args()
     if args.selftest:
         selftest()
@@ -436,6 +492,8 @@ def main() -> None:
     ev = walk_forward(states)
     print("\n=== R1b GATE READ — out-of-sample seasons only ===")
     gate_read(ev)
+    if args.ml_sensitivity:
+        ml_sensitivity(states, args.games)
 
 
 if __name__ == "__main__":
