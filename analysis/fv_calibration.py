@@ -362,6 +362,17 @@ def main() -> None:
         print(fmt_pd(f"holds, estimates {v}", paired_diff(holds[holds.estimates_version == v], "fv", "mid")))
     for lab, mflag in [("clock estimated", holds.minutes_left_is_estimate == "t"), ("clock real", holds.minutes_left_is_estimate == "f")]:
         print(fmt_pd(f"holds, {lab}", paired_diff(holds[mflag], "fv", "mid")))
+    # The clock-estimate contrast above is CONFOUNDED WITH MODEL VERSION, and
+    # these three lines are what shows it. v3/v4 read the venue clock by
+    # construction, so the flag can only ever be set on v1 rows -- which makes
+    # "flagged vs unflagged" mostly "v1 vs everything else". Printed here so the
+    # report's correction reproduces from the artifact rather than from prose.
+    print("crosstab estimates_version x clock-estimate flag:")
+    print(pd.crosstab(holds.estimates_version, holds.minutes_left_is_estimate))
+    v1 = holds[holds.estimates_version == "v1"]
+    for lab, mflag in [("v1 clock estimated", v1.minutes_left_is_estimate == "t"),
+                       ("v1 clock real", v1.minutes_left_is_estimate == "f")]:
+        print(fmt_pd(f"holds, {lab}", paired_diff(v1[mflag], "fv", "mid")))
     band = (holds.mid >= 0.35) & (holds.mid <= 0.65)
     print(fmt_pd("holds, mid 0.35-0.65 (size band)", paired_diff(holds[band], "fv", "mid")))
     print(fmt_pd("holds, mid outside 0.35-0.65", paired_diff(holds[~band], "fv", "mid")))
