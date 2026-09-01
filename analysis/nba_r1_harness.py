@@ -320,10 +320,11 @@ def load_real(games_path: str, plays_path: str) -> pd.DataFrame:
         frames.append(snap.reset_index())
     states = pd.concat(frames, ignore_index=True)
     states["m"] = states.home_score - states.away_score
+    states["tot"] = states.home_score + states.away_score  # for R3b; R1's arithmetic ignores it
     states = states.merge(g[["game_id", "season", "e", "y"]], on="game_id")
     print(f"states: {len(states)} rows, {states.game_id.nunique()} games, "
           f"{states.season.nunique()} seasons, grid t=1..47")
-    return states[["game_id", "season", "t", "m", "e", "y"]]
+    return states[["game_id", "season", "t", "m", "tot", "e", "y"]]
 
 
 # ------------------------------------------------------------------ ML sensitivity
