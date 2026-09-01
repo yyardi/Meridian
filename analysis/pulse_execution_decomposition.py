@@ -505,6 +505,134 @@ def section_unfilled(dec: pd.DataFrame, legs: pd.DataFrame,
               f"= {sub.unfilled.mean():5.1%}  ({sub.event_slug.nunique()} games)")
 
 
+#: The 6b scan, shared verbatim with the selftest so the tested query IS the
+#: production query. Needs `ticks` (market_slug, captured_at, mid, two_sided,
+#: is_live, event_slug) and `unf_df` (id, event_slug, market_slug, side,
+#: limit_price, decided_at, withdrawn_at) in scope.
+WITHDRAWAL_SCAN_SQL = """
+        WITH live_end AS (
+          SELECT event_slug, max(captured_at) t_end FROM ticks
+          WHERE is_live GROUP BY 1
+        ), u AS (
+          SELECT f.*, e.t_end FROM unf_df f JOIN live_end e USING (event_slug)
+        ), scan AS (
+          SELECT u.id,
+            max(CASE WHEN t.captured_at > u.decided_at
+                      AND t.captured_at <= u.withdrawn_at
+                      AND ((u.side='yes' AND t.mid <= u.limit_price) OR
+                           (u.side='no'  AND t.mid >= u.limit_price))
+                     THEN 1 ELSE 0 END) crossed_while_resting,
+            max(CASE WHEN t.captured_at > u.withdrawn_at
+                      AND t.captured_at <= u.t_end
+                      AND ((u.side='yes' AND t.mid <= u.limit_price) OR
+                           (u.side='no'  AND t.mid >= u.limit_price))
+                     THEN 1 ELSE 0 END) would_fill_later,
+            min(CASE WHEN t.captured_at > u.withdrawn_at
+                      AND t.captured_at <= u.t_end
+                      AND ((u.side='yes' AND t.mid <= u.limit_price) OR
+                           (u.side='no'  AND t.mid >= u.limit_price))
+                     THEN epoch(t.captured_at - u.withdrawn_at) END) s_to_fill
+          FROM u LEFT JOIN ticks t
+            ON t.market_slug = u.market_slug AND t.two_sided AND t.is_live
+           AND t.captured_at > u.decided_at AND t.captured_at <= u.t_end
+          GROUP BY u.id
+        )
+        SELECT u.*, coalesce(s.crossed_while_resting, 0) crossed_while_resting,
+               coalesce(s.would_fill_later, 0) would_fill_later, s.s_to_fill
+        FROM u LEFT JOIN scan s ON u.id = s.id
+"""
+
+
+def section_withdrawal_autopsy(con: duckdb.DuckDBPyConnection,
+                               dec: pd.DataFrame,
+                               resolved: pd.DataFrame) -> None:
+    """6b. Whose fault is an unfilled entry — the market's or our own policy?
+
+    Every unfilled entry on this tape was WITHDRAWN by the engine (the rule:
+    stood down the moment the CURRENT estimate stops clearing zero at the
+    resting price — core/pulse/live.py _manage_entry — or the stream left the
+    live set for 120s). So "unfilled" is withdrawal-censored, not
+    expiry-censored, and the +11c unfilled-outperformance result has two
+    candidate mechanisms with different remedies:
+
+      (a) LIMIT NEVER REACHABLE: the mid ran away and never came back — a
+          placement problem; no cancellation policy changes it.
+      (b) PULLED TOO EARLY: after we withdrew, the mid DID cross the resting
+          price — a patient order would have filled under the same rule; the
+          withdrawal policy, not the market, discarded the trade.
+
+    This section splits the withdrawn population by "would the order have
+    filled later" (any two-sided live tick after withdrawn_at, up to the
+    event's last live tick, with mid at-or-through the limit) and scores each
+    half on the same settle-basis counterfactual as section 6.
+
+    Built-in control: the same query counts mid-crossings BETWEEN decided_at
+    and withdrawn_at. Under the engine's own rule that count should be ~0
+    (it fills on the newest tick per ~1s cycle, two-sided, <=60s fresh); a
+    large number here means this join and the engine disagree about the tape
+    and the split above is untrustworthy.
+    """
+    hr("6b. WITHDRAWAL AUTOPSY — pulled too early, or never reachable?")
+    ent = dec[dec.action == "enter"].copy()
+    settle = resolved.dropna(subset=["settlement"]).drop_duplicates(
+        "market_slug").set_index("market_slug").settlement
+    unf = ent[ent.filled_at.isna() & ent.withdrawn_at.notna()].copy()
+    n_open = int((ent.filled_at.isna() & ent.withdrawn_at.isna()).sum())
+    unf["s"] = unf.side.map(sgn)
+    unf["settle_join"] = unf.market_slug.map(settle)
+    unf["rest_s"] = (unf.withdrawn_at - unf.decided_at).dt.total_seconds()
+    unf["late"] = ~unf.period.isin(["Q1", "Q2", "Q3"])
+    print(f"unfilled entries: {len(unf)} withdrawn + {n_open} still open at "
+          f"export (open rows excluded below)")
+    print(f"rest time before withdrawal: median {unf.rest_s.median():.0f}s, "
+          f"p25 {unf.rest_s.quantile(.25):.0f}s, p75 "
+          f"{unf.rest_s.quantile(.75):.0f}s (descriptive)")
+
+    con.register("unf_df", unf[["id", "event_slug", "market_slug", "side",
+                                "limit_price", "decided_at", "withdrawn_at",
+                                "late"]])
+    per = con.execute(WITHDRAWAL_SCAN_SQL).df()
+    per = per.merge(unf[["id", "s", "settle_join"]], on="id")
+    per["cf_pnl_ct"] = per.s * (per.settle_join - per.limit_price)
+
+    cross = per.crossed_while_resting.astype(bool)
+    n_cross = int(cross.sum())
+    print(f"\ncontrol: mid crossed the limit WHILE the order rested yet the "
+          f"engine recorded no fill: {n_cross}/{len(per)} = "
+          f"{n_cross / len(per):.1%}. Expected small but nonzero: the engine "
+          f"reads only the NEWEST tick per ~1s cycle (plus a 60s staleness "
+          f"gate) on a 200ms tape, so sub-cycle crossings are invisible to "
+          f"it and visible to this scan — this line QUANTIFIES that stated "
+          f"fill-rule blindness. A large fraction would mean scan and engine "
+          f"disagree about the tape itself; treat >10% as disqualifying.")
+    wf = per.would_fill_later.astype(bool) & ~cross
+    never = ~per.would_fill_later.astype(bool) & ~cross
+    print(f"\nthree-way split of withdrawn entries (settle-basis cf at limit, "
+          f"same yardstick as section 6):")
+    print(f"  limit reached AFTER withdrawal: {int(wf.sum())}/{len(per)} = "
+          f"{wf.mean():.1%} ({per[wf].event_slug.nunique()} games); "
+          f"median wait {per.loc[wf, 's_to_fill'].median():.0f}s")
+    for name, mask in (
+            ("PULLED TOO EARLY (reached after pull)", wf),
+            ("NEVER REACHABLE (mid never came)", never),
+            ("SUB-CYCLE CROSS while resting", cross)):
+        sub = per[mask & per.settle_join.notna()]
+        vals = {g: list(v) for g, v in sub.groupby("event_slug").cf_pnl_ct}
+        print(f"  {name:38s}: {cm_str(vals)}")
+    print("\nby the late cell (B x D joint note; late = Q4+):")
+    for latev in (True, False):
+        sub = per[per.late == latev]
+        if len(sub) == 0:
+            continue
+        print(f"  late={latev}: {int(sub.would_fill_later.sum())}/{len(sub)} "
+              f"= {sub.would_fill_later.mean():.1%} would have filled later "
+              f"({sub.event_slug.nunique()} games)")
+    print("\n(withdrawal trigger in code: the model's OWN fair value crossing "
+          "back through the resting price — 'edge gone' — or estimate/stream "
+          "loss. 'Would fill later' therefore means: the model gave up, and "
+          "the market subsequently came to the original price anyway.)")
+
+
 def section_exit_availability(con: duckdb.DuckDBPyConnection,
                               dec: pd.DataFrame, legs: pd.DataFrame) -> None:
     hr("7. EXIT AVAILABILITY — rides and the bookless endgame "
@@ -698,6 +826,48 @@ def selftest() -> int:
           f"{r['g2']:+.4f} -> {'ok' if ok else 'FAIL'}")
     failures += 0 if ok else 1
 
+    # Withdrawal-autopsy scan (6b) on a synthetic tape, running the SAME SQL
+    # the real section runs: one order whose limit is reached only AFTER
+    # withdrawal, one never reached, one crossed while resting (the control
+    # the real run expects to read ~0).
+    wd = duckdb.connect()
+    S = pd.Timedelta
+    wticks = pd.DataFrame([
+        dict(event_slug="g1", market_slug="A", captured_at=base + S(seconds=10), mid=0.45),
+        dict(event_slug="g1", market_slug="A", captured_at=base + S(seconds=90), mid=0.39),
+        dict(event_slug="g1", market_slug="B", captured_at=base + S(seconds=10), mid=0.45),
+        dict(event_slug="g1", market_slug="B", captured_at=base + S(seconds=90), mid=0.45),
+        dict(event_slug="g1", market_slug="C", captured_at=base + S(seconds=20), mid=0.61),
+        dict(event_slug="g1", market_slug="C", captured_at=base + S(seconds=90), mid=0.55),
+    ])
+    wticks["two_sided"] = True
+    wticks["is_live"] = True
+    wunf = pd.DataFrame([
+        dict(id=1, event_slug="g1", market_slug="A", side="yes",
+             limit_price=0.40, decided_at=base, withdrawn_at=base + S(seconds=30)),
+        dict(id=2, event_slug="g1", market_slug="B", side="yes",
+             limit_price=0.40, decided_at=base, withdrawn_at=base + S(seconds=30)),
+        dict(id=3, event_slug="g1", market_slug="C", side="no",
+             limit_price=0.60, decided_at=base, withdrawn_at=base + S(seconds=30)),
+    ])
+    wd.register("ticks", wticks)
+    wd.register("unf_df", wunf)
+    scan = wd.execute(WITHDRAWAL_SCAN_SQL).df().set_index("id")
+    ok = (scan.loc[1, "crossed_while_resting"] == 0
+          and scan.loc[1, "would_fill_later"] == 1
+          and abs(scan.loc[1, "s_to_fill"] - 60) < 1e-9
+          and scan.loc[2, "crossed_while_resting"] == 0
+          and scan.loc[2, "would_fill_later"] == 0
+          and scan.loc[3, "crossed_while_resting"] == 1
+          and scan.loc[3, "would_fill_later"] == 0)
+    print(f"  withdrawal scan: fill-after-pull read "
+          f"{int(scan.loc[1, 'would_fill_later'])} (want 1), never-reached "
+          f"read {int(scan.loc[2, 'would_fill_later'])} (want 0), "
+          f"resting-cross control read "
+          f"{int(scan.loc[3, 'crossed_while_resting'])} (want 1) -> "
+          f"{'ok' if ok else 'FAIL'}")
+    failures += 0 if ok else 1
+
     print(f"mutation test: {'ALL OK' if failures == 0 else f'{failures} FAILURES'}")
     return failures
 
@@ -744,11 +914,12 @@ def main() -> int:
 
     con = duckdb.connect()
     con.execute("SET timezone='UTC'")
-    markets = sorted(set(legs.market_slug) | set(exits_filled.market_slug))
+    markets = sorted(dec.market_slug.dropna().unique())
     load_ticks(con, args.ticks, markets)
     section_mid_sanity(con, legs, exits_filled)
     section_adverse_selection(con, legs, exits_filled)
     section_unfilled(dec, legs, resolved)
+    section_withdrawal_autopsy(con, dec, resolved)
     section_exit_availability(con, dec, legs)
 
     hr("STANDING STATEMENTS")
