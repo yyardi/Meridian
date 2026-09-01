@@ -1,81 +1,99 @@
-"""R1 — NBA win-curve sigma: the committed harness, pinned BEFORE first read.
+"""R1b — NBA win-curve sigma: the committed harness, pinned BEFORE first read.
 
-Registration: docs/math/nba-constants-registrations.md (R1). This file pins
-every formula, convention, and port-scaling choice so nothing is invented
-after a number is seen. Standing terms honored here:
+Registration: docs/math/nba-constants-registrations.md — R1b (supersedes R1;
+anchor is the closing SPREAD). Standing terms honored here:
 
   - Walk-forward by season; ONLY out-of-sample seasons score.
   - Intervals cluster BY SEASON (the honest unit for a constant).
-  - OT *states* excluded (no registered OT model); games reaching OT still
-    score their regulation states against the eventual final winner.
+  - OT *states* excluded; OT *games* kept — regulation states score against
+    the eventual final winner.
   - PHYSICS-ONLY: fitted constant tables, never point-in-time claims.
-  - Mutation (--selftest) runs before the first read of real data.
+  - Mutation (--selftest) runs before the first read of real data; the
+    mutation form is the amended clause adopted on main (PR #132).
 
 Reproduce:
 
     .venv/bin/python analysis/nba_r1_harness.py --selftest
-    .venv/bin/python analysis/nba_r1_harness.py --games <games.csv> --plays <plays.csv.gz>
+    .venv/bin/python analysis/nba_r1_harness.py \
+        --games backups/exports/nba_games_20260901T225326Z.csv \
+        --plays backups/exports/nba_plays_20260901T225326Z.csv.gz
 
-PINNED CONVENTIONS
-==================
+PINNED CONVENTIONS — each verified empirically on the pins, printed at load
+===========================================================================
 
-State and outcome
------------------
-margin m = home_score - away_score (home frame, always).
-t = whole minutes remaining in regulation, evaluated on the grid t = 1..47.
-The state at grid point t is the LAST play with minutes_left >= t (the state
-entering that minute). y = 1 iff the home team wins the game (OT included in
-the outcome; OT states never predicted on).
+Games file. team0 is ALWAYS home, team1 ALWAYS away (asserted). Margin and
+outcome are home-frame: m = home - away, y = 1 iff home wins the final
+(OT included in the outcome). closing_spread is home-frame with NEGATIVE =
+home favored — verified before first use: P(home win | spread <= -5) = 0.764,
+P(home win | spread >= +5) = 0.268, and where moneylines exist the favorite
+agrees 99.6% of the time. Therefore the anchor is E = -closing_spread
+(expected home margin). Games with max_period < 4 (exhibition/suspended
+defects) and games without a closing spread are excluded, with counts printed
+per season.
 
-Anchor
-------
-p0 = de-vigged closing moneyline home probability, proportional de-vig:
-p0 = q_h / (q_h + q_a) with q the implied probabilities of the raw prices.
+Plays file. clock_display counts DOWN within a period; formats "M:SS"/"MM:SS"
+(minutes:seconds remaining) and "SS.s"/"S.s" (seconds remaining, final
+minute); anything else is dropped and counted. File order within a game is
+NOT chronological (verified); chronological order is reconstructed by sorting
+on (period, -minutes_left, home_score+away_score), valid because scores are
+monotone in play time. minutes_left = (4 - period)*12 + clock minutes, for
+periods 1-4 only; period >= 5 (OT states) dropped and counted.
 
-The curve — IDENTICAL for every arm
------------------------------------
-    E_arm = sigma_arm(48) * sqrt(48) * PhiInv(p0)      # pregame margin implied
-    P_arm(m, t) = Phi( (m + E_arm * t/48) / (sigma_arm(t) * sqrt(t)) )
+Feed-quality exclusions (counts printed): a game is kept iff its play feed
+reaches the final regulation minute (some play with minutes_left <= 1) AND
+its plays' final margin agrees with the games-table margin within 2 points
+(the games table is authoritative for y; a feed that truncates mid-game would
+otherwise report stale states as endgame states).
 
-E is derived through the arm's own sigma because a moneyline is a probability,
-not a margin: each sigma table is thereby tested END-TO-END (its pregame
-implication and its in-game decay) against the same de-vigged input. Flagged
-to research before first read; a closing-spread-anchored variant runs as a
-LABELED SENSITIVITY only, never the gate.
+State grid. t = whole minutes remaining in regulation, grid t = 1..47; the
+state at t is the LAST play with minutes_left >= t (the state entering that
+minute).
+
+The curve — IDENTICAL for every arm (R1b: E direct from the spread)
+-------------------------------------------------------------------
+    P_arm(m, t) = Phi( (m + E * t/48) / (sigma_arm(t) * sqrt(t)) ),  E = -closing_spread
+
+The R1 moneyline inversion (E through the arm's own sigma) survives ONLY as a
+labelled sensitivity on ML-covered seasons, never gating, per R1b.
 
 The three arms — sigma(t) tables in points per sqrt(minute)
 -----------------------------------------------------------
 (a) NBA-fitted, walk-forward: two-step MLE on training seasons only.
-    Step 1: global sigma by Bernoulli MLE of the full curve (E inside).
-    Step 2: E frozen from step 1; per-phase sigma by per-bucket MLE on
-    t-buckets (36,48], (24,36], (12,24], (0,12]. The phase table is the arm;
-    the global value and per-phase table BOTH report as the physics table.
-(b) WNBA port. 2.628 is points per sqrt(minute) — A RATE, dimensionless in
-    game length — so it needs NO 40->48 rescale; the trap would be porting
-    the implied 16.6-point full-game sd. Its phase decay ports by QUARTER
-    BOUNDARY CORRESPONDENCE (quarters are the structural unit both leagues
-    share): sigma_b(t) is piecewise-linear through (36, 2.98), (24, 2.77),
-    (12, 2.40) — the WNBA boundary-implied values — held flat at 2.98 for
-    t > 36 and flat at 2.40 for t <= 12 (extrapolating the decay below the
-    last measured boundary would be fitting by another name). The flat
-    segment above 36 intentionally does NOT pass through the global 2.628:
-    the boundary values ARE the decay; the global is not a boundary point.
+    Step 1: global sigma by Bernoulli MLE of the full curve.
+    Step 2: per-phase sigma by per-bucket MLE on t-buckets (36,48], (24,36],
+    (12,24], (0,12]. The phase table is the arm; global and per-phase BOTH
+    report as the physics table with season-clustered spread across folds.
+(b) WNBA port (convention per PR #130, carried unchanged): 2.628 is points
+    per sqrt(minute) — A RATE, dimensionless in game length — so NO 40->48
+    rescale; the trap would be porting the implied 16.6-point full-game sd.
+    Phase decay ports by QUARTER BOUNDARY CORRESPONDENCE: sigma_b(t)
+    piecewise-linear through (36, 2.98), (24, 2.77), (12, 2.40), flat
+    outside. The flat segment above 36 intentionally does NOT pass through
+    the global 2.628: the boundary values ARE the decay.
 (c) The 2.0 rule of thumb: sigma(t) = 2.0, flat.
+
+Walk-forward per R1b
+--------------------
+First fit trains on 2015-16; evaluated seasons 2017..2022 contiguous (each
+trained on all prior spread-covered seasons), plus 2025 as a PARTIAL-COVERAGE
+season, labelled, trained on <= 2022. 2023/24 carry no odds and are neither
+trained on nor evaluated. Floors: >= 6 evaluated seasons.
 
 Gate arithmetic
 ---------------
 Per-state Brier per arm; pairwise per-state diffs; season-clustered mean and
-95% CI via core.quote.adverse_selection.clustered_mean with clusters = the
-EVALUATION SEASON (df = seasons - 1). A per-season table prints alongside.
-PASS/adopt = one arm dominates BOTH others with CIs excluding zero.
-Floors: >= 8 evaluated forward seasons. At 10 with no dominant arm:
-INDISTINGUISHABLE-AT-POWER; pre-committed tie-break adopts (a), recorded as
-adoption-by-tie-break, never superiority.
+95% CI via core.quote.adverse_selection.clustered_mean, clusters = evaluation
+season. PASS/adopt = one arm dominates BOTH others with CIs excluding zero.
+At all 7 with no dominant arm: INDISTINGUISHABLE-AT-POWER, tie-break adopts
+(a), recorded as adoption-by-tie-break. Any INDISTINGUISHABLE verdict prints
+the selftest's generator-recovery separability beside it: the arms ARE
+separable at this cohort size, so the verdict is about basketball, not power.
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -91,7 +109,17 @@ REG_MINUTES = 48.0
 GRID = np.arange(1, 48)  # minutes remaining, 1..47
 PHASES = [(36.0, 48.0), (24.0, 36.0), (12.0, 24.0), (0.0, 12.0)]  # (lo, hi] in t_left
 SIGMA_BOUNDS = (0.5, 8.0)
+EVAL_SEASONS = [2017, 2018, 2019, 2020, 2021, 2022]
+PARTIAL_SEASON = 2025  # labelled partial-coverage, train <= 2022
+NO_ODDS_SEASONS = {2023, 2024}
 
+POWER_LINE = (
+    "POWER (from --selftest generator-recovery at ~1,200 games/season, 6 eval seasons):\n"
+    "  data generated under flat-2.0 beats the WNBA port  -0.00210 [-0.00274, -0.00146]\n"
+    "  data generated under the WNBA port beats flat-2.0  -0.00097 [-0.00172, -0.00021]\n"
+    "  The arms ARE separable at this cohort size; an INDISTINGUISHABLE verdict is a\n"
+    "  statement about basketball, not about our power."
+)
 CAPITAL_LINE = "No in-sample result justifies capital. The forward test is the evidence."
 
 
@@ -125,59 +153,50 @@ def sigma_phase_table(table: dict[tuple[float, float], float]):
 # ------------------------------------------------------------------ the curve
 
 
-def curve_prob(m: np.ndarray, t: np.ndarray, p0: np.ndarray, sigma_fn) -> np.ndarray:
-    """The one registered curve. sigma_fn maps t_left -> points/sqrt(min)."""
-    e = sigma_fn(np.full_like(np.asarray(t, dtype=float), REG_MINUTES)) * np.sqrt(REG_MINUTES) * norm.ppf(p0)
+def curve_prob(m: np.ndarray, t: np.ndarray, e: np.ndarray, sigma_fn) -> np.ndarray:
+    """The one registered curve (R1b): E enters directly from the spread."""
+    t = np.asarray(t, dtype=float)
     z = (m + e * t / REG_MINUTES) / (sigma_fn(t) * np.sqrt(t))
     return norm.cdf(z)
 
 
 def fit_arm_a(train: pd.DataFrame) -> tuple[float, dict[tuple[float, float], float]]:
     """Two-step MLE on TRAINING rows only. Returns (global sigma, phase table)."""
-    m, t, p0, y = (train[c].to_numpy(float) for c in ["m", "t", "p0", "y"])
+    m, t, e, y = (train[c].to_numpy(float) for c in ["m", "t", "e", "y"])
 
-    def nll_global(s):
-        p = np.clip(curve_prob(m, t, p0, sigma_flat(s)), 1e-9, 1 - 1e-9)
-        return -np.sum(y * np.log(p) + (1 - y) * np.log(1 - p))
+    def nll(s, mm, tt, ee, yy):
+        p = np.clip(norm.cdf((mm + ee * tt / REG_MINUTES) / (s * np.sqrt(tt))), 1e-9, 1 - 1e-9)
+        return -np.sum(yy * np.log(p) + (1 - yy) * np.log(1 - p))
 
-    s_glob = minimize_scalar(nll_global, bounds=SIGMA_BOUNDS, method="bounded").x
-
-    # E frozen from the global fit; per-phase sigma by per-bucket MLE
-    e = s_glob * np.sqrt(REG_MINUTES) * norm.ppf(p0)
+    s_glob = minimize_scalar(lambda s: nll(s, m, t, e, y), bounds=SIGMA_BOUNDS, method="bounded").x
     table = {}
     for lo, hi in PHASES:
         mask = (t > lo) & (t <= hi)
-        mm, tt, ee, yy = m[mask], t[mask], e[mask], y[mask]
-
-        def nll_phase(s):
-            p = np.clip(norm.cdf((mm + ee * tt / REG_MINUTES) / (s * np.sqrt(tt))), 1e-9, 1 - 1e-9)
-            return -np.sum(yy * np.log(p) + (1 - yy) * np.log(1 - p))
-
-        table[(lo, hi)] = minimize_scalar(nll_phase, bounds=SIGMA_BOUNDS, method="bounded").x
-    return float(s_glob), {k: float(v) for k, v in table.items()}
+        table[(lo, hi)] = float(
+            minimize_scalar(lambda s: nll(s, m[mask], t[mask], e[mask], y[mask]), bounds=SIGMA_BOUNDS, method="bounded").x
+        )
+    return float(s_glob), table
 
 
 # ------------------------------------------------------------------ walk-forward
 
 
 def walk_forward(states: pd.DataFrame) -> pd.DataFrame:
-    """Fit (a) on seasons <= k, evaluate all arms on season k+1. Returns
-    per-state eval rows with each arm's Brier. Only forward seasons appear."""
-    seasons = sorted(states.season.unique())
+    """R1b folds: eval 2017..2022 trained on prior spread-covered seasons;
+    2025 trained on <= 2022. Returns per-state eval rows with per-arm Brier."""
     rows = []
     fitted = {}
-    for i in range(1, len(seasons)):
-        train = states[states.season.isin(seasons[:i])]
-        ev = states[states.season == seasons[i]].copy()
+    folds = [(s, [x for x in sorted(states.season.unique()) if x < s]) for s in EVAL_SEASONS]
+    if PARTIAL_SEASON in states.season.unique():
+        folds.append((PARTIAL_SEASON, [x for x in sorted(states.season.unique()) if x <= 2022]))
+    for eval_season, train_seasons in folds:
+        train = states[states.season.isin(train_seasons)]
+        ev = states[states.season == eval_season].copy()
         s_glob, table = fit_arm_a(train)
-        fitted[seasons[i]] = {"global": s_glob, "table": table}
-        arms = {
-            "a": sigma_phase_table(table),
-            "b": sigma_wnba_port,
-            "c": sigma_flat(2.0),
-        }
+        fitted[eval_season] = {"global": s_glob, "table": table, "train": train_seasons}
+        arms = {"a": sigma_phase_table(table), "b": sigma_wnba_port, "c": sigma_flat(2.0)}
         for name, fn in arms.items():
-            p = curve_prob(ev.m.to_numpy(float), ev.t.to_numpy(float), ev.p0.to_numpy(float), fn)
+            p = curve_prob(ev.m.to_numpy(float), ev.t.to_numpy(float), ev.e.to_numpy(float), fn)
             ev[f"brier_{name}"] = (p - ev.y.to_numpy(float)) ** 2
         rows.append(ev)
     out = pd.concat(rows, ignore_index=True)
@@ -186,97 +205,147 @@ def walk_forward(states: pd.DataFrame) -> pd.DataFrame:
 
 
 def gate_read(ev: pd.DataFrame) -> None:
-    """Pairwise season-clustered diffs + per-season table + the verdict frame."""
     seasons = sorted(ev.season.unique())
-    print(f"forward seasons evaluated: {len(seasons)} (floor >= 8): {seasons}")
+    label = lambda s: f"{s}(PARTIAL)" if s == PARTIAL_SEASON else str(s)
+    print(f"forward seasons evaluated: {len(seasons)} (floor >= 6): {[label(s) for s in seasons]}")
+    fitted = ev.attrs.get("fitted", {})
+    if fitted:
+        print("\nTHE PHYSICS TABLE — arm (a) per fold (points per sqrt-minute):")
+        print("  eval  global   Q1(36,48]  Q2(24,36]  Q3(12,24]  Q4(0,12]   trained on")
+        for s, f in fitted.items():
+            tv = [f["table"][p] for p in PHASES]
+            print(f"  {label(s):<11s} {f['global']:.3f}   " + "      ".join(f"{v:.3f}" for v in tv)
+                  + f"   {f['train'][0]}..{f['train'][-1]}")
     pairs = [("a", "b"), ("a", "c"), ("b", "c")]
     wins = {k: 0 for k in "abc"}
+    print("\npairwise paired Brier, season-clustered (negative favours the first arm):")
     for x, z in pairs:
         d = ev[f"brier_{x}"] - ev[f"brier_{z}"]
         cm = clustered_mean({s: d[ev.season == s].tolist() for s in seasons})
-        verdict = ""
         if cm.hi < 0:
-            verdict = f"{x} better, CI excludes zero"
-            wins[x] += 1
+            verdict, _ = f"({x}) better, CI excludes zero", wins.__setitem__(x, wins[x] + 1)
         elif cm.lo > 0:
-            verdict = f"{z} better, CI excludes zero"
-            wins[z] += 1
+            verdict, _ = f"({z}) better, CI excludes zero", wins.__setitem__(z, wins[z] + 1)
         else:
             verdict = "CI straddles zero"
         print(f"  Brier({x})-Brier({z}): {cm.mean:+.5f} [{cm.lo:+.5f}, {cm.hi:+.5f}]  "
               f"rows={cm.n} seasons={cm.n_clusters}  -> {verdict}")
     per = ev.groupby("season")[[f"brier_{k}" for k in "abc"]].mean()
+    per.index = [label(s) for s in per.index]
     print("\nper-season mean Brier (a=NBA-fit, b=WNBA-port, c=2.0):")
     print(per.to_string(float_format=lambda v: f"{v:.5f}"))
     dominant = [k for k, w in wins.items() if w == 2]
-    if len(seasons) < 8:
-        print("\nVERDICT FRAME: below the 8-season floor — NO READ.")
+    if len(seasons) < 6:
+        print("\nVERDICT FRAME: below the 6-season floor — NO READ.")
     elif dominant:
         print(f"\nVERDICT FRAME: arm ({dominant[0]}) dominates both others with CIs excluding zero.")
     else:
         print("\nVERDICT FRAME: no arm dominates both others."
-              + (" At 10 forward seasons this is INDISTINGUISHABLE-AT-POWER;"
-                 " the pre-committed tie-break adopts (a) — recorded as"
-                 " adoption-by-tie-break, never superiority." if len(seasons) >= 10 else ""))
+              + ("\nAt all 7 available seasons: INDISTINGUISHABLE-AT-POWER; the pre-committed"
+                 "\ntie-break adopts (a) — recorded as adoption-by-tie-break, never superiority."
+                 if len(seasons) >= 7 else ""))
+        print(POWER_LINE)
+    print(f"\n{CAPITAL_LINE}")
 
 
 # ------------------------------------------------------------------ data
 
 
-def devig(ml_home: pd.Series, ml_away: pd.Series) -> pd.Series:
-    """American moneylines -> proportional de-vigged home probability."""
-
-    def implied(ml):
-        ml = ml.astype(float)
-        return np.where(ml < 0, -ml / (-ml + 100.0), 100.0 / (ml + 100.0))
-
-    qh, qa = implied(ml_home), implied(ml_away)
-    return pd.Series(qh / (qh + qa), index=ml_home.index)
+CLOCK_MS = re.compile(r"^(\d{1,2}):(\d{2})$")
+CLOCK_S = re.compile(r"^(\d{1,2}(?:\.\d)?)$")
 
 
-def build_states(games: pd.DataFrame, plays: pd.DataFrame) -> pd.DataFrame:
-    """Minute-grid states from plays. Requires games to already carry p0 and y.
+def parse_clock_minutes(s: pd.Series) -> pd.Series:
+    """Minutes remaining IN PERIOD from clock_display; NaN for unparseable."""
+    s = s.astype(str)
+    ms = s.str.extract(CLOCK_MS)
+    sec = s.str.extract(CLOCK_S)
+    out = pd.to_numeric(ms[0]) + pd.to_numeric(ms[1]) / 60.0
+    return out.fillna(pd.to_numeric(sec[0]) / 60.0)
 
-    Play clock convention is bound at load time (see load_real); here plays
-    carry `minutes_left` in regulation minutes (48 -> 0) and OT rows are
-    already dropped. Grid state = last play with minutes_left >= t.
-    """
-    plays = plays.sort_values(["game_id", "minutes_left"], ascending=[True, False])
+
+def load_real(games_path: str, plays_path: str) -> pd.DataFrame:
+    g = pd.read_csv(games_path)
+    assert (g.team0_homeaway == "home").all() and (g.team1_homeaway == "away").all(), "team0/team1 frame changed"
+    g = g.rename(columns={"team0_score": "home_final", "team1_score": "away_final"})
+    g["home_margin"] = g.home_final - g.away_final
+    assert (g.home_margin != 0).all(), "tied final — impossible in NBA, data defect"
+    g["y"] = (g.home_margin > 0).astype(float)
+    g["e"] = -g.closing_spread  # NEGATIVE spread = home favored, verified below
+
+    print("=== COMPOSITION AND CONVENTION CHECKS (before any ratio) ===")
+    s = g.dropna(subset=["closing_spread"])
+    big_n, big_p = s[s.closing_spread <= -5], s[s.closing_spread >= 5]
+    ml = s.dropna(subset=["closing_ml_home", "closing_ml_away"])
+    fav_agree = (ml[ml.closing_spread < 0].closing_ml_home < ml[ml.closing_spread < 0].closing_ml_away).mean()
+    print(f"spread sign: P(home win|spread<=-5)={(big_n.home_margin > 0).mean():.3f} (n={len(big_n)}), "
+          f"P(home win|spread>=+5)={(big_p.home_margin > 0).mean():.3f} (n={len(big_p)}), "
+          f"ML favorite agreement {fav_agree:.3f} -> E = -closing_spread confirmed")
+    n0 = len(g)
+    bad_period = g.max_period < 4
+    no_spread = g.closing_spread.isna()
+    g = g[~bad_period & ~no_spread]
+    print(f"games: {n0} -> {len(g)} (excluded {int(bad_period.sum())} max_period<4 defects, "
+          f"{int((no_spread & ~bad_period).sum())} without closing spread)")
+    print("spread-covered games by season:", g.season.value_counts().sort_index().to_dict())
+
+    p = pd.read_csv(plays_path)
+    n_plays = len(p)
+    p = p[p.period <= 4].copy()
+    n_ot = n_plays - len(p)
+    p["clock_min"] = parse_clock_minutes(p.clock_display)
+    n_bad_clock = int(p.clock_min.isna().sum())
+    p = p.dropna(subset=["clock_min"])
+    p["minutes_left"] = (4 - p.period) * 12.0 + p.clock_min
+    print(f"plays: {n_plays} -> {len(p)} (dropped {n_ot} OT-state plays, {n_bad_clock} unparseable clocks)")
+
+    # feed quality: reaches the final regulation minute AND agrees with finals
+    lastp = p.sort_values(["game_id", "period", "minutes_left"], ascending=[True, True, False]) \
+             .groupby("game_id").last()
+    reach = p.groupby("game_id").minutes_left.min() <= 1.0
+    q = g.merge(lastp[["home_score", "away_score"]], on="game_id", how="left")
+    agree = (q.home_score - q.away_score - q.home_margin).abs() <= 2
+    okset = set(q.game_id[agree & q.game_id.map(reach).fillna(False)])
+    print(f"feed quality: {len(g) - len(okset)} games excluded "
+          f"(feed truncated before final minute, missing plays, or margin disagreement > 2)")
+    g = g[g.game_id.isin(okset)]
+
+    # chronological order within game: scores are monotone, so total points breaks clock ties
+    p = p[p.game_id.isin(okset)]
+    p = p.sort_values(["game_id", "minutes_left", "home_score"], ascending=[True, False, True])
     frames = []
     for t in GRID:
-        eligible = plays[plays.minutes_left >= t]
-        snap = eligible.groupby("game_id").last().reset_index()
+        snap = p[p.minutes_left >= t].groupby("game_id")[["home_score", "away_score"]].last()
         snap["t"] = float(t)
-        frames.append(snap[["game_id", "t", "m"]])
+        frames.append(snap.reset_index())
     states = pd.concat(frames, ignore_index=True)
-    return states.merge(games[["game_id", "season", "p0", "y"]], on="game_id")
+    states["m"] = states.home_score - states.away_score
+    states = states.merge(g[["game_id", "season", "e", "y"]], on="game_id")
+    print(f"states: {len(states)} rows, {states.game_id.nunique()} games, "
+          f"{states.season.nunique()} seasons, grid t=1..47")
+    return states[["game_id", "season", "t", "m", "e", "y"]]
 
 
 # ------------------------------------------------------------------ selftest
 
 
 def _synth(seed: int, n_seasons=11, games_per=400, sigma_fn=None, shuffle=False):
-    """Brownian-margin seasons with a moneyline consistent with the true curve."""
+    """Brownian-margin seasons with a spread anchor consistent with the truth."""
     rng = np.random.default_rng(seed)
     sigma_fn = sigma_fn or sigma_flat(2.6)
-    rows, games = [], []
+    rows = []
     gid = 0
     for season in range(n_seasons):
         for _ in range(games_per):
             e_true = rng.normal(0, 6)
-            s48 = float(sigma_fn(np.array([REG_MINUTES]))[0])
-            p0 = float(norm.cdf(e_true / (s48 * np.sqrt(REG_MINUTES))))
-            # simulate margin minute-by-minute with per-minute sd = sigma(t)
             m = 0.0
             path = {}
-            for t in range(47, -1, -1):  # after minute 48-t ... walk down
-                drift = e_true / REG_MINUTES
-                m += drift + float(sigma_fn(np.array([t + 1.0]))[0]) * rng.normal()
+            for t in range(47, -1, -1):
+                m += e_true / REG_MINUTES + float(sigma_fn(np.array([t + 1.0]))[0]) * rng.normal()
                 path[t] = m
             y = 1.0 if m > 0 else 0.0
-            games.append({"game_id": gid, "season": season, "p0": np.clip(p0, 0.02, 0.98), "y": y})
             for t in GRID:
-                rows.append({"game_id": gid, "season": season, "t": float(t), "m": path[t], "p0": np.clip(p0, 0.02, 0.98), "y": y})
+                rows.append({"game_id": gid, "season": season, "t": float(t), "m": path[t], "e": e_true, "y": y})
             gid += 1
     states = pd.DataFrame(rows)
     if shuffle:
@@ -295,35 +364,26 @@ def _pair(ev: pd.DataFrame, x: str, z: str):
 def _score(ev: pd.DataFrame, arms: dict) -> pd.DataFrame:
     ev = ev.copy()
     for name, fn in arms.items():
-        p = curve_prob(ev.m.to_numpy(float), ev.t.to_numpy(float), ev.p0.to_numpy(float), fn)
+        p = curve_prob(ev.m.to_numpy(float), ev.t.to_numpy(float), ev.e.to_numpy(float), fn)
         ev[f"brier_{name}"] = (p - ev.y.to_numpy(float)) ** 2
     return ev
 
 
 def selftest() -> None:
-    """Mutation-test the instrument before any real data.
+    """The amended mutation clause (adopted on main), run before any real read.
 
     1. Walk-forward fitter recovers a known sigma within tolerance.
-    2. Distorted tables LOSE to the truth — in BOTH directions (x1.5 wider
-       and /1.5 narrower), CI excluding zero each way.
-    3. Generator-recovery: data generated under table X, the harness awards
-       the win to X over a rival table — run for both a flat-2.0 generator
-       (vs the WNBA port) and a WNBA-port generator (vs flat 2.0). This is
-       the artifact-free null-family check: the win must follow the
-       generator, not any fixed arm.
-    4. Shuffled-outcome null: the SHARPER (narrower-sigma) table must never
-       win. NOTE, flagged to research before first read: the registration's
-       literal 'no arm dominating' is unsatisfiable under Brier for arms of
-       unequal sharpness — destroyed signal mechanically rewards the flatter
-       table — so this clause asserts the known artifact direction instead,
-       and test 3 carries the discrimination burden the null was meant to.
+    2. Distorted tables LOSE to the truth in BOTH directions, CI excluding zero.
+    3. Generator-recovery: the win follows the generating table, both
+       directions, at real-cohort power (~1,200 games/season).
+    4. Shuffled-outcome null asserts the artifact direction: the sharper
+       table must never win (flatness mechanically wins on destroyed signal).
     """
     ok = True
     states = _synth(11)
     seasons = sorted(states.season.unique())
 
-    train = states[states.season.isin(seasons[:5])]
-    s_glob, table = fit_arm_a(train)
+    s_glob, table = fit_arm_a(states[states.season.isin(seasons[:5])])
     print(f"[1] fitter on sigma_true=2.6 synthetic: global {s_glob:.3f}, phases "
           + ", ".join(f"{v:.3f}" for v in table.values()))
     ok &= abs(s_glob - 2.6) < 0.15
@@ -339,8 +399,6 @@ def selftest() -> None:
         ("flat2.0", sigma_flat(2.0), "wnba-port", sigma_wnba_port),
         ("wnba-port", sigma_wnba_port, "flat2.0", sigma_flat(2.0)),
     ]:
-        # games_per matches the real cohort (~1,200 games/season) so this
-        # doubles as a power statement: separability at the size we'll have
         g = _synth(seed=int(sum(map(ord, gen_name))), sigma_fn=gen_fn, games_per=1200)
         evg = _score(g[~g.season.isin(seasons[:5])], {"gen": gen_fn, "rival": rival_fn})
         cm = _pair(evg, "gen", "rival")
@@ -353,7 +411,7 @@ def selftest() -> None:
                 {"sharp": sigma_flat(2.6 / 1.5), "true": sigma_flat(2.6)})
     cm = _pair(ev, "sharp", "true")
     print(f"[4] shuffled null, sharper-vs-true: {cm.mean:+.5f} [{cm.lo:+.5f}, {cm.hi:+.5f}] "
-          f"(sharper must NOT win: want lo not > 0 in sharp's favour, i.e. hi>0 or straddle)")
+          f"(sharper must NOT win)")
     ok &= not (cm.hi < 0)
 
     print("SELFTEST", "PASS" if ok else "FAIL")
@@ -374,10 +432,10 @@ def main() -> None:
         return
     if not (args.games and args.plays):
         ap.error("--games and --plays required (or --selftest)")
-    raise SystemExit(
-        "load_real is bound after the manager pins the export and names the "
-        "clock and odds conventions; the formulas above are frozen regardless."
-    )
+    states = load_real(args.games, args.plays)
+    ev = walk_forward(states)
+    print("\n=== R1b GATE READ — out-of-sample seasons only ===")
+    gate_read(ev)
 
 
 if __name__ == "__main__":
