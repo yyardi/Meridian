@@ -303,6 +303,8 @@ def main() -> None:
     print(f"rows by type: {holds.mtype.value_counts().to_dict()}")
     print(f"games by type: {holds.groupby('mtype').game_id.nunique().to_dict()}")
     print(f"rows by estimates_version: {holds.estimates_version.value_counts().to_dict()}")
+    print("version x clock-flag crosstab (the flag exists ONLY on v1 — v3/v4 read the venue clock):")
+    print(pd.crosstab(holds.estimates_version, holds.minutes_left_is_estimate).to_string())
     print(f"hold cadence: ~60s per market; book width median {holds.width.median():.2f}, p90 {holds.width.quantile(0.9):.2f}")
     print(f"|fv-mid| median {abs(holds.fv - holds.mid).median():.3f} on holds vs {abs(enters.fv - enters.mid).median():.3f} on entries")
     base = {g: v["y"].tolist() for g, v in holds.groupby("game_id")}
@@ -360,8 +362,13 @@ def main() -> None:
         print(fmt_pd(f"holds, {lab}", paired_diff(holds[m], "fv", "mid")))
     for v in ["v1", "v3", "v4"]:
         print(fmt_pd(f"holds, estimates {v}", paired_diff(holds[holds.estimates_version == v], "fv", "mid")))
-    for lab, mflag in [("clock estimated", holds.minutes_left_is_estimate == "t"), ("clock real", holds.minutes_left_is_estimate == "f")]:
+    # CONFOUND (B's catch): the estimate flag exists only on v1 rows, so a raw
+    # flagged-vs-unflagged contrast is mostly v1-vs-rest. Shown raw AND within-v1.
+    for lab, mflag in [("clock estimated (v1-only!)", holds.minutes_left_is_estimate == "t"), ("clock real", holds.minutes_left_is_estimate == "f")]:
         print(fmt_pd(f"holds, {lab}", paired_diff(holds[mflag], "fv", "mid")))
+    v1h = holds[holds.estimates_version == "v1"]
+    print(fmt_pd("v1 holds, flagged", paired_diff(v1h[v1h.minutes_left_is_estimate == "t"], "fv", "mid")))
+    print(fmt_pd("v1 holds, unflagged (thin!)", paired_diff(v1h[v1h.minutes_left_is_estimate == "f"], "fv", "mid")))
     band = (holds.mid >= 0.35) & (holds.mid <= 0.65)
     print(fmt_pd("holds, mid 0.35-0.65 (size band)", paired_diff(holds[band], "fv", "mid")))
     print(fmt_pd("holds, mid outside 0.35-0.65", paired_diff(holds[~band], "fv", "mid")))
