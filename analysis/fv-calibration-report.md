@@ -73,8 +73,9 @@ exception below that is really an *input-integrity* failure.
 | all | +0.0061 | [−0.0111, +0.0233] | 12,689 / 33 |
 | totals | +0.0144 | [−0.0137, +0.0425] | 6,957 / 25 |
 | spread | −0.0044 | [−0.0284, +0.0196] | 4,870 / 32 |
-| **clock estimated** | **+0.0420** | [−0.0438, +0.1277] | 1,055 / 22 |
+| **clock estimated** (v1-only — see confound) | **+0.0420** | [−0.0438, +0.1277] | 1,055 / 22 |
 | clock real | +0.0029 | [−0.0145, +0.0202] | 11,634 / 31 |
+| v1 unflagged (thin control) | +0.0044 | [−0.0159, +0.0247] | 251 / 10 |
 | mid 0.35–0.65 (the size band) | +0.0176 | [−0.0111, +0.0462] | 3,046 / 32 |
 | \|fv−mid\| > 0.05 (disagreements) | +0.0120 | [−0.0229, +0.0468] | 6,151 / 32 |
 | \|fv−mid\| ≤ 0.05 (agreements) | +0.0006 | [−0.0022, +0.0035] | 6,538 / 33 |
@@ -95,11 +96,10 @@ doors, none of which is "slightly wrong probabilities":
 
 1. **Corrupted state in, certainty out.** sea-dal 08-23: score 91 points at
    "Q2, 30:00 left" — jointly impossible (the game finaled 162) — and *not*
-   flagged (`minutes_left_is_estimate='f'`). The projection extrapolated to
-   235.1 and emitted P(over 171.5) = 1.0000 against a market at 0.62. Under
-   won. Estimated-clock rows are 8.3% of holds but **28.1% of extreme-miss
-   rows**; entries claiming ≥0.25 edge carry the flag at **42.7%** vs 19.8%
-   baseline (ties to B's broken-state pointer).
+   flagged (`minutes_left_is_estimate='f'`, and a **v3** row, so state
+   corruption is not confined to v1's clock estimator). The projection
+   extrapolated to 235.1 and emitted P(over 171.5) = 1.0000 against a market
+   at 0.62. Under won.
 2. **Under-shrunk pace with too-small σ mid-game.** conn-dal 08-30: 105 points
    at the half → projection 200.6, σ 13.0 → P(over 173.5) = 0.98 for 19
    consecutive minutes. Second half scored 63; final 168. (The mid also missed
@@ -118,13 +118,17 @@ state arrives.
 
 ## Top-3 candidate hypotheses (each: sentence · confound check · forward test)
 
-1. **Clock-integrity, not probability, is the model's worst input:** on states
-   with estimated or internally-inconsistent clocks the FV's Brier deficit vs
-   the mid is an order of magnitude larger than on clean states (+0.042 vs
-   +0.003 point estimates). Confound: flagged rows skew late-game and
-   v1-heavy; check within version × period. Forward test: log a
-   score-vs-elapsed plausibility check per tick, and score flagged vs unflagged
-   cohorts separately in the next N games.
+1. **State-integrity, not probability, is the model's worst input** — with a
+   confound that must travel with it (B's catch, verified here): the
+   `minutes_left_is_estimate` flag exists **only on v1 rows** (v3/v4 read the
+   venue clock by construction), so the raw flagged-vs-unflagged contrast
+   (+0.042 vs +0.003) is mostly v1-vs-rest. Within v1 the point contrast
+   survives (flagged +0.042 / 22 games vs unflagged +0.004 / 251 rows, 10
+   games) but the control cell is too thin to separate clock quality from
+   version. What is NOT confounded: the row-level door — a jointly-impossible
+   clock/score state on a **v3 unflagged** row priced as P=1.0000. Forward
+   test: log a score-vs-elapsed plausibility check per tick on the current
+   version, and score plausible vs implausible cohorts in the next N games.
 2. **The totals endgame needs an event-driven tail (fouling + OT), not a
    Gaussian:** every ≥0.98 miss is a total, and the two endgame misses are
    exactly the discrete-scoring regimes σ→0 cannot represent. Confound: 6
@@ -137,7 +141,14 @@ state arrives.
    fails to order realized outcomes anywhere. Confound: disagreement
    correlates with wide books and broken states; recheck excluding flagged
    clocks and width>0.10. Forward test: the #20-family paired comparison on
-   forward games, disagreement-bucketed.
+   forward games, disagreement-bucketed. Cross-lane note (B, post-hoc on A's
+   ledger): this Brier-level damage does **not** show up in trip P&L — a
+   5¢-target roll pays on price oscillation and exit availability, not on the
+   belief being right — so it should surface on the ride-to-settlement leg,
+   where B's n is still too thin (15 est-clock rides) to see it. Entries
+   claiming ≥0.25 edge carry the estimate flag at 42.7% vs 19.8% baseline,
+   but per the same confound this largely restates "v1 wrote the big-edge
+   tail" (70 of 157 ≥0.25-edge entries are v1).
 
 ## Top-3 negatives, mechanism named
 
