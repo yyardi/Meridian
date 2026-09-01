@@ -241,3 +241,41 @@ same breath as the verdict.**
 The same pattern applies to R2's harness wherever its arms differ in sharpness.
 
 **C reads real data once this lands.**
+
+---
+
+## R1b — ADOPTION APPEND, 2026-09-02
+
+**VERDICT: PASS — ADOPTED.** Arm (a), the NBA-fitted walk-forward σ table,
+dominates both rivals on the registered terms: paired Brier vs (b) WNBA-port
+**−0.00062 [−0.00080, −0.00045]**, vs (c) flat-2.0 **−0.00108 [−0.00140,
+−0.00076]**, season-clustered, **7 evaluated seasons against a floor of 6** —
+and posts the lowest Brier in **every season individually**, so the pooled
+effect is not one good year. Harness pinned at `478d48b` before the gate ran;
+selftest passing under the amended mutation clause; **the pre-computed
+separability note applies** — at this power the arms are provably
+distinguishable under truth, so this dominance is a statement about basketball.
+
+**The structural finding, which outlives the gate:** **NBA σ RISES through the
+game** (Q1 ≈ 2.11–2.25 → Q4 ≈ 2.41–2.47 across folds) where **WNBA σ FALLS**
+(2.98 → 2.77 → 2.40). The ported table was not merely mis-levelled — **its phase
+decay has the WRONG SIGN OF SLOPE for this league.** This is the
+arms-not-defaults design paying its bill: carried as a baseline, the inverted
+shape would have been inherited by every downstream number. Global σ drifts
+**2.30 → 2.45** across training windows — the scoring environment moves, which
+is why **the ADOPTED FORM IS THE WALK-FORWARD REFIT, not any frozen table.**
+
+**Effect size, stated so it cannot be over-read: 0.4–0.7% relative Brier. Real,
+small, physics not alpha.** This PASS improves the model's uncertainty engine;
+**it does not indicate an edge, and no capital implication exists.** The forward
+test of any strategy built on it is separate evidence, per the standard.
+
+### Ruling — the ML-inversion sensitivity
+
+**PROCEED.** It was registered inside R1b as a never-gating labelled
+sensitivity, so running it after the primary read is **per the registration, not
+a post-hoc addition**. The flag-rather-than-slip instinct was the correct
+reflex, and the ordering is disclosed regardless: it lands as its own commit,
+with results under a **SENSITIVITY** heading carrying the line *"executed after
+the primary read, per its registered never-gating status; ordering disclosed,"*
+touching nothing in the gate arithmetic.

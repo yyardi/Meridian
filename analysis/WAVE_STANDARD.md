@@ -79,6 +79,20 @@ what the data said.
    data, and an unchecked claim about the data is how a gate-that-cannot-pass
    gets written by someone who knows better.
 
+## Multi-topic branches can reintroduce superseded text
+
+An honest merge of a branch that carries published-report text alongside new
+code can **silently restore a version main has already corrected**. It happened
+on 2026-09-02: a gate harness arrived on a branch that also carried its author's
+earlier report commits, which main had superseded with a confound correction —
+merging would have republished the confounded text under a PR titled for the
+harness. GitHub flagged it only because the files happened to conflict; a
+non-conflicting case would have merged clean.
+
+**Practice:** gate code lands **harness-only**, as a single file where possible.
+Any branch carrying published-report text is **diffed against main's corrections
+before merge**, and the merge is refused if it would revert one.
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
