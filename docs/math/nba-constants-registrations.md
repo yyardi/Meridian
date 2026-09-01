@@ -279,3 +279,76 @@ reflex, and the ordering is disclosed regardless: it lands as its own commit,
 with results under a **SENSITIVITY** heading carrying the line *"executed after
 the primary read, per its registered never-gating status; ordering disclosed,"*
 touching nothing in the gate arithmetic.
+
+---
+
+## R2 — AMENDMENT, 2026-09-02, before any read
+
+**Nothing has computed.** The amendment is clean for that reason and would not
+be after a read.
+
+### The error being corrected
+
+R2 was ruled *"unaffected, run now on all 11 seasons"* and briefed onward as
+*"needs no anchor / no market data."* **All of that is false.** R2's estimand
+names its anchor in its second symbol:
+
+```
+dev = margin − E·(elapsed/48),   E from the closing spread
+```
+
+This is the WNBA #89 / #89-fg form exactly (*"closing-spread anchor, play-level
+margins"*), and an anchor-free variant is refused on precedent: **#16/#17
+established that team-blind anchors invert reversion results.**
+
+### Coverage, cited per rule 10
+
+Spread coverage is contiguous **2015–2022 plus partial 2025 — 9 seasons**.
+Walk-forward evaluations: **2016–2022 plus 2025 (PARTIAL) = 8 available forward
+seasons.**
+
+### 1. Anchor — confirmed
+
+**R2 is spread-anchored**, in the #89 form.
+
+### 2. Closure clause — amended to a reachable state
+
+The registered clause said *"at 10 forward seasons"*. **Only 8 exist. That state
+cannot occur** — the gate-that-cannot-close species, inside the clause written
+against it, caught pre-read. Superseded text left untouched above.
+
+> **At all 8 available forward seasons with the CI straddling zero →
+> NO-MARGINAL-VALUE: the term is not added, the physics table stands as
+> reference, the gate closes.**
+
+### 3. Floor — moves to ≥ 7 of the 8 available
+
+**Chosen with the coverage table in view, disclosed as such.** A zero-margin
+floor converts **any single-season data defect into a mid-run NO DATA**;
+R1b's shape (floor 6 of 7 available, margin 1) is the precedent. **One season of
+margin is protection against defects, not against results** — the floor still
+cannot be met by fewer than 7 honest seasons.
+
+### 4. Pins — approved as proposed
+
+12 gridpoints at elapsed 4…48 with **β(48) = 0 forced** (11 fitted, matching
+#89's endpoint convention); `expected_final = E + (1 − s(elapsed))·dev`;
+no-intercept regression of `(dev_final − dev_t)` on `dev_t` as primary, with an
+intercept variant as robustness; per-season β fits with t-intervals across
+seasons; **σ from R1b's ADOPTED arm (a), refit per fold** — the adopted form
+used exactly as adopted.
+
+**Both pre-named readings stand unchanged:** a ≈0 result is **redundancy of
+form**, a finding about the FV's arithmetic, not the absence of the physics.
+Neither reading is adoptable retroactively.
+
+---
+
+## R1b — sensitivity note
+
+**Sensitivity (PR #136, never-gating, executed post-read as registered):** under
+the circular ML-inversion construction the arm ordering scrambles — each table's
+σ enters its own anchor, partially immunising it against its own mis-level, and
+the comparison degrades to self-consistency, where flatness wins for the
+shuffled-null reason. **The spread re-anchoring was adopted on coverage grounds;
+this is its empirical vindication: the severed loop was load-bearing.**

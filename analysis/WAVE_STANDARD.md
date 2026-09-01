@@ -71,7 +71,15 @@ guarantees the registered test and the exploratory wave cannot disagree about
 what the data said.
 
 10. **A registration that names a floor must cite, inside itself, the coverage
-   table that makes the floor reachable.** Floor feasibility is checked at
+   table that makes the floor reachable.** And its corollary, learned the same
+   way: **an exemption is a claim about dependencies.** *"Unaffected"* and
+   *"needs no X"* carry the same citation duty as a floor. R2 was ruled
+   "unaffected, all 11 seasons" and briefed onward as "needs no market data"
+   — while its estimand names its anchor in its second symbol
+   (`dev = margin − E·(elapsed/48)`). The dependency check is reading the
+   estimand's own formula, which would have cost ten seconds. An unchecked
+   exemption propagates further than an unchecked floor, because nobody
+   re-derives a claim that something does *not* matter. Floor feasibility is checked at
    registration time, not discovered at fit time. Two gates were registered on
    2026-09-01 whose anchors did not exist for enough seasons; both could never
    have passed at any effort, and it was caught only because the executing agent
