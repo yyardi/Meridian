@@ -148,6 +148,28 @@ safe-harbour market type (spreads 27/46 bookless, totals 53/85, winners 4/5).
 - 18 rides have no exit row at all (engine never rested an exit — restart?).
 - 11 entries and 7 exits neither filled nor withdrawn at export time.
 
+## Addendum 2026-09-01 (post cross-check with track B)
+
+- **Orphan-exit reconciliation resolved.** A's ledger re-links the 17 filled
+  exits with NULL `entry_id` (`lineage_source='reconstructed'`; rule stated in
+  A's report, `analysis/roundtrip_ledger_report.md`); `live_report.py`'s
+  LATERAL join drops them; this script follows the drop policy, hence 154
+  rides vs A's 137. **The policy choice is load-bearing:** B measures the
+  live-faithful subset at −10.0¢/$ under drop-them vs +1.2¢/$ under A's
+  re-linking. Any registration touching the live-faithful series must pin
+  which policy it scores under.
+- **Ride economics corroborated on A's substrate, sharper than my $2.09:**
+  exiting every ride at A's `close_yes_value` (last two-sided quote) recovers
+  **$0.00** — losing rides are already worthless while the book is still
+  alive. Refined mechanism split (B's addendum, branch quant-b/pulse-loss-map):
+  booklessness predicts WHERE rides happen; the dollars are adverse selection
+  against the *static exit policy* (exit rests at entry+5¢ until the EV stop
+  fires). Consistent with this track's negative #3.
+- **One-mechanism-two-symptoms verdict, joint:** holds only in the late-game
+  cell; my flat |margin| cut against B's 10.8% ride spike at |margin|≥10 is
+  the discriminating fact. To be consolidated as one finding with two
+  measurements (B: P&L; D: state profile) when the manager calls for it.
+
 ## Standing statements
 
 Multiple comparisons: dozens of intervals across types, bands, versions and
