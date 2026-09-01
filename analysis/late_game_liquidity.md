@@ -1,12 +1,13 @@
 # The late-game cell — one liquidity mechanism, two symptoms (B × D joint note)
 
 **Status: descriptive, in-sample, hypothesis-generating.** Drafted by Quant B,
-reviewed against Quant D's state profile; pins `20260901T195202Z`; substrate
-A's `roundtrip_ledger_20260901T195202Z.csv`. D's numbers are quoted from
-their execution decomposition (report commit a7d8f26, branch local pending
-operator-authorized push — numbers quoted rather than linked for that
-reason). B's numbers are from `analysis/pulse_loss_map_report.md` and its
-2026-09-01 addendum.
+reviewed by Quant D (sign-off conditions applied in this revision); pins
+`20260901T195202Z`; substrate A's `roundtrip_ledger_20260901T195202Z.csv`.
+D's numbers are quoted from their execution decomposition and its addendum 2
+(commits a7d8f26, c1b0fba; branch local pending operator-authorized push —
+quoted rather than linked for that reason). B's numbers are from
+`analysis/pulse_loss_map_report.md` (+ addendum) and
+`analysis/withdrawal_autopsy.py`.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
 
@@ -23,10 +24,16 @@ resolves — produces **two symptoms measured independently**:
   34 games), and the ride leg loses −55 to −100¢/$ in every version ×
   market type.
 
-Supporting tape fact (new here, descriptive — medians, no new clustered
-intervals): books at intent time are already wider late — median spread
-8¢ (filled) / 10¢ (unfilled) in late states vs 4¢ / 7¢ early — and every
-one of the 177 late unfilled intents ended `withdrawn`, none `expired`.
+Supporting tape fact (descriptive medians, no new clustered intervals):
+books at intent time are already wider late — median spread 8¢ (filled) /
+10¢ (unfilled) in late states vs 4¢ / 7¢ early.
+
+**Structural note, so nobody reads it as evidence:** the tape has no
+`expired` state for entries at all — the engine withdraws an entry the
+moment its own fair value stops clearing the resting price
+(`live.py` entry management), so ALL unfilled entries everywhere end
+`withdrawn` (1,019) or open-at-export (11). "Every late unfilled intent
+was withdrawn" is true by construction and discriminates nothing.
 
 ## The discriminator — why "one mechanism" holds ONLY here
 
@@ -47,28 +54,56 @@ comes back. So:
 * **D's ~33% early baseline** is a third, separate phenomenon
   (price-never-came-back with a thick book) and is not claimed here.
 
-## The check that ties the mechanism down before any forward test (D's
-proposal — runnable on the same tape)
+## The withdrawal autopsy — the entry-side mechanism, measured twice
 
-D's late-game unfilled excess is rule-unfilled (the mid never crossed the
-resting limit). The shared-mechanism claim therefore predicts: **the tick
-tape around those late unfilled intents should show thin or one-sided
-books at and shortly after intent time**, materially more often than
-around early unfilled intents. This is answerable now from the local tick
-DB (the 200ms stream; note the recorder writes to local postgres, not
-Supabase) with no forward data. If those books are two-sided and deep, the
-shared-mechanism claim is wrong and the two symptoms are coincidence at
-this n.
+Both agents autopsied the 1,019 withdrawals independently (B:
+`analysis/withdrawal_autopsy.py` against the pinned 200ms tick export;
+D: their script's section 6b, mutation-tested); the implementations
+reconcile (B 66.2% reached-later vs D 63.9% + 3.9% sub-cycle crossings —
+definitional differences at the boundary).
+
+* Orders rested median **~2.5 min** before the pull, and at the pull sat
+  median **5.5¢ (early) / 7¢ (late)** from the fill price — only 13–18%
+  within 2¢. The engine does not cancel at the door.
+* **D's late unfilled excess is withdrawal-censored; post-pull, roughly
+  half the late cell was never reachable at any patience (47.8% vs 30.4%
+  early — shorter-window confound noted), and the reachable half was
+  worth ~0** (D: −1.06¢/ct [−5.36, +3.25]; B, per-$ money-at-price at the
+  cancelled limit: −11.5¢/$ [−27.3, +4.3], G=33).
+* The entire unfilled-settle-better effect (D's +11.07¢/ct) sits in the
+  **never-reachable** third (D: +33.34¢/ct [+29.50, +37.18]; B: +170¢/$
+  [+41, +299] — wide, cheap-cost denominators). The fills the book never
+  offered are the ones that were worth having: adverse selection stated
+  as a reachability fact.
+
+**Consequence for remedies:** patience or better placement is refuted
+in-sample (the reachable half earns ~nothing). The only policy that
+reaches the never-reachable third is **crossing at the touch — a taker
+arm — priced against the spread plus the measured taker fee** (the
+2.5¢/ct swing of docs/math/fees-and-spread.md). That is a forward-test
+candidate, not a recommendation; the higher never-reachable share late
+supports the liquidity mechanism, with the window confound carried.
+
+## The remaining open check
+
+The book-state question is still open in one direction: do the **pinned
+ticks** (`live_ticks_pulse_games_20260901T195202Z.csv.gz`, all 34 games at
+200ms) show thin or one-sided books at and shortly after late unfilled
+intents, materially more often than early ones? The never-reachable split
+above is consistent with yes, but book *state* (one-sidedness, depth at
+touch) has not been read directly. If those books are two-sided and deep,
+the shared-mechanism claim loses its entry-side symptom.
 
 ## What would falsify the joint claim forward
 
 A forward cohort in which late-game unfilled share and late-game ride
-share decouple (one elevated, the other at baseline); or the book-state
-check above failing in-sample.
+share decouple (one elevated, the other at baseline); the book-state
+check above failing; or a taker forward arm whose captured value in the
+never-reachable states fails to clear spread + fee.
 
 ---
 
-*Multiplicity: every interval quoted here was already counted in its
-source artifact (B: 197+12 post-hoc; D: their report's own accounting).
-This note adds 8 descriptive medians/shares and no new clustered
-intervals.*
+*Multiplicity: intervals quoted from B's loss map and D's decomposition
+were counted in their source artifacts. This note adds B's 5 clustered
+valuation intervals (autopsy) and 8 descriptive medians/shares; D's
+addendum 2 carries its own accounting.*
