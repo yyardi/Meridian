@@ -1,10 +1,12 @@
 """R3b — NBA totals coefficients: the committed harness, pinned BEFORE first read.
 
 Registration: docs/math/nba-constants-registrations.md — R3 arms/gate, R3b
-re-anchoring. Built against the six pin proposals sent to research on
-2026-09-02; COMPUTES NOTHING REAL until those rulings land. The arm (b) sigma
-port uses proposal (i) — per-sqrt-minute rates keyed by quarter index — and
-must be re-pinned here verbatim if research rules otherwise.
+re-anchoring, and the R3b RULINGS of 2026-09-02 (verified on main before this
+read). Floor >= 5 of 6; sigma port ruled for (i) RATE-KEYED: "THE INVARIANT
+PORTED IS THE MATCHED-BOUNDARY RATE, NOT A WITHIN-GAME sqrt-t LAW" — option
+(ii), the absolute triple 15.88/13.03/9.67 unchanged, is NOT arm (b) and runs
+only as the LABELLED NEVER-GATING SENSITIVITY (b') beside the verdict.
+Forbidden form: any port mixing rates and absolutes across boundaries.
 
 Reproduce:
 
@@ -78,8 +80,9 @@ FLOOR = 5  # proposed >= 5 of 6 available; the ruling may confirm or move it
 
 WNBA_B = {36.0: 1.318, 24.0: 1.208, 12.0: 1.128}
 WNBA_SHARE = {36.0: 0.2541, 24.0: 0.5022, 12.0: 0.7566}
-WNBA_SIGMA_RATE = {36.0: 2.899, 24.0: 2.914, 12.0: 3.059}  # per sqrt-minute, proposal (i)
+WNBA_SIGMA_RATE = {36.0: 2.899, 24.0: 2.914, 12.0: 3.059}  # per sqrt-minute — ruling (i)
 WNBA_SIGMA_PORTED = {t: WNBA_SIGMA_RATE[t] * np.sqrt(t) for t in BOUNDARIES}
+WNBA_SIGMA_ABSOLUTE = {36.0: 15.88, 24.0: 13.03, 12.0: 9.67}  # sensitivity (b') ONLY, never gating
 
 POWER_NOTE = ("POWER: selftest generator-recovery separates the arm tables with CIs excluding\n"
               "zero both ways at ~1,200 games/season x 5 eval seasons — an INDISTINGUISHABLE\n"
@@ -229,10 +232,9 @@ def build_boundary_states(games_path: str, plays_path: str) -> pd.DataFrame:
     st = st[~push].copy()
     st["y_over"] = (st.actual > st.mu).astype(float)
     print(f"boundary states: {n0} rows -> {len(st)} after excluding {int(push.sum())} push rows "
-          f"(actual == line); {st.game_id.nunique()} games, seasons "
-          f"{st.groupby('season').game_id.nunique().to_dict()}")
-    print(f"OT games in sample: {int(st[st.is_ot].game_id.nunique())} "
+          f"(actual == line) · OT games in sample: {int(st[st.is_ot].game_id.nunique())} "
           f"(settlement frame is OT-inclusive)")
+    print(f"{st.game_id.nunique()} games, per season: {st.groupby('season').game_id.nunique().to_dict()}")
     return st
 
 
@@ -365,6 +367,17 @@ def main() -> None:
     ev = walk_forward_r3(st)
     print("\n=== R3b GATE READ — out-of-sample seasons only ===")
     gate_read_r3(ev)
+    # (b') — LABELLED NEVER-GATING SENSITIVITY, per the ruling: the absolute
+    # triple unchanged, "so that if absolute-invariance is somehow true it
+    # shows up honestly without gating anything."
+    y = ev.y_over.to_numpy(float)
+    bprime = (prob_over(ev, WNBA_SHARE, WNBA_B, WNBA_SIGMA_ABSOLUTE) - y) ** 2
+    print("\n=== SENSITIVITY (b') — absolute-sigma port, NEVER GATING ===")
+    for x, brier_x in [("a", ev.brier_a), ("b", ev.brier_b)]:
+        d = pd.Series(brier_x.to_numpy() - bprime, index=ev.index)
+        cm = clustered_mean({s: d[ev.season == s].tolist() for s in sorted(ev.season.unique())})
+        print(f"  Brier({x})-Brier(b'): {cm.mean:+.5f} [{cm.lo:+.5f}, {cm.hi:+.5f}]  seasons={cm.n_clusters}")
+    print("  (the gate above stands on the rate-keyed port regardless)")
 
 
 if __name__ == "__main__":
