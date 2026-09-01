@@ -3,6 +3,20 @@
 **Question assigned:** where does this model actually lose money, and is there
 any region where it doesn't.
 
+**Multiplicity, first:** this analysis computed **197 game-clustered
+intervals; at 95%, ~10 of them are expected 'significant' by chance alone.**
+Any single cell below must be read against that denominator. The findings
+this report leads with are not of that kind: the ride-tail loss was
+*predicted by an independent prior measurement* (docs/math/bookless-endgames.md,
+measured before this run, from different data, for a different reason — it
+says where exit books die, and that is exactly where the ride losses land),
+which puts it in a different class from a pattern discovered by slicing.
+The honest top line: **the whole book is +1.6¢/$ [−1.4, +4.7] under
+doubly-optimistic fills — the upper bound itself includes zero — and −17 to
+−35¢/$ in every big cell under the measured concession.** This is not
+"profitable but needs better execution"; the optimistic bound already
+straddles zero.
+
 **Artifact:** `analysis/pulse_loss_map.py`. Reproduce:
 `.venv/bin/python analysis/pulse_loss_map.py` (mutation self-test:
 `--selftest` — null reads ~zero, injected +3¢ capture recovered).
@@ -60,7 +74,9 @@ Where the losses sit in state space (composition, then outcome):
   16% above 65¢, only 12% below 20¢. Unlike V1–V3's old model, the edge
   claimed here is claimed where size exists — and realizes **+1.4¢/$
   [−1.1, +4.0]** there. Flat, not negative: the model trades where it
-  could trade and makes approximately nothing.
+  could trade and makes approximately nothing. **This is a different
+  failure from the old model's** (positive where nothing could fill): the
+  problem is the edge itself, not an untradeable location.
 
 ## Candidates (hypotheses, ranked; each needs its forward test)
 
@@ -79,9 +95,11 @@ Where the losses sit in state space (composition, then outcome):
    games at +2.4¢/$ [+0.5, +4.3] vs dropped +0.2¢/$ [−5.8, +6.3] — an
    upper-bound number among 197 comparisons. *Confound:* shares its
    mechanism with bookless endgames (selection: books die in decided
-   games), so it may be venue structure, not model skill; **Q4-adjacent —
-   inherits #20's answer if #20 resolves it.** *Forward test:* pre-declare
-   the state filter, score both arms on forward games only.
+   games), so it may be venue structure, not model skill. **Q4-adjacent —
+   HELD pending #20's at-floor read (same pins, running now); this
+   candidate inherits #20's answer and registers nothing until that
+   lands** (wave standard corollary 9). *Forward test (after #20):*
+   pre-declare the state filter, score both arms on forward games only.
 3. **Totals in the 35–65¢ depth band are the one deployment-relevant
    region that is not negative.** *Falsifiable:* v4-total entries at
    35–65¢ cost have per-$ ≥ 0 on the forward cohort. In-sample: v4
