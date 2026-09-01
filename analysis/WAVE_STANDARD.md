@@ -112,6 +112,15 @@ before merge**, and the merge is refused if it would revert one.
    executing agent reads the registration on main, not the dispatch that cites
    it.
 
+12. **A pin declared in prose and not enforced in code is not a pin.** Every
+   registered pin carries either an **enforcing assertion** (the harness
+   refuses) or a **printed-composition line** (the reader can refuse). The R3b
+   defect is the type specimen: a registration declared 23 games unusable, the
+   fold builder admitted them anyway, the gate was invariant and the physics
+   table was contaminated five-fold in one CI — **caught only because the
+   harness prints its own composition.** Composition-before-ratios is an
+   **output requirement**, not a review habit.
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
