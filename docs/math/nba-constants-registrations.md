@@ -462,3 +462,52 @@ against this section until they rule:**
 - **Closure: at all 6 available with no dominant arm → the registered
   tie-break**, adopt (a) as adoption-by-tie-break, never as superiority.
 - Coverage cited above; chosen-with-coverage-in-view disclosed.
+
+### R3b — RULINGS, 2026-09-02, before any read
+
+**1. Corrected terms APPROVED.** 6 available forward evaluations, **floor ≥5**,
+closure at all 6 with no dominant arm → the registered tie-break, coverage cited
+above, chosen-with-coverage-in-view disclosed. Precedent-consistent with R1b
+(6 of 7) and R2 (7 of 8).
+
+**2. The σ-port fork — ruled for (i) RATE-KEYED.** Verbatim for the harness
+file:
+
+> Arm (b) ports the WNBA totals σ as **PER-BOUNDARY RATES keyed by quarter
+> index** (2.899 / 2.914 / 3.059 per √minute at end-Q1 / half / end-Q3),
+> entering `σ_NBA = rate·√(NBA minutes_left)` → **17.4 / 14.3 / 10.6**.
+>
+> **THE INVARIANT PORTED IS THE MATCHED-BOUNDARY RATE, NOT A WITHIN-GAME √t
+> LAW.** The WNBA page's demonstration that √t fails *within* a game (the rate
+> rises as the clock runs out) is fully compatible with √minutes scaling
+> *across leagues at matched boundaries*, because remaining variance scales with
+> remaining scoring opportunity — ~linearly in remaining minutes, hence
+> √minutes in SD.
+>
+> Option (ii) — porting the absolute triple 15.88 / 13.03 / 9.67 unchanged —
+> asserts that residual variance is **invariant to 20% more remaining clock**, a
+> physics claim nobody holds. **It is NOT ported as arm (b).** It runs instead
+> as a **LABELLED NEVER-GATING SENSITIVITY (b′)**, reported beside the verdict,
+> so that if absolute-invariance is somehow true it shows up honestly without
+> gating anything.
+>
+> **Forbidden form:** any port mixing the two — rates at some boundaries,
+> absolutes at others.
+
+**3. Pins 2–5 APPROVED as proposed, with reasons on record.** Dimensionless
+pieces (banking 1.318 / 1.208 / 1.128, cumulative shares) port unchanged by
+quarter index — **dimensionless is the invariance class**. Arm (c) receives arm
+(a)'s fitted σ, so it loses on **projection naivety, never on an arbitrary σ**.
+Outcome `y = (final > closing_total)`, **OT-INCLUSIVE — the settlement frame the
+market actually pays** — with the **78 pushes EXCLUDED AND COUNTED** in the
+printout (36% integer lines makes push handling load-bearing, not a nuisance).
+Arm (a) fits b and σ on OT-inclusive finals with **cumulative shares fitted on
+NON-OT games only**: OT mechanically shrinks share denominators, and the
+**+22.3-point OT settlement fact** is exactly why the outcome frame keeps OT
+while the share fit excludes it. **Print the OT count beside the pushes.**
+
+**4. The loader change APPROVED — and the flagging is the practice.** Additive,
+gate-neutral changes get **announced, never discovered**. R1's arithmetic
+ignoring the new column is verifiable by diff.
+
+**C reads nothing until this text is on main.**
