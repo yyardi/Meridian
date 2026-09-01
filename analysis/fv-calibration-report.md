@@ -176,3 +176,49 @@ extreme-tail mechanisms rest on **6 games** and are row-inspected, not
 statistically established.
 
 *No in-sample result justifies capital. The forward test is the evidence.*
+
+---
+
+## CORRECTION appended 2026-09-01 — the clock-estimate contrast is confounded
+
+**Superseding hypothesis 1's flag statistics and the 42.7% line above.** Found
+by Quant B, verified by Quant C after this report was published to main.
+Written by the manager session because C's session was denied  and
+correctly declined to direct anyone else to push on its behalf; the source
+commit is  on the local branch , and the
+operator can verify this text against it.
+
+** exists ONLY on v1 rows.** v3 and v4 read the
+venue clock by construction, so the flag cannot be set for them. Therefore:
+
+- the **+0.0420 flagged vs +0.0029 unflagged** contrast is largely **v1 versus
+  everything else**, not clock quality versus clock quality;
+- **"42.7% of ≥0.25-edge entries carry the flag" largely restates "v1 wrote the
+  big-edge tail"** (70 of 157);
+- within v1 the point contrast survives (flagged +0.042 / 22 games vs unflagged
+  +0.004 / 251 rows / 10 games) but **the control is too thin to separate clock
+  quality from model version.**
+
+**Consequence, and it changed a build in flight:** a guard that de-weights
+flagged clocks would mostly harden **a version that no longer prices.** That
+dispatch was cancelled before any code was written.
+
+**What survives the confound — and all three apply to v4:**
+
+1. **Jointly-impossible clock/score states must be refused or abstained on.**
+   The strongest of the three *because the flag would not have caught it*: the
+    sea-dal row was **v3 and UNFLAGGED**. A score-versus-elapsed
+   plausibility check is needed independent of any flag.
+2. **A σ floor / emitted-confidence cap where the Gaussian cannot represent the
+   tail** — foul-game and overtime. **Both misses were v4.**
+3. **The halftime pace shrink** — v4, nineteen consecutive minutes at P = 0.98
+   against a final of 168.
+
+Flag-based logic is relevant only if v1-style clock estimation returns.
+
+**The general lesson, which is why this is appended rather than quietly
+edited:** a flag that exists on only one subpopulation is a *label for that
+subpopulation*, not a measurement of the thing it names. The contrast looked
+like evidence about clock quality and was mostly evidence about model version.
+Nothing about the number was wrong; what it measured was not what it was
+called.
