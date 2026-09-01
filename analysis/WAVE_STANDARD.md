@@ -72,7 +72,11 @@ what the data said.
 
 10. **A registration that names a floor must cite, inside itself, the coverage
    table that makes the floor reachable.** And its corollary, learned the same
-   way: **an exemption is a claim about dependencies.** *"Unaffected"* and
+   way: **an exemption is a claim about dependencies.** And its twin, confirmed twice in
+   one day: **inheritance claims are exemptions wearing different clothes** —
+   *"same as X"*, *"the same shape as Y"* carry the same citation duty as a
+   floor, **and their disproof is usually already printed on the page being
+   cited.** *"Unaffected"* and
    *"needs no X"* carry the same citation duty as a floor. R2 was ruled
    "unaffected, all 11 seasons" and briefed onward as "needs no market data"
    — while its estimand names its anchor in its second symbol
