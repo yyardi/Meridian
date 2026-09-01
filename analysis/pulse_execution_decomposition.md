@@ -148,6 +148,68 @@ safe-harbour market type (spreads 27/46 bookless, totals 53/85, winners 4/5).
 - 18 rides have no exit row at all (engine never rested an exit — restart?).
 - 11 entries and 7 exits neither filled nor withdrawn at export time.
 
+## Addendum 2026-09-01 (post cross-check with track B)
+
+- **Orphan-exit reconciliation resolved.** A's ledger re-links the 17 filled
+  exits with NULL `entry_id` (`lineage_source='reconstructed'`; rule stated in
+  A's report, `analysis/roundtrip_ledger_report.md`); `live_report.py`'s
+  LATERAL join drops them; this script follows the drop policy, hence 154
+  rides vs A's 137. **The policy choice is load-bearing:** B measures the
+  live-faithful subset at −10.0¢/$ under drop-them vs +1.2¢/$ under A's
+  re-linking. Any registration touching the live-faithful series must pin
+  which policy it scores under.
+- **Ride economics corroborated on A's substrate, sharper than my $2.09:**
+  exiting every ride at A's `close_yes_value` (last two-sided quote) recovers
+  **$0.00** — losing rides are already worthless while the book is still
+  alive. Refined mechanism split (B's addendum, branch quant-b/pulse-loss-map):
+  booklessness predicts WHERE rides happen; the dollars are adverse selection
+  against the *static exit policy* (exit rests at entry+5¢ until the EV stop
+  fires). Consistent with this track's negative #3.
+- **One-mechanism-two-symptoms verdict, joint:** holds only in the late-game
+  cell; my flat |margin| cut against B's 10.8% ride spike at |margin|≥10 is
+  the discriminating fact. To be consolidated as one finding with two
+  measurements (B: P&L; D: state profile) when the manager calls for it.
+
+## Addendum 2, 2026-09-01 — withdrawal autopsy (manager's question on the 177)
+
+Every unfilled entry on this tape is **withdrawal-censored**, not
+expiry-censored (1,019 withdrawn + 11 open at export; no `expired` state
+exists in `pulse_decisions`). The trigger in code (`live.py`,
+`_manage_entry`): the engine stands an entry down the moment its OWN current
+fair value stops clearing the resting price ("edge gone"), or on
+estimate/stream loss (120s unseen). Median rest before withdrawal 164s
+(p25 27s, p75 692s). So the manager's alternative reading — *"our
+cancellation policy discards our best ideas"* — was live, and the section 6b
+scan (mutation-tested: injected fill-after-pull, never-reached, and
+resting-cross cases all read back) resolves it:
+
+| withdrawn entries, three ways | n (rows/games) | settle-basis cf at limit |
+|---|---|---|
+| limit reached AFTER the pull (patient order fills) | 651/33 = 63.9% | **−1.06¢/ct [−5.36, +3.25]** |
+| NEVER reachable (mid never came back) | 328/30 = 32.2% | **+33.34¢/ct [+29.50, +37.18]** |
+| sub-cycle cross while resting (engine's 1s blindness) | 40/18 = 3.9% | +20.40¢/ct [+0.31, +40.49] |
+
+**The cheap remedy is refuted.** Patience is worth ≈ nothing: the 64% of
+withdrawn orders the market later came back to would have earned −1¢/ct.
+The entire +11.07¢ unfilled-outperformance (section 6) lives in the
+never-reachable third — intents where the price ran away in the predicted
+direction and no cancellation policy, at any patience, gets that fill. The
+selection filter running backwards is the **limit-order mechanism itself**
+(you are filled exactly when the market comes to disagree with you), not
+the withdrawal rule. This *strengthens* candidate #1's forward test
+(cross-at-touch arm): crossing at intent is the only policy that reaches
+the +33¢ third — whether that alpha survives the spread + 0.06·p·(1−p)
+taker toll is exactly what the forward arm measures.
+
+Two side facts. (1) The 3.9% resting-window crossings the engine never saw
+quantify the stated sub-cycle fill-rule blindness — and their +20.4¢ mean
+(wide CI, 40 rows) is consistent with the docstring's warning that the
+invisible fills skew favourable. (2) For the B×D note: late (Q4+) withdrawn
+intents are more often never-reachable (47.8% vs 30.4% early), consistent
+with the shared liquidity mechanism — but the window for "reached later"
+is mechanically shorter late in a game; that confound must ride along with
+the claim.
+
 ## Standing statements
 
 Multiple comparisons: dozens of intervals across types, bands, versions and
