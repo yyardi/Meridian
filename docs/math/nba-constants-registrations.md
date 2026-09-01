@@ -130,3 +130,85 @@ for a units reason while the verdict read *"WNBA constants don't transfer"* —
 a false finding, unfalsifiable after the fact, and pointing at the wrong
 conclusion. The forbidden list is what makes the harness able to refuse the
 error rather than the reader having to catch it.
+
+---
+
+## 2026-09-02 — R1 and R3 close as INFEASIBLE-AS-REGISTERED; R1b and R3b supersede
+
+**R1 and R3 could never have passed.** Both anchored on data that does not exist
+for enough seasons. Their text above is **untouched**; these supersede them and
+are filed beside them.
+
+**The feasibility artifact — odds coverage by season, measured before any fit:**
+
+| season | games | spread | moneyline | total |
+|---|---|---|---|---|
+| 2015 | 1231 | 1230 | 0 | 0 |
+| 2016 | 1231 | 1230 | 24 | 24 |
+| 2017 | 1232 | 1230 | 1230 | 1230 |
+| 2018 | 1232 | 1230 | 1230 | 1230 |
+| 2019 | 973 | 971 | 971 | 971 |
+| 2020 | 1081 | 1080 | 1080 | 1080 |
+| 2021 | 1231 | 1231 | 1231 | 1231 |
+| 2022 | 1231 | 1231 | 1231 | 1231 |
+| **2023** | 1232 | **0** | **0** | **0** |
+| **2024** | 1234 | **0** | **0** | **0** |
+| 2025 | 1235 | 979 | 974 | 979 |
+
+The moneyline anchor exists in 7 seasons with a two-season hole; walk-forward
+over a broken chain yields at most ~6 evaluated seasons against a floor of ≥8.
+**2023–24 carry the `odds` key with empty arrays** — the absence was verified,
+not inferred.
+
+### R1b — supersedes R1
+
+Identical to R1 **except the anchor: de-vigged expected margin from the closing
+SPREAD.**
+
+**This is a better design, not merely a coverage fix.** R1's moneyline
+construction used a σ-dependent inversion to build the anchor that then
+evaluates σ — mildly circular. **The closing spread gives expected margin
+directly and severs that loop.** The coverage hole forced the cleaner estimand.
+
+**Walk-forward.** First fit trains on 2015–16; evaluated seasons **2017–2022
+contiguous (6)**, plus **2025 as a PARTIAL-COVERAGE season, labelled**,
+evaluated with train ≤ 2022. The hole means no 2023/24 evaluations — not a
+broken claim.
+
+**Floors: ≥ 6 evaluated seasons scoring.** Gate unchanged: three arms, paired
+Brier, season-clustered, dominance to adopt.
+
+**Closure.** At all 7 available evaluated seasons with no dominant arm →
+**INDISTINGUISHABLE-AT-POWER**, adopt (a) by the pre-committed league-matched
+tie-break, recorded as such.
+
+**Disclosure, stated because it is the point:** *this floor was chosen WITH the
+coverage table in view.* That is clean **only** because nothing has computed and
+the choice is disclosed inside the registration. The alternative was a gate that
+cannot pass.
+
+**Estimands fixed here:** E comes from the closing spread, with the sign
+convention **verified empirically per league before first use**. The moneyline
+inversion survives as a **labelled sensitivity on ML-covered seasons only, never
+gating**. **OT states are excluded; OT games are kept** — regulation-state
+predictions score against the eventual final winner, so a regulation tie at 0:00
+predicting ≈0.5 against an OT-decided outcome is legitimate and informative.
+
+The σ-port convention (PR #130) carries to R1b arm (b) unchanged.
+
+### R3b — supersedes R3
+
+Identical re-anchoring, coverage citation, floors, closure and disclosure as
+R1b. Arms unchanged. The closing-total anchor is replaced by the spread-era
+totals lines where present (2015–2022, 2025 partial — same table column).
+
+### OPEN, and nothing computes against it until ruled
+
+**The mutation clause inherited from R1/R3 is unsatisfiable as written.** Quant
+C's argument, unresolved at the time of this filing: *"a shuffled-outcome null
+shows no arm dominating" cannot hold under Brier for arms of unequal
+sharpness* — destroying the signal mechanically rewards the flattest σ table, so
+under a genuine null the widest arm wins every time. **Dominance manufactured by
+flatness, not by the harness lying.** C declined to bend the harness to fake a
+pass and proposed a replacement form. **Until the research agent rules, no arm
+reads real data under this clause.**
