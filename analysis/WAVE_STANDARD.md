@@ -101,6 +101,13 @@ non-conflicting case would have merged clean.
 Any branch carrying published-report text is **diffed against main's corrections
 before merge**, and the merge is refused if it would revert one.
 
+11. **Verify the landed text on main before reading, never the relay.** On
+   2026-09-02 a relayed exemption — *"R2 needs no anchor"* — propagated through
+   three people while the formula that refuted it sat in the registration the
+   whole time. **The relay is a pointer; the artifact is the claim.** An
+   executing agent reads the registration on main, not the dispatch that cites
+   it.
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
