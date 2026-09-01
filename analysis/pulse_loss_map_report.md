@@ -171,3 +171,35 @@ results were read; the one post-hoc construction (candidate 2's filter) is
 labelled as such.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+---
+
+## Addendum 2026-09-01 (post-merge) — D's decomposition refines negative #1's mechanism
+
+D's execution decomposition, corroborated here on A's close columns: exiting
+every ride at the **last two-sided quote** would have recovered ~nothing —
+A's `close_yes_value` puts the mean value of losing rides at book close at
+**0.000** ($0.00 saved across all 137 rides, vs −$28.82 shadow lost; D's
+tick-DB variant, final-5:00 definition: $2.09 saved, 84/136 rides bookless).
+
+So the mechanism attribution in negative #1 splits in two, and the original
+wording over-attributed:
+
+* **Selection into ride status** is the bookless-endgame fact (still the
+  independent-prior prediction: rides concentrate where books die).
+* **The dollars** are lost while the book is alive: the price runs away and
+  never crosses the resting exit, which sits at entry + 5¢ until the EV
+  stop fires. That is adverse selection against a static exit policy — the
+  book's death only forecloses a last exit at already-worthless prices.
+
+Consequences: (1) a smarter *late-game* exit rule could not have recovered
+the ride losses on this tape — the levers are avoiding the states
+(candidate 2, HELD for #20) or changing what the exit rests at after entry;
+(2) booklessness remains a real **risk constraint** (it caps what any exit
+rule can do late, and live sizing must price it) even though it is not the
+P&L driver here. D's unfilled-entry state profile overlaps the ride tail
+**only in the late-game cell** (their |margin| cut is flat where rides
+spike) — "one mechanism, two symptoms" holds there and only there.
+
+In-sample, hypothesis-generating, same pins.
+**No in-sample result justifies capital. The forward test is the evidence.**
