@@ -360,6 +360,8 @@ def main() -> None:
         print(fmt_pd(f"holds, {lab}", paired_diff(holds[m], "fv", "mid")))
     for v in ["v1", "v3", "v4"]:
         print(fmt_pd(f"holds, estimates {v}", paired_diff(holds[holds.estimates_version == v], "fv", "mid")))
+    for lab, mflag in [("clock estimated", holds.minutes_left_is_estimate == "t"), ("clock real", holds.minutes_left_is_estimate == "f")]:
+        print(fmt_pd(f"holds, {lab}", paired_diff(holds[mflag], "fv", "mid")))
     band = (holds.mid >= 0.35) & (holds.mid <= 0.65)
     print(fmt_pd("holds, mid 0.35-0.65 (size band)", paired_diff(holds[band], "fv", "mid")))
     print(fmt_pd("holds, mid outside 0.35-0.65", paired_diff(holds[~band], "fv", "mid")))
