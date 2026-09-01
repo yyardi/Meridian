@@ -183,9 +183,9 @@ statistically established.
 
 **Superseding hypothesis 1's flag statistics and the 42.7% line above.** Found
 by Quant B, verified by Quant C after this report was published to main.
-Written by the manager session because C's session was denied  and
+Written by the manager session because C's session was denied `git push` and
 correctly declined to direct anyone else to push on its behalf; the source
-commit is  on the local branch , and the
+commit is `7050902` on the local branch `quant-c/fv-calibration`, and the
 operator can verify this text against it.
 
 ** exists ONLY on v1 rows.** v3 and v4 read the
@@ -207,7 +207,7 @@ dispatch was cancelled before any code was written.
 
 1. **Jointly-impossible clock/score states must be refused or abstained on.**
    The strongest of the three *because the flag would not have caught it*: the
-    sea-dal row was **v3 and UNFLAGGED**. A score-versus-elapsed
+    `P = 1.0000` sea-dal row was **v3 and UNFLAGGED**. A score-versus-elapsed
    plausibility check is needed independent of any flag.
 2. **A σ floor / emitted-confidence cap where the Gaussian cannot represent the
    tail** — foul-game and overtime. **Both misses were v4.**
