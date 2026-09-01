@@ -413,3 +413,52 @@ R2** (see the coverage table above; totals column).
 
 C builds the totals loader and selftests; **reads nothing until this lands** —
 the same sequence that has now worked three times.
+
+### R3b PRE-CHECK — CORRECTED, 2026-09-02, still before any read
+
+**The pre-check filed minutes ago is wrong and its floor was unreachable.** It
+asserted *"totals coverage = 2015–2022 + 2025p, the same 8-available shape as
+R2"* and set a floor of ≥7. **Totals coverage is NOT the same as spread
+coverage**, and the coverage table already on this page said so — column
+`totals`, not column `spread`.
+
+**Measured, both columns side by side:**
+
+| season | totals | spread |
+|---|---|---|
+| 2015 | **0** | 1230 |
+| 2016 | **24** | 1230 |
+| 2017 | 1230 | 1230 |
+| 2018 | 1230 | 1230 |
+| 2019 | 971 | 971 |
+| 2020 | 1080 | 1080 |
+| 2021 | 1231 | 1231 |
+| 2022 | 1231 | 1231 |
+| 2023 | 0 | 0 |
+| 2024 | 0 | 0 |
+| 2025 | 979 | 979 |
+
+**Totals begin in 2017, not 2015** (2016's 24 games are unusable). Usable
+totals seasons: **2017–2022 + 2025 = 7**. Walk-forward evaluations:
+**2018–2022 + 2025 (PARTIAL) = 6 available forward seasons.**
+
+**So the corrected pre-check's own floor of ≥7 exceeded the 6 seasons that
+exist — a gate that cannot pass, written inside the amendment created to
+prevent gates that cannot pass.** Third instance of the species today, and the
+first one to appear in its own countermeasure.
+
+**How it happened, since the mechanism is the useful part:** *"the same shape as
+R2"* is an inheritance claim, and inheritance claims are exemptions wearing
+different clothes — rule 10's corollary applies exactly. **The disproof was
+already printed on this page, one column to the left of the one being read.**
+
+**CORRECTED TERMS, pending the research agent's ruling — nothing computes
+against this section until they rule:**
+
+- Available forward evaluations: **6** (2018–2022 + 2025 PARTIAL).
+- **Proposed floor: ≥5 of the 6 available** — one season of margin, on the
+  R1b (6 of 7) and R2 (7 of 8) precedent: *margin protects against defects, not
+  against results.*
+- **Closure: at all 6 available with no dominant arm → the registered
+  tie-break**, adopt (a) as adoption-by-tie-break, never as superiority.
+- Coverage cited above; chosen-with-coverage-in-view disclosed.
