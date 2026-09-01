@@ -181,7 +181,8 @@ def physics_table(st: pd.DataFrame) -> None:
 def gate_read_r2(ev: pd.DataFrame) -> None:
     seasons = sorted(ev.season.unique())
     label = lambda s: f"{s}(PARTIAL)" if s == PARTIAL_SEASON else str(s)
-    print(f"forward seasons evaluated: {len(seasons)} (floor >= 8): {[label(s) for s in seasons]}")
+    print(f"forward seasons evaluated: {len(seasons)} (floor >= 7 of 8 available, "
+          f"per the 2026-09-02 amendment): {[label(s) for s in seasons]}")
     d = ev.brier_shrunk - ev.brier_plain
     cm = clustered_mean({s: d[ev.season == s].tolist() for s in seasons})
     print(f"\npaired Brier (shrunk - plain), season-clustered (negative favours the shrink):")
@@ -192,8 +193,8 @@ def gate_read_r2(ev: pd.DataFrame) -> None:
     per.index = [label(s) for s in per.index]
     print("\nper-season mean Brier:")
     print(per.to_string(float_format=lambda v: f"{v:.5f}"))
-    if len(seasons) < 8:
-        print("\nVERDICT FRAME: below the 8-season floor — NO READ.")
+    if len(seasons) < 7:
+        print("\nVERDICT FRAME: below the 7-season floor — NO READ.")
     elif cm.hi < 0:
         print("\nVERDICT FRAME: PASS — CI excludes zero in the shrink's favour.")
     elif cm.lo > 0:
@@ -202,8 +203,10 @@ def gate_read_r2(ev: pd.DataFrame) -> None:
         print("\nVERDICT FRAME: CI straddles zero. Pre-named reading applies: REDUNDANCY OF"
               "\nFORM — the anchor's drift term already encodes the pull toward pregame"
               "\nexpectation; a finding about the FV's arithmetic, not absence of the physics."
-              "\nThe physics table above stands as reference regardless. Closure at this"
-              "\ncoverage (8 forward seasons, not the registered 10) is research's to name.")
+              "\nThe physics table above stands as reference regardless."
+              + ("\nPer the amended closure: at all 8 available forward seasons with the CI"
+                 "\nstraddling zero -> NO-MARGINAL-VALUE, the term is not added, the gate closes."
+                 if len(seasons) >= 8 else ""))
     print(f"\n{CAPITAL_LINE}")
 
 
