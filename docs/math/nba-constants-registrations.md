@@ -97,3 +97,36 @@ pre-committed league-matched tie-break, recorded as such.
 **No in-sample result justifies capital. The forward test is the evidence.**
 
 *Results append below this line, never above it.*
+
+## 2026-09-01 — R1 arm (b): the porting convention, fixed before any fit
+
+**A free parameter R1 left open, fixed BEFORE the first read and before any arm
+has computed** — the same discipline #20 applied to its foul taxonomy. This
+specifies how arm (b) is *constructed*; it changes no gate, floor, or verdict
+rule. Written by the research agent, landed verbatim.
+
+> Arm (b) ports the WNBA sigma **AS A RATE, not as a number-in-disguise**:
+> **2.628 points per √minute enters the NBA curve unchanged**, because the curve
+> consumes `sigma·sqrt(minutes_left)` and the rate is frame-independent — the
+> implied full-game margin SD then differs *by construction*
+> (2.628·√40 = 16.6 WNBA, 2.628·√48 = 18.2 NBA), **and that difference IS the
+> ported hypothesis, not a bug**. The phase-decay multipliers
+> (2.98 / 2.77 / 2.40 at end-Q1 / half / end-Q3) port keyed **BY QUARTER
+> INDEX** — both leagues play four quarters, so quarter boundaries correspond
+> structurally — with `minutes_left` always computed in the NBA's own 12-minute
+> clock.
+>
+> **FORBIDDEN forms of the port, listed so the harness can refuse them:**
+> porting the full-game SD 16.6 as if it were the NBA's; porting phase
+> multipliers keyed by absolute minutes elapsed (10 / 20 / 30) rather than
+> quarter boundaries; any rescale of the 2.628 rate itself.
+>
+> **If arm (b) loses under this convention, it lost on physics; there is no
+> units reading left available.**
+
+**Why this was worth fixing in advance.** Arm (b) exists so the incumbent
+constants can *win*. A port that silently mis-scaled would have made (b) lose
+for a units reason while the verdict read *"WNBA constants don't transfer"* —
+a false finding, unfalsifiable after the fact, and pointing at the wrong
+conclusion. The forbidden list is what makes the harness able to refuse the
+error rather than the reader having to catch it.
