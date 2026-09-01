@@ -180,8 +180,8 @@ def physics_table(st: pd.DataFrame) -> None:
 def gate_read_r3(ev: pd.DataFrame) -> None:
     seasons = sorted(ev.season.unique())
     label = lambda s: f"{s}(PARTIAL)" if s == PARTIAL_SEASON else str(s)
-    print(f"forward seasons evaluated: {len(seasons)} (proposed floor >= {FLOOR} of 6 available"
-          f" — the zero-margin ruling is research's): {[label(s) for s in seasons]}")
+    print(f"forward seasons evaluated: {len(seasons)} (floor >= {FLOOR} of 6 available, "
+          f"per the 2026-09-02 R3b rulings): {[label(s) for s in seasons]}")
     pairs = [("a", "b"), ("a", "c"), ("b", "c")]
     wins = {k: 0 for k in "abc"}
     print("\npairwise paired Brier, season-clustered (negative favours the first arm):")
