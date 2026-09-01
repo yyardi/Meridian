@@ -110,3 +110,10 @@ The two measure different things and will not agree; 7 fully-dead winners here
 against 9 bookless in the cohort is the expected disagreement, not a
 contradiction.
 
+**Second instance, 2026-09-01:** the same mechanism appeared inside a coverage
+**GUARD** — a pair-only join mislabelling repeat pairings as coverage-suspect —
+and was caught from the exclusion list before the result was read. A filter
+running ahead of a join turns a property of the data into an apparent property
+of the pipeline, and it does so just as readily inside the instrument built to
+prevent bad conclusions as inside the analysis itself.
+
