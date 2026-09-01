@@ -202,13 +202,42 @@ Identical re-anchoring, coverage citation, floors, closure and disclosure as
 R1b. Arms unchanged. The closing-total anchor is replaced by the spread-era
 totals lines where present (2015–2022, 2025 partial — same table column).
 
-### OPEN, and nothing computes against it until ruled
+### RESOLVED 2026-09-02 — the mutation clause, replaced
 
-**The mutation clause inherited from R1/R3 is unsatisfiable as written.** Quant
-C's argument, unresolved at the time of this filing: *"a shuffled-outcome null
-shows no arm dominating" cannot hold under Brier for arms of unequal
-sharpness* — destroying the signal mechanically rewards the flattest σ table, so
-under a genuine null the widest arm wins every time. **Dominance manufactured by
-flatness, not by the harness lying.** C declined to bend the harness to fake a
-pass and proposed a replacement form. **Until the research agent rules, no arm
-reads real data under this clause.**
+**The clause inherited from R1/R3 was unsatisfiable and is superseded.** Quant C
+demonstrated it before reading any real data; the research agent ruled and
+adopted C's replacement verbatim.
+
+**Why the original could not hold.** *"A shuffled-outcome null shows no arm
+dominating"* cannot be true under Brier for arms of unequal sharpness:
+destroying the signal **mechanically rewards the flattest σ table**, so under a
+genuine null the widest arm wins every time. Dominance is **manufactured by
+flatness**, not evidence that the harness lied. That makes the original a check
+that cannot pass — the documented species, **appearing inside a mutation test,
+which is where it hides best because nobody mutation-tests the mutation test.**
+
+**The adopted clause — three parts, each of which CAN fail:**
+
+1. **Distorted tables lose to truth in BOTH directions** (wider and narrower),
+   CIs excluding zero. Gives direction sensitivity.
+2. **Generator-recovery, both ways:** data generated under table X awards the win
+   to X over a rival, run in both directions at real-cohort power. This is the
+   correct null/alternative pair for comparing calibration tables.
+3. **The literal shuffled null is RETAINED, asserting the known artifact
+   direction** — under shuffle, the sharper table must **never** win.
+
+Part 3 is the move worth keeping as a pattern: **do not delete a broken check —
+invert it into an assertion of the artifact it exposes.** The broken symmetry
+assumption becomes a determinate check of the harness itself.
+
+**Required in the verdict text.** C's generator-recovery at real-cohort power
+(arms separable under truth, CIs excluding zero both ways at 6 seasons ×
+~1,200 games) **prints beside any INDISTINGUISHABLE verdict as its power
+note** — *"this result is a statement about basketball, not about our power, per
+the pre-computed separability of [date/commit]."* #20 had to reconstruct its
+power note after the fact; **R1b's is pre-computed and reaches the reader in the
+same breath as the verdict.**
+
+The same pattern applies to R2's harness wherever its arms differ in sharpness.
+
+**C reads real data once this lands.**
