@@ -53,6 +53,23 @@ thread, because a lesson is operative only where the work happens.
    NULL books. Cohort-tick counts and raw-row counts are different units and
    both true.
 
+9. **A live gate is not relitigated by an exploratory slice.** Where a
+   registered test covers a region, its read lands first and the exploratory
+   work inherits the answer. If the registered test is unresolved, exploratory
+   findings in that region carry an explicit *"the registered test on this
+   region is unresolved"* header. Exploration may generate candidates in a
+   gated region; it may not quietly supply a verdict there.
+
+## Run from pins, not from a database
+
+Where a run can be executed against frozen CSV exports rather than a live
+database, it is. Not for convenience — **it makes the window incapable of
+changing.** Every prior at-floor attempt read a database whose contents moved
+underneath it, and the source-window rule could only ask the author to *state*
+the window. Reading pins removes the failure instead of documenting it, and it
+guarantees the registered test and the exploratory wave cannot disagree about
+what the data said.
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
