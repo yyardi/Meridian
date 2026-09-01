@@ -227,6 +227,11 @@ def build_boundary_states(games_path: str, plays_path: str) -> pd.DataFrame:
     g = g.dropna(subset=["closing_total"]).rename(columns={"closing_total": "mu"})
     st = states[states.t.isin(BOUNDARIES)].merge(
         g[["game_id", "mu", "actual", "is_ot"]], on="game_id")
+    # the registration's coverage is 2017-2022 + 2025; 2016's ~24 lined games
+    # are declared unusable and enter NOTHING — not training, not the table
+    n_2016 = st[st.season == 2016].game_id.nunique()
+    st = st[st.season != 2016]
+    print(f"season 2016 excluded entirely per the coverage citation ({n_2016} lined games unusable)")
     n0 = len(st)
     push = st.actual == st.mu
     st = st[~push].copy()
