@@ -511,3 +511,46 @@ gate-neutral changes get **announced, never discovered**. R1's arithmetic
 ignoring the new column is verifiable by diff.
 
 **C reads nothing until this text is on main.**
+
+---
+
+## R3b — ADOPTION APPEND, 2026-09-02
+
+**VERDICT: PASS — ADOPTED.** Arm (a) dominates on the registered terms:
+vs (b) **−0.00030 [−0.00050, −0.00011]** with (a) lowest in **all six evaluated
+seasons individually**; vs (c) **−0.02055 [−0.02330, −0.01779]** — the
+naive-extrapolation floor loses at **~70× the (a)−(b) gap**, confirming (c) as
+the interpretability floor it was registered to be. Floor ≥5 met at 6; harness
+selftests passing; composition printed: **22,707 boundary states / 7,546 games,
+234 pushes excluded and counted, 104 OT games** in the OT-inclusive settlement
+frame. **Adopted form: walk-forward per-fold refit, joining R1b's σ and R2's
+shrink.**
+
+**SENSITIVITY b′ (never-gating), the ruling measured:** rate-keyed beats
+absolute-invariance, **−0.00017 [−0.00030, −0.00003]**. The σ-port fork was
+ruled on physics reasoning and **filed with its rival as a live sensitivity
+rather than a discard — so the ruling got TESTED instead of obeyed, and
+survived.** That pattern — **rule + rival-as-sensitivity** — is precedent.
+
+**DEFECT, disclosed before adoption and governing what may be quoted.** The
+registration declared 2016's 23 lined games unusable; the fold builder admitted
+them to training and to an equal-weight cluster in the physics table. **The GATE
+is invariant** (−0.00031 → −0.00030). **The PHYSICS TABLE was materially
+contaminated:** first-read endQ1 b printed **1.181 [0.956, 1.406]**; corrected
+**1.087 [1.060, 1.113]** — a **five-fold CI inflation from one junk cluster**.
+**Only the corrected table exists for citation; the first-read table is
+retracted on sight wherever it appears.**
+
+**STRUCTURAL FINDINGS.** NBA banking is **nearly pure** — b = **1.087 / 1.018 /
+1.021** vs WNBA **1.318 / 1.208 / 1.128**, all CIs excluding 1.0: pace
+persistence is real and **~5× smaller**; an NBA totals surprise is almost
+entirely banked points. **Second instance of the ported table being wrong IN
+KIND rather than degree** (R1b: inverted σ slope; R3b: collapsed banking) —
+**arms-not-defaults justified twice by shape, never merely by level.**
+
+**The invariance-class contrast worth keeping: quarter-structure constants port
+(shares 0.2538 / 0.5066 / 0.7577, near-identical to WNBA); pace-persistence
+constants do not. Which class a constant belongs to is now a question to ask
+BEFORE porting it.** σ = 15.25 / 12.81 / 9.24, below every ported form.
+
+**Effect size: physics, not alpha. No capital implication.**
