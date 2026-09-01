@@ -70,6 +70,15 @@ the window. Reading pins removes the failure instead of documenting it, and it
 guarantees the registered test and the exploratory wave cannot disagree about
 what the data said.
 
+10. **A registration that names a floor must cite, inside itself, the coverage
+   table that makes the floor reachable.** Floor feasibility is checked at
+   registration time, not discovered at fit time. Two gates were registered on
+   2026-09-01 whose anchors did not exist for enough seasons; both could never
+   have passed at any effort, and it was caught only because the executing agent
+   asked whether the data existed before fitting. A floor is a claim about the
+   data, and an unchecked claim about the data is how a gate-that-cannot-pass
+   gets written by someone who knows better.
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
