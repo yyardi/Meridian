@@ -3,9 +3,9 @@
 **Status: descriptive, in-sample, hypothesis-generating.** Drafted by Quant B,
 reviewed by Quant D (sign-off conditions applied in this revision); pins
 `20260901T195202Z`; substrate A's `roundtrip_ledger_20260901T195202Z.csv`.
-D's numbers are quoted from their execution decomposition and its addendum 2
-(commits a7d8f26, c1b0fba; branch local pending operator-authorized push —
-quoted rather than linked for that reason). B's numbers are from
+D's numbers are from `analysis/pulse_execution_decomposition.md` (merged,
+PR #122; the withdrawal autopsy is its Addendum 2, PR #126 — both on
+main). B's numbers are from
 `analysis/pulse_loss_map_report.md` (+ addendum) and
 `analysis/withdrawal_autopsy.py`.
 
