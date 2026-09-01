@@ -352,3 +352,64 @@ the circular ML-inversion construction the arm ordering scrambles — each table
 the comparison degrades to self-consistency, where flatness wins for the
 shuffled-null reason. **The spread re-anchoring was adopted on coverage grounds;
 this is its empirical vindication: the severed loop was load-bearing.**
+
+---
+
+## R2 — ADOPTION APPEND, 2026-09-02
+
+**VERDICT: PASS — ADOPTED.** Paired Brier (shrunk − plain) **−0.001609
+[−0.002195, −0.001023]**, 413,553 states / **8 forward seasons** against a floor
+of ≥7, the shrink winning **ALL EIGHT seasons individually** (narrowest
+COVID-2020 −0.00016, largest 2017 −0.00260), ~2.6× the R1b (a)−(b) gap.
+**Adopted form: the walk-forward per-fold pair — R1b's σ and this shrink table,
+refit together each season, never frozen.**
+
+**The pre-named reading REFUSED BY DATA.** #108's redundancy-of-form did not
+occur: the anchored FV's arithmetic does **not** already capture in-game
+reversion, and the explicit term adds material calibration in every season.
+
+**Two readings remain for the WNBA's ≈0 and this append CLAIMS NEITHER:**
+(i) 18 games could not have seen an effect of this size in either direction —
+the WNBA read was **power-limited, not informative of redundancy**; or (ii) the
+leagues genuinely differ. **The NBA answer is measured regardless; the WNBA
+question stays open at its own gate and inherits nothing from this one.**
+
+**A pre-named reading being refused is what the note existed for.** A ≈0 here
+would have adopted redundancy invisibly; instead the non-occurrence is loud.
+
+**The physics table, standing regardless of the gate:** β monotone **0.430 at 4′
+→ 0.086 at 44′**, every gridpoint's CI excluding zero; intercept and
+no-intercept variants agree **to the fourth decimal at every point** — the
+spread anchor is unbiased in this frame. The NBA reverts **more** than the WNBA
+early (0.430 vs 0.355) with the same qualitative decay.
+
+**Stated conservatism:** σ is refit per fold on the **PLAIN** curve per the
+approved pin, so the shrunk arm carries a σ fitted to the unshrunk mean and
+**slightly under-sizes its own confidence — the PASS is if anything
+understated.** The σ-refit-under-shrink variant was **NOT run because it would
+be post-hoc**; if anyone wants the sharper number, it gets its own registration.
+
+**Effect size, so it cannot be over-read: ~0.16% relative Brier. Physics, not
+alpha. No capital implication; adopted into the model's uncertainty engine,
+nothing more.**
+
+---
+
+## R3b — PRE-CHECK AND AMENDMENT, filed before C builds
+
+**Per rule 10, feasibility is established before the harness exists.**
+
+**Totals coverage = 2015–2022 + 2025 partial — the same 8-available shape as
+R2** (see the coverage table above; totals column).
+
+- **Floor: ≥ 7 of the 8 available evaluated seasons.**
+- **Closure: at all 8 with no dominant arm → the registered tie-break** (adopt
+  (a), the league-matched estimand, recorded as adoption-by-tie-break, never as
+  superiority).
+- **Coverage cited inside this amendment; chosen-with-coverage-in-view
+  disclosed.**
+- **R1's original 10-season closure language is superseded wherever R3b
+  inherited it.**
+
+C builds the totals loader and selftests; **reads nothing until this lands** —
+the same sequence that has now worked three times.
