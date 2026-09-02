@@ -492,8 +492,55 @@ def run_db() -> int:
               "(recording binary not deployed). Nothing to score; not a "
               "failure.")
         return 0
+    return _run_checks(df)
+
+
+def _parse_bool(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v):
+        return None
+    s = str(v).strip().lower()
+    if s in ("t", "true", "1"):
+        return True
+    if s in ("f", "false", "0"):
+        return False
+    return None
+
+
+def _load_csv(path: str) -> pd.DataFrame:
+    """Load a CSV export of quote_v2_observations (e.g. psql
+    `\\copy (SELECT ...) TO 'f.csv' CSV HEADER`) into the same frame the checks
+    consume. Coerces postgres CSV quirks: booleans as t/f, NULLs as empty,
+    ISO timestamps. Lets a real board be scored offline when the DB isn't
+    reachable from where the scorer runs."""
+    df = pd.read_csv(path, dtype=str, na_values=[""], keep_default_na=True)
+    for col in ("observed_at", "source_captured_at", "det_confirm_t0"):
+        if col in df.columns:
+            # format="ISO8601", not inference: postgres exports whole-second
+            # stamps without a fractional part and sub-second ones with, and
+            # format inference locks onto the first value and coerces the rest
+            # to NaT (the verify-clock-and-timezone class of bug). ISO8601
+            # parses the mixed precision — and the space/'T' separator — as one.
+            df[col] = pd.to_datetime(df[col], errors="coerce", utc=True,
+                                     format="ISO8601")
+    for col in ("best_bid", "best_ask"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "det_in_window" in df.columns:
+        df["det_in_window"] = df["det_in_window"].map(_parse_bool)
+    return df
+
+
+def run_csv(path: str) -> int:
+    df = _load_csv(path)
+    if df.empty:
+        print(f"{path}: no rows.")
+        return 0
+    return _run_checks(df, source=path)
+
+
+def _run_checks(df: pd.DataFrame, source: str = "quote_v2_observations") -> int:
     games = df["game_id"].nunique()
-    print(f"scoring {len(df):,} rows across {games} game(s)\n")
+    print(f"scoring {len(df):,} rows across {games} game(s) from {source}\n")
     mm = reconcile(df)
     print(f"CHECK 1 replay-reconciliation: {len(mm)} mismatch(es)")
     for x in mm[:20]:
@@ -536,11 +583,16 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--db", action="store_true")
+    ap.add_argument("--csv", metavar="PATH",
+                    help="score a CSV export of quote_v2_observations "
+                         "(offline, when the DB isn't reachable here)")
     args = ap.parse_args()
     if args.selftest:
         return selftest()
     if args.db:
         return run_db()
+    if args.csv:
+        return run_csv(args.csv)
     print(__doc__)
     return 0
 
