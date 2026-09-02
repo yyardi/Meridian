@@ -78,12 +78,14 @@ are the registration's (rule 11); this is the design input feeding it:
     even though trip P&L (A1) does. A character-keyed QUOTING arm has no
     at-fill support; the A1 gate remains the forward test of the trip-P&L claim.
   * **v2-WIDTH folds or is redefined** (see the constant above).
-  * **NEW lever — requote-into-the-dip** (the sharpest input): post-fill mids
-    revert +0.76→+0.90c and the +10m markout is −0.63 [−1.27, +0.02]; ~40% of
-    at-fill loss is TRANSIENT. An arm that holds briefly after a fill, or
-    requotes at the pre-fill mid rather than chasing the post-fill mid, has
-    ~0.8c/fill of measured not-losing available. Proposed as v2-HOLD, pending
-    the registration.
+  * **v2-PATIENCE — requote-into-the-dip** (the sharpest input, now LIVE): an
+    arm that holds briefly after a fill, or requotes at the pre-fill mid rather
+    than chasing the post-fill dip, has ~0.8c/fill of measured not-losing
+    available (+10m markout −0.63 [−1.27, +0.02]; ~40% of at-fill loss is
+    transient). PRECONDITION MET (D M4 405ef34): v1's requote-into-dip rate is
+    82.2% [79.0, 85.3], so the lever is real and the 0.8c is not already in the
+    −1.60; and dip-born vs reverted-birth captures OVERLAP (−1.52 vs −1.63), so
+    it is a post-fill BEHAVIOUR effect — a requote-replay arm, never a subset.
 """
 
 from __future__ import annotations
@@ -121,20 +123,35 @@ FEE_PER_CONTRACT = 0.0
 #: (D b952c9e: Q4 −3.00c vs −1.3/−1.4 early). "Late" = minutes_left at or below
 #: this, OR Q4. Threshold PENDING the registration.
 LATENESS_MINUTES_LEFT = None            # PENDING registration
-#: v2-CONGESTION (second): calibrated definition from D's post-mortem via B's
-#: lags_for_event — a fill within CONGESTION_WINDOW_S after a lag episode of
-#: >= this many seconds is "in congestion" (−1.74c vs −1.44c clear). Confirm in
-#: the registration.
-CONGESTION_LAG_THRESHOLD_S = 5.0        # from D's cut; registration confirms
+#: v2-CONGESTION (second): a fill within CONGESTION_WINDOW_S after a lag
+#: episode of >= CONGESTION_LAG_THRESHOLD_S is "in congestion". Canonical
+#: numbers under B's DETERMINISTIC lags instrument (census c78432d): in-
+#: congestion −1.79c [−1.92, −1.66] (n=7,801) vs clear −1.43c [−1.52, −1.35]
+#: (n=9,231), G=13. B's determinism fix moved ~1,200 fills of cell membership
+#: (a different opener set, not a neutral stabilization), so the cells are
+#: VERSION-LOCKED to the census commit — pin it beside the definition the way
+#: the A1 linking policy is pinned. Earlier per-pin caching is unnecessary now
+#: (the instrument is order-invariant); the version pin replaces it.
+CONGESTION_LAG_THRESHOLD_S = 5.0        # registration confirms
 CONGESTION_WINDOW_S = 30.0
-#: v2-PATIENCE (third, CONDITIONAL): requote-into-the-dip is a measured cost
-#: (post-fill mid reverts +0.76→+0.90c; ~0.8c/fill not-losing available). But
-#: the arm is VACUOUS if v1 never actually requoted into dips — the 0.8c would
-#: already be in the −1.60. Gated on D's requote-baseline measurement; the
-#: registration's precondition section sets this. PATIENCE is a BEHAVIOUR-change
-#: arm (hold/requote-at-pre-fill-mid), NOT a subset predicate — it needs a
-#: requote-replay, not fill selection, so it is scaffolded as a distinct type.
-PATIENCE_ENABLED = None                 # PENDING D's requote-baseline + reg
+#: The lags census the congestion cells are computed AGAINST — c78432d or
+#: later (D, 2026-09-02). Cells are only comparable within one census version.
+CONGESTION_CENSUS_COMMIT = "c78432d"
+#: v2-PATIENCE (third): requote-into-the-dip is a measured cost (post-fill mid
+#: reverts +0.76→+0.90c; ~0.8c/fill not-losing available). PRECONDITION MET —
+#: D's M4 (quote_v2_markout.py @ 405ef34): v1's requote-into-dip rate is
+#: 82.2% [79.0, 85.3] clustered (G=13), so v1 released the lever constantly and
+#: the 0.8c is NOT already in the −1.60 — the arm is LIVE, not vacuous. And it
+#: is a BEHAVIOUR effect not a selection effect: dip-born vs reverted-birth
+#: captures OVERLAP (−1.52 vs −1.63), so a fill-subset scoring would read it as
+#: nothing — PATIENCE must be a requote-REPLAY (hold briefly / requote at the
+#: pre-fill mid), which is why it is a distinct arm type below, not a predicate.
+PATIENCE_ENABLED = True                 # precondition met (D M4 405ef34)
+#: The requote-replay's rule parameters — PENDING the registration (rule 11):
+#: how long to hold after a fill before requoting, and whether to requote at the
+#: pre-fill mid rather than chasing the post-fill mid.
+PATIENCE_HOLD_SECONDS = None            # PENDING registration
+PATIENCE_REQUOTE_AT_PREFILL_MID = None  # PENDING registration
 
 REVERT = "revert"
 
@@ -291,11 +308,28 @@ ARMS: dict[str, Arm] = {
                     "quote only revert + guard-clean + uncongested + not-late"),
     "v2-CONGESTION": Arm("v2-CONGESTION", A1_FAIL, _congestion_keeps,
                          "skip B's clustered slow windows (>=5s lag / 30s)"),
-    # v2-PATIENCE (A1-FAIL, CONDITIONAL) is a BEHAVIOUR-change arm, not a subset
-    # predicate — see PATIENCE_ENABLED. It enters ARMS as a requote-replay once
-    # D's requote-baseline clears its precondition and the registration declares
-    # it; it is intentionally absent from this subset-predicate registry.
+    # v2-PATIENCE (A1-FAIL) is LIVE (PATIENCE_ENABLED, D M4 405ef34) but a
+    # BEHAVIOUR-change arm, not a subset predicate — it is intentionally absent
+    # from this subset-predicate registry and scored by requote-replay (below).
 }
+
+
+@dataclass(frozen=True)
+class PatienceArm:
+    """v2-PATIENCE: a requote-REPLAY arm, not a fill subset. It re-derives what
+    v1's fills would have been under a patient requote rule (hold briefly after
+    a fill, or requote at the pre-fill mid rather than chasing the post-fill
+    dip) and re-scores. The 0.8c/fill lives in post-fill BEHAVIOUR (dip-born
+    −1.52 vs reverted-birth −1.63 overlap, D M4), so subset-selection reads it
+    as nothing — the replay is the only instrument that sees it. The replay's
+    exact rule (hold seconds / pre-fill-mid) is the registration's (rule 11);
+    the replay itself needs the tick tape and lands with assemble_ledger's
+    requote path."""
+
+    name: str = "v2-PATIENCE"
+    branch: str = A1_FAIL
+    enabled: bool = bool(PATIENCE_ENABLED)
+    detail: str = "requote-replay: hold / requote at pre-fill mid, ~0.8c target"
 
 
 @dataclass
@@ -345,6 +379,13 @@ def assemble_ledger(fills: pd.DataFrame, *, tick_path: Path | None = None
     game state at fill time), and `markout_{h}` (D's markouts()). Until a
     dependency is on main the corresponding column is left absent and the arms
     that need it raise rather than score on a stub.
+
+    CONGESTION VERSION PIN (D, 2026-09-02): B's `lags_for_event` is now
+    order-invariant (deterministic fix, census c78432d) — no per-pin caching
+    needed. But the fix MOVED ~1,200 fills of cell membership, so cells are
+    only comparable within one census version: compute `congested` against
+    CONGESTION_CENSUS_COMMIT (c78432d or later) and record the census commit
+    on the ledger, the way the A1 linking policy is pinned.
     """
     raise NotImplementedError(
         "assemble_ledger wires D's markouts(), B's lags_for_event, and the A1 "
@@ -424,6 +465,9 @@ def _selftest():
     # v2-WIDTH is gone (confounded on this tape); assert it is not an arm.
     assert "v2-WIDTH" not in ARMS and "v2-GUARD" not in ARMS
     assert set(ARMS) == {"v2-STATE", "v2-CONGESTION"}
+    # v2-PATIENCE is LIVE but a behaviour-change arm — not in the subset
+    # registry, and its precondition is resolved to enabled (D M4).
+    assert "v2-PATIENCE" not in ARMS and PatienceArm().enabled is True
 
     # interpretation matrix: emits per-character coordinates from an enriched
     # ledger; the injected revert-favourable capture shows up as the column.
