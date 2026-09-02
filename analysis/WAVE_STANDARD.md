@@ -142,6 +142,12 @@ before merge**, and the merge is refused if it would revert one.
    paid. The audit question is one line: **"does any filter's predicate
    reference a frame the registration excludes?"**
 
+14. **Every candidate registration states its expected FIRING RATE** (per game
+   and per slate) from the descriptive data that motivated it, **and the
+   verdict reports the realized rate beside it.** An edge that cannot fire
+   often enough to matter at the operator's capital is a finding, not a
+   strategy — the operator's words, now the registry's words.
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced

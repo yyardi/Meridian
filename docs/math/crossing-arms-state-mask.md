@@ -80,3 +80,9 @@ not adopted, the gate closes.
 **No in-sample result justifies capital. The forward test is the evidence.**
 
 *Results append below this line, never above it.*
+
+## 2026-09-02 — linking-pin harmonization
+
+Same note as the parent registration's, same instant: context lines harmonize
+on the REPAIRED rule with the drop-rule number printed beside, no gated
+quantity depends on linking, the original text stands untouched.

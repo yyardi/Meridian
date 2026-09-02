@@ -588,3 +588,31 @@ defensible window (F8 lag matters least when the anchor does the work).
 *— Quant C. All candidates in-sample where they cite numbers; the atlas
 tables are measured but the candidates are hypotheses. No in-sample result
 justifies capital. The forward test is the evidence.*
+
+---
+
+## The atlas band gap — disposed as TWO tracks (research agent, 2026-09-02)
+
+The **+2–4pp leader-underrating in the 18–36-minutes-left band** (atlas,
+season-clustered CIs off zero) is a **MODEL-vs-REALITY gap, not (yet) a
+market-vs-reality gap.** The distinction is the whole disposition:
+
+- **Track 1 — now:** an FV lead-band correction arm. Calibration work,
+  registered in the R-series pattern, **C's to build off the atlas.** Improves
+  exits and the platform regardless of any market.
+- **Track 2 — candidate 7a for round 3:** fires only if **the NBA market
+  shares the miscalibration in that band** — unmeasurable until listings
+  trade, which makes it a **textbook novel-exposure candidate** under the
+  tiebreaker: it predicts something unmeasured, and the day-one survey records
+  exactly the data that grades it.
+
+**Nobody may collapse the two tracks into "the model found an edge."**
+
+## Freshness postscript — attacked AND dead
+
+B's round-2 attack on the freshness candidate and the research agent's same-day
+empirical kill converged independently. **Attacked and dead is the strongest
+close a candidate gets.** D3's convergence-direction merge proposal inherits
+the corpse's lesson: **any convergence candidate must show it is not freshness
+wearing a new name** — the age-bucket table above is the reference its
+attackers should cite.
