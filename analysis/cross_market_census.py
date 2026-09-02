@@ -110,6 +110,10 @@ def triangle_for_event(df: pd.DataFrame) -> dict:
     spr = spr.dropna(subset=["best_bid", "best_ask"])
     if win.empty or spr.empty:
         return out
+    win = win.sort_values(["captured_at", "market_slug"],
+                          kind="stable")
+    spr = spr.sort_values(["captured_at", "market_slug"],
+                          kind="stable")   # deterministic keep='last' ties
     spr["x"] = -spr.line.astype(float)          # S(x): P(m > x)
     spr["mid"] = (spr.best_bid + spr.best_ask) / 2
     spr["spread_px"] = spr.best_ask - spr.best_bid
@@ -288,6 +292,13 @@ def lags_for_event(df: pd.DataFrame, kind: str) -> list[tuple]:
         subset=["best_bid", "best_ask"]).copy()
     if lad.empty or lad.market_slug.nunique() < 2:
         return []
+    # canonical order INSIDE the instrument: whole-board snapshots share
+    # timestamps, and trigger suppression is tie-order-sensitive — a
+    # consumer feeding rows in nondeterministic order (e.g. from SQL
+    # without ORDER BY) must still get identical episodes (D measured
+    # ~0.4% cell drift before this; rule 15)
+    lad = lad.sort_values(["captured_at", "market_slug"],
+                          kind="stable").reset_index(drop=True)
     lad["mid"] = (lad.best_bid + lad.best_ask) / 2
     per_rung = {}
     trig = []
@@ -299,7 +310,7 @@ def lags_for_event(df: pd.DataFrame, kind: str) -> list[tuple]:
         big = np.abs(d) >= TRIGGER_MOVE
         for j in np.flatnonzero(big):
             trig.append((ts[1:][j], slug, np.sign(d[j])))
-    trig.sort(key=lambda x: x[0])
+    trig.sort(key=lambda x: (x[0], x[1]))   # tie-break by rung slug
     lags = []
     last_t0 = None
     for t0, slug0, sgn in trig:
