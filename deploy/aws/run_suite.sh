@@ -45,9 +45,16 @@ echo "==> suite"
 # and does not COPY tests/, so the repo is mounted and the dev extras added
 # in the container. --no-deps is deliberate: nothing from the compose stack
 # is touched, and the production Postgres is not on this network at all.
-docker run --rm --network "$NET" \
+# --network container:$PG puts the suite in the Postgres container's OWN
+# network namespace, so "localhost:5432" genuinely reaches the throwaway
+# database. This SATISFIES conftest's local-only guard rather than bypassing
+# it: that guard refuses any URL without localhost/127.0.0.1 because the tests
+# write and delete rows, and it is right to. Note its error message offers
+# MERIDIAN_TEST_DATABASE_URL as an escape hatch, but the check runs on the
+# resolved URL either way -- the variable does not bypass it. Reported.
+docker run --rm --network "container:$PG" \
   -v "$REPO":/src -w /src \
-  -e MERIDIAN_TEST_DATABASE_URL="postgresql+psycopg://meridian:meridian@${PG}:5432/meridian_suite_$$" \
-  -e DATABASE_URL="postgresql+psycopg://meridian:meridian@${PG}:5432/meridian_suite_$$" \
+  -e MERIDIAN_TEST_DATABASE_URL="postgresql+psycopg://meridian:meridian@localhost:5432/meridian_suite_$$" \
+  -e DATABASE_URL="postgresql+psycopg://meridian:meridian@localhost:5432/meridian_suite_$$" \
   --entrypoint sh "$IMG" -c \
   'pip install --quiet --no-cache-dir "pytest>=8.0" >/dev/null && exec python -m pytest "$@"' _ "$@"
