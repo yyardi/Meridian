@@ -156,6 +156,17 @@ before merge**, and the merge is refused if it would revert one.
    timing-sensitive instrument must include a jitter-null, and one top episode
    gets hand-verified before any census is believed.**
 
+16. **The known-answer duty: any new instrument touching a measured domain must
+   reproduce the measured value on the pinned substrate BEFORE its first live
+   read.** It complements the mutation suite exactly — mutation proves the
+   needle can move; the known answer proves it points at truth on real data.
+   The type specimen: the day-one survey's coherence module first reported
+   6,963 violations against a measured invariant of ~1 — a dominance-direction
+   sign error masked by two vacuous selftest cases, caught only because the
+   boring list held a measured value to disagree with. **A closed negative is a
+   calibration standard for every future instrument in its domain.** The night
+   we can't re-run is exactly the night the instrument must already be proven.
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
