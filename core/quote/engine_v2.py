@@ -97,6 +97,17 @@ class ShadowQuoterV2(ShadowQuoter):
               AND captured_at > now() - make_interval(secs => :age)
             ORDER BY market_slug, captured_at DESC
         """), {"age": MAX_OBSERVATION_AGE_SECONDS}).all()
+        # The QUOTER'S OWN receive stamp for this batch — one instant, taken
+        # when the read returns. NOT market_snapshots.captured_at: that is the
+        # recorder's cross-process clock, which the schema forbids
+        # (docs/math/quote-v2-observation-schema.md: observed_at is "the
+        # QUOTER'S OWN stamp — never recorder stamps"; B's congestion-detector
+        # registration forbids a cross-process recorder-timestamp join). det_*
+        # stamped in the recorder clock would later join to fills in the quoter
+        # clock — the exact skew the design exists to prevent. One stamp per
+        # cycle gives a uniform <=1s cadence, and within a cycle the detector's
+        # (t, ladder, rung) tie discipline reduces to market_slug order.
+        read_at = dt.datetime.now(UTC)
         out = []
         for r in rows:
             bid, ask = float(r.best_bid), float(r.best_ask)
@@ -106,9 +117,19 @@ class ShadowQuoterV2(ShadowQuoter):
                 market_slug=r.market_slug, game_id=str(r.game_id),
                 event_slug=r.event_slug or "",
                 sports_market_type=r.sports_market_type or "",
-                observed_at=r.captured_at, bid=bid, ask=ask,
+                observed_at=read_at, source_captured_at=r.captured_at,
+                bid=bid, ask=ask,
                 is_live=bool(r.is_live),
                 event_period=r.event_period, event_score=r.event_score))
+        # Canonical input order (observed_at, market_slug) — the c78432d tie
+        # discipline the congestion detector registers as its input contract.
+        # record_cycle feeds the per-game detector in this order, so the
+        # offline recording-integrity replay reconciles exactly. With the
+        # per-cycle read stamp above this reduces to market_slug within a cycle;
+        # kept explicit so it stays correct if observed_at ever becomes
+        # per-observation, and so an equal-instant divergence is a real
+        # out-of-contract signal (the scorer's should-never-fire assertion).
+        out.sort(key=lambda o: (o["observed_at"], o["market_slug"]))
         return out
 
     def _detector_for(self, game_id: str):
@@ -152,6 +173,7 @@ class ShadowQuoterV2(ShadowQuoter):
                     event_slug=o["event_slug"],
                     sports_market_type=o["sports_market_type"],
                     observed_at=o["observed_at"],
+                    source_captured_at=o["source_captured_at"],
                     best_bid=Decimal(str(o["bid"])), best_ask=Decimal(str(o["ask"])),
                     is_live=o["is_live"], event_period=o["event_period"],
                     event_score=o["event_score"], margin=margin, total_so_far=total,
