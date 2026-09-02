@@ -101,6 +101,18 @@ Split by how positions ended: trips +$55.86 (1,807 rows), rides −$28.82
 (137 rows) — full-intent, policy frame. Not interpreted here; that is B's
 slice.
 
+**The live-faithful read is decided by the lineage repair.** All 17
+reconstructed links fall in the early era — exactly the era where caps
+were enforced rather than annotated — so they are 17 of the 60
+live-faithful scored rows (28%). With the re-linking, the live-faithful
+frame reads +4.1% dollar-weighted (+1.2¢/$ equal-weighted; 55 trips /
+5 rides); booking those 17 as rides instead reads **−6.3%** (−10.0¢/$;
+38 trips / 22 rides). The full-intent frame barely moves (−$3.40 on
++$27.05). Independently confirmed by B's from-scratch reconstruction,
+which matches this ledger to 6 decimals on every row except exactly those
+17. Any registered series on the live-faithful population inherits this
+sensitivity; filter on `lineage_source` to take either side.
+
 **The ordering of those arms is the finding to carry, not the +2.7%:** the
 headline is entirely inside the maker-fill assumption. Under the measured
 in-game fill concession the same tape reads −19.2%, and trips pay the
