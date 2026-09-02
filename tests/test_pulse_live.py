@@ -570,7 +570,9 @@ def test_the_engine_cannot_place_modify_or_cancel_anything():
     import ast
     import inspect
 
-    for module in (pl, ps, pr):
+    from core.pulse import reprice as prc
+
+    for module in (pl, ps, pr, prc):
         tree = ast.parse(inspect.getsource(module))
         imported: set[str] = set()
         for node in ast.walk(tree):
