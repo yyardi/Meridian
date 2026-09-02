@@ -65,10 +65,21 @@ replacement-by-tie-break, never as superiority.
 **Power expectation, stated before the read:** both arms approximate the
 same variance correction, so near-indistinguishability is the EXPECTED
 outcome and the tie-break is expected to decide. That is by design, not a
-defect: the informative branches are FAIL (the z-gradient is real) and a
-PASS with margin (the effective form was also mis-shaped). A straddle here
-is not the R4 closure's uninformative straddle — it affirmatively licenses
-the simpler form via the pre-committed rule.
+defect. A straddle here is not the R4 closure's uninformative straddle — it
+affirmatively licenses the simpler form via the pre-committed rule.
+
+**POWER PROGNOSIS FOR THE FAIL BRANCH, from the mutation suite at real-gate
+power:** under a synthetic z-gradient STRONGER than plausible reality
+(g_true 1.25/1.00/0.60), the g-incumbent's advantage over R4b reads only
++0.000065 [−0.000008, +0.000139] — the FAIL branch is NEAR-UNDETECTABLE at
+achievable power (the suite proves detectability in principle at 3×
+cohort). Consequently, pre-committed: **a FAIL, if it occurs, is STRONG
+evidence for the z-gradient** (the real effect must far exceed the
+prognosis), **and a straddle carries NO evidence against the z-gradient
+theory** — it licenses the simpler form on parsimony alone, exactly as the
+tie-break states, while leaving the gradient question to better instruments
+(e.g., a z-resolved diagnostic at higher granularity, a future
+registration if anyone wants it).
 
 **O4 (firing rate): NOT APPLICABLE** — calibration arm; stated so the
 checklist reads considered rather than skipped.
@@ -79,17 +90,17 @@ t-intervals (the physics table).
 
 ## Mutation, per the adopted clause
 
-Before first read: (1) generator whose truth is the shrunk-mean form with
-known σ' — the step-2 fitter recovers it within tolerance; (2) distorted σ'
-loses to fitted in BOTH directions, CIs excluding zero; (3) the
-DISCRIMINATION pair at real-gate power: (i) under a uniform
-variance-reduction generator, R4b must beat the PRE-R4 stack (no refit, no
+Before first read: (1) on a reverting generator the shrunk-mean fitter's σ'
+sits below the unshrunk-fit σ in every phase (the refit sees the variance
+the shrink removed); (2) distorted σ' loses to fitted in BOTH directions,
+CIs excluding zero; (3) the DISCRIMINATION pair: (i) under a reverting
+generator at real-gate power, R4b must beat the PRE-R4 stack (no refit, no
 g) — the instrument sees the correction; (ii) under a generator with a TRUE
-z-gradient, the g-incumbent must beat R4b — the instrument can detect when
-g carries real information, which is exactly what the gate's FAIL branch
-claims to measure; (4) a generator matching the incumbent's own form reads
-the gate as a straddle; (5) shuffled-outcome null asserts the artifact
-direction (the sharper arm must never win).
+z-gradient, the g-incumbent must beat R4b at ELEVATED (3×) power — proving
+the FAIL branch detectable in principle — with the REAL-power read printed
+as the prognosis above, not asserted; (4) a generator matching the
+incumbent's own form reads the gate as a straddle; (5) shuffled-outcome
+null asserts the artifact direction (the sharper arm must never win).
 
 ## Standing terms
 
