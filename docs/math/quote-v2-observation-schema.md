@@ -49,7 +49,7 @@ of waiting for post-A1 deploy.
 | `quote_event` | str | quote lifecycle: rested / requoted / withdrawn / held / filled_bid / filled_ask / none — PATIENCE requote behaviour |
 | `det_version` | str | **B's pin discipline: detector code version (commit) that produced the fields below** |
 | `det_in_window` | bool | live congestion detector: is this obs inside a confirmed window (opens t0+5s) |
-| `det_confirm_here` | bool | **B's request: a raw CONFIRM fired at this obs** — lets a density-gated v2 (window on 2nd confirm within 30s) be evaluated on the recorded stream with no re-instrumentation |
+| `det_confirm_t0` | ts null | **B sign-off: the confirmed trigger's t0 AS A VALUE, not a boolean.** The true confirm instant is t0+5s, which falls BETWEEN observations; a boolean flag is quantized to obs times while offline replay computes exact instants, so they could never byte-match. Recording t0 pins the confirm identity exactly and gives the density-gated v2 its confirm times for free. NULL when no confirm is tied to this obs |
 
 **Deliberately NOT stored — recomputed offline from the raw stream, to avoid
 freezing a version into the table:**
@@ -74,13 +74,40 @@ freezing a version into the table:**
    commit until A1's gate reads. This table adds no order path (shadow-only,
    credential-free stays load-bearing; AST test extends to the writer).
 5. **Detector live** — the quoter runs B's `CongestionDetector.feed` on its own
-   stream and records `det_in_window` / `det_confirm_here` / `det_version`.
+   stream and records `det_in_window` / `det_confirm_t0` / `det_version`.
+
+## Standing checks (B sign-off, 2026-09-02 — the mutation-test pattern applied to production recording)
+
+1. **Replay reconciliation.** The scorer recomputes the detector outputs
+   OFFLINE from the recorded raw stream (`observed_at`, `best_bid/ask`,
+   `sports_market_type`) and ASSERTS they match the recorded `det_in_window` /
+   `det_confirm_t0`, per game, printed. This is what makes recorded `det_*`
+   VERIFIED provenance rather than unverifiable trust, and it makes the
+   pending-trigger state fully derivable (so it is deliberately NOT a column);
+   any live/replay divergence (state corruption, a missed observation) is
+   caught by it. `det_confirm_t0` as a value (not a quantized boolean) is what
+   lets this reconciliation be exact.
+2. **Cadence self-measurement.** The scorer prints the median and p99
+   inter-observation gap per game FROM THE RAW STREAM — no trust, just
+   arithmetic — so ≤1s compliance is measured, never assumed.
+
+## Arm-pin decisions this schema forces (pinned before first read, not at read time)
+
+- **Stall-degeneracy (B):** an observation STALL > ~2s inside a pending
+  trigger's life partially FORCES its confirm, the same way a 5s cadence would
+  (a sibling response can't arrive within LONG_S if no observation arrives).
+  No extra column is needed (stalls are derivable from the raw inter-obs gaps),
+  but the CONGESTION arm's registration MUST state, before its first read,
+  whether stall-affected confirms are excluded or included in the cohort.
+  Flagged here so it is an explicit pin, decidable now, never a read-time
+  choice.
 
 ## Open questions for sign-off
 
-- **B:** does `det_confirm_here` + `det_in_window` + the raw stream cover the
-  density-gated v2's evaluation needs, or do you want the pending-trigger state
-  recorded too? And confirm ≤1s cadence is the registered-object property.
+- **B: SIGNED OFF 2026-09-02** — no pending-state column (derivable, guarded by
+  the replay-reconciliation check above); `det_confirm_here` → `det_confirm_t0`
+  (timestamp value); ≤1s confirmed as the registered-object property; cadence
+  self-measured and the stall-degeneracy arm-pin flagged. All folded above.
 - **D:** markout runs forward-ASOF on `observed_at`; anything beyond
   `observed_at`/`best_bid`/`best_ask` you need on this table for the forward
   markout coverage print?
