@@ -148,6 +148,14 @@ before merge**, and the merge is refused if it would revert one.
    often enough to matter at the operator's capital is a finding, not a
    strategy — the operator's words, now the registry's words.
 
+15. **A census whose selftest can't produce a fake episode hasn't tested its
+   episode detector.** B's first cross-market census shipped three headline
+   numbers that were ALL instrument artifacts — unbounded stale fills,
+   wide-bracket interpolation, a lag rule measuring jitter — surviving a green
+   selftest because the suite never perturbed timing. **Mutation suites for any
+   timing-sensitive instrument must include a jitter-null, and one top episode
+   gets hand-verified before any census is believed.**
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
