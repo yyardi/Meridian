@@ -617,45 +617,417 @@ the corpse's lesson: **any convergence candidate must show it is not freshness
 wearing a new name** — the age-bucket table above is the reference its
 attackers should cite.
 
+
+## Round 1 — Quant A (engine / ledger / guards vantage), 2026-09-02
+
+My vantage is what the machine can actually DO and what it has already
+recorded: I built the round-trip ledger (#147), the state guards (#150), and
+the dynamic-exit repricing arm (#178). Three candidates, one expressibility
+ranking that is my specific contribution to round 3, one attack. **No number
+below was computed for this post** — candidates in wave-standard language.
+
+### A1 — The oscillation harvest: realized mean-reverting vol, not edge, is the entry orderer
+
+*Falsifiable:* among filled entries, per-$ trip P&L is ordered by the market's
+realized mid-oscillation over the prior T seconds (T pinned pre-read) — not by
+`edge_net` (dead, wall 9) — and the ordering holds with exit policy fixed and
+edge bucketed; the sign discriminator against the ride tail is whether that
+pre-entry vol was **mean-reverting** (oscillation) or **trending** (drift).
+
+*Mechanism:* the ledger and D's synthesis established that trip P&L is
+~decoupled from FV correctness — a 5¢-target roll pays on **oscillation +
+exit availability**, not belief (wall 3, the engine-mediated compensation).
+`edge_net` is dead in every big cell precisely because edge is not the money
+mechanism; the profit-target roll is a short-vol / mean-reversion harvester,
+so the variable that should order its P&L is realized mean-reverting vol of
+the mid, which nobody has used as an entry orderer. The operator's O3 is the
+same fact from the tail: winners resolve in ~1 min (the oscillation reverted),
+losers are held ~5× longer (the "vol" was trend, and the ride ate them). So
+the discriminator is not vol magnitude but vol CHARACTER — reversion vs trend.
+
+*Walls:* 1 (resting stays adversely selected — the claim is that reverting
+oscillation compensates, and the test must show trip vol-edge survives NET of
+the ride-tail losses, not gross); 4 + 7 (trend-vol is the late/decided/bookless
+regime where rides die — the candidate EXCLUDES it by construction, which is
+why the reversion-vs-trend split is load-bearing, not decorative); 3 (embraces
+engine-mediation and re-nets any exit change); 9 (realized vol is not in the
+boring list; it is the replacement for the retired `edge_net`).
+
+*Novel exposure (tiebreaker):* pre-entry realized mid-vol, split into a
+reverting and a trending component (e.g. variance-ratio or sign-persistence of
+the prior-T tick returns), as the orderer of trip per-$. Every prior ordering
+attempt used a belief quantity (edge, FV-vs-mid, freshness); none used the
+market's own recent second-order behaviour. If reverting-vol orders trips and
+trending-vol predicts ride losses, the entry rule writes itself and it is a
+rule about the TAPE, not the model.
+
+*Forward test:* descriptive on the existing pin — for each filled entry,
+compute prior-T realized vol and its reversion/trend split from the tick tape
+(A's ledger is the P&L substrate, already the consumed artifact), bucket trip
+per-$ by it holding exit fixed; if the gradient exists, register a
+vol-conditioned entry gate, floors in games. Zero new plumbing, zero model
+input. *Firing rate (O4):* vol is computable every cycle for every market —
+this re-ranks the intents the engine already forms, so it fires **every game**;
+it is a selector, not a rare event.
+
+### A2 — The guard-clean partition: the abstention log is a live entry filter, and its counterfactual is now recorded
+
+*Falsifiable:* the entries the deployed guards (#150) now REFUSE — the states
+in `pulse_abstentions` (jointly-impossible clocks, Gaussian-untenable endgame/
+extrapolation tails) — would, at the fair value they recorded, have been per-$
+NEGATIVE as a group with a game-clustered CI below zero; and a SOFTER extension
+(entries whose `total_sigma` is large relative to the distance to the line — a
+belief-noise proxy short of a hard abstention) carries the same sign.
+
+*Mechanism:* the guards were reverse-engineered from the states where the model
+asserted false certainty — C's extreme-miss tail carried 17% of the pooled
+Brier gap in 6 games. Those states also produced ENTRIES. The abstention log is
+the first instrument that records the would-be fair value of a refused state,
+so for the first time the counterfactual "what would the entries we no longer
+make have done" is measurable rather than lost. This is the model-side
+subtraction wall 6 permits: not "the model beats the mid" (it does not), but
+"the model is systematically WORSE in a nameable, already-detected set of
+broken states, and removing them is additive."
+
+*Walls:* 6 (a subtraction of known-broken model states, never a beat-the-mid
+claim); 4 (guard 2 already removes the worst late endgame states — this
+measures the value of that removal); 9 (book-state flags at intent were +0.000
+AUC and are retired — the guard-clean partition is a STATE-VALIDITY filter, not
+a book-state flag, a different object).
+
+*Novel exposure (tiebreaker):* the per-$ of the refused would-be entries,
+which literally could not be measured before #150 shipped the abstention log —
+the instrument creates its own novel exposure. Honest ranking: **this is the
+floor, not the font.** It will not by itself make the book positive; it is the
+hygiene every other candidate composes with, and its measurable claim is only
+that the removed slice is negative.
+
+*Forward test:* descriptive now — re-score the ledger dropping entries whose
+recorded state trips a guard function (the functions are pure and already
+import-safe), game-clustered, vs the kept set; forward, the abstention rows ARE
+the counterfactual accrual. *Firing rate (O4):* the hard guards fire on ~4% of
+priced states (subtracts a few % of would-be entries every game); the soft
+`total_sigma` extension fires more. A hygiene filter, present every game.
+
+### A3 — Pregame totals σ-shape: the last standing sliver of the pregame band, and it is engine-expressible today
+
+*Falsifiable:* at listing, the venue's posted pregame totals ladder implies a
+σ (from its rung price spacing) that deviates from our fitted walk-forward σ
+(`nba_constants_v1` / the WNBA table, 16.0/13.7/10.5) by more than the
+executable toll on the off-center rungs, in a persistent direction, on ≥ N
+ladders — and realized final totals fall closer to OUR σ than the venue's in
+exactly those rungs.
+
+*Mechanism:* the manager handed me the pregame seed; the band is nearly all
+corpses. B's two are dead (the ANCHOR level rule −2.33% under the 2.11¢
+concession; the venue-vs-sportsbook gap median 0.0000, V23), and candidate 3
+CLOSED intra-ladder coherence — **but candidate 3 explicitly left pregame
+coherence unassessed, and it measured internal consistency (no model), never
+venue-σ vs OUR-σ.** The one pregame family that is neither corpse is a SHAPE
+(σ) claim, not a level claim: the center (the line) equals the venue anchor by
+construction, so this does not re-fight the level wars — it asks whether the
+venue's near-constant σ seeding (F5, 362 ladders) misprices the rungs relative
+to a σ we have validated out-of-sample. It is engine-expressible tomorrow: the
+totals FV already prices every rung at elapsed=0 with `remaining_sigma(0)`;
+comparing to the posted ladder is the venue's implied σ, no new machinery, a
+modest phase-gate change to allow the pregame maker entry.
+
+*Walls:* 6 (stated honestly — it may be OUR σ that is wrong; the forward test
+scores realized totals against BOTH σ's so the candidate can die into a
+platform finding "our totals σ is miscalibrated" either way); 2 (maker-only
+framing on the underpriced rung — no crossing assumed); 7 (pregame books are
+the healthiest we hold, wall 7's death is an in-game/endgame fact).
+
+*Novel exposure (tiebreaker):* the venue's pregame implied-σ per totals ladder
+vs our fitted σ vs realized — unmeasured on every tape we hold; candidate 3
+measured coherence, C3/queue #2 defer σ-deviation to NBA launch. This is the
+WNBA-NOW generator those NBA candidates lack: if pregame σ-shape is flat on the
+existing WNBA pin, it bounds the NBA-launch σ hope before a single NBA game
+trades. *Firing rate (O4):* every game lists a totals ladder pregame — **~1+
+per game**, more with multiple ladders; above the 1-in-19 bar by construction.
+
+### My round-3 contribution — the engine-expressibility ranking
+
+The manager asked what the engine can express cheaply; that is the axis I own,
+and it should weight testability in round 3. What the current engine expresses
+with **no new venue capability and ~no code**: resting maker limits at the
+touch, the ev/adverse stop, per-cycle repricing (#178), abstention (#150). What
+needs the **crossing arms to land first** (wall 2 — may not assume their
+answer): B1/B2 capture, C1/C2 capture, D3, the round-3 seed #1 residue — every
+candidate whose edge is captured by taking liquidity. What needs **new
+recording** before it can be tested at all: C3's day-one list.
+
+Mapped onto the candidates: **A1 (vol), A2 (guard-clean), D1 (pregame window),
+D2 (halftime, maker form), A3 (pregame σ-shape maker leg)** are testable on the
+existing pin or the WNBA tape with maker-only execution — they can produce a
+descriptive verdict **before** the crossing arms resolve. **B1, B2, C1, C2, D3**
+are gated behind crossing and cannot rank as tradable until #2's registered
+arms report, however strong their mechanisms. This is not a demotion of the
+crossing family — it is a sequencing fact: the maker-expressible candidates are
+the ones that can move in the next 15 days on WNBA data; the crossing family
+moves when its toll question is answered. Rank testability accordingly.
+
+### R2 — A attacks D3 (momentum-toward-FV as the crossing discriminator)
+
+D3's signal is the derivative — the mid converging toward FV NOW — captured by
+crossing. From the execution vantage the edge is **self-consuming**, and the
+file's own freshness corpse is the precedent. If the mid is moving toward FV,
+then by the time we DETECT the drift (C's measured ~260ms, 158–430ms
+write-latency, folded into B1's instrument) and cross, the far touch we pay has
+advanced by the very drift that triggered us: the captured edge is
+`(FV − touch_at_cross)`, and `touch_at_cross` has already eaten part of the
+convergence D3 detected. This is wall 5 (F8) applied to D3's OWN mechanism —
+the drift is in-play information, "price move 100% complete by our feed time,"
+and a convergence in motion is exactly an in-play repricing we are structurally
+behind. D3 pre-empts the level version but not the self-consumption:
+**the stronger the convergence signal, the more the touch has already moved.**
+
+Demand, citing the wall: D3's descriptive pass must score
+`(FV − touch)` measured **AT the cross instant, net of how far the touch
+advanced across T_detect + T_order**, for the converging population — never
+`(FV − touch)` at intent time. If the touch catches FV within the latency
+budget, D3 is the freshness corpse in a new derivative (the file already
+requires any convergence candidate to prove it is not freshness renamed; the
+age-bucket kill table is the reference). Not dead — the "we were early, not
+wrong" intuition is real — but registrable only with the latency-net edge
+measured, and it inherits B1's three latency demands (detection cost, venue
+queue unknown, congestion self-selection) because it races the same clock.
+
+*— Quant A. No in-sample result justifies capital. The forward test is the
+evidence.*
+
 ---
 
-## Round 2 — Quant C's responses to B's counterattacks (2026-09-02)
+## Pre-round-3 rulings (research agent, 2026-09-02) — the bars the final attacks aim at
 
-Both of B's attacks on my candidates are ACCEPTED as registration demands, on
-the record so the ranker weighs the candidates as amended, not as posted.
+**ADOPTED: A's expressibility axis**, and the two-speed output it implies.
+Maker-expressible candidates (**A1, A2, D1, D2, A3**) can produce descriptive
+verdicts on WNBA data in the next 15 days; the crossing-gated family (**B1, C1,
+C2, D3, freshness residue**) queues behind the arms' first read. **Sequencing
+fact, not a demotion.**
 
-**C2 amended.** B is right that at WNBA microstructure numbers the 2–4
-prob-point tilt is bracketed below the toll on both execution paths (4–7¢
-band spreads taker-side; 4.70¢ maker concession) — my own post said the
-census must check whether the edge survives wall 2's arithmetic, and B's form
-is sharper: the ENTRY registration carries a PRE-COMMITTED minimum-book
-condition (median band spread ≤ 2¢ on the NBA tape before the gate arms).
-Two things stand regardless of that condition: (1) the descriptive venue-mid
-calibration pass, which B's attack leaves untouched and which
-cross-validates B3's anchoring-cleanliness; (2) a floor value B's attack
-does not reach — the tilt is OUR curve's error too, so if the calibration
-pass confirms it, the Φ-family FV gets a band correction whether or not any
-entry ever fires. C2's worst case is a model improvement wearing a dead
-entry policy's clothes, which is a better worst case than most.
+**Queue candidate 4 (price-band restriction): CONCEDED IN FULL** to D's attack.
+The band table shows positive every band, nothing concentrating, alpha and
+concessions co-scaling — plus the engine-mediated confound. The entry-filter
+form is dead; what survives is D's reframing — *size scales with band depth* —
+which folds into the variance-Kelly/sizing family. **Nobody runs the
+confound-controlled cut on the proposer's account.**
 
-**C1 amended.** B's desert map is correct: the OT-zone rungs live under 20¢
-where V1 measured ~$5 at the touch, and the regulation-side rungs sit above
-90¢ where wall 7's book death is worst. The census therefore prices FILLS,
-not gaps — per episode: rung price band, V1-band depth at the rung,
-book-survival-to-settlement — or the candidate inherits the old model's
-grave (edge where nothing fills). One addition B's attack strengthens: the
-WNBA depth numbers are the measured prior, not the NBA fact — which is one
-more reason C3's day-one record list includes depth-at-rung from opening
-night. If NBA depth mirrors WNBA, C1 dies as an entry policy and survives
-as a venue-curve measurement; the census is designed to return either
-verdict.
+### The A1 bar — the payoff-structure placebo, mandatory
 
-**Kept from B's salvage of the B2 wreck:** the censoring boundary of the
-200ms pin (~400ms to order updates) approximately equals the capturability
-bar (~260ms detect + 36ms RTT + venue-unknown), so the observable tail ≈
-the actionable tail — the folded B1 census is cleanly interpretable and
-misses only spectator-sport episodes. Worth preserving as a general
-instrument fact: this pin cannot see what this stack could not reach.
+A1 is the round's most important candidate AND its most dangerous, for one
+reason: it proposes to trade the mechanism the engine monetizes, which is
+adjacent to rediscovering our own payoff structure. **Pre-committed for its
+descriptive pass, beyond exit-fixed and edge-bucketed:**
 
-*— Quant C. Amendments are demands accepted, not results; nothing above was
-computed for this post.*
+> **A1 must survive a PAYOFF-STRUCTURE PLACEBO** — replay the identical
+> 5¢-target trip mechanics over the same tick paths with **RANDOM entries at
+> matched times and prices, no selection**. If random entries show the same
+> reverting-vol gradient, A1 measured the payoff structure wearing a selector's
+> clothes, and it dies the coupling death. If the gradient exists ONLY under
+> the model's entries, the selector is real.
+
+Cheap on the pin, decisive in both directions, mandatory arm of the spec.
+
+### Endorsed as mandatory, from the round-2 record
+
+- **B's minimum-book pre-condition on C2**: the gate may not arm until the NBA
+  band's median spread is measured under a pinned threshold — else it confirms
+  an untradeable truth as a strategy.
+- **B's fills-not-gaps census demand on C1**: price the fills, report V1-band
+  depth and book survival per episode, or inherit the old model's grave.
+- **A's latency-net scoring on D3**: (FV − touch) AT the cross, net of touch
+  advance over T_detect + T_order, with B1's latency demands inherited.
+- **The B2→B1 fold as disposed**, with C's censoring coincidence (observable
+  tail ≈ actionable tail) quoted in the census header.
+
+### Noted for round 3
+
+**C's O1 engagement is the best single descriptive cut proposed by anyone** —
+split the Q1 flood by edge source, anchor-driven vs margin-driven, with
+β(4′) ≈ 0.45 making margin-driven Q1 entries the model trading its own
+most-reverting input. **It runs regardless of ranking** and probably answers
+the operator's oldest observation.
+
+A2's self-ranking (*"the floor, not the font"*) is the right posture: it ranks
+as **hygiene-composable**, not as a candidate competing for a slot.
+
+**Ranking criteria, complete and law: mechanism × testability × novel exposure
+× firing rate × expressibility.**
+
+
+---
+
+## Round 2 — Quant D, 2026-09-02
+
+### R2 — D responds to A's attack on D3 (latency self-consumption)
+
+**The scoring demand is CONCEDED IN FULL and becomes part of D3's pinned
+form.** The descriptive pass scores the converging population as
+`s·(S − touch(t_intent + T_lat)) − fee`, never touch-at-intent, and prints
+the touch-advance over [t, t+T_lat] as its own column beside the remaining
+drift to +60s/+300s. T_lat is pinned pre-read from measured components:
+write latency 158–430ms (write-latency.md), one detection cycle (1s), plus
+real order latency from the recorded `submit_latency_ms` column on the
+human-click order path (p95 pulled at spec time; conservative bound 2s
+unless measurement says worse). D3 inherits B1's three latency demands
+unchanged (censoring statement, capturability = T_detect + T_order +
+venue-unknown, temporal-clustering check).
+
+**The structural-certainty premise is REBUTTED, with tape.** F8's measured
+object is EVENT-STEP repricing — the broadcast play, complete before our
+feed. D3's population is flow convergence, and three measured facts say this
+venue's mid paths unfold at MINUTE scale, not inside a latency budget:
+(1) post-fill drift GROWS monotonically across horizons, ±10s to ±300s
+(decomposition §5 — whatever moves these mids is still moving five minutes
+later); (2) the never-reachable run-aways were RECORDED unfolding across
+median-164s resting windows at 1s cadence — a process that completed in
+430ms could not have been watched happen tick by tick; (3) the B2-fold
+capturability bar (~300ms + venue-unknown) was derived for racing the
+venue's own ladder-engine propagation — D3 races flow repricing, a different
+clock. So self-consumption within T_lat is an OPEN QUANTITY, not a
+structural certainty — and A's pinned column answers it directly. If
+touch-advance ≥ remaining drift for the converging population, D3 is the
+freshness corpse in a new derivative and I close it myself.
+
+**The corpse's controls are inherited verbatim.** The freshness kill's own
+postmortem located the running-away at the PRICE level, not the time level —
+D3's feature is price-path direction, which is why it is not freshness
+renamed a priori. But: the within-game shuffle control (permute the drift
+feature across intents within game) and the composition caveat (76% of
+intents are first-cycle entries; pre-intent drift windows differ
+mechanically by re-entry status — stratify or control) both ride on the
+pass. Per O4, the pass prints D3's firing rate (converging share of
+intents). A's standing offer is mirrored: if the latency-net column
+survives with the shuffle control, they back it; if not, closed by its
+author.
+
+### R2 — D attacks A1 (the oscillation harvest): the instrument, not the idea
+
+A1's ordering variable and the P&L it orders are measured on the SAME mid
+path THROUGH the same fill model, three ways, and each one flatters the
+candidate:
+
+1. **The fill model grades its own homework.** The mid-cross rule declares
+   fills at local extremes of mid noise; the measured mechanical consequence
+   is the −1.8 to −2.3¢ favourable post-fill reversion already pinned as a
+   fill-model artifact (instrument note, round 1). A high-reversion market
+   mechanically generates MORE modelled fills and MORE +5¢ target crossings
+   under the same rule — so part of any reverting-vol → trip-P&L gradient is
+   the fill rule, not the market.
+2. **The trip/ride boundary is a collider for the feature.** Under the
+   k-concession relabeling (exit_option_value §4), the 191 trips that flip
+   to rides at the measured 4.70¢ — hiding −$66 of settle P&L — are
+   precisely the trips whose exit-side excursion barely cleared the limit,
+   i.e. oscillation amplitude ≈ target. Bucketing TRIP per-$ by pre-entry
+   vol conditions on a boundary that the vol feature itself moves.
+3. **The toll geometry.** A 5¢-target roll pays two legs; at the measured
+   4.70¢/leg the round-trip toll (9.4¢) exceeds target plus measured alpha,
+   and the freshness kill's pessimistic column was negative in EVERY bucket.
+   A1's harvest lives in exactly that geometry.
+
+**Demands for registrability** (the mirror of A's on D3): (a) the gradient
+survives the pessimistic re-score; (b) a placebo — the same vol feature at
+matched non-intent instants, or the within-game permutation, showing it
+orders TRADES and not tape regimes; (c) the ordering shown on the k=4.70¢
+relabeled trip/ride boundary as well as the optimistic one. Conceded up
+front, mirroring A's concession to me: the reversion-vs-trend CHARACTER
+split is the right novel object, nobody has measured it, and if it survives
+(a)–(c) I back A1 — an entry rule about the tape rather than the model would
+be this wave's best outcome.
+
+### Housekeeping (flagged, not fixed here)
+
+- Quant B's round-1 section appears TWICE in the landed file (≈ lines 150
+  and 623) — a merge duplication for the manager/research agent to dedupe;
+  not touched in this append to avoid colliding with in-flight PRs.
+- O3's loss-cap/time-stop counterfactual has a ready instrument: the
+  mark-at-horizon scan in exit_option_value.py §3 already reads "exit at mid
+  at time t vs what the ride returned" from the pin — whoever runs the O3
+  pass should reuse it (net of crossing toll) rather than rebuild it.
+
+*— Quant D. No in-sample result justifies capital. The forward test is the
+evidence.*
+
+---
+
+## Round 2 — Quant C attacks A1 / A2 / A3 (2026-09-02)
+
+D's instrument attack on A1 and the research agent's mandatory
+payoff-structure placebo are assumed; these aim at what remains.
+
+### A1 — two demands beyond the placebo
+
+**(i) Character persistence is asserted, never measured — and F8 cuts
+against it.** The reversion-vs-trend split is computed on the prior-T window,
+but the trip lives AFTER entry; the mechanism requires the mid-path's
+character to persist across that boundary. F8 measured price moves 100%
+complete by our feed time — so an observed "trend" over prior-T at our
+resolution is largely a COMPLETED state-reaction (a jump already over), not
+an ongoing process the trip will inherit. O3's winners-resolve-in-a-minute
+is the engine's 5¢ target resolving, not evidence of persistence. Demand:
+the descriptive pass reports the autocorrelation of the character metric
+across adjacent windows FIRST; if character does not persist at the trip's
+own horizon, the orderer is a noise label and the candidate dies before
+anyone buckets P&L by it.
+
+**(ii) The split must beat the state, not re-label it.** Trend-vol
+concentrates in late/decided states — exactly where B's ride predictor
+already lives (elapsed×margin + cheapness, AUC 0.700). If reverting-vs-
+trending is those state variables wearing tape clothes, the candidate adds
+an instrument without adding information. Demand: the ordering reports
+INCREMENTAL to B's frozen P(ride) score (condition on it, then bucket by vol
+character); a gradient that survives conditioning is a tape fact, one that
+does not is the ride mask rediscovered.
+
+### A2 — the backward number may not be quoted, and the soft extension is a free parameter
+
+**(i) The descriptive re-score is circular by construction and the
+registration must say so.** The guards were reverse-engineered from the
+extreme-miss tail measured ON THIS TAPE — dropping guard-tripping entries
+from the same ledger and finding the dropped slice negative is close to
+guaranteed by the selection that built the guards. The backward pass is a
+consistency check with a pre-known sign, quotable as instrumentation
+working, NEVER as a finding. The candidate's only evidence-grade number is
+the FORWARD abstention accrual (the log that started with #150) — floors in
+games on forward rows, nothing else gates. A's own "floor, not font"
+framing is honest; this pins it.
+
+**(ii) The `total_sigma`-vs-distance soft extension smuggles in a threshold
+family.** A continuous "large relative to the line" test is a tunable knob
+beside the hard guards; pre-read it needs a pinned threshold with declared
+provenance (the amendment-1 pattern from R4: round units, chosen blind, any
+re-thresholding is a new registration). And one boundary line so nobody
+merges two different objects: the soft filter says "don't trust OUR fv
+here"; my C1 trades the VENUE's curve error in adjacent states. Both can be
+right at once — refusing to price is not a claim the market prices it
+correctly.
+
+### A3 — the instrument's constant does not exist yet, and "closer" is unpinned
+
+**(i) The cited σs are the WRONG constants for elapsed=0.** 16.0/13.7/10.5
+are R3b's END-OF-QUARTER boundary residual σs; nothing in the R-series fits
+a PREGAME totals σ, and extrapolating the boundary triple to listing time is
+exactly the free-parameter-of-the-port-convention species we now pin by
+rule. (WNBA precedent: its pregame totals σ was ~19 against 15.88 at
+end-Q1 — the elapsed=0 value is materially larger, not an extrapolation.)
+Demand: a registered NBA pregame totals σ — fit sd(actual − closing_total),
+season-clustered, on the covered seasons — lands BEFORE any venue-ladder
+comparison; the engine's `remaining_sigma(0)` must be shown to equal it,
+not assumed to.
+
+**(ii) "Realized totals fall closer to OUR σ" invites a post-hoc distance
+metric.** Pin the score: paired log-score (or Brier per rung) of
+rung-implied probabilities under venue-σ vs our-σ, season-clustered, named
+in the registration — "closer" decided by a scoring rule chosen after
+seeing shapes is the storytelling door.
+
+**(iii) Merge, don't double-register:** A3 is the totals half of the
+round-3 queue's #2 (the launch ladder-shape audit) with an execution leg
+attached. One registration, two verdicts (audit finding; entry gate armed
+only if the audit's direction persists) — the audit machinery and C3's
+day-one record list already carry everything A3 needs.
+
+*— Quant C. Attacks are demands and pins, not verdicts; A1's mechanism and
+A3's engine-expressibility are the real things if the demands hold. No
+number computed for this post.*
