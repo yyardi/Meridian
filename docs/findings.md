@@ -390,6 +390,43 @@ edge has to appear nearer the money, or size stays at a few dollars per rung.
 
 ---
 
+### V29 — The venue lists NBA winners, spreads AND totals, with the WNBA's structure
+
+**Measured 2026-09-02, directly against `api.polymarket.us`, before any NBA
+build was scoped.** The question that gates every NBA plan — *is there anything
+to trade* — had never been asked of the venue itself.
+
+Scanning ~8,000 markets by `offset`, NBA slugs appear as
+**`aec` 918 · `asc` 81 · `tsc` 81 · `tec` 52**, and the ladder markets are
+structurally identical to the WNBA's:
+
+```
+asc-nba-was-mia-2026-03-10-pos-16pt5   spreads   ["+16.50","-16.50"]
+asc-nba-bos-sa-2026-03-10-pos-3pt5     spreads   ["+3.50","-3.50"]
+tsc-nba-det-bkn-2026-03-10-216pt5      totals    ["Over","Under"]
+```
+
+**Consequences.**
+
+1. **The whole model architecture has an NBA target.** Winner, spread and
+   totals all exist — the three families the NBA constants (R1b σ, R2 shrink,
+   R3b banking) were just fitted for. Had the venue offered moneylines only,
+   two of those three gates would have been fitted for markets that do not
+   exist.
+2. **Half-point lines throughout** (`16pt5`, `3pt5`, `216pt5`) — the same
+   push-unreachable convention as WNBA (V-series), so the spread/total frame
+   work ports.
+3. **`gameStartTime` is present**, so the tipoff-driven machinery has its input.
+4. **Nothing is OPEN yet.** Every NBA market found is `RESOLVED` (or
+   `UNSPECIFIED`) — the sample is the 2025-26 season, and the 2026-27 season
+   has not been listed. **This is a statement about September, not about the
+   venue's intentions.**
+
+**What this does NOT establish:** depth, spread width, or whether NBA books
+survive an endgame the way WNBA's do not (`bookless-endgames.md`). Those are
+tick-level facts and require the recorder to run against live NBA markets. **A
+listing is not a book.**
+
 ## 2. Bugs
 
 Every one of these was free because nothing traded. That property is the reason
