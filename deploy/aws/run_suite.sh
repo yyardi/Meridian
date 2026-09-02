@@ -32,10 +32,10 @@ docker network create "$NET" >/dev/null
 echo "==> throwaway postgres"
 docker run -d --rm --name "$PG" --network "$NET" \
   -e POSTGRES_USER=meridian -e POSTGRES_PASSWORD=meridian -e POSTGRES_DB=meridian \
-  postgres:16-alpine >/dev/null
+  postgres:16-alpine -p 5433 >/dev/null
 
 for i in $(seq 1 60); do
-  docker exec "$PG" pg_isready -U meridian -d meridian >/dev/null 2>&1 && break
+  docker exec "$PG" pg_isready -U meridian -d meridian -p 5433 >/dev/null 2>&1 && break
   sleep 1
   [ "$i" = 60 ] && { echo "postgres never became ready"; exit 1; }
 done
@@ -52,9 +52,15 @@ echo "==> suite"
 # write and delete rows, and it is right to. Note its error message offers
 # MERIDIAN_TEST_DATABASE_URL as an escape hatch, but the check runs on the
 # resolved URL either way -- the variable does not bypass it. Reported.
+#
+# No URL overrides are passed: conftest's ADMIN engine is hardcoded to
+# localhost:5433/meridian to create and sweep its own per-run database, so the
+# throwaway Postgres listens on 5433 and the suite runs EXACTLY as designed
+# rather than against a redirected environment. Overriding the test URL while
+# leaving the admin URL untouched is what produced 382 collection errors on the
+# first attempt -- the per-run database was created somewhere the tests never
+# looked.
 docker run --rm --network "container:$PG" \
   -v "$REPO":/src -w /src \
-  -e MERIDIAN_TEST_DATABASE_URL="postgresql+psycopg://meridian:meridian@localhost:5432/meridian_suite_$$" \
-  -e DATABASE_URL="postgresql+psycopg://meridian:meridian@localhost:5432/meridian_suite_$$" \
   --entrypoint sh "$IMG" -c \
   'pip install --quiet --no-cache-dir "pytest>=8.0" >/dev/null && exec python -m pytest "$@"' _ "$@"
