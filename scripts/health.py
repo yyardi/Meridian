@@ -91,6 +91,13 @@ def check_containers() -> list[Check]:
         # D1, and the whole v2 program.
         "meridian-quote-engine": "QUOTE engine v2-recording (shadow, frozen; "
                                  "A1/D1/v2 substrate)",
+        # GRIDIRON (NFL, 2026-09-02, operator directive — one league, maker
+        # only, its own program name; Meridian stays basketball). The venue
+        # listed nfl 16 / mlb 50 / cfb 100 events while wnba was dark; the
+        # operator's focus ruling cut recording to NFL alone. League-suffixed
+        # heartbeat rows (pregame_recorder_nfl / live_recorder_nfl).
+        "meridian-nfl-recorder": "GRIDIRON: NFL pregame board",
+        "meridian-nfl-live-recorder": "GRIDIRON: NFL live ticks (0.5s)",
     }
     try:
         out = subprocess.run(

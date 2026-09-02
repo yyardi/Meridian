@@ -1,0 +1,46 @@
+# GRIDIRON recording overlay — NFL only (2026-09-02, operator directive).
+#
+#     docker compose -f docker-compose.yml -f docker-compose.nfl.yml up -d
+#
+# Probed 2026-09-02: the venue lists nfl 16, mlb 50, cfb 100, epl 10 events
+# while wnba/nba list 0. The operator's focus ruling cut this overlay from
+# four leagues to ONE: "being the world's best at one is gonna beat being
+# averagely shit at everything" — NFL, maker-side only, under its own program
+# name (GRIDIRON; Meridian is basketball). MLB is deliberately NOT recorded:
+# sharp daily markets are where thin teams get ground up, and the operator
+# named it. CFB/EPL cut for the same reason.
+#
+# RATE BUDGET (gateway ceiling 20 req/s): wnba base pair caps 5+12 but polls
+# an empty league (near-zero actual until listings return); this adds caps
+# 2+4. Worst realistic concurrency ≈ NFL live + hourly pregame sweeps, well
+# under the ceiling.
+#
+# Heartbeats: league-suffixed rows (pregame_recorder_nfl / live_recorder_nfl)
+# — one row per process, B11. GET-only; nothing here can place an order.
+services:
+  nfl-recorder:
+    build: .
+    container_name: meridian-nfl-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: nfl
+      MERIDIAN_RPS: "2"
+
+  nfl-live-recorder:
+    build: .
+    container_name: meridian-nfl-live-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: nfl
+      MERIDIAN_RPS: "4"
+    # 0.5s, not the wnba 0.2s: first nights on a new league earn tighter
+    # cadence only after the rate budget is observed under real load.
+    command: ["sh", "-c", "alembic upgrade head && python -m core.live_recorder --interval 0.5"]
