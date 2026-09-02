@@ -109,6 +109,21 @@ records status, it does not amend the draft; only dated author amendments do)
   carries the version note retiring pre-canonical consumer numbers
   (8dde1f6). A is warned: a scaffold predicate keyed at trigger time is the
   lookahead bug — key at confirm time (t0+5s).
+- **A — ledger seam closed and the CONGESTION substrate mismatch caught
+  2026-09-02 (PR #212 → fe45ccc):** fed the recorder tape, the registered
+  detector marked 90.6% of fills congested vs the 46% lag-statistic; A
+  FAIL-CLOSED the gate flag rather than shipping the proxy as truth — the
+  standard working unprompted, and the trigger for amendment 9.
+- **B — the revision bar's provenance, verbatim in the log because it is
+  the sharpest statement of the laundering trap on record:** every
+  alternative bar B could derive comes off the RECORDER clock, the very
+  feed the registration rules non-compliant, so deriving the revision bar
+  from it would launder the wrong instrument's measurements into the judge
+  of the right one — "worse provenance wearing better clothes." An agent
+  checking their own candidate numbers and ruling AGAINST their own
+  provenance is the property this record is built to produce.
+- **The thread's last word (B's):** a validated proxy is the one honest
+  way a refused input ever earns partial readmission.
 
 ---
 
@@ -293,3 +308,47 @@ different episode sets; their numbers must never be silently mixed. (The
 log holding the canonical numbers while the registered text held the
 retired ones is exactly why the constitution says the log cannot amend —
 this closes the gap the right way.)
+
+**Amendment 9 (2026-09-02): CONGESTION's in-sample read was STRUCTURALLY
+IMPOSSIBLE, and the arm's gate gains a second named dependency.** The
+registered detector is defined over the consumer's OWN observation stream
+and stamps at cadence ≪ LONG_S; v1 recorded no such stream and observed at
+~5s, where the response test DEGENERATES — a sibling's response is first
+observed at the next cycle, landing at or past the 5s deadline by
+construction, so every trigger confirms and the instrument measures the
+consumer's cadence, not the venue (the registration's append A carries the
+mechanism). Fed the 200ms recorder tape — right cadence, FORBIDDEN clock —
+it marks 90.6% of in-game fills / 75% of game time congested against the
+46% lag-statistic: the divergence is the substrate mismatch being
+MATERIAL, and the detector's own-stream constraint is what made the wrong
+read detectable rather than quietly believed. The gate flag (`congested`)
+is ABSENT in-sample and the arm FAIL-CLOSES; only a labelled
+`congested_recorder_proxy` exists, diagnostics-only, PERMANENTLY barred
+from gates. The arm's gate dependencies are now: (i) the detector
+registration — met, cec9453 / epoch 1788366953
+(`docs/math/congestion-detector-registration.md`); (ii) the v2 quoter
+recording its own observation stream (A's forward schema, fe45ccc lineage)
+— cohort FORWARD-ONLY per amendment 4's cutoff clause. NO READER may
+conclude an in-sample congestion read was available and skipped: it was
+not available, and this amendment is the proof it was checked. Two arms
+(CONGESTION, GUARDS) now share this substrate dependency — the forward
+schema is the single highest-leverage build item in the program,
+unblocking two of four arms simultaneously; it should ship once, complete,
+rather than fast.
+
+**The proxy ruling (author's, B's pre-exclusion folded verbatim into the
+lock):** forward-only is the only registrable path for the GATE, full
+stop — validating a downsample proxy requires the truth stream v1 never
+recorded; an unvalidated proxy is a free parameter wearing a measurement's
+name. The door and its lock, written now so it is not relitigated
+quarterly: once the forward stream accrues, a proxy-validation study
+(proxy vs truth on the overlapping forward period, agreement
+pre-registered) MAY register as its own instrument question — and a proxy
+that passes could thereafter INFORM retrospective descriptive work, never
+gate anything. The lock: "candidate proxies must satisfy the detector's
+cadence requirement (observation cadence ≪ LONG_S); feeds that fail it are
+excluded BY DEFINITION, not by study." Full disposition, one line each:
+the 5s downsample — dead by definition (append A's degeneracy is the
+proof); the 200ms recorder tape — right cadence, wrong clock, eligible for
+a future pre-registered overlap study, descriptive-only forever; the
+gate — forward-only on the quoter's own stream, always.
