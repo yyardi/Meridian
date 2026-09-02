@@ -190,6 +190,64 @@ RESPONSE_MOVE = 0.02    # a same-direction >=2c move on another rung responds
 RESPONSE_CAP_S = 10.0   # responses later than this are not responses
 
 
+def spread_distribution(df: pd.DataFrame) -> pd.DataFrame:
+    """Survey module (NBA day-one consumable): per market type × period,
+    the bid-ask spread distribution and two-sided share. Input: any tick
+    frame with sports_market_type, event_period, best_bid, best_ask.
+    Returns one row per (type, period): n rows, share two-sided, spread
+    p50/p90 in cents over two-sided rows. Counts before ratios."""
+    d = df.copy()
+    d["mtype"] = d.sports_market_type.str.rsplit("_", n=1).str[-1]
+    d["two"] = d.best_bid.notna() & d.best_ask.notna()
+    d["spread_px"] = d.best_ask - d.best_bid
+    if "event_period" not in d.columns:
+        d["event_period"] = "ALL"      # period split only when the input
+                                       # carries the venue period column
+    rows = []
+    for (mt, per), g in d.groupby(["mtype", "event_period"],
+                                  dropna=False):
+        two = g[g.two]
+        rows.append({
+            "mtype": mt, "period": per, "n_rows": len(g),
+            "n_two_sided": len(two),
+            "share_two_sided": len(two) / len(g) if len(g) else np.nan,
+            "spread_p50_c": (two.spread_px.quantile(.5) * 100
+                             if len(two) else np.nan),
+            "spread_p90_c": (two.spread_px.quantile(.9) * 100
+                             if len(two) else np.nan)})
+    return pd.DataFrame(rows)
+
+
+def validate_lag_instrument(seed: int = 7) -> bool:
+    """Rule-15 consumable: the jitter-null + known-lag pair for
+    lags_for_event, callable from any consumer's self-test (the survey
+    must run this against ITS import, not trust this file's history).
+    Returns True iff the instrument recovers a planted 1.5s co-move AND
+    invents nothing on independent ±1¢ jitter."""
+    t0 = pd.Timestamp("2026-01-01")
+    rows = []
+    for s in np.arange(0, 60, 0.2):
+        m1 = 0.60 if s < 30 else 0.55
+        m2 = 0.40 if s < 31.5 else 0.35
+        for slug, m, line in (("s1", m1, 2.5), ("s2", m2, -3.5)):
+            rows.append({"market_slug": slug, "sports_market_type":
+                         "basketball_team_full_game_spread", "line": line,
+                         "captured_at": t0 + pd.Timedelta(seconds=float(s)),
+                         "best_bid": m - 0.01, "best_ask": m + 0.01})
+    lags = lags_for_event(pd.DataFrame(rows), "spread")
+    ok = len(lags) == 1 and 1.2 < lags[0][1] < 1.8
+    rng = np.random.default_rng(seed)
+    rows = []
+    for s in np.arange(0, 300, 0.2):
+        for slug, base, line in (("s1", 0.60, 2.5), ("s2", 0.40, -3.5)):
+            m = base + rng.choice([-0.01, 0.0, 0.01])
+            rows.append({"market_slug": slug, "sports_market_type":
+                         "basketball_team_full_game_spread", "line": line,
+                         "captured_at": t0 + pd.Timedelta(seconds=float(s)),
+                         "best_bid": m - 0.01, "best_ask": m + 0.01})
+    return ok and len(lags_for_event(pd.DataFrame(rows), "spread")) == 0
+
+
 def lags_for_event(df: pd.DataFrame, kind: str) -> list[tuple]:
     """Directional co-move response lags. A >=3c move on one rung opens an
     episode; every OTHER rung's first same-direction >=2c move within 10s
