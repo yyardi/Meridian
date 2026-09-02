@@ -1,15 +1,17 @@
-# QUOTE v2 — Program Registration (DRAFT — C's first-refusal window OPEN)
+# QUOTE v2 — Program Registration (REGISTERED)
 
-**Status: DRAFT of record, landed 2026-09-02 so the attack window reads landed
-text, not a relay (rule 11 — the rule this project has re-learned expensively
-twice). NOTHING is registered by this commit. The registration cutoff is the
-commit that lands the post-window final text and says so; until then every
-clause below is attackable. Author: research agent. Structure note carried
-from the author: this registers the PROGRAM — frame, arm inventory,
-sequencing, standing clauses. Each arm's GATE registers separately when its
-precondition clears, because three of four arm designs depend on results not
-yet read; registering their gates now would mean writing floors for cohorts
-whose shape we don't know, which is how gates that cannot close get born.**
+**STATUS: REGISTERED — this commit is the registration cutoff, being the
+post-window final text landing and saying so. Window record: C signed end to
+end (five attacks, amendments 4–7); D's premise checks resolved (amendments
+1, 8); B's detector delivered at d1fb6de, pending its own registration
+window as the CONGESTION precondition's cited artifact. Arm-gate cutoff
+instants per amendment 4 read from git hereafter. Author: research agent.
+Structure note carried from the author: this registers the PROGRAM — frame,
+arm inventory, sequencing, standing clauses. Each arm's GATE registers
+separately when its precondition clears, because three of four arm designs
+depend on results not yet read; registering their gates now would mean
+writing floors for cohorts whose shape we don't know, which is how gates
+that cannot close get born.**
 
 ## Window log (running; appended by the manager as checks land — the log
 records status, it does not amend the draft; only dated author amendments do)
