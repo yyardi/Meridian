@@ -616,3 +616,167 @@ close a candidate gets.** D3's convergence-direction merge proposal inherits
 the corpse's lesson: **any convergence candidate must show it is not freshness
 wearing a new name** — the age-bucket table above is the reference its
 attackers should cite.
+
+
+---
+
+## Round 1 — Quant B (loss map / coupling vantage)
+
+One seed self-killed before posting, recorded so nobody re-mines it:
+**pregame maker flow in the 35–65¢ band** dies twice on the wall — the
+ANCHOR pregame entry rule is already measured at −2.33% under the
+measured 2.11¢ pregame concession (C13/C14), and the venue-vs-sportsbook
+gap is measured at median 0.0000 (V23). A pregame candidate must state a
+mispricing family that is neither of those two corpses; I don't have one.
+
+### B1 — The winner↔spread triangle (cross-type consistency)
+
+*Falsifiable:* in-game, the winner mid and the spread-ladder-implied
+win probability (the −0.5 rung equivalence: P(m>0) is exactly the
+winner, integer margins) diverge by more than the executable toll
+(both spreads + fees) in ≥N distinct episodes per game persisting ≥5s,
+in a consistent lead direction.
+*Mechanism:* the venue's market types are quoted by processes that
+measurably live and die INDEPENDENTLY (bookless-endgames' within-game
+control: winner book 5 two-sided rows in the window where that same
+game's spread carried 3,430). Independent processes desynchronize on
+state changes; this is venue-internal sync, so F8's feed-lag bound
+(wall 5) does not apply — no race against ESPN, only against the
+venue's own other book.
+*Why the coherence closure does not cover it:* candidate 3's CLOSED
+verdict is totals-rungs-only, on a 10-second sampling grid, live rows
+only. Cross-TYPE was never measured, spread-rung coherence was
+explicitly deferred, and sub-10s episodes are invisible to a 10s grid
+by construction. The 200ms pin can see them.
+*Forward test:* descriptive episode census on the existing pin first
+(count, duration, net edge after tolls — counts before ratios); if
+episodes exist at all, a registered forward gate on episode frequency ×
+capturable edge, floors in games. Zero model input — this is
+arbitrage-shaped, so walls 5 and 6 have no purchase.
+
+### B2 — Rung-update staleness (who is the flow?)
+
+*Falsifiable:* when a totals/spread ladder reprices on a state change,
+rung updates propagate non-simultaneously at 200ms resolution: the
+last-updated rung's stale price deviates from its already-updated
+neighbours' implied value by more than the toll, in ≥X episodes/game,
+capturable by crossing the stale rung.
+*Mechanism:* the engine-mediated-compensation lesson inverted (wall 3):
+OUR fixed 5¢ target manufactured structure; other participants'
+mechanical quoting (ladder engines updating rungs in sequence, fixed
+refresh grids) manufactures theirs. D measured our shadow fills buying
+noise dips with favourable drift — the real version of that harvest, if
+it exists, is picking off the mechanically stale rung, being the
+adverse selector instead of the adversely selected (wall 1, other
+side).
+*Distinct from B1:* B1 is level-inconsistency across types; B2 is
+update-LAG within one ladder, temporal, attribution-flavoured (whose
+quotes are stale — the same census tells us what the flow structure
+is even if the edge doesn't clear the toll).
+*Forward test:* update-propagation census on the 200ms pin (latency
+histogram between neighbouring-rung updates on the same state change);
+then a registered crossing gate conditional on measured lag > toll.
+Wall 2 discipline: this is a crossing idea and may not assume the
+crossing arms' verdict — it registers only if the census shows lag
+episodes whose captured edge would clear spread + 0.06·p(1−p)
+independently.
+
+### B3 — Where is the MARKET miscalibrated? (model-free state calibration)
+
+*Falsifiable:* the venue mid, bucketed by a PRE-DECLARED small family
+of state cells (period × band × market type — pinned before looking),
+is miscalibrated against realized outcomes by ≥X¢ with a game-clustered
+CI excluding zero, in some cell, on data the cell choice never saw.
+*Mechanism:* every model-side candidate died because OUR beliefs were
+worse than the mid (walls 5, 6). The untested direction is the mid
+itself: calibration of the market against realized frequencies, no
+model anywhere. Wall 3's anchoring trap is structurally avoided —
+comparing a price to the realized frequency OF ITS OWN TRADES conditions
+on exactly what the price conditions on. C's track showed our FV loses
+the disagreement; nobody has yet asked where the mid loses to reality.
+*Discipline:* this is a fishing licence if the cell family is not
+pinned first — the pre-declared family and the multiplicity bill print
+in the artifact before any cell is read (loss-map rules). WNBA pin is
+in-sample generator only; the NBA launch (V29: identical structure) is
+the forward cohort, and C's atlas is the natural cell-family source.
+*Forward test:* cells pinned from WNBA + atlas reasoning; scored on
+forward NBA games only; floors in games per cell.
+
+### R2 opening move (the seed invited attack): the freshness candidate
+
+The research agent's #1 (disagreement freshness) has a survivorship
+confound the tape cannot escape: OUR withdrawal rule deletes stale
+disagreements (the engine pulls when edge dies — the autopsy), so
+"persistent edge" on this tape means "edge the engine kept believing",
+a survivor-biased population. And its own text notes fresh
+disagreements are the never-reachable third — so as an ENTRY policy it
+is a crossing policy in disguise, and per wall 2 it may not assume the
+crossing arms' answer. It needs (a) an edge-age definition robust to
+our own withdrawals, (b) explicit sequencing behind the crossing
+verdict. Not dead — but not registrable before those two.
+
+*(B posts; attacks welcome. No number above was computed for this post —
+candidates only, in wave-standard language.)*
+
+### R2 outcome on B2 — C's attack ACCEPTED; B2 folds into B1
+
+C's attack (latency): the harvest races the venue's own ladder engine
+with a measured ~260ms average detection (158–430ms; write-latency.md,
+numbers verified) + 36ms warm RTT + an UNMEASURABLE venue queue — and
+the 200ms pin cannot even see sub-poll propagation (ordering two rung
+updates needs them in different polls, so the observable population is
+the ≳400ms tail; the histogram is censored exactly where software-loop
+lags live). All three of C's demands are accepted and carried:
+the censoring statement prints in the census; the capturability line is
+T_detect + T_order + venue-unknown, never the toll alone; long-lag
+episodes get a temporal-clustering check (venue congestion plausibly
+slows OUR order exactly when it slows their engine — marginal captures
+select against us).
+
+One coincidence worth keeping from the wreck: **the pin's censoring
+boundary (~400ms) approximately EQUALS the capturability bar (~300ms +
+venue-unknown)** — the census cannot see what the strategy could not
+reach anyway. So the observable tail ≈ the actionable tail, and the
+folded census is cleanly interpretable rather than fatally biased,
+missing only spectator-sport episodes.
+
+**Disposition: B2 is DEMOTED from entry-policy candidate to the
+attribution half of B1's instrument.** One census, two outputs: the
+within-type update-lag baseline (attribution: what the venue's quoting
+structure looks like) and the cross-type desync episodes (B1's
+entry-policy claim, which plausibly persists for seconds — a race our
+latency can actually run). B1's spec inherits C's three demands.
+Narrowed to what the instruments can honestly measure, per the wall's
+own standard.
+
+### R2 — B attacks C1 and C2 (the execution bracket)
+
+**C2 (lead-underrating band): the edge is bracketed below the measured
+toll on BOTH execution paths, at WNBA-measured numbers.** The claimed
+size is 2–4 probability points. My loss map measured in-game winner/
+spread books in exactly the mid-game band at **4–7¢ median spread**
+(spread_px on 1,944 fills), and the measured maker concession is
+**4.70¢** [4.41, 5.00] per filled quote. So: as maker, concession ≥
+edge; as taker, spread + 0.06·p(1−p) fee > edge. Even a FULLY REAL
+tilt is uncapturable at these numbers — the candidate is economically
+alive only if NBA books in the band are materially tighter than WNBA's,
+which is unknowable until listing. Demand: the registration carries a
+PRE-COMMITTED minimum-book condition (e.g., median band spread ≤ 2¢
+measured on the NBA tape before the gate arms), or the forward test
+will "confirm" a mispricing nobody can trade — a calibration finding
+wearing an entry policy's clothes. (The descriptive calibration pass
+is untouched by this attack and worth running regardless — as a
+finding. Note E[y − mid | cell] is anchoring-clean per wall 3: the mid
+conditions on whatever it wants, cell membership is public.)
+
+**C1 (bimodal endgame): both mispriced legs live in measured deserts.**
+The OT-zone over rungs price in the <20¢ band — V1 measured ~$5 at the
+touch there, and V3 says cheap contracts resolve their moves less
+often; the just-above-regulation side prices >90¢ where wall 7's book
+death is worst. The census must therefore price the FILLS, not just
+the gaps: per episode, report the mispriced rung's price band, V1-band
+depth, and whether a two-sided book survived to settlement — else the
+candidate inherits the old model's exact grave (edge concentrated
+where nothing could fill, V1–V3). Not dead: the bimodal mechanism is
+the most physically-grounded thing in this file; but its tradable form
+must be shown to exist on the tape, not assumed from the distribution.
