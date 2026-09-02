@@ -539,9 +539,10 @@ def main():
       "running it: the persistence result (+0.174 at 90s, robust) and one "
       "sharp falsifiable claim — that reverting fills pay measurably "
       "below-average concession. Breakeven burden (linear between the two "
-      "published arms): c* ≈ 0.72¢/leg vs the 4.70¢ average — an ~85% "
-      "concession reduction. Large, one number, printed so no 3.9¢ result is "
-      "later called 'directionally supportive'. Not a capital claim.\n")
+      "published arms): c* in **[0.13, 0.72]¢/leg** (equal-weighted to pooled) "
+      "vs the 4.70¢ average — an ~85–97% concession reduction. Large, a "
+      "one-number band, printed so no 3.9¢ result is later called "
+      "'directionally supportive'. Not a capital claim.\n")
     W("*Two framing notes carried from the manager's routing:* A1 leans on NO "
       "'margin-driven = suspect' reasoning (B's Q1 split closed that door; this "
       "is a vol-character feature, orthogonal to edge source). And it does not "
@@ -627,13 +628,65 @@ def main():
       "per quote-engine fill (`mid_at_quote` vs `mid_at_fill`), per-fill and "
       "tight — far fewer games than P&L significance needs. If reverting fills "
       "do NOT show below-average concession, the mechanism is dead long before "
-      "the P&L floors fill (October, not December).\n")
+      "the slower per-$ floors fill (see the dated horizon below).\n")
     W("2. **Per-$-by-character — the ECONOMICS test, slow.** The registration's "
       "gate proper: does the character order per-$ over all fills on real "
       "fills, surviving the (now per-character, not uniform) concession, "
       "game-clustered. This is the floors-in-games arm.\n")
     W("Score both; the concession split is the leading indicator, the per-$ "
       "the verdict.\n")
+
+    W("\n### Gate accrual and floors (rule 10)\n")
+    W("Accrual measured by the research agent against PRODUCTION, read-only, "
+      "**query stamped 2026-09-02 15:25Z** (not computable from the pinned "
+      "exports; cited here with its provenance, not re-derived):\n")
+    W("- in-game fills **17,032 over 13 games** (2026-08-18 → 08-22), pregame "
+      "307 over 13 — a ~1,310 in-game-fills-per-game rate (2,400–5,000/day "
+      "over 3–5 games/day).\n")
+    W("- At this tape's character shares (~87% featured, ~65% revert) the FILL "
+      "floors (≥120 revert / ≥60 non-revert) clear inside a single game; the "
+      "**GAME floors are the only binding constraint** (≥12 revert-games / ≥8 "
+      "non-revert-games) ≈ **3–4 slate days**. Dated horizon **~Sept 26–30**, "
+      "CONDITIONAL on the operator reversing the Quote stop in time for the "
+      "Sept 17 resumption, caveated for late-season slate density.\n")
+    W("- **QUOTE-STOP HOLD (a fact, not a suspicion):** the quote engine's "
+      "fills STOP on 2026-08-22, measured in the production DB, matching a "
+      "standing operator order (\"stop Quote until further notice\", Aug 22). "
+      "The gate's dependency is therefore the operator REVERSING that order, "
+      "not an ops redeploy. (Evidence is the DB fills cutoff + the operator's "
+      "order; NOT a container display — the repo health script hardcodes an "
+      "eight-container roster and cannot see overlays either way, a "
+      "substituted-instrument trap the research agent flagged and corrected.) "
+      "PULSE — the repricing arm (#178) and guards (#150) — is deployed and "
+      "running; only Quote is stopped. **Cohort accrual begins at the first "
+      "fill after the landing epoch; if no fills exist 7 days after WNBA "
+      "resumption, the registration surfaces a HOLD state named 'operator has "
+      "not reversed the Quote stop' rather than silently aging toward "
+      "exhaustion.** The registration lands regardless and sits in HOLD if the "
+      "operator declines — the question stays sharp, the discipline holds its "
+      "breath instead of dying.\n")
+
+    W("\n### Weighting and breakeven, pinned BEFORE any forward number "
+      "(research amendment)\n")
+    W("- **Primary = POOLED per-$ with a game-clustered CI** — the economic "
+      "quantity (pooled is what you earn if sizing follows fill availability). "
+      "**Robustness clause:** if the game-equal-weighted point estimate "
+      "disagrees IN SIGN with the pooled read, the verdict downgrades to "
+      "straddle regardless of the pooled CI. No weighting shopping after the "
+      "fact.\n")
+    W("- **Both breakevens printed** (linear interpolation between the two "
+      "published arms, slope ≈6.01%/(¢/leg)): **c\\* ≈ 0.72¢/leg** from the "
+      "pooled arm (+4.35% at 0¢), **c\\* ≈ 0.13¢/leg** from the equal-weighted "
+      "arm (+0.77% at 0¢). The mechanism's burden lives in that band; the gate "
+      "measures where the real per-character concession falls (vs the 4.70¢ "
+      "average).\n")
+    W("- **Prior, stated plainly:** with the paired placebo at "
+      "+0.04% [−10.10%, +7.81%], the in-sample null (engine coupling + "
+      "fill-model optimism concentrated in oscillating states) is STRONGLY "
+      "FAVORED. A1 is not a promising candidate; it is a cheap discriminator on "
+      "a live question. Stating the prior as adverse also protects the PASS "
+      "branch: clearing a stated-adverse prior on real fills cannot be "
+      "discounted as expectation-confirmation.\n")
 
     W("\n## Multiple comparisons & capital\n")
     W("Several character×horizon×quintile cells are read here; a few sub-0.05 "
