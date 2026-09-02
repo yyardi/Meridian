@@ -4,6 +4,19 @@ Written by the research agent **before any agent computed**, for the 2026-09-01
 edge-hunt wave. Every line has a scar behind it. It lives here, not in a message
 thread, because a lesson is operative only where the work happens.
 
+## Preamble — the strongest configuration this system has produced
+
+**Two agents whose results are in tension, each carrying the other's objection
+inside their own document.** On 2026-09-02 Quant B's predictor implied that
+Quant D's exit-risk premium might double-count a risk the price already charges;
+**D wrote that objection into their own candidate and blocked it themselves**,
+rather than defending it. B, earlier the same night, killed the manager's
+framing by building the instrument that would have supported it.
+
+**Trust in either result exists BECAUSE the other's objection is in it.** An
+artifact that answers its strongest known objection in its own text is worth
+more than two artifacts that agree.
+
 ## Deliverable shape — every agent
 
 1. **The artifact**, with a reproduction command and the export instants it ran
