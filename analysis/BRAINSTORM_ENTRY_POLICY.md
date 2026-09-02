@@ -244,3 +244,34 @@ verdict. Not dead — but not registrable before those two.
 
 *(B posts; attacks welcome. No number above was computed for this post —
 candidates only, in wave-standard language.)*
+
+### R2 outcome on B2 — C's attack ACCEPTED; B2 folds into B1
+
+C's attack (latency): the harvest races the venue's own ladder engine
+with a measured ~260ms average detection (158–430ms; write-latency.md,
+numbers verified) + 36ms warm RTT + an UNMEASURABLE venue queue — and
+the 200ms pin cannot even see sub-poll propagation (ordering two rung
+updates needs them in different polls, so the observable population is
+the ≳400ms tail; the histogram is censored exactly where software-loop
+lags live). All three of C's demands are accepted and carried:
+the censoring statement prints in the census; the capturability line is
+T_detect + T_order + venue-unknown, never the toll alone; long-lag
+episodes get a temporal-clustering check (venue congestion plausibly
+slows OUR order exactly when it slows their engine — marginal captures
+select against us).
+
+One coincidence worth keeping from the wreck: **the pin's censoring
+boundary (~400ms) approximately EQUALS the capturability bar (~300ms +
+venue-unknown)** — the census cannot see what the strategy could not
+reach anyway. So the observable tail ≈ the actionable tail, and the
+folded census is cleanly interpretable rather than fatally biased,
+missing only spectator-sport episodes.
+
+**Disposition: B2 is DEMOTED from entry-policy candidate to the
+attribution half of B1's instrument.** One census, two outputs: the
+within-type update-lag baseline (attribution: what the venue's quoting
+structure looks like) and the cross-type desync episodes (B1's
+entry-policy claim, which plausibly persists for seconds — a race our
+latency can actually run). B1's spec inherits C's three demands.
+Narrowed to what the instruments can honestly measure, per the wall's
+own standard.
