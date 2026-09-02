@@ -43,7 +43,9 @@ from sqlalchemy import text
 
 from core.live_fv import parse_score
 from core.quote.engine import (
+    INGAME,
     MAX_OBSERVATION_AGE_SECONDS,
+    CycleResult,
     ShadowQuoter,
 )
 from core.quote.storage import QuoteV2Observation
@@ -200,6 +202,33 @@ class ShadowQuoterV2(ShadowQuoter):
 
     # ---- lifecycle: quote at 5s (v1), record at <=1s (new), telemetry ----- #
 
+    def _quote_and_beat(self) -> None:
+        """Run one v1 quote cycle AND beat the heartbeat with v1's exact
+        payload. v2's `run_forever` overrode v1's loop, and v1's loop beats
+        every cycle (engine.py); the first override dropped the beat, so the
+        engine ran fine but read DEAD to /api/quote, the header dot, and
+        health.py — a healthy engine on a silent telemetry channel. The
+        replay-equivalence proof could not catch it: it compares `_standing`
+        and fills, and the beat is neither (a rule-19 blind spot of that proof,
+        now declared in its docstring and covered by `_selftest_heartbeat_beat`
+        instead). Beats even when `cycle()` raises, exactly as v1 does, so a bad
+        cycle degrades the payload (game_live=None) but never kills the channel.
+        """
+        started = time.monotonic()
+        try:
+            result = self.cycle()
+            any_live = any(q.regime == INGAME
+                           for q in self._standing.values())
+        except Exception as exc:   # one bad cycle must not silence telemetry
+            log.error("quote_v2_cycle_failed", error=str(exc)[:300])
+            result, any_live = CycleResult(), None
+        self._heartbeat.beat(
+            interval_seconds=self.interval_seconds,
+            rows_written=result.fills,
+            cycle_seconds=time.monotonic() - started,
+            game_live=any_live,
+        )
+
     def run_forever(self) -> None:
         log.info("quote_v2_started",
                  quote_interval_seconds=self.interval_seconds,
@@ -214,13 +243,13 @@ class ShadowQuoterV2(ShadowQuoter):
             except Exception as exc:
                 log.error("quote_v2_record_failed", error=str(exc)[:300])
             record_done = time.monotonic()
-            # quoting on v1's slower cadence, unchanged
+            # quoting on v1's slower cadence, unchanged — and beating the
+            # heartbeat every quote cycle exactly as v1 does (payload is
+            # quote-cycle-shaped, so it rides the 5s quote tick, not the <=1s
+            # record tick; max heartbeat age ~= interval_seconds, matching v1).
             if record_done - last_quote >= self.interval_seconds:
                 last_quote = record_done
-                try:
-                    self.cycle()
-                except Exception as exc:
-                    log.error("quote_v2_cycle_failed", error=str(exc)[:300])
+                self._quote_and_beat()
             # proof-3 telemetry: the recording must not slow the quote loop
             log.debug("quote_v2_loop_times",
                       record_s=round(record_done - loop_started, 4),
@@ -344,12 +373,53 @@ def _selftest_replay_equivalence(Session) -> None:
         _clean()
 
 
+def _selftest_heartbeat_beat(Session) -> None:
+    """Amendment-11 checklist item: v2's loop MUST beat every quote cycle.
+
+    The replay-equivalence proof is BLIND to this — it compares `_standing` and
+    fills, and the beat is neither (a declared rule-19 gap of that proof). So
+    the beat is asserted directly here: a stubbed heartbeat, one quote-and-beat
+    on an empty board, then a raising cycle. Both must beat — the second because
+    one bad cycle must not silence the telemetry channel (the exact failure the
+    first override shipped: healthy engine, heartbeat age growing unbounded,
+    reads DEAD to /api/quote and health.py).
+    """
+    from unittest import mock
+
+    beats: list[dict] = []
+
+    class _StubHeartbeat:
+        def beat(self, **kw):
+            beats.append(kw)
+
+    q = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
+                       settlement_lookup=lambda s: None)
+    q._heartbeat = _StubHeartbeat()
+
+    q._quote_and_beat()   # normal quote cycle (empty board)
+    assert len(beats) == 1, "no heartbeat beat on a normal quote cycle"
+    assert set(beats[0]) == {"interval_seconds", "rows_written",
+                             "cycle_seconds", "game_live"}, \
+        f"beat payload shape != v1: {sorted(beats[0])}"
+    assert beats[0]["interval_seconds"] == q.interval_seconds
+
+    with mock.patch.object(q, "cycle", side_effect=RuntimeError("boom")):
+        q._quote_and_beat()
+    assert len(beats) == 2, "a failed cycle did not beat — telemetry would die"
+    assert beats[1]["game_live"] is None, \
+        "failed-cycle beat must carry game_live=None (v1 semantics)"
+
+    print("proof (heartbeat, rule-19 gap of equivalence): v2 beats every quote "
+          "cycle with v1's payload, and beats even when cycle() raises")
+
+
 def selftest(Session=None) -> int:
     _selftest_ast()
     if Session is None:
         from core.storage import get_engine, get_sessionmaker
         Session = get_sessionmaker(get_engine())
     _selftest_replay_equivalence(Session)
+    _selftest_heartbeat_beat(Session)
     print("engine_v2 selftest: ALL PROOFS PASS")
     return 0
 
