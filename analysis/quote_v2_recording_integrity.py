@@ -77,9 +77,11 @@ committed at sweep end, so rows surfaced already ~16min stale and the quoter was
 structurally blind to the whole board while `record_s` sat at 2-3ms). No
 in-table check — not cadence, not reconciliation, not cross-clock — can
 distinguish these two, because all three operate on rows that exist. The
-compensator is an OUT-OF-BAND row-visibility probe (does the table receive rows
-at all while a board is known live), which is what caught the defect; this
-scorer defers the empty verdict to that probe rather than pronouncing it clean.
+compensator is the out-of-band row-visibility probe
+`analysis/quote_v2_visibility_probe.py` (birth-staleness per sweep +
+receiving-while-live), which classifies an empty read as EMPTY_BENIGN vs an
+ALARM; this scorer defers the empty verdict to that probe rather than
+pronouncing it clean.
 
 --selftest validates the instrument on synthetic streams whose `det_*` this
 module itself produced via the engine's recording logic; it is ready the moment
@@ -513,8 +515,9 @@ def _empty_verdict(source: str) -> int:
           "scorer cannot tell 'no board live yet' from 'board live but its "
           "rows were born invisible' — stamped past the engine's 600s window "
           "before they surfaced (the RPS-2 slow-sweep defect, 2026-09-02). "
-          "Confirm which with the OUT-OF-BAND row-visibility probe (does the "
-          "table receive rows while a board is known live), not this scorer.")
+          "Confirm which with the row-visibility probe that classifies exactly "
+          "this: analysis/quote_v2_visibility_probe.py --db  (EMPTY_BENIGN vs "
+          "an ALARM), not this scorer.")
     return 0
 
 
