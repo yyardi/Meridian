@@ -133,3 +133,36 @@ saturation read must not run on a league whose detector constants are
 WNBA-census-derived. GRIDIRON gets its OWN saturation read on NFL games,
 with the cross-league constants provenance disclosed as a first guess —
 registered in GRIDIRON's registry, not here.
+
+## 2026-09-02 — NFL pre-data note (GRIDIRON; appended before first NFL data)
+
+The detector was built and its constants adopted on WNBA structure.
+Venue-measured NFL differences, written down while no data exists so the
+first read cannot be interpreted conveniently:
+
+* **Board scale**: WNBA ladders ran ~9 rungs, 2–4 concurrent games; the
+  Kalshi-verified NFL structure implies Polymarket-scale boards of ~25
+  spread + ~19 total rungs per game and up to ~13 concurrent games on a
+  Sunday slate. Long-lag confirms come disproportionately from quiet deep
+  rungs, and the NFL board has many more of them — **saturation risk is
+  structurally HIGHER**, which is exactly what the 50%-coverage revision
+  bar (median of the first 10 compliant games, board-agnostic by text)
+  exists to read. No constant changes pre-data.
+* **Scoring shape**: NFL scoring is bursty (0/3/7-point jumps, long quiet
+  stretches) — triggers will be larger and more synchronized WITHIN a
+  game than basketball's continuous flow. Between games, dynamics are
+  independent.
+* **The falsifiable pre-data prediction this enables**: on a multi-game
+  NFL slate, game dynamics cannot produce CROSS-GAME clustering — so if
+  long-lag episodes still cluster across games in wall-clock, the
+  venue-congestion interpretation strengthens materially; if clustering
+  measured cross-game-only vanishes, the WNBA clustering (55–70% vs
+  7–12%) may have been game-local dynamics misread as venue congestion.
+  The forward stream should be read BOTH ways (pooled, and
+  cross-game-only), declared here before either number exists.
+* **Pooling**: the registered definition pools venue-level. On a 13-game
+  board a GAME-LOCAL window variant becomes plausible — if ever wanted,
+  that is a NEW registered version per the one-version-per-arm-cohort
+  rule, never a silent reinterpretation.
+
+No in-sample result justifies capital. The forward test is the evidence.
