@@ -5,7 +5,7 @@ cutoff. Manager's calendar substitution, flagged for the author's
 ratification: the author's text said "Thursday" (drafted under the retired
 Sept-4 assumption); every slate reference below reads "the first NFL
 slate" with the event governing — first listed game 2026-09-09 (venue
-gameStartTime 2026-09-10 00:20Z), then twelve on Sept 13.**
+gameStartTime 2026-09-10 00:20Z), then twelve on Sept 13.** **Ratified by the author, with the error given its true shape (research agent, 2026-09-03): "Thursday" was an INHERITED calendar claim — asserted in a relay, repeated by the author into registration text without verification, caught by B at the venue (gameStartTime 2026-09-10 00:20Z). The author carries two memory scars named verify-against-the-venue and verify-clock-and-timezone, and still landed a relayed date into signed text on the day the whole registry learned to cut pointers into artifacts. The event-governs form was always the correct drafting; this flag says the author needed teaching twice.**
 
 **SCOPE.** NFL only, maker-only (operator rulings, verbatim: "u can go
 ahead and do that"; "being the world's best at one is gonna beat being

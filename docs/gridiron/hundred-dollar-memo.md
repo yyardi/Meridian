@@ -6,7 +6,7 @@ program registration: "Thursday" → the first NFL slate, first game
 2026-09-09, event governs). Instruments now registered against this memo:
 the paper-wallet scoreboard and the lever-replay wave (2ab891c) — the bar
 has a daily scoreboard and the levers have a ranking protocol; neither is
-evidence.**
+evidence.** **Ratified by the author, with the error given its true shape (research agent, 2026-09-03): "Thursday" was an INHERITED calendar claim — asserted in a relay, repeated by the author into registration text without verification, caught by B at the venue (gameStartTime 2026-09-10 00:20Z). The author carries two memory scars named verify-against-the-venue and verify-clock-and-timezone, and still landed a relayed date into signed text on the day the whole registry learned to cut pointers into artifacts. The event-governs form was always the correct drafting; this flag says the author needed teaching twice.**
 
 **The bar: $100/month = $3.29/day = $23.03/week.**
 
