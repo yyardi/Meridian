@@ -70,8 +70,11 @@ FLOOR_GAMES = 15
 def cohort_epoch() -> int:
     """Epoch of the commit that ADDED the registration file. From git,
     never from prose (the registration's own rule)."""
+    # %ct (COMMITTER epoch), never %at: a cherry-pick preserves the
+    # author instant, which can predate the object being citable on main
+    # (the congestion-detector registration hit exactly this, 113s apart)
     out = subprocess.run(
-        ["git", "log", "--diff-filter=A", "--format=%at", "--",
+        ["git", "log", "--diff-filter=A", "--format=%ct", "--",
          REGISTRATION],
         cwd=REPO, capture_output=True, text=True, check=True).stdout.split()
     if not out:
