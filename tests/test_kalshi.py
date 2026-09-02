@@ -35,6 +35,9 @@ from core.config import KalshiConfig
 from core.kalshi.analysis import gate_status
 from core.kalshi.mapping import (
     KALSHI_TO_ESPN,
+    KALSHI_TO_ESPN_NFL,
+    LEAGUE_NFL,
+    LEAGUE_SERIES,
     SERIES_MONEYLINE,
     SERIES_SPREAD,
     SERIES_TOTAL,
@@ -113,6 +116,72 @@ def test_unknown_code_raises_loudly():
 
 def test_game_key_from_event_ticker():
     assert game_key_from_event_ticker("KXWNBAGAME-26AUG05PHXATL") == "26AUG05PHXATL"
+
+
+# --------------------------------------------------------------------- #
+# NFL (GRIDIRON) — codes harvested from the venue 2026-09-02 via each
+# open KXNFLGAME event's market-ticker suffixes
+# --------------------------------------------------------------------- #
+
+
+def test_parse_nfl_game_key_basic():
+    parsed = parse_game_key("26SEP09NESEA", LEAGUE_NFL)
+    assert parsed is not None
+    assert parsed.local_date == dt.date(2026, 9, 9)
+    assert (parsed.first_code, parsed.second_code) == ("NE", "SEA")
+    assert parsed.league == LEAGUE_NFL
+    assert parsed.espn_pair == frozenset({"NE", "SEA"})
+
+
+def test_parse_nfl_variable_length_codes():
+    # The pair that kills any fixed-offset split: 2-char + 3-char.
+    parsed = parse_game_key("26SEP10SFLAR", LEAGUE_NFL)
+    assert parsed is not None
+    assert (parsed.first_code, parsed.second_code) == ("SF", "LAR")
+
+
+def test_parse_nfl_divergent_codes():
+    # The two NFL codes that differ from ESPN's space (CONN/PDX's species).
+    parsed = parse_game_key("26SEP13CLEJAC", LEAGUE_NFL)
+    assert parsed is not None
+    assert (parsed.first_espn, parsed.second_espn) == ("CLE", "JAX")
+
+    parsed = parse_game_key("26SEP13WASDAL", LEAGUE_NFL)
+    assert parsed is not None
+    assert (parsed.first_espn, parsed.second_espn) == ("WSH", "DAL")
+
+
+def test_every_nfl_pair_splits_uniquely():
+    """All 32x31 ordered NFL pairs: exactly one split — the same guard that
+    makes a future code addition loud instead of silently mis-parsed."""
+    codes = list(KALSHI_TO_ESPN_NFL)
+    for a, b in itertools.permutations(codes, 2):
+        blob = a + b
+        splits = [
+            (blob[:i], blob[i:])
+            for i in range(1, len(blob))
+            if blob[:i] in KALSHI_TO_ESPN_NFL and blob[i:] in KALSHI_TO_ESPN_NFL
+        ]
+        assert splits == [(a, b)], f"ambiguous NFL pair: {a}+{b} -> {splits}"
+
+
+def test_cross_league_collision_is_real():
+    """SEA/ATL is a valid pair in BOTH leagues — the same game_key parses
+    under both tables. This is the measured fact behind keying
+    kalshi_games on (league, game_key) rather than game_key alone."""
+    wnba = parse_game_key("26SEP13SEAATL")
+    nfl = parse_game_key("26SEP13SEAATL", LEAGUE_NFL)
+    assert wnba is not None and nfl is not None
+    assert wnba.game_key == nfl.game_key
+    assert wnba.league != nfl.league
+
+
+def test_league_series_disjoint_and_complete():
+    assert set(LEAGUE_SERIES["wnba"]) == {
+        "KXWNBAGAME", "KXWNBASPREAD", "KXWNBATOTAL"}
+    assert set(LEAGUE_SERIES["nfl"]) == {
+        "KXNFLGAME", "KXNFLSPREAD", "KXNFLTOTAL"}
+    assert not (set(LEAGUE_SERIES["wnba"]) & set(LEAGUE_SERIES["nfl"]))
     assert game_key_from_event_ticker("KXWNBAGAME") is None
     assert game_key_from_event_ticker("") is None
 
