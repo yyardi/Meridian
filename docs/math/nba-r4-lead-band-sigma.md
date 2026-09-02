@@ -1,10 +1,10 @@
 # R4 — margin-conditional σ (the lead-band correction arm)
 
-**Status: SIGNED OFF by the research agent 2026-09-02, conditional on four
-amendments — all applied below verbatim. NOTHING COMPUTES until this text
-lands on main; the landed commit is the cutoff**, read with the git `%ct`
-convention, never from prose. Drafted by Quant C; the sign-off travels with
-the research agent's message of record.
+**Status: SIGNED OFF by the research agent 2026-09-02 — final, amendments
+1–6 all applied below verbatim. NOTHING COMPUTES until this text lands on
+main; the landed commit is the cutoff**, read with the git `%ct` convention,
+never from prose. Drafted by Quant C; the sign-off travels with the research
+agent's messages of record; selftest lineage ef0557a.
 
 ## What this is, and emphatically what it is not
 
@@ -88,9 +88,24 @@ firing; stated so the checklist reads considered rather than skipped.
 
 **Gate:** paired per-state Brier (R4 − incumbent), season-clustered
 (`clustered_mean`, clusters = evaluation season). **PASS/adopt** = CI
-excludes zero in R4's favour. **FAIL** = excludes zero against. Closure: at
-all 7 with the CI straddling → **NO-MARGINAL-VALUE**, g is not added, the
-band gap stands as a documented model limitation, the gate closes.
+excludes zero in R4's favour. **FAIL** = excludes zero against.
+
+**POWER PROGNOSIS, from the mutation suite's test 3 at real-gate power
+(ef0557a):** an injected effect STRONGER than the atlas tilt clears zero only
+marginally (−0.000146 [−0.000245, −0.000047]). A σ-correction's Brier value
+is second-order, so AT ATLAS-TRUE MAGNITUDE A STRADDLE IS A LIKELY OUTCOME
+EVEN IF THE EFFECT IS ENTIRELY REAL. Consequently — the inverse of R1b's
+separability note — the closure's NO-MARGINAL-VALUE verdict is UNINFORMATIVE
+about the z-family theory and may never be quoted against it; it states only
+that the correction is not worth adding at measurable Brier value. What
+remains informative at this power: a PASS (effect stronger or better-shaped
+than prognosis), a FAIL with CI against (the correction actively damages
+bulk calibration), and the descriptive band-tilt diagnostic, which answers
+"did the band signature shrink" regardless of the global gate.
+
+Closure: at all 7 with the CI straddling → **NO-MARGINAL-VALUE**, g is not
+added, the band gap stands as a documented model limitation with its theory
+untested at achievable power, the gate closes.
 
 **Pre-named readings, neither adoptable retroactively:**
 - PASS = the decided-ness effect is real and z-expressible.
@@ -105,6 +120,14 @@ band gap stands as a documented model limitation, the gate closes.
   stack — named now so "does R2's shrink contribute to the band gap" gets an
   answer nobody can be accused of fitting after the fact.
 - Fitted g by fold, per-season fits with t-intervals — the physics table.
+
+**Caveats from the mutation suite, recorded here so nobody re-learns them:**
+(i) The two-step fit lets σ_phase absorb clock-collinear z-effects; fitted g
+is an EFFECTIVE parameter of the residual and UNDERSTATES the physical
+effect — g's magnitude may not be quoted as the size of the decided-ness
+physics. (ii) Fitting g on shuffled outcomes inflates it toward the wide
+bound — the flatness artifact, instance recorded for the artifact-direction
+pattern; the suite's diagnostic print is the guard.
 
 ## Mutation, per the adopted clause (PR #132 form)
 
