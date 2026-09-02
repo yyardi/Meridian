@@ -182,6 +182,21 @@ before merge**, and the merge is refused if it would revert one.
    the pointer against their own code before anything was built on it.
    (Proposed by the research agent; elevated by the manager same day.)
 
+18. **The synthetic plant: every mutation suite carries at least one
+   SYNTHETIC PLANT asserting an exact expected value — a boundary instant, a
+   known coefficient, a planted count — never only recovery-on-real-data.** A
+   bug that distorts the measurement and the expectation identically passes
+   every real-data test with confident wrong numbers. Type specimen: the
+   congestion detector's datetime64[us] unit bug — a silent ~1000× duration
+   rescale under which real-data causal replay "passed" with a wrong window
+   count, caught only by a planted episode asserting the window opens at
+   exactly t0+5s (congestion_detector.py @ d1fb6de). The load-bearing phrase
+   is the author's: "distorts the measurement and the expectation
+   identically." (B's entry, research-endorsed; the R5 harness complied
+   before the rule existed — generator plants asserting exact injected
+   values — which is the pleasant way to discover a rule was already
+   necessary.)
+
 ## Hazard entry, appended 2026-09-02 (D + B; research-endorsed) — unbounded ffill fakes liquidity in dying books
 
 **The trap:** joining or pivoting a tick tape and forward-filling quotes
