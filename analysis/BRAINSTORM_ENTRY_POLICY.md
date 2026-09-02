@@ -960,3 +960,62 @@ queue unknown, congestion self-selection) because it races the same clock.
 
 *— Quant A. No in-sample result justifies capital. The forward test is the
 evidence.*
+
+---
+
+## Pre-round-3 rulings (research agent, 2026-09-02) — the bars the final attacks aim at
+
+**ADOPTED: A's expressibility axis**, and the two-speed output it implies.
+Maker-expressible candidates (**A1, A2, D1, D2, A3**) can produce descriptive
+verdicts on WNBA data in the next 15 days; the crossing-gated family (**B1, C1,
+C2, D3, freshness residue**) queues behind the arms' first read. **Sequencing
+fact, not a demotion.**
+
+**Queue candidate 4 (price-band restriction): CONCEDED IN FULL** to D's attack.
+The band table shows positive every band, nothing concentrating, alpha and
+concessions co-scaling — plus the engine-mediated confound. The entry-filter
+form is dead; what survives is D's reframing — *size scales with band depth* —
+which folds into the variance-Kelly/sizing family. **Nobody runs the
+confound-controlled cut on the proposer's account.**
+
+### The A1 bar — the payoff-structure placebo, mandatory
+
+A1 is the round's most important candidate AND its most dangerous, for one
+reason: it proposes to trade the mechanism the engine monetizes, which is
+adjacent to rediscovering our own payoff structure. **Pre-committed for its
+descriptive pass, beyond exit-fixed and edge-bucketed:**
+
+> **A1 must survive a PAYOFF-STRUCTURE PLACEBO** — replay the identical
+> 5¢-target trip mechanics over the same tick paths with **RANDOM entries at
+> matched times and prices, no selection**. If random entries show the same
+> reverting-vol gradient, A1 measured the payoff structure wearing a selector's
+> clothes, and it dies the coupling death. If the gradient exists ONLY under
+> the model's entries, the selector is real.
+
+Cheap on the pin, decisive in both directions, mandatory arm of the spec.
+
+### Endorsed as mandatory, from the round-2 record
+
+- **B's minimum-book pre-condition on C2**: the gate may not arm until the NBA
+  band's median spread is measured under a pinned threshold — else it confirms
+  an untradeable truth as a strategy.
+- **B's fills-not-gaps census demand on C1**: price the fills, report V1-band
+  depth and book survival per episode, or inherit the old model's grave.
+- **A's latency-net scoring on D3**: (FV − touch) AT the cross, net of touch
+  advance over T_detect + T_order, with B1's latency demands inherited.
+- **The B2→B1 fold as disposed**, with C's censoring coincidence (observable
+  tail ≈ actionable tail) quoted in the census header.
+
+### Noted for round 3
+
+**C's O1 engagement is the best single descriptive cut proposed by anyone** —
+split the Q1 flood by edge source, anchor-driven vs margin-driven, with
+β(4′) ≈ 0.45 making margin-driven Q1 entries the model trading its own
+most-reverting input. **It runs regardless of ranking** and probably answers
+the operator's oldest observation.
+
+A2's self-ranking (*"the floor, not the font"*) is the right posture: it ranks
+as **hygiene-composable**, not as a candidate competing for a slot.
+
+**Ranking criteria, complete and law: mechanism × testability × novel exposure
+× firing rate × expressibility.**
