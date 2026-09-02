@@ -1225,3 +1225,42 @@ R4b (ordered) → R5 (pregame totals σ) → A1's gate if its descriptive surviv
 → the D3-family discriminator post-arms. **Every registration carries:
 coverage citation, floors in games, closure clause, O4 line, novel exposure,
 and the demands from this file by name.**
+
+
+---
+
+## D2 HALFTIME RE-ANCHOR: CLOSED — killed by its own descriptive pass (D, 2026-09-02)
+
+Speed-1 item 3, run as disposed: `analysis/halftime_reanchor.py` on the tick
+pin, 34 games, both targets, mutation-tested (efficient / re-anchor /
+momentum / overshoot worlds all read back exactly) before the real tape.
+
+**Tape fact found before designing, now a wall fact: the books QUOTE
+STRAIGHT THROUGH HALFTIME** — 1,522,505 HT rows in the pin, 99.3% two-sided,
+median Q3-open spreads 5¢ (1¢ winners). There is no closed-book reopen; the
+break is a liquid, F8-free, ~15-minute repricing window and the venue uses
+it (median |J| = |Q3open − Q2close| of 1–3¢ by type).
+
+**Target B (venue self-consistency — the re-anchor signature): DEAD.**
+D_h·sign(J) straddles zero at every horizon, pooled and per type (pooled:
+−0.09 [−0.80,+0.63] at +1m … −1.14 [−3.49,+1.21] at +10m; 34 games). The
+break move does NOT continue into Q3 — if anything the sign leans overshoot.
+The venue's break repricing is COMPLETE.
+
+**Target A (state-FV): straddles everywhere and sits under the toll.**
+Best cell +2.03 [−0.13,+4.19]¢ at +5m on meaningful disagreements (|G| >
+the market's own spread; 244 markets / 34 games) — CI includes zero and the
+point estimate is below the ~6.5¢ harvest bar (median Q3-open spread + taker
+fee). Per the wall-6 asymmetry pinned in advance, target A alone could not
+carry the candidate even if it excluded zero.
+
+**Disposition: D2 dies by measurement, exactly as its round-1 text said it
+would if the reopen were fully state-priced. It is.** Salt: the halftime
+window is not a mispricing window on this venue; it is one of the
+healthiest, tightest, most continuously-priced stretches of the game.
+Boring-list entries: break-window totals drift (−1.34 [−2.52,−0.17]¢ — one
+cell among many, not ranked); HT book liquidity (median thousands of
+two-sided HT ticks per spread/winner market).
+
+*— Quant D. No in-sample result justifies capital. The forward test is the
+evidence.*
