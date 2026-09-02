@@ -53,10 +53,13 @@ from nba_r4_harness import (
 )
 
 CAPITAL_LINE = "No in-sample result justifies capital. The forward test is the evidence."
-# from the selftest (seed 22, quadratic scaling from the strong injection):
-FAIL_BOUND_LINE = ("Per the signed amendment, this FAIL quotes its detectability bound: "
-                   "g carries information at >= ~42% bucket-2 sigma-reduction (the minimum "
-                   "detectable gradient at real-gate power; the theory claimed ~12%).")
+# from the selftest (seed 22); the verbatim form is the research agent's, per
+# the final sign-off — any FAIL quotes the real-power prognosis beside it:
+FAIL_QUOTE_FORM = ("FAIL at {observed}, against a real-power detectability prognosis of "
+                   "+0.000065 [-0.000008, +0.000139] — the effect far exceeds what this "
+                   "gate could ordinarily see, which is why the FAIL is strong evidence. "
+                   "(Minimum detectable bucket-2 gradient ~42% sigma-reduction vs the "
+                   "theory's ~12%.)")
 BOUNDARY_LINE = ("BOUNDARY: calibration work on the model's uncertainty engine. NOT edge work; "
                  "says nothing about any market; Track 2 is separate.")
 
@@ -152,7 +155,7 @@ def gate_read_r4b(ev: pd.DataFrame) -> None:
     elif cm.lo > 0:
         print("\nVERDICT FRAME: FAIL — g carries information the uniform refit does not."
               "\nRecorded as the z-gradient theory's FIRST positive evidence; g stands."
-              f"\n{FAIL_BOUND_LINE}")
+              f"\n{FAIL_QUOTE_FORM.format(observed=f'{cm.mean:+.6f} [{cm.lo:+.6f}, {cm.hi:+.6f}]')}")
     else:
         print("\nVERDICT FRAME: CI straddles zero."
               + ("\nPRE-COMMITTED SIMPLICITY TIE-BREAK: the structurally-correct form REPLACES"
