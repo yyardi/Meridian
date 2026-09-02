@@ -244,3 +244,187 @@ verdict. Not dead — but not registrable before those two.
 
 *(B posts; attacks welcome. No number above was computed for this post —
 candidates only, in wave-standard language.)*
+
+
+---
+
+## Round 1 — Quant D (execution microstructure), 2026-09-02
+
+Three candidates, one instrument note, one engagement with the round-3 seed
+queue. Every number cited below is in-sample and inherits the fill-model
+caveats of its source doc.
+
+### D1 — Rest where nobody is informed: the pregame concession window
+
+*Real resting-order concession, measured on the quote engine's own fills, is
+≤ 0 in dead pregame windows (≥ N hours before tip, N pinned before reading),
+and the measured +4.70¢ in-game adverse concession is concentrated in the
+in-play/near-tip window.*
+
+**Mechanism.** Adverse selection needs informed aggressors; informed
+aggressors need information arrival. F8's 36-second feed-lag bound (wall #5)
+is an IN-PLAY mechanism — during a dead pregame afternoon there is no play to
+be 36 seconds behind. The measured concession numbers we quote everywhere
+(2.11¢ pregame, 4.70¢ in-game) are already a 2× window split in this
+direction; the candidate says the gradient continues inside pregame, and
+somewhere out on it the maker side of the book stops paying and starts
+collecting. If true, "be the resting flow" (seed 5) is a WINDOW property, not
+a flow-family property — and it composes with the pregame 35–65¢ depth fact
+(wall, seed 1) rather than fighting the in-play wall.
+
+**Forward test.** No new plumbing: the quote shadow engine accrues real
+resting fills with `mid_at_quote`/`mid_at_fill` already. Pin a window
+partition (hours-to-tip buckets) before the next read; score per-window
+concession, game-clustered, floors per regime as already registered. The
+in-tape descriptive first pass (my post-fill drift by window on the decision
+tape) is cheap but carries the fill-rule artifact — the quote engine's real
+fills are the evidence-grade instrument.
+
+**Wall respected:** #2 not assumed (this is maker-side, no crossing); #5
+respected (mechanism is absence-of-information, not "venue is slow"); #4
+untouched (pregame, not late).
+
+### D2 — The halftime re-anchor
+
+*Across the halftime boundary, ladders reopen at prices that then drift
+systematically (> spread + fee) toward the live-FV computed from first-half
+state — the reopen is anchored to a stale pregame/early shape, and the drift
+is harvestable in a window where F8 does not bind.*
+
+**Mechanism.** Halftime is the one in-game moment where repricing is
+wholesale re-anchoring rather than event reaction: no clock is running,
+nothing races our 36-second feed. The venue seeds ladders with near-constant
+σ (F5, 362 ladders) — a seeding-error family already measured once. If the
+halftime reopen re-seeds from a stale anchor, the first minutes of Q3 carry a
+predictable drift toward state-updated fair value, and a HALFTIME-WINDOW
+entry (rest or cross, priced either way) collects it without touching the
+late-game exit hazard (wall #4, #7 — halftime books are the healthiest
+in-game books we hold).
+
+**Forward test.** Descriptive first, from the pin we already hold: 34 games
+× (last two-sided Q2 mid, first two-sided Q3 mid, mid at Q3+5m) per market,
+vs halftime-state FV — one script, no new data. If the drift exists and
+exceeds spread+fee in a direction knowable AT the reopen, register a
+halftime-window companion with the entry rule pinned. If the reopen is
+already fully state-priced, the candidate dies by measurement and seed 4
+loses its most testable member.
+
+**Wall respected:** #5's F8 clause explicitly does not bind (break window);
+#6 is the risk — if the FV is uninformative where it disagrees, the drift
+must be measured toward *state-updated market self-consistency* (the venue's
+own Q3 pricing minutes later), not toward our FV alone; the descriptive pass
+scores BOTH targets so the candidate can die honestly.
+
+### D3 — Momentum-toward-FV as the crossing discriminator
+
+*Among forward intents, those where the mid had moved toward the model's
+fair value over the prior T seconds (T pinned before reading) outperform
+those where it had not, scored at the far touch per the registered formula —
+direction of convergence, not level of disagreement, is what selects the
+never-reachable winners.*
+
+**Mechanism.** The withdrawal autopsy split the unfilled: the market coming
+back to our price was worth ~0; the market running away (toward our FV) was
+worth +33¢/ct we never got. Running away toward our number is the market
+AGREEING LATE — we were early, not wrong. A static level-disagreement, per
+wall #6, is the regime where the market has been right. So the tradable
+signal is the derivative (is the market converging to us NOW), not the level
+(how far it is from us) — and crossing is the only execution that captures a
+convergence already in motion (resting guarantees we only catch the ones
+that come back, worth ~0, wall #1).
+
+**Forward test.** This does NOT assume the crossing gate's answer (wall #2):
+it is the natural NEXT companion — one input, the pre-intent drift-toward-FV
+sign/threshold from the tick tape, keyed off the parent arm (b) exactly as
+the state mask is. Descriptive first on the forward cohort once the parent
+resolves; registration only through c7.
+
+**Relation to the round-3 seed #1 (disagreement freshness):** same family,
+different derivative — freshness asks WHEN the edge appeared; D3 asks which
+way the market is MOVING now. They disagree on a concrete population: an edge
+that appeared long ago while the mid converges steadily toward FV is stale
+per #1 and prime per D3. Propose measuring both on the same forward
+descriptive pass so the family produces ONE registered discriminator, not
+two correlated gates.
+
+### Instrument note — the favourable drift is not yet evidence of anything
+
+Seed 5 quotes my −1.8 to −2.3¢ favourable post-fill drift. Before anyone
+builds on it: that number is measured under the mid-cross fill rule, which
+declares fills at local extremes of mid noise — reversion after a
+locally-extreme trigger is partly MECHANICAL, and the same tape's real
+resting orders measured +4.70¢ ADVERSE. The in-tape discriminator, if wanted
+(cheap, descriptive): decompose modelled fills by which side of the book
+moved to trigger the mid-cross (far side tightening toward us = quote-refresh
+flavour; near side stepping through = trade-through flavour) and compare
+post-fill drift between the two. Until that or the D1 window split says
+otherwise, the favourable drift should be cited as a FILL-MODEL ARTIFACT,
+never as measured counterparty behaviour.
+
+### Engagement with the round-3 queue
+
+**Queue #4 (price-band restriction) — attack, citing the wall.** The wall's
+own boring list (#9) retires edge_net ordering and cheap contracts; my
+decomposition's band table shows per-band P&L positive in EVERY band under
+the optimistic rule with alpha and concessions scaling together — no band
+flips sign, nothing concentrates. The 35–65¢ band's virtue is DEPTH (it can
+absorb size), which is a sizing input, not an entry filter: restricting
+entries to it forfeits bands that are currently additive in-sample without
+buying any measured improvement. Unless the confound-controlled cut named in
+the queue shows a per-$ gradient the raw table hides, this candidate should
+rank below the registered pair, and its registrable form is "size scales
+with band depth", not "enter only in band".
+
+**Queue #1 (freshness) — merge proposal, not attack:** see D3. One
+descriptive pass, both features, one discriminator survives.
+
+*— Quant D. No in-sample result justifies capital. The forward test is the
+evidence.*
+
+---
+
+## Round 1 — THE OPERATOR (relayed by the manager, checked against the tape)
+
+The operator's direct observations, each verified before filing. **They watch
+the dashboard live; treat these as a participant's candidates, not noise.**
+
+**O1 — "It acts very odd pregame, taking so many positions."** CHECKED, and the
+tape sharpens it: PULSE has **zero pregame entries** (phase=in_play on all
+2,974) — but it **front-loads Q1 massively: 829 of 1,944 filled entries (43%)
+land in Q1**, versus 229 in Q4. What the operator sees at tip is a flood.
+*Open question for the room: is Q1 the model's best window (pregame anchor
+still fresh, F8 lag least harmful) or its most overconfident (least in-game
+information, the anchor doing all the work)? Nobody has cut per-$ by period
+with exit policy held fixed.*
+
+**O2 — "Pulse really likes the spread bets."** CHECKED, half-right and the
+right half is interesting: intents are **56.7% totals / 37.5% spreads / 5.9%
+winner** — but **spreads earn the most per dollar (+3.8%/$ vs totals +2.1%,
+winner −1.1%, maker arm)**. The model *prefers* totals; it *performs* on
+spreads. If that gap survives clustering and an edge-bucket control, the mix is
+mis-allocated.
+
+**O3 — "Don't hold losing positions too long; take the small loss."** CHECKED
+and the tape agrees with the operator, monotonically:
+
+```
+losing trips by holding time (dollar-weighted per-$):
+  <2m    -18.3%     10-30m  -34.6%
+  2-10m  -19.9%     >30m    -38.9%
+winning trips: median hold 1.0 min · losing trips: median hold 5.2 min
+```
+
+Winners resolve in a minute; losers are held five times longer and the longer
+held, the worse. **Confound named before anyone runs at it:** holding time is
+not chosen — it is what happens when the exit doesn't fill, so "held longer"
+partly MEANS "price moved away." The testable form is a **loss-cap /
+time-stop counterfactual on the tick pin**: exit at mid when down k¢ for m
+minutes, scored net of the crossing toll, k and m pinned pre-read. This is
+adjacent to the registered repricing arm but is a distinct policy (cap vs
+re-target) and would need its own registration.
+
+**O4 — the frequency requirement, now a standing term:** *"don't find niche
+garbage that works 1 in every 19 games."* **Every surviving candidate states
+its expected FIRING RATE (opportunities per game) beside its novel exposure.**
+A true edge that fires once a month cannot be distinguished from luck inside a
+season, and the operator has said plainly it is not worth their capital.
