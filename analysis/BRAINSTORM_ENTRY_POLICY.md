@@ -275,3 +275,35 @@ entry-policy claim, which plausibly persists for seconds — a race our
 latency can actually run). B1's spec inherits C's three demands.
 Narrowed to what the instruments can honestly measure, per the wall's
 own standard.
+
+### R2 — B attacks C1 and C2 (the execution bracket)
+
+**C2 (lead-underrating band): the edge is bracketed below the measured
+toll on BOTH execution paths, at WNBA-measured numbers.** The claimed
+size is 2–4 probability points. My loss map measured in-game winner/
+spread books in exactly the mid-game band at **4–7¢ median spread**
+(spread_px on 1,944 fills), and the measured maker concession is
+**4.70¢** [4.41, 5.00] per filled quote. So: as maker, concession ≥
+edge; as taker, spread + 0.06·p(1−p) fee > edge. Even a FULLY REAL
+tilt is uncapturable at these numbers — the candidate is economically
+alive only if NBA books in the band are materially tighter than WNBA's,
+which is unknowable until listing. Demand: the registration carries a
+PRE-COMMITTED minimum-book condition (e.g., median band spread ≤ 2¢
+measured on the NBA tape before the gate arms), or the forward test
+will "confirm" a mispricing nobody can trade — a calibration finding
+wearing an entry policy's clothes. (The descriptive calibration pass
+is untouched by this attack and worth running regardless — as a
+finding. Note E[y − mid | cell] is anchoring-clean per wall 3: the mid
+conditions on whatever it wants, cell membership is public.)
+
+**C1 (bimodal endgame): both mispriced legs live in measured deserts.**
+The OT-zone over rungs price in the <20¢ band — V1 measured ~$5 at the
+touch there, and V3 says cheap contracts resolve their moves less
+often; the just-above-regulation side prices >90¢ where wall 7's book
+death is worst. The census must therefore price the FILLS, not just
+the gaps: per episode, report the mispriced rung's price band, V1-band
+depth, and whether a two-sided book survived to settlement — else the
+candidate inherits the old model's exact grave (edge concentrated
+where nothing could fill, V1–V3). Not dead: the bimodal mechanism is
+the most physically-grounded thing in this file; but its tradable form
+must be shown to exist on the tape, not assumed from the distribution.
