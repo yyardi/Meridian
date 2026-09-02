@@ -125,3 +125,34 @@ nba_constants_v3.json carries σ' and retires g, lineage in header.
 ---
 
 *Results append below this line, never above it.*
+
+## ADOPTION APPEND (R4b, 2026-09-02) — the research agent's text, verbatim
+
+**VERDICT: PASS OUTRIGHT — ADOPTED. The tie-break was never needed.** Paired
+Brier (R4b − incumbent) −0.000048 [−0.000073, −0.000024], 373,227 states / 7
+forward seasons, R4b lower in all seven. The structurally-correct form beats
+the effective-parameter form ON MERIT: g retires on superiority, not
+parsimony. MECHANISM, visible in the fold table: σ' differs from σ·ḡ in
+SHAPE, not level — lower through Q2/Q3, HIGHER in Q4 (≈2.40–2.47 vs
+≈2.23–2.27). The uniform multiplier could not express the phase profile the
+shrunk mean actually requires; the proper refit recovers it. Band-tilt stays
+dead under both arms (R4b −0.0075 [−0.0197, +0.0047]). Constants v3 adopted
+(990cd14): σ' global 2.200, phase 1.912/2.058/2.223/2.464; g retired; β and
+totals tables unchanged; v1/v2 superseded with lineage.
+
+**THE ARC, for the record:** the atlas measured a band gap → R4 diagnosed it
+as a stack-composition artifact and patched it with an effective parameter,
+its attribution diagnostic pre-naming the next question → R4b replaced the
+patch with the structural fix and the gate confirmed the fix strictly
+better. Three registrations, each one's diagnostic writing the next one's
+question before anyone knew the answer — and the final stack contains NO
+PARAMETER WHOSE NAME LIES ABOUT ITS MEANING:
+P = Φ((E + (1−s)·dev)/(σ'(t)·√t)), every symbol what it says.
+
+**Branches that never fired, kept for the next reader:** the FAIL-quote
+wiring and the theory-implied prognosis are in the landed text so a
+different verdict's meaning was fixed before this one arrived. The
+z-gradient theory remains unconfirmed and untested at detectable power —
+recorded as an open question, not a defeat.
+
+**Calibration work, never edge work. No capital implication.**
