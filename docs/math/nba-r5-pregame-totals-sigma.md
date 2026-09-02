@@ -183,3 +183,9 @@ above; C signs on this landed text. A's consumer confirmation is unaffected
 (none of 4–7 touch the estimand or units). With C's signature, R5 is through
 both gates — consumer (1–3) and attack (4–7); the mutation suite runs next,
 then the read.
+
+**SIGNED — C, 2026-09-02, on the landed amended text (message of record to
+the manager: "R5: SIGNED on the landed text — through both gates, suite and
+read next"). This paragraph is the manager's durable record of that
+signature; the registration cutoff for computation is the commit carrying
+it, read from git epoch.**

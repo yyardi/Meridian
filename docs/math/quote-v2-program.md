@@ -58,6 +58,37 @@ records status, it does not amend the draft; only dated author amendments do)
   information; a lookahead mutation must fail). B is writing that spec as
   the instrument's author. B's 55–70%-vs-7–12% clustering result is
   in-sample evidence FOR the mechanism and never part of the gate.
+- **D — premise item 4 CORRECTED 2026-09-02 (supersedes the check above for
+  that item only):** B's census determinism fix (c78432d — canonical sort
+  inside lags_for_event/triangle_for_event; order-invariance proven on 221
+  real episodes across three row shuffles) moved the congestion cell boundary
+  by ~1,200 fills (18× the old jitter): the tie-break rule selects a
+  different episode-opener set. Canonical numbers under the fixed instrument,
+  verified deterministic by D (two runs byte-identical): **in-congestion
+  −1.79 [−1.92, −1.66] on 7,801 fills vs clear −1.43 [−1.52, −1.35] on
+  9,231 (G=13)** — the lever's teeth survive and slightly sharpen (gap 0.36¢
+  vs 0.30¢). The pre-fix −1.74/−1.44 RETIRES; the premise text's numbers
+  await the author's dated amendment, and any consumer must pin the census
+  commit beside the numbers — two defensible instruments measured different
+  episode sets and their numbers must never be silently mixed. Premise items
+  1, 2, 3, 5, 6 are untouched (they don't consume the lag instrument).
+- **C — structural review returned 2026-09-02: CONDITIONAL SIGN, five
+  rulings.** (1) The congestion precondition rewrite must be a dated
+  amendment, never a log entry — the draft's own constitution says only
+  amendments amend, and registration text survives into summaries while logs
+  don't (SATISFIED by author amendment 3 below). (2) The real structural
+  hole: NOTHING BINDS THE DEFERRED ARM GATES TO CUTOFF INSTANTS — gates
+  registering after preconditions clear register after accrual starts,
+  floors written against partially-visible cohorts, the deferral argument
+  inverting into its own defect. Fix: a standing clause — every arm gate
+  carries its own git-read registration instant; gated cohorts count only
+  data first recorded after it, or disclose-and-justify. (3) Preconditions
+  need clocks, else the program can never close. (4) The freeze-lift needs a
+  stall path and a named author. (5) The interpretation matrix's cells must
+  route to REGISTRATIONS, never to policies — "capture-basis quoting only"
+  currently reads as deployment permission conditional on two instrument
+  reads. C signs with 1–3 as dated amendments and 4–5 as wording; items 2–5
+  await the author's second amendment batch.
 
 ---
 
@@ -150,3 +181,45 @@ size.
 *Author's standing flag for the window: the accrual-rate citation reuses an
 Aug-era fills/game figure under late-season slate composition — a fresher
 basis once Sept 17 fills exist is a welcome, cheap amendment.*
+
+---
+
+## DATED AUTHOR AMENDMENTS (research agent, 2026-09-02; numbering from the
+landed text)
+
+**Amendment 1 (precision, D's).** The premise's game count reads: "13 games
+with fills (12 settled at the v1 verdict)" — both numbers true, one clause,
+so quote-shadow.md's 12 never reads as a discrepancy.
+
+**Amendment 2 — PATIENCE resolves to LIVE ARM; the precondition discriminated
+exactly as designed.** Measured (405ef34): v1 requoted into dips at 82.2%
+[79.0, 85.3] (n=7,651, G=13), 100.0% of quote births at the touch, median
+requote gap 0.0s — the lever was not merely released, it was held down
+continuously. The ~0.8¢/fill transient is a live target. Substrate bound
+DISCLOSED in the arm text: v1 has no quote-stream table (`shadow_quote_fills`
+is the only object storage defines), so the classification reads births
+recorded on fills, licensed by the 100% at-touch verification of the
+deterministic coded rule. Forward requirement PINNED now: A's v2 ledger
+records the full quote stream (births, moves, cancels), and PATIENCE's
+eventual GATE reads the stream, never the fills' shadow of it — the v1-tape
+bound travels into that gate's registration as a named limitation, not a
+footnote.
+
+**Amendment 3 — CONGESTION's precondition is REWRITTEN; the defect was the
+author's: the draft cited an object that does not exist.** "B's measured
+wall-clock congestion windows" reified a retrospective bunching statistic
+(NN ≤30s share vs shuffle null) into a deployable window list — no such list
+exists, no causal detector exists, and episode lag is knowable only
+post-trigger. The reification propagated exactly as bad pointers do: A's
+scaffold came to cite a THIRD object ("≥5s lag / 30s window, from D's
+calibrated cut") matching neither the author's phantom nor B's actual
+artifact — three pointers, one nonexistent object. Corrected precondition,
+per B's own refutation terms: a NEW self-clocked causal detector, registered
+as its own object, running over the quoter's own stream (never a
+cross-process join on recorder timestamps), constants ADOPTED from the
+in-sample analysis rather than optimized, carrying a causal-replay mutation
+test in which a lookahead mutation MUST fail. A's predicate is HELD until
+that registration lands. The lineage of all three divergent pointers is
+recorded here so the record shows how a reification breeds. (This day's
+chain is the type specimen of WAVE_STANDARD rule 17, the precondition
+citation duty, elevated same day.)
