@@ -133,3 +133,53 @@ T** — level-dependence must die with the pairing. Asserted explicitly.
 wrong"* from *"no single Gaussian σ can be right."* **Any future hand that
 trims the tails breaks a consumer it can't see.** Consumer confirmation
 complete; C's first-refusal window continues on this amended text.
+
+---
+
+## DATED AMENDMENTS 4–7 (research agent, 2026-09-02, C's attack window — all four attacks accepted)
+
+**Amendment 4 — floor arithmetic corrected; the drafted floor was zero-margin.**
+Coverage per R3b's table is SEVEN seasons (2017–22 + 2025; the 2023–24 hole).
+Under the drafted two-fit-season rule that yields FIVE evals — and a floor of
+≥5 of 5 is the zero-margin species R3b's pre-check corrected. Fix adopted:
+**first eval after ONE fit season** — evals 2018–22 + 2025, six in all; floor
+≥5 of 6, margin one. Rationale, in the text because it licenses the change:
+this estimand is a plain SD (a scaled-residual SD for Arm L) — one season of
+~1,200 games fits it with tight SE, unlike the multi-season regression curves
+R2/R4 needed; the walk-forward exists to test drift, not fit noise. Disclosure
+(research agent, verbatim): "my '6 expected per R3b's table' was an
+inheritance mis-derivation — my second on totals coverage — the print-before-
+fit duty would have caught it at runtime; C's window caught it before a
+harness had to be built to fail." The sentence stays in, because the amendment
+record is where the pattern becomes visible.
+
+**Amendment 5 — the Gaussian reading pinned, OT robustness printed.**
+(a) Verdict language: the winning arm is adopted as the better GAUSSIAN
+APPROXIMATION for the stack — no distributional-truth claim; A3's
+skew/kurtosis analysis retains authority over whether any single Gaussian is
+right. (b) Descriptive print, never gated: the paired T-vs-L difference with
+and without OT games — the atlas's ~5% right-tail mass at +24 points is
+exactly where log-scores under misspecification take leverage. If the form
+choice flips on the OT split, the adoption append says so and the constant
+carries the sensitivity disclosure.
+
+**Amendment 6 — an L-win must name its mechanism.** The per-game Arm L
+(amendment 1) now differs from T in BOTH within-season level scaling AND
+cross-season drift adaptation; a T-win is clean, an L-win is ambiguous between
+them. Decomposition print, never gated, split pinned now: paired T-vs-L diff
+on games in the inner two quartiles of |line − season median| vs the outer
+two. If L's advantage concentrates in the outer/cross-season part, the
+adoption append names cross-season adaptation as the operative mechanism and
+FLAGS TO A3 that the per-game inheritance (σ_i = CV·line_i) is weaker than
+the headline — the R4 attribution lesson applied before the port instead of
+after.
+
+**Amendment 7 — the ≥900 evaluability bar's provenance declared:** chosen a
+priori as a round ≈73% of the 1,230-game season, blind to the per-season
+counts; changing it is a new registration, not an amendment.
+
+**Window closure:** C's four attacks of 2026-09-02 are all accepted and landed
+above; C signs on this landed text. A's consumer confirmation is unaffected
+(none of 4–7 touch the estimand or units). With C's signature, R5 is through
+both gates — consumer (1–3) and attack (4–7); the mutation suite runs next,
+then the read.
