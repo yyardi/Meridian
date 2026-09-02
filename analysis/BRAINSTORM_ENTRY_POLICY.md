@@ -948,3 +948,72 @@ be this wave's best outcome.
 
 *— Quant D. No in-sample result justifies capital. The forward test is the
 evidence.*
+
+---
+
+## Round 2 — Quant A responds, 2026-09-02
+
+### R2 close on D3 — my "structurally behind" premise DOWNGRADED; D's rebuttal accepted
+
+D conceded the latency-net scoring column (score the converging population at
+`s·(S − touch(t_intent + T_lat)) − fee`, touch-advance over `[t, t+T_lat]` its
+own column, T_lat pinned from measured components, B1's three latency demands +
+the freshness controls inherited). That was the whole point of my attack, so it
+lands as a required column, not a kill.
+
+**And D's rebuttal of "structurally behind" is correct — I withdraw the
+structural framing.** My error was importing F8's clock: F8 measures
+EVENT-STEP repricing (seconds), but D3's population is FLOW convergence, and
+D's evidence says that unfolds at minute scale — post-fill drift growing
+monotonically 10s→300s, run-aways recorded across median-164s resting windows
+watched at 1s cadence. A process you can watch tick-by-tick for 164s is not one
+that completes in 430ms, and C's ~300ms bar was derived for racing the ladder
+ENGINE's propagation, a different clock than racing flow. So self-consumption
+within T_lat (~2s of a ~164s process) is a small empirical fraction the pinned
+column now measures — **an open quantity, not a structural certainty.** D3
+registers on that basis; it dies only if touch-advance ≥ remaining drift, which
+is exactly what the column will show. Withdraw-and-back stands: if the
+latency-net edge survives, I back it.
+
+### R2 — A responds to D's attack on A1: all three conceded, and A1 reframed
+
+D's three are correct methodology, not quibbles. I concede each and the
+concession changes A1's registrable form:
+
+1. **Fill-rule grades its own homework — conceded, the central hazard.** The
+   mid-cross rule declares fills at local mid extrema, around which D measured
+   −1.8/−2.3¢ mechanical reversion, so a "reverting-vol → trip-P&L" gradient
+   scored under that rule is partly the fill model marking itself. Fix already
+   in D's own instrument note: **A1's OUTCOME is scored on the quote engine's
+   REAL resting fills (evidence-grade, the +4.70¢-adverse instrument), never
+   the mid-cross rule.** The decision-tape pass is descriptive-only and prints
+   the artifact caveat. Note the FEATURE (pre-entry realized vol, measured
+   strictly before the decision tick) is clean — the contamination D names is
+   in the outcome, which real-fills scoring removes.
+
+2. **Collider at the trip/ride boundary — conceded, and it exposes a framing
+   error in A1.** Oscillation causes both the feature and trip-vs-ride
+   membership, so conditioning on trips collider-biases the estimate; D's
+   k=4.70 relabeling flipping 191 boundary trips (−$66 hidden) is the proof.
+   **A1 is reframed: pre-entry reverting-vol character orders per-$ over ALL
+   filled entries — trips AND rides together, boundary-invariant.** I should
+   not have said "orders trip P&L"; the correct object never conditions on the
+   collider.
+
+3. **The 9.4¢ two-leg toll — conceded as the bar.** This is the geometry where
+   freshness's pessimistic column went negative in every bucket. **A1 must
+   clear the pessimistic re-score with a game-clustered CI or it is freshness's
+   cousin and I close it myself.**
+
+So A1's registrable form, with D's three demands built in: feature =
+strictly-pre-decision reverting-vs-trend vol character; outcome = per-$ over
+all fills (no boundary conditioning), scored on real resting fills AND under
+the pessimistic concession; controls = within-game placebo + matched-instant.
+Mirror of D's offer accepted in full: if reverting-vs-trend CHARACTER orders
+per-$ over all fills, on real fills, surviving the pessimistic re-score and the
+placebo, then it is a tape rule beating a model rule — the wave's best possible
+outcome — and it registers. If not, it joins the corpses with its mechanism
+named. That is the right bar and I hold A1 to it.
+
+*— Quant A. No in-sample result justifies capital. The forward test is the
+evidence.*
