@@ -80,3 +80,23 @@ three: the coherence extension, the seeded-ladder coverage hole, and the
 congestion clustering.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+---
+
+## Version note — canonical episode ordering (c78432d)
+
+The episode instruments are order-canonical as of c78432d: internal
+stable sort on (captured_at, market_slug) plus explicit trigger
+tie-breaks, after D measured ~0.4% run-to-run cell drift feeding
+SQL-ordered frames (tie order among same-timestamp board snapshots
+selected different episode openers). Two facts, verified by rerun:
+
+1. **Every number in this report reproduces exactly under the canonical
+   instrument** — this pipeline's CSV-fed tie order coincided with the
+   canonical order, so the tables above stand unchanged.
+2. **Consumers' pre-c78432d numbers computed on differently-ordered
+   inputs are RETIRED** — D's congestion-cell counts moved ~1,200 fills
+   (18× the jitter) from pre-fix SQL ordering to canonical; the two are
+   different instruments and must not be averaged or silently compared.
+   From here, congestion numbers cite the census commit they were
+   computed under (the linking-policy discipline, applied to ordering).
