@@ -133,7 +133,11 @@ sharper version of this check.
 
 **Candidates** (each with its forward test): (1) *ride-risk-priced entries* —
 require edge ≥ concessions + δ*(p̂) with B's fitted p̂; forward test: paper arm
-beside the engine, game-clustered paired per-$. (2) *front-loaded exit
+beside the engine, game-clustered paired per-$. **Open reconciliation before
+any registration**: B's predictor work finds per-$ outcomes flat across ride-
+risk quintiles — the market may already charge for ride risk through the
+contract price, in which case δ*(p̂) on top double-counts; one reconciling
+paragraph between the two docs is owed first (agreed with B). (2) *front-loaded exit
 management* — the term structure says exit value dies with the hold, not the
 book; a forward arm that reprices or abandons exits early (vs the static
 entry+5¢ target) is testable on the same tape forward; c7's call whether it
