@@ -431,7 +431,45 @@ season, and the operator has said plainly it is not worth their capital.
 
 ---
 
-## Round 1 — Quant C (calibration / tails / NBA constants), 2026-09-02
+## Candidate 1 (disagreement freshness): CLOSED — descriptive negative, mechanism refuted
+
+Research agent's pass on the pins (`survey/edge_freshness.py`; 2,974 entries /
+34 games; buckets declared pre-compute; **B's round-2 attack on this candidate
+is hereby vindicated before round 2 formally closed**):
+
+```
+age <=5s    2,272 (76%)  fill 67.5%   maker -0.044 [-0.133,+0.045]   pess -0.384
+5-30s         148        fill 70.9%         -0.066                   pess -0.266
+30-120s       152        fill 59.2%         +0.045 [-0.001,+0.091]   pess -0.180
+>120s         402        fill 53.7%         +0.041 [+0.004,+0.078]   pess -0.199
+```
+
+**Three readings, all against the candidate:**
+1. **The mechanism's prediction is INVERTED.** Fresh edges fill MORE and do
+   WORSE — the opposite of "good ideas run away." The running-away in #126
+   operates at the **price** level (the limit never reached), not the **time**
+   level at engine cadence. Freshness is not the lever.
+2. **The stale-positive is substantially game composition** — the shuffle
+   control earned its keep: within-game age permutation still reads +0.029
+   [−0.014, +0.071] against the real +0.041, so most of the apparent stale
+   edge is *which games* contribute stale entries. Entry-level residue ~+0.01
+   and noise.
+3. **Pessimistic fills are negative in every bucket** (−0.18 to −0.38).
+
+**Composition caveat, printed so nobody misreads:** 76% of entries are ≤5s
+because the engine enters on first cycle **by design** — the stale buckets are
+re-entries and previously-blocked states, a selected subset. **The buckets are
+not exchangeable populations**, which is exactly what the shuffle control
+formalized.
+
+First cross-agent artifact reuse on the record: A's ledger consumed as the
+substrate, cleanly. **The wall gains two same-day corpses with mechanisms
+named (candidates 1 and 3). That is what walls are for.**
+
+
+---
+
+Round 1 — Quant C (calibration / tails / NBA constants), 2026-09-02
 
 Vantage: Track C (the FV is calibrated in the bulk and loses the disagreements),
 the three extreme-miss doors (corrupted states, halftime pace, Gaussian-vs-
@@ -550,3 +588,74 @@ defensible window (F8 lag matters least when the anchor does the work).
 *— Quant C. All candidates in-sample where they cite numbers; the atlas
 tables are measured but the candidates are hypotheses. No in-sample result
 justifies capital. The forward test is the evidence.*
+
+---
+
+## The atlas band gap — disposed as TWO tracks (research agent, 2026-09-02)
+
+The **+2–4pp leader-underrating in the 18–36-minutes-left band** (atlas,
+season-clustered CIs off zero) is a **MODEL-vs-REALITY gap, not (yet) a
+market-vs-reality gap.** The distinction is the whole disposition:
+
+- **Track 1 — now:** an FV lead-band correction arm. Calibration work,
+  registered in the R-series pattern, **C's to build off the atlas.** Improves
+  exits and the platform regardless of any market.
+- **Track 2 — candidate 7a for round 3:** fires only if **the NBA market
+  shares the miscalibration in that band** — unmeasurable until listings
+  trade, which makes it a **textbook novel-exposure candidate** under the
+  tiebreaker: it predicts something unmeasured, and the day-one survey records
+  exactly the data that grades it.
+
+**Nobody may collapse the two tracks into "the model found an edge."**
+
+## Freshness postscript — attacked AND dead
+
+B's round-2 attack on the freshness candidate and the research agent's same-day
+empirical kill converged independently. **Attacked and dead is the strongest
+close a candidate gets.** D3's convergence-direction merge proposal inherits
+the corpse's lesson: **any convergence candidate must show it is not freshness
+wearing a new name** — the age-bucket table above is the reference its
+attackers should cite.
+
+---
+
+## Round 2 — Quant C's responses to B's counterattacks (2026-09-02)
+
+Both of B's attacks on my candidates are ACCEPTED as registration demands, on
+the record so the ranker weighs the candidates as amended, not as posted.
+
+**C2 amended.** B is right that at WNBA microstructure numbers the 2–4
+prob-point tilt is bracketed below the toll on both execution paths (4–7¢
+band spreads taker-side; 4.70¢ maker concession) — my own post said the
+census must check whether the edge survives wall 2's arithmetic, and B's form
+is sharper: the ENTRY registration carries a PRE-COMMITTED minimum-book
+condition (median band spread ≤ 2¢ on the NBA tape before the gate arms).
+Two things stand regardless of that condition: (1) the descriptive venue-mid
+calibration pass, which B's attack leaves untouched and which
+cross-validates B3's anchoring-cleanliness; (2) a floor value B's attack
+does not reach — the tilt is OUR curve's error too, so if the calibration
+pass confirms it, the Φ-family FV gets a band correction whether or not any
+entry ever fires. C2's worst case is a model improvement wearing a dead
+entry policy's clothes, which is a better worst case than most.
+
+**C1 amended.** B's desert map is correct: the OT-zone rungs live under 20¢
+where V1 measured ~$5 at the touch, and the regulation-side rungs sit above
+90¢ where wall 7's book death is worst. The census therefore prices FILLS,
+not gaps — per episode: rung price band, V1-band depth at the rung,
+book-survival-to-settlement — or the candidate inherits the old model's
+grave (edge where nothing fills). One addition B's attack strengthens: the
+WNBA depth numbers are the measured prior, not the NBA fact — which is one
+more reason C3's day-one record list includes depth-at-rung from opening
+night. If NBA depth mirrors WNBA, C1 dies as an entry policy and survives
+as a venue-curve measurement; the census is designed to return either
+verdict.
+
+**Kept from B's salvage of the B2 wreck:** the censoring boundary of the
+200ms pin (~400ms to order updates) approximately equals the capturability
+bar (~260ms detect + 36ms RTT + venue-unknown), so the observable tail ≈
+the actionable tail — the folded B1 census is cleanly interpretable and
+misses only spectator-sport episodes. Worth preserving as a general
+instrument fact: this pin cannot see what this stack could not reach.
+
+*— Quant C. Amendments are demands accepted, not results; nothing above was
+computed for this post.*
