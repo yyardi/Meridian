@@ -107,7 +107,9 @@ anything on either doc. Adds 5 clustered intervals (the per-contract
 quintile column) to this report's count.
 
 **1. The label's lower bound is now a number (D's excursion scan):** under
-a k-concession fill rule the optimistic ride share (7.0%) rises to 9.5%
+a k-concession fill rule the optimistic ride share (7.9%, drop policy —
+the same lineage policy as the k-curve and the 11.4% breakeven; this
+report's re-linked base is 7.0%) rises to 9.5%
 (k=1¢), 11.1% (k=2¢), 14.6% (k=3.15¢) and **17.7% at the full measured
 4.70¢ — above the optimistic-rule breakeven ride share of 11.4%**. The
 optimistic label undercounts no-exit risk by 2–10pp depending on the
