@@ -32,9 +32,17 @@ Two reads (per the manager, 2026-09-02):
    the quoter is blind at this instant regardless of how the staleness arose.
 
 2. RECEIVING-WHILE-LIVE, a NAMED ALARM (not an ambiguity). If a board is present
-   (market_snapshots gained rows within the board window) but quote_v2_observations
-   gained zero rows within the recent window, the quoter recorded nothing while a
-   board was being captured — the blindness symptom, stated as an alarm.
+   and the substrate is FRESH but quote_v2_observations gained zero rows in the
+   recent window, the quoter recorded nothing it could see — a hard alarm.
+
+Verdict (refined 2026-09-02 so a checklist probe does not cry wolf): a SLOW
+recorder (birth-staleness >= window: rows born past the window), a STALLED
+recorder (sweeps overdue vs the measured cadence), and a quoter blind on FRESH
+substrate are each a hard ALARM. A FAST-but-INFREQUENT recorder (rows born
+fresh, sweeps rarer than the window) is DUTY_CYCLED — a truthful middle state
+reporting its fresh-fraction, not an alarm. An aged-out state with too few
+sweeps to measure cadence is INDETERMINATE (never a false all-clear). No board
+is EMPTY_BENIGN; fresh + continuous + recording is HEALTHY.
 
 Belongs in the pre-slate checklist beside the heartbeat (§4b) once it exists:
 same species — check the level the consumer acts on.
@@ -64,6 +72,10 @@ WINDOW_S = 600.0
 BOARD_WINDOW_S = 1800.0
 #: The "in the last N seconds" for the receiving-while-live read.
 RECENT_S = 600.0
+#: A sweep is OVERDUE (recorder may have stalled) when the freshest substrate is
+#: older than this multiple of the measured cadence. A design bound, not fitted:
+#: within one cadence a trough is expected; beyond ~1.5x the next sweep is late.
+OVERDUE_FACTOR = 1.5
 
 
 @dataclass
@@ -86,41 +98,90 @@ class ProbeState:
 
 @dataclass
 class Verdict:
-    status: str                          # HEALTHY | EMPTY_BENIGN | ALARM
+    #: HEALTHY | EMPTY_BENIGN | DUTY_CYCLED | INDETERMINATE | ALARM
+    status: str
     alarms: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+
+
+def _sweep_interval_s(state: ProbeState) -> float | None:
+    """Median gap between consecutive sweeps' captured_at — the cadence. None if
+    fewer than two sweeps (cadence unmeasurable)."""
+    if len(state.sweeps) < 2:
+        return None
+    ts = sorted(s.captured_at for s in state.sweeps)
+    gaps = sorted((ts[i + 1] - ts[i]).total_seconds() for i in range(len(ts) - 1))
+    return gaps[len(gaps) // 2]
 
 
 def classify(state: ProbeState) -> Verdict:
     """Pure: ProbeState -> Verdict. The empty-read verdict the scorer defers to.
 
-    No board present -> empty is benign. Board present but the substrate is born
-    past the window, or the quoter recorded nothing while it was captured ->
-    ALARM, with the reason named. Never returns a bare 'clean'."""
+    The refinement (2026-09-02): DON'T conflate a SLOW recorder (rows born past
+    the window — a real defect) with an INFREQUENT-but-fast recorder (rows born
+    fresh, but sweeps rarer than the window, so the substrate is duty-cycled).
+    The first is an ALARM; the second is a truthful middle state (DUTY_CYCLED)
+    reporting its fresh-fraction, because a checklist probe that cries wolf 50
+    minutes of every hour trains people to ignore red (health.py's cutover
+    lesson). The safety rails keep the softening honest: a slow recorder, an
+    overdue (stalled) recorder, and a quoter blind on FRESH substrate all stay
+    hard ALARMs, and an aged-out state we cannot classify (fewer than two sweeps)
+    is INDETERMINATE — never a false all-clear."""
     w = state.window_s
     if not state.board_present:
         return Verdict("EMPTY_BENIGN", [],
                        ["no market_snapshots rows within the board window — no "
                         "board listed; an empty observation stream is expected"])
+
+    interval = _sweep_interval_s(state)
+    lag = state.freshest_lag_s
+    fresh_now = lag is not None and lag < w
+
+    # ---- hard ALARMs (the safety rails; never softened) ------------------- #
     alarms: list[str] = []
-    if state.freshest_lag_s is not None and state.freshest_lag_s >= w:
-        alarms.append(
-            f"substrate born invisible: the freshest visible market_snapshots "
-            f"row is {state.freshest_lag_s:.0f}s old (>= {w:.0f}s window) — every "
-            f"visible row is already past the quoter's window (recorder too slow)")
     dead = [s for s in state.sweeps if s.birth_staleness_s >= w]
-    if dead:
+    if dead:                                   # RECORDER TOO SLOW — the defect
         worst = max(s.birth_staleness_s for s in dead)
         alarms.append(
-            f"{len(dead)}/{len(state.sweeps)} recent sweeps committed >= {w:.0f}s "
-            f"after their captured_at (worst {worst:.0f}s) — dead on arrival to "
-            f"the quoter")
-    if state.quoter_rows_recent == 0:
-        alarms.append(
-            f"board present but quote_v2_observations gained 0 rows in the last "
-            f"{state.recent_s:.0f}s — the quoter recorded nothing while a board "
-            f"was being captured")
-    return Verdict("ALARM" if alarms else "HEALTHY", alarms, [])
+            f"recorder too slow: {len(dead)}/{len(state.sweeps)} recent sweeps "
+            f"committed >= {w:.0f}s after captured_at (worst {worst:.0f}s) — rows "
+            f"born past the quoter's window, dead on arrival")
+    if interval is not None and lag is not None and lag > OVERDUE_FACTOR * interval:
+        alarms.append(                         # STALLED RECORDER — must not hide
+            f"sweeps overdue: freshest substrate is {lag:.0f}s old, > "
+            f"{OVERDUE_FACTOR:g}x the {interval:.0f}s cadence — the recorder may "
+            f"have stalled (an outage cannot hide inside the duty-cycle verdict)")
+    if fresh_now and state.quoter_rows_recent == 0:
+        alarms.append(                         # QUOTER BLIND on fresh substrate
+            f"quoter blind: substrate is fresh ({lag:.0f}s < {w:.0f}s window) but "
+            f"quote_v2_observations gained 0 rows in {state.recent_s:.0f}s — the "
+            f"quoter recorded nothing it could see")
+    if alarms:
+        return Verdict("ALARM", alarms, [])
+
+    # ---- non-alarm classification ---------------------------------------- #
+    # Aged out but cadence unmeasurable: cannot tell a duty-cycle trough from a
+    # stall. Refuse the all-clear.
+    if not fresh_now and interval is None:
+        return Verdict("INDETERMINATE", [], [
+            f"freshest substrate is "
+            f"{'n/a' if lag is None else f'{lag:.0f}s'} old (>= {w:.0f}s window) "
+            f"but there are < 2 sweeps to measure cadence — cannot distinguish a "
+            f"duty-cycle trough from a stalled recorder; need >= 2 sweeps"])
+    # Fast recorder, sweeps rarer than the window: duty-cycled, not broken.
+    if interval is not None and interval > w:
+        frac = w / interval
+        phase = "currently fresh" if fresh_now else f"currently in a trough ({lag:.0f}s old)"
+        return Verdict("DUTY_CYCLED", [], [
+            f"observation duty-cycled ~{frac:.0%}: substrate fresh for the {w:.0f}s "
+            f"window out of every {interval:.0f}s sweep cadence (recorder fast — "
+            f"birth-staleness under the window — but sweeps infrequent); {phase}. "
+            f"Tolerable where the consumer's real read is continuous (in-game 0.5s "
+            f"recorder → cadence << window); a coverage gap where it is not."])
+    # Continuous, fresh, quoter recording (or nothing to flag).
+    return Verdict("HEALTHY", [], (
+        [] if interval is not None else
+        ["substrate fresh and quoter recording; cadence unmeasured (< 2 sweeps)"]))
 
 
 # --------------------------------------------------------------------------- #
@@ -177,8 +238,16 @@ def _print_verdict(state: ProbeState, v: Verdict) -> None:
     if state.sweeps:
         st = sorted(s.birth_staleness_s for s in state.sweeps)
         med = st[len(st) // 2]
-        print(f"birth-staleness over {len(state.sweeps)} recent sweeps: "
-              f"min {st[0]:.0f}s  median {med:.0f}s  max {st[-1]:.0f}s")
+        print(f"birth-staleness over {len(state.sweeps)} recent sweeps "
+              f"(recorder speed): min {st[0]:.0f}s  median {med:.0f}s  max "
+              f"{st[-1]:.0f}s")
+        interval = _sweep_interval_s(state)
+        if interval is not None:
+            print(f"sweep cadence (interval between sweeps): {interval:.0f}s"
+                  + (f"  -> fresh-fraction {state.window_s / interval:.0%}"
+                     if interval > state.window_s else "  (continuous: <= window)"))
+        else:
+            print("sweep cadence: unmeasured (< 2 sweeps)")
     print(f"\nVERDICT: {v.status}")
     for a in v.alarms:
         print(f"  ALARM: {a}")
@@ -193,59 +262,67 @@ def run_db() -> int:
         state = gather(s)
     v = classify(state)
     _print_verdict(state, v)
-    return 0 if v.status != "ALARM" else 1
+    # distinct exit codes for a checklist: 1 = ALARM, 2 = INDETERMINATE (look
+    # again, never a silent pass), 0 = HEALTHY / EMPTY_BENIGN / DUTY_CYCLED.
+    return {"ALARM": 1, "INDETERMINATE": 2}.get(v.status, 0)
 
 
 # --------------------------------------------------------------------------- #
 #  --selftest: the classifier can fail, and created_at really carries the lag
 # --------------------------------------------------------------------------- #
 
-def _mk(now, sweeps, freshest, board, quoter):
-    return ProbeState(now=now, sweeps=sweeps, freshest_lag_s=freshest,
-                      board_present=board, quoter_rows_recent=quoter)
-
-
 def selftest(Session=None) -> int:
     ok = True
     now = dt.datetime(2026, 9, 9, 0, 0, tzinfo=UTC)
 
-    def fresh_sweeps(stale_s):
-        return [Sweep(now - dt.timedelta(seconds=1), 900, stale_s)]
+    def st(ages, stale_s, quoter):
+        """ProbeState from sweep ages (s ago), a uniform birth-staleness, and a
+        quoter row count. freshest_lag = youngest sweep; board present iff any."""
+        sweeps = [Sweep(now - dt.timedelta(seconds=a), 900, stale_s) for a in ages]
+        return ProbeState(
+            now=now, sweeps=sweeps,
+            freshest_lag_s=(min(ages) if ages else None),
+            board_present=bool(ages), quoter_rows_recent=quoter)
+
+    def check(label, v, want_status, want_in=(), want_not=()):
+        nonlocal ok
+        c = v.status == want_status
+        for s in want_in:
+            c = c and any(s in x for x in v.alarms + v.notes)
+        for s in want_not:
+            c = c and not any(s in x for x in v.alarms + v.notes)
+        print(f"{label:22}-> {v.status:13} {'OK' if c else 'FAIL: ' + repr(v)}")
+        ok &= c
 
     # 1. no board -> benign empty (NOT an alarm, NOT 'healthy')
-    v = classify(_mk(now, [], None, False, 0))
-    c = v.status == "EMPTY_BENIGN"
-    print(f"no board          -> {v.status:12} {'OK' if c else 'FAIL'}")
-    ok &= c
+    check("no board", classify(st([], 0.5, 0)), "EMPTY_BENIGN")
 
-    # 2. healthy: fresh substrate, quoter recording
-    v = classify(_mk(now, fresh_sweeps(0.5), 0.5, True, 900))
-    c = v.status == "HEALTHY" and not v.alarms
-    print(f"fresh + recording -> {v.status:12} {'OK' if c else 'FAIL'}")
-    ok &= c
+    # 2. continuous + recording (interval 60s <= 600 window) -> healthy
+    check("continuous+recording", classify(st([1, 61, 121], 1.0, 900)), "HEALTHY")
 
-    # 3. THE DEFECT: born invisible (16min sweeps, freshest 16min, quoter empty)
-    v = classify(_mk(now, fresh_sweeps(960.0), 960.0, True, 0))
-    c = (v.status == "ALARM"
-         and any("born invisible" in a for a in v.alarms)
-         and any("dead on arrival" in a for a in v.alarms)
-         and any("recorded nothing" in a for a in v.alarms))
-    print(f"born-invisible    -> {v.status:12} {'OK (all 3 alarms)' if c else 'FAIL'}")
-    ok &= c
+    # 3. THE REGRESSION THAT MATTERS: slow recorder (birth-staleness 960s >=
+    #    window) must STILL land ALARM after the softening.
+    check("slow recorder (defect)", classify(st([1, 900], 960.0, 0)),
+          "ALARM", want_in=("recorder too slow",))
 
-    # 4. quoter blind despite FRESH substrate (recorder fine, quoter down)
-    v = classify(_mk(now, fresh_sweeps(1.0), 1.0, True, 0))
-    c = (v.status == "ALARM"
-         and any("recorded nothing" in a for a in v.alarms)
-         and not any("born invisible" in a for a in v.alarms))
-    print(f"quoter-blind      -> {v.status:12} {'OK' if c else 'FAIL'}")
-    ok &= c
+    # 4. quoter blind on FRESH substrate -> hard ALARM (not softened)
+    check("quoter-blind on fresh", classify(st([1, 61], 1.0, 0)),
+          "ALARM", want_in=("quoter blind",), want_not=("recorder too slow",))
 
-    # 5. RPS-6 fixed state: 5min sweeps, under the 10min window -> healthy
-    v = classify(_mk(now, fresh_sweeps(300.0), 300.0, True, 900))
-    c = v.status == "HEALTHY"
-    print(f"fixed 5min sweeps -> {v.status:12} {'OK (under window)' if c else 'FAIL'}")
-    ok &= c
+    # 5. DUTY_CYCLED: fast recorder (birth 1s), hourly sweeps (interval 3600 >
+    #    window), currently in a trough, quoter empty (expected) -> NOT an alarm,
+    #    reports the ~17% fresh-fraction. This is tonight's real property.
+    check("duty-cycled (hourly)", classify(st([1800, 5400], 1.0, 0)),
+          "DUTY_CYCLED", want_in=("duty-cycled ~17%",))
+
+    # 6. SAFETY: a stalled recorder cannot hide in the duty-cycle verdict.
+    #    Same cadence, but freshest is 7200s > 1.5x3600 -> overdue ALARM.
+    check("sweeps overdue (stall)", classify(st([7200, 10800], 1.0, 0)),
+          "ALARM", want_in=("sweeps overdue",))
+
+    # 7. INDETERMINATE: tonight's post-fix state — 1 sweep, born fresh (1s) but
+    #    aged out now (1014s), cadence unmeasurable -> never a false all-clear.
+    check("aged, <2 sweeps", classify(st([1014], 1.0, 0)), "INDETERMINATE")
 
     if Session is not None:
         ok &= _selftest_created_at_carries_lag(Session)
@@ -253,9 +330,11 @@ def selftest(Session=None) -> int:
         print("created_at-carries-lag: SKIPPED (no DB; run --selftest with a "
               "DATABASE_URL to validate the birth-staleness metric empirically)")
 
-    print("\nSELFTEST:", "PASS — classifier names the defect (born-invisible), "
-          "distinguishes it from quoter-down and from benign-empty, and never "
-          "calls an unclassifiable empty 'healthy'. The probe can fail."
+    print("\nSELFTEST:", "PASS — the slow-recorder defect STILL alarms (the "
+          "regression that matters); a fast-but-infrequent recorder is the "
+          "truthful DUTY_CYCLED middle state, not a cried-wolf alarm; and a "
+          "stalled recorder, a quoter blind on fresh substrate, and an "
+          "unclassifiable aged-out state are each caught. The probe can fail."
           if ok else "FAIL")
     return 0 if ok else 1
 
