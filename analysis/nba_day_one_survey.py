@@ -418,6 +418,15 @@ def m4_lags(df: pd.DataFrame) -> None:
 # M5 — ladder sigma vs the fitted constants
 # --------------------------------------------------------------------------- #
 
+def load_r5_sigma_t0() -> dict | None:
+    """R5's pregame totals sigma (rule 17: file + block + commit cited at
+    the print site). Returns the `r5_sigma_t0` block or None if absent."""
+    p = Path(__file__).with_name("nba_constants_v3.json")
+    if not p.exists():
+        return None
+    return json.loads(p.read_text()).get("r5_sigma_t0")
+
+
 def probit_fit(lines: pd.Series, mids: pd.Series) -> tuple[float, float] | None:
     """(mu, sigma) from ladder mids: P(X > L) = 1 - Phi((L-mu)/sigma).
 
@@ -488,9 +497,30 @@ def m5_sigma(df: pd.DataFrame) -> None:
                   f"p75 {sig.quantile(.75):.2f})")
             if period is None:
                 if mtype == "total":
-                    print("    comparison GATED: no pregame totals-sigma "
-                          "estimand until R5 registers — fitted values "
-                          "reported, the hook is the commitment")
+                    r5 = load_r5_sigma_t0()
+                    if r5 is None:
+                        print("    comparison unavailable: r5_sigma_t0 "
+                              "block not found in nba_constants_v3.json — "
+                              "was R5 reverted?")
+                        continue
+                    ref0 = r5["sigma_t0_pregame_totals"]
+                    dv0 = {e: [s - ref0] for e, (mu, s) in fits}
+                    cm0 = clustered_mean(dv0)
+                    line0 = (f"    vs sigma_T0 {ref0} (SE {r5['se']}; "
+                             f"analysis/nba_constants_v3.json block "
+                             f"`r5_sigma_t0` @ 5acd3c8, rule 17): "
+                             f"deviation {sig.median() - ref0:+.2f} (median)")
+                    if cm0 is not None:
+                        line0 += (f"; clustered {cm0.mean:+.2f} "
+                                  f"[{cm0.lo:+.2f}, {cm0.hi:+.2f}] "
+                                  f"({cm0.n_clusters} games)")
+                    print(line0)
+                    print("    disclosures carried from the block: Gaussian-"
+                          "approximation adoption only (A3's shape authority "
+                          "stands); OT-INCLUSIVE (OT share of pregame totals "
+                          "variance 9.75%; the no-OT route flips the form "
+                          "decision — disclosed); calibration constant, "
+                          "never edge.")
                 continue
             if mtype == "total":
                 ref = r3b[NBA_BOUNDARY_MIN_LEFT[period]]
@@ -697,6 +727,24 @@ def selftest() -> int:
     check("sigma fit recovers mu=222.5 sigma=14",
           fit is not None and abs(fit[0] - 222.5) < 0.1
           and abs(fit[1] - 14.0) < 0.1)
+
+    # Rule-18 plant for the sigma_T0 wiring: a fabricated pregame ladder
+    # priced at exactly 1 - Phi((L - mu)/sigma_T0) must read ~ZERO
+    # deviation against the adopted block.
+    r5 = load_r5_sigma_t0()
+    if r5 is None:
+        print("  r5_sigma_t0 block missing — sigma_T0 plant SKIPPED "
+              "(module will print unavailable)")
+    else:
+        s0 = float(r5["sigma_t0_pregame_totals"])
+        lines0 = pd.Series([200.5 + 6 * k for k in range(10)])
+        mids0 = pd.Series(1.0 - stats.norm.cdf((lines0 - 224.0) / s0))
+        fit0 = probit_fit(lines0, mids0)
+        ok0 = fit0 is not None and abs(fit0[1] - s0) < 1e-6
+        print(f"  rule-18 plant: ladder priced at sigma_T0={s0} reads "
+              f"deviation {0.0 if not fit0 else fit0[1] - s0:+.6f} -> "
+              f"{'ok' if ok0 else 'FAIL'}")
+        failures += 0 if ok0 else 1
 
     # M2: both raw shapes parse.
     b, a = parse_book_raw(df.raw.dropna().iloc[0])
