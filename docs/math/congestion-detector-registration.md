@@ -76,3 +76,50 @@ instrument detects; it does not promise.
 ---
 
 *Results append below this line, never above it.*
+
+## APPEND A (2026-09-02, B + research — cadence compliance)
+
+The detector's semantics require observation cadence ≪ LONG_S (rule of
+thumb: ≤1s). Near 5s cadence the response test DEGENERATES: a sibling's
+response is first observed at the next cycle, landing at or past the 5s
+deadline by construction — every trigger confirms, and the instrument
+measures the consumer's cadence, not the venue. Implicit in "self-clocked
+pure function of the consumer's stream"; explicit here because it decided
+a real question: v1 observed at ~5s and recorded no stream, so NO
+COMPLIANT IN-SAMPLE FEED EXISTS — the program registration's amendment 9
+impossibility, with its mechanism named. Any consumer's gate cites its
+stream's cadence beside this line.
+
+## APPEND B (2026-09-02, B + research — selectivity + pre-registered revision condition)
+
+Coverage diagnostic on the non-compliant recorder tape (labelled proxy,
+diagnostics-only): ~75% of game time / 90.6% of v1 fills marked
+congested — near-saturation, not a lever. Beyond the clock, a structural
+cause: the detector confirms every UNANSWERED trigger (quiet deep rungs
+rarely answer), while the registered mechanism evidence was the CLUSTERING
+of long lags.
+
+PRE-REGISTERED REVISION CONDITION, written before any compliant data
+exists: if on the v2 quoter's own compliant stream, over its first 10
+games, congested share of game time exceeds 50% — the a-priori bar:
+suppression is only a lever if a MAJORITY of time remains quotable — then
+detector v2 registers with DENSITY GATING (the window opens on the SECOND
+confirm within WINDOW_S, tying the object to its own clustering evidence),
+constants carried, as a new pinned version landing BEFORE the CONGESTION
+arm's gate cutoff; the arm cites exactly one registered detector version
+for its entire cohort.
+
+MEASUREMENT DEFINITION, pinned before any compliant data exists:
+"congested share of game time" = the window-union coverage of IN-PLAY time
+(first to last live observation of that game on the quoter's own stream),
+computed PER GAME; the 50% bar reads on the MEDIAN across the first 10
+compliant games. Median a-priori: one pathological game — an outage, an OT
+circus — must not decide an instrument revision in either direction. Bar
+and definition jointly authored: research (number and lever rationale), B
+(definition and median), both blind to forward data.
+
+Justification recorded now, ahead of any temptation: the diagnostic
+numbers are coverage statistics — an instrument property; no P&L was
+consulted; this is design-from-diagnostics, not optimization-on-outcomes.
+A's forward schema records raw confirms beside windows so any v2 evaluates
+on the same recorded stream without re-instrumentation.
