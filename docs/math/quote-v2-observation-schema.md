@@ -21,11 +21,27 @@ BEFORE the model + migration land.**
   absent on that table.
 
 So: a new `quote_v2_observations` table, written by the v2 quoter on its own
-clock. **The quoter still quotes the FROZEN v1 policy during the freeze** — it
-only ADDS recording; this table can therefore begin accruing the compliant
-stream from Sept 17 without changing what is quoted (freeze-safe), so the
-congestion / guard / PATIENCE cohorts build in parallel with A1's gate instead
-of waiting for post-A1 deploy.
+clock. The quoter still quotes the FROZEN v1 policy — it only ADDS recording.
+
+**Two gates, not one (manager, 2026-09-02) — do not conflate them:**
+- **LANDING** this model + migration on main is repo code, off-path, no deploy
+  implied — safe once D's field sign-off arrives.
+- **STARTING the recording** — deploying the v2 quoter binary — is
+  AMENDMENT-GATED even though it is recording-only, because the freeze's LETTER
+  pins the running COMMIT (7a3a217), and a new binary replaces it. It requires
+  a research DATED AMENDMENT first: (a) deploy BEFORE the first Sept 17 tip so
+  A1's entire cohort accrues under ONE commit (no mid-accrual change — this
+  serves the sequencing clause's purpose better than its letter); (b) the
+  amendment names the new pinned freeze commit; (c) a policy-equivalence
+  obligation rides with it — replay proof that the v2 quoter's quoting code
+  paths produce IDENTICAL outputs to v1 on identical inputs, plus the shadow
+  AST test extended to the writer.
+
+**Hard consequence:** if the amendment + build + deploy cannot all complete
+before the first Sept 17 tip, the recording does NOT deploy mid-accrual — it
+waits for A1, and congestion / guards / PATIENCE lose their parallel accrual.
+Ship once, complete, before the 17th. Only WITH the amendment landed does the
+compliant stream accrue in parallel with A1's gate.
 
 ## Field set (one row per quoter observation of one market, ≤1s cadence)
 
@@ -70,13 +86,26 @@ freezing a version into the table:**
 3. **Full quote stream** — a row on every observation, carrying the current
    resting quote (or its absence), so unfilled requotes are visible to
    PATIENCE, not just fills.
-4. **Freeze-safe** — recording only; the quoted policy stays the frozen v1
-   commit until A1's gate reads. This table adds no order path (shadow-only,
-   credential-free stays load-bearing; AST test extends to the writer).
+4. **Recording only, but deploy is amendment-gated** — the quoted policy stays
+   the frozen v1 commit, and this table adds no order path (shadow-only,
+   credential-free stays load-bearing; AST test extends to the writer). But
+   deploying the recording binary replaces the pinned freeze commit, so it
+   ships only under the research amendment above (new pinned commit +
+   policy-equivalence replay proof + before the first Sept 17 tip, else it
+   waits for A1). Landing the model/migration is separate and off-path.
 5. **Detector live** — the quoter runs B's `CongestionDetector.feed` on its own
    stream and records `det_in_window` / `det_confirm_t0` / `det_version`.
 
-## Standing checks (B sign-off, 2026-09-02 — the mutation-test pattern applied to production recording)
+## Read embargo (amendment 10, 256c038)
+
+**The forward observation table is EMBARGOED from ANALYTICAL reads until a
+consuming gate registers.** The sole pre-registered exempt reader is B's blind
+saturation diagnostic (coverage only). The standing checks below are
+RECORDING-INTEGRITY checks (provenance + cadence of the recording itself), NOT
+analytics — they read no outcome and score no arm, so they do not breach the
+embargo. Framed here so the embargo and the checks are never seen in tension.
+
+## Standing checks (B sign-off — recording-integrity, not analytics)
 
 1. **Replay reconciliation.** The scorer recomputes the detector outputs
    OFFLINE from the recorded raw stream (`observed_at`, `best_bid/ask`,
@@ -90,6 +119,24 @@ freezing a version into the table:**
 2. **Cadence self-measurement.** The scorer prints the median and p99
    inter-observation gap per game FROM THE RAW STREAM — no trust, just
    arithmetic — so ≤1s compliance is measured, never assumed.
+
+## Deploy proofs (amendment 10, 256c038 — attach to the recording deploy; the freeze re-binds only at the instant they land)
+
+The v2 quoter binary deploys only WITH these three proofs; c7's #214 sign-off
+rides on them being spec requirements. They are the v2 quoter build's finish
+line (built with the recording path, not this schema PR):
+
+1. **Replay equivalence** — the new binary, replayed on the pinned Aug tape,
+   produces BYTE-IDENTICAL quoting decisions to the frozen commit 7a3a217.
+   Built as a SELFTEST (not a one-off run), because the freeze re-binds only at
+   the instant the proofs land — a standing check, re-runnable.
+2. **AST extension** — the credential / venue-order-client import ban, verified
+   on the WRITER path, registration-grade (extends the shadow-only AST test the
+   quote + pulse engines already carry).
+3. **Off-decision-path** — the observation writer is ASYNC off the quote loop,
+   with quoter loop-time telemetry printed pre/post on the first slate night. A
+   recording-only change that slowed the loop would be a policy change wearing a
+   recording costume (c7); the telemetry proves it did not.
 
 ## Arm-pin decisions this schema forces (pinned before first read, not at read time)
 
@@ -108,11 +155,20 @@ freezing a version into the table:**
   the replay-reconciliation check above); `det_confirm_here` → `det_confirm_t0`
   (timestamp value); ≤1s confirmed as the registered-object property; cadence
   self-measured and the stall-degeneracy arm-pin flagged. All folded above.
-- **D:** markout runs forward-ASOF on `observed_at`; anything beyond
-  `observed_at`/`best_bid`/`best_ask` you need on this table for the forward
-  markout coverage print?
-- **c7 / manager:** per-arm cutoff (amendment 4) reads the migration's landing
-  commit; confirm this table's landing is the cohort epoch for the congestion /
-  guard / PATIENCE gates.
+- **D: SIGNED OFF 2026-09-02** — markout core needs only
+  `observed_at`/`best_bid`/`best_ask` (present). The three forward-post-mortem
+  fields D flagged (`event_period`, `event_score`, `is_live`) are ALREADY on
+  the row point-in-time at observation, plus `margin`/`total_so_far` for the
+  guard cut — so the state cuts avoid a cross-stream stamp join. Confirmed
+  present; no raw-JSONB fallback needed.
+- **MANAGER: SIGNED OFF 2026-09-02** on the field set + design, with the
+  deploy condition folded above (landing is off-path; STARTING recording is
+  amendment-gated: new pinned freeze commit, policy-equivalence replay proof,
+  before the first Sept 17 tip or it waits for A1).
+- **c7:** per-arm cohort-epoch framing (amendment 4) routed to research —
+  manager's framing: substrate epoch = migration landing, gates carry their own
+  instants and invoke amendment 4's disclose-and-justify for the gap (the
+  stream is written by a frozen recorder the gate authors don't shape).
+  Research's ruling, not settled here.
 
 **No in-sample result justifies capital. The forward test is the evidence.**

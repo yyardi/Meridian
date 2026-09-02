@@ -109,9 +109,13 @@ class QuoteV2Observation(Base):
     cadence with its OWN stamps — never the recorder's (`market_snapshots`),
     whose cross-process timestamps B's congestion detector forbids and whose
     ~200ms cadence over-fires it. **No order exists behind any row** — the
-    quoter still rests the FROZEN v1 policy and this table only RECORDS, so it
-    is freeze-safe and begins accruing the compliant stream from Sept 17 while
-    A1's gate reads. Shadow-only, credential-free stays load-bearing.
+    quoter still rests the FROZEN v1 policy and this table only RECORDS.
+    Recording-only is NOT automatically freeze-safe, though: deploying the
+    recording binary replaces the pinned freeze commit (7a3a217), so it ships
+    only under a research dated amendment (new pinned commit + policy-
+    equivalence replay proof, before the first Sept 17 tip or it waits for A1).
+    Landing this model/migration is separate — repo code, off-path.
+    Shadow-only, credential-free stays load-bearing.
 
     What consumes each field: guards + the lateness/state arm read the
     quote-time state snapshot (period/score/margin/minutes_left/clock-quality/
