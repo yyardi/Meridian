@@ -1,0 +1,410 @@
+"""QUOTE v2 — the round-trip ledger and the branch-keyed arm scaffolding.
+
+Manager's ticket (2026-09-02). **OFF THE LIVE PATH. Nothing here deploys.**
+The live v1 quoter's policy is FROZEN until A1's gate reads: v2's central
+premise (quote only in reverting states) IS the A1 hypothesis, null-favored,
+and changing WHICH states get quoted before the read turns the cohort into
+selection and kills the non-revert comparison leg. So the arms here are
+evaluated by REPLAY over the recorded v1 quote stream (subset-scoring of fills
+that already happened) — never by touching what the running engine quotes.
+
+Division of labour (agreed with Quant D, 2026-09-02):
+* **D owns the markout core** — `analysis/quote_v2_markout.py`: `markouts()`
+  (per-fill side-signed markout at +30s/+2m/+10m, gap-capped, coverage
+  counted) and `rule16_gate()` (reproduces v1's ledgered −1.60¢ [−1.69,−1.50]
+  net-capture over all 17,032 in-game fills, clustered by game, fails closed).
+  This module CONSUMES both; it never reimplements markout, and it never
+  re-gates rule 16 — it consumes fills that passed D's gate or calls it.
+* **This module owns** the ledger schema, round-trip inventory P&L (settlement
+  basis, distinct from D's net-capture markout basis — labelled, never mixed),
+  and the arm scaffolding + its selftests.
+* **Blessed primitives, imported never reimplemented:** clustering =
+  `core.quote.adverse_selection.clustered_mean` (games are the clusters);
+  per-fill scoring = `core.quote.report.score_fill` and `net_capture_mark`.
+* **Shared classifier:** the A1 vol-character labeller
+  (`analysis/a1_oscillation_descriptive.py`, frozen constants BAR=2s,
+  WINDOW=120s, k=6, revert<0.8/trend>1.2) is imported here for v2-STATE AND by
+  D's M2 post-mortem — one classifier, so the arm cells and the post-mortem
+  cells are the SAME cells by construction.
+
+THE ARMS (branch-keyed, NEVER bundled — the research agent's non-negotiable:
+a bundle that wins attributes nothing, a bundle that loses kills four ideas at
+once). Each arm is one pre-declared lever; the A1 gate's read selects the
+branch:
+
+* A1-PASS  -> **v2-STATE**: quote only where char==revert AND guard-clean AND
+              uncongested.
+* A1-FAIL  -> the other measured levers, each its own arm:
+  * **v2-CONGESTION** — do not quote inside B's clustered slow windows.
+  * **v2-WIDTH** — quote no tighter than measured adverse selection + margin
+    (arithmetic from v1's own ledger; the manager's tight-loses/wide-wins seed
+    points here).
+  * **v2-GUARD** — refuse to quote in states the PULSE guards flag
+    (`core.pulse.guards`, ported to a refuse-to-quote path).
+
+**Arm THRESHOLDS are pinned by the registration (rule 11), not here.** The
+constants below are the scaffolding's declared knobs, marked PENDING; they are
+set from D's post-mortem cuts + the landed registration before any real read.
+
+The optimism caveat carried from v1 (docs/math/quote-shadow.md): the fill rule
+undercounts exactly the fills that hurt, so every capture/P&L number here is an
+upper bound — a measured loss is trustworthy, a measured profit authorises
+nothing.
+
+FORWARD v2 FILL SCHEMA — required, cheap now, IMPOSSIBLE retroactively
+(D's request, 2026-09-02): when the v2 quoter deploys (post-A1-read), each
+recorded fill MUST carry, beyond v1's columns:
+  * ``game_start_time`` — enables the pregame hours-to-tip partition; D1's
+    dead-window fold is undecidable without it.
+  * the quoter's STATE SNAPSHOT AT QUOTE TIME — event_period, event_score,
+    minutes_left/clock, and whatever fair value exists — so the guard arm
+    (v2-GUARD) and any lateness/state arm become scorable. On the v1 pin these
+    are absent, which is exactly why v2-GUARD is not scorable in-sample (D:
+    estimated clock defeats guard 1, guard 2 needs fv).
+The v1 pin cannot be backfilled with these; they are a build requirement for
+the v2 quoter's storage model, to be laid down BEFORE it records its first
+forward fill. Documented here so it cannot be forgotten at deploy.
+
+ARM RE-SPEC INPUT from D's calibrated post-mortem (b952c9e) — arm definitions
+are the registration's (rule 11); this is the design input feeding it:
+  * **Lateness is the loss concentration** (Q4 −3.00c vs −1.3/−1.4 early;
+    every spread band worsens late). The strongest measured lever is a
+    late-state filter, not character.
+  * **Character is FLAT on at-fill capture** (revert −1.70 / trend −1.57 /
+    rw −1.52) — at-fill adverse selection does not discriminate on character
+    even though trip P&L (A1) does. A character-keyed QUOTING arm has no
+    at-fill support; the A1 gate remains the forward test of the trip-P&L claim.
+  * **v2-WIDTH folds or is redefined** (see the constant above).
+  * **NEW lever — requote-into-the-dip** (the sharpest input): post-fill mids
+    revert +0.76→+0.90c and the +10m markout is −0.63 [−1.27, +0.02]; ~40% of
+    at-fill loss is TRANSIENT. An arm that holds briefly after a fill, or
+    requotes at the pre-fill mid rather than chasing the post-fill mid, has
+    ~0.8c/fill of measured not-losing available. Proposed as v2-HOLD, pending
+    the registration.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from core.quote.adverse_selection import ClusteredMean, clustered_mean
+from core.quote.report import net_capture_mark, score_fill
+from core.quote.storage import ASK, BID
+
+ROOT = Path(__file__).resolve().parent.parent
+PIN = "20260902T161223Z"
+EXPORTS = Path(os.environ.get("MERIDIAN_EXPORTS_DIR", ROOT / "backups" / "exports"))
+FILLS = EXPORTS / f"quote_fills_v1_{PIN}.csv"
+
+#: Maker fills pay theta_maker = 0 (V9/C7); v1 rests and never crosses, so the
+#: venue fee on every recorded fill is 0. Carried as a parameter so a future
+#: taker-close arm can set it, never hard-zeroed.
+FEE_PER_CONTRACT = 0.0
+
+# ---- arm knobs: PENDING the registration (rule 11) ------------------------ #
+#: v2-WIDTH: minimum half-spread the maker will rest at = measured adverse
+#: selection + margin. **CAUTION (D's post-mortem b952c9e):** the manager's
+#: tight-loses/wide-wins seed was SETTLEMENT basis and INVERTS on the
+#: capture basis (<=2c −1.30 vs >10c −2.54, monotone the other way), and the
+#: settlement gradient does not survive clustering. Width is substantially a
+#: LATENESS proxy. "Quote wider in the same state" has no support; the arm
+#: must be redefined orthogonally to state or FOLDED — a registration call.
+WIDTH_MIN_HALF_SPREAD = None            # PENDING registration (likely folded)
+#: v2-CONGESTION: calibrated definition from D's post-mortem (b952c9e), via
+#: B's lags_for_event — a fill within CONGESTION_WINDOW_S after a lag episode
+#: of >= this many seconds is "in congestion" (−1.74c vs −1.44c clear).
+#: Confirm in the registration.
+CONGESTION_LAG_THRESHOLD_S = 5.0        # from D's cut; registration confirms
+CONGESTION_WINDOW_S = 30.0
+
+REVERT = "revert"
+
+
+# --------------------------------------------------------------------------- #
+# Round-trip inventory P&L — settlement basis (MINE; net-capture is D's basis)
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class InventoryPnl:
+    """Round-trip inventory P&L to settlement, per contract, game-clustered.
+
+    A filled bid is a unit LONG YES opened at quote_price and closed at
+    settlement (money at price, C11); a filled ask is a unit SHORT YES. P&L per
+    fill = returned − staked − fee. This is the SETTLEMENT basis — the economic
+    round trip (open at the quote, close when the market pays) — and is a
+    different number from D's net-capture-at-fill markout basis; the two are
+    never summed.
+    """
+
+    per_fill: ClusteredMean | None      # mean P&L/contract, game-clustered
+    total_usd: float                    # summed realised inventory P&L
+    n_fills: int
+    n_games: int
+
+
+def inventory_pnl(fills: pd.DataFrame, *, fee: float = FEE_PER_CONTRACT
+                  ) -> InventoryPnl:
+    """Settlement-basis round-trip P&L over the settled fills in `fills`."""
+    df = fills[fills.settlement.isin([0, 1])].copy()
+    by_game: dict[str, list[float]] = {}
+    total = 0.0
+    for r in df.itertuples():
+        staked, returned = score_fill(side=r.side, quote_price=float(r.quote_price),
+                                      settlement=int(r.settlement))
+        pnl = returned - staked - fee
+        by_game.setdefault(str(r.game_id), []).append(pnl)
+        total += pnl
+    return InventoryPnl(
+        per_fill=clustered_mean(by_game),
+        total_usd=total,
+        n_fills=len(df),
+        n_games=len(by_game),
+    )
+
+
+def net_capture(fills: pd.DataFrame) -> ClusteredMean | None:
+    """v1's net-capture-at-fill mark, game-clustered — the rule-16 anchor's
+    basis. Imported computation (`net_capture_mark`), clustered by game. This
+    does NOT re-run D's rule16_gate; it is the same quantity for slicing."""
+    by_game: dict[str, list[float]] = {}
+    for r in fills.itertuples():
+        c = net_capture_mark(side=r.side, quote_price=float(r.quote_price),
+                             mid_at_fill=float(r.mid_at_fill))
+        by_game.setdefault(str(r.game_id), []).append(c)
+    return clustered_mean(by_game)
+
+
+# --------------------------------------------------------------------------- #
+# The arm scaffolding — branch-keyed replay predicates, never bundled
+# --------------------------------------------------------------------------- #
+
+A1_PASS = "A1-PASS"
+A1_FAIL = "A1-FAIL"
+
+
+@dataclass(frozen=True)
+class Arm:
+    """One pre-declared lever. `keeps(row)` is the replay predicate: given a
+    v1 fill enriched with its quote-time state cells, would this arm have rested
+    the quote that produced it? Scoring runs on the kept subset ONLY, per arm,
+    never bundled."""
+
+    name: str
+    branch: str                         # A1_PASS | A1_FAIL
+    keeps: "callable"
+    detail: str
+
+
+def _state_keeps(row) -> bool:
+    # v2-STATE: the A1-PASS arm. Quote only reverting, guard-clean, uncongested.
+    return (row.character == REVERT
+            and not row.guard_flagged
+            and not row.congested)
+
+
+def _congestion_keeps(row) -> bool:
+    # v2-CONGESTION: quote everywhere EXCEPT B's clustered slow windows.
+    return not row.congested
+
+
+def _width_keeps(row) -> bool:
+    # v2-WIDTH: only rest when the half-spread clears adverse selection + margin.
+    if WIDTH_MIN_HALF_SPREAD is None:
+        raise ValueError("WIDTH_MIN_HALF_SPREAD is PENDING the registration; "
+                         "pin it from D's post-mortem before scoring v2-WIDTH")
+    return (float(row.spread_at_quote) / 2.0) >= WIDTH_MIN_HALF_SPREAD
+
+
+def _guard_keeps(row) -> bool:
+    # v2-GUARD: refuse to quote in PULSE-guard-flagged states.
+    return not row.guard_flagged
+
+
+ARMS: dict[str, Arm] = {
+    "v2-STATE": Arm("v2-STATE", A1_PASS, _state_keeps,
+                    "quote only revert + guard-clean + uncongested"),
+    "v2-CONGESTION": Arm("v2-CONGESTION", A1_FAIL, _congestion_keeps,
+                         "skip B's clustered slow windows"),
+    "v2-WIDTH": Arm("v2-WIDTH", A1_FAIL, _width_keeps,
+                    "half-spread >= adverse selection + margin"),
+    "v2-GUARD": Arm("v2-GUARD", A1_FAIL, _guard_keeps,
+                    "refuse to quote in PULSE-guard-flagged states"),
+}
+
+
+@dataclass
+class ArmScore:
+    arm: str
+    branch: str
+    n_kept: int
+    n_games: int
+    inventory: InventoryPnl
+    net_capture: ClusteredMean | None
+    #: markout_{h} clustered means, filled from D's markout columns when the
+    #: enriched ledger carries them; empty until then.
+    markout: dict[str, ClusteredMean | None]
+
+
+def score_arm(ledger: pd.DataFrame, arm: Arm) -> ArmScore:
+    """Score ONE arm on its kept subset. Never bundles arms. `ledger` is the
+    enriched per-fill frame (v1 fills + state cells + optionally D's markout_{h}
+    columns)."""
+    kept = ledger[ledger.apply(arm.keeps, axis=1)].copy()
+    markout = {}
+    for col in [c for c in kept.columns if c.startswith("markout_")]:
+        by_game: dict[str, list[float]] = {}
+        for r in kept.dropna(subset=[col]).itertuples():
+            by_game.setdefault(str(r.game_id), []).append(float(getattr(r, col)))
+        markout[col] = clustered_mean(by_game)
+    return ArmScore(
+        arm=arm.name, branch=arm.branch, n_kept=len(kept),
+        n_games=kept.game_id.nunique(),
+        inventory=inventory_pnl(kept), net_capture=net_capture(kept),
+        markout=markout,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Ledger assembly — enrich v1 fills with state cells + D's markouts
+# --------------------------------------------------------------------------- #
+
+def assemble_ledger(fills: pd.DataFrame, *, tick_path: Path | None = None
+                    ) -> pd.DataFrame:
+    """Enrich the pinned v1 fills into the scoring ledger. Wires the D/B/
+    classifier dependencies; each is imported lazily so this module and its
+    inventory/arm selftests run before those files land.
+
+    Adds per fill: `character` (A1 classifier at quote time), `congested`
+    (B's lags_for_event), `guard_flagged` (core.pulse.guards on the tape's
+    game state at fill time), and `markout_{h}` (D's markouts()). Until a
+    dependency is on main the corresponding column is left absent and the arms
+    that need it raise rather than score on a stub.
+    """
+    raise NotImplementedError(
+        "assemble_ledger wires D's markouts(), B's lags_for_event, and the A1 "
+        "classifier — implemented once those are confirmed on main and the arm "
+        "thresholds are pinned by the registration (rule 11). The inventory "
+        "P&L, net_capture, and arm predicates are complete and selftested; "
+        "this is the only pending seam.")
+
+
+# --------------------------------------------------------------------------- #
+# Selftests — rule 15 (jitter-null) + arm predicates + inventory known-answer
+# --------------------------------------------------------------------------- #
+
+def _synthetic_fills(rng, n_games=8, per_game=40, edge=0.0):
+    """Synthetic settled fills. `edge` shifts settlement toward the maker's
+    favour per contract (0 = null)."""
+    rows = []
+    for g in range(n_games):
+        for _ in range(per_game):
+            side = BID if rng.random() < 0.5 else ASK
+            q = float(rng.uniform(0.30, 0.70))
+            # null: settlement independent of the quote (fair coin at the mid)
+            p_yes = min(max(q + (edge if side == BID else -edge), 0.01), 0.99)
+            sett = int(rng.random() < p_yes)
+            rows.append({"game_id": f"g{g}", "side": side, "quote_price": q,
+                         "mid_at_fill": q + rng.normal(0, 0.01),
+                         "settlement": sett})
+    return pd.DataFrame(rows)
+
+
+def _selftest():
+    rng = np.random.default_rng(20260902)
+
+    # rule 15 — JITTER-NULL: settlement independent of the quote -> inventory
+    # P&L clustered CI includes zero (the instrument does not manufacture edge).
+    null = _synthetic_fills(rng, edge=0.0)
+    inv = inventory_pnl(null)
+    assert inv.per_fill is not None and not inv.per_fill.excludes_zero, \
+        f"null inventory P&L excluded zero: {inv.per_fill}"
+
+    # and PERMUTING settlement across fills within game destroys any edge ->
+    # still ~0 (the second jitter-null form).
+    shuffled = null.copy()
+    shuffled["settlement"] = (shuffled.groupby("game_id").settlement
+                              .transform(lambda s: rng.permutation(s.values)))
+    inv_s = inventory_pnl(shuffled)
+    assert not inv_s.per_fill.excludes_zero
+
+    # known-answer (mine, hand-computed): a bid at 0.40 that settles 1 earns
+    # +0.60; an ask at 0.40 that settles 0 earns +0.40. Two games so the
+    # clustered mean is defined.
+    ka = pd.DataFrame([
+        {"game_id": "a", "side": BID, "quote_price": 0.40, "mid_at_fill": 0.40,
+         "settlement": 1},
+        {"game_id": "b", "side": ASK, "quote_price": 0.40, "mid_at_fill": 0.40,
+         "settlement": 0},
+    ])
+    ik = inventory_pnl(ka)
+    assert abs(ik.total_usd - (0.60 + 0.40)) < 1e-9, ik.total_usd
+
+    # injected EDGE recovers positive (the needle moves).
+    strong = _synthetic_fills(rng, edge=0.08)
+    assert inventory_pnl(strong).per_fill.mean > 0
+
+    # arm predicates on synthetic enriched rows — each keeps the right states.
+    Row = lambda **k: type("R", (), k)
+    assert _state_keeps(Row(character="revert", guard_flagged=False, congested=False))
+    assert not _state_keeps(Row(character="trend", guard_flagged=False, congested=False))
+    assert not _state_keeps(Row(character="revert", guard_flagged=True, congested=False))
+    assert not _state_keeps(Row(character="revert", guard_flagged=False, congested=True))
+    assert _congestion_keeps(Row(congested=False))
+    assert not _congestion_keeps(Row(congested=True))
+    assert _guard_keeps(Row(guard_flagged=False))
+    assert not _guard_keeps(Row(guard_flagged=True))
+    # v2-WIDTH raises while its threshold is unpinned (fail-closed, not a stub).
+    try:
+        _width_keeps(Row(spread_at_quote=0.06))
+        raise AssertionError("v2-WIDTH scored with an unpinned threshold")
+    except ValueError:
+        pass
+
+    # shadow-only, structurally (the v1 guarantee carried into v2): this module
+    # has NO import path to the executor or the venue order client.
+    import ast
+    tree = ast.parse(Path(__file__).read_text())
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+            imported.update(f"{node.module}.{a.name}" for a in node.names)
+        elif isinstance(node, ast.Import):
+            imported.update(a.name for a in node.names)
+    for forbidden in ("core.executor", "core.fill_watcher",
+                      "core.polymarket.client.PolymarketOrderClient",
+                      "core.polymarket.client.PolymarketAuthedClient"):
+        assert forbidden not in imported, f"v2 ledger imports {forbidden}"
+
+    print("selftest: PASSED (rule-15 jitter-null x2; inventory known-answer; "
+          "edge recovery; arm predicates; v2-WIDTH fails closed unpinned; "
+          "shadow-only AST clean)")
+
+
+def main():
+    _selftest()
+    if not FILLS.exists():
+        print(f"pinned fills not found at {FILLS} — selftests only.")
+        return
+    fills = pd.read_csv(FILLS)
+    ig = fills[fills.regime == "ingame"]
+    print(f"v1 pinned fills: {len(fills)} ({len(ig)} ingame / "
+          f"{ig.game_id.nunique()} games)")
+    inv = inventory_pnl(ig)
+    print(f"v1 in-game inventory P&L (settlement basis): "
+          f"total ${inv.total_usd:+.2f}, per-fill "
+          f"{inv.per_fill.mean:+.4f} [{inv.per_fill.lo:+.4f}, "
+          f"{inv.per_fill.hi:+.4f}] over {inv.n_games} games")
+    nc = net_capture(ig)
+    print(f"v1 in-game net-capture (D's rule-16 basis, sliced here): "
+          f"{nc.mean*100:+.2f}c [{nc.lo*100:+.2f}, {nc.hi*100:+.2f}] "
+          f"(D's rule16_gate is the authority)")
+
+
+if __name__ == "__main__":
+    main()
