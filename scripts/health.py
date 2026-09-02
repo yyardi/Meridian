@@ -82,11 +82,14 @@ def check_containers() -> list[Check]:
         # family.
         "meridian-espn-live-recorder": "ESPN live feed (signal side)",
         "meridian-pulse-engine": "PULSE engine (repricing arm + state guards)",
-        # Restarted by operator order 2026-09-02 16:04Z, policy FROZEN at
-        # commit 7a3a217 until A1's gate reads (quote-v2-program.md
-        # sequencing rule). MISSING is now a real outage, and it is the
-        # substrate for A1, D1, and the whole v2 program.
-        "meridian-quote-engine": "QUOTE engine (shadow, frozen @7a3a217; "
+        # Restarted by operator order 2026-09-02 16:04Z; re-bound same day
+        # under amendment 10 to the v2 RECORDING engine (quoting policy is
+        # v1's, byte-identical — proven on the pinned Aug tape; recording is
+        # additive, own-stamp per the B14 fix). Frozen until A1's gate reads
+        # (quote-v2-program.md, the freeze-rebind dated line names the
+        # commit). MISSING is a real outage: this is the substrate for A1,
+        # D1, and the whole v2 program.
+        "meridian-quote-engine": "QUOTE engine v2-recording (shadow, frozen; "
                                  "A1/D1/v2 substrate)",
     }
     try:
