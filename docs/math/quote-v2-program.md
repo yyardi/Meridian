@@ -299,6 +299,26 @@ landing; PATIENCE's gate = the v2 stream ledger shipping; GUARDS = fv +
 exact-clock inline on fills. The program can no longer pend forever on an
 arm that never clears.
 
+**DATED LINE under amendment 5 (2026-09-02, author's):** the fv-waits
+decision creates the program's tightest clock, named here so it is CHOSEN
+rather than discovered at the review instant. GUARDS' precondition (fv +
+exact-clock inline) cannot clear before the post-A1 deploy: exact-clock
+ships pre-tip, fv only after A1 reads (amendment 10's no-mid-accrual
+rule), and the post-A1 deploy owes its own equivalence proofs. Feasible
+path: A1 reads ~Sept 26–30 → post-A1 build with proofs → deploy → GUARDS
+registers before NBA opening night (event-governed). Slack ≈ three weeks,
+contingent on A1 reading promptly and the post-A1 deploy not slipping.
+PRE-ACCEPTED OUTCOME: if the chain slips, GUARDS converts to CLOSED-UNMET
+at the review instant exactly as amendment 5 provides — the review
+instant does NOT bend for a tight chain; bending clocks for tight chains
+is what review instants exist to prevent. The cost is bounded and was
+chosen twice over: the state guards themselves remain deployed on the
+decision side regardless of this arm's fate; only guard-gated QUOTING
+closes; revival is a fresh registration citing an already-written design.
+This line reopens neither the fv-waits decision nor the no-mid-accrual
+rule — it prices their interaction, in advance, in the voice that
+authored both.
+
 **Amendment 6 — FREEZE-LIFT COMPLETED.** (a) Stall path, DUAL-TRIGGERED
 (C's reachability catch — the gate-that-cannot-fire species applied to the
 author's own clause: nothing pinned verifies twelve more 2026 WNBA
