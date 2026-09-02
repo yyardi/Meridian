@@ -97,3 +97,59 @@ probability against the venue's own prices; no historical base-rate
 comparison appears.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+---
+
+## Addendum 2026-09-02 — reconciliation with D's exit-option premium, label bound quantified, book-state check closed
+
+Written with D (`analysis/exit_option_value.md`), before c7 registers
+anything on either doc. Adds 5 clustered intervals (the per-contract
+quintile column) to this report's count.
+
+**1. The label's lower bound is now a number (D's excursion scan):** under
+a k-concession fill rule the optimistic ride share (7.0%) rises to 9.5%
+(k=1¢), 11.1% (k=2¢), 14.6% (k=3.15¢) and **17.7% at the full measured
+4.70¢ — above the optimistic-rule breakeven ride share of 11.4%**. The
+optimistic label undercounts no-exit risk by 2–10pp depending on the
+concession assumed; the flipped trips hide −$66.37 of settle P&L.
+
+**2. Units reconciliation — per-dollar flat, per-contract mildly negative:**
+
+| p̂ quintile | E[pnl/ct] clustered | trip ¢/ct | ride drag p̂·E[loss] ¢/ct |
+|---|---|---|---|
+| q1 (1.8%) | +1.59 [−0.66, +3.83] | +2.51 | 0.84 |
+| q3 (5.2%) | +1.15 [+0.14, +2.15] | +2.57 | 1.36 |
+| q5 (18.0%) | **−0.72 [−2.32, +0.87]** | +2.53 | **2.84** |
+
+Per contract, trip capture is ~flat (+2.2–2.6¢/ct) while the ride drag
+rises with p̂ — so the per-contract gradient drifts mildly negative, though
+q5's CI still spans zero. The per-dollar flatness of the main report is
+the same data divided by cost (0.68 → 0.26 across quintiles).
+
+**3. Consequence for D's δ*(p):** D's late-cell δ* of 3.5–3.8¢/ct is
+approximately the **gross** ride drag (my q5 measures 2.84¢/ct on the
+pooled tape; D's late cells run higher). But realized trip capture in the
+same states already compensates ~75% of it per contract (~100% per dollar,
+equal-weighted). **Charging gross δ* as an entry threshold on top of
+edge_net double-charges**; the net uncollected premium is ~0.7–1¢/ct at
+q5 with a CI spanning zero — in-sample, indistinguishable from already
+fair. One refinement of this report's own language: the compensation
+channel is the ENGINE's fixed 5¢ profit target divided by a falling cost —
+engine-mediated, not a market law — so "the market has priced it" is
+better said as "this exit policy's payoff structure collects it." Under
+any changed exit policy (the taker arm included) the netting must be
+recomputed, which is precisely where D's δ* table becomes the right
+instrument. δ* as a variance/sizing input is untouched by this.
+
+**4. Book-state check (joint note's open item) — CLOSED:** D's per-intent
+flags (±60s window, from the pins) joined to all 1,944 scored fills.
+Adding `share_two_sided` + one-sidedness to the model changes LOGO AUC by
+**+0.000** (0.700 → 0.700); book state ALONE scores 0.323 — individually
+anti-predictive. Verdict: **state proxies subsume book state at intent.**
+Late books are an order of magnitude sicker (D: ~12% one-sided within 60s
+vs ~1% early — the joint note's falsification does not fire), but book
+sickness does not mark which individual entry rides. Caveat: the ±60s
+window extends past intent, so this is mechanism attribution, not a
+deployable feature.
+
+**No in-sample result justifies capital. The forward test is the evidence.**
