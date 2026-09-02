@@ -86,6 +86,7 @@ from core.kelly_sizing import Constraint, size_position
 from core.live_fv import DEFAULT_SIGMA, Clock, fair_value, minutes_remaining, parse_score
 from core.live_totals_fv import over_probability, project_total, remaining_sigma
 from core.pulse import guards
+from core.pulse.reprice import RepriceArm
 from core.pulse.storage import (
     ENTER,
     EXIT,
@@ -99,6 +100,7 @@ from core.pulse.storage import (
     YES,
     PulseAbstention,
     PulseDecision,
+    PulseRepriceExit,
 )
 from core.pulse.win_curve import REGULATION_MINUTES, pregame_margin_from_price
 
@@ -367,6 +369,11 @@ class MarketState:
     entry_stake: float = 0.0
     position: OpenPosition | None = None
     last_seen_monotonic: float = field(default_factory=time.monotonic)
+    #: Dynamic-exit shadow arms, keyed by entry_decision_id. Independent of
+    #: `position`'s life: an arm outlives the incumbent's exit so it can hold
+    #: out for a repriced target (core/pulse/reprice.py). Re-entry adds a
+    #: second arm; the key keeps them disjoint.
+    reprice_arms: dict[int, RepriceArm] = field(default_factory=dict)
 
 
 @dataclass
@@ -378,6 +385,10 @@ class CycleResult:
     exit_fills: int = 0
     withdrawals: int = 0
     settled: int = 0
+    #: Dynamic-exit shadow arm (core/pulse/reprice.py): arms whose repriced
+    #: target filled this cycle, and arms finalised as riding to settlement.
+    reprice_fills: int = 0
+    reprice_finalized: int = 0
 
 
 @dataclass(frozen=True)
@@ -978,6 +989,19 @@ class PulseEngine:
         # The exit rests the moment the entry exists — that IS the strategy.
         self._place_exit(session, state, ob, est,
                          reason="profit_target", stop=False, result=result)
+        # Alongside it, born identical, rest the DYNAMIC-exit shadow arm
+        # (annotation only — no order; docs/math/dynamic-exit-repricing.md).
+        # It rests at the static target now; `_manage_reprice_arms`, later in
+        # this same cycle, gives it its first observation on this ob (which
+        # anchors fv_open and cannot fill — never filled by its birth tick).
+        state.reprice_arms[position.entry_decision_id] = RepriceArm(
+            entry_decision_id=position.entry_decision_id,
+            event_slug=ob.event_slug, market_slug=ob.market_slug,
+            side=position.side, strategy=position.strategy,
+            entry_price=position.entry_price, contracts=position.contracts,
+            profit_target=self.profit_target, opened_at=ob.captured_at,
+            stop_rule=self.stop_rule, stop_adverse=self.stop_adverse,
+            estimates_version=est.version)
 
     def _place_exit(self, session, state: MarketState, ob: Observation,
                     est: Estimate, *, reason: str, stop: bool,
@@ -1026,6 +1050,55 @@ class PulseEngine:
                  held_seconds=round((ob.captured_at - pos.opened_at).total_seconds(), 1))
         self._release_daily_stake(pos.stake_usd)   # position closed, money back
         state.position = None          # flat again — the market may be re-entered
+
+    def _manage_reprice_arms(self, session, state: MarketState,
+                             ob: Observation, est: Estimate,
+                             result: CycleResult) -> None:
+        """Advance every live dynamic-exit arm one observation (annotation
+        only — no order, no position touched). An arm that fills is written
+        and dropped; unfilled arms keep repricing until the market rides to
+        settlement (finalised in the sweep). Independent of `state.position`:
+        an arm outlives the incumbent's exit by design."""
+        for entry_id, arm in list(state.reprice_arms.items()):
+            out = arm.observe(mid=ob.mid, ask=ob.ask, bid=ob.bid,
+                              at=ob.captured_at, fv=est.fair_value,
+                              clock_usable=est.clock.usable)
+            if out.filled:
+                self._write_reprice_exit(session, arm, outcome="exit_fill")
+                result.reprice_fills += 1
+                del state.reprice_arms[entry_id]
+                log.info("pulse_reprice_fill", market=ob.market_slug,
+                         entry_decision_id=entry_id, side=arm.side,
+                         dynamic_exit=round(arm.fill_price, 4),
+                         was_stop=arm.is_stop,
+                         diverged=arm.target_diverged)
+
+    def _write_reprice_exit(self, session, arm: RepriceArm, *,
+                            outcome: str) -> None:
+        """Persist one arm's outcome. Idempotent via the unique constraint on
+        entry_decision_id — a finalise racing a late fill cannot double-write.
+        Stores NO settlement: a riding arm is scored at the entry's own
+        settlement, joined on entry_decision_id (A's ledger's convention)."""
+        from decimal import Decimal as D
+
+        def dec(v, nd=4):
+            return None if v is None else D(str(round(float(v), nd)))
+
+        session.add(PulseRepriceExit(
+            entry_decision_id=arm.entry_decision_id,
+            event_slug=arm.event_slug, market_slug=arm.market_slug,
+            strategy=arm.strategy, side=arm.side,
+            entry_price=dec(arm.entry_price), contracts=dec(arm.contracts),
+            profit_target=dec(arm.profit_target), opened_at=arm.opened_at,
+            dynamic_outcome=outcome,
+            dynamic_exit_price=dec(arm.fill_price),
+            dynamic_filled_at=arm.filled_at, was_stop=arm.is_stop,
+            fv_open=dec(arm.fv_open), reprice_cycles=arm.reprice_cycles,
+            target_diverged=arm.target_diverged,
+            staleness_holds=arm.staleness_holds,
+            staleness_fallbacks=arm.staleness_fallbacks,
+            estimates_version=arm.estimates_version,
+        ))
 
     def _manage_position(self, session, state: MarketState, ob: Observation,
                          est: Estimate, result: CycleResult) -> None:
@@ -1350,6 +1423,12 @@ class PulseEngine:
                 else:
                     self._maybe_enter(session, state, ob, est, bankroll, result)
 
+                # The dynamic-exit shadow arms advance every cycle, whether or
+                # not the incumbent still holds the position — an arm outlives
+                # the incumbent's exit by design (annotation, no order).
+                if state.reprice_arms:
+                    self._manage_reprice_arms(session, state, ob, est, result)
+
             self._sweep_unseen(session, seen, result)
             session.commit()
 
@@ -1382,7 +1461,20 @@ class PulseEngine:
                 log.info("pulse_position_rides_to_settlement", market=slug,
                          entry_decision_id=state.position.entry_decision_id)
                 state.position = None
-            if state.position is None and state.entry_order is None:
+            # Dynamic-exit arms ride to settlement on the same grace: any arm
+            # that never hit its repriced target is finalised as 'settlement'
+            # (scored at the entry's own settlement, joined by id).
+            if state.reprice_arms and unseen > POSITION_UNSEEN_RIDE_SECONDS:
+                for entry_id, arm in list(state.reprice_arms.items()):
+                    self._write_reprice_exit(session, arm, outcome="settlement")
+                    result.reprice_finalized += 1
+                    log.info("pulse_reprice_rides_to_settlement", market=slug,
+                             entry_decision_id=entry_id,
+                             diverged=arm.target_diverged,
+                             staleness_fallbacks=arm.staleness_fallbacks)
+                state.reprice_arms.clear()
+            if (state.position is None and state.entry_order is None
+                    and not state.reprice_arms):
                 del self._markets[slug]
 
     # ---- settlement ------------------------------------------------------- #
