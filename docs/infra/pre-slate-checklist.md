@@ -112,6 +112,16 @@ fold needs it; the 09-02 pin lacked it). Use the full-column export path
 (`scripts/pin_tick_export.sh` gained the fee/book-tier columns for the
 survey — same lesson: pin MORE columns than today's question needs).
 
+**League pin (2026-09-02, D's self-reported hazard, export layer owns
+it):** `shadow_quote_fills` is mixed-league from GRIDIRON (077c0b9) on.
+Every v1-BASELINE export pins `league = WNBA` (event-slug prefix filter,
+stated in the export command) — the v1 pin IS the WNBA baseline, and
+rule-16 gates count against 17,032 on exactly that cohort; a mixed export
+fails those gates closed for the WRONG reason (count mismatch reading as
+calibration failure). GRIDIRON exports are separate files with the league
+in the filename. The immutable 09-02 pin predates NFL and is already
+pure. Consumers' gates stand pat; the filter lives here.
+
 ## 6. D1 partition line (owner: Quant D, before its read)
 
 D1's registered pre-read partition predates the quoter stop/restart; its
