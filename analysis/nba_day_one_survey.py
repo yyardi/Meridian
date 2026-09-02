@@ -393,21 +393,25 @@ def m4_lags(df: pd.DataFrame) -> None:
     s = pd.Series([l for _, l in episodes])
     print(f"episodes {len(s)}: lag p50 {s.median():.2f}s, p90 "
           f"{s.quantile(.9):.2f}s")
-    # Temporal clustering of long lags, by episode TIMESTAMP. The shuffled
-    # baseline is deliberately NOT recomputed here — B's census run() owns
-    # the properly-nulled version (WNBA: 55-70% clustered vs 7-12%
-    # shuffled); this line is the day-one point estimate to compare to it.
-    t_long = sorted(t for t, l in episodes if l > 1.0)
-    if len(t_long) >= 3:
-        near = sum(
-            1 for i, t in enumerate(t_long)
-            if (i > 0 and (t - t_long[i - 1]).total_seconds() <= 60)
-            or (i + 1 < len(t_long)
-                and (t_long[i + 1] - t).total_seconds() <= 60))
-        print(f"long-lag (>1s) temporal clustering: {near}/{len(t_long)} "
-              f"within 60s of another — compare against B's census null "
-              f"(WNBA 55-70% vs 7-12% shuffled); rule 15 on the first NBA "
-              f"episode")
+    # Congestion clustering with B's OWN null (census.congestion_clustering,
+    # aedced3): one instrument, one copy of the null — a reimplementation
+    # here already produced null == statistic once and is why the callable
+    # exists (its docstring says so).
+    if hasattr(census, "congestion_clustering"):
+        cc = census.congestion_clustering(episodes)
+        if cc is None:
+            print("congestion clustering: <10 long-lag episodes — "
+                  "no verdict (counted, not invented)")
+        else:
+            print(f"congestion clustering (B's nulled instrument): "
+                  f"share_near {cc['share_near']:.1%} vs null "
+                  f"{cc['null_share']:.1%} -> "
+                  f"{'CLUSTERED' if cc['clustered'] else 'not clustered'} "
+                  f"(WNBA reference 55-70% vs 7-12%); rule 15 on the first "
+                  f"NBA episode")
+    else:
+        print("DEGRADED: census.congestion_clustering missing — land B's "
+              "aedced3; no local null on purpose")
 
 
 # --------------------------------------------------------------------------- #
@@ -775,6 +779,19 @@ def selftest() -> int:
                   bool(census.validate_lag_instrument()))
         except Exception as exc:
             check(f"B's validate_lag_instrument() raised: {exc}", False)
+        # Wiring check for the congestion callable: a tightly clustered
+        # synthetic pool must read CLUSTERED through MY call path.
+        if hasattr(census, "congestion_clustering"):
+            base_t = pd.Timestamp("2026-10-20 23:00:00")
+            clustered_pool = ([(base_t + pd.Timedelta(seconds=i), 6.0)
+                               for i in range(12)]
+                              + [(base_t + pd.Timedelta(hours=3), 0.5)])
+            cc = census.congestion_clustering(clustered_pool)
+            check("congestion wiring: clustered pool reads clustered",
+                  cc is not None and cc["clustered"] is True)
+        else:
+            print("  congestion_clustering absent — M4 will run DEGRADED "
+                  "(land B's aedced3)")
     else:
         print("  census module unavailable — lag validation SKIPPED "
               "(M1/M4 degraded); land B's b9c380f")
