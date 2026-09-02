@@ -66,11 +66,24 @@ a should-never-fire assertion: post-sort, a collision that ever diverges is the
 engine drifting OUT of the registered contract — the cheapest detector for that
 regression, so it is reported (never papered over), not expected.
 
-No forward rows exist until the recording binary deploys (amendment-gated,
-post-7a3a217). --selftest validates the instrument now, on synthetic streams
-whose `det_*` this module itself produced via the engine's recording logic, so
-it is ready the moment real rows land. --db is a no-op-clean read when the
-table is empty.
+DECLARED BLIND SPOT (rule 19 — a checker names what it cannot see). This scorer
+reads what is IN the table; it CANNOT see observations that were never recorded.
+So an EMPTY read is ambiguous and must never be reported as health: "empty and
+clean" can mean "no board is live yet" OR "a board is live but its rows were
+born invisible" — stamped older than the engine's 600s observation window before
+they became visible, so the quoter never ingested them (the RPS-2 slow-sweep
+defect, 2026-09-02: a ~15min sweep stamped `captured_at` at sweep start and
+committed at sweep end, so rows surfaced already ~16min stale and the quoter was
+structurally blind to the whole board while `record_s` sat at 2-3ms). No
+in-table check — not cadence, not reconciliation, not cross-clock — can
+distinguish these two, because all three operate on rows that exist. The
+compensator is an OUT-OF-BAND row-visibility probe (does the table receive rows
+at all while a board is known live), which is what caught the defect; this
+scorer defers the empty verdict to that probe rather than pronouncing it clean.
+
+--selftest validates the instrument on synthetic streams whose `det_*` this
+module itself produced via the engine's recording logic; it is ready the moment
+real (non-empty) rows land. --csv scores an offline export for the same reason.
 """
 
 from __future__ import annotations
@@ -482,17 +495,27 @@ def run_db() -> int:
                   or "could not connect" in msg or "connection refused" in msg
                   or "operationalerror" in type(exc).__name__.lower())
         if absent:
-            print("quote_v2_observations not present / DB unreachable — no "
-                  "forward rows yet (recording binary not deployed). Nothing "
-                  "to score; not a failure.")
+            print("quote_v2_observations not present / DB unreachable from "
+                  "here. Cannot score — this is an absent-table / no-DB-route "
+                  "condition, distinct from an EMPTY table (see the blind-spot "
+                  "note for what empty does and does not mean).")
             return 0
         raise
     if df.empty:
-        print("quote_v2_observations is empty — no forward rows yet "
-              "(recording binary not deployed). Nothing to score; not a "
-              "failure.")
-        return 0
+        return _empty_verdict("quote_v2_observations")
     return _run_checks(df)
+
+
+def _empty_verdict(source: str) -> int:
+    """Empty is AMBIGUOUS, never health (the module's declared blind spot).
+    Say so loudly and defer to the out-of-band row-visibility probe."""
+    print(f"{source}: EMPTY — 0 rows. This is NOT a clean pass. An in-table "
+          "scorer cannot tell 'no board live yet' from 'board live but its "
+          "rows were born invisible' — stamped past the engine's 600s window "
+          "before they surfaced (the RPS-2 slow-sweep defect, 2026-09-02). "
+          "Confirm which with the OUT-OF-BAND row-visibility probe (does the "
+          "table receive rows while a board is known live), not this scorer.")
+    return 0
 
 
 def _parse_bool(v):
@@ -533,8 +556,7 @@ def _load_csv(path: str) -> pd.DataFrame:
 def run_csv(path: str) -> int:
     df = _load_csv(path)
     if df.empty:
-        print(f"{path}: no rows.")
-        return 0
+        return _empty_verdict(path)
     return _run_checks(df, source=path)
 
 
