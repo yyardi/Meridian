@@ -190,3 +190,49 @@ class PulseDecision(Base):
         Index("ix_pd_entry_id", "entry_id"),
         Index("ix_pd_settlement", "settlement"),
     )
+
+
+class PulseAbstention(Base):
+    """One recorded refusal to price: a state the guards would not touch.
+
+    The `binding_constraint` principle applied to pricing (operator ticket,
+    2026-09-01): a blocked size is data, and so is a refused state. Rows are
+    written by the engine, throttled per (market, guard) like hold rows, so
+    a persistent bad state marks itself once a minute instead of at feed
+    cadence. `fair_value_raw` carries what the model WOULD have asserted
+    when the confidence guard refused (the evidence); the state guard
+    refuses before pricing, so there it is NULL. See `core/pulse/guards.py`
+    for the checks and their measured tape footprints.
+    """
+
+    __tablename__ = "pulse_abstentions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    decided_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    event_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    market_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: 'implausible_state' | 'unrepresentable_confidence' (guards.py).
+    guard: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: The guard's own detail string, e.g. 'score_too_high_for_elapsed:...'.
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # ---- the refused state, as observed ---------------------------------- #
+    period: Mapped[str | None] = mapped_column(String(32))
+    minutes_left: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    total_so_far: Mapped[int | None] = mapped_column(Integer)
+    margin: Mapped[int | None] = mapped_column(Integer)
+    line: Mapped[Decimal | None] = mapped_column(Points)
+    fair_value_raw: Mapped[Decimal | None] = mapped_column(Price)
+    estimates_version: Mapped[str] = mapped_column(String(4), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "guard in ('implausible_state','unrepresentable_confidence')",
+            name="ck_pa_guard"),
+        Index("ix_pa_event_slug", "event_slug"),
+        Index("ix_pa_decided_at", "decided_at"),
+    )
