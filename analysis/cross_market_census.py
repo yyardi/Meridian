@@ -248,6 +248,34 @@ def validate_lag_instrument(seed: int = 7) -> bool:
     return ok and len(lags_for_event(pd.DataFrame(rows), "spread")) == 0
 
 
+def congestion_clustering(pairs: list[tuple], *, long_s: float = 5.0,
+                          near_s: float = 30.0, shuffles: int = 10,
+                          seed: int = 20260902) -> dict | None:
+    """Survey consumable: C's congestion check as ONE instrument (rule 15).
+    Input: lags_for_event output pooled across ladders/events. Returns
+    {share_near, null_share, clustered} — the share of long-lag (≥long_s)
+    episodes within near_s of the next one, against a uniform-shuffle null
+    over the pooled time span; clustered = share > 2× null. None below 10
+    long-lag episodes. Consumers must use THIS null, not a reimplementation
+    — the broken-null failure mode (null == statistic) has already happened
+    once and is why this is a callable."""
+    if not pairs:
+        return None
+    lg = np.array([x[1] for x in pairs])
+    t0s = np.array([x[0].value for x in pairs], dtype=float) / 1e9
+    long_t = np.sort(t0s[lg >= long_s])
+    if len(long_t) < 10:
+        return None
+    share = float(np.mean(np.diff(long_t) <= near_s))
+    rng = np.random.default_rng(seed)
+    null = float(np.mean([
+        np.mean(np.diff(np.sort(rng.uniform(
+            t0s.min(), t0s.max(), size=len(long_t)))) <= near_s)
+        for _ in range(shuffles)]))
+    return {"share_near": share, "null_share": null,
+            "clustered": share > 2 * null}
+
+
 def lags_for_event(df: pd.DataFrame, kind: str) -> list[tuple]:
     """Directional co-move response lags. A >=3c move on one rung opens an
     episode; every OTHER rung's first same-direction >=2c move within 10s
@@ -364,7 +392,6 @@ def run(exports: Path, workdir: Path) -> int:
         print(f"| {thr*100:.0f}¢ | {c1} | {c5} | {ev} |")
 
     print("\n## Part 2 — update-lag attribution (observable tail only)\n")
-    rng = np.random.default_rng(20260902)
     for kind in ("spread", "total"):
         pairs = all_lags[kind]
         if len(pairs) == 0:
@@ -378,24 +405,16 @@ def run(exports: Path, workdir: Path) -> int:
               f"p50 {np.median(lg):.2f}s, p90 "
               f"{np.quantile(lg, .9):.2f}s (cap {RESPONSE_CAP_S:.0f}s). "
               f"Sub-0.4s mass is left-censored, not fast: unmeasurable.")
-        # C's congestion check: do LONG lags cluster in wall-clock time
-        # (venue-wide slowness would also slow OUR order at capture time)?
-        long_t = np.sort(t0s[lg >= 5.0])
-        if len(long_t) >= 10:
-            near = float(np.mean(np.diff(long_t) <= 30.0))
-            shuf = []
-            for _ in range(10):
-                s = np.sort(rng.uniform(t0s.min(), t0s.max(),
-                                        size=len(long_t)))
-                shuf.append(float(np.mean(np.diff(s) <= 30.0)))
+        # C's congestion check — via the ONE shared instrument
+        cc = congestion_clustering(pairs)
+        if cc is not None:
             verdict = ("CLUSTERED — capture would select against us; "
-                       "C's confound live"
-                       if near > 2 * np.mean(shuf)
+                       "C's confound live" if cc["clustered"]
                        else "no strong clustering")
-            print(f"  congestion check: {near*100:.0f}% of long-lag "
-                  f"(≥5s) episodes within 30s of the next one, vs "
-                  f"{np.mean(shuf)*100:.0f}% under uniform shuffle — "
-                  f"{verdict}. (Cross-event pooling; wall-clock.)")
+            print(f"  congestion check: {cc['share_near']*100:.0f}% of "
+                  f"long-lag (≥5s) episodes within 30s of the next one, "
+                  f"vs {cc['null_share']*100:.0f}% under uniform shuffle "
+                  f"— {verdict}. (Cross-event pooling; wall-clock.)")
 
     print("\nNo capture claim is made anywhere above; the toll benchmark "
           "and the wall's racing bar stand between any episode and an "
