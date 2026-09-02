@@ -390,6 +390,43 @@ edge has to appear nearer the money, or size stays at a few dollars per rung.
 
 ---
 
+### V29 — The venue lists NBA winners, spreads AND totals, with the WNBA's structure
+
+**Measured 2026-09-02, directly against `api.polymarket.us`, before any NBA
+build was scoped.** The question that gates every NBA plan — *is there anything
+to trade* — had never been asked of the venue itself.
+
+Scanning ~8,000 markets by `offset`, NBA slugs appear as
+**`aec` 918 · `asc` 81 · `tsc` 81 · `tec` 52**, and the ladder markets are
+structurally identical to the WNBA's:
+
+```
+asc-nba-was-mia-2026-03-10-pos-16pt5   spreads   ["+16.50","-16.50"]
+asc-nba-bos-sa-2026-03-10-pos-3pt5     spreads   ["+3.50","-3.50"]
+tsc-nba-det-bkn-2026-03-10-216pt5      totals    ["Over","Under"]
+```
+
+**Consequences.**
+
+1. **The whole model architecture has an NBA target.** Winner, spread and
+   totals all exist — the three families the NBA constants (R1b σ, R2 shrink,
+   R3b banking) were just fitted for. Had the venue offered moneylines only,
+   two of those three gates would have been fitted for markets that do not
+   exist.
+2. **Half-point lines throughout** (`16pt5`, `3pt5`, `216pt5`) — the same
+   push-unreachable convention as WNBA (V-series), so the spread/total frame
+   work ports.
+3. **`gameStartTime` is present**, so the tipoff-driven machinery has its input.
+4. **Nothing is OPEN yet.** Every NBA market found is `RESOLVED` (or
+   `UNSPECIFIED`) — the sample is the 2025-26 season, and the 2026-27 season
+   has not been listed. **This is a statement about September, not about the
+   venue's intentions.**
+
+**What this does NOT establish:** depth, spread width, or whether NBA books
+survive an endgame the way WNBA's do not (`bookless-endgames.md`). Those are
+tick-level facts and require the recorder to run against live NBA markets. **A
+listing is not a book.**
+
 ## 2. Bugs
 
 Every one of these was free because nothing traded. That property is the reason
@@ -521,6 +558,39 @@ mutation-tested this way, and two were rewritten because of what it showed — t
 page-list check passed with a new unguarded page dropped in, which is the exact
 case it existed to catch. Thirty seconds, and it is the only evidence that
 separates a guard from a decoration.
+
+**A gate that cannot CLOSE.** Two vacuous forms are already in this log: the
+check that cannot fail (above) and the gate that cannot pass (#20's original
+paired-Brier primary, killed at commissioning by its own mutation test). v3d
+exposed a third on 2026-08-27: a gate whose verdicts enumerate PASS and FAIL and
+let a catch-all *"anything else → NO DATA"* absorb the rest, **with no resolution
+condition.** Its true state that day — own trading measurably negative,
+paired-vs-incumbent flat — maps to NO DATA under the registered letter, and would
+map there at ANY sample size: not passing, not failing, never closing.
+**Un-resolvable by any amount of data is a property a gate can have, and nobody
+chooses it** — it falls out of enumerating the interesting outcomes and letting
+`else` hold everything unforeseen.
+
+The tell that found it: **a NO DATA standing at 11 games when both registered
+floors read met.** "Not enough data" could not be the explanation, because there
+was enough data; what was missing was any way for the gate to ever say so. It
+surfaced only because someone refused an inference — *"a second floor must be
+binding"* — and demanded the line instead. Both floors were met; there was no
+second floor.
+
+Two details worth keeping. **The branch that fired was the only one without a
+test** — every other verdict branch had one, which is why two different facts
+could share the string `NO DATA` with nothing objecting: the absent-variable
+shape, where the absent thing is an entire case. And **the deciding quantity was
+never printed**, so the verdict had to be derived by exhausting the branches in
+the source rather than read off the report.
+
+Countermeasure, forward-only: **a registration names the condition under which
+the gate CLOSES, not only the conditions under which it passes or fails.** The
+concrete pattern is a closure clause — *"at 2× floor with the asymmetric clause
+still unmet: FAIL-BY-EXHAUSTION."* v3d's registration stays exactly as written,
+per the no-retrofit rule; its state is carried honestly as a substantive NO DATA
+with the deciding quantity now printed beside its comparator.
 
 Corollary, from the push above: **consistency between two runs of the same check
 is not evidence.** Two agreeing readings tell you about the instrument. *(This
@@ -828,6 +898,37 @@ bookless-endgame finding most depended on — re-derived against the repaired
 mirror, **identical per-game tick counts**. The holes were real, bounded, and
 repaired; the check that would have invalidated a result came back clean. What
 survives is the knowledge that our completeness witness never looked.
+
+#### A correct document written to an occupied path destroys provenance
+
+Nothing about the content is wrong, and that is the whole problem.
+
+On 2026-08-27 a results write-up for `docs/math/espn-wp-vs-price.md` was drafted
+for landing at that path. The path was already occupied — by the **pre-registration**,
+153 lines, whose own header reads *"REGISTERED 2026-08-25, NOTHING COMPUTED …
+nothing above the results line may be edited after data accrues"*, with the
+result duly appended below that line two days earlier. The draft's numbers were
+right, its verdict identical, its reasoning the same.
+
+**Writing it would have replaced the exam with the answer sheet, and every check
+we have would have passed afterward.** Same k, same r = 0.973, same money
+clause, same PASS-but-not-tradable conclusion. No content comparison, no test,
+no review of the resulting file could have detected the loss — because **what
+dies is not information but ORDERING**, and ordering is the entire evidentiary
+value of a pre-registration. A registration proves the terms preceded the data.
+A file that says the same things, written afterward, proves nothing at all and
+looks identical.
+
+Caught by `ls` before writing, not by review afterward — there is no afterward
+in which it is catchable.
+
+**How to apply.** Read the path before writing it, every time, even when you are
+confident it is new; a write is not an edit and carries no diff to inspect. And
+when a page must be landed after its verdict is known, **say so in the page**:
+name the registration of record and mark the page as the write-up (as the F7
+page does), so a document dated after the result cannot be mistaken for one
+dated before it.
+
 
 #### A frozen subject list answers a question about the past
 

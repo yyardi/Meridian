@@ -1319,10 +1319,10 @@ def v3d_verdict(gate: list[V4GameRead]) -> str:
     v3d's own per-$ is entirely POSITIVE), which is flagged out loud rather
     than reinterpreted in v3d's favour."""
     if not v3d_at_floor(gate):
-        return "NO DATA"
+        return "NO DATA (below floor)"
     td = paired_trading(gate, "v3d", "v1")
     if td is None:
-        return "NO DATA"
+        return "NO DATA (below floor — no paired read)"
     if td.mean > 0 and td.lo > 0:
         return "PASS (reopens the trading question; authorises nothing)"
     if td.hi < 0:
@@ -1335,7 +1335,11 @@ def v3d_verdict(gate: list[V4GameRead]) -> str:
         return ("NO DATA — own per-$ entirely positive with an inconclusive "
                 "paired read is a shape the registration text does not "
                 "cover; flagged for the manager, not reinterpreted")
-    return "NO DATA"
+    # At floor, paired read inconclusive, own per-$ measurably negative: the
+    # asymmetric clause ("stops the bleeding") is unmet. This is a SUBSTANTIVE
+    # middle state, not an empty cohort, and it must not print like one.
+    return ("NO DATA (at floor; own per-$ measurably negative; asymmetric "
+            "clause not met)")
 
 
 def evaluate_v4(Session, *, limit: int | None = None) -> V4Result:
@@ -1621,6 +1625,18 @@ def format_v4(r: V4Result) -> str:
     if td3 is not None:
         add(f"  paired trading diff (v3d−v3a), game means: {_fmt_cm(td3)} — "
             "what the discipline recovered")
+    # The asymmetric clause turns on v3d's OWN per-$, and "stops the bleeding"
+    # is only defined against what v1 bleeds on the same cohort. Both were
+    # invisible here while deciding the verdict — a gate whose deciding number
+    # is not printed is one a reader cannot check.
+    own3d = own_roi(gate3d, "v3d")
+    own1 = own_roi(gate3d, "v1")
+    if own3d is not None:
+        add(f"  [v3d] own per-$: {_fmt_cm(own3d)} — THE DECIDING QUANTITY for "
+            "the asymmetric clause")
+    if own1 is not None:
+        add(f"  [v1]  own per-$: {_fmt_cm(own1)} — what \"stops the bleeding\" "
+            "is measured against")
     add("  Brier consistency: v3d prices with v3a's estimate list, the same "
         "object — identical by construction, as registered.")
     verdict3d = v3d_verdict(gate3d)

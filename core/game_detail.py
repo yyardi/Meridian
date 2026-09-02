@@ -297,9 +297,11 @@ _FINAL_SCORE_SQL = text("""
      LIMIT 1
 """)
 
-#: Games the model actually shadow-traded, newest first. Driven by
-#: `shadow_orders` rather than by the snapshot stream: a game with no decision
-#: in it has nothing for this page to show.
+#: Games the model actually shadow-traded, newest first. Driven by BOTH
+#: decision ledgers — the pregame sizer's `shadow_orders` and PULSE's own
+#: `pulse_decisions` — rather than by the snapshot stream: a game with no
+#: decision in it has nothing for this page to show. Reading only the first
+#: hid every PULSE-traded game the pregame sizer skipped.
 #: Era filtering (core/era.py) happens in the HAVING clause on the game's
 #: LAST decision — a game belongs to the era it finished deciding in, so one
 #: game's tape is never split across the archive boundary. Both bounds are
@@ -307,38 +309,56 @@ _FINAL_SCORE_SQL = text("""
 #: serves "everything" (both NULL), "PULSE era" (since set), and "archive"
 #: (before set).
 _GAMES_SQL = text("""
-    SELECT so.event_slug,
-           count(*) AS n_trades,
-           min(so.decided_at) AS first_decision,
-           max(so.decided_at) AS last_decision,
-           count(p.resolved_outcome) AS n_resolved,
-           max(ts.tipoff) AS tipoff
-      FROM shadow_orders so
-      LEFT JOIN predictions p ON p.id = so.prediction_id
-      -- The game's own start, from our snapshots: predictions do not carry
-      -- it. A LATERAL bounded per event, not a GROUP BY over the whole
-      -- snapshots table — the unbounded form cost 2.9s once the 200ms
-      -- recorder had written millions of rows (measured on the mirror;
-      -- sub-100ms after).
+    WITH decisions AS (
+             -- The pregame sizer's ledger...
+             SELECT event_slug, decided_at, prediction_id
+               FROM shadow_orders
+             UNION ALL
+             -- ...and PULSE's own. Reading only the first made this list
+             -- structurally blind to every game PULSE traded and the pregame
+             -- sizer did not: measured 2026-08-31, 17 games and 8,644 PULSE
+             -- decisions since 2026-08-25 were in the database and nowhere on
+             -- the page, because a $3.67 bankroll sized every pregame order to
+             -- zero and that writer records nothing at zero. `enter`/`exit`
+             -- only — a `hold` is not a trade.
+             SELECT event_slug, decided_at, NULL::bigint AS prediction_id
+               FROM pulse_decisions
+              WHERE action IN ('enter', 'exit')
+    ),
+    grouped AS (
+        SELECT d.event_slug,
+               count(*) AS n_trades,
+               min(d.decided_at) AS first_decision,
+               max(d.decided_at) AS last_decision,
+               count(p.resolved_outcome) AS n_resolved
+          FROM decisions d
+          LEFT JOIN predictions p ON p.id = d.prediction_id
+         WHERE d.event_slug IS NOT NULL
+           AND d.event_slug LIKE :league_prefix
+         GROUP BY d.event_slug
+        HAVING (CAST(:since AS timestamptz) IS NULL OR max(d.decided_at) >= :since)
+           AND (CAST(:before AS timestamptz) IS NULL OR max(d.decided_at) < :before)
+         ORDER BY max(d.decided_at) DESC
+         LIMIT :limit
+    )
+    SELECT g.event_slug, g.n_trades, g.first_decision, g.last_decision,
+           g.n_resolved, ts.tipoff
+      FROM grouped g
+      -- The game's own start, from our snapshots: predictions do not carry it.
+      -- Joined AFTER the aggregate, not before it: as a per-ROW lateral this
+      -- probe ran once per decision (~37k times) instead of once per game
+      -- (~35), which is what made the union time out at >60s on 2026-08-31.
       -- LIMIT 1, not max(): a live event holds millions of 200ms rows and
-      -- max() reads them all (6.5s measured); the tip is the venue's
-      -- schedule and constant per event in practice, so any non-null row
-      -- answers (2ms measured). A revised tip would be picked up by
-      -- whichever row the index yields — acceptable for a card label.
+      -- max() reads them all; `ix_snapshots_event_has_start` makes the
+      -- LIMIT 1 a bounded index probe.
       LEFT JOIN LATERAL (
             SELECT game_start_time AS tipoff
               FROM market_snapshots ms
-             WHERE ms.event_slug = so.event_slug
+             WHERE ms.event_slug = g.event_slug
                AND ms.game_start_time IS NOT NULL
              LIMIT 1
       ) ts ON true
-     WHERE so.event_slug IS NOT NULL
-       AND so.event_slug LIKE :league_prefix
-     GROUP BY so.event_slug
-    HAVING (CAST(:since AS timestamptz) IS NULL OR max(so.decided_at) >= :since)
-       AND (CAST(:before AS timestamptz) IS NULL OR max(so.decided_at) < :before)
-     ORDER BY max(so.decided_at) DESC
-     LIMIT :limit
+     ORDER BY g.last_decision DESC
 """)
 
 
