@@ -87,7 +87,11 @@ Where the losses sit in state space (composition, then outcome):
    pessimistic arm inverts it, so the candidate is exactly the gap between
    fill models. *Forward test:* **already registered and accruing**
    (docs/math/pulse-live.md; live-faithful series at 60/100 fills, reading
-   +1.2¢/$ [−11.0, +13.5]) — no new registration needed; wait.
+   +1.2¢/$ [−11.0, +13.5] under A's lineage repair, −10.0¢/$ without it —
+   the 17 repaired links are all early-era rows, 28% of this subset, so
+   the read is decided by the linking policy; quote both sides until a
+   registration pins one per `lineage_source`) — no new registration
+   needed; wait.
 2. **Avoiding the ride-tail states improves the book.** *Falsifiable:*
    entries decided outside (Q4 ∪ |margin| ≥ 10) outperform entries inside
    on per-$ outcome, forward cohort, clustered. In-sample effect (post-hoc
