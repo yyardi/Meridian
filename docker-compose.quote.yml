@@ -15,7 +15,13 @@ services:
   quote-engine:
     build: .
     container_name: meridian-quote-engine
-    command: python -m core.quote.engine
+    # engine_v2 = v1's quoting UNCHANGED (subclass inherits cycle(); replay-
+    # equivalence proven byte-identical on the pinned Aug tape) + the
+    # observation recording path (quote_v2_observations, ≤1s, the quoter's
+    # OWN stamps per the B14 fix, detector live). Switched 2026-09-02 under
+    # amendment 10's freeze-rebind; the rebind line in
+    # docs/math/quote-v2-program.md cites the proofs and the fixed binary.
+    command: python -m core.quote.engine_v2
     environment:
       DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
       MERIDIAN_QUOTE_INTERVAL_SECONDS: "5"

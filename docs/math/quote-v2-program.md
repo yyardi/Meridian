@@ -444,3 +444,53 @@ object are the correction. Proof 1 = A's replay runner over THIS pin, both
 engines, byte-for-byte, with reproduction of the ~17,032-fill ledger
 population as the substrate-integrity check (rule 16 built into the
 proof). The freeze-rebind line will cite this same pin and md5.
+
+**FREEZE-REBIND dated line under amendment 10, stage 2 (2026-09-02,
+manager).** Written once before and refused twice on its own discipline:
+the first draft was permission-paused unpushed, and in the pause A found
+findings B14 (the recording binary stamped `observed_at` from the
+recorder's forbidden cross-process clock — a defect #217's reconciliation
+scorer structurally cannot see; rule 19 is its residue), so that draft
+was marked never-ship and THIS line is rebuilt on the FIXED binary
+(#218 → merge b50390f: own-stamp `observed_at`; B's canonical
+(observed_at, market_slug) feed sort per the detector's registered input
+contract; `source_captured_at` carried as provenance-never-input, giving
+the wrong-clock regression an assertable signature; scorer check 3
+cross-clock validity with plants, closing the declared blind spot).
+
+The three proofs, each verified by the manager's own runs on the fixed
+tree, not the relay:
+
+— **Proof 1 (registered form,** `analysis/quote_v2_replay_proof.py`**):**
+EQUIVALENCE — v1==v2 byte-identical `_standing` + fills across all 14,861
+replay cycles on the pin named in the dated line above (md5-gated read).
+INTEGRITY COMPANION (completeness form; the withdrawn attribution form
+and its history are in the log): all 17,032 ledgered in-game fills'
+producing observations present and matching — zero holes in all four
+categories; rule-18 plants pass. The cadence-bounded reproduction count
+(16,400 on a 5s grid) prints as a labelled non-gating diagnostic.
+
+— **Proof 2:** the AST no-order/no-credential ban verified on the writer
+path (engine_v2 selftest, re-run by the manager on the fixed tree).
+
+— **Proof 3:** recording is off the decision path — structurally (v2
+overrides no quoting method, asserted in code) and behaviourally
+(equivalence holds with recording interleaved; `record_cycle` perturbs
+neither `_standing` nor fills; manager re-ran the selftest against an
+ephemeral postgres with the full migration chain through e1a7c3f60d94
+applied). The quoter loop-time telemetry prints pre/post on the first
+slate night per this amendment.
+
+**THE FREEZE RE-BINDS TO THE COMMIT CARRYING THIS LINE**, which also
+switches the quote overlay's command to the v2 recording engine
+(`docker-compose.quote.yml` → `core.quote.engine_v2`); the pre-tip deploy
+runs exactly this commit, and the running engine's quoting policy remains
+v1's, byte-identical, per proof 1. **fv-WAITS is the named fork of
+record:** `fair_value` records NULL until the post-A1 deploy; guard-2's
+cohort hole is counted and disclosed per the scoring standard; the clock
+consequence for GUARDS is priced in the dated line under amendment 5.
+Recording — and with it the compliant observation stream for the
+CONGESTION / GUARDS / PATIENCE substrate — begins when this commit
+deploys; the embargo on analytical reads stands, with the recording-
+integrity scorer's checks running as recording-integrity, never
+analytics.
