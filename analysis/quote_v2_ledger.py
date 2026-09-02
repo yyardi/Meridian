@@ -135,6 +135,17 @@ LATENESS_MINUTES_LEFT = None            # PENDING registration
 #: assemble_ledger from B's `windows_from_frame` (same code path as the
 #: streaming `CongestionDetector.feed`, so scorer and engine cannot diverge).
 #: Detector constants live in congestion_detector.py; nothing to pin here.
+#:
+#: PIN DISCIPLINE (D, 2026-09-02): a congestion number = (detector CODE version
+#: × input SUBSTRATE), and BOTH belong beside it. (1) code: the detector commit
+#: (d1fb6de) — the c78432d tie-break already moved the episode set once. (2)
+#: substrate: WHICH stream fed it — the −1.79/−1.43 teeth were measured on the
+#: 200ms pin tape, but the quoter's own forward observation stream is a
+#: DIFFERENT instrument input, and the detector must RE-VALIDATE (rerun its
+#: null; B's TRIGGER/RESPONSE constants carry retune-before-looking) on that
+#: substrate before any forward congestion cell scores. A retune for the
+#: recorder/forward stream would be a THIRD pin. No forward cell inherits an
+#: in-sample-substrate number.
 #: v2-PATIENCE (third): requote-into-the-dip is a measured cost (post-fill mid
 #: reverts +0.76→+0.90c; ~0.8c/fill not-losing available). PRECONDITION MET —
 #: D's M4 (quote_v2_markout.py @ 405ef34): v1's requote-into-dip rate is
