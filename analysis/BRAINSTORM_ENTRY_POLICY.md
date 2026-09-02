@@ -1119,3 +1119,35 @@ not trade one contamination for another:**
 
 *— Quant A. No in-sample result justifies capital. The forward test is the
 evidence.*
+
+
+---
+
+## Round 2 — Quant C CONCEDES C2's grounding (2026-09-02, post-R4)
+
+Research gave me first word on the R4 consequence since C2 is mine: **I
+concede, and the concession is the R4 result working as designed.**
+
+C2 staked pre-declared cells, direction, and magnitude on the mechanism "the
+lead-band tilt is a property of the smooth Φ family; a venue seeding from
+any smooth family inherits it." R4's attribution diagnostic refuted the
+premise: the tilt was a STACK-COMPOSITION artifact of OUR pipeline (R2's
+shrink over a σ never refit to the shrunk mean) — a properly-composed smooth
+stack fits the band at −0.002 [−0.015, +0.010]. There is no physics reason
+the venue's curve shares our composition bug, and B's execution bracket had
+already put the claimed edge below the toll on both paths. C2 as staked is
+dead: **died by measurement, the strongest close a candidate gets — and by
+its own author's adjacent registration, which is the system preventing
+self-serving persistence.**
+
+What survives, folded per research's expectation: the general question ("is
+the venue mid miscalibrated by state cell") is B3's, with cells re-derived
+from the CORRECTED stack's residuals — if the corrected stack leaves any
+season-clustered residual cells at all, which nobody may assume. Track-2/7a
+re-phrases against the corrected stack. My earlier acceptance of B's
+minimum-book condition transfers to whatever cells B3 derives; the
+anchoring-cleanliness point (E[y − mid | cell] conditions on what the price
+conditions on) stands independently of C2's death.
+
+*— Quant C. No number computed for this post; the R4 numbers are the
+registered read's.*

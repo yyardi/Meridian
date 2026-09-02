@@ -1,0 +1,68 @@
+{
+  "provenance": {
+    "version": 2,
+    "lineage": "v1 = pre-R4 (no g; superseded by this file). v2 = R4 g adopted (PASS -0.000548 [-0.000821,-0.000275], 7 seasons). If R4b replaces g, v3 carries the refit-sigma and retires it.",
+    "pins": [
+      "backups/exports/nba_games_20260901T225326Z.csv",
+      "backups/exports/nba_plays_20260901T225326Z.csv.gz"
+    ],
+    "generator": "analysis/nba_constants_v2.py",
+    "commit": "5e5b813b4bfaa9ae17f9746d9848cdc92fa805df",
+    "date": "2026-09-02",
+    "boundary": "PHYSICS-ONLY: fitted constant tables, never point-in-time claims. Full-data fits of the ADOPTED estimands (R1b arm a, R2 shrink, R4 g, R3b arm a); the gates scored walk-forward out-of-sample. Calibration constants, never edge. Amendment-6 caveat travels: g is an EFFECTIVE parameter (mostly the missing sigma-refit for the shrunk stack), not decided-ness physics."
+  },
+  "r1b_sigma": {
+    "global_per_sqrt_min": 2.595961694274835,
+    "phase_table": {
+      "(36.0,48.0]": 2.317290056166461,
+      "(24.0,36.0]": 2.5771596728954753,
+      "(12.0,24.0]": 2.6485112881047015,
+      "(0.0,12.0]": 2.706797791206941
+    }
+  },
+  "r2_shrink": {
+    "gridpoints_elapsed": {
+      "4": 0.45200282232584665,
+      "8": 0.4070562804859566,
+      "12": 0.34646389528895827,
+      "16": 0.3215500201579765,
+      "20": 0.2958335305814474,
+      "24": 0.2508896838832462,
+      "28": 0.2305862229764023,
+      "32": 0.20534944469484046,
+      "36": 0.1610634475019677,
+      "40": 0.13186568873789103,
+      "44": 0.09273279961789099
+    },
+    "beta_48": 0.0
+  },
+  "r4_g": {
+    "z_edges": [
+      0.5,
+      1.5
+    ],
+    "buckets": {
+      "z<0.5": 0.8104362887984711,
+      "0.5<=z<1.5": 0.8445715385306088,
+      "z>=1.5": 0.863150773886043
+    },
+    "applies": "sigma_R4(t) = sigma_phase(t) * g(bucket(z)); z from the anchored UNSHRUNK expectation per the registration"
+  },
+  "r3b_totals": {
+    "share": {
+      "36.0": 0.2538552787663108,
+      "24.0": 0.5066375526284078,
+      "12.0": 0.7577061674166196
+    },
+    "b": {
+      "36.0": 1.0880151701804228,
+      "24.0": 1.014059121255322,
+      "12.0": 1.0201455129149555
+    },
+    "sigma": {
+      "36.0": 16.02965017240843,
+      "24.0": 13.735977039467762,
+      "12.0": 10.48049321497334
+    }
+  }
+}
