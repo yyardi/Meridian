@@ -465,6 +465,32 @@ the list is a curiosity rather than a P&L.
 | B11 | **Transaction-pooler rewrite killed the 200ms recorder for 23 hours** | **2 games of tick data, unrecoverable** | `app_database_url()` matched on port `:5432/` alone, not on the host being Supabase, so it rewrote the *local* recorder's URL to 6543 where nothing listens | Fixed: rewrite now requires a Supabase host. See below — the test that should have caught it passed vacuously |
 | B12 | **ESPN moved the season type; 18 days of results vanished** | ~51 games missing; the pregame model predicted on team form frozen at 2026-07-31 | `Event.season_type_id` read `event["seasonType"]`; the scoreboard endpoint nests it as `season.type` and carries no such key, so `_rows_for_event` correctly refused every event for having an unknown season type | An assertion on **rows written**, not on the job not raising. `_safe` had nothing to catch and the scheduler heartbeat reports `rows_written: NULL` by design. See below |
 | B13 | **Stored bankroll snapshots came back claiming the positions read had failed** | the page showed "positions unread" in red against a real $3.60 open position, and `equity` silently degraded to sizing-cash ($23.22 → $19.62) | `AccountSnapshot` grew `positions`/`positions_read_ok`; `record()` never persisted them and `latest()` never reconstructed them, so a stored row returned the dataclass defaults — and `positions_read_ok=False` asserts a FAILED read, not an empty book. `current()` prefers a fresh stored row, so the serving path got the degraded copy while the poller logged the truth in the same minute | A round-trip assertion over `dataclasses.fields()` — not a hand-written field list, which is the same bug one level up. The first version of that guard monkeypatched `record`/`latest` and passed with the bug re-introduced; it tested the stub |
+| B14 | **The v2 recording binary stamped `observed_at` from the recorder's clock** | $0 — caught pre-deploy, pre-data | `engine_v2.py:109` copied `market_snapshots.captured_at` — the cross-process clock the signed schema and the detector contract forbid three times over | Not the integrity scorer — see below; caught by the scorer's own author auditing what their checker structurally cannot see |
+
+### B14 in detail — reconciliation proves consistency, never correctness (wrong-but-consistent, 2026-09-02)
+
+The merged recording binary stamped `observed_at` from the recorder's
+cross-process clock — forbidden three times over by the signed schema and
+the detector contract — and #217's integrity scorer STRUCTURALLY cannot
+catch it: it reconciles replay against the same stored stamp, so a stamp
+that is wrong consistently passes every reconciliation. **Reconciliation
+proves CONSISTENCY, never correctness; a checker whose legs both derive
+from one source inherits that source's defects invisibly.** Caught
+pre-data by the checker's own author asking what the checker cannot see.
+
+Resolution order preserved the record: fix → all three amendment-10
+proofs re-run → rebuilt rebind → deploy; the stale rebind commit is
+marked never-ship; nothing landed is invalidated (proof 1 concerns
+quoting decisions and substrate completeness, both stamp-independent;
+zero forward rows exist).
+
+Credit each thing precisely, because a record that moralizes luck into
+design will one day trust luck: the permission pause BOUGHT THE HOURS in
+which A's audit ran, but the protection was the question, not the luck —
+the pause's safety was design (the rebind commit IS the freeze commit, so
+deploy could never outrun the record); its protectiveness tonight was
+fortune. The durable counter-measure is rule 19 (WAVE_STANDARD): every
+registered checker declares its blind spots.
 
 ### B11 in detail — three failures stacked
 
