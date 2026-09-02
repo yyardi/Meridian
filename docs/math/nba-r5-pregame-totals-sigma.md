@@ -104,3 +104,32 @@ branches yield an adoptable constant; they differ in what ports.
 Calibration work, never edge work. **No in-sample result justifies capital;
 the forward test is the evidence.** No branch of this registration has a
 capital implication.
+
+---
+
+## DATED AMENDMENTS 1–3 (research agent, 2026-09-02, consumer confirmation — A credited)
+
+**Amendment 1 — Arm L is redefined PER-GAME.** As drafted, Arm L scaled by the
+eval season's MEAN closing line — a season-level effective parameter that could
+only capture cross-season drift. The level-dependence thesis is a **PER-GAME
+claim**: a 210-line game and a 225-line game must carry different σ. Corrected
+form: **CV fit on the expanding window as SD((final − line)/line); Arm L scores
+each eval game under N(0, (CV·line_i)²) with the game's OWN line.** The
+season-mean version was the effective-parameter smudge R4→R4b taught us to
+refuse — structurally-correct forms only, this time BEFORE fitting.
+
+**Amendment 2 — the adopted constant matches the winning form's units:** points
+if T wins; **the DIMENSIONLESS CV coefficient itself if L wins** — never a
+season-mean-scaled points number. A3 needs per-game σ = CV × that game's line,
+and dimensionless is what ports.
+
+**Amendment 3 — shuffle-null sharpened:** permuting finals across games
+destroys the line–final pairing, so under shuffle **Arm L must NOT beat Arm
+T** — level-dependence must die with the pairing. Asserted explicitly.
+
+**Confirmed unchanged, on the record:** the no-winsorizing forbidden form is
+**load-bearing, not hygiene** — A3 measures residual skew/kurtosis of
+(final − line) from the same untrimmed substrate to distinguish *"venue's σ
+wrong"* from *"no single Gaussian σ can be right."* **Any future hand that
+trims the tails breaks a consumer it can't see.** Consumer confirmation
+complete; C's first-refusal window continues on this amended text.
