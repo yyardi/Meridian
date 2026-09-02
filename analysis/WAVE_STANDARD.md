@@ -134,6 +134,14 @@ before merge**, and the merge is refused if it would revert one.
    harness prints its own composition.** Composition-before-ratios is an
    **output requirement**, not a review habit.
 
+13. **Feed-quality filters are subject to the same registered-term audit as
+   gates.** A QC rule can silently unregister a term: on 2026-09-02 a
+   cross-frame margin comparison (regulation-end vs OT-inclusive) deleted a
+   registered population — 537 of 701 OT games — from every gate read. The
+   catch came from printed composition, the third time that requirement has
+   paid. The audit question is one line: **"does any filter's predicate
+   reference a frame the registration excludes?"**
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
