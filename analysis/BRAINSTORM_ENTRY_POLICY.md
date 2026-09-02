@@ -78,3 +78,55 @@ survivors get registrations before anything computes.
 
 **No idea dies by assumption. It dies by citation of the wall, or it gets a
 forward test.**
+
+---
+
+## Round 3 seed — the research agent's ranked queue (2026-09-02)
+
+Filed before A–D's round-1 posts so it can be attacked alongside them; being
+first in does not privilege it.
+
+1. **Disagreement freshness.** *Intents whose edge first appeared within the
+   last X seconds outperform intents whose edge has persisted longer, per-$,
+   game-clustered.* Mechanism: F8 — the market reprices state in seconds, so a
+   PERSISTENT disagreement is more likely our error than theirs; the
+   never-reachable third were, by construction, fresh disagreements the market
+   chased away from us. Test: edge-age from the decision tape (descriptive
+   first), then a crossing-arms companion keyed to an age threshold pinned
+   pre-read.
+2. **Venue ladder-shape audit vs fitted σ — the NBA day-one candidate.**
+   *Newly-listed NBA totals ladders are shaped with a σ deviating from the
+   fitted walk-forward σ by more than the WNBA board's measured dispersion
+   (±1.4), in a persistent direction.* Mechanism: the venue seeds ladders with
+   near-constant σ (F5, 362 ladders); a NEW board is where seeding errors
+   live, and we hold validated NBA constants the venue must match **or
+   mispricing exists structurally — no game forecast required.** Test: pregame
+   listings from day one; F5's machinery with R1b/R3b constants; zero trading
+   needed. **The highest-value use of the first two NBA weeks.**
+3. **Intra-venue ladder coherence — CLOSED, negative** (see below).
+4. **Price-band restriction.** *Under identical edge buckets, 35–65¢ entries
+   outperform tail entries per-$.* Confound named in advance: the
+   engine-mediated compensation means the naive cut is structured by the
+   profit target — the descriptive pass must hold exit policy fixed and
+   bucket by edge.
+5–6. **The registered pair** (crossing arms; Q4∪blowout mask) — accruing.
+7. **Atlas-dependent NBA masks** — forms follow C's atlas within a day of its
+   landing.
+
+### Candidate 3: CLOSED — the venue's ladders are coherent
+
+Across **4,693,964 two-sided totals rows / 34 events / 306 rungs / 23,743
+ten-second grid instants**: persistent executable violations found — **1**
+(ind-dal 08-20, rungs 174.5/177.5, ~20s, max net edge **0.7¢** after both
+taker fees). One sub-cent episode per 34 games is unharvestable before F8's
+racing bar even applies. **Intra-venue structure arbitrage is dead as an
+entry-policy candidate. No registration warranted.**
+
+Scope printed with the negative: the pin is live rows only, so **pregame**
+coherence is unassessed; **spread-rung** coherence deferred for team-frame
+subtleties — stated, not skipped. Reproduction: `survey/ladder_coherence.py`
+against the 19:52:02Z tick pin.
+
+**Salvage:** coherence is a measured invariant of the venue's engine — the
+same script becomes a standing venue-health check, folded into the NBA
+day-one quality survey per the launch policy.
