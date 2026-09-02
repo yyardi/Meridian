@@ -465,3 +465,126 @@ formalized.
 First cross-agent artifact reuse on the record: A's ledger consumed as the
 substrate, cleanly. **The wall gains two same-day corpses with mechanisms
 named (candidates 1 and 3). That is what walls are for.**
+
+
+---
+
+Round 1 — Quant C (calibration / tails / NBA constants), 2026-09-02
+
+Vantage: Track C (the FV is calibrated in the bulk and loses the disagreements),
+the three extreme-miss doors (corrupted states, halftime pace, Gaussian-vs-
+foul-game/OT), and the NBA atlas — which has now MEASURED the tails those doors
+pointed at, on 13,116 games. Atlas numbers cited below are measured
+(season-clustered, in `analysis/nba-atlas.md`); nothing else here is computed.
+
+### C1 — The bimodal endgame: totals rungs where no unimodal curve can be right
+
+*Falsifiable:* in states (|margin| ≤ 3, ≤ 3:00 left) with a live two-sided
+totals book, the venue's implied P(over) on rungs between the
+regulation-projected total and that total plus one OT's points deviates from
+the atlas-measured empirical frequency by more than the executable toll, in a
+consistent direction (underpricing the over), in ≥ N distinct games.
+
+*Mechanism:* the final-total distribution in those states is genuinely
+BIMODAL: a regulation mass, plus an OT mass shifted +24.2 points (atlas: p10
++15, p90 +36), reached 3.8–4.1% of the time from close late states — and OT
+games settle +22.3 over their lines. A unimodal curve in remaining points —
+ANY unimodal curve, ours included (this was exactly R3b's extreme-miss door:
+our own Gaussian emitted P(over)=0.0000 with 9s left against a market bid of
+0.63, and the over won) — cannot put mass on both modes at once. F5 measured
+the venue seeding ladders with near-constant σ. This is a functional-form
+claim about the venue's curve, not a speed claim: wall 5 has no purchase.
+The market was RIGHT against our Gaussian in the one row we inspected (bid
+0.63, over won) — so the venue may already price the bump; the candidate is
+that it prices it with a smooth compromise that misprices BOTH the
+just-above-regulation rungs and the OT-zone rungs in opposite directions.
+
+*Walls respected:* 7 (endgame books die — the family conditions on a live
+totals book and reports book-survival as part of the census; no safe-harbour
+assumed); 4 (late-state exit economics — this family's position is
+minutes from settlement, so the registered form must score settle-held, no
+exit assumed, and re-net per wall 3); 2 (crossing toll carried explicitly).
+
+*Forward test:* WNBA 200ms pin first as generator — census of late close
+states with two-sided totals books: rung prices vs realized, episode counts
+and direction, ZERO trading. Then NBA forward with the atlas frequencies as
+the pre-committed empirical curve. *Novel exposure:* the venue's implied
+P(OT-zone totals) in tied endgames — never measured on any tape we hold.
+*Firing rate (O4):* atlas says 27% of games are ≤5-margin at 2:00; discounted
+by |m|≤3 and totals-book survival (~1 in 10 ladders dies independently, more
+late), honest estimate **~0.15–0.25 opportunities per game** — above the
+1-in-19 bar, below "every game"; stated so the ranker can weigh it.
+
+### C2 — The mid-game lead-underrating band (the atlas disagreement cells)
+
+*Falsifiable:* in the pre-declared cells (18–36 minutes left, lead 4–19), the
+venue's winner mid is miscalibrated against realized outcomes in the SAME
+direction and band as every smooth σ-curve we tested — underrating the leader
+by ≥ 2 probability points, game-clustered CI excluding zero, on data that
+never informed the cell choice.
+
+*Mechanism:* the atlas measured raw P(leader wins) sitting +2 to +4 points
+ABOVE the adopted walk-forward model in those cells (CIs off zero,
+season-clustered) — while the same model is calibrated overall (REL 0.0004).
+The tilt is a property of the smooth Φ(m/σ√t) FAMILY, not of one fit: leads
+persist beyond what Brownian margins imply in the mid-game band. If the
+venue's book is seeded from any smooth family (F5), it inherits the tilt.
+Wall 6 does NOT bar this: our FV is on the WRONG side of these cells too —
+the idea uses the empirical-vs-family gap, which is precisely what the FV
+fails to encode, so this is not "trust the FV's disagreement" resurrected.
+This is B3 with the fishing licence pre-solved: the cells, direction, and
+magnitude are named here, in advance, from physics the atlas measured.
+
+*Walls respected:* 5 (functional form, not speed); 3 (any exit change
+re-nets); 9 (not in the boring list — mid-margin buckets were P&L cuts of OUR
+entries, not venue-mid calibration).
+
+*Forward test:* WNBA tape descriptive (venue winner mid in the band vs
+realized, game-clustered) as the generator; NBA forward cohort scores the
+pinned cells. If the venue prices the band correctly where our family does
+not, the candidate dies and leaves a finding: the venue's curve is better
+than the Φ family — worth knowing either way. *Novel exposure:* venue-mid
+calibration by state cell — unmeasured on every tape we hold (B3 asks the
+question generally; C2 stakes the specific cells/direction/size).
+*Firing rate (O4):* the band covers most of every game's second and third
+quarters; a maker-side rule in it fires **several times per game**. The
+constraint is edge size (2–4 points) vs the toll — which is why the honest
+first form is maker-side or no-trade-region, and the census must say whether
+2–4 points survives wall 2's arithmetic at all.
+
+### C3 — Launch-window discipline: the audit is the trade, recording is the entry fee
+
+Extends the round-3 queue's #2 (which already uses R1b/R3b constants — the
+corrected post-OT-fix values in `nba_constants_v1.json`, note the totals σ
+moved materially: 16.0/13.7/10.5). Two additions:
+
+1. *A falsifiable decay:* if launch mispricing exists, the σ-deviation of
+   newly listed NBA ladders from the fitted constants SHRINKS over the first
+   weeks with a measurable half-life; the window is finite and its length is
+   itself the most decision-relevant number (it bounds what any launch
+   strategy could ever be worth). *Novel exposure:* the half-life — nobody
+   has measured how fast this venue's seeding errors close.
+2. *The day-one record list, so October can test what September registered* —
+   per listing: full ladder snapshot at first appearance + timestamp; first
+   two-sided time per rung; book-death/revival events with game state;
+   halftime last-Q2/first-Q3 two-sided mids (D2 needs exactly this); the
+   ESPN state joined at listing and at each snapshot; and C1's late-state
+   rung census fields. All of it is recorder plumbing, none of it is trading,
+   and every candidate above plus B1/B2/D2 becomes testable on NBA data only
+   if this exists from opening night. *Firing rate:* every listing, weeks 1–2.
+
+### Engagement with O1 (the Q1 flood), from the R2 curve
+
+The R2 physics table gives O1's question a sharper form: β(4′) ≈ 0.45 means
+nearly half of an early margin deviation dies before the final — Q1 is where
+live-margin information is WEAKEST. So the Q1 front-load is defensible only
+if Q1 entries are anchor-driven (pregame line vs venue price) rather than
+margin-driven. The cut nobody has run: split Q1 entries by edge source —
+margin-deviation term vs anchor-vs-market term — and score per-$ with exit
+policy fixed. If the flood is margin-driven, the model is trading its own
+most-reverting input; if anchor-driven, O1's oddity may actually be the
+defensible window (F8 lag matters least when the anchor does the work).
+
+*— Quant C. All candidates in-sample where they cite numbers; the atlas
+tables are measured but the candidates are hypotheses. No in-sample result
+justifies capital. The forward test is the evidence.*
