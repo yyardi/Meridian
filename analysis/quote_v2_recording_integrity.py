@@ -1,11 +1,16 @@
-"""QUOTE v2 recording-integrity scorer — the two standing checks B signed off
-on for the `quote_v2_observations` table (see the model docstring in
+"""QUOTE v2 recording-integrity scorer — the standing checks B signed off on
+for the `quote_v2_observations` table (see the model docstring in
 core/quote/storage.py and docs/math/quote-v2-observation-schema.md).
 
     .venv/bin/python analysis/quote_v2_recording_integrity.py --selftest
     .venv/bin/python analysis/quote_v2_recording_integrity.py --db   # once data exists
 
-Two checks, per game:
+Three checks, per game — two INTEGRITY (was the stream faithfully recorded)
+and one VALIDITY (was the RIGHT clock recorded). The distinction is load-
+bearing: an integrity check reconciles what was recorded against itself, so a
+wrong-but-internally-consistent input passes it; a validity check asserts a
+property only the RIGHT input can have. Check 3 exists because checks 1–2
+structurally cannot see a wrong-clock regression.
 
 1. REPLAY-RECONCILIATION. The engine wrote `det_in_window`/`det_confirm_t0`
    LIVE, feeding B's congestion detector from the quoter's own stream
@@ -36,18 +41,30 @@ Two checks, per game:
    detector the way the ~200ms recorder tape does (the recorder-proxy lesson);
    this check makes compliance MEASURED, not assumed.
 
-CANONICAL FEED ORDER (a documented assumption of check 1). The detector is
-order-sensitive only when a trigger and a same-ladder response share one
-receive instant. This scorer replays in the detector's canonical order
-(`observed_at`, then `market_slug` — the c78432d ordering discipline). For the
-reconciliation to be exact, the recording engine must feed its within-cycle
-observations in that same order. `record_cycle` currently iterates
-`_record_observations(s)` in returned order; if two markets of one game ever
-carry a bit-identical `observed_at`, that order must be market_slug-sorted or
-this check will report a spurious mismatch. Flagged forward to B — the fix is a
-one-line sort on the engine's feed, and until forward data exists it cannot be
-exercised. This scorer does NOT paper over it: an equal-instant collision that
-diverges is reported as a real mismatch, with the collision noted.
+3. CROSS-CLOCK VALIDITY. `observed_at` (quoter's own stamp) and
+   `source_captured_at` (the upstream recorder stamp carried through) are two
+   clocks on one event. Recording both gives the wrong-clock regression an
+   ASSERTABLE SIGNATURE that checks 1–2 cannot: `observed_at ==
+   source_captured_at` EVERYWHERE is exactly what the fixed bug
+   (`observed_at = r.captured_at`) looked like, and it alarms. Also asserts the
+   ordering only the right clocks produce — `observed_at >= source_captured_at`
+   (the quoter receives no earlier than the recorder captured), and median skew
+   within the DECLARED [0, SKEW_BOUND_S]s (B's pre-data expectation from the
+   ≤1s cycle, not a bar fitted to data). A clock inversion or an out-of-band
+   median alarms too. `source_captured_at` NULLs are counted as a coverage
+   hole (never dropped), not an alarm.
+
+CANONICAL FEED ORDER (now closed). The detector is order-sensitive only when a
+trigger and a same-ladder response share one receive instant. This scorer
+replays in the detector's canonical order (`observed_at`, then `market_slug` —
+the c78432d ordering discipline), which is the detector's REGISTERED input
+contract. The recording engine now conforms: `record_cycle` feeds
+`_record_observations(s)` sorted `(observed_at, market_slug)` (B's ruling), and
+with the per-cycle quoter read-stamp all within-cycle `observed_at` are equal so
+the sort reduces to `market_slug`. The equal-instant collision LABEL is kept as
+a should-never-fire assertion: post-sort, a collision that ever diverges is the
+engine drifting OUT of the registered contract — the cheapest detector for that
+regression, so it is reported (never papered over), not expected.
 
 No forward rows exist until the recording binary deploys (amendment-gated,
 post-7a3a217). --selftest validates the instrument now, on synthetic streams
@@ -79,6 +96,9 @@ UTC = dt.timezone.utc
 
 CADENCE_SPEC_S = 1.0          # schema pre-declared target, not a fitted bar
 CONFIRM_TOL_S = 1e-3         # confirm_t0 float->datetime round-trip tolerance
+SKEW_BOUND_S = 2.0          # B's DECLARED cross-clock expectation (pre-data:
+                            # quoter reads within ~1-2 cycles of the recorder
+                            # capture), not a bar fitted to observed skew
 
 # Columns the reconciliation reads from the table. Kept explicit so a schema
 # drift surfaces as a KeyError here, not as a silent pass.
@@ -218,6 +238,74 @@ def measure_cadence(df: pd.DataFrame) -> list[Cadence]:
 
 
 # --------------------------------------------------------------------------- #
+#  Check 3: cross-clock validity (the ONE validity check; 1-2 are integrity)
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class CrossClock:
+    game_id: str
+    n: int
+    n_missing: int               # source_captured_at NULL (coverage hole)
+    n_inversion: int             # observed_at < source_captured_at (impossible)
+    median_skew_s: float
+    p99_skew_s: float
+    all_zero: bool               # == everywhere -> the wrong-clock regression
+    bounded: bool                # median within declared [0, SKEW_BOUND_S]
+    alarm: bool
+    reasons: list[str]
+
+
+def check_cross_clock(df: pd.DataFrame) -> list[CrossClock]:
+    """Per game, assert the two clocks have the shape only the RIGHT pair can:
+    `observed_at` (quoter) recorded no earlier than `source_captured_at`
+    (upstream), a small-positive median skew, and — the signature integrity
+    cannot see — NOT identical everywhere. `observed_at == source_captured_at`
+    for every row is exactly the fixed `observed_at = r.captured_at` bug, so it
+    ALARMS. Pure function of `df`."""
+    out: list[CrossClock] = []
+    for game_id, g in df.groupby("game_id", sort=True):
+        n = len(g)
+        if "source_captured_at" not in g.columns:
+            out.append(CrossClock(game_id, n, n, 0, float("nan"), float("nan"),
+                                  False, False, True,
+                                  ["source_captured_at column absent"]))
+            continue
+        miss = g["source_captured_at"].isna()
+        n_missing = int(miss.sum())
+        gg = g[~miss]
+        if gg.empty:
+            out.append(CrossClock(game_id, n, n_missing, 0, float("nan"),
+                                  float("nan"), False, False, False,
+                                  [f"{n_missing} rows missing source_captured_at "
+                                   "(coverage hole)"]))
+            continue
+        skew = np.array([_epoch_seconds(o) - _epoch_seconds(s) for o, s in
+                         zip(gg["observed_at"], gg["source_captured_at"])])
+        n_inv = int((skew < 0).sum())
+        med = float(np.median(skew))
+        p99 = float(np.percentile(skew, 99))
+        all_zero = bool((skew == 0).all())
+        bounded = 0.0 <= med <= SKEW_BOUND_S
+        reasons: list[str] = []
+        if all_zero:
+            reasons.append("observed_at == source_captured_at everywhere "
+                           "(wrong-clock regression)")
+        if n_inv:
+            reasons.append(f"{n_inv} rows observed_at < source_captured_at "
+                           "(clock inversion)")
+        if not bounded:
+            reasons.append(f"median skew {med:.3f}s outside declared "
+                           f"[0,{SKEW_BOUND_S}]s")
+        if n_missing:
+            reasons.append(f"{n_missing} rows missing source_captured_at "
+                           "(coverage hole, counted not dropped)")
+        alarm = all_zero or n_inv > 0 or not bounded
+        out.append(CrossClock(game_id, n, n_missing, n_inv, med, p99,
+                              all_zero, bounded, alarm, reasons))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 #  Synthetic substrate for --selftest (the engine's own recording logic writes
 #  the det_* columns from a CLEAN raw stream; plants then corrupt raw ONLY).
 # --------------------------------------------------------------------------- #
@@ -251,6 +339,10 @@ def _synth_clean_game(game_id: str = "g1") -> pd.DataFrame:
     df["det_in_window"] = win
     df["det_confirm_t0"] = c0
     df["det_version"] = "selftest"
+    # upstream stamp = recorded 0.3s BEFORE the quoter observed it: a healthy
+    # small-positive skew (quoter receives after the recorder captured). The
+    # cross-clock plants below overwrite this column only.
+    df["source_captured_at"] = df["observed_at"] - pd.Timedelta(seconds=0.3)
     return df
 
 
@@ -325,11 +417,45 @@ def selftest() -> int:
           f"{'OK (caught)' if cad_caught else 'FAIL (missed a cadence gap)'}")
     ok &= cad_caught
 
+    # CHECK 3 clean: healthy 0.3s skew — not identical, no inversion, bounded.
+    xc_clean = check_cross_clock(clean)[0]
+    xc_ok = (not xc_clean.alarm and not xc_clean.all_zero
+             and xc_clean.n_inversion == 0 and xc_clean.bounded)
+    print(f"cross-clock clean: median skew={xc_clean.median_skew_s:.3f}s, "
+          f"all_zero={xc_clean.all_zero}, inversions={xc_clean.n_inversion} -> "
+          f"{'OK (healthy two-clock shape)' if xc_ok else 'FAIL'}")
+    ok &= xc_ok
+
+    # PLANT D (the fixed bug's signature): observed_at == source_captured_at
+    # EVERYWHERE. Integrity checks 1-2 pass this unchanged (same stored stamp);
+    # only the validity check sees it.
+    pd_ = clean.copy()
+    pd_["source_captured_at"] = pd_["observed_at"]
+    xc_reg = check_cross_clock(pd_)[0]
+    reg_caught = xc_reg.all_zero and xc_reg.alarm
+    # and prove checks 1-2 are BLIND to it (the whole reason check 3 exists)
+    blind = not reconcile(pd_) and measure_cadence(pd_)[0].n_violations == 0
+    print(f"plant D (observed_at==source everywhere): all_zero={xc_reg.all_zero}"
+          f", alarm={xc_reg.alarm}; integrity blind={blind} -> "
+          f"{'OK (only validity catches it)' if reg_caught and blind else 'FAIL'}")
+    ok &= reg_caught and blind
+
+    # PLANT E: clock inversion — quoter stamped 5s BEFORE the recorder captured.
+    pe = clean.copy()
+    pe["source_captured_at"] = pe["observed_at"] + pd.Timedelta(seconds=5)
+    xc_inv = check_cross_clock(pe)[0]
+    inv_caught = xc_inv.n_inversion > 0 and xc_inv.alarm
+    print(f"plant E (5s clock inversion): inversions={xc_inv.n_inversion}, "
+          f"alarm={xc_inv.alarm} -> "
+          f"{'OK (caught)' if inv_caught else 'FAIL (missed an inversion)'}")
+    ok &= inv_caught
+
     print()
-    print("SELFTEST:", "PASS — reconciliation catches a dropped and a "
-          "corrupted raw observation as named mismatches, and the cadence "
-          "check flags a sub-spec gap; clean passes both. The scorer can fail."
-          if ok else "FAIL")
+    print("SELFTEST:", "PASS — integrity (checks 1-2) catches a dropped and a "
+          "corrupted raw observation and a sub-spec cadence gap; validity "
+          "(check 3) catches the wrong-clock regression that integrity is "
+          "structurally BLIND to, plus a clock inversion; clean passes all "
+          "three. The scorer can fail." if ok else "FAIL")
     return 0 if ok else 1
 
 
@@ -341,7 +467,8 @@ def _load_db() -> pd.DataFrame:
     from core.storage.base import get_engine  # lazy: selftest needs no DB
     eng = get_engine()
     q = ("SELECT game_id, market_slug, sports_market_type, observed_at, "
-         "best_bid, best_ask, det_in_window, det_confirm_t0, det_version "
+         "source_captured_at, best_bid, best_ask, det_in_window, "
+         "det_confirm_t0, det_version "
          "FROM quote_v2_observations")
     return pd.read_sql(q, eng)
 
@@ -381,11 +508,28 @@ def run_db() -> int:
     cad = measure_cadence(df)
     tot_viol = sum(c.n_violations for c in cad)
     for c in cad:
+        if c.n_gaps == 0:
+            print(f"  {c.game_id}: {c.markets} mkts, no gaps to measure "
+                  f"(<2 obs/market)")
+            continue
         print(f"  {c.game_id}: {c.markets} mkts, median={c.median_s:.3f}s "
               f"p99={c.p99_s:.3f}s max={c.max_s:.3f}s "
               f"violations={c.n_violations}/{c.n_gaps}")
-    print(f"  -> total {tot_viol} gap(s) over spec across all games")
-    return 0 if not mm else 1
+    print(f"  -> total {tot_viol} gap(s) over spec across all games\n")
+
+    print("CHECK 3 cross-clock validity (observed_at vs source_captured_at, "
+          "declared skew [0,%.1fs]):" % SKEW_BOUND_S)
+    xc = check_cross_clock(df)
+    xc_alarm = any(c.alarm for c in xc)
+    for c in xc:
+        tag = "ALARM" if c.alarm else "ok"
+        print(f"  {c.game_id}: n={c.n} median_skew={c.median_skew_s:.3f}s "
+              f"p99={c.p99_skew_s:.3f}s all_zero={c.all_zero} "
+              f"inversions={c.n_inversion} missing={c.n_missing} [{tag}]")
+        for r in c.reasons:
+            print(f"      - {r}")
+    print(f"  -> {'PASS (two clocks have the right shape)' if not xc_alarm else 'ALARM (wrong-clock / inversion / out-of-band)'}")
+    return 0 if (not mm and not xc_alarm) else 1
 
 
 def main() -> int:
