@@ -1,9 +1,10 @@
-# R4 — margin-conditional σ (the lead-band correction arm) — DRAFT for research sign-off
+# R4 — margin-conditional σ (the lead-band correction arm)
 
-**Status: DRAFT by Quant C, 2026-09-02, for the research agent's sign-off.
-NOTHING COMPUTES until this text lands on main, amended or not.** The
-cutoff/cohort instant, once landed, is this document's first commit, read with
-the git `%ct` convention, never from prose.
+**Status: SIGNED OFF by the research agent 2026-09-02, conditional on four
+amendments — all applied below verbatim. NOTHING COMPUTES until this text
+lands on main; the landed commit is the cutoff**, read with the git `%ct`
+convention, never from prose. Drafted by Quant C; the sign-off travels with
+the research agent's message of record.
 
 ## What this is, and emphatically what it is not
 
@@ -28,9 +29,14 @@ registration fixes ONE:
 
 **Primary form: a margin-conditional σ multiplier.**
 
-    z            = |m + E·t/48| / (σ_phase(t) · √t)      # the incumbent's own z
+    z            = |m + E·t/48| / (σ_phase(t) · √t)
     σ_R4(t, ...) = σ_phase(t) · g(bucket(z))
     bucket(z)    : z ∈ [0, 0.5) · [0.5, 1.5) · [1.5, ∞)
+
+z is computed from the anchored, UNSHRUNK expectation — pinned as the formula
+states. The bucket edges 0.5 and 1.5 are fixed A PRIORI as round units on the
+z scale, chosen without reference to the atlas's diagnostic cells; they are
+not fitted, not tuned, and any future re-bucketing is a new registration.
 
 with g a per-bucket multiplier fitted by walk-forward MLE on training seasons
 only (σ_phase refit per fold exactly as adopted, then g on top with σ_phase
@@ -40,9 +46,9 @@ settlement frame — is untouched.
 
 Why this form: the physical reading of the band gap is that **decided-ness
 suppresses remaining variance** (clock burn, benches, possession play) beyond
-what a margin-independent σ can express. Expressing it in the incumbent's own
-z, not raw |m| or a time band, makes the claim self-consistent across the
-clock: the band is where mid-size leads produce mid-size z, so a z-effect
+what a margin-independent σ can express. Expressing it in a standardized z
+(the anchored, unshrunk expectation over the phase-σ horizon), not raw |m| or
+a time band, makes the claim self-consistent across the clock: the band is where mid-size leads produce mid-size z, so a z-effect
 predicts the band signature — and predicts signatures OUTSIDE the diagnostic
 band that the diagnosis never measured. That out-of-band behaviour is this
 arm's **novel exposure**, stated per the round-3 tiebreaker's standard: if g
@@ -63,13 +69,22 @@ gate scores ALL states).
    the attribution diagnostic below exists to say whether anyone should
    write it. Not this arm.
 4. **Touching the anchor, the outcome frame, or OT handling.**
+5. **Computing z from the shrink-adjusted expectation** — plausible, but it
+   couples this arm to R2's table and creates two-z ambiguity; it is a
+   different registration if anyone ever wants it.
 
 ## Arms and gate
 
 Arms into the identical stack: (a) incumbent = adopted R1b σ + R2 shrink ·
 (b) R4 = incumbent with σ_phase → σ_R4. Same states, same anchor, same
 folds as R1b: eval **2017–2022 + 2025 (PARTIAL, train ≤ 2022)** = 7 forward
-seasons, **floor ≥ 6** (R1b precedent).
+seasons, **floor ≥ 6**. Coverage, cited: closing spreads 2015–2022
+contiguous + 2025 partial (979/1,235), hole 2023–24, per the season coverage
+table (#140 lineage) — 7 evaluated forward seasons feasible, floor ≥ 6 met
+by construction.
+
+**O4 (firing rate): NOT APPLICABLE** — calibration arm, no entries, no
+firing; stated so the checklist reads considered rather than skipped.
 
 **Gate:** paired per-state Brier (R4 − incumbent), season-clustered
 (`clustered_mean`, clusters = evaluation season). **PASS/adopt** = CI
