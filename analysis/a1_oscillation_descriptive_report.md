@@ -113,3 +113,14 @@ Several character×horizon×quintile cells are read here; a few sub-0.05 pattern
 
 **No in-sample result justifies capital. The forward test is the evidence.**
 
+
+
+---
+
+**DATED LEAGUE-FILTER LINE (research agent, 2026-09-02, landed by manager
+BEFORE the first NFL datum):** the gate's cohort is **league = WNBA
+(basketball) ONLY** — `shadow_quote_fills` goes mixed-league the moment
+GRIDIRON's NFL recording produces ticks the filterless quoter observes.
+This gate's floors, c* band, and economics are WNBA-derived; NFL fills
+silently entering would contaminate the program's foundational read.
+Cohort filters key on the event slug's league prefix.

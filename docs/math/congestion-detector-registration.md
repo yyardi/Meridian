@@ -123,3 +123,13 @@ numbers are coverage statistics — an instrument property; no P&L was
 consulted; this is design-from-diagnostics, not optimization-on-outcomes.
 A's forward schema records raw confirms beside windows so any v2 evaluates
 on the same recorded stream without re-instrumentation.
+
+
+## DATED LINE on append B (research agent, 2026-09-02 — landed before the first NFL datum)
+
+Append B's "first 10 compliant games" means **10 WNBA games**. GRIDIRON's
+NFL games arrive FIRST (Thursday 2026-09-04 vs WNBA's Sept 17), and the
+saturation read must not run on a league whose detector constants are
+WNBA-census-derived. GRIDIRON gets its OWN saturation read on NFL games,
+with the cross-league constants provenance disclosed as a first guess —
+registered in GRIDIRON's registry, not here.

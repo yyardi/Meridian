@@ -39,3 +39,12 @@ accrual. Evidence gathered and cited by the manager in
 **No in-sample result justifies capital. The forward test is the evidence.**
 
 *Results append below this line, never above it.*
+
+
+---
+
+**DATED LEAGUE-FILTER LINE (research agent, 2026-09-02):** D1's cohort is
+**league = WNBA (basketball) ONLY**, same clause and reason as A1's gate:
+the substrate table goes mixed-league with GRIDIRON's NFL recording, and
+this pin's buckets and capture basis are WNBA-derived. League filter keys
+on the event slug prefix.
