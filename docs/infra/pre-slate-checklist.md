@@ -86,6 +86,25 @@ PULSE tape for any gated cohort.
   ledger (A's build) records the full quote stream — verify its first rows
   carry fv, clock-quality, and game_start_time per the registered schema.
 
+## 4b. After ANY engine deploy: the heartbeat ROW advances (10-minute rule)
+
+Promoted from habit to checklist line by amendment 11's rider (2026-09-02,
+the night the v2 engine deployed healthy but beat-less): after any engine
+deploy, verify the service's `service_heartbeats` row advances within 10
+minutes — the ROW, not the log line, because the row is the level every
+health surface acts on. The replay-equivalence proof declares this as its
+blind spot by design (it compares quoting decisions and fills; liveness
+side-effects are outside its comparison set); this check is the named
+compensator.
+
+```bash
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$MERIDIAN_SERVER "sudo docker exec meridian-postgres psql -U meridian -d meridian -Atc \"SELECT service, round(extract(epoch from now()-beat_at),1) AS age_s, interval_seconds FROM service_heartbeats ORDER BY service;\""
+```
+
+Every deployed engine's age must sit under 3× its interval and SHRINK
+back there after a restart. An age that grows while the container logs
+look healthy is exactly the 2026-09-02 signature.
+
 ## 5. Next fills pin (after first slate)
 
 The next `quote_fills` export must carry `game_start_time` (D1's pregame
