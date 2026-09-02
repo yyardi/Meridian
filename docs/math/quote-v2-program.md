@@ -505,6 +505,17 @@ recorded datum onward, the no-mid-accrual consequence binds exactly as
 written — no deploy until A1 reads, chosen not drifted. The heartbeat-fix
 redeploy proceeds under this amendment.
 
+**DATED LEAGUE-FILTER LINE (research agent, 2026-09-02, landed before the
+first NFL datum):** GRIDIRON (the operator-directed NFL maker program,
+2026-09-02) makes `shadow_quote_fills` and `quote_v2_observations`
+MIXED-LEAGUE tables from the first NFL tick the filterless quoter
+observes. Standing note binding every arm of THIS program: **all cohorts
+read basketball only** (league keyed on the event slug prefix), the
+mixed-league substrate is disclosed in every read, and A1's gate and D1
+carry the same clause in their own registrations (dated lines landed
+2026-09-02). GRIDIRON's cohorts live in GRIDIRON's own registry; nothing
+NFL gates or informs a basketball arm, and vice versa.
+
 *Rider — rule 19 applied to the proofs themselves:* the replay-equivalence
 proof DECLARES its blind spot — it compares quoting decisions and fills;
 liveness side-effects (heartbeat writes, telemetry) are outside its
