@@ -169,6 +169,19 @@ before merge**, and the merge is refused if it would revert one.
    *Cross-ref: the ffill-staleness hazard entry is the habit form of this duty —
    one discipline at two strengths; amendments to either must notice the other.*
 
+17. **The precondition citation duty (corollary to rule 10): a floor is a
+   claim about data; a PRECONDITION is a claim about an artifact. Both carry
+   the citation duty** — name the file/function/commit that satisfies it, or
+   state explicitly "to be built and registered." An uncited precondition is
+   where reifications breed. The type specimen (2026-09-02, the QUOTE v2
+   congestion arm): a draft cited "measured wall-clock congestion windows,"
+   which reified a retrospective bunching statistic into a deployable window
+   list; the bad pointer then propagated — a builder's scaffold cited a third
+   object matching neither the phantom nor the real artifact. Three pointers,
+   one nonexistent object, caught only because the instrument's author checked
+   the pointer against their own code before anything was built on it.
+   (Proposed by the research agent; elevated by the manager same day.)
+
 ## Hazard entry, appended 2026-09-02 (D + B; research-endorsed) — unbounded ffill fakes liquidity in dying books
 
 **The trap:** joining or pivoting a tick tape and forward-filling quotes
