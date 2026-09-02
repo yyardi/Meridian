@@ -167,6 +167,44 @@ before merge**, and the merge is refused if it would revert one.
    calibration standard for every future instrument in its domain.** The night
    we can't re-run is exactly the night the instrument must already be proven.
 
+## Hazard entry, appended 2026-09-02 (D + B; research-endorsed) — unbounded ffill fakes liquidity in dying books
+
+**The trap:** joining or pivoting a tick tape and forward-filling quotes
+without a staleness bound treats an absent quote as the last one repeated.
+On a board where books thin and die (this venue's defining late-game fact),
+that manufactures simultaneity that never existed: a stale side held
+against a fresh one produces phantom crossings, phantom lags, phantom
+liquidity.
+
+**Hit twice, independently, same tape, same day.** D's coherence module
+first read **6,963 "persistent executable violations" against a measured
+invariant of ~1** — raw-tick ffill held stale quotes against fresh ones
+(compounded by a dominance-direction error the discrepancy then exposed).
+B's cross-market census: an unbounded as-of forward-fill let rungs whose
+books had died keep quoting into the winner↔spread triangle, manufacturing
+fake incoherence precisely in decided games — a 2s staleness tolerance on
+the join collapsed 1,462 fake persistent >10¢ episodes to 101 (a separate
+interpolation-bracket guard took the rest to 1). The attribution split is
+part of the record: the ffill trap accounts for 1,462→101; 101→1 was a
+DIFFERENT trap (wide-bracket interpolation), and crediting it to this rule
+would overstate what a staleness bound buys.
+
+**The rule:** any cross-series comparison on a tick tape must bound
+staleness explicitly and state the bound in the artifact — compliant
+patterns: c7's 10s-fresh grid (both series must quote within the same
+bucket; the coherence instruments), B's 2s as-of tolerance on the 200ms
+native grid (`cross_market_census.py`). An absent quote is ABSENT, not the
+previous value; and per the recorder's own book_tier principle, distinguish
+*no resting size* from *we did not look*. A joined number whose staleness
+bound is unstated is unreviewable.
+
+**The tell that catches it:** compare the instrument's first read against
+any known invariant or closed count before trusting it — the 6,963-vs-1
+discrepancy is what surfaced this trap, twice. This tell is the HABIT form
+of **rule 16, the known-answer duty**, which is its mandatory-gate form:
+one discipline at two strengths — an amendment to either should notice the
+other. (Same family as "break a new check on purpose before trusting it".)
+
 ## Priority hint
 
 The price bands where size actually exists (**35–65¢**) have never been sliced
