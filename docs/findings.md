@@ -427,6 +427,24 @@ survive an endgame the way WNBA's do not (`bookless-endgames.md`). Those are
 tick-level facts and require the recorder to run against live NBA markets. **A
 listing is not a book.**
 
+### V30 — The tick tape's `event_score` can die before the game does
+
+**Measured 2026-09-02** (C's census mapper): in at least one game the tape's
+last `event_score` is **stale against settlement** — tor-wsh reads 82-91 on the
+tape while the game settled 93-82. The recorder's score column stopped
+updating before the game ended, silently, while price rows kept flowing.
+
+**Consequences.** Any join, mapper, or filter keyed on the tape's last score is
+keyed on a field with no freshness guarantee. **Settlement finals are the only
+authoritative mapping key** (C's mapper now keys on unordered final-score pairs
+from settlement, with slug-vs-UTC ±1 day for the evening-tip date shift).
+Under rule 13, any feed-quality predicate referencing `event_score` owes an
+audit — a quietly-dying field inside a QC rule is a filter defect waiting to
+unregister a population.
+
+Filed in the verify-against-the-venue family: the venue's settlement is the
+fact; the feed's convenience column is a cache with no invalidation.
+
 ## 2. Bugs
 
 Every one of these was free because nothing traded. That property is the reason
