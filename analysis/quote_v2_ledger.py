@@ -378,11 +378,14 @@ def assemble_ledger(fills: pd.DataFrame, *, tick_path: Path | None = None
       * `character` — the A1 vol classifier at QUOTE time (the shared
         `analysis.a1_oscillation_descriptive` at its frozen constants), so the
         v2-STATE cells and D's post-mortem cells are the same cells;
-      * `congested` — from B's registered causal detector
-        (`analysis.congestion_detector.windows_from_frame`, @ d1fb6de),
-        computed PER GAME on the raw tick frame and tested at each fill's
-        `filled_at`. The window opens at confirm time (t0+5s), so a fill-time
-        test reads no future.
+      * `congested` — the GATE flag — is ABSENT in sample (so
+        `_congestion_keeps` fail-closes). B's causal detector must run on the
+        QUOTER'S OWN observation stream at its own cadence/stamps
+        (registration); v1 recorded no such stream, and the recorder tick tape
+        (200ms, recorder stamps) is the forbidden cross-process clock AND
+        over-fires (90.6% of fills / 75% of game time vs D's ~46%). A labelled
+        `congested_recorder_proxy` is recorded for diagnostics only; the gate
+        flag awaits the forward v2 quoter's own observation stream.
       * `guard_flagged` — PENDING the forward v2 fill schema (needs fv +
         clock-quality per quote row; not on the v1 pin). Left ABSENT —
         `_guard_keeps` scores only once the v2 quoter records those fields.
@@ -418,25 +421,34 @@ def assemble_ledger(fills: pd.DataFrame, *, tick_path: Path | None = None
         for m, t in zip(df.market_slug, df.quoted_at)
     ]
 
-    # 3. congested (B's causal detector) — windows PER GAME (venue-pooled
-    #    across that game's ladders), fill tested at filled_at. Same code path
-    #    as the streaming detector, so scorer and engine cannot diverge.
+    # 3. congestion — the GATE flag (`congested`) is intentionally ABSENT in
+    #    sample so `_congestion_keeps` fail-closes. B's causal detector must be
+    #    fed the QUOTER'S OWN observation stream at the quoter's cadence with
+    #    its own stamps (registration); v1 never recorded that stream, and
+    #    feeding the RECORDER tick tape instead (200ms, recorder stamps) is the
+    #    cross-process-timestamp usage B's registration explicitly forbids. It
+    #    also over-fires badly at 200ms: 90.6% of in-game fills / 75% of game
+    #    TIME congested (vs D's ~46% lag-statistic) — a cadence/stamp artifact,
+    #    NOT the gate. Recorded ONLY as a labelled proxy for diagnostics; the
+    #    real `congested` awaits the forward v2 quoter's own observation stream.
     from analysis import congestion_detector as cg
     raw = pd.read_csv(
         tp, usecols=["event_slug", "market_slug", "sports_market_type",
                      "captured_at", "best_bid", "best_ask"])
-    raw["captured_at"] = pd.to_datetime(raw.captured_at, utc=True, errors="coerce")
+    # Hand B's detector tz-NAIVE UTC datetimes: windows_from_frame does its own
+    # int64-ns normalization (the ns-hazard note), which requires naive.
+    raw["captured_at"] = (pd.to_datetime(raw.captured_at, utc=True,
+                                         errors="coerce").dt.tz_localize(None))
     raw = raw.dropna(subset=["captured_at"])
-    windows_by_game: dict[str, list[tuple]] = {}
-    for game, g in raw.groupby("event_slug"):
-        windows_by_game[game] = cg.windows_from_frame(g)
+    windows_by_game = {game: cg.windows_from_frame(g)
+                       for game, g in raw.groupby("event_slug")}
     fill_game = df.market_slug.map(slug2game)
-    fsec = df.filled_at.astype("datetime64[ns]").astype("int64") / 1e9
-    df["congested"] = [
+    fsec = (df.filled_at - pd.Timestamp("1970-01-01", tz="UTC")).dt.total_seconds()
+    df["congested_recorder_proxy"] = [
         any(a <= t < b for a, b in windows_by_game.get(gm, []))
         for gm, t in zip(fill_game, fsec)
     ]
-    # guard_flagged intentionally absent — see docstring (forward-schema).
+    # `congested` (gate) and `guard_flagged` intentionally absent — see docstring.
     return df
 
 
