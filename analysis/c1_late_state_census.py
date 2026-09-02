@@ -62,7 +62,7 @@ def load_plays(path: str) -> pd.DataFrame:
     for c in ["period", "clock_secs", "score_a", "score_b"]:
         p[c] = pd.to_numeric(p[c], errors="coerce")
     p = p.dropna(subset=["period", "clock_secs", "score_a", "score_b"])
-    p["wallclock"] = pd.to_datetime(p.wallclock, errors="coerce", utc=True)
+    p["wallclock"] = pd.to_datetime(p.wallclock, errors="coerce", utc=True, format="ISO8601")
     p = p.dropna(subset=["wallclock"])
     p["tot"] = p.score_a + p.score_b
     p["margin_abs"] = (p.score_a - p.score_b).abs()
@@ -70,22 +70,23 @@ def load_plays(path: str) -> pd.DataFrame:
 
 
 def map_games(ticks: pd.DataFrame, plays: pd.DataFrame) -> dict[str, str]:
-    """event_slug -> espn_gid by (slug date, unordered final-score pair)."""
+    """event_slug -> espn_gid by unordered final-score pair + date within 1 day.
+
+    The slug carries the US game date; ESPN wallclocks are UTC, so an evening
+    tip lands on the NEXT UTC date — the date check is |slug - utc_start| <= 1
+    day, with the score pair carrying the identification."""
     finals = plays.groupby("espn_gid").agg(a=("score_a", "max"), b=("score_b", "max"),
                                            d=("wallclock", "min"))
-    finals["key"] = [f"{r.d.date()}|{frozenset([int(r.a), int(r.b)])}" for r in finals.itertuples()]
-    slug_final = {}
+    by_pair: dict[frozenset, list] = {}
+    for gid, row in finals.iterrows():
+        by_pair.setdefault(frozenset([int(row.a), int(row.b)]), []).append((gid, row.d.date()))
+    out, misses, ambigs = {}, [], []
     for slug, g in ticks.groupby("event_slug"):
         last = g.sort_values("captured_at").event_score.dropna().iloc[-1]
-        a, b = (int(x) for x in last.split("-"))
-        date = "-".join(slug.split("-")[-3:])
-        slug_final[slug] = f"{date}|{frozenset([a, b])}"
-    espn_by_key = {}
-    for gid, row in finals.iterrows():
-        espn_by_key.setdefault(row.key, []).append(gid)
-    out, misses, ambigs = {}, [], []
-    for slug, key in slug_final.items():
-        hits = espn_by_key.get(key, [])
+        pair = frozenset(int(x) for x in last.split("-"))
+        slug_date = pd.Timestamp("-".join(slug.split("-")[-3:])).date()
+        hits = [gid for gid, d in by_pair.get(pair, [])
+                if abs((d - slug_date).days) <= 1]
         if len(hits) == 1:
             out[slug] = hits[0]
         elif len(hits) == 0:
@@ -104,7 +105,7 @@ def map_games(ticks: pd.DataFrame, plays: pd.DataFrame) -> dict[str, str]:
 def build_instants(ticks: pd.DataFrame, plays: pd.DataFrame, mapping: dict) -> pd.DataFrame:
     """10s-grid totals-book instants joined to the ESPN state at that wallclock."""
     t = ticks[ticks.sports_market_type == "basketball_team_full_game_total"].copy()
-    t["captured_at"] = pd.to_datetime(t.captured_at, utc=True)
+    t["captured_at"] = pd.to_datetime(t.captured_at, utc=True, format="ISO8601")
     t["bucket"] = t.captured_at.dt.floor("10s")
     t = t.sort_values("captured_at").groupby(["market_slug", "bucket"]).last().reset_index()
     t["espn_gid"] = t.event_slug.map(mapping)
@@ -201,7 +202,9 @@ def selftest() -> None:
        beyond tolerance carries none.
     """
     ok = True
-    base = pd.Timestamp("2026-08-20 01:00:00", tz="UTC")
+    # g1 starts at 03:00Z on the 21st while the slug says 08-20 — the UTC
+    # date-shift case the real data is full of; the ±1-day rule must map it
+    base = pd.Timestamp("2026-08-21 03:00:00", tz="UTC")
 
     plays = pd.DataFrame({
         "espn_gid": ["g1"] * 3 + ["g2"] * 2,
