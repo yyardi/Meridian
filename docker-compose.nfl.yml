@@ -28,7 +28,14 @@ services:
     environment:
       DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       MERIDIAN_LEAGUE: nfl
-      MERIDIAN_RPS: "2"
+      # 2 → 6 (2026-09-02, stale-at-birth finding): the NFL board is 912
+      # markets ≈ 1,824 requests/sweep; at RPS 2 a sweep takes ~15 min and
+      # commits rows stamped at sweep START — every row already outside the
+      # quoter's 600s observation window when it first becomes VISIBLE
+      # (measured: captured_at 22:52:38Z, visibility ~23:09Z). At 6 the
+      # sweep lands in ~5 min, leaving real window. Budget: wnba pair idles
+      # on an empty league; nfl-live idles until Sept 9.
+      MERIDIAN_RPS: "6"
 
   nfl-live-recorder:
     build: .
