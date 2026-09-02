@@ -82,14 +82,16 @@ leans R4b); a strong injection (bucket-2 gap 40%) reads +0.000065
 [−0.000008, +0.000139] at real power and +0.000082 [+0.000035, +0.000129]
 at 3× (detectable in principle, asserted there); **minimum detectable
 bucket-2 gradient at real-gate power ≈ 42% σ-reduction** (quadratic
-scaling), against the theory's ~12%. Consequently, pre-committed: **any
-FAIL verdict quotes that bound beside it — "g carries information at ≥
-~42% σ-reduction" — never the bare sentence**; a FAIL is therefore STRONG
-evidence (the real effect must be ~3.5× the theory's size); and a straddle
-carries NO evidence against the z-gradient theory — it licenses the
-simpler form on parsimony alone, exactly as the tie-break states, leaving
-the gradient question to better instruments (a future registration if
-anyone wants it).
+scaling), against the theory's ~12%. Consequently, pre-committed, in the
+research agent's verbatim form from the final sign-off: **any FAIL verdict
+quotes the printed real-power prognosis beside it — "FAIL at [observed],
+against a real-power detectability prognosis of +0.000065 [−0.000008,
++0.000139] — the effect far exceeds what this gate could ordinarily see,
+which is why the FAIL is strong evidence" — never the bare sentence.** And
+a straddle carries NO evidence against the z-gradient theory — it licenses
+the simpler form on parsimony alone, exactly as the tie-break states,
+leaving the gradient question to better instruments (a future registration
+if anyone wants it).
 
 **O4 (firing rate): NOT APPLICABLE** — calibration arm; stated so the
 checklist reads considered rather than skipped.
