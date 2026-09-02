@@ -1,0 +1,57 @@
+{
+  "provenance": {
+    "version": 3,
+    "lineage": "v1 = pre-R4 (superseded). v2 = R4 g adopted (superseded). v3 = R4b PASS (-0.000048 [-0.000073,-0.000024], 7 seasons, outright not tie-break): sigma refit under the SHRUNK mean replaces sigma_phase+g; g RETIRED. Parameters mean what they say.",
+    "pins": [
+      "backups/exports/nba_games_20260901T225326Z.csv",
+      "backups/exports/nba_plays_20260901T225326Z.csv.gz"
+    ],
+    "generator": "analysis/nba_constants_v3.py",
+    "commit": "256d091c931ec9bf58873e253f191a8e8552f4da",
+    "date": "2026-09-02",
+    "boundary": "PHYSICS-ONLY: fitted constant tables, never point-in-time claims. Full-data fits of the ADOPTED estimands (R4b sigma-prime under the shrunk mean, R2 shrink, R3b arm a); the gates scored walk-forward out-of-sample. Calibration constants, never edge."
+  },
+  "r4b_sigma_shrunk_fit": {
+    "global_per_sqrt_min": 2.1996374786470625,
+    "phase_table": {
+      "(36.0,48.0]": 1.9117251778952604,
+      "(24.0,36.0]": 2.058024352877089,
+      "(12.0,24.0]": 2.2227686372324937,
+      "(0.0,12.0]": 2.464196747039125
+    },
+    "applies": "sigma for the SHRUNK-mean stack: P = Phi((E+(1-s)dev)/(sigma'*sqrt(t)))"
+  },
+  "r2_shrink": {
+    "gridpoints_elapsed": {
+      "4": 0.45200282232584665,
+      "8": 0.4070562804859566,
+      "12": 0.34646389528895827,
+      "16": 0.3215500201579765,
+      "20": 0.2958335305814474,
+      "24": 0.2508896838832462,
+      "28": 0.2305862229764023,
+      "32": 0.20534944469484046,
+      "36": 0.1610634475019677,
+      "40": 0.13186568873789103,
+      "44": 0.09273279961789099
+    },
+    "beta_48": 0.0
+  },
+  "r3b_totals": {
+    "share": {
+      "36.0": 0.2538552787663108,
+      "24.0": 0.5066375526284078,
+      "12.0": 0.7577061674166196
+    },
+    "b": {
+      "36.0": 1.0880151701804228,
+      "24.0": 1.014059121255322,
+      "12.0": 1.0201455129149555
+    },
+    "sigma": {
+      "36.0": 16.02965017240843,
+      "24.0": 13.735977039467762,
+      "12.0": 10.48049321497334
+    }
+  }
+}
