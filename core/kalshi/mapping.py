@@ -55,15 +55,69 @@ KALSHI_TO_ESPN: dict[str, str] = {
     "WSH": "WSH",
 }
 
+#: Kalshi NFL code -> ESPN abbreviation. Codes harvested from the venue
+#: 2026-09-02 via each open KXNFLGAME event's own market-ticker suffixes
+#: (the two per-team markets name the codes exactly — no split-guessing),
+#: with yes_sub_title confirming the franchise. Two differ from ESPN,
+#: the same species as CONN/PDX above.
+KALSHI_TO_ESPN_NFL: dict[str, str] = {
+    "ARI": "ARI", "ATL": "ATL", "BAL": "BAL", "BUF": "BUF", "CAR": "CAR",
+    "CHI": "CHI", "CIN": "CIN", "CLE": "CLE", "DAL": "DAL", "DEN": "DEN",
+    "DET": "DET", "GB": "GB", "HOU": "HOU", "IND": "IND",
+    "JAC": "JAX",    # <- differs
+    "KC": "KC", "LAC": "LAC", "LAR": "LAR", "LV": "LV", "MIA": "MIA",
+    "MIN": "MIN", "NE": "NE", "NO": "NO", "NYG": "NYG", "NYJ": "NYJ",
+    "PHI": "PHI", "PIT": "PIT", "SEA": "SEA", "SF": "SF", "TB": "TB",
+    "TEN": "TEN",
+    "WAS": "WSH",    # <- differs
+}
+
+LEAGUE_WNBA = "wnba"
+LEAGUE_NFL = "nfl"
+
+#: One explicit table per league. Seven codes exist in BOTH tables (ATL,
+#: CHI, DAL, IND, LV, MIN, SEA), so a game key alone does not identify a
+#: league — parsing takes the league, and kalshi_games keys on
+#: (league, game_key). A same-date cross-league pair (SEA/ATL in both
+#: leagues on one Sunday) is a real collision, not a hypothetical.
+LEAGUE_TABLES: dict[str, dict[str, str]] = {
+    LEAGUE_WNBA: KALSHI_TO_ESPN,
+    LEAGUE_NFL: KALSHI_TO_ESPN_NFL,
+}
+
 #: The three full-game series the pre-registered comparison runs on.
 SERIES_MONEYLINE = "KXWNBAGAME"
 SERIES_SPREAD = "KXWNBASPREAD"
 SERIES_TOTAL = "KXWNBATOTAL"
 
+#: The NFL full-game series (GRIDIRON) — venue-verified 2026-09-02: same
+#: event-ticker shape, ~25 team-directional spread rungs and ~19 total
+#: rungs per game, no start time on events (the standing WNBA gap).
+SERIES_MONEYLINE_NFL = "KXNFLGAME"
+SERIES_SPREAD_NFL = "KXNFLSPREAD"
+SERIES_TOTAL_NFL = "KXNFLTOTAL"
+
 SERIES_TO_MARKET_TYPE: dict[str, str] = {
     SERIES_MONEYLINE: "winner",
     SERIES_SPREAD: "spread",
     SERIES_TOTAL: "total",
+    SERIES_MONEYLINE_NFL: "winner",
+    SERIES_SPREAD_NFL: "spread",
+    SERIES_TOTAL_NFL: "total",
+}
+
+SERIES_TO_LEAGUE: dict[str, str] = {
+    SERIES_MONEYLINE: LEAGUE_WNBA,
+    SERIES_SPREAD: LEAGUE_WNBA,
+    SERIES_TOTAL: LEAGUE_WNBA,
+    SERIES_MONEYLINE_NFL: LEAGUE_NFL,
+    SERIES_SPREAD_NFL: LEAGUE_NFL,
+    SERIES_TOTAL_NFL: LEAGUE_NFL,
+}
+
+LEAGUE_SERIES: dict[str, tuple[str, ...]] = {
+    LEAGUE_WNBA: (SERIES_MONEYLINE, SERIES_SPREAD, SERIES_TOTAL),
+    LEAGUE_NFL: (SERIES_MONEYLINE_NFL, SERIES_SPREAD_NFL, SERIES_TOTAL_NFL),
 }
 
 _MONTHS = {
@@ -77,20 +131,23 @@ class ParsedGameKey:
     """Date and team codes recovered from a Kalshi game key.
 
     ``first_code``/``second_code`` are positional ONLY — see module docstring.
+    ``league`` names which code table parsed it (shared codes make the key
+    alone league-ambiguous).
     """
 
     game_key: str
     local_date: dt.date
     first_code: str
     second_code: str
+    league: str = LEAGUE_WNBA
 
     @property
     def first_espn(self) -> str:
-        return _to_espn(self.first_code)
+        return _to_espn(self.first_code, self.league)
 
     @property
     def second_espn(self) -> str:
-        return _to_espn(self.second_code)
+        return _to_espn(self.second_code, self.league)
 
     @property
     def espn_pair(self) -> frozenset[str]:
@@ -98,17 +155,18 @@ class ParsedGameKey:
         return frozenset({self.first_espn, self.second_espn})
 
 
-def _to_espn(code: str) -> str:
+def _to_espn(code: str, league: str = LEAGUE_WNBA) -> str:
+    table = LEAGUE_TABLES[league]
     key = (code or "").strip().upper()
-    if key not in KALSHI_TO_ESPN:
+    if key not in table:
         raise UnknownTeamError(
-            f"no ESPN mapping for Kalshi team {code!r}. A franchise was "
-            "probably added — update KALSHI_TO_ESPN."
+            f"no ESPN mapping for Kalshi {league} team {code!r}. A franchise "
+            "was probably added — update the league's table."
         )
-    return KALSHI_TO_ESPN[key]
+    return table[key]
 
 
-def parse_game_key(game_key: str) -> ParsedGameKey | None:
+def parse_game_key(game_key: str, league: str = LEAGUE_WNBA) -> ParsedGameKey | None:
     """Parse ``26AUG05PHXATL`` -> (2026-08-05, PHX, ATL), or None.
 
     Returns None when the date is malformed, when no split of the team blob
@@ -127,16 +185,18 @@ def parse_game_key(game_key: str) -> ParsedGameKey | None:
     except ValueError:
         return None
 
+    table = LEAGUE_TABLES[league]
     splits = [
         (teams[:i], teams[i:])
         for i in range(1, len(teams))
-        if teams[:i] in KALSHI_TO_ESPN and teams[i:] in KALSHI_TO_ESPN
+        if teams[:i] in table and teams[i:] in table
     ]
     if len(splits) != 1:
         return None
     first, second = splits[0]
     return ParsedGameKey(
-        game_key=key, local_date=local_date, first_code=first, second_code=second
+        game_key=key, local_date=local_date, first_code=first,
+        second_code=second, league=league,
     )
 
 

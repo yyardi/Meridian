@@ -50,8 +50,10 @@ from core.config import KALSHI, KalshiConfig
 from core.heartbeat import SERVICE_KALSHI, Heartbeat
 from core.kalshi.client import KalshiPublicClient
 from core.kalshi.mapping import (
+    LEAGUE_SERIES,
     SERIES_MONEYLINE,
     SERIES_SPREAD,
+    SERIES_TO_LEAGUE,
     SERIES_TO_MARKET_TYPE,
     SERIES_TOTAL,
     ParsedGameKey,
@@ -72,7 +74,13 @@ log = structlog.get_logger(__name__)
 
 UTC = dt.timezone.utc
 
-POLLED_SERIES = (SERIES_MONEYLINE, SERIES_SPREAD, SERIES_TOTAL)
+#: Every series the recorder discovers and polls, both leagues. Per-game
+#: polling uses the game's OWN league's three series (a game key is only
+#: meaningful inside its league). Sunday worst case, stated arithmetic:
+#: ~13 NFL games + ~4 WNBA games in the 6h pregame window x 3 series
+#: = ~51 requests per 60s cycle = 0.85 req/s sustained against the 5/s
+#: bucket (burst drains in ~10s); discovery adds 6 requests per 6h.
+POLLED_SERIES = LEAGUE_SERIES["wnba"] + LEAGUE_SERIES["nfl"]
 
 #: Fields whose change means "the contract's terms changed" and earns a new
 #: kalshi_contracts row. Prices are deliberately absent.
@@ -180,7 +188,7 @@ class KalshiRecorder:
         with self._Session() as session:
             for game in self._pollable_games(session, captured_at):
                 stats.games_polled += 1
-                for series in POLLED_SERIES:
+                for series in LEAGUE_SERIES[game.league]:
                     event_ticker = f"{series}-{game.game_key}"
                     try:
                         self._record_event(
@@ -227,18 +235,21 @@ class KalshiRecorder:
 
     def _discover(self, captured_at: dt.datetime, stats: KalshiStats) -> None:
         """Upsert one kalshi_games row per open game, then link to Polymarket."""
-        seen: dict[str, dict[str, Any]] = {}
+        seen: dict[tuple[str, str], dict[str, Any]] = {}
         # The moneyline series alone names every game, but spread/total events
         # can in principle open on a different schedule; union all three.
+        # Keyed by (league, game_key): shared team codes make the key alone
+        # league-ambiguous (the SEA/ATL Sunday collision).
         for series in POLLED_SERIES:
+            league = SERIES_TO_LEAGUE[series]
             for event in self._client.iter_events(series, status="open"):
                 key = game_key_from_event_ticker(str(event.get("event_ticker") or ""))
-                if key and key not in seen:
-                    seen[key] = event
+                if key and (league, key) not in seen:
+                    seen[(league, key)] = event
 
         with self._Session() as session:
-            for key, event in seen.items():
-                parsed = parse_game_key(key)
+            for (league, key), event in seen.items():
+                parsed = parse_game_key(key, league)
                 if parsed is None:
                     # All-star exhibitions ('26JUL25SPNCOO') and anything else
                     # that is not a franchise game. Not an error.
@@ -246,6 +257,7 @@ class KalshiRecorder:
                     continue
                 values = {
                     "game_key": parsed.game_key,
+                    "league": parsed.league,
                     "local_date": dt.datetime.combine(
                         parsed.local_date, dt.time.min, tzinfo=UTC
                     ),
@@ -259,7 +271,8 @@ class KalshiRecorder:
                 inserted = session.execute(
                     pg_insert(KalshiGame)
                     .values(**values)
-                    .on_conflict_do_nothing(index_elements=["game_key"])
+                    .on_conflict_do_nothing(
+                        index_elements=["league", "game_key"])
                     .returning(KalshiGame.id)
                 ).scalar()
                 if inserted is not None:
