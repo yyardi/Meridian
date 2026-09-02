@@ -75,3 +75,18 @@ injected edge**.
 **No in-sample result justifies capital. The forward test is the evidence.**
 
 *Results append below this line, never above it.*
+
+## 2026-09-02 — linking-pin harmonization (report layer; the gate is untouched)
+
+D's scorer surfaced that this registration's context line pins the **drop**
+rule while the companion pins the **repaired** rule — opposite sides of the
+sign-flipping sensitivity, in two texts that claim to share a policy. **The
+research agent's resolution: both gates' CONTEXT lines harmonize on the
+REPAIRED `lineage_source` rule** (it corrected an attribution bug; the
+artifact-correct side), **with the drop-rule number printed beside wherever a
+linked context figure appears** — the both-sides #147/#148 convention.
+
+**No gated quantity in either registration depends on linking** — both scorers
+are linking-free by construction. This is a report-layer harmonization, not a
+gate change; the original pin text stands above this note untouched. The
+scorer's NOTICE retires with this note's landing.
