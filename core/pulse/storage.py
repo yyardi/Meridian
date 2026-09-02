@@ -66,6 +66,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -235,4 +236,80 @@ class PulseAbstention(Base):
             name="ck_pa_guard"),
         Index("ix_pa_event_slug", "event_slug"),
         Index("ix_pa_decided_at", "decided_at"),
+    )
+
+
+class PulseRepriceExit(Base):
+    """One filled entry's DYNAMIC-exit shadow arm (core/pulse/reprice.py).
+
+    Built against `docs/math/dynamic-exit-repricing.md`. The engine's live
+    behaviour is the STATIC incumbent, recorded in `pulse_decisions`; this
+    table records, per filled entry, what a profit-target exit repriced each
+    cycle at current fair value WOULD have done — no order exists behind it.
+
+    **One row per entry, keyed by `entry_decision_id`** (unique). The pair is
+    a one-key join: this row is the dynamic arm; the static arm is the same
+    entry's outcome in `pulse_decisions` / A's round-trip ledger, joined on
+    `entry_decision_id`. No reconstruction (design constraint 1).
+
+    Scoring is the ledger's own policy — round-trip, YES frame, maker fills at
+    the recorded limits, $0 fees (V9/C7):
+
+    * ``dynamic_outcome='exit_fill'``: the arm hit its repriced target;
+      per-contract P&L = sign·(``dynamic_exit_price`` − ``entry_price``),
+      sign +1 YES / −1 NO.
+    * ``dynamic_outcome='settlement'``: the arm never filled while the market
+      was live; it rides, scored at the entry's settlement (join
+      `pulse_decisions.settlement` on `entry_decision_id` — this table stores
+      no settlement, exactly as A's ledger reads it from the entry row).
+
+    `target_diverged` is the cheap in-engine flag (the repriced target
+    differed from the static target on some cycle); the registration's
+    "diverging exit" — a dynamic realized exit differing from the static one
+    — is computed at analysis time from the pair. `staleness_holds` /
+    `staleness_fallbacks` make the v3a staleness bound observable in the tape.
+    """
+
+    __tablename__ = "pulse_reprice_exits"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    #: The entry this arm belongs to — the pairing key, unique per position.
+    entry_decision_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    # ---- carry-through so the dynamic P&L is self-contained --------------- #
+    event_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    market_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(16), nullable=False)
+    side: Mapped[str] = mapped_column(String(3), nullable=False)
+    entry_price: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    contracts: Mapped[Decimal] = mapped_column(Qty, nullable=False)
+    profit_target: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # ---- the dynamic arm's outcome --------------------------------------- #
+    #: 'exit_fill' (hit the repriced target) | 'settlement' (rode).
+    dynamic_outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    dynamic_exit_price: Mapped[Decimal | None] = mapped_column(Price)
+    dynamic_filled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The repriced exit ended as a stop-cut (mirrors the incumbent's ev/adverse cut).
+    was_stop: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # ---- diagnostics ----------------------------------------------------- #
+    fv_open: Mapped[Decimal | None] = mapped_column(Price)
+    reprice_cycles: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    target_diverged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    staleness_holds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    staleness_fallbacks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    estimates_version: Mapped[str] = mapped_column(String(4), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("dynamic_outcome in ('exit_fill','settlement')",
+                        name="ck_pre_outcome"),
+        CheckConstraint("side in ('yes','no')", name="ck_pre_side"),
+        UniqueConstraint("entry_decision_id", name="uq_pre_entry"),
+        Index("ix_pre_event_slug", "event_slug"),
+        Index("ix_pre_entry_id", "entry_decision_id"),
     )
