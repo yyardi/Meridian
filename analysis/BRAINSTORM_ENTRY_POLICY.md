@@ -428,3 +428,40 @@ garbage that works 1 in every 19 games."* **Every surviving candidate states
 its expected FIRING RATE (opportunities per game) beside its novel exposure.**
 A true edge that fires once a month cannot be distinguished from luck inside a
 season, and the operator has said plainly it is not worth their capital.
+
+---
+
+## Candidate 1 (disagreement freshness): CLOSED — descriptive negative, mechanism refuted
+
+Research agent's pass on the pins (`survey/edge_freshness.py`; 2,974 entries /
+34 games; buckets declared pre-compute; **B's round-2 attack on this candidate
+is hereby vindicated before round 2 formally closed**):
+
+```
+age <=5s    2,272 (76%)  fill 67.5%   maker -0.044 [-0.133,+0.045]   pess -0.384
+5-30s         148        fill 70.9%         -0.066                   pess -0.266
+30-120s       152        fill 59.2%         +0.045 [-0.001,+0.091]   pess -0.180
+>120s         402        fill 53.7%         +0.041 [+0.004,+0.078]   pess -0.199
+```
+
+**Three readings, all against the candidate:**
+1. **The mechanism's prediction is INVERTED.** Fresh edges fill MORE and do
+   WORSE — the opposite of "good ideas run away." The running-away in #126
+   operates at the **price** level (the limit never reached), not the **time**
+   level at engine cadence. Freshness is not the lever.
+2. **The stale-positive is substantially game composition** — the shuffle
+   control earned its keep: within-game age permutation still reads +0.029
+   [−0.014, +0.071] against the real +0.041, so most of the apparent stale
+   edge is *which games* contribute stale entries. Entry-level residue ~+0.01
+   and noise.
+3. **Pessimistic fills are negative in every bucket** (−0.18 to −0.38).
+
+**Composition caveat, printed so nobody misreads:** 76% of entries are ≤5s
+because the engine enters on first cycle **by design** — the stale buckets are
+re-entries and previously-blocked states, a selected subset. **The buckets are
+not exchangeable populations**, which is exactly what the shuffle control
+formalized.
+
+First cross-agent artifact reuse on the record: A's ledger consumed as the
+substrate, cleanly. **The wall gains two same-day corpses with mechanisms
+named (candidates 1 and 3). That is what walls are for.**
