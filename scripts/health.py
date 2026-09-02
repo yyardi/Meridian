@@ -74,6 +74,18 @@ def check_containers() -> list[Check]:
         "meridian-api": "dashboard + order path + fill watcher",
         "meridian-alerter": "phone alerts (ntfy)",
         "meridian-postgres": "local Postgres",
+        # Overlay engines. Added 2026-09-02 after the health display's silence
+        # about them got read as "no PULSE container" by a session that then
+        # asked for a redeploy of a running engine — the display could neither
+        # confirm nor deny exactly the two processes the research program
+        # depends on this month. `espn-live-recorder` rides the same overlay
+        # family. The quote engine stays listed while stopped BY OPERATOR
+        # ORDER: seeing "quote-engine MISSING (operator-stopped, standing
+        # instruction)" is the truth; not seeing it at all was the bug.
+        "meridian-espn-live-recorder": "ESPN live feed (signal side)",
+        "meridian-pulse-engine": "PULSE engine (repricing arm + state guards)",
+        "meridian-quote-engine": "QUOTE engine (operator-stopped since ~08-22; "
+                                 "A1's gate substrate when it returns)",
     }
     try:
         out = subprocess.run(
