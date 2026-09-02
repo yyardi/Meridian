@@ -166,6 +166,8 @@ before merge**, and the merge is refused if it would revert one.
    boring list held a measured value to disagree with. **A closed negative is a
    calibration standard for every future instrument in its domain.** The night
    we can't re-run is exactly the night the instrument must already be proven.
+   *Cross-ref: the ffill-staleness hazard entry is the habit form of this duty —
+   one discipline at two strengths; amendments to either must notice the other.*
 
 ## Hazard entry, appended 2026-09-02 (D + B; research-endorsed) — unbounded ffill fakes liquidity in dying books
 
