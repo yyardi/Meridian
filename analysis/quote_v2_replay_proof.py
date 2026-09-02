@@ -188,11 +188,63 @@ def one_pass(target_events):
     return cycles, obs_at
 
 
+def check_completeness(ledger, obs_at):
+    """Per-fill substrate completeness → list of holes (market, side, reason,
+    ts). Pure, so its own rule-18 plants (below) can prove it CAN fail — a
+    completeness checker with a too-loose join is itself vacuous (matches
+    everything, finds no holes), the exact species this replaces."""
+    holes = []
+    for (m, side, q, f, qp, mf) in ledger:
+        if (m, q) not in obs_at:
+            holes.append((m, side, "quote_obs_absent", q))
+            continue
+        to = obs_at.get((m, f))
+        if to is None:
+            holes.append((m, side, "trigger_obs_absent", f))
+            continue
+        mid = to[2]
+        if abs(mid - mf) > 1e-9:
+            holes.append((m, side, "trigger_mid!=ledger", f))
+            continue
+        crosses = (mid <= qp) if side == "bid" else (mid >= qp)
+        if not crosses:
+            holes.append((m, side, "trigger_no_cross", f))
+    return holes
+
+
+def _rule18_plants() -> None:
+    """The checker must FAIL on a planted defect — else its clean pass is
+    vacuous (c7's requirement). (a) a deleted producing obs is reported as the
+    exact named hole; (b) a mid perturbed by one tick is caught as a value
+    mismatch; and a clean case is empty."""
+    t = dt.datetime(2026, 8, 18, 1, 0, 0, tzinfo=dt.timezone.utc)
+    tf = t + dt.timedelta(seconds=6)
+    ledger = [("m", "bid", t, tf, 0.40, 0.38)]        # crosses: mid 0.38 <= 0.40
+    clean = {("m", t): (0.39, 0.41, 0.40), ("m", tf): (0.36, 0.40, 0.38)}
+    assert check_completeness(ledger, clean) == [], "clean case must be empty"
+    # (a) delete the TRIGGER obs
+    oa = dict(clean); del oa[("m", tf)]
+    h = check_completeness(ledger, oa)
+    assert h == [("m", "bid", "trigger_obs_absent", tf)], h
+    # (a') delete the QUOTE obs
+    oa = dict(clean); del oa[("m", t)]
+    h = check_completeness(ledger, oa)
+    assert h == [("m", "bid", "quote_obs_absent", t)], h
+    # (b) perturb the trigger mid by one tick (0.38 -> 0.39)
+    oa = dict(clean); oa[("m", tf)] = (0.37, 0.41, 0.39)
+    h = check_completeness(ledger, oa)
+    assert h == [("m", "bid", "trigger_mid!=ledger", tf)], h
+    print("rule-18 plants: PASS — a deleted producing obs and a one-tick mid "
+          "perturbation are each caught as the exact named hole; clean is empty. "
+          "The completeness checker can fail, so its clean pass is not vacuous.")
+
+
 def main() -> int:
     import logging
     import structlog
     structlog.configure(
         wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING))
+    _rule18_plants()
     _verify_pin()
 
     ledger = load_ledger_ingame()
@@ -204,6 +256,7 @@ def main() -> int:
     # --- part 1: EQUIVALENCE (byte-identical, cadence-independent) --------- #
     v1, v2 = _make(ReplayV1), _make(ReplayV2)
     diverged = 0
+    ingame_produced = 0                # for the labelled cadence diagnostic only
     for i, obs in enumerate(cycles):
         f1 = v1.run_cycle(obs)
         f2 = v2.run_cycle(obs)
@@ -212,30 +265,18 @@ def main() -> int:
             diverged += 1
             if diverged <= 3:
                 print(f"  DIVERGENCE at cycle {i}")
+        ingame_produced += sum(1 for f in f1 if f.regime == "ingame")
 
     # --- part 2: SUBSTRATE COMPLETENESS (per fill, exact, cadence-free) ---- #
-    q_missing = t_missing = t_midmismatch = t_nocross = 0
-    holes = []
-    for (m, side, q, f, qp, mf) in ledger:
-        if (m, q) not in obs_at:
-            q_missing += 1
-            holes.append((m, side, "quote_obs_absent", q))
-            continue
-        to = obs_at.get((m, f))
-        if to is None:
-            t_missing += 1
-            holes.append((m, side, "trigger_obs_absent", f))
-            continue
-        _, _, mid = to
-        if abs(mid - mf) > 1e-9:
-            t_midmismatch += 1
-            holes.append((m, side, "trigger_mid!=ledger", f))
-            continue
-        crosses = (mid <= qp) if side == "bid" else (mid >= qp)
-        if not crosses:
-            t_nocross += 1
-            holes.append((m, side, "trigger_no_cross", f))
+    holes = check_completeness(ledger, obs_at)
+    by = {r: 0 for r in ("quote_obs_absent", "trigger_obs_absent",
+                         "trigger_mid!=ledger", "trigger_no_cross")}
+    for h in holes:
+        by[h[2]] += 1
     confirmed = len(ledger) - len(holes)
+
+    # --- labelled NON-GATING diagnostic (c7/manager): cadence-bounded ------ #
+    repro_n = ingame_produced         # in-game fills the 5s-grid replay produced
 
     print("\n=== registered proof-1 result ===")
     print("PART 1 — EQUIVALENCE (rebind core):")
@@ -245,10 +286,18 @@ def main() -> int:
     print("PART 2 — SUBSTRATE COMPLETENESS (integrity companion, per fill):")
     print(f"  ledgered in-game fills             : {len(ledger):,}")
     print(f"  producing obs present & matching    : {confirmed:,}")
-    print(f"  quote-obs absent (hole)            : {q_missing:,}")
-    print(f"  trigger-obs absent (hole)          : {t_missing:,}")
-    print(f"  trigger mid != ledger mid_at_fill  : {t_midmismatch:,}")
-    print(f"  trigger present but no cross       : {t_nocross:,}")
+    print(f"  quote-obs absent (hole)            : {by['quote_obs_absent']:,}")
+    print(f"  trigger-obs absent (hole)          : {by['trigger_obs_absent']:,}")
+    print(f"  trigger mid != ledger mid_at_fill  : {by['trigger_mid!=ledger']:,}")
+    print(f"  trigger present but no cross       : {by['trigger_no_cross']:,}")
+    print("DIAGNOSTIC (NON-GATING, LABELLED) — cadence-bounded reproduction:")
+    print(f"  in-game fills produced by the 5s-grid replay: {repro_n:,} "
+          f"(ledger {len(ledger):,})")
+    print("  NOTE: this measures REPLAY CADENCE, not substrate fidelity — v1's "
+          "exact cycle grid is unrecorded, so a from-substrate replay reproduces "
+          "the population only up to cadence. NO BAR is attached (the "
+          "congestion-proxy precedent, applied to a number). Substrate fidelity "
+          "is Part 2 above; this line is a diagnostic only.")
 
     ok = True
     if diverged != 0:
