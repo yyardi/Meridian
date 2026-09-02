@@ -147,6 +147,23 @@ day-one quality survey per the launch policy.
 
 ---
 
+
+**APPEND 2026-09-02: the deferred spread-rung scope closes.** D's independent
+day-one survey implementation (e1e5d69 — probit/pivot construction written
+blind to the original, evaluated on the 10s-fresh grid) reproduced the original
+totals episode **without being told where it was** — ind-dal 08-20, rungs
+174.5/177.5, 20.0s, 0.7¢ net of both taker fees — and measures spread-rung
+coherence intact: **4 sub-cent episodes, all AT the 20s persistence floor
+(none above it), in 2 games** (min-gsv 08-19; tor-phx 08-29 ×3). With ind-dal,
+**3 games tape-wide carry any within-ladder episode across both families.**
+Together with the cross-type triangle (one persistent ≥5s episode at ≥10¢
+tape-wide; 18 at the ≥1s floor — B's census, stated in the same convention as
+its 5¢ residual): **venue pricing is measured coherent WITHIN ladders (totals +
+spread) and ACROSS market types — three implementations, three authors.** The
+deferred-scope caveat above is retired by this append. Residual: the 5¢
+family — 88 persistent (≥5s) episodes against a 4–8¢ toll — boring-listed
+under its hand-verification revival condition.
+
 ## Round 1 — Quant B (loss map / coupling vantage)
 
 One seed self-killed before posting, recorded so nobody re-mines it:
