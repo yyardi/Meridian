@@ -1,9 +1,12 @@
-# R4b — the fitting-order fix: σ refit under the shrunk mean — DRAFT for research sign-off
+# R4b — the fitting-order fix: σ refit under the shrunk mean
 
-**Status: DRAFT by Quant C, 2026-09-02, per the research agent's R4 ruling 1
-("the cleaner form gets its own registration immediately"). NOTHING COMPUTES
-until the signed text lands on main; the landed commit is the cutoff, read
-with the git `%ct` convention, never from prose.**
+**Status: SIGNED OFF by the research agent 2026-09-02 with one amendment
+(the discrimination magnitudes pinned and the FAIL verdict's detectability
+bound — applied below verbatim, measured numbers included). NOTHING COMPUTES
+until this text lands on main; the landed commit is the cutoff, read with
+the git `%ct` convention, never from prose.** Drafted by Quant C; the
+sign-off travels with the research agent's message of record; selftest
+lineage b641108 → this commit.
 
 ## What this is
 
@@ -65,10 +68,28 @@ replacement-by-tie-break, never as superiority.
 **Power expectation, stated before the read:** both arms approximate the
 same variance correction, so near-indistinguishability is the EXPECTED
 outcome and the tie-break is expected to decide. That is by design, not a
-defect: the informative branches are FAIL (the z-gradient is real) and a
-PASS with margin (the effective form was also mis-shaped). A straddle here
-is not the R4 closure's uninformative straddle — it affirmatively licenses
-the simpler form via the pre-committed rule.
+defect. A straddle here is not the R4 closure's uninformative straddle — it
+affirmatively licenses the simpler form via the pre-committed rule.
+
+**POWER PROGNOSIS FOR THE FAIL BRANCH, from the mutation suite at real-gate
+power — magnitudes pinned per the signed amendment:** the z-gradient
+generator injects the magnitude THE THEORY ORIGINALLY IMPLIED — the atlas
+tilt's ~12%-σ-equivalent (g_true 1.00/0.88/0.88) — so "detectable" means
+detectable at the size the theory claimed; and the suite PRINTS the minimum
+detectable gradient at real-gate power. Measured: the theory-implied
+injection reads −0.000016 [−0.000037, +0.000006] (invisible; sign even
+leans R4b); a strong injection (bucket-2 gap 40%) reads +0.000065
+[−0.000008, +0.000139] at real power and +0.000082 [+0.000035, +0.000129]
+at 3× (detectable in principle, asserted there); **minimum detectable
+bucket-2 gradient at real-gate power ≈ 42% σ-reduction** (quadratic
+scaling), against the theory's ~12%. Consequently, pre-committed: **any
+FAIL verdict quotes that bound beside it — "g carries information at ≥
+~42% σ-reduction" — never the bare sentence**; a FAIL is therefore STRONG
+evidence (the real effect must be ~3.5× the theory's size); and a straddle
+carries NO evidence against the z-gradient theory — it licenses the
+simpler form on parsimony alone, exactly as the tie-break states, leaving
+the gradient question to better instruments (a future registration if
+anyone wants it).
 
 **O4 (firing rate): NOT APPLICABLE** — calibration arm; stated so the
 checklist reads considered rather than skipped.
@@ -79,17 +100,17 @@ t-intervals (the physics table).
 
 ## Mutation, per the adopted clause
 
-Before first read: (1) generator whose truth is the shrunk-mean form with
-known σ' — the step-2 fitter recovers it within tolerance; (2) distorted σ'
-loses to fitted in BOTH directions, CIs excluding zero; (3) the
-DISCRIMINATION pair at real-gate power: (i) under a uniform
-variance-reduction generator, R4b must beat the PRE-R4 stack (no refit, no
+Before first read: (1) on a reverting generator the shrunk-mean fitter's σ'
+sits below the unshrunk-fit σ in every phase (the refit sees the variance
+the shrink removed); (2) distorted σ' loses to fitted in BOTH directions,
+CIs excluding zero; (3) the DISCRIMINATION pair: (i) under a reverting
+generator at real-gate power, R4b must beat the PRE-R4 stack (no refit, no
 g) — the instrument sees the correction; (ii) under a generator with a TRUE
-z-gradient, the g-incumbent must beat R4b — the instrument can detect when
-g carries real information, which is exactly what the gate's FAIL branch
-claims to measure; (4) a generator matching the incumbent's own form reads
-the gate as a straddle; (5) shuffled-outcome null asserts the artifact
-direction (the sharper arm must never win).
+z-gradient, the g-incumbent must beat R4b at ELEVATED (3×) power — proving
+the FAIL branch detectable in principle — with the REAL-power read printed
+as the prognosis above, not asserted; (4) a generator matching the
+incumbent's own form reads the gate as a straddle; (5) shuffled-outcome
+null asserts the artifact direction (the sharper arm must never win).
 
 ## Standing terms
 
