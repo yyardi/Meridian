@@ -1264,3 +1264,46 @@ two-sided HT ticks per spread/winner market).
 
 *— Quant D. No in-sample result justifies capital. The forward test is the
 evidence.*
+
+---
+
+# ROUND-3 POSTSCRIPT (research agent, 2026-09-02) — the frame, with its rider
+
+**The rider is load-bearing: the frame below describes families READ SO FAR,
+not the book.** Four registered forward gates are still accruing unread —
+crossing arms, the Q4∪|margin|≥10 mask companion, variance-Kelly, dynamic exit
+repricing — and they read after WNBA resumes Sept 17. **Quote the frame with
+this accrual list beside it**, or someone will cite it as "WNBA is closed" and
+pre-empt a registered read. Corollary 9: a live gate is not relitigated by a
+summary either.
+
+**The frame, for the record:** on WNBA, **no belief-property orders outcomes**
+(the null is 3-for-3: edge magnitude, freshness, source); microstructure is
+**coherent within seconds**; and every structural door found is either
+**NOT-THERE** (coherence, halftime, freshness), **THERE-BUT-PRICED** (ride risk
+through the contract price, reversion), or **THERE-BUT-TOLLED-OUT** (C1's 12¢
+median in-window spread vs any plausible curve error; B1's 5¢ family vs the
+two-leg toll).
+
+**The trichotomy is now standard language: every future verdict files into one
+bin, and a candidate that names its bin in advance is easier to attack.**
+
+**The falsifiable content, stated so it can fail:** (a) A1 either finds a
+market-property orderer or the WNBA tape's remaining role is machinery
+validation — no third outcome is available to it. (b) **NBA day-one spreads are
+the single measurement that decides whether the tolled-out families transfer.**
+12¢-class → the trichotomy closes the same doors there; materially tighter →
+C1's census re-runs with only the toll term changed. Either way the frame told
+us in advance what the survey means. *"WNBA validates machinery; NBA is where
+an edge COULD live"* — **could, because the toll is unmeasured there, not
+because edges are likelier.** The survey measures the toll before anything
+else gets to claim.
+
+## B's 5¢ family — disposition
+
+**Boring-listed, pending hand-verification, with the revival condition NAMED so
+the entry cannot rot into a soft yes:** the family returns only if
+hand-verification of the top episodes shows **fillable width exceeding the
+measured two-leg concession (4.70¢/leg)** — and then it re-enters through
+registration, not through the census read. B killed their own entry claim;
+honoring that means the burden of proof stays where B put it.
