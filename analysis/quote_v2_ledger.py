@@ -57,10 +57,13 @@ recorded fill MUST carry, beyond v1's columns:
   * ``game_start_time`` — enables the pregame hours-to-tip partition; D1's
     dead-window fold is undecidable without it.
   * the quoter's STATE SNAPSHOT AT QUOTE TIME — event_period, event_score,
-    minutes_left/clock, and whatever fair value exists — so the guard arm
-    (v2-GUARD) and any lateness/state arm become scorable. On the v1 pin these
-    are absent, which is exactly why v2-GUARD is not scorable in-sample (D:
-    estimated clock defeats guard 1, guard 2 needs fv).
+    minutes_left/clock, **clock quality (minutes_left_is_estimate), and the
+    fair value if any** — so the lateness/state arms and, critically, the GUARD
+    arm become scorable. Guards are on the BUILD LIST (not v1-scorable:
+    estimated clock defeats guard 1, guard 2 needs fv); carrying fv +
+    clock-quality on every v2 quote row is THE NAMED ENGINEERING TRIGGER that
+    returns guards to the arm list (manager). This is this module's build
+    obligation for the v2 quoter's storage.
 The v1 pin cannot be backfilled with these; they are a build requirement for
 the v2 quoter's storage model, to be laid down BEFORE it records its first
 forward fill. Documented here so it cannot be forgotten at deploy.
@@ -107,20 +110,31 @@ FILLS = EXPORTS / f"quote_fills_v1_{PIN}.csv"
 FEE_PER_CONTRACT = 0.0
 
 # ---- arm knobs: PENDING the registration (rule 11) ------------------------ #
-#: v2-WIDTH: minimum half-spread the maker will rest at = measured adverse
-#: selection + margin. **CAUTION (D's post-mortem b952c9e):** the manager's
-#: tight-loses/wide-wins seed was SETTLEMENT basis and INVERTS on the
-#: capture basis (<=2c −1.30 vs >10c −2.54, monotone the other way), and the
-#: settlement gradient does not survive clustering. Width is substantially a
-#: LATENESS proxy. "Quote wider in the same state" has no support; the arm
-#: must be redefined orthogonally to state or FOLDED — a registration call.
-WIDTH_MIN_HALF_SPREAD = None            # PENDING registration (likely folded)
-#: v2-CONGESTION: calibrated definition from D's post-mortem (b952c9e), via
-#: B's lags_for_event — a fill within CONGESTION_WINDOW_S after a lag episode
-#: of >= this many seconds is "in congestion" (−1.74c vs −1.44c clear).
-#: Confirm in the registration.
+# v2-WIDTH IS REMOVED (manager, ahead of registration): on the v1 tape width
+# was itself state-driven, so width and state are confounded BY THE QUOTING
+# POLICY THAT GENERATED THE DATA — no observational read of this tape can
+# identify a width effect. A width arm needs EXOGENOUS width variation (a
+# policy varying width within state, pre-declared) — a v2.1 design, never a v1
+# measurement. Not scaffolded here on purpose.
+#
+#: v2-STATE / LATENESS (primary): lateness is the measured loss concentration
+#: (D b952c9e: Q4 −3.00c vs −1.3/−1.4 early). "Late" = minutes_left at or below
+#: this, OR Q4. Threshold PENDING the registration.
+LATENESS_MINUTES_LEFT = None            # PENDING registration
+#: v2-CONGESTION (second): calibrated definition from D's post-mortem via B's
+#: lags_for_event — a fill within CONGESTION_WINDOW_S after a lag episode of
+#: >= this many seconds is "in congestion" (−1.74c vs −1.44c clear). Confirm in
+#: the registration.
 CONGESTION_LAG_THRESHOLD_S = 5.0        # from D's cut; registration confirms
 CONGESTION_WINDOW_S = 30.0
+#: v2-PATIENCE (third, CONDITIONAL): requote-into-the-dip is a measured cost
+#: (post-fill mid reverts +0.76→+0.90c; ~0.8c/fill not-losing available). But
+#: the arm is VACUOUS if v1 never actually requoted into dips — the 0.8c would
+#: already be in the −1.60. Gated on D's requote-baseline measurement; the
+#: registration's precondition section sets this. PATIENCE is a BEHAVIOUR-change
+#: arm (hold/requote-at-pre-fill-mid), NOT a subset predicate — it needs a
+#: requote-replay, not fill selection, so it is scaffolded as a distinct type.
+PATIENCE_ENABLED = None                 # PENDING D's requote-baseline + reg
 
 REVERT = "revert"
 
@@ -180,6 +194,45 @@ def net_capture(fills: pd.DataFrame) -> ClusteredMean | None:
 
 
 # --------------------------------------------------------------------------- #
+# The interpretation matrix — emit BOTH coordinates per character, so the cell
+# is a lookup, never an argument constructed after the numbers exist (manager).
+# --------------------------------------------------------------------------- #
+#
+#   A1-PASS x capture-flat          -> revert edge is ROLL economics; v2-STATE
+#                                      quotes for the TRIP, not the capture.
+#   A1-PASS x capture-discriminates -> full state-conditional maker (strongest).
+#   A1-FAIL x capture-flat          -> classifier dead for making; fall to
+#                                      CONGESTION / PATIENCE.
+#   A1-FAIL x capture-discriminates -> capture-basis quoting only; trip dead.
+#
+# ROW axis  = A1-PASS/FAIL: the A1 gate's TRIP-economics read per character
+#             (forward, on the quote engine's real fills — pending the gate).
+# COLUMN axis = capture-flat/discriminates: the AT-FILL capture read per
+#             character on the quote fills (computable now; D found it flat:
+#             revert −1.70 / trend −1.57 / rw −1.52).
+# This module emits the column coordinate; the A1 gate supplies the row.
+
+def matrix_coordinates(ledger: pd.DataFrame) -> dict[str, dict]:
+    """Per-character coordinates for the interpretation matrix. `ledger` must
+    carry a `character` column (from the A1 classifier at quote time). Emits,
+    per character, the at-fill CAPTURE read (net_capture, the column axis) and
+    the inventory P&L, both game-clustered. The trip-economics ROW axis is the
+    A1 gate's read, joined in when it lands — not manufactured here."""
+    if "character" not in ledger.columns:
+        raise ValueError("ledger not enriched with `character`; run "
+                         "assemble_ledger first")
+    out = {}
+    for ch in ("revert", "rw", "trend"):
+        sub = ledger[ledger.character == ch]
+        out[ch] = {
+            "n": len(sub),
+            "at_fill_capture": net_capture(sub),          # COLUMN coordinate
+            "inventory_pnl": inventory_pnl(sub).per_fill,
+        }
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # The arm scaffolding — branch-keyed replay predicates, never bundled
 # --------------------------------------------------------------------------- #
 
@@ -200,40 +253,48 @@ class Arm:
     detail: str
 
 
+def _is_late(row) -> bool:
+    if getattr(row, "period", None) == "Q4":
+        return True
+    if LATENESS_MINUTES_LEFT is None:
+        return False                    # threshold pending; Q4 is the safe part
+    ml = getattr(row, "minutes_left", None)
+    return ml is not None and ml <= LATENESS_MINUTES_LEFT
+
+
 def _state_keeps(row) -> bool:
-    # v2-STATE: the A1-PASS arm. Quote only reverting, guard-clean, uncongested.
+    # v2-STATE / LATENESS (primary, A1-PASS branch): quote only reverting,
+    # guard-clean, uncongested, and NOT late (lateness is the loss
+    # concentration, D b952c9e).
     return (row.character == REVERT
             and not row.guard_flagged
-            and not row.congested)
+            and not row.congested
+            and not _is_late(row))
 
 
 def _congestion_keeps(row) -> bool:
-    # v2-CONGESTION: quote everywhere EXCEPT B's clustered slow windows.
+    # v2-CONGESTION (A1-FAIL branch): quote everywhere EXCEPT B's slow windows.
     return not row.congested
 
 
-def _width_keeps(row) -> bool:
-    # v2-WIDTH: only rest when the half-spread clears adverse selection + margin.
-    if WIDTH_MIN_HALF_SPREAD is None:
-        raise ValueError("WIDTH_MIN_HALF_SPREAD is PENDING the registration; "
-                         "pin it from D's post-mortem before scoring v2-WIDTH")
-    return (float(row.spread_at_quote) / 2.0) >= WIDTH_MIN_HALF_SPREAD
-
-
+# v2-GUARD is NOT an arm on this substrate (manager -> BUILD LIST): the v1 pin
+# lacks the state fields the guards need (estimated clock defeats guard 1,
+# guard 2 needs fv). It returns as an arm once the v2 quoter RECORDS fv +
+# clock-quality per quote row (the named engineering trigger, this module's
+# forward-schema requirement). Predicate kept for when that lands.
 def _guard_keeps(row) -> bool:
-    # v2-GUARD: refuse to quote in PULSE-guard-flagged states.
     return not row.guard_flagged
 
 
 ARMS: dict[str, Arm] = {
     "v2-STATE": Arm("v2-STATE", A1_PASS, _state_keeps,
-                    "quote only revert + guard-clean + uncongested"),
+                    "quote only revert + guard-clean + uncongested + not-late"),
     "v2-CONGESTION": Arm("v2-CONGESTION", A1_FAIL, _congestion_keeps,
-                         "skip B's clustered slow windows"),
-    "v2-WIDTH": Arm("v2-WIDTH", A1_FAIL, _width_keeps,
-                    "half-spread >= adverse selection + margin"),
-    "v2-GUARD": Arm("v2-GUARD", A1_FAIL, _guard_keeps,
-                    "refuse to quote in PULSE-guard-flagged states"),
+                         "skip B's clustered slow windows (>=5s lag / 30s)"),
+    # v2-PATIENCE (A1-FAIL, CONDITIONAL) is a BEHAVIOUR-change arm, not a subset
+    # predicate — see PATIENCE_ENABLED. It enters ARMS as a requote-replay once
+    # D's requote-baseline clears its precondition and the registration declares
+    # it; it is intentionally absent from this subset-predicate registry.
 }
 
 
@@ -350,20 +411,28 @@ def _selftest():
 
     # arm predicates on synthetic enriched rows — each keeps the right states.
     Row = lambda **k: type("R", (), k)
-    assert _state_keeps(Row(character="revert", guard_flagged=False, congested=False))
-    assert not _state_keeps(Row(character="trend", guard_flagged=False, congested=False))
-    assert not _state_keeps(Row(character="revert", guard_flagged=True, congested=False))
-    assert not _state_keeps(Row(character="revert", guard_flagged=False, congested=True))
+    base = dict(character="revert", guard_flagged=False, congested=False,
+                period="Q2", minutes_left=15.0)
+    assert _state_keeps(Row(**base))
+    assert not _state_keeps(Row(**{**base, "character": "trend"}))
+    assert not _state_keeps(Row(**{**base, "guard_flagged": True}))
+    assert not _state_keeps(Row(**{**base, "congested": True}))
+    # lateness: Q4 is late even with the threshold unpinned (the safe part).
+    assert not _state_keeps(Row(**{**base, "period": "Q4"}))
     assert _congestion_keeps(Row(congested=False))
     assert not _congestion_keeps(Row(congested=True))
-    assert _guard_keeps(Row(guard_flagged=False))
-    assert not _guard_keeps(Row(guard_flagged=True))
-    # v2-WIDTH raises while its threshold is unpinned (fail-closed, not a stub).
-    try:
-        _width_keeps(Row(spread_at_quote=0.06))
-        raise AssertionError("v2-WIDTH scored with an unpinned threshold")
-    except ValueError:
-        pass
+    # v2-WIDTH is gone (confounded on this tape); assert it is not an arm.
+    assert "v2-WIDTH" not in ARMS and "v2-GUARD" not in ARMS
+    assert set(ARMS) == {"v2-STATE", "v2-CONGESTION"}
+
+    # interpretation matrix: emits per-character coordinates from an enriched
+    # ledger; the injected revert-favourable capture shows up as the column.
+    enr = null.copy()
+    enr["character"] = ["revert", "rw", "trend"] * (len(enr) // 3) + \
+        ["revert"] * (len(enr) % 3)
+    mx = matrix_coordinates(enr)
+    assert set(mx) == {"revert", "rw", "trend"}
+    assert all("at_fill_capture" in mx[c] for c in mx)
 
     # shadow-only, structurally (the v1 guarantee carried into v2): this module
     # has NO import path to the executor or the venue order client.
@@ -382,7 +451,8 @@ def _selftest():
         assert forbidden not in imported, f"v2 ledger imports {forbidden}"
 
     print("selftest: PASSED (rule-15 jitter-null x2; inventory known-answer; "
-          "edge recovery; arm predicates; v2-WIDTH fails closed unpinned; "
+          "edge recovery; arm predicates incl. lateness; ARMS == "
+          "{v2-STATE, v2-CONGESTION} (WIDTH/GUARD removed); matrix coordinates; "
           "shadow-only AST clean)")
 
 
