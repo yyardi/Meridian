@@ -57,7 +57,13 @@ CAPITAL_LINE = "No in-sample result justifies capital. The forward test is the e
 
 
 def load_plays(path: str) -> pd.DataFrame:
-    p = pd.read_csv(path, header=None, names=PLAY_COLS, low_memory=False)
+    head = pd.read_csv(path, nrows=0)
+    if "espn_game_id" in head.columns:  # the dedicated clock pin (headered, 6 cols)
+        p = pd.read_csv(path).rename(columns={
+            "espn_game_id": "espn_gid", "clock_seconds": "clock_secs",
+            "home_score": "score_a", "away_score": "score_b"})
+    else:  # the headerless 14-col eval export
+        p = pd.read_csv(path, header=None, names=PLAY_COLS, low_memory=False)
     p = p[pd.to_numeric(p.period, errors="coerce").notna()].copy()
     for c in ["period", "clock_secs", "score_a", "score_b"]:
         p[c] = pd.to_numeric(p[c], errors="coerce")
@@ -69,21 +75,34 @@ def load_plays(path: str) -> pd.DataFrame:
     return p.sort_values(["espn_gid", "wallclock", "tot"])
 
 
-def map_games(ticks: pd.DataFrame, plays: pd.DataFrame) -> dict[str, str]:
+def map_games(ticks: pd.DataFrame, plays: pd.DataFrame,
+              outcomes: pd.DataFrame | None = None) -> dict[str, str]:
     """event_slug -> espn_gid by unordered final-score pair + date within 1 day.
 
     The slug carries the US game date; ESPN wallclocks are UTC, so an evening
     tip lands on the NEXT UTC date — the date check is |slug - utc_start| <= 1
-    day, with the score pair carrying the identification."""
+    day, with the score pair carrying the identification. Finals come from the
+    RESOLVED OUTCOMES where available (the settlement-authoritative source;
+    the tick tape's last event_score went stale before the final points in at
+    least one measured game, tor-wsh 08-19) and fall back to the tick tape's
+    last score for events the outcomes file lacks."""
     finals = plays.groupby("espn_gid").agg(a=("score_a", "max"), b=("score_b", "max"),
                                            d=("wallclock", "min"))
     by_pair: dict[frozenset, list] = {}
     for gid, row in finals.iterrows():
         by_pair.setdefault(frozenset([int(row.a), int(row.b)]), []).append((gid, row.d.date()))
+    auth = {}
+    if outcomes is not None and "event_slug" in outcomes.columns:
+        oc = outcomes.dropna(subset=["event_slug", "final_score_home", "final_score_away"])
+        for slug, g in oc.groupby("event_slug"):
+            auth[slug] = frozenset([int(g.final_score_home.iloc[0]), int(g.final_score_away.iloc[0])])
     out, misses, ambigs = {}, [], []
     for slug, g in ticks.groupby("event_slug"):
-        last = g.sort_values("captured_at").event_score.dropna().iloc[-1]
-        pair = frozenset(int(x) for x in last.split("-"))
+        if slug in auth:
+            pair = auth[slug]
+        else:
+            last = g.sort_values("captured_at").event_score.dropna().iloc[-1]
+            pair = frozenset(int(x) for x in last.split("-"))
         slug_date = pd.Timestamp("-".join(slug.split("-")[-3:])).date()
         hits = [gid for gid, d in by_pair.get(pair, [])
                 if abs((d - slug_date).days) <= 1]
@@ -279,7 +298,7 @@ def main() -> None:
     ticks = pd.read_csv(args.ticks)
     plays = load_plays(args.plays)
     outcomes = pd.read_csv(args.outcomes)
-    mapping = map_games(ticks, plays)
+    mapping = map_games(ticks, plays, outcomes)
     st = build_instants(ticks, plays, mapping)
     census(st, outcomes)
 
