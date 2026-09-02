@@ -314,6 +314,8 @@ def pilot_gradient(bars: dict[str, pd.Series], ledger: pd.DataFrame) -> dict:
             "revert_maker": clustered_ci(rev.pnl_per_dollar, rev.event_slug),
             "nonrevert_maker": clustered_ci(rest.pnl_per_dollar, rest.event_slug),
         }
+    out["_raw"] = have[["event_slug", "char", "pnl_per_dollar"]].rename(
+        columns={"event_slug": "game", "pnl_per_dollar": "per_d"})
     return out
 
 
@@ -366,11 +368,35 @@ def placebo_gradient(bars: dict[str, pd.Series], ledger: pd.DataFrame,
             recs.append({"per_d": sign * (close - entry) / cost,
                          "char": character(past), "game": game})
     d = pd.DataFrame(recs)
-    res = {"n": len(d), "games": d.game.nunique() if len(d) else 0}
+    res = {"n": len(d), "games": d.game.nunique() if len(d) else 0, "_raw": d}
     for c in ("revert", "rw", "trend"):
         sub = d[d.char == c]
         res[c] = clustered_ci(sub.per_d, sub.game)
     return res
+
+
+def paired_placebo_diff(real_raw: pd.DataFrame, placebo_raw: pd.DataFrame,
+                        char: str = "revert") -> dict:
+    """D's refinement: the placebo runs on the SAME games as the real entries,
+    so the game-level DIFF (mean real − mean placebo, per game) removes the
+    shared game variance inflating the two marginal intervals and may resolve
+    the selection-above-mechanical split with zero new data."""
+    r = (real_raw[real_raw.char == char].groupby("game").per_d.mean()
+         .rename("real"))
+    p = (placebo_raw[placebo_raw.char == char].groupby("game").per_d.mean()
+         .rename("placebo"))
+    j = pd.concat([r, p], axis=1).dropna()
+    if len(j) < 3:
+        return {"games": len(j)}
+    diff = (j.real - j.placebo).to_numpy()
+    rng = np.random.default_rng(SEED)
+    boots = np.array([diff[rng.integers(0, len(diff), len(diff))].mean()
+                      for _ in range(10000)])
+    lo, hi = np.percentile(boots, [2.5, 97.5])
+    return {"games": len(j), "point": float(diff.mean()),
+            "lo": float(lo), "hi": float(hi),
+            "real_mean": float(j.real.mean()),
+            "placebo_mean": float(j.placebo.mean())}
 
 
 # --------------------------------------------------------------------------- #
@@ -426,6 +452,7 @@ def main():
     persistence = measure_persistence(bars, slug2game)
     pilot = pilot_gradient(bars, ledger)
     placebo = placebo_gradient(bars, ledger)
+    paired = paired_placebo_diff(pilot["_raw"], placebo["_raw"], "revert")
 
     lines = []
     W = lines.append
@@ -455,12 +482,17 @@ def main():
       f"of the time vs a {lift90['base_revert_rate']:.0%} base — lift "
       f"{lift90['lift']:+.3f} [{lift90['lift_ci'][0]:+.3f}, {lift90['lift_ci'][1]:+.3f}], "
       "game-clustered, well off zero. Not a noise label.")
-    W(f"2. **The maker-frame ordering is REAL and best-in-wave.** Reverting "
-      f"entries {rev_m[0]:+.2%} [{rev_m[1]:+.2%}, {rev_m[2]:+.2%}] "
+    ew_rev = paired.get("real_mean", float("nan"))
+    W(f"2. **A maker-frame ordering exists but is COMPOSITION-FRAGILE.** Pooled, "
+      f"reverting entries {rev_m[0]:+.2%} [{rev_m[1]:+.2%}, {rev_m[2]:+.2%}] "
       f"({'CI excludes zero' if maker_excludes_zero else 'CI spans zero'}), "
-      f"above rw {rw_m[0]:+.2%} and trend {tr_m[0]:+.2%}. A market property "
-      "orders the maker frame where three belief properties did not — the "
-      "tape-vs-model distinction is real AT THE MAKER FRAME.")
+      f"above rw {rw_m[0]:+.2%} and trend {tr_m[0]:+.2%} — the only maker-frame "
+      "ordering on a market property in the wave. BUT counts-before-ratios "
+      f"(wave rule 1): equal-weighted BY GAME the revert per-$ is only "
+      f"{ew_rev:+.2%} — the pooled positive is carried by a few high-count "
+      "games (per-game revert count ranges 1–82). The pooled number is "
+      "game-composition-weighted; the ordering is real but not robust to game "
+      "weighting, and the paired-placebo test below shows selection adds ~0.")
     W(f"3. **It does NOT clear the uniform pessimistic bar (demand #6).** At the "
       f"measured 4.70¢/leg concession every character is negative "
       f"(revert {rev_p[0]:+.2%}) — the freshness shape. BUT the ordering "
@@ -472,21 +504,44 @@ def main():
       "per-character fills) measures whether revert entries actually pay less.** "
       "So A1 is neither cleared nor dead: its kill condition points straight at "
       "what the gate must measure.")
+    paired_txt = (
+        f"the PAIRED game-level diff (real − placebo, same games) is "
+        f"{paired['point']:+.2%} [{paired['lo']:+.2%}, {paired['hi']:+.2%}] over "
+        f"{paired['games']} games — "
+        + ("CI excludes zero, so selection adds above the mechanical floor even "
+           "after removing shared game variance."
+           if paired.get('lo', -1) > 0 else
+           "CI still spans zero, so the selection-above-mechanical split is not "
+           "resolved in-sample even paired — the honest answer, and the gate "
+           "settles it.")) if "point" in paired else "the paired diff is unavailable."
     W(f"4. **Not purely mechanical (placebo, demand #3).** Random entries also "
-      f"show revert>rest, but weakly: placebo revert {plac_rev[0]:+.2%} "
-      f"[{plac_rev[1]:+.2%}, {plac_rev[2]:+.2%}] (CI spans zero) vs real "
-      f"{rev_m[0]:+.2%}. The real effect sits above the placebo point estimate — "
-      "selection adds beyond the roll's mechanical harvest — though the "
-      "intervals overlap, so the split is not sharply resolved in-sample.")
+      f"show revert>rest, but weakly (placebo revert {plac_rev[0]:+.2%} "
+      f"[{plac_rev[1]:+.2%}, {plac_rev[2]:+.2%}], CI spans zero) vs real "
+      f"{rev_m[0]:+.2%}. Pairing (D's refinement): {paired_txt}")
     W("5. **Incremental to B's frozen P(ride) (demand #5).** Revert beats "
       "non-revert INSIDE every P(ride) quintile (strongest in Q5), where B's "
       "own read has per-$ flat across quintiles. Not the ride mask renamed.\n")
-    W("**Verdict:** the market-property-orders-outcomes question resolves "
-      "POSITIVE at the maker frame — the wave's terminal-negative is averted, "
-      "the tape-vs-model distinction is real. Whether it is TRADABLE turns on "
-      "the per-character concession, which the uniform pessimistic frame cannot "
-      "resolve and the quote-engine gate can. A1 earns its gate. Not a capital "
-      "claim; a hypothesis sharpened to one measurable question.\n")
+    W("**Verdict (aligned with the research agent's ruling).** A1 FAILED "
+      "demand #6 as written — negative in every character under the uniform "
+      "concession. The pilot justifies NOTHING on its own: the maker-frame "
+      "ordering is composition-fragile (pooled +4.35%, equal-weighted "
+      f"{ew_rev:+.2%}), and the paired-placebo test shows selection adds ~0 "
+      "over the roll's mechanical harvest. TWO nested in-sample artifacts "
+      "reproduce this tape without any market truth: (a) engine payoff coupling "
+      "(the 5¢ roll harvests oscillation by construction — the placebo shows "
+      "~80% of the ORDERING present in coin-flip entries), and (b) fill-model "
+      "optimism CORRELATED WITH THE FEATURE (the mid-cross rule books favourable "
+      "drift largest exactly in oscillating states — 'revert character' and "
+      "'fill-model profit' are near-synonyms on this tape). Nothing on the "
+      "pinned tape can separate 'revert states are genuinely maker-friendly' "
+      "from those two artifacts. **Only real fills can — which is why the gate "
+      "is the only instrument, not a consolation.** What survives to justify "
+      "running it: the persistence result (+0.174 at 90s, robust) and one "
+      "sharp falsifiable claim — that reverting fills pay measurably "
+      "below-average concession. Breakeven burden (linear between the two "
+      "published arms): c* ≈ 0.72¢/leg vs the 4.70¢ average — an ~85% "
+      "concession reduction. Large, one number, printed so no 3.9¢ result is "
+      "later called 'directionally supportive'. Not a capital claim.\n")
     W("*Two framing notes carried from the manager's routing:* A1 leans on NO "
       "'margin-driven = suspect' reasoning (B's Q1 split closed that door; this "
       "is a vol-character feature, orthogonal to edge source). And it does not "
@@ -534,6 +589,17 @@ def main():
     for c in ("revert", "rw", "trend"):
         r = placebo[c]
         W(f"| {c} | {r[0]:+.3%} [{r[1]:+.3%}, {r[2]:+.3%}] | {r[3]} | {r[4]} |")
+    if "point" in paired:
+        W(f"\n**Paired game-level diff (revert, real − placebo, same games)** — "
+          f"removes shared game variance (D's refinement): "
+          f"**{paired['point']:+.3%} [{paired['lo']:+.3%}, {paired['hi']:+.3%}]** "
+          f"over {paired['games']} games "
+          f"(real {paired['real_mean']:+.3%} vs placebo {paired['placebo_mean']:+.3%} "
+          "in-game means). "
+          + ("Excludes zero: selection adds above the mechanical floor."
+             if paired['lo'] > 0 else
+             "Spans zero: unresolved in-sample even paired — the gate settles it.")
+          + "\n")
 
     W("\n## DEMAND #5 — incremental to B's frozen P(ride) (per-$ within quintile)\n")
     W("B's own read: per-$ is flat across P(ride) quintiles. If revert only "
@@ -549,11 +615,25 @@ def main():
         rv, nr = d["revert_maker"], d["nonrevert_maker"]
         W(f"| {q} | {rv[0]:+.3%} (n={rv[3]}) | {nr[0]:+.3%} (n={nr[3]}) | {d['n']} |")
 
-    W("\n## DEMAND #1 — the gate (real resting fills): NO DATA\n")
+    W("\n## DEMAND #1 — the gate (real resting fills): NO DATA, and its spec\n")
     W("`shadow_quote_fills` is not in the pinned exports (live DB only), so the "
       "evidence-grade gate reads **NO DATA** here. This pass is the instrument "
       "and the pilot; the gate is a forward / DB study (feature AND outcome on "
       "the quote engine's own tape, per the pinned spec).\n")
+    W("**The gate scores TWO things, not one (D's refinement):**\n")
+    W("1. **Concession-by-character — the MECHANISM test, fast.** A1's whole "
+      "claim is concession HETEROGENEITY: reverting-character fills carry "
+      "below-average adverse selection. That concession is measured directly "
+      "per quote-engine fill (`mid_at_quote` vs `mid_at_fill`), per-fill and "
+      "tight — far fewer games than P&L significance needs. If reverting fills "
+      "do NOT show below-average concession, the mechanism is dead long before "
+      "the P&L floors fill (October, not December).\n")
+    W("2. **Per-$-by-character — the ECONOMICS test, slow.** The registration's "
+      "gate proper: does the character order per-$ over all fills on real "
+      "fills, surviving the (now per-character, not uniform) concession, "
+      "game-clustered. This is the floors-in-games arm.\n")
+    W("Score both; the concession split is the leading indicator, the per-$ "
+      "the verdict.\n")
 
     W("\n## Multiple comparisons & capital\n")
     W("Several character×horizon×quintile cells are read here; a few sub-0.05 "
