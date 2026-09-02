@@ -79,13 +79,15 @@ def check_containers() -> list[Check]:
         # asked for a redeploy of a running engine — the display could neither
         # confirm nor deny exactly the two processes the research program
         # depends on this month. `espn-live-recorder` rides the same overlay
-        # family. The quote engine stays listed while stopped BY OPERATOR
-        # ORDER: seeing "quote-engine MISSING (operator-stopped, standing
-        # instruction)" is the truth; not seeing it at all was the bug.
+        # family.
         "meridian-espn-live-recorder": "ESPN live feed (signal side)",
         "meridian-pulse-engine": "PULSE engine (repricing arm + state guards)",
-        "meridian-quote-engine": "QUOTE engine (operator-stopped since ~08-22; "
-                                 "A1's gate substrate when it returns)",
+        # Restarted by operator order 2026-09-02 16:04Z, policy FROZEN at
+        # commit 7a3a217 until A1's gate reads (quote-v2-program.md
+        # sequencing rule). MISSING is now a real outage, and it is the
+        # substrate for A1, D1, and the whole v2 program.
+        "meridian-quote-engine": "QUOTE engine (shadow, frozen @7a3a217; "
+                                 "A1/D1/v2 substrate)",
     }
     try:
         out = subprocess.run(
