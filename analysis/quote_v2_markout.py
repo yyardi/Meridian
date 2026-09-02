@@ -424,6 +424,88 @@ def m3_toll_map(ing: pd.DataFrame, out: Path | None = None) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# M4 — v1's requote behavior (gates the PATIENCE arm; research ruling 2)
+# --------------------------------------------------------------------------- #
+
+REQUOTE_WINDOW_S = 10.0     # a quote born this soon after a same-market fill
+                            # is a requote of the fill's own episode
+
+
+def m4_requote_behavior(fills: pd.DataFrame) -> None:
+    """Did v1 requote into dips? THE QUOTE STREAM DOES NOT EXIST — only
+    shadow_quote_fills was persisted (core/quote/storage.py has exactly one
+    table; unfilled quote updates were never written). But v1's requote rule
+    is DETERMINISTIC IN CODE: 'a bid at the best bid and an offer at the
+    best ask ... requoted to the touch every cycle' at 5s cadence, no
+    damping (core/quote/engine.py:6-7, :68). So the rule's answer is
+    always / <=5s / to the current touch, into dips included, BY
+    CONSTRUCTION — and this module VERIFIES the coded rule against the
+    recorded quote BIRTHS the fills carry (quoted_at, mid_at_quote,
+    spread_at_quote), which is verification of a known rule, not a proxy
+    for an unrecorded stream."""
+    hr("M4. V1 REQUOTE BEHAVIOR (PATIENCE-arm gate; stream absent, rule "
+       "deterministic, births verified)")
+    ing = fills[fills.regime == "ingame"].sort_values("filled_at")
+
+    # 1. Touch-quoting at birth: quote_price must equal the touch implied by
+    # mid_at_quote -/+ spread/2. Verifies 'requoted to the touch'.
+    implied = [r.mid_at_quote - r.spread_at_quote / 2 if r.side == "bid"
+               else r.mid_at_quote + r.spread_at_quote / 2
+               for r in ing.itertuples()]
+    at_touch = (np.abs(ing.quote_price.values - np.array(implied)) < 5e-5)
+    print(f"quotes born AT the touch: {int(at_touch.sum())}/{len(ing)} = "
+          f"{at_touch.mean():.1%} (the coded rule, verified on births)")
+
+    # 2. Requote-into-dip rate: per fill f with a prior same-market fill p
+    # within REQUOTE_WINDOW_S of f's BIRTH, was f born at/beyond p's dipped
+    # mid (signed vs p's side: <=0 means the market had not reverted before
+    # v1 re-centered)?
+    rows = []
+    for m, g in ing.groupby("market_slug"):
+        g = g.sort_values("filled_at")
+        prev = None
+        for r in g.itertuples():
+            if prev is not None:
+                gap = (r.quoted_at - prev.filled_at).total_seconds()
+                if 0 <= gap <= REQUOTE_WINDOW_S:
+                    into_dip = signed(prev.side, r.mid_at_quote,
+                                      prev.mid_at_fill) <= 0
+                    rows.append(dict(game_id=r.game_id, gap_s=gap,
+                                     into_dip=into_dip, capture=r.capture))
+            prev = r
+    rq = pd.DataFrame(rows)
+    if len(rq) == 0:
+        print("no fills with a same-market predecessor inside the window — "
+              "nothing to verify (counted)")
+        return
+    print(f"\nfills whose quote was born <= {REQUOTE_WINDOW_S:.0f}s after a "
+          f"prior same-market fill: {len(rq)}/{len(ing)} = "
+          f"{len(rq) / len(ing):.1%}; birth gap p50 "
+          f"{rq.gap_s.median():.1f}s (rule cadence: 5s)")
+    dip_vals = {g: [float(v) for v in s]
+                for g, s in rq.groupby("game_id").into_dip}
+    cmr = clustered_mean(dip_vals)
+    ci = (f"{cmr.mean:.1%} [{cmr.lo:.1%}, {cmr.hi:.1%}] "
+          f"(n={cmr.n}, G={cmr.n_clusters})" if cmr is not None
+          else "n/a (<2 games)")
+    print(f"REQUOTE-INTO-DIP RATE (born at/beyond the un-reverted dip): "
+          f"{ci}  [raw {rq.into_dip.mean():.1%}]")
+    cap_dip = rq[rq.into_dip]
+    cap_not = rq[~rq.into_dip]
+    print(f"capture of dip-born fills:     "
+          f"{cm_str({g: list(v) for g, v in cap_dip.groupby('game_id').capture})}")
+    if len(cap_not):
+        print(f"capture of reverted-birth fills: "
+              f"{cm_str({g: list(v) for g, v in cap_not.groupby('game_id').capture})}")
+    print("\nTHE BRANCH (research's pre-written text): a meaningful "
+          "into-dip rate means v1 was RELEASING the patience lever "
+          "constantly — PATIENCE is a real arm with the measured ~0.8c "
+          "target. A negligible rate would demote the reversion to a "
+          "measurement-horizon note. The rate above decides; the "
+          "registration says which.")
+
+
+# --------------------------------------------------------------------------- #
 # Selftest — rule 15: jitter-null + injected answers, all synthetic
 # --------------------------------------------------------------------------- #
 
@@ -487,6 +569,39 @@ def selftest() -> int:
     check("injected -2c adverse (bid)", mk.markout_30s.iloc[1], -0.02)
     check("same tape, ask side reads +2c", mk.markout_30s.iloc[2], +0.02)
 
+    # M4 requote classification: fill B born 4s after fill A at the
+    # un-reverted dip -> into_dip; fill C born after reversion -> not;
+    # fill D born 300s later -> outside the window entirely.
+    t0 = pd.Timestamp("2026-08-20 01:00:00+00:00")
+    seq = pd.DataFrame([
+        dict(_syn("bid", 0.40, 0.42, 0.39, market="mA"),
+             quoted_at=t0, filled_at=t0 + pd.Timedelta(seconds=5)),
+        dict(_syn("ask", 0.38, 0.39, 0.40, market="mA"),
+             quoted_at=t0 + pd.Timedelta(seconds=9),      # 4s after A fills
+             filled_at=t0 + pd.Timedelta(seconds=20)),    # born at dip .39
+        # C's predecessor is B (an ask filled with mid risen to 0.40); a
+        # REVERTED birth for C means mid back BELOW 0.40 at quote time.
+        dict(_syn("bid", 0.38, 0.39, 0.37, market="mA"),
+             quoted_at=t0 + pd.Timedelta(seconds=28),
+             filled_at=t0 + pd.Timedelta(seconds=40)),
+        dict(_syn("bid", 0.40, 0.42, 0.39, market="mA"),
+             quoted_at=t0 + pd.Timedelta(seconds=400),
+             filled_at=t0 + pd.Timedelta(seconds=410)),
+    ])
+    seq["regime"] = "ingame"
+    seq["capture"] = 0.0
+    import contextlib, io as _io
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        m4_requote_behavior(seq)
+    out_txt = buf.getvalue()
+    ok = ("2/4" in out_txt and "raw 50.0%" in out_txt)
+    print(f"  M4 requote classification (2 in-window, 1 into-dip) -> "
+          f"{'ok' if ok else 'FAIL'}")
+    if not ok:
+        print(out_txt)
+    failures += 0 if ok else 1
+
     # rule-16 gate: a synthetic book that does NOT match the ledger must
     # fail closed (and pass only in rehearsal mode).
     import contextlib, io
@@ -536,6 +651,7 @@ def main() -> int:
     load_ticks(con, args.ticks, sorted(fills.market_slug.unique()))
     fills = markouts(con, fills)
     m1_report(fills)
+    m4_requote_behavior(fills)
 
     # Seed 2 / D1 fold: the pregame regime on the maker's own ledger
     # (capture AND settlement bases, clustered; n is small and says so).
