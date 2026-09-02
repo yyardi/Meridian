@@ -1,9 +1,12 @@
-# R4b — the fitting-order fix: σ refit under the shrunk mean — DRAFT for research sign-off
+# R4b — the fitting-order fix: σ refit under the shrunk mean
 
-**Status: DRAFT by Quant C, 2026-09-02, per the research agent's R4 ruling 1
-("the cleaner form gets its own registration immediately"). NOTHING COMPUTES
-until the signed text lands on main; the landed commit is the cutoff, read
-with the git `%ct` convention, never from prose.**
+**Status: SIGNED OFF by the research agent 2026-09-02 with one amendment
+(the discrimination magnitudes pinned and the FAIL verdict's detectability
+bound — applied below verbatim, measured numbers included). NOTHING COMPUTES
+until this text lands on main; the landed commit is the cutoff, read with
+the git `%ct` convention, never from prose.** Drafted by Quant C; the
+sign-off travels with the research agent's message of record; selftest
+lineage b641108 → this commit.
 
 ## What this is
 
@@ -69,17 +72,24 @@ defect. A straddle here is not the R4 closure's uninformative straddle — it
 affirmatively licenses the simpler form via the pre-committed rule.
 
 **POWER PROGNOSIS FOR THE FAIL BRANCH, from the mutation suite at real-gate
-power:** under a synthetic z-gradient STRONGER than plausible reality
-(g_true 1.25/1.00/0.60), the g-incumbent's advantage over R4b reads only
-+0.000065 [−0.000008, +0.000139] — the FAIL branch is NEAR-UNDETECTABLE at
-achievable power (the suite proves detectability in principle at 3×
-cohort). Consequently, pre-committed: **a FAIL, if it occurs, is STRONG
-evidence for the z-gradient** (the real effect must far exceed the
-prognosis), **and a straddle carries NO evidence against the z-gradient
-theory** — it licenses the simpler form on parsimony alone, exactly as the
-tie-break states, while leaving the gradient question to better instruments
-(e.g., a z-resolved diagnostic at higher granularity, a future
-registration if anyone wants it).
+power — magnitudes pinned per the signed amendment:** the z-gradient
+generator injects the magnitude THE THEORY ORIGINALLY IMPLIED — the atlas
+tilt's ~12%-σ-equivalent (g_true 1.00/0.88/0.88) — so "detectable" means
+detectable at the size the theory claimed; and the suite PRINTS the minimum
+detectable gradient at real-gate power. Measured: the theory-implied
+injection reads −0.000016 [−0.000037, +0.000006] (invisible; sign even
+leans R4b); a strong injection (bucket-2 gap 40%) reads +0.000065
+[−0.000008, +0.000139] at real power and +0.000082 [+0.000035, +0.000129]
+at 3× (detectable in principle, asserted there); **minimum detectable
+bucket-2 gradient at real-gate power ≈ 42% σ-reduction** (quadratic
+scaling), against the theory's ~12%. Consequently, pre-committed: **any
+FAIL verdict quotes that bound beside it — "g carries information at ≥
+~42% σ-reduction" — never the bare sentence**; a FAIL is therefore STRONG
+evidence (the real effect must be ~3.5× the theory's size); and a straddle
+carries NO evidence against the z-gradient theory — it licenses the
+simpler form on parsimony alone, exactly as the tie-break states, leaving
+the gradient question to better instruments (a future registration if
+anyone wants it).
 
 **O4 (firing rate): NOT APPLICABLE** — calibration arm; stated so the
 checklist reads considered rather than skipped.

@@ -53,6 +53,10 @@ from nba_r4_harness import (
 )
 
 CAPITAL_LINE = "No in-sample result justifies capital. The forward test is the evidence."
+# from the selftest (seed 22, quadratic scaling from the strong injection):
+FAIL_BOUND_LINE = ("Per the signed amendment, this FAIL quotes its detectability bound: "
+                   "g carries information at >= ~42% bucket-2 sigma-reduction (the minimum "
+                   "detectable gradient at real-gate power; the theory claimed ~12%).")
 BOUNDARY_LINE = ("BOUNDARY: calibration work on the model's uncertainty engine. NOT edge work; "
                  "says nothing about any market; Track 2 is separate.")
 
@@ -147,7 +151,8 @@ def gate_read_r4b(ev: pd.DataFrame) -> None:
         print("\nVERDICT FRAME: PASS — R4b REPLACES g (constants v3; g retired).")
     elif cm.lo > 0:
         print("\nVERDICT FRAME: FAIL — g carries information the uniform refit does not."
-              "\nRecorded as the z-gradient theory's FIRST positive evidence; g stands.")
+              "\nRecorded as the z-gradient theory's FIRST positive evidence; g stands."
+              f"\n{FAIL_BOUND_LINE}")
     else:
         print("\nVERDICT FRAME: CI straddles zero."
               + ("\nPRE-COMMITTED SIMPLICITY TIE-BREAK: the structurally-correct form REPLACES"
@@ -216,12 +221,20 @@ def selftest() -> None:
     print(f"[3i] reverting gen, R4b vs PRE-R4 stack: {cm.mean:+.6f} [{cm.lo:+.6f}, {cm.hi:+.6f}] (want hi<0)")
     ok &= cm.hi < 0
 
-    # [3ii] runs twice: at REAL power the FAIL branch is near-undetectable even
-    # for a gradient stronger than plausible reality (that read is the PROGNOSIS
-    # and prints), and at ELEVATED power (3x games) the instrument must detect
-    # it — proving the gate CAN see a z-gradient in principle.
-    for tag, gp, assert_it in [("real power (prognosis)", 1230, False), ("elevated 3x power", 3690, True)]:
-        zg = _synth_r4(22, g_true=(1.25, 1.00, 0.60), n_seasons=11, games_per=gp)
+    # [3ii] per the signed amendment: (a) the THEORY-IMPLIED injection — the
+    # atlas tilt's ~12%-sigma-equivalent, g_true (1.00, 0.88, 0.88) — at real
+    # power, printed as prognosis; (b) a strong injection at elevated 3x power,
+    # asserted (the instrument detects in principle); (c) the minimum
+    # detectable bucket-2 gradient at real power, estimated from (b)'s
+    # real-power twin under quadratic scaling of the paired diff in the
+    # sigma-gap (CI half-width ~invariant), printed for the FAIL verdict.
+    results = {}
+    for tag, g_true, gp, assert_it in [
+        ("theory-implied @ real power", (1.00, 0.88, 0.88), 1230, False),
+        ("strong @ real power", (1.25, 1.00, 0.60), 1230, False),
+        ("strong @ 3x power", (1.25, 1.00, 0.60), 3690, True),
+    ]:
+        zg = _synth_r4(22, g_true=g_true, n_seasons=11, games_per=gp)
         trz = zg[zg.season < 4]
         beta_z = fit_beta(trz)
         _, sig_uz = fit_arm_a(trz)
@@ -231,11 +244,20 @@ def selftest() -> None:
         evz = zg[zg.season >= 4]
         p_incz, p_r4bz = _score_arms(evz, sigma_fn_uz, sigma_phase_table(sig_sz), beta_z, g_z)
         cm = _paired(evz, p_r4bz, p_incz)
+        results[tag] = cm
         want = "want lo>0" if assert_it else "prognosis, no assertion"
-        print(f"[3ii] z-gradient gen at {tag}, R4b vs g-incumbent: "
+        print(f"[3ii] z-gradient {tag}, R4b vs g-incumbent: "
               f"{cm.mean:+.6f} [{cm.lo:+.6f}, {cm.hi:+.6f}] ({want})")
         if assert_it:
             ok &= cm.lo > 0
+    strong = results["strong @ real power"]
+    gap_injected = 0.40  # bucket-2 sigma-gap of the strong injection
+    hw = (strong.hi - strong.lo) / 2
+    if strong.mean > 0:
+        min_gap = gap_injected * float(np.sqrt(hw / strong.mean))
+        print(f"[3ii-c] minimum detectable bucket-2 gradient at real-gate power "
+              f"~{min_gap:.0%} sigma-reduction (quadratic scaling from the strong "
+              f"injection; theory claims ~12%) — any FAIL verdict quotes this bound")
 
     br = _synth_r2(23, revert_per_min=0.0, n_seasons=11, games_per=1230)
     trb = br[br.season < 4]
