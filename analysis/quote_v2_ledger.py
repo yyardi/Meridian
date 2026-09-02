@@ -123,20 +123,18 @@ FEE_PER_CONTRACT = 0.0
 #: (D b952c9e: Q4 −3.00c vs −1.3/−1.4 early). "Late" = minutes_left at or below
 #: this, OR Q4. Threshold PENDING the registration.
 LATENESS_MINUTES_LEFT = None            # PENDING registration
-#: v2-CONGESTION (second): a fill within CONGESTION_WINDOW_S after a lag
-#: episode of >= CONGESTION_LAG_THRESHOLD_S is "in congestion". Canonical
-#: numbers under B's DETERMINISTIC lags instrument (census c78432d): in-
-#: congestion −1.79c [−1.92, −1.66] (n=7,801) vs clear −1.43c [−1.52, −1.35]
-#: (n=9,231), G=13. B's determinism fix moved ~1,200 fills of cell membership
-#: (a different opener set, not a neutral stabilization), so the cells are
-#: VERSION-LOCKED to the census commit — pin it beside the definition the way
-#: the A1 linking policy is pinned. Earlier per-pin caching is unnecessary now
-#: (the instrument is order-invariant); the version pin replaces it.
-CONGESTION_LAG_THRESHOLD_S = 5.0        # registration confirms
-CONGESTION_WINDOW_S = 30.0
-#: The lags census the congestion cells are computed AGAINST — c78432d or
-#: later (D, 2026-09-02). Cells are only comparable within one census version.
-CONGESTION_CENSUS_COMMIT = "c78432d"
+#: v2-CONGESTION (second): the arm's object is B's REGISTERED self-clocked
+#: causal detector, `analysis/congestion_detector.py` @ d1fb6de — imported, not
+#: reinvented. NOT the earlier "≥5s lag / 30s window" lag-statistic (that was a
+#: retrospective clustering statistic, in-sample mechanism evidence, never the
+#: gate — program doc, B's refutation). The causal rule: trigger move ≥3¢ on a
+#: rung, UNRESOLVED by a same-ladder response ≥2¢ within 5s, opens a venue-
+#: pooled window [t0+5s, t0+35s). The window OPENS AT CONFIRM (t0+5s), so a
+#: predicate keyed at fill time reads no future — keying at TRIGGER time is the
+#: lookahead bug B's mutation test exists to catch. `congested` is set in
+#: assemble_ledger from B's `windows_from_frame` (same code path as the
+#: streaming `CongestionDetector.feed`, so scorer and engine cannot diverge).
+#: Detector constants live in congestion_detector.py; nothing to pin here.
 #: v2-PATIENCE (third): requote-into-the-dip is a measured cost (post-fill mid
 #: reverts +0.76→+0.90c; ~0.8c/fill not-losing available). PRECONDITION MET —
 #: D's M4 (quote_v2_markout.py @ 405ef34): v1's requote-into-dip rate is
@@ -146,7 +144,8 @@ CONGESTION_CENSUS_COMMIT = "c78432d"
 #: captures OVERLAP (−1.52 vs −1.63), so a fill-subset scoring would read it as
 #: nothing — PATIENCE must be a requote-REPLAY (hold briefly / requote at the
 #: pre-fill mid), which is why it is a distinct arm type below, not a predicate.
-PATIENCE_ENABLED = True                 # precondition met (D M4 405ef34)
+PATIENCE_ENABLED = True                 # precondition met (D M4 405ef34;
+#                                         quote_v2_markout.py landed at 282ab2f)
 #: The requote-replay's rule parameters — PENDING the registration (rule 11):
 #: how long to hold after a fill before requoting, and whether to requote at the
 #: pre-fill mid rather than chasing the post-fill mid.
@@ -370,29 +369,75 @@ def score_arm(ledger: pd.DataFrame, arm: Arm) -> ArmScore:
 
 def assemble_ledger(fills: pd.DataFrame, *, tick_path: Path | None = None
                     ) -> pd.DataFrame:
-    """Enrich the pinned v1 fills into the scoring ledger. Wires the D/B/
-    classifier dependencies; each is imported lazily so this module and its
-    inventory/arm selftests run before those files land.
+    """Enrich the pinned v1 fills into the scoring ledger.
 
-    Adds per fill: `character` (A1 classifier at quote time), `congested`
-    (B's lags_for_event), `guard_flagged` (core.pulse.guards on the tape's
-    game state at fill time), and `markout_{h}` (D's markouts()). Until a
-    dependency is on main the corresponding column is left absent and the arms
-    that need it raise rather than score on a stub.
+    Adds, per fill:
+      * `mid_{h}` / `markout_{h}` — D's markouts() (`analysis.quote_v2_markout`,
+        side-signed, GAP_CAP_S=120, NaN where a horizon runs past coverage;
+        coverage is counted, never dropped);
+      * `character` — the A1 vol classifier at QUOTE time (the shared
+        `analysis.a1_oscillation_descriptive` at its frozen constants), so the
+        v2-STATE cells and D's post-mortem cells are the same cells;
+      * `congested` — from B's registered causal detector
+        (`analysis.congestion_detector.windows_from_frame`, @ d1fb6de),
+        computed PER GAME on the raw tick frame and tested at each fill's
+        `filled_at`. The window opens at confirm time (t0+5s), so a fill-time
+        test reads no future.
+      * `guard_flagged` — PENDING the forward v2 fill schema (needs fv +
+        clock-quality per quote row; not on the v1 pin). Left ABSENT —
+        `_guard_keeps` scores only once the v2 quoter records those fields.
 
-    CONGESTION VERSION PIN (D, 2026-09-02): B's `lags_for_event` is now
-    order-invariant (deterministic fix, census c78432d) — no per-pin caching
-    needed. But the fix MOVED ~1,200 fills of cell membership, so cells are
-    only comparable within one census version: compute `congested` against
-    CONGESTION_CENSUS_COMMIT (c78432d or later) and record the census commit
-    on the ledger, the way the A1 linking policy is pinned.
+    Dependencies imported lazily so the inventory/arm/matrix selftests run
+    without loading the tape.
     """
-    raise NotImplementedError(
-        "assemble_ledger wires D's markouts(), B's lags_for_event, and the A1 "
-        "classifier — implemented once those are confirmed on main and the arm "
-        "thresholds are pinned by the registration (rule 11). The inventory "
-        "P&L, net_capture, and arm predicates are complete and selftested; "
-        "this is the only pending seam.")
+    import duckdb
+
+    from analysis import a1_oscillation_descriptive as a1
+    from analysis import quote_v2_markout as mko
+
+    df = fills.copy()
+    for col in ("quoted_at", "filled_at"):
+        df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+
+    tp = Path(tick_path) if tick_path is not None else a1.TICKS
+    markets = sorted(df.market_slug.dropna().unique().tolist())
+
+    # 1. markouts (D) — side-signed per-fill markout at +30s/+2m/+10m.
+    con = duckdb.connect()
+    try:
+        con.execute("SET timezone='UTC'")
+        mko.load_ticks(con, tp, markets)
+        df = mko.markouts(con, df)
+    finally:
+        con.close()
+
+    # 2. character (A1 classifier at quote time) — the shared labeller.
+    bars, slug2game = a1.load_bars()
+    df["character"] = [
+        a1.character(a1.vr_at(bars[m], t)) if m in bars else "na"
+        for m, t in zip(df.market_slug, df.quoted_at)
+    ]
+
+    # 3. congested (B's causal detector) — windows PER GAME (venue-pooled
+    #    across that game's ladders), fill tested at filled_at. Same code path
+    #    as the streaming detector, so scorer and engine cannot diverge.
+    from analysis import congestion_detector as cg
+    raw = pd.read_csv(
+        tp, usecols=["event_slug", "market_slug", "sports_market_type",
+                     "captured_at", "best_bid", "best_ask"])
+    raw["captured_at"] = pd.to_datetime(raw.captured_at, utc=True, errors="coerce")
+    raw = raw.dropna(subset=["captured_at"])
+    windows_by_game: dict[str, list[tuple]] = {}
+    for game, g in raw.groupby("event_slug"):
+        windows_by_game[game] = cg.windows_from_frame(g)
+    fill_game = df.market_slug.map(slug2game)
+    fsec = df.filled_at.astype("datetime64[ns]").astype("int64") / 1e9
+    df["congested"] = [
+        any(a <= t < b for a, b in windows_by_game.get(gm, []))
+        for gm, t in zip(fill_game, fsec)
+    ]
+    # guard_flagged intentionally absent — see docstring (forward-schema).
+    return df
 
 
 # --------------------------------------------------------------------------- #
