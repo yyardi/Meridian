@@ -133,11 +133,16 @@ sharper version of this check.
 
 **Candidates** (each with its forward test): (1) *ride-risk-priced entries* —
 require edge ≥ concessions + δ*(p̂) with B's fitted p̂; forward test: paper arm
-beside the engine, game-clustered paired per-$. **Open reconciliation before
-any registration**: B's predictor work finds per-$ outcomes flat across ride-
-risk quintiles — the market may already charge for ride risk through the
-contract price, in which case δ*(p̂) on top double-counts; one reconciling
-paragraph between the two docs is owed first (agreed with B). (2) *front-loaded exit
+beside the engine, game-clustered paired per-$. **Reconciliation written —
+see `ride_predictor_report.md`, addendum 2026-09-02 §3**: δ*(p) is the GROSS
+ride drag, and the engine's current exit policy (fixed 5¢ target ÷ falling
+cost) already collects ~75% of it per contract in the risky states — so
+charging gross δ* on top of edge_net **double-charges**; the net uncollected
+premium is ~0.7–1¢/ct at the top risk quintile with a CI spanning zero. The
+netting is ENGINE-MEDIATED, not a market law: under any changed exit policy
+(the taker arm included) it must be recomputed, and that recomputation is
+where this table is the right instrument. δ* as a variance/sizing input is
+untouched by the netting. (2) *front-loaded exit
 management* — the term structure says exit value dies with the hold, not the
 book; a forward arm that reprices or abandons exits early (vs the static
 entry+5¢ target) is testable on the same tape forward; c7's call whether it
