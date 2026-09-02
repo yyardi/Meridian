@@ -89,4 +89,17 @@ entry's outcome in `pulse_decisions` / A's round-trip ledger. One-key join on
   exactly as it abandons in-flight incumbent positions. Continuous per-game
   operation is the assumption for both.
 
+## Reading the loss tail — a dynamic-arm ride loss is the policy's own cost, not an artifact
+
+Because the arm outlives the incumbent's exit, it rides into states the
+incumbent never held — including the bookless endgame region (wall 7). When
+the paired read shows the dynamic arm losing on a ride the incumbent had
+already closed out of, **that loss is the hypothesis's own cost, not an
+execution artifact to be netted away.** Holding out for a repriced target *is*
+accepting the exposure of not having exited; the ride loss is the price of
+that choice and belongs in the dynamic arm's P&L in full. The verdict must
+read it as the policy difference it is — the reason to compare the arms at all
+— never discount it as a fill-model quirk. (The F8 caveat above is the
+genuine artifact class; this ride exposure is not in it.)
+
 *No in-sample result justifies capital. The forward test is the evidence.*
