@@ -176,8 +176,14 @@ class KalshiGame(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     #: The shared suffix of the game's event tickers across all three series,
-    #: e.g. '26AUG05PHXATL' from KXWNBAGAME-26AUG05PHXATL.
-    game_key: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    #: e.g. '26AUG05PHXATL' from KXWNBAGAME-26AUG05PHXATL. NOT unique alone:
+    #: seven team codes exist in both the WNBA and NFL tables, so a same-date
+    #: cross-league pair (SEA/ATL on one Sunday) collides — identity is
+    #: (league, game_key). Child tables disambiguate via series_ticker.
+    game_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    league: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="wnba"
+    )
     #: Date encoded in the ticker (US-local, like Polymarket slug dates).
     local_date: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -198,6 +204,8 @@ class KalshiGame(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("league", "game_key",
+                         name="uq_kalshi_games_league_game_key"),
         Index("ix_kalshi_games_local_date", "local_date"),
         Index("ix_kalshi_games_polymarket_event_slug", "polymarket_event_slug"),
     )
