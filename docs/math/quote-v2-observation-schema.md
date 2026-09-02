@@ -51,6 +51,7 @@ compliant stream accrue in parallel with A1's gate.
 | `market_slug`, `game_id`, `event_slug` | str | join keys |
 | `sports_market_type` | str | congestion detector ladder=kind, rung=slug |
 | `observed_at` | ts (tz) | **the QUOTER'S OWN stamp** — the compliant clock; detector + markout run on this, never recorder stamps |
+| `source_captured_at` | ts (tz) null | **raw provenance: the upstream `market_snapshots.captured_at` carried through — NOT venue truth, NOT a detector clock. Never fed to the detector.** Exists for three reads only: the cross-clock validity check (regression = `observed_at == source_captured_at` everywhere), latency decomposition `observed_at − source_captured_at`, and the amendment-9 proxy-validation join key |
 | `best_bid`, `best_ask` | Price | book; mid/spread derived |
 | `is_live` | bool | pregame/in-play regime seam |
 | `event_period` | str | LATENESS arm, guards |
@@ -82,7 +83,15 @@ freezing a version into the table:**
 1. **Cadence ≤1s** (B: observation cadence ≪ LONG_S=5s or the detector
    degenerates). The v2 quoter observes at ≤1s even though v1 was 5s.
 2. **Own stamps** — `observed_at` is the quoter's receive time, never a
-   recorder timestamp.
+   recorder timestamp. The upstream stamp is carried separately as
+   `source_captured_at` (raw provenance). **Pinned consumption rule: the
+   detector and EVERY gate read `observed_at` ONLY; `source_captured_at` is
+   never fed to the detector** — the recording-integrity replay enforces this
+   structurally (re-instrumenting the detector on the wrong column diverges from
+   the recorded `det_*` and is caught). Recording both stamps gives the
+   wrong-clock regression an assertable signature (`observed_at ==
+   source_captured_at` everywhere) that an integrity check — which reconciles
+   what was recorded, not which clock was fed — structurally cannot see.
 3. **Full quote stream** — a row on every observation, carrying the current
    resting quote (or its absence), so unfilled requotes are visible to
    PATIENCE, not just fills.

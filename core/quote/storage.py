@@ -150,6 +150,22 @@ class QuoteV2Observation(Base):
     #: markout run on this, never on a recorder timestamp.
     observed_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False)
+    #: The upstream recorder snapshot's stamp (`market_snapshots.captured_at`)
+    #: carried through as RAW PROVENANCE — NOT venue truth (it is the recorder's
+    #: capture time, itself downstream of the venue) and NOT a detector clock.
+    #: PINNED CONSUMPTION RULE: the detector and EVERY gate read `observed_at`
+    #: ONLY; `source_captured_at` is never fed to the detector — the
+    #: recording-integrity replay enforces this structurally (re-instrumenting
+    #: the detector on this column diverges from the recorded `det_*` and is
+    #: caught). It exists for three reads only: (1) the cross-clock VALIDITY
+    #: check — a wrong-clock regression is `observed_at == source_captured_at`
+    #: everywhere, which integrity alone cannot see; (2) latency decomposition
+    #: `observed_at - source_captured_at` (quoter stall vs upstream silence);
+    #: (3) the amendment-9 proxy-validation join key (recorder tape ⋈ quoter
+    #: stream on this, not fuzzy price-matching). Cheap now, backfill-impossible
+    #: later.
+    source_captured_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True))
     best_bid: Mapped[Decimal] = mapped_column(Price, nullable=False)
     best_ask: Mapped[Decimal] = mapped_column(Price, nullable=False)
     is_live: Mapped[bool] = mapped_column(Boolean, nullable=False)
