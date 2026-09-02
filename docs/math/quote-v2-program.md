@@ -124,6 +124,14 @@ records status, it does not amend the draft; only dated author amendments do)
   provenance is the property this record is built to produce.
 - **The thread's last word (B's):** a validated proxy is the one honest
   way a refused input ever earns partial readmission.
+- **Substrate epoch INSTANTIATED 2026-09-02:** the observation migration
+  (amendment 10's cohort-epoch ruling) landed at merge commit 322397c —
+  epoch by command, never prose:
+  `TZ=UTC git log -1 --format=%ct 322397c`. Field set signed by B, D,
+  manager, and research (condition met: the three deploy proofs are spec
+  requirements). The v2 quoter recording path + proofs are in build (A);
+  the freeze remains bound to 7a3a217 until the proofs land per
+  amendment 10 stage 2.
 
 ---
 
