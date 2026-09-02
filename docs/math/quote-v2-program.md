@@ -494,3 +494,24 @@ CONGESTION / GUARDS / PATIENCE substrate — begins when this commit
 deploys; the embargo on analytical reads stands, with the recording-
 integrity scorer's checks running as recording-integrity, never
 analytics.
+
+**AMENDMENT 11 (2026-09-02):** amendment 10's "a pre-first-tip deploy,"
+singular, was drafting accident, not considered boundary — the purpose is
+ONE BINARY PER COHORT, and a cohort begins at its FIRST RECORDED DATUM,
+not at the first deploy. Corrected boundary: deploys are authorized while
+zero fills AND zero observation rows exist, each under the full
+three-proof regime with its own rebind dated line; from the first
+recorded datum onward, the no-mid-accrual consequence binds exactly as
+written — no deploy until A1 reads, chosen not drifted. The heartbeat-fix
+redeploy proceeds under this amendment.
+
+*Rider — rule 19 applied to the proofs themselves:* the replay-equivalence
+proof DECLARES its blind spot — it compares quoting decisions and fills;
+liveness side-effects (heartbeat writes, telemetry) are outside its
+comparison set BY DESIGN and stay there (bloating the replay to chase
+side-effects would weaken its one job). The compensating check is
+assigned to the right instrument and named: the deploy checklist verifies
+the heartbeat ROW advances within 10 minutes of any engine deploy — the
+check that caught the 2026-09-02 heartbeat drop, promoted from habit to
+checklist line. One equivalence proof, one declared blind spot, one named
+compensator.
