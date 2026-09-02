@@ -17,7 +17,7 @@ The null was three-for-three on BELIEF properties (edge_net; the coupling; Q1 ed
 4. **Not purely mechanical (placebo, demand #3).** Random entries also show revert>rest, but weakly (placebo revert +0.45% [-5.83%, +9.19%], CI spans zero) vs real +4.35%. Pairing (D's refinement): the PAIRED game-level diff (real − placebo, same games) is +0.04% [-10.10%, +7.81%] over 32 games — CI still spans zero, so the selection-above-mechanical split is not resolved in-sample even paired — the honest answer, and the gate settles it.
 5. **Incremental to B's frozen P(ride) (demand #5).** Revert beats non-revert INSIDE every P(ride) quintile (strongest in Q5), where B's own read has per-$ flat across quintiles. Not the ride mask renamed.
 
-**Verdict (aligned with the research agent's ruling).** A1 FAILED demand #6 as written — negative in every character under the uniform concession. The pilot justifies NOTHING on its own: the maker-frame ordering is composition-fragile (pooled +4.35%, equal-weighted +0.77%), and the paired-placebo test shows selection adds ~0 over the roll's mechanical harvest. TWO nested in-sample artifacts reproduce this tape without any market truth: (a) engine payoff coupling (the 5¢ roll harvests oscillation by construction — the placebo shows ~80% of the ORDERING present in coin-flip entries), and (b) fill-model optimism CORRELATED WITH THE FEATURE (the mid-cross rule books favourable drift largest exactly in oscillating states — 'revert character' and 'fill-model profit' are near-synonyms on this tape). Nothing on the pinned tape can separate 'revert states are genuinely maker-friendly' from those two artifacts. **Only real fills can — which is why the gate is the only instrument, not a consolation.** What survives to justify running it: the persistence result (+0.174 at 90s, robust) and one sharp falsifiable claim — that reverting fills pay measurably below-average concession. Breakeven burden (linear between the two published arms): c* ≈ 0.72¢/leg vs the 4.70¢ average — an ~85% concession reduction. Large, one number, printed so no 3.9¢ result is later called 'directionally supportive'. Not a capital claim.
+**Verdict (aligned with the research agent's ruling).** A1 FAILED demand #6 as written — negative in every character under the uniform concession. The pilot justifies NOTHING on its own: the maker-frame ordering is composition-fragile (pooled +4.35%, equal-weighted +0.77%), and the paired-placebo test shows selection adds ~0 over the roll's mechanical harvest. TWO nested in-sample artifacts reproduce this tape without any market truth: (a) engine payoff coupling (the 5¢ roll harvests oscillation by construction — the placebo shows ~80% of the ORDERING present in coin-flip entries), and (b) fill-model optimism CORRELATED WITH THE FEATURE (the mid-cross rule books favourable drift largest exactly in oscillating states — 'revert character' and 'fill-model profit' are near-synonyms on this tape). Nothing on the pinned tape can separate 'revert states are genuinely maker-friendly' from those two artifacts. **Only real fills can — which is why the gate is the only instrument, not a consolation.** What survives to justify running it: the persistence result (+0.174 at 90s, robust) and one sharp falsifiable claim — that reverting fills pay measurably below-average concession. Breakeven burden (linear between the two published arms): c* in **[0.13, 0.72]¢/leg** (equal-weighted to pooled) vs the 4.70¢ average — an ~85–97% concession reduction. Large, a one-number band, printed so no 3.9¢ result is later called 'directionally supportive'. Not a capital claim.
 
 *Two framing notes carried from the manager's routing:* A1 leans on NO 'margin-driven = suspect' reasoning (B's Q1 split closed that door; this is a vol-character feature, orthogonal to edge source). And it does not build on B's lone unranked Q1-mixed ≥10¢ interval — a different partition; no cell here is derived from it.
 
@@ -80,11 +80,31 @@ B's own read: per-$ is flat across P(ride) quintiles. If revert only re-orders w
 
 **The gate scores TWO things, not one (D's refinement):**
 
-1. **Concession-by-character — the MECHANISM test, fast.** A1's whole claim is concession HETEROGENEITY: reverting-character fills carry below-average adverse selection. That concession is measured directly per quote-engine fill (`mid_at_quote` vs `mid_at_fill`), per-fill and tight — far fewer games than P&L significance needs. If reverting fills do NOT show below-average concession, the mechanism is dead long before the P&L floors fill (October, not December).
+1. **Concession-by-character — the MECHANISM test, fast.** A1's whole claim is concession HETEROGENEITY: reverting-character fills carry below-average adverse selection. That concession is measured directly per quote-engine fill (`mid_at_quote` vs `mid_at_fill`), per-fill and tight — far fewer games than P&L significance needs. If reverting fills do NOT show below-average concession, the mechanism is dead long before the slower per-$ floors fill (see the dated horizon below).
 
 2. **Per-$-by-character — the ECONOMICS test, slow.** The registration's gate proper: does the character order per-$ over all fills on real fills, surviving the (now per-character, not uniform) concession, game-clustered. This is the floors-in-games arm.
 
 Score both; the concession split is the leading indicator, the per-$ the verdict.
+
+
+### Gate accrual and floors (rule 10)
+
+Accrual measured by the research agent against PRODUCTION, read-only, **query stamped 2026-09-02 15:25Z** (not computable from the pinned exports; cited here with its provenance, not re-derived):
+
+- in-game fills **17,032 over 13 games** (2026-08-18 → 08-22), pregame 307 over 13 — a ~1,310 in-game-fills-per-game rate (2,400–5,000/day over 3–5 games/day).
+
+- At this tape's character shares (~87% featured, ~65% revert) the FILL floors (≥120 revert / ≥60 non-revert) clear inside a single game; the **GAME floors are the only binding constraint** (≥12 revert-games / ≥8 non-revert-games) ≈ **3–4 slate days**. Dated horizon **~Sept 26–30** if the quoter runs from the Sept 17 resumption, caveated for late-season slate density.
+
+- **DEPLOYMENT HOLD (a fact, not a suspicion):** fills STOP on 2026-08-22 and the production health check shows no quote-engine (or PULSE) container running — the overlay is not deployed. The registration's clock does not tick until redeploy (operator-gated, Sept 17 deadline). **Cohort accrual begins at the first fill after the landing epoch; if no fills exist 7 days after WNBA resumption, the registration surfaces a DEPLOYMENT HOLD rather than silently aging toward exhaustion** — an undeployed quoter is a named operational state, never data.
+
+
+### Weighting and breakeven, pinned BEFORE any forward number (research amendment)
+
+- **Primary = POOLED per-$ with a game-clustered CI** — the economic quantity (pooled is what you earn if sizing follows fill availability). **Robustness clause:** if the game-equal-weighted point estimate disagrees IN SIGN with the pooled read, the verdict downgrades to straddle regardless of the pooled CI. No weighting shopping after the fact.
+
+- **Both breakevens printed** (linear interpolation between the two published arms, slope ≈6.01%/(¢/leg)): **c\* ≈ 0.72¢/leg** from the pooled arm (+4.35% at 0¢), **c\* ≈ 0.13¢/leg** from the equal-weighted arm (+0.77% at 0¢). The mechanism's burden lives in that band; the gate measures where the real per-character concession falls (vs the 4.70¢ average).
+
+- **Prior, stated plainly:** with the paired placebo at +0.04% [−10.10%, +7.81%], the in-sample null (engine coupling + fill-model optimism concentrated in oscillating states) is STRONGLY FAVORED. A1 is not a promising candidate; it is a cheap discriminator on a live question. Stating the prior as adverse also protects the PASS branch: clearing a stated-adverse prior on real fills cannot be discounted as expectation-confirmation.
 
 
 ## Multiple comparisons & capital
