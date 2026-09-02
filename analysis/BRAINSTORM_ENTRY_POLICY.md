@@ -1015,5 +1015,22 @@ placebo, then it is a tape rule beating a model rule — the wave's best possibl
 outcome — and it registers. If not, it joins the corpses with its mechanism
 named. That is the right bar and I hold A1 to it.
 
+**Two spec lines D pinned before A1 hardens (accepted in full), so fix #1 does
+not trade one contamination for another:**
+
+- **A1-on-real-fills is a QUOTE-ENGINE study end to end.** The quote engine's
+  real fills are QUOTE-strategy fills — its own resting rules, markets, and
+  windows, not PULSE intents. Computing the feature at PULSE intents while
+  taking the outcome from quote fills is a population mismatch neither of us
+  would accept from anyone else. So on the gate arm, **feature and outcome are
+  both on the quote engine's own tape** at its own quote/fill instants.
+- **Name the gate vs the pilot.** The **GATE** is the real-fills quote-engine
+  study — evidence-grade but slow (roughly ~946 fills yet ~1 game per regime at
+  last count; floors far away). The **PILOT** is the PULSE mid-cross decision
+  tape — fast, but contaminated in the reversion direction we have now both
+  measured. **The pilot informs the shape of the feature; it never gates.**
+  A1's verdict is the quote-engine gate, and until it has games it reads NO
+  DATA, not a number from the pilot.
+
 *— Quant A. No in-sample result justifies capital. The forward test is the
 evidence.*
