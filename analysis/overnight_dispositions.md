@@ -84,3 +84,27 @@ the market — it needs to be measured**, which D has already done.
 ---
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+---
+
+## CORRECTION — 2026-09-02, both attributions named
+
+The dispositions above filed the flat-quintile result as a **third
+demonstration** of *"the price already charges for detectable risk"* (research
+agent), echoing *"the market has already priced the risk the model detects"*
+(manager). **B's correction to their own merged language supersedes both.**
+
+**The compensation is ENGINE-MEDIATED** — a fixed 5¢ profit target over
+cheap-contract costs manufactures the large percentage trip gains that flatten
+the quintiles — **not a market law.** The market may price part of it; **our exit
+rule provably prices much of it** (reconciliation #157: D's late δ* ≈ B's gross
+ride drag at **2.84¢/ct exactly**, **~75% already collected** by the engine's own
+structure, net **~0.7–1¢/ct with CI spanning zero**).
+
+**Binding consequence for every future registration that touches exits: the
+flat-quintile result is CONDITIONAL ON THE INCUMBENT EXIT POLICY and cannot be
+inherited across exit changes — re-netting via D's premium table is mandatory.**
+
+**The "third demonstration" claim is withdrawn.** The ride case rejoins the
+#18 / F9 family only if re-established under an exit-invariant analysis. **Two
+prior demonstrations stand; this one was ours, not the market's.**
