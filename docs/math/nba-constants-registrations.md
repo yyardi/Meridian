@@ -554,3 +554,54 @@ constants do not. Which class a constant belongs to is now a question to ask
 BEFORE porting it.** σ = 15.25 / 12.81 / 9.24, below every ported form.
 
 **Effect size: physics, not alpha. No capital implication.**
+
+---
+
+## CORRECTION APPENDS — 2026-09-02, the OT-exclusion defect
+
+**A loader defect reached every gate read.** C's feed-quality rule compared the
+plays' **regulation-end** margin to the games table's **OT-inclusive** final, so
+**537 of 701 OT games were silently excluded as "bad feed"** — violating R1b's
+registered term (*OT states excluded, OT GAMES KEPT*) and biasing every read
+against close games. **Caught because the atlas prints its composition** (OT
+share 1.3% vs the corpus's 5.3%) — the third time that requirement has paid.
+Corrected rule: OT games are checked against what OT regulation is (tied at the
+horn); all 701 pass, 17 genuinely bad feeds stay out. Defect fix `8639152`,
+corrected constants `nba_constants_v1.json` @ `d52fe89`.
+
+### R1b and R2 — verdicts STAND, constants corrected
+
+Both verdicts **survive the corrected loader, stronger**: R1b (a)−(b)
+**−0.00055 [−0.00069, −0.00041]**, (a)−(c) −0.00177, and (b)−(c) now also
+excludes zero; R2 PASS **−0.001690 [−0.002253, −0.001127]**, all 8 seasons.
+
+**The fold constants change materially and every prior quotation is
+superseded** by `nba_constants_v1.json`: σ global **2.596**, phase
+**2.317 / 2.577 / 2.649 / 2.707** — Q4 σ 2.71 versus the first-read 2.46,
+**because the dropped OT games WERE the close endgames informing late σ.** The
+NBA rising-σ shape is **strengthened** by the correction. R2 β(4′) = 0.452,
+table 0.452 … 0.093. **First-read tables retracted on sight**, both-runs
+disclosure per the 2016 precedent.
+
+### R3b — THE VERDICT CHANGES
+
+**The published dominance is WITHDRAWN.** Corrected read: (a)−(b)
+**+0.00003 [−0.00011, +0.00017]** — straddles at all 6 evaluated seasons. Per
+the registration as written: **INDISTINGUISHABLE-AT-POWER → arm (a) is adopted
+BY THE PRE-COMMITTED TIE-BREAK, recorded as adoption-by-tie-break, NEVER as
+superiority.** The pre-computed power note prints beside this and is what makes
+it meaningful: the arms are separable at this power, so **this is genuine
+convergence — a statement about basketball.**
+
+**Mechanism of the false dominance:** restoring the OT tail (+22.3 over the
+line) moved the fitted σ to **16.03 / 13.74 / 10.48, CONVERGING to the
+rate-keyed port (17.4 / 14.3 / 10.6)** — the first-read "dominance" was the
+fitted table exploiting the OT-exclusion bias.
+
+**Structural lines revised:** the banking collapse **STANDS**
+(1.088 / 1.014 / 1.020); the shares invariance **STANDS**; *"σ below every
+ported form"* is **RETRACTED** and replaced: **TOTALS σ PORTS UNDER
+RATE-KEYING** (fitted ≈ ported within power). The invariance-class table gains
+its third row — **quarter structure ports; banking does not; totals σ
+rate-ports** — and the b′ sensitivity's verdict (both beat the absolute port)
+is **doubly vindicated: by measurement and by convergence.**
