@@ -66,11 +66,26 @@ a should-never-fire assertion: post-sort, a collision that ever diverges is the
 engine drifting OUT of the registered contract — the cheapest detector for that
 regression, so it is reported (never papered over), not expected.
 
-No forward rows exist until the recording binary deploys (amendment-gated,
-post-7a3a217). --selftest validates the instrument now, on synthetic streams
-whose `det_*` this module itself produced via the engine's recording logic, so
-it is ready the moment real rows land. --db is a no-op-clean read when the
-table is empty.
+DECLARED BLIND SPOT (rule 19 — a checker names what it cannot see). This scorer
+reads what is IN the table; it CANNOT see observations that were never recorded.
+So an EMPTY read is ambiguous and must never be reported as health: "empty and
+clean" can mean "no board is live yet" OR "a board is live but its rows were
+born invisible" — stamped older than the engine's 600s observation window before
+they became visible, so the quoter never ingested them (the RPS-2 slow-sweep
+defect, 2026-09-02: a ~15min sweep stamped `captured_at` at sweep start and
+committed at sweep end, so rows surfaced already ~16min stale and the quoter was
+structurally blind to the whole board while `record_s` sat at 2-3ms). No
+in-table check — not cadence, not reconciliation, not cross-clock — can
+distinguish these two, because all three operate on rows that exist. The
+compensator is the out-of-band row-visibility probe
+`analysis/quote_v2_visibility_probe.py` (birth-staleness per sweep +
+receiving-while-live), which classifies an empty read as EMPTY_BENIGN vs an
+ALARM; this scorer defers the empty verdict to that probe rather than
+pronouncing it clean.
+
+--selftest validates the instrument on synthetic streams whose `det_*` this
+module itself produced via the engine's recording logic; it is ready the moment
+real (non-empty) rows land. --csv scores an offline export for the same reason.
 """
 
 from __future__ import annotations
@@ -482,18 +497,75 @@ def run_db() -> int:
                   or "could not connect" in msg or "connection refused" in msg
                   or "operationalerror" in type(exc).__name__.lower())
         if absent:
-            print("quote_v2_observations not present / DB unreachable — no "
-                  "forward rows yet (recording binary not deployed). Nothing "
-                  "to score; not a failure.")
+            print("quote_v2_observations not present / DB unreachable from "
+                  "here. Cannot score — this is an absent-table / no-DB-route "
+                  "condition, distinct from an EMPTY table (see the blind-spot "
+                  "note for what empty does and does not mean).")
             return 0
         raise
     if df.empty:
-        print("quote_v2_observations is empty — no forward rows yet "
-              "(recording binary not deployed). Nothing to score; not a "
-              "failure.")
-        return 0
+        return _empty_verdict("quote_v2_observations")
+    return _run_checks(df)
+
+
+def _empty_verdict(source: str) -> int:
+    """Empty is AMBIGUOUS, never health (the module's declared blind spot).
+    Say so loudly and defer to the out-of-band row-visibility probe."""
+    print(f"{source}: EMPTY — 0 rows. This is NOT a clean pass. An in-table "
+          "scorer cannot tell 'no board live yet' from 'board live but its "
+          "rows were born invisible' — stamped past the engine's 600s window "
+          "before they surfaced (the RPS-2 slow-sweep defect, 2026-09-02). "
+          "Confirm which with the row-visibility probe that classifies exactly "
+          "this: analysis/quote_v2_visibility_probe.py --db  (EMPTY_BENIGN vs "
+          "an ALARM), not this scorer.")
+    return 0
+
+
+def _parse_bool(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v):
+        return None
+    s = str(v).strip().lower()
+    if s in ("t", "true", "1"):
+        return True
+    if s in ("f", "false", "0"):
+        return False
+    return None
+
+
+def _load_csv(path: str) -> pd.DataFrame:
+    """Load a CSV export of quote_v2_observations (e.g. psql
+    `\\copy (SELECT ...) TO 'f.csv' CSV HEADER`) into the same frame the checks
+    consume. Coerces postgres CSV quirks: booleans as t/f, NULLs as empty,
+    ISO timestamps. Lets a real board be scored offline when the DB isn't
+    reachable from where the scorer runs."""
+    df = pd.read_csv(path, dtype=str, na_values=[""], keep_default_na=True)
+    for col in ("observed_at", "source_captured_at", "det_confirm_t0"):
+        if col in df.columns:
+            # format="ISO8601", not inference: postgres exports whole-second
+            # stamps without a fractional part and sub-second ones with, and
+            # format inference locks onto the first value and coerces the rest
+            # to NaT (the verify-clock-and-timezone class of bug). ISO8601
+            # parses the mixed precision — and the space/'T' separator — as one.
+            df[col] = pd.to_datetime(df[col], errors="coerce", utc=True,
+                                     format="ISO8601")
+    for col in ("best_bid", "best_ask"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "det_in_window" in df.columns:
+        df["det_in_window"] = df["det_in_window"].map(_parse_bool)
+    return df
+
+
+def run_csv(path: str) -> int:
+    df = _load_csv(path)
+    if df.empty:
+        return _empty_verdict(path)
+    return _run_checks(df, source=path)
+
+
+def _run_checks(df: pd.DataFrame, source: str = "quote_v2_observations") -> int:
     games = df["game_id"].nunique()
-    print(f"scoring {len(df):,} rows across {games} game(s)\n")
+    print(f"scoring {len(df):,} rows across {games} game(s) from {source}\n")
     mm = reconcile(df)
     print(f"CHECK 1 replay-reconciliation: {len(mm)} mismatch(es)")
     for x in mm[:20]:
@@ -536,11 +608,16 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--db", action="store_true")
+    ap.add_argument("--csv", metavar="PATH",
+                    help="score a CSV export of quote_v2_observations "
+                         "(offline, when the DB isn't reachable here)")
     args = ap.parse_args()
     if args.selftest:
         return selftest()
     if args.db:
         return run_db()
+    if args.csv:
+        return run_csv(args.csv)
     print(__doc__)
     return 0
 
