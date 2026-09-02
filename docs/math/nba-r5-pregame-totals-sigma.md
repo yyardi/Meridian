@@ -1,10 +1,9 @@
-# R5 — pregame totals σ (σ_T0) — DRAFT UNDER PEER ATTACK
+# R5 — pregame totals σ (σ_T0) — READ AND ADOPTED
 
-**Research agent, 2026-09-02. DRAFT. Peer-attack window open: C has first
-refusal (they forced this registration to exist); A confirms the estimand is
-the one A3 needs (they are its consumer). Lands as signed after their attacks
-or 24h silence, whichever first. NOTHING COMPUTES until the signed text lands;
-the landed commit is the cutoff, read from git epoch, never prose.**
+**Research agent, 2026-09-02. REGISTERED, SIGNED (C, on the amended text),
+READ same day: σ_T0 = 18.2735 points (SE 0.1449) — see the adoption append.
+Original window terms preserved below for the record; the amendment trail
+(1–7) and the signature paragraph are the registration's history.**
 
 ## Estimand
 
@@ -189,3 +188,39 @@ the manager: "R5: SIGNED on the landed text — through both gates, suite and
 read next"). This paragraph is the manager's durable record of that
 signature; the registration cutoff for computation is the commit carrying
 it, read from git epoch.**
+
+---
+
+## ADOPTION APPEND (research agent, 2026-09-02 — landed by the manager after
+reproducing the full printed run from the committed harness, not the relay)
+
+READ 2026-09-02, single-shot on the pin; suite passed in the same invocation
+(shuffle-null: L strictly worse once the pairing is destroyed, −0.0034;
+generator recovery at 14/22 both within 3·SE; OT direction asserted).
+**VERDICT: STRADDLE → POINTS ON PARSIMONY. ADOPTED: σ_T0 = 18.2735 points
+(SE 0.1449, n=7,952 games, terminal expanding window over 2017–2022 +
+2025-partial).** Primary L−T = +0.000601 [−0.001418, +0.002621], 6 evals,
+floor 5 met with margin. Tie-break loser recorded: per-game relative form,
+terminal cv 0.0824, drifting down 0.0849→0.0824 across seasons.
+
+AMENDMENT-5b DISCLOSURE: the form DECISION is invariant to the OT split but
+its ROUTE flips — excluding OT games T wins OUTRIGHT (−0.002564 [−0.004892,
+−0.000236]); including them, straddle. OT tail games are the only thing
+keeping the relative form in the race — the pre-registered leverage warning
+confirmed in the benign direction. The winner is the better Gaussian
+approximation only; A3's shape authority stands.
+
+AMENDMENT-6 print: no mechanism concentration (inner +0.000452, outer
++0.000595, both straddle) — moot, L lost.
+
+NOVEL EXPOSURE DELIVERED: OT share of pregame totals variance = 9.75%
+(18.27 OT-inclusive vs 17.36 regulation-only, 421 OT games) — a number that
+existed nowhere in our record this morning. 2025-partial (979/1,235) and the
+2023–24 gap-jump fold disclosed as amended. Calibration work, never edge
+work; no capital implication.
+
+Constant appended to `analysis/nba_constants_v3.json` (block `r5_sigma_t0`);
+harness `analysis/nba_r5_sigma.py` committed alongside; manager reproduced
+every number above from a fresh invocation before landing (suite 3/3 then
+read, byte-for-byte on the adopted constant, primary CI, both descriptive
+prints, and the cv drift endpoints).
