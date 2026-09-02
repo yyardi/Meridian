@@ -70,7 +70,13 @@ class Recorder:
         self.config = config or RECORDER
         self._client = client or PolymarketGatewayClient(self.config)
         self._Session = sessionmaker or get_sessionmaker(get_engine())
-        self._heartbeat = Heartbeat(self._Session, SERVICE_PREGAME)
+        # One heartbeat ROW per recorder process (2026-09-02, multi-league
+        # expansion): two recorders sharing one service key would mask each
+        # other's death — the B11 shape. wnba keeps the bare name so every
+        # existing health surface stays true.
+        _svc = (SERVICE_PREGAME if self.config.league_slug == "wnba"
+                else f"{SERVICE_PREGAME}_{self.config.league_slug}")
+        self._heartbeat = Heartbeat(self._Session, _svc)
 
     # ------------------------------------------------------------------ #
     # One cycle

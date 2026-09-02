@@ -719,7 +719,8 @@ class LiveRecorder:
             or get_sessionmaker(
                 get_engine(pool_size=1, max_overflow=0, pool_timeout=2)
             ),
-            SERVICE_LIVE,
+            (SERVICE_LIVE if self.config.league_slug == "wnba"
+             else f"{SERVICE_LIVE}_{self.config.league_slug}"),  # B11: one row per process
         )
         self._rows_at_last_beat = 0
 
