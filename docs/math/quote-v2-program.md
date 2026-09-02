@@ -505,8 +505,8 @@ recorded datum onward, the no-mid-accrual consequence binds exactly as
 written — no deploy until A1 reads, chosen not drifted. The heartbeat-fix
 redeploy proceeds under this amendment.
 
-**DATED LEAGUE-FILTER LINE (research agent, 2026-09-02, landed before the
-first NFL datum):** GRIDIRON (the operator-directed NFL maker program,
+**DATED LEAGUE-FILTER LINE (research agent, 2026-09-02):** GRIDIRON (the
+operator-directed NFL maker program,
 2026-09-02) makes `shadow_quote_fills` and `quote_v2_observations`
 MIXED-LEAGUE tables from the first NFL tick the filterless quoter
 observes. Standing note binding every arm of THIS program: **all cohorts
@@ -515,6 +515,16 @@ mixed-league substrate is disclosed in every read, and A1's gate and D1
 carry the same clause in their own registrations (dated lines landed
 2026-09-02). GRIDIRON's cohorts live in GRIDIRON's own registry; nothing
 NFL gates or informs a basketball arm, and vice versa.
+
+*Timing correction (manager, 2026-09-02, same evening):* this line was
+drafted to land "before the first NFL datum" and DID NOT — the first NFL
+snapshot rows became visible at epoch 1788389558+~960s (the slow-sweep
+commit), preceding this line's commit (1788390495) by minutes. No
+substantive effect: the clauses are definitional, not cutoff-dependent;
+zero fills and zero observation rows existed in the gap (verified — the
+quoter was structurally blind to the stale-born sweep, findings-bound
+separately). The record carries the true order rather than the intended
+one.
 
 *Rider — rule 19 applied to the proofs themselves:* the replay-equivalence
 proof DECLARES its blind spot — it compares quoting decisions and fills;
