@@ -53,3 +53,67 @@ windows and as-of instants printed per findings #95a. First recorded
 
 *Referenced by #20's cohort rule, the EV-stop registration (limit clause), and
 F10/F11 in the research artifact. Results append below this line, never above.*
+
+## Within-game control (added 2026-08-28; GS-NY 08-27, 19-pt final)
+
+The strongest instance in the set: **game, window, and instrument held fixed,
+only the market varying.** In the twelve minutes 01:50→02:02Z the same recorder
+captured near-identical row counts across that game's markets —
+
+| market | Q4-window rows | two-sided | last two-sided |
+|---|---|---|---|
+| **winner** `aec-wnba-gsv-ny-2026-08-27` | 3,456 | **5** | 01:50:06Z |
+| spread `asc-…-neg-10pt5` | 3,456 | 3,430 | 02:01:54Z |
+| total `tsc-…-154pt5` | 3,178 | 3,178 | 02:01:32Z |
+| total `tsc-…-157pt5` | 3,031 | 3,031 | 02:01:59Z |
+
+Not an outage, not a coverage gap, not a board effect: **the venue stopped
+quoting the winner of a decided game while that same game's spread and totals
+books quoted continuously to the buzzer.** Every earlier instance compared
+across games; this one holds everything fixed but the market.
+
+### Is the hazard winner-specific? Partly — and the converse is FALSE
+
+The obvious refinement — *winner books die, ladder books persist* — was tested
+across all 70 games carrying Q4 winner coverage, measured as the share of Q4
+winner rows that were two-sided. **It is half true, and the half that fails
+matters more.**
+
+**Where the winner book is fully dead (0.0% two-sided), the ladders always
+survive — 7 of 7:**
+
+| game | winner | spread | totals |
+|---|---|---|---|
+| atl-conn 08-13 | 0.0% | 33.9% | 96.2% |
+| atl-la 08-20 | 0.0% | 5.9% | 35.5% |
+| conn-dal 08-02 | 0.0% | 50.1% | 45.7% |
+| gsv-conn 08-26 | 0.0% | 36.8% | 93.9% |
+| lv-ny 08-09 | 0.0% | 28.1% | 95.6% |
+| phx-wsh 08-09 | 0.0% | 30.3% | 86.7% |
+| por-dal 08-25 | 0.0% | 68.5% | 90.8% |
+
+**But ladders die independently, with the winner book healthy — at least 6
+games:** phx-chi 08-03 (winner 86.8%, **totals 0.0%**), min-gsv 08-19 (71.9%,
+**4.6%**), dal-wsh 08-05 (97.4%, **11.3%**), wsh-por 08-23 (86.7%, **18.5%**),
+ind-ny 08-22 (77.9%, **22.5%**), la-min 08-06 (97.3%, **spread 28.5%**).
+
+**So "ladder exits persist" is not a safe assumption, and an EV stop must not
+be written as though it were.** The winner book dies more often and more
+completely — consistent with P→1 leaving nothing to quote — but *every* market
+type can go one-sided in an endgame, and a rule that trusts the ladder to be
+there will find it missing in roughly one game in ten.
+
+**Unit note, load-bearing:** the percentages above are the share of **whole-Q4**
+winner rows that were two-sided. That is *not* the cohort's priceability test,
+which asks for a two-sided quote **inside the final 5:00** on a 10s resample.
+The two measure different things and will not agree; 7 fully-dead winners here
+against 9 bookless in the cohort is the expected disagreement, not a
+contradiction.
+
+**Second instance, 2026-09-01:** the same mechanism appeared inside a coverage
+**GUARD** — a pair-only join mislabelling repeat pairings as coverage-suspect —
+and was caught from the exclusion list before the result was read. A filter
+running ahead of a join turns a property of the data into an apparent property
+of the pipeline, and it does so just as readily inside the instrument built to
+prevent bad conclusions as inside the analysis itself.
+

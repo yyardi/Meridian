@@ -199,7 +199,23 @@ def test_v3d_verdict_branches():
 
     below = [_v3d_read(i, v3d_roi=[0.05], v1_roi=[0.0], fills=1)
              for i in range(12)]       # 12 fills < 100
-    assert v3d_verdict(below) == "NO DATA"
+    v = v3d_verdict(below)
+    assert v.startswith("NO DATA") and "below floor" in v
+
+    # The branch that actually fired on 2026-08-27 and had NO test: AT floor,
+    # paired-vs-v1 inconclusive, v3d's own per-$ measurably NEGATIVE. The
+    # asymmetric clause is unmet, so the registered verdict is NO DATA — but it
+    # is a substantive middle state and must not print like an empty cohort.
+    # Distinguishing the two strings is the whole point of the branch.
+    unmet = [_v3d_read(i, v3d_roi=[-0.04 + jitter(i)],
+                       v1_roi=[-0.045 if i % 2 else -0.03])
+             for i in range(12)]
+    v = v3d_verdict(unmet)
+    assert v.startswith("NO DATA") and "at floor" in v
+    assert "own per-$ measurably negative" in v
+    assert "below floor" not in v, (
+        "the substantive middle state must not be reported as a counting "
+        "shortfall — they are different facts about the arm")
 
 
 def test_gate_cohorts_cut_at_each_registration():

@@ -63,3 +63,27 @@ is corrected to the commit instant. No at-floor number has ever been read
 from the wrong cutoff (the gate cohort printed NO DATA on every run to
 date), so the correction is costless — which is exactly why it happens
 now and not after the first read.
+
+## 2026-08-27 — known limit: the exit book is not always there
+
+**Recorded before the first gate read.** Bounds interpretation and adds a
+diagnostic; changes no registered term. Source:
+[bookless-endgames.md](bookless-endgames.md).
+
+The stop's exit book exists precisely while the game is in question and
+evaporates once it isn't. Measured across the 22 signal-covered games: **9
+endgames carried no two-sided winner quote inside the final 5:00**, several
+one-sided from Q3 onward (atl-la 08-20: 7,866 Q4 rows, zero two-sided). An exit
+rule works where you least need it and disappears where you would most want out.
+
+Therefore:
+
+1. **A PASS at this gate is a statement about games where an exit existed.** The
+   honest reading is *"the stop works where the venue quoted an exit"* — never
+   *"the stop works."*
+2. **Sizing that leans on the stop must price the possibility that there is no
+   exit at any price** once a position is sufficiently wrong: the states where
+   the stop would fire hardest overlap the states where the book is gone.
+3. The eval report should carry a **stop-unreachable count** — windows where the
+   rule fired and no two-sided book existed — so this limit is measured as the
+   cohort accrues rather than assumed. **Diagnostic line, never gate-eligible.**

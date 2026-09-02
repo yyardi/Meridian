@@ -322,10 +322,25 @@ STATUS_CACHE_SECONDS = 5.0
 #: with the pregame recorder dead for hours.
 _HEALTH_SQL = text("""
 select
-  (select reltuples::bigint from pg_class where relname = 'market_snapshots'),
-  (select reltuples::bigint from pg_class where relname = 'book_levels'),
-  (select reltuples::bigint from pg_class where relname = 'predictions'),
-  (select reltuples::bigint from pg_class where relname = 'shadow_orders'),
+  -- Schema-qualified deliberately. `relname` alone is NOT unique: the
+  -- `merge_stage` schema left over from the 2026-08-20 Supabase migration
+  -- still holds same-named copies of all four tables, so an unqualified
+  -- lookup returns two rows and the whole endpoint dies with
+  -- CardinalityViolation -- measured 2026-09-01, /api/status returning 500
+  -- while /api/games and /api/picks were fine. A leftover schema is a live
+  -- hazard, not just clutter; it already caused a column miscount once.
+  (select reltuples::bigint from pg_class c join pg_namespace n
+     on n.oid = c.relnamespace
+   where c.relname = 'market_snapshots' and n.nspname = 'public'),
+  (select reltuples::bigint from pg_class c join pg_namespace n
+     on n.oid = c.relnamespace
+   where c.relname = 'book_levels' and n.nspname = 'public'),
+  (select reltuples::bigint from pg_class c join pg_namespace n
+     on n.oid = c.relnamespace
+   where c.relname = 'predictions' and n.nspname = 'public'),
+  (select reltuples::bigint from pg_class c join pg_namespace n
+     on n.oid = c.relnamespace
+   where c.relname = 'shadow_orders' and n.nspname = 'public'),
   (select max(captured_at) from market_snapshots),
   (select max(captured_at) from market_snapshots where book_tier is null),
   (select max(captured_at) from market_snapshots where book_tier is not null),
