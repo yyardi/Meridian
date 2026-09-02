@@ -616,6 +616,29 @@ def status() -> dict:
         and not any(v["verdict"] == heartbeat.DEAD for v in heartbeats.values())
     )
 
+    # Overlay engines (PULSE, QUOTE), reported beside — never inside — the
+    # recorder verdict. They are excluded from APP_DB_SERVICES on purpose (an
+    # operator-stopped overlay must not read DEAD on every host), which left
+    # this endpoint structurally unable to say whether the two processes the
+    # research program depends on were running — the same blindness
+    # scripts/health.py had until 2026-09-02. `healthy` deliberately ignores
+    # them: absence here is a fact for the header dot, not a recorder failure.
+    overlays = {}
+    for svc in ("pulse_engine", "quote_engine"):  # SERVICE_PULSE / SERVICE_QUOTE;
+        # literals, not imports: pulling core.pulse.live in here would load the
+        # whole engine module into the API process just to name a row key.
+        entry = (beats or {}).get(svc)
+        if entry is None:
+            overlays[svc] = {"verdict": "absent"}
+        else:
+            age = float(entry["age_seconds"])
+            interval = float(entry["interval_seconds"])
+            overlays[svc] = {
+                "age_seconds": age,
+                "interval_seconds": interval,
+                "verdict": heartbeat.verdict(age, interval),
+            }
+
     value = {
         "newest": newest.isoformat() if newest else None,
         "age_minutes": (
@@ -629,6 +652,10 @@ def status() -> dict:
         #: 'idle' | 'ok'; any 'dead' fails `healthy`. 'degraded' means a live
         #: game, a fresh beat, and zero rows — alive but writing nothing.
         "heartbeats": heartbeats,
+        #: The two model engines, for the main-page header dots. Same verdict
+        #: vocabulary plus 'absent' (no beat row ever) — and deliberately NOT
+        #: part of `healthy`; see the comment where this is built.
+        "overlays": overlays,
         "healthy": healthy,
         #: Approximate — planner statistics, not a scan. See _HEALTH_SQL.
         "counts_estimated": True,
