@@ -85,6 +85,7 @@ from core.bankroll import BankrollUnavailable
 from core.kelly_sizing import Constraint, size_position
 from core.live_fv import DEFAULT_SIGMA, Clock, fair_value, minutes_remaining, parse_score
 from core.live_totals_fv import over_probability, project_total, remaining_sigma
+from core.pulse import guards
 from core.pulse.storage import (
     ENTER,
     EXIT,
@@ -96,6 +97,7 @@ from core.pulse.storage import (
     STRAT_TOTAL,
     STRAT_WINNER,
     YES,
+    PulseAbstention,
     PulseDecision,
 )
 from core.pulse.win_curve import REGULATION_MINUTES, pregame_margin_from_price
@@ -211,6 +213,10 @@ BANKROLL_MAX_AGE_SECONDS = 1800.0
 #: market — the 2026-08-20 starvation was invisible precisely because this
 #: skip was silent.
 SIZED_ZERO_LOG_SECONDS = 300.0
+#: A guard refusal (core/pulse/guards.py) writes one pulse_abstentions row
+#: per market+guard at most this often — a persistent bad state marks
+#: itself once a minute, not at feed cadence.
+ABSTAIN_RECORD_SECONDS = 60.0
 #: Shadow sizing semantics (operator decision, 2026-08-21): exposure caps
 #: ANNOTATE, never bind — see _maybe_enter. "1" restores live-faithful
 #: enforcement (the future live mode; release-on-return still governs the
@@ -312,6 +318,14 @@ class Estimate:
     #: (matchup sigma, blended anchor) fed the number; a v2-mode engine whose
     #: form refused still prices with v1 values and says so.
     version: str = ESTIMATES_V1
+    #: Set when a guard refused this state (core/pulse/guards.py):
+    #: which guard, its detail string, and — for the confidence guard —
+    #: the fair value the model WOULD have asserted (the evidence).
+    #: fair_value is None whenever these are set; the cycle records the
+    #: refusal to pulse_abstentions, throttled.
+    abstain_guard: str | None = None
+    abstain_reason: str | None = None
+    abstained_fair_value: float | None = None
 
 
 @dataclass
@@ -447,6 +461,7 @@ class PulseEngine:
         self._daily_staked = 0.0
         #: market -> monotonic instant of the last sized-to-zero warning.
         self._sized_zero_logged: dict[str, float] = {}
+        self._abstain_recorded: dict[tuple[str, str], float] = {}
         self._heartbeat = hb.Heartbeat(sessionmaker, SERVICE_PULSE)
         self._stop = threading.Event()
 
@@ -685,6 +700,7 @@ class PulseEngine:
         strategy = {MARKET_WINNER: STRAT_WINNER, MARKET_TOTAL: STRAT_TOTAL,
                     MARKET_SPREAD: STRAT_SPREAD}[ob.sports_market_type]
         fv = projected = sigma_t = None
+        abstain_guard = abstain_reason = abstained_fv = None
         note = clock.note
 
         # v2/v3/v4 inputs, where available; the version label records what
@@ -707,6 +723,20 @@ class PulseEngine:
             elif strategy == STRAT_TOTAL and anchors.totals_mu_v2 is not None:
                 totals_mu = anchors.totals_mu_v2
                 version = ESTIMATES_V2
+
+        # Guard 1 (operator ticket 2026-09-01): a jointly-impossible
+        # clock/score state is refused BEFORE any pricing. Deliberately
+        # flag-independent — the worst recorded miss was v3 and unflagged
+        # (core/pulse/guards.py). The cycle records the refusal, throttled.
+        if pair is not None and clock.usable:
+            g1 = guards.implausible_state(
+                period=ob.event_period, minutes_left=clock.minutes_left,
+                total_so_far=total_so_far, margin=margin)
+            if g1 is not None:
+                abstain_guard, abstain_reason = guards.GUARD_STATE, g1
+                note = f"abstained: {g1}"
+                clock = Clock(clock.minutes_left, clock.is_estimate, note,
+                              usable=False)
 
         if pair is None:
             note = "no score on the tick — no estimate"
@@ -755,6 +785,20 @@ class PulseEngine:
                 sigma_t = remaining_sigma(elapsed)
                 fv = over_probability(projected_total=projected,
                                       line=ob.line, sigma=sigma_t)
+                # Guard 2: a certainty the Gaussian tail cannot represent
+                # (foul game, overtime, half-length extrapolation) ABSTAINS
+                # — never clamps: a clamped fv reaching the entry logic
+                # would manufacture fade-the-certainty trades against a
+                # market legitimately at 0.99 (core/pulse/guards.py).
+                if fv is not None:
+                    g2 = guards.unrepresentable_confidence(
+                        fair_value=fv, minutes_left=clock.minutes_left,
+                        line=ob.line, total_so_far=total_so_far)
+                    if g2 is not None:
+                        abstain_guard = guards.GUARD_CONFIDENCE
+                        abstain_reason = g2
+                        abstained_fv, fv = fv, None
+                        note = f"abstained: {g2}"
         elif strategy == STRAT_SPREAD:
             if ob.line is None:
                 note = "spread market without a line"
@@ -771,7 +815,8 @@ class PulseEngine:
             strategy=strategy, fair_value=fv, clock=clock,
             score=ob.event_score, margin=margin, total_so_far=total_so_far,
             projected_total=projected, total_sigma=sigma_t, note=note,
-            version=version,
+            version=version, abstain_guard=abstain_guard,
+            abstain_reason=abstain_reason, abstained_fair_value=abstained_fv,
         )
 
     # ---- decision rows ---------------------------------------------------- #
@@ -822,6 +867,35 @@ class PulseEngine:
             capped_stake_usd=dec(capped_stake),
             capped_contracts=dec(capped_contracts),
         )
+
+    def _record_abstention(self, session, ob: Observation,
+                           est: Estimate) -> None:
+        """A guard refused to price — record it (the binding_constraint
+        principle: a refusal is data; a silent skip is not). Throttled per
+        (market, guard) so a persistent bad state marks once a minute."""
+        key = (ob.market_slug, est.abstain_guard or "")
+        last = self._abstain_recorded.get(key, float("-inf"))
+        if time.monotonic() - last < ABSTAIN_RECORD_SECONDS:
+            return
+        self._abstain_recorded[key] = time.monotonic()
+        from decimal import Decimal as D
+
+        def dec(v, nd=4):
+            return None if v is None else D(str(round(float(v), nd)))
+
+        session.add(PulseAbstention(
+            decided_at=ob.captured_at, event_slug=ob.event_slug,
+            market_slug=ob.market_slug, strategy=est.strategy,
+            guard=est.abstain_guard, reason=(est.abstain_reason or "")[:200],
+            period=ob.event_period,
+            minutes_left=dec(est.clock.minutes_left, 2),
+            total_so_far=est.total_so_far, margin=est.margin,
+            line=dec(ob.line, 2),
+            fair_value_raw=dec(est.abstained_fair_value),
+            estimates_version=est.version,
+        ))
+        log.warning("pulse_abstained", market=ob.market_slug,
+                    guard=est.abstain_guard, reason=est.abstain_reason)
 
     def _withdraw(self, session, decision_id: int, at: dt.datetime | None = None) -> None:
         session.execute(text("""
@@ -1261,6 +1335,8 @@ class PulseEngine:
                 state.event_slug = ob.event_slug
                 state.last_seen_monotonic = time.monotonic()
                 est = self._estimate(ob)
+                if est.abstain_guard is not None:
+                    self._record_abstention(session, ob, est)
 
                 # Fills first, against orders that were ALREADY resting — an
                 # order is never filled by the observation it was born from.
