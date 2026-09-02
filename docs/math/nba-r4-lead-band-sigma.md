@@ -152,3 +152,23 @@ OT states excluded.
 ---
 
 *Results append below this line, never above it.*
+
+## VERDICT — 2026-09-02, appended per the research agent's ruling
+
+VERDICT: PASS — ADOPTED. Paired Brier (R4 − incumbent) −0.000548 [−0.000821,
+−0.000275], 373,227 states / 7 forward seasons, R4 lower in all seven. Per
+the pre-registered power frame this is the INFORMATIVE branch (~3.7× the
+prognosis injection). THE ATTRIBUTION DIAGNOSTIC ANSWERS ITS PRE-NAMED
+QUESTION DECISIVELY: band tilt +0.0271 [+0.0148,+0.0394] under the incumbent
+stack; −0.0020 [−0.0145,+0.0104] under R4; −0.0277 [−0.0392,−0.0163] under
+σ-only. **The lead-band tilt was a STACK-COMPOSITION ARTIFACT, not margin
+physics**: R2 shrinks the mean while σ remained fitted to the unshrunk
+curve, leaving stack variance too wide; fitted g is near-uniform (~0.83,
+flat-to-reversed vs the z-gradient) and functions as the missing σ-refit,
+which is why the gate passes while the z-gradient theory is UNCONFIRMED.
+Amendment 6 governs: g may not be quoted as decided-ness physics, and the
+fit shows it mostly is not. R2's adoption stands untouched (its gate
+compared both arms under the same σ frame; its stated conservatism is what
+R4 just priced). The atlas band GAP was real as measured; its NAME changes:
+an artifact of our stack's composition, not a property of smooth families —
+the corrected stack fits the band at −0.002.
