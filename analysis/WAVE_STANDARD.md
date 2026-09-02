@@ -197,6 +197,25 @@ before merge**, and the merge is refused if it would revert one.
    values — which is the pleasant way to discover a rule was already
    necessary.)
 
+19. **Every registered checker DECLARES ITS BLIND SPOTS — at least one
+   class of defect it structurally cannot catch, stated where the checker
+   registers.** Precedent: the deployed guards' own coverage statement
+   (31/44 caught, 13 unreachable by any state-only check — stated, not
+   hidden). Rule 18 covers the bug that distorts measurement and
+   expectation identically; this covers the checker BUILT so both legs
+   share a source: reconciliation proves consistency, never correctness,
+   and a checker whose legs both derive from one origin inherits that
+   origin's defects invisibly. Type specimen (2026-09-02,
+   wrong-but-consistent, findings B14): the recording binary stamped
+   observed_at from the forbidden cross-process clock, and the
+   recording-integrity scorer — plants passing, shown able to fail —
+   still could not see it, because replay and record shared the stamp.
+   A checker with no stated blind spot has not been asked what it cannot
+   see — and the asking is where the catch lives: the scorer's author
+   found the bug by auditing their own instrument's structure, hours
+   before any data existed to be corrupted. (Research proposed; manager
+   elevated same day.)
+
 ## Hazard entry, appended 2026-09-02 (D + B; research-endorsed) — unbounded ffill fakes liquidity in dying books
 
 **The trap:** joining or pivoting a tick tape and forward-filling quotes
