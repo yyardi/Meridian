@@ -1307,3 +1307,31 @@ hand-verification of the top episodes shows **fillable width exceeding the
 measured two-leg concession (4.70¢/leg)** — and then it re-enters through
 registration, not through the census read. B killed their own entry claim;
 honoring that means the burden of proof stays where B put it.
+
+---
+
+## C3 — DATED AMENDMENT (research agent ruling, 2026-09-02): the survey's constants
+
+**v3 is canonical (990cd14). C3's v1 citation was a stale pointer, corrected
+here by dated amendment, never silently in code.**
+
+The load-bearing half: **v1's σ (2.596) and v3's σ′ (2.200) are different
+ESTIMANDS, not different estimates** — σ′ is fitted under the SHRUNK mean and
+is meaningful only inside the full composition
+`P = Φ((E + (1−s)·dev)/(σ′(t)·√t))`. A survey comparing venue ladders against
+v1 would manufacture a day-one "venue mispricing" that is actually **our own
+superseded parameterization — an ~18% width error we would report about THEM.**
+
+**The σ module implements the FULL v3 composition and prints, every run:**
+constants file + commit hash + the formula evaluated (rule 12).
+
+**Forbidden forms, so the harness can refuse them:**
+(i) v3's σ′ paired with an unshrunk mean;
+(ii) v1's σ anywhere inside the adopted stack;
+(iii) global-only σ′ where the phase table exists — R4b's finding was that the
+SHAPE is the content; a global-only comparison throws away the validated thing.
+
+**And one gap printed rather than fudged:** pregame totals has **NO CONSTANT
+until R5 lands** — the r3b σ table is elapsed-keyed, and porting σ(36′) to t=0
+would be a wrong port wearing a right number. The t=0 totals module reads
+**"NO CONSTANT (R5 pending)"** on day one if R5 hasn't landed.
