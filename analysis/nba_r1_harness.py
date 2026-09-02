@@ -264,7 +264,10 @@ def parse_clock_minutes(s: pd.Series) -> pd.Series:
     return out.fillna(pd.to_numeric(sec[0]) / 60.0)
 
 
-def load_real(games_path: str, plays_path: str) -> pd.DataFrame:
+def load_real(games_path: str, plays_path: str, require_spread: bool = True) -> pd.DataFrame:
+    """require_spread=False keeps games without a closing spread (e columns NaN)
+    for descriptive uses that need no anchor — the atlas. Gate harnesses use the
+    default and are unaffected; announced, never discovered."""
     g = pd.read_csv(games_path)
     assert (g.team0_homeaway == "home").all() and (g.team1_homeaway == "away").all(), "team0/team1 frame changed"
     g = g.rename(columns={"team0_score": "home_final", "team1_score": "away_final"})
@@ -283,11 +286,12 @@ def load_real(games_path: str, plays_path: str) -> pd.DataFrame:
           f"ML favorite agreement {fav_agree:.3f} -> E = -closing_spread confirmed")
     n0 = len(g)
     bad_period = g.max_period < 4
-    no_spread = g.closing_spread.isna()
+    no_spread = g.closing_spread.isna() if require_spread else pd.Series(False, index=g.index)
     g = g[~bad_period & ~no_spread]
     print(f"games: {n0} -> {len(g)} (excluded {int(bad_period.sum())} max_period<4 defects, "
-          f"{int((no_spread & ~bad_period).sum())} without closing spread)")
-    print("spread-covered games by season:", g.season.value_counts().sort_index().to_dict())
+          f"{int((no_spread & ~bad_period).sum())} without closing spread"
+          + ("" if require_spread else " — spreadless KEPT, require_spread=False") + ")")
+    print("games by season:", g.season.value_counts().sort_index().to_dict())
 
     p = pd.read_csv(plays_path)
     n_plays = len(p)
@@ -299,15 +303,25 @@ def load_real(games_path: str, plays_path: str) -> pd.DataFrame:
     p["minutes_left"] = (4 - p.period) * 12.0 + p.clock_min
     print(f"plays: {n_plays} -> {len(p)} (dropped {n_ot} OT-state plays, {n_bad_clock} unparseable clocks)")
 
-    # feed quality: reaches the final regulation minute AND agrees with finals
+    # feed quality: reaches the final regulation minute AND is internally
+    # consistent. The consistency check is PER GAME KIND: a non-OT game's
+    # regulation-end margin must agree with the final margin (<=2); an OT
+    # game's regulation ends TIED by definition, so its check is
+    # |regulation margin| <= 2 and regulation total <= final total — comparing
+    # its regulation margin to the OT-inclusive final margin (the original
+    # rule) wrongly excluded 537 of 701 OT games, violating the registered
+    # "OT games kept" term. Corrected 2026-09-02; gate reads re-run.
     lastp = p.sort_values(["game_id", "period", "minutes_left"], ascending=[True, True, False]) \
              .groupby("game_id").last()
     reach = p.groupby("game_id").minutes_left.min() <= 1.0
     q = g.merge(lastp[["home_score", "away_score"]], on="game_id", how="left")
-    agree = (q.home_score - q.away_score - q.home_margin).abs() <= 2
-    okset = set(q.game_id[agree & q.game_id.map(reach).fillna(False)])
-    print(f"feed quality: {len(g) - len(okset)} games excluded "
-          f"(feed truncated before final minute, missing plays, or margin disagreement > 2)")
+    q["reg_margin"] = q.home_score - q.away_score
+    is_ot = q.max_period > 4
+    agree_reg = (q.reg_margin - q.home_margin).abs() <= 2
+    agree_ot = (q.reg_margin.abs() <= 2) & ((q.home_score + q.away_score) <= (q.home_final + q.away_final))
+    okset = set(q.game_id[q.game_id.map(reach).fillna(False) & np.where(is_ot, agree_ot, agree_reg)])
+    print(f"feed quality: {len(g) - len(okset)} games excluded; OT games kept: "
+          f"{int((is_ot & q.game_id.isin(okset)).sum())} of {int(is_ot.sum())} (registered term: OT games KEPT)")
     g = g[g.game_id.isin(okset)]
 
     # chronological order within game: scores are monotone, so total points breaks clock ties
