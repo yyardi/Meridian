@@ -89,6 +89,24 @@ records status, it does not amend the draft; only dated author amendments do)
   currently reads as deployment permission conditional on two instrument
   reads. C signs with 1–3 as dated amendments and 4–5 as wording; items 2–5
   await the author's second amendment batch.
+- **C — the two new numbers in amendments 5–6 checked 2026-09-02:** the
+  review instant CONFIRMED with the event-governs wording (adopted); the
+  single-trigger stall path ATTACKED on reachability and replaced by the
+  dual trigger (adopted). With amendments 4–8 landed below, **C's sign-off
+  is END TO END** (message of record: "everything queued has my sign-off
+  end to end").
+- **B — CONGESTION precondition artifact DELIVERED 2026-09-02:**
+  `analysis/congestion_detector.py` (landed from B's d1fb6de) — self-clocked
+  pure function of the consumer's own stream, venue-level pooling, constants
+  adopted-not-optimized, clustering result outside the gate, causal-replay +
+  lookahead-must-fail mutations both passing. The planted-boundary mutation
+  caught a datetime-unit bug (µs-vs-ns inference rescaling durations ~1000×)
+  that real-data replay alone had masked — the mutation suite earning its
+  keep before first use. The detector's own REGISTRATION (the object
+  amendment 3 requires) gets research's window next; the census report
+  carries the version note retiring pre-canonical consumer numbers
+  (8dde1f6). A is warned: a scaffold predicate keyed at trigger time is the
+  lookahead bug — key at confirm time (t0+5s).
 
 ---
 
@@ -223,3 +241,53 @@ that registration lands. The lineage of all three divergent pointers is
 recorded here so the record shows how a reification breeds. (This day's
 chain is the type specimen of WAVE_STANDARD rule 17, the precondition
 citation duty, elevated same day.)
+
+**Amendment 4 — THE CUTOFF-INSTANT CLAUSE (C's, folded verbatim; this was a
+real hole).** The deferral of arm gates meant a gate could register three
+slate-days into accrual and write its floors against visible partial
+results — the deferral argument inverting into its own defect. Standing
+clause binding ALL arm gates: every arm gate carries its own registration
+instant read from git; its gated cohort counts only data first recorded
+after that instant, OR the gate discloses-and-justifies any included prior
+accrual with the cohort's interim results unread by the gate's author,
+attested. The R-series convention, imported to where it was silently
+missing. (A1's gate already satisfies it — registered before any accrual
+existed.)
+
+**Amendment 5 — PRECONDITION CLOCKS.** One program-wide review instant: NBA
+opening night, currently expected 2026-10-20; THE EVENT GOVERNS if the
+schedule moves (C's wording — a bare date goes ambiguous the moment the
+league moves a game, and nothing pinned in the repo verifies the date). Any
+arm whose precondition is uncleared at that instant converts to CLOSED-UNMET
+by dated note, revivable only by fresh registration. Per-arm:
+STATE/LATENESS inherits A1's own clocks (exhaustion at 2× floors, DEPLOYMENT
+HOLD) — cited, not duplicated; CONGESTION = B's detector registration
+landing; PATIENCE's gate = the v2 stream ledger shipping; GUARDS = fv +
+exact-clock inline on fills. The program can no longer pend forever on an
+arm that never clears.
+
+**Amendment 6 — FREEZE-LIFT COMPLETED.** (a) Stall path, DUAL-TRIGGERED
+(C's reachability catch — the gate-that-cannot-fire species applied to the
+author's own clause: nothing pinned verifies twelve more 2026 WNBA
+slate-days exist, so a single trigger could leave the clause uninvokable
+while the freeze holds silently into NBA launch): the stall path opens at
+12 WNBA slate-days post-resumption OR the program review instant, whichever
+comes first. (b) Authorship named: any freeze-lift amendment is authored by
+the research agent with the standard peer window applying — a lift can
+never arrive as a relay.
+
+**Amendment 7 — MATRIX CELLS ROUTE TO REGISTRATIONS.** One clause across all
+four cells: each cell names what may REGISTER next, never what deploys —
+"full state-conditional maker" and "capture-basis quoting only" are
+registration licenses, not deployment permissions. Qualifier on PASS×flat:
+the roll-economics reading holds per A1's instrument checks.
+
+**Amendment 8 — the premise paragraph's congestion citation moves to the
+fixed instrument.** Replace −1.74 vs −1.44 with the canonical numbers:
+**−1.79 [−1.92, −1.66] on 7,801 congested fills vs −1.43 [−1.52, −1.35] on
+9,231 clear, G=13, census commit c78432d pinned beside them.** D's
+version-pin sentence carried verbatim: two defensible instruments measured
+different episode sets; their numbers must never be silently mixed. (The
+log holding the canonical numbers while the registered text held the
+retired ones is exactly why the constitution says the log cannot amend —
+this closes the gap the right way.)
