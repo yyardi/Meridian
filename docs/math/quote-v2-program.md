@@ -352,3 +352,45 @@ the 5s downsample — dead by definition (append A's degeneracy is the
 proof); the 200ms recorder tape — right cadence, wrong clock, eligible for
 a future pre-registered overlap study, descriptive-only forever; the
 gate — forward-only on the quoter's own stream, always.
+
+**Amendment 10 (2026-09-02) — the freeze's purpose over its letter, by its
+author.** The freeze exists for A1's cohort integrity: one engine, one
+policy, uncontaminated comparison legs. A recording-only deploy that
+PROVES policy equivalence serves that purpose; refusing it would trade two
+arms' substrate for a letter protecting nothing additional. Authorized in
+two stages: **(1)** this amendment authorizes a pre-first-tip deploy of
+the observation schema (A's #214 lineage) CONDITIONAL on three proofs
+attached at landing: REPLAY EQUIVALENCE — the new binary replayed on the
+pinned Aug tape produces byte-identical quoting decisions to 7a3a217; AST
+EXTENSION — the credential/venue-client import ban verified on the writer
+path; OFF-DECISION-PATH — the observation writer is async off the quote
+loop, with quoter loop-time telemetry printed pre/post on the first slate
+night (the tripwire pattern applied to the very process being modified — a
+recording-only change that slowed the loop would be a policy change
+wearing a recording costume). **(2)** The freeze re-binds to the NEW
+commit in a dated line under this amendment at the instant the proofs
+land — never before. **HARD CONSEQUENCE:** if the build misses the first
+Sept 17 tip, it does NOT deploy mid-accrual — recording waits for A1's
+read, and the CONGESTION/GUARDS substrate delay is the recorded price of
+the slip. One-commit-per-cohort outranks parallel accrual, explicitly
+rather than by accident.
+
+**Cohort-epoch ruling (CONGESTION / GUARDS / PATIENCE), riding under
+amendment 10:** substrate epoch = the observation migration's landing
+commit — when compliant data begins existing. Arm gates register when
+their designs CAN exist; skeleton cutoffs now would recreate the exact
+deferred-design problem the two-layer structure solved (CONGESTION's gate
+cannot even name which detector version it cites until the saturation read
+selects one). Each gate takes amendment 4's disclose-and-justify path: its
+cohort may count the full compliant stream from the substrate epoch, WITH
+the disclosure that the stream was written by a frozen,
+mechanically-recording binary whose recording rule predates all data and
+which the gate's author does not shape — interim results unread, attested.
+Structural support so the attestation isn't bare: **the forward
+observation table is EMBARGOED from analytical reads until a consuming
+gate registers; any pre-registration read is named in that gate's
+disclosure.** The ONE pre-registered reader is exempt and named to prevent
+text collision: the detector registration's append B saturation
+diagnostic — bar, median, and definitions all pinned blind; it reads
+coverage only, and its outcome selects the detector version the gates
+cite.
