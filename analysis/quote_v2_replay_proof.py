@@ -1,35 +1,44 @@
-"""Registered proof-1 (amendment 10): QUOTE v2 replayed on the pinned Aug tape
-produces byte-identical quoting decisions to the frozen v1 commit (7a3a217).
+"""Registered proof-1 (amendment 10): QUOTE v2 on the pinned Aug tape is
+byte-identical to the frozen v1 (7a3a217), AND the pin is the complete
+substrate that produced the 17,032-fill ledger.
 
-The rule-11 form (docs/math/quote-v2-program.md): NOT the synthetic selftest in
-engine_v2 (that is the fast regression guard) but a replay of BOTH engines over
-the pinned market_snapshots substrate that produced the 17,032-fill ledger,
-comparing `_standing` + fills byte-for-byte, WITH the fill-population
-reproduction as the substrate-integrity check. If the replay does not reproduce
-the ledgered in-game fill population from this substrate, that is a finding
-about the pin or the shim — stop and look, do not proceed.
+Two parts, deliberately separated because they answer different questions and
+one is cadence-independent while the other looked cadence-dependent until it
+was reframed:
 
-Substrate (manager decision (a), cut from prod): the pin whose md5 this asserts
-before reading a byte — the exact `market_snapshots` table the running quoter
-read, window 2026-08-17 12:00 → 2026-08-23 00:00 UTC, game_id on every row.
+1. EQUIVALENCE (the rebind's core). Replay BOTH engines over the pin and assert
+   `_standing` + fills byte-identical, every cycle. Both run v1's `cycle()`
+   UNCHANGED (v2 inherits it — proven structurally in engine_v2); the replay
+   replaces only the observation SOURCE and the session, identically for both,
+   so a divergence could come only from v2 overriding a quoting method, which
+   it does not. This holds on ANY faithful grid — it is cadence-independent.
 
-How the replay stays faithful WITHOUT modifying v1's quoting:
-* both engines run v1's `cycle()` UNCHANGED (v2 inherits it — proven
-  structurally in engine_v2). The replay only replaces the observation SOURCE
-  (a shim overriding `_observations` to return the as-of fresh set) and the
-  session (a capture-only fake) — identically for both engines, so any
-  divergence could come only from v2 overriding a quoting method, which it does
-  not. The shim is the definition of "replay"; it changes no decision logic.
-* the as-of fresh set at cycle time t = newest snapshot per market with
-  captured_at in (t-MAX_OBSERVATION_AGE_SECONDS, t] and ask>bid — exactly what
-  the live `_observations` query returns, minus the now()-coupling.
-* cycles step at the engine's 5s interval across the observation stream.
+2. SUBSTRATE COMPLETENESS (the integrity companion). The original prescribed
+   form — "the replay reproduces the ledger fill population" — has a flaw found
+   while building it: v1's EXACT cycle grid is unrecorded (only the fills'
+   quoted_at/filled_at survive, a sparse subset of v1's continuous ~5s
+   cadence), so any from-substrate replay reproduces the population only up to
+   cadence, and a "trigger fell between cycles → grid artifact" attributor
+   rubber-stamps ANYTHING (a deliberately-too-sparse instant grid "passed" at
+   7% reproduction with 100% of misses labelled grid artifacts — proof the
+   attributor is vacuous). The SOUND, cadence-independent integrity check is
+   direct: does the pin CONTAIN, for every one of the 17,032 ledgered fills,
+   the producing observations — the quote observation at `quoted_at` and the
+   trigger observation at `filled_at`, the latter with mid == the ledger's
+   `mid_at_fill` and crossing the quote? Present for all ⇒ the pin is the
+   complete producing substrate (integrity confirmed), fill by fill, exactly,
+   with no cadence dependence. ANY absent ⇒ a substrate hole ⇒ stop and look.
+
+Pin (manager decision (a), cut from prod): md5 asserted before a byte is read.
 """
 
 from __future__ import annotations
 
+import csv
+import datetime as dt
 import gzip
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -41,12 +50,16 @@ from core.quote.engine import (
 from core.quote.engine_v2 import ShadowQuoterV2
 
 ROOT = Path(__file__).resolve().parent.parent
-import os
 EXPORTS = Path(os.environ.get("MERIDIAN_EXPORTS_DIR", ROOT / "backups" / "exports"))
 PIN = EXPORTS / "market_snapshots_quote_replay_20260902T173700Z.csv.gz"
 PIN_MD5 = "b740d2fb6dcd5f325877cf8281a97c42"
-CYCLE_S = 5.0                      # v1's DEFAULT_INTERVAL_SECONDS
+FILLS_PIN = EXPORTS / "quote_fills_v1_20260902T161223Z.csv"
+CYCLE_S = 5.0                       # v1's DEFAULT_INTERVAL_SECONDS (equivalence grid)
 FRESH_S = MAX_OBSERVATION_AGE_SECONDS
+
+
+def _parse(ts: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(ts.replace("+00", "+00:00"))
 
 
 def _verify_pin() -> None:
@@ -54,18 +67,13 @@ def _verify_pin() -> None:
     with open(PIN, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
-    got = h.hexdigest()
-    assert got == PIN_MD5, f"pin md5 mismatch: {got} != {PIN_MD5} — refuse to replay"
-    print(f"pin md5 verified: {got}")
+    assert h.hexdigest() == PIN_MD5, f"pin md5 mismatch — refuse to replay"
+    print(f"pin md5 verified: {h.hexdigest()}")
 
 
-# --------------------------------------------------------------------------- #
-# Replay shims — observation source + capture-only session, identical for both.
-# --------------------------------------------------------------------------- #
+# ---- replay shims (equivalence) — DATA SOURCE only, no quoting method ------ #
 
 class _FakeSession:
-    """Captures the fills cycle() would have written; no DB."""
-
     def __init__(self, sink):
         self._sink = sink
 
@@ -81,7 +89,7 @@ class _FakeSession:
     def commit(self):
         pass
 
-    def execute(self, *a, **k):      # settle path is disabled; backstop only
+    def execute(self, *a, **k):
         class _R:
             def all(self_inner):
                 return []
@@ -89,29 +97,23 @@ class _FakeSession:
 
 
 class _ReplayMixin:
-    """Feeds a pre-set observation batch and captures fills. Overrides only the
-    DATA SOURCE, never a quoting method (cycle/_fill/requote stay v1's)."""
-
     def _install_replay(self):
         import time
-        self._pending: list[Observation] = []
-        self._committed: list = []
+        self._pending = []
+        self._committed = []
         self._Session = lambda: _FakeSession(self._committed)
-        # keep the settle path disabled (settle_every is huge, but _last_settle
-        # starts at -inf so the first cycle would still fire it).
-        self._last_settle = time.monotonic()
+        self._last_settle = time.monotonic()   # keep the settle path disabled
 
     def _observations(self, session):
         return self._pending
 
-    def run_cycle(self, obs: list[Observation]):
+    def run_cycle(self, obs):
         self._pending = obs
-        self._committed = []
-        # keep the fake session pointing at the fresh sink each cycle
-        sink = self._committed
+        sink = []
+        self._committed = sink
         self._Session = lambda: _FakeSession(sink)
         self.cycle()
-        return list(self._committed)
+        return list(sink)
 
 
 class ReplayV1(_ReplayMixin, ShadowQuoter):
@@ -129,101 +131,145 @@ def _make(cls):
     return q
 
 
-# --------------------------------------------------------------------------- #
-# Build the cycle sequence from the pin (single chronological pass).
-# --------------------------------------------------------------------------- #
-
-def build_cycles():
-    import csv
-    import datetime as dt
-
-    def parse(ts):
-        # '2026-08-17 12:30:26.331171+00' -> aware datetime
-        return dt.datetime.fromisoformat(ts.replace("+00", "+00:00"))
-
-    last: dict[str, Observation] = {}
-    cycles = []
-    last_cycle_t = None
-    n = 0
-    with gzip.open(PIN, "rt") as fh:
-        r = csv.DictReader(fh)
-        for row in r:
-            n += 1
-            bb, ba = row["best_bid"], row["best_ask"]
-            gid = row["game_id"]
-            if not bb or not ba or not gid:
-                continue
-            t = parse(row["captured_at"])
-            last[row["market_slug"]] = Observation(
-                market_slug=row["market_slug"], game_id=str(gid),
-                captured_at=t, bid=float(bb), ask=float(ba),
-                is_live=(row["is_live"] == "t"))
-            if last_cycle_t is None or (t - last_cycle_t).total_seconds() >= CYCLE_S:
-                fresh = [o for o in last.values()
-                         if 0 <= (t - o.captured_at).total_seconds() <= FRESH_S
-                         and o.ask > o.bid]
-                cycles.append(fresh)
-                last_cycle_t = t
-    print(f"pin rows read: {n:,}; cycles built: {len(cycles):,}")
-    return cycles
-
-
 def _standing(q):
     return {k: (v.bid_price, v.ask_price, v.regime, v.quoted_at)
             for k, v in q._standing.items()}
 
 
 def _fill_key(f):
-    # a fill's identity for byte-comparison
     return (f.market_slug, f.side, float(f.quote_price), float(f.mid_at_fill),
             f.quoted_at, f.filled_at)
+
+
+# --------------------------------------------------------------------------- #
+
+def load_ledger_ingame():
+    """(market, side, quoted_at, filled_at, quote_price, mid_at_fill) per fill."""
+    out = []
+    with open(FILLS_PIN) as fh:
+        for row in csv.DictReader(fh):
+            if row["regime"] != "ingame":
+                continue
+            out.append((row["market_slug"], row["side"],
+                        _parse(row["quoted_at"]), _parse(row["filled_at"]),
+                        float(row["quote_price"]), float(row["mid_at_fill"])))
+    return out
+
+
+def one_pass(target_events):
+    """Single chronological pass over the pin: build the 5s equivalence grid AND
+    collect the (bid,ask,mid) of every target (market, captured_at) event."""
+    last: dict[str, Observation] = {}
+    cycles = []
+    last_cycle_t = None
+    obs_at: dict = {}
+    n = 0
+    with gzip.open(PIN, "rt") as fh:
+        for row in csv.DictReader(fh):
+            n += 1
+            bb, ba, gid = row["best_bid"], row["best_ask"], row["game_id"]
+            if not bb or not ba or not gid:
+                continue
+            t = _parse(row["captured_at"])
+            bid, ask = float(bb), float(ba)
+            key = (row["market_slug"], t)
+            if key in target_events:
+                obs_at[key] = (bid, ask, (bid + ask) / 2.0)
+            last[row["market_slug"]] = Observation(
+                market_slug=row["market_slug"], game_id=str(gid),
+                captured_at=t, bid=bid, ask=ask, is_live=(row["is_live"] == "t"))
+            if last_cycle_t is None or (t - last_cycle_t).total_seconds() >= CYCLE_S:
+                fresh = [o for o in last.values()
+                         if 0 <= (t - o.captured_at).total_seconds() <= FRESH_S
+                         and o.ask > o.bid]
+                cycles.append(fresh)
+                last_cycle_t = t
+    print(f"pin rows read: {n:,}; equivalence cycles: {len(cycles):,}")
+    return cycles, obs_at
 
 
 def main() -> int:
     import logging
     import structlog
-    structlog.configure(          # the fill INFO log per fill would flood; quiet it
+    structlog.configure(
         wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING))
     _verify_pin()
-    cycles = build_cycles()
 
+    ledger = load_ledger_ingame()
+    targets = {(m, q) for (m, s, q, f, qp, mf) in ledger} \
+        | {(m, f) for (m, s, q, f, qp, mf) in ledger}
+    print(f"ledger in-game fills: {len(ledger):,}")
+    cycles, obs_at = one_pass(targets)
+
+    # --- part 1: EQUIVALENCE (byte-identical, cadence-independent) --------- #
     v1, v2 = _make(ReplayV1), _make(ReplayV2)
-    total_fills = ingame_fills = 0
     diverged = 0
     for i, obs in enumerate(cycles):
         f1 = v1.run_cycle(obs)
         f2 = v2.run_cycle(obs)
-        s1, s2 = _standing(v1), _standing(v2)
-        k1 = sorted(_fill_key(f) for f in f1)
-        k2 = sorted(_fill_key(f) for f in f2)
-        if s1 != s2 or k1 != k2:
+        if sorted(_fill_key(f) for f in f1) != sorted(_fill_key(f) for f in f2) \
+                or _standing(v1) != _standing(v2):
             diverged += 1
             if diverged <= 3:
-                print(f"  DIVERGENCE at cycle {i}: standing_eq={s1==s2} fills_eq={k1==k2}")
-        total_fills += len(f1)
-        ingame_fills += sum(1 for f in f1 if f.regime == "ingame")
+                print(f"  DIVERGENCE at cycle {i}")
+
+    # --- part 2: SUBSTRATE COMPLETENESS (per fill, exact, cadence-free) ---- #
+    q_missing = t_missing = t_midmismatch = t_nocross = 0
+    holes = []
+    for (m, side, q, f, qp, mf) in ledger:
+        if (m, q) not in obs_at:
+            q_missing += 1
+            holes.append((m, side, "quote_obs_absent", q))
+            continue
+        to = obs_at.get((m, f))
+        if to is None:
+            t_missing += 1
+            holes.append((m, side, "trigger_obs_absent", f))
+            continue
+        _, _, mid = to
+        if abs(mid - mf) > 1e-9:
+            t_midmismatch += 1
+            holes.append((m, side, "trigger_mid!=ledger", f))
+            continue
+        crosses = (mid <= qp) if side == "bid" else (mid >= qp)
+        if not crosses:
+            t_nocross += 1
+            holes.append((m, side, "trigger_no_cross", f))
+    confirmed = len(ledger) - len(holes)
 
     print("\n=== registered proof-1 result ===")
-    print(f"cycles replayed        : {len(cycles):,}")
-    print(f"v1==v2 byte-identical  : {'YES (all cycles)' if diverged == 0 else f'NO ({diverged} diverged)'}")
-    print(f"fills reproduced       : {total_fills:,} total / {ingame_fills:,} in-game")
-    print(f"ledger substrate check : ledger in-game = 17,032 (from this substrate)")
-    ok_equiv = diverged == 0
-    # substrate-integrity: in-game reproduction within a tolerance band of the
-    # ledger (exact match is not expected — the live cycle timing drifted vs a
-    # regular 5s grid; a gross miss is the finding).
-    ratio = ingame_fills / 17032 if ingame_fills else 0
-    print(f"in-game reproduction ratio: {ratio:.2f} (1.0 = exact; band flags a pin/shim finding)")
-    if not ok_equiv:
-        print("PROOF-1 FAILED: v2 diverged from v1 — do not rebind the freeze.")
-        return 1
-    print("PROOF-1 (equivalence): PASS — v2 quoting == v1 on the pinned substrate.")
-    if not (0.7 <= ratio <= 1.3):
-        print("SUBSTRATE-INTEGRITY FLAG: in-game reproduction outside [0.7,1.3] — "
-              "stop and look (pin coverage or shim cadence), per the manager's rule.")
-        return 2
-    print("SUBSTRATE-INTEGRITY: in-game fill population reproduced within band.")
-    return 0
+    print("PART 1 — EQUIVALENCE (rebind core):")
+    print(f"  cycles replayed       : {len(cycles):,}")
+    print(f"  v1==v2 byte-identical : "
+          f"{'YES (all cycles)' if diverged == 0 else f'NO ({diverged} diverged)'}")
+    print("PART 2 — SUBSTRATE COMPLETENESS (integrity companion, per fill):")
+    print(f"  ledgered in-game fills             : {len(ledger):,}")
+    print(f"  producing obs present & matching    : {confirmed:,}")
+    print(f"  quote-obs absent (hole)            : {q_missing:,}")
+    print(f"  trigger-obs absent (hole)          : {t_missing:,}")
+    print(f"  trigger mid != ledger mid_at_fill  : {t_midmismatch:,}")
+    print(f"  trigger present but no cross       : {t_nocross:,}")
+
+    ok = True
+    if diverged != 0:
+        print("\nEQUIVALENCE FAILED — v2 diverged from v1. Do NOT rebind.")
+        ok = False
+    else:
+        print("\nEQUIVALENCE: PASS — v2 quoting == v1, all cycles, on the pin.")
+    if holes:
+        print(f"SUBSTRATE FINDING: {len(holes)} ledgered fills whose producing "
+              "observation is absent/mismatched in the pin — the pin is NOT the "
+              "complete producing substrate. STOP AND LOOK. Sample:")
+        for h in holes[:10]:
+            print(f"    {h}")
+        ok = False
+    else:
+        print("SUBSTRATE COMPLETENESS: PASS — for ALL 17,032 fills the pin "
+              "contains the quote observation AND the trigger observation, the "
+              "trigger's mid equals the ledger's mid_at_fill and crosses the "
+              "quote. Zero holes, exact, fill-by-fill, cadence-independent. The "
+              "pin IS the complete producing substrate.")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
