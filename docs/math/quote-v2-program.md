@@ -124,6 +124,14 @@ records status, it does not amend the draft; only dated author amendments do)
   provenance is the property this record is built to produce.
 - **The thread's last word (B's):** a validated proxy is the one honest
   way a refused input ever earns partial readmission.
+- **A — the proof-1 substrate gap caught and refused 2026-09-02:** no
+  existing pin cleanly carried the full 13-game window (the eval pin ends
+  Aug 20 22:25; the since-0820 pin lacks game_id), and A asked for a
+  ruling instead of stitching a substitute that provably wasn't what the
+  prod quoter read. Manager cut the true object from prod same hour (the
+  dated line under amendment 10 carries its identity). Third
+  under-specified pointer cut into an artifact today, third different
+  hand; the fail-close habit is now the house norm, not the exception.
 - **Substrate epoch INSTANTIATED 2026-09-02:** the observation migration
   (amendment 10's cohort-epoch ruling) landed at merge commit 322397c —
   epoch by command, never prose:
@@ -402,3 +410,17 @@ text collision: the detector registration's append B saturation
 diagnostic — bar, median, and definitions all pinned blind; it reads
 coverage only, and its outcome selects the detector version the gates
 cite.
+
+**DATED LINE under amendment 10 (2026-09-02):** proof 1's replay substrate
+is `backups/exports/market_snapshots_quote_replay_20260902T173700Z.csv.gz`
+— prod market_snapshots verbatim, 2026-08-17 12:00 → 2026-08-23 00:00 UTC,
+5,319,984 rows, game_id on all, md5
+`b740d2fb6dcd5f325877cf8281a97c42`, one named exclusion (`raw`, the venue
+blob — nothing in the observation path reads it). The amendment's original
+phrase "the pinned Aug tape" named no artifact — an under-specified
+pointer of the rule-17 species, the author's own (research agent); A's
+refusal to stitch a substitute substrate and the manager's cut of the true
+object are the correction. Proof 1 = A's replay runner over THIS pin, both
+engines, byte-for-byte, with reproduction of the ~17,032-fill ledger
+population as the substrate-integrity check (rule 16 built into the
+proof). The freeze-rebind line will cite this same pin and md5.

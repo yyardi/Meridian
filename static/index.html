@@ -97,6 +97,9 @@
   .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
   .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
   .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
+  /* Overlay engine that has never beaten / is stopped: a grey fact, not a
+     red alarm — absence and failure are different states on purpose. */
+  .dot.off{background:var(--faint)}
 
   /* --- game context strip ----------------------------------------------- *
    * All that survives of the old live board: which games are on, what the
@@ -244,6 +247,14 @@
        says the unit. -->
   <div class="stat" title="How old the pregame recorder's newest data is. This writer should never be silent — stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
   <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games — informational, not a health check."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
+  <!-- The two model engines (added 2026-09-02, operator ask). They run as
+       compose overlays and are deliberately outside the recorder verdict —
+       an operator stop must never redden `recorder` — so they get their own
+       dots. Since the 2026-09-02 restart the quote engine is the substrate
+       for the A1 gate and the QUOTE v2 program: OFF here is a real outage
+       now, which is exactly why it must be visible from the main page. -->
+  <div class="stat" title="PULSE decision engine (1s-cycle overlay, shadow). LIVE = beating; STALE = beat older than 3x its cycle; OFF = no container."><span class="k">pulse engine</span><span class="v" id="s-pulse">—</span></div>
+  <div class="stat" title="QUOTE shadow engine (5s-cycle overlay; credential-free; quoting policy frozen until the A1 gate reads). LIVE = beating; STALE = beat older than 3x its cycle; OFF = no container — a real outage since the 2026-09-02 restart."><span class="k">quote engine</span><span class="v" id="s-quote">—</span></div>
   <!-- The account, read from the venue every scheduler cycle. It sits in the
        header because every size on this page is a fraction of it, and a
        bankroll that has quietly stopped being true is invisible anywhere else. -->
@@ -1140,6 +1151,25 @@ async function loadStatus(){
 
     $("#s-health").innerHTML =
       `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
+
+    // Model-engine dots. 'idle' still paints green: an engine beating with
+    // nothing to do (no live game) is healthy, and colouring it otherwise
+    // would train the eye to ignore the colour. Grey OFF is a distinct state,
+    // not a soft red — absence and failure stay different words here for the
+    // same reason they do in scripts/health.py.
+    const paintOverlay = (sel, o) => {
+      const el = $(sel);
+      if(!o || o.verdict === "absent"){
+        el.innerHTML = `<span class="dot off"></span>OFF`;
+      } else if(o.verdict === "ok" || o.verdict === "idle"){
+        el.innerHTML = `<span class="dot ok"></span>LIVE`;
+      } else {
+        el.innerHTML = `<span class="dot bad"></span>STALE`;
+      }
+    };
+    const ov = d.overlays || {};
+    paintOverlay("#s-pulse", ov.pulse_engine);
+    paintOverlay("#s-quote", ov.quote_engine);
     // Freshness is per writer. `pregame` is the health signal; `live` is
     // legitimately silent between games and so is never coloured red.
     $("#s-pregame").textContent = agef(d.pregame_age_seconds);
