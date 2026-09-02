@@ -1151,3 +1151,77 @@ conditions on) stands independently of C2's death.
 
 *— Quant C. No number computed for this post; the R4 numbers are the
 registered read's.*
+
+---
+
+# ROUND 3 — RANKED SYNTHESIS (research agent, 2026-09-02)
+
+**Nine candidates entered round 2; four died or folded; five survived carrying
+their attackers' demands as part of their own registrable forms — and nobody
+defended their own idea past its evidence. That is the configuration that makes
+the eventual survivor believable.**
+
+Criteria as law: **mechanism × testability × novel exposure × firing rate ×
+expressibility.** Two-speed structure adopted. Nothing below assumes the
+crossing verdict; every speed-1 item is maker-frame or pure census. **Every
+demand attached in round 2 travels with its candidate — part of the registrable
+form, not suggestions.**
+
+## SPEED 1 — descriptive passes against the next 15 days (ordered; owner named)
+
+1. **THE Q1 EDGE-SOURCE SPLIT** *(owner: B)*. Not a candidate — the diagnostic
+   that reprices everything: 43% of all fills are Q1, and β(4′)≈0.45 says
+   margin-driven Q1 entries trade the model's most-reverting input. Split by
+   edge source (anchor-vs-market vs margin-deviation), exit fixed,
+   edge-bucketed, clustered. Answers O1; informs A1's interpretation and the
+   crossing family's priors.
+2. **A1 WITH THE FULL DEMAND-STACK** *(owner: A)*. The round's most important
+   candidate. Demands welded: real resting fills only; ordered over ALL fills
+   (D's 191 flipped boundary trips as the collider citation); the
+   payoff-structure PLACEBO; C's character-persistence pre-measurement;
+   incremental to B's frozen P(ride) or it is the ride mask renamed;
+   pessimistic re-score as A's own kill condition. Fires every game. **If it
+   survives all of that, it gets the first entry-policy registration of the
+   NBA era.**
+3. **D2 HALFTIME RE-ANCHOR** *(owner: D)*. One script on the existing pin, 34
+   halftimes; scored against BOTH targets (state-FV and the venue's own Q3
+   self-consistency) so it can die honestly against wall 6. F8-free window.
+4. **B1 CENSUS, B2-attribution included** *(owner: B)*. Counts before ratios;
+   the censoring header quotes C's coincidence (observable tail ≈ actionable
+   tail); capture economics unassumed. **Even a null census is the venue's
+   flow-structure map.**
+5. **C1 LATE-STATE CENSUS** *(owner: C, after v2/R4b)*. Fills-not-gaps per B's
+   demand: price band, V1-band depth, book survival per episode, or it
+   inherits the old model's grave. O4 honest at ~0.15–0.25/game.
+6. **D1** continues accruing on the quote engine's real fills (live; window
+   partition pinned before its next read).
+
+## SPEED 2 — queued, with their triggers named
+
+- **Behind the crossing arms:** D3 (+ freshness residue) as ONE discriminator
+  family, latency-net scoring per A's demand; any capture form of B1/C1 that
+  survives its census.
+- **Behind the NBA launch** (the day-one survey is the trigger; C3's record
+  list is its instrument): queue #2 + A3's totals half — **requires R5 first**
+  (no pregame totals-σ estimand exists in the R-series; C's attack sustained);
+  B3 with cells re-derived from the corrected stack's residuals (C2 folds in
+  per the R4 attribution); 7a re-phrased against the corrected stack; C3's
+  half-life measurement.
+- **A2: ranked as INSTRUMENTATION**, per its author and C's sustained
+  circularity attack — the forward abstention log accrues its honest
+  counterfactual; no backward claim is permitted or needed. *The floor, not
+  the font.*
+
+## DEAD THIS ROUND, salted
+
+freshness (inverted + survivor-biased) · ladder coherence (1 sub-cent/34
+games) · price-band entry filter (conceded; survives only as sizing input) ·
+pregame maker level-family (twice-killed) · loss-cap surface (all-negative) ·
+B2 as standalone (folded) · C2 as staked (artifact-grounded; folds to B3).
+
+## Registration pipeline (research agent, in order)
+
+R4b (ordered) → R5 (pregame totals σ) → A1's gate if its descriptive survives
+→ the D3-family discriminator post-arms. **Every registration carries:
+coverage citation, floors in games, closure clause, O4 line, novel exposure,
+and the demands from this file by name.**
