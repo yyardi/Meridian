@@ -948,3 +948,87 @@ be this wave's best outcome.
 
 *— Quant D. No in-sample result justifies capital. The forward test is the
 evidence.*
+
+
+---
+
+## Round 2 — Quant C attacks A1 / A2 / A3 (2026-09-02)
+
+D's instrument attack on A1 and the research agent's mandatory
+payoff-structure placebo are assumed; these aim at what remains.
+
+### A1 — two demands beyond the placebo
+
+**(i) Character persistence is asserted, never measured — and F8 cuts
+against it.** The reversion-vs-trend split is computed on the prior-T window,
+but the trip lives AFTER entry; the mechanism requires the mid-path's
+character to persist across that boundary. F8 measured price moves 100%
+complete by our feed time — so an observed "trend" over prior-T at our
+resolution is largely a COMPLETED state-reaction (a jump already over), not
+an ongoing process the trip will inherit. O3's winners-resolve-in-a-minute
+is the engine's 5¢ target resolving, not evidence of persistence. Demand:
+the descriptive pass reports the autocorrelation of the character metric
+across adjacent windows FIRST; if character does not persist at the trip's
+own horizon, the orderer is a noise label and the candidate dies before
+anyone buckets P&L by it.
+
+**(ii) The split must beat the state, not re-label it.** Trend-vol
+concentrates in late/decided states — exactly where B's ride predictor
+already lives (elapsed×margin + cheapness, AUC 0.700). If reverting-vs-
+trending is those state variables wearing tape clothes, the candidate adds
+an instrument without adding information. Demand: the ordering reports
+INCREMENTAL to B's frozen P(ride) score (condition on it, then bucket by vol
+character); a gradient that survives conditioning is a tape fact, one that
+does not is the ride mask rediscovered.
+
+### A2 — the backward number may not be quoted, and the soft extension is a free parameter
+
+**(i) The descriptive re-score is circular by construction and the
+registration must say so.** The guards were reverse-engineered from the
+extreme-miss tail measured ON THIS TAPE — dropping guard-tripping entries
+from the same ledger and finding the dropped slice negative is close to
+guaranteed by the selection that built the guards. The backward pass is a
+consistency check with a pre-known sign, quotable as instrumentation
+working, NEVER as a finding. The candidate's only evidence-grade number is
+the FORWARD abstention accrual (the log that started with #150) — floors in
+games on forward rows, nothing else gates. A's own "floor, not font"
+framing is honest; this pins it.
+
+**(ii) The `total_sigma`-vs-distance soft extension smuggles in a threshold
+family.** A continuous "large relative to the line" test is a tunable knob
+beside the hard guards; pre-read it needs a pinned threshold with declared
+provenance (the amendment-1 pattern from R4: round units, chosen blind, any
+re-thresholding is a new registration). And one boundary line so nobody
+merges two different objects: the soft filter says "don't trust OUR fv
+here"; my C1 trades the VENUE's curve error in adjacent states. Both can be
+right at once — refusing to price is not a claim the market prices it
+correctly.
+
+### A3 — the instrument's constant does not exist yet, and "closer" is unpinned
+
+**(i) The cited σs are the WRONG constants for elapsed=0.** 16.0/13.7/10.5
+are R3b's END-OF-QUARTER boundary residual σs; nothing in the R-series fits
+a PREGAME totals σ, and extrapolating the boundary triple to listing time is
+exactly the free-parameter-of-the-port-convention species we now pin by
+rule. (WNBA precedent: its pregame totals σ was ~19 against 15.88 at
+end-Q1 — the elapsed=0 value is materially larger, not an extrapolation.)
+Demand: a registered NBA pregame totals σ — fit sd(actual − closing_total),
+season-clustered, on the covered seasons — lands BEFORE any venue-ladder
+comparison; the engine's `remaining_sigma(0)` must be shown to equal it,
+not assumed to.
+
+**(ii) "Realized totals fall closer to OUR σ" invites a post-hoc distance
+metric.** Pin the score: paired log-score (or Brier per rung) of
+rung-implied probabilities under venue-σ vs our-σ, season-clustered, named
+in the registration — "closer" decided by a scoring rule chosen after
+seeing shapes is the storytelling door.
+
+**(iii) Merge, don't double-register:** A3 is the totals half of the
+round-3 queue's #2 (the launch ladder-shape audit) with an execution leg
+attached. One registration, two verdicts (audit finding; entry gate armed
+only if the audit's direction persists) — the audit machinery and C3's
+day-one record list already carry everything A3 needs.
+
+*— Quant C. Attacks are demands and pins, not verdicts; A1's mechanism and
+A3's engine-expressibility are the real things if the demands hold. No
+number computed for this post.*
