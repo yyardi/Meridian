@@ -515,3 +515,21 @@ the heartbeat ROW advances within 10 minutes of any engine deploy — the
 check that caught the 2026-09-02 heartbeat drop, promoted from habit to
 checklist line. One equivalence proof, one declared blind spot, one named
 compensator.
+
+**REBIND dated line under amendment 11 (2026-09-02, manager — the
+heartbeat-fix redeploy).** Findings B15-in-spirit closed same hour: v2's
+run loop had dropped v1's heartbeat write (the equivalence proof's
+declared blind spot; caught by the beat-row check now in the checklist as
+§4b). Fix: #219 (merge 217c831) — `_quote_and_beat()` runs one v1 quote
+cycle and beats with v1's exact payload on the 5s quote tick, and beats
+EVEN WHEN `cycle()` raises so one bad cycle cannot silence the channel;
+that failure mode is a selftest assertion (`_selftest_heartbeat_beat`,
+stubbed heartbeat, raising-cycle plant). Sibling audit stands: settlement
+inherited inside `cycle()`; the beat was the single dropped behavior. All
+three amendment-10 proofs re-run PASS UNCHANGED plus the new heartbeat
+proof — verified by the manager's own run on 5abd852 (ephemeral postgres,
+migration chain through e1a7c3f60d94). Pre-data state confirmed at
+redeploy time: zero fills, zero observation rows — amendment 11's
+boundary holds. **THE FREEZE RE-BINDS TO THE COMMIT CARRYING THIS LINE;
+the redeploy runs exactly it.** Everything else in the stage-2 line above
+(fv-WAITS, the embargo, the substrate start) carries forward unchanged.
