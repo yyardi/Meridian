@@ -35,6 +35,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from core.storage.base import Base
 
 Price = Numeric(6, 4)
+Qty = Numeric(18, 4)          # contract quantities (matches book_levels.quantity)
 
 PREGAME = "pregame"
 INGAME = "ingame"
@@ -197,6 +198,26 @@ class QuoteV2Observation(Base):
     quote_ask: Mapped[Decimal | None] = mapped_column(Price)
     quote_event: Mapped[str] = mapped_column(String(16), nullable=False,
                                              default="none")
+
+    # ---- queue-ahead depth at OUR quote price (D's fill-probability axis) --- #
+    #: The resting size AT our own quote price on each side — the queue we sit
+    #: behind (all of it has time priority; we just joined). This is the second
+    #: axis of P(fill | distance-from-touch, queue-ahead): leaning inside the
+    #: touch moves BOTH inputs at once (shortens the queue, lowers reach), so
+    #: netting them needs both on the same row. NULL when we hold no standing
+    #: quote on that side (no queue to be behind) or no depth sample backs the
+    #: row. Sampled from the venue book on a BOUNDED cadence (option 1, manager
+    #: 2026-09-03), for quoted markets ONLY, NOT joined from book_levels — the
+    #: observation's OWN fresh fetch, so there is no cross-stream point-in-time
+    #: hazard. Limitation lives in docs/math/quote-v2-observation-schema.md.
+    our_bid_qty: Mapped[Decimal | None] = mapped_column(Qty)
+    our_ask_qty: Mapped[Decimal | None] = mapped_column(Qty)
+    #: The instant the depth sample behind our_bid_qty/our_ask_qty was FETCHED
+    #: (quoter clock). Staleness = observed_at - depth_fetched_at is carried on
+    #: EVERY row that reuses a cached sample, so a consumer sees how old the queue
+    #: number is; beyond D's staleness bound the queue-ahead is unusable, not
+    #: merely stale. NULL when no sample backs this row.
+    depth_fetched_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
     # ---- congestion detector output (B) ---------------------------------- #
     #: The detector code version (commit) that produced the fields below —

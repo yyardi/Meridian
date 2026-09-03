@@ -65,6 +65,22 @@ DEFAULT_RECORD_INTERVAL_SECONDS = 1.0
 #: congestion_detector commit at deploy.
 DETECTOR_VERSION = "d1fb6de"
 
+#: Queue-ahead depth sampling (manager 2026-09-03: option 1, scope-a, cadence-b).
+#: The book is fetched for a QUOTED market at most once per this interval and
+#: cached; every observation in between reuses it and carries the sample's
+#: staleness (observed_at - depth_fetched_at). PLACEHOLDER — the refresh interval
+#: and the staleness bound below are D's convention (contemporaneous-depth
+#: semantics); they are named so D's answer is a one-line change, not a rewrite.
+#: Bounded cadence keeps the request rate well under the shared ceiling: rate =
+#: (quoted markets) / interval; e.g. 20 quoted markets / 30s = 0.67 req/s.
+DEPTH_REFRESH_INTERVAL_SECONDS = 30.0
+#: Beyond this age a row's queue-ahead is UNUSABLE, not merely stale (a consumer
+#: gate checks observed_at - depth_fetched_at against it). D's to set; carried so
+#: the number lives in one place. Not enforced at write time — the writer records
+#: the stamp and lets the consumer judge, so the raw sample is never silently
+#: dropped (coverage counted, never hidden).
+DEPTH_QUEUE_STALENESS_MAX_SECONDS = 90.0
+
 
 def _epoch_seconds(t: dt.datetime) -> float:
     return (t - dt.datetime(1970, 1, 1, tzinfo=UTC)).total_seconds()
@@ -84,6 +100,12 @@ class ShadowQuoterV2(ShadowQuoter):
         #: game's ladders), fed in observation order.
         self._detectors: dict[str, object] = {}
         self._confirms_seen: dict[str, int] = {}
+        #: Bounded-cadence queue-ahead depth cache (manager 2026-09-03): per
+        #: market -> ({(side, price4dp): qty}, fetched_at). Refreshed at most once
+        #: per DEPTH_REFRESH_INTERVAL_SECONDS, for QUOTED markets only. v2-only
+        #: state — NOT _standing and NOT fills, so replay equivalence (proof 1)
+        #: and off-decision-path (proof 3) are untouched.
+        self._book_cache: dict[str, tuple[dict, dt.datetime]] = {}
 
     # ---- recording (OFF the decision path — never touches _standing/fills) - #
 
@@ -148,11 +170,65 @@ class ShadowQuoterV2(ShadowQuoter):
             self._confirms_seen[game_id] = 0
         return det
 
+    def _fetch_book_levels(self, market_slug: str) -> dict | None:
+        """One venue book read -> {(side, price@4dp): total_qty}. Uses the
+        READ-ONLY gateway client (no order/auth/credential import — proof 2; the
+        same client v1 uses for settlement). Fail-open: any error -> None, never
+        a crash or a stall of the record loop."""
+        from collections import defaultdict
+
+        from core.polymarket.client import PolymarketGatewayClient
+        try:
+            with PolymarketGatewayClient() as gw:
+                book, _raw = gw.get_book(market_slug)
+        except Exception as exc:            # a read failure must never break recording
+            log.warning("qv2_book_fetch_failed", market=market_slug,
+                        error=str(exc)[:150])
+            return None
+        md = getattr(book, "market_data", None)
+        if md is None:
+            return None
+        out: dict = defaultdict(float)
+        for side, entries in (("bid", md.bids), ("offer", md.offers)):
+            for be in entries:
+                if be.px is None or be.px.value is None or be.qty is None:
+                    continue
+                out[(side, round(float(be.px.value), 4))] += float(be.qty)
+        return dict(out)
+
+    def _queue_ahead(self, market_slug: str, bid_price, ask_price,
+                     now: dt.datetime):
+        """Queue-ahead qty at OUR quote price on each side, from a bounded-cadence
+        book sample (manager 2026-09-03, option 1). Refreshes the per-market
+        cache at most once per DEPTH_REFRESH_INTERVAL_SECONDS; reuses it
+        otherwise and reports the sample's FETCH instant so staleness is visible
+        on every row. Read-only, off the decision path (never touches _standing/
+        fills), fail-open. Returns (our_bid_qty, our_ask_qty, depth_fetched_at) —
+        any may be None (no sample, or no standing quote on that side)."""
+        cached = self._book_cache.get(market_slug)
+        if cached is None or (now - cached[1]).total_seconds() \
+                >= DEPTH_REFRESH_INTERVAL_SECONDS:
+            levels = self._fetch_book_levels(market_slug)
+            if levels is None:
+                return None, None, None
+            self._book_cache[market_slug] = (levels, now)
+            cached = self._book_cache[market_slug]
+        levels, fetched_at = cached
+
+        def at(side, price):
+            if price is None:
+                return None
+            return levels.get((side, round(float(price), 4)), 0.0)
+
+        return at("bid", bid_price), at("offer", ask_price), fetched_at
+
     def record_cycle(self) -> int:
         """Write one observation row per live market. Runs B's detector on the
         quoter's OWN stream. **Reads `_standing` (the quoting state) but never
         writes it** — this is the off-decision-path guarantee, asserted in the
-        selftest. Returns rows written."""
+        selftest. For markets we are QUOTING it also records the queue-ahead
+        depth at our own price (bounded-cadence book sample, read-only, fail-open
+        — still off the decision path). Returns rows written."""
         with self._Session() as s:
             obs = self._record_observations(s)
             rows = []
@@ -175,6 +251,15 @@ class ShadowQuoterV2(ShadowQuoter):
                 margin = None if pair is None else pair[0] - pair[1]
                 total = None if pair is None else pair[0] + pair[1]
                 q = self._standing.get(o["market_slug"])   # READ only
+                # Queue-ahead at OUR price — quoted markets only (no standing
+                # quote -> no queue to be behind -> NULL). Bounded-cadence book
+                # sample; off the decision path; fail-open to NULL.
+                if q is None:
+                    bidq = askq = depth_at = None
+                else:
+                    bidq, askq, depth_at = self._queue_ahead(
+                        o["market_slug"], q.bid_price, q.ask_price,
+                        o["observed_at"])
                 rows.append(QuoteV2Observation(
                     market_slug=o["market_slug"], game_id=o["game_id"],
                     event_slug=o["event_slug"],
@@ -198,6 +283,9 @@ class ShadowQuoterV2(ShadowQuoter):
                     quote_bid=None if q is None else Decimal(str(q.bid_price)),
                     quote_ask=None if q is None else Decimal(str(q.ask_price)),
                     quote_event="rested" if q is not None else "none",
+                    our_bid_qty=None if bidq is None else Decimal(str(bidq)),
+                    our_ask_qty=None if askq is None else Decimal(str(askq)),
+                    depth_fetched_at=depth_at,
                     det_version=self.detector_version, det_in_window=in_window,
                     det_confirm_t0=confirm_t0,
                     engine_commit=self._engine_commit))
@@ -527,6 +615,89 @@ def _selftest_league_filter_and_identity(Session) -> None:
     print("proof (engine-identity stamp): a written row carries the binary commit")
 
 
+def _selftest_queue_ahead(Session) -> None:
+    """Queue-ahead recording (manager 2026-09-03): the POSITIVE path (the proofs
+    above only exercise fail-open-to-NULL because the offline book fetch 404s).
+    With a known book sample: (1) a QUOTED market's row carries our_bid_qty /
+    our_ask_qty at our own price + depth_fetched_at; (2) an UNQUOTED market's row
+    is NULL (no queue to be behind); (3) the per-market cache bounds the fetch —
+    two record cycles in one refresh window fetch ONCE (the rate guarantee)."""
+    import os
+
+    from core.quote.engine import StandingQuote
+
+    saved = os.environ.get("MERIDIAN_ENGINE_COMMIT")
+    os.environ["MERIDIAN_ENGINE_COMMIT"] = "qa-selftest01"
+    SLUG_Q, SLUG_U, GAME = "tsc-wnba-qa-quoted", "tsc-wnba-qa-unquoted", "qa-game"
+
+    def _clean():
+        with Session() as s:
+            s.execute(text("delete from market_snapshots where market_slug in (:q,:u)"),
+                      {"q": SLUG_Q, "u": SLUG_U})
+            s.execute(text("delete from quote_v2_observations where market_slug in (:q,:u)"),
+                      {"q": SLUG_Q, "u": SLUG_U})
+            s.commit()
+
+    _clean()
+    try:
+        q = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
+                           settlement_lookup=lambda s: None)
+        # a KNOWN book, and a call counter to prove the cache bounds fetches
+        calls = {"n": 0}
+        known = {("bid", 0.4000): 500.0, ("offer", 0.4400): 300.0}
+
+        def fake_fetch(slug):
+            calls["n"] += 1
+            return known
+        q._fetch_book_levels = fake_fetch          # monkeypatch the venue read
+
+        # we ARE quoting SLUG_Q at bid 0.40 / ask 0.44; NOT quoting SLUG_U
+        q._standing[SLUG_Q] = StandingQuote(
+            market_slug=SLUG_Q, game_id=GAME, regime="ingame",
+            bid_price=0.40, ask_price=0.44, mid=0.42, spread=0.04,
+            quoted_at=dt.datetime.now(UTC))
+
+        base = dt.datetime.now(UTC) - dt.timedelta(seconds=5)
+        with Session() as s:
+            for slug in (SLUG_Q, SLUG_U):
+                s.execute(text("""
+                    insert into market_snapshots
+                        (market_slug, game_id, event_slug, sports_market_type,
+                         captured_at, best_bid, best_ask, is_live)
+                    values (:m,:g,'e','basketball_team_full_game_spread',:t,
+                            0.40,0.44,true)
+                """), {"m": slug, "g": GAME, "t": base})
+            s.commit()
+
+        q.record_cycle()
+        q.record_cycle()          # second cycle, same refresh window
+
+        with Session() as s:
+            rows = {r.market_slug: r for r in s.execute(text(
+                "select distinct on (market_slug) market_slug, our_bid_qty, "
+                "our_ask_qty, depth_fetched_at from quote_v2_observations "
+                "where market_slug in (:q,:u) order by market_slug, id desc"),
+                {"q": SLUG_Q, "u": SLUG_U}).all()}
+
+        rq = rows[SLUG_Q]
+        assert float(rq.our_bid_qty) == 500.0, f"our_bid_qty {rq.our_bid_qty} != 500"
+        assert float(rq.our_ask_qty) == 300.0, f"our_ask_qty {rq.our_ask_qty} != 300"
+        assert rq.depth_fetched_at is not None, "depth_fetched_at not stamped"
+        ru = rows[SLUG_U]
+        assert ru.our_bid_qty is None and ru.our_ask_qty is None, \
+            "unquoted market carried a queue-ahead (should be NULL — no queue)"
+        assert calls["n"] == 1, \
+            f"cache did not bound the fetch: {calls['n']} fetches in one window"
+        print("proof (queue-ahead): quoted row carries our-price depth + stamp; "
+              "unquoted is NULL; cache bounds the fetch to once per window")
+    finally:
+        _clean()
+        if saved is None:
+            os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
+        else:
+            os.environ["MERIDIAN_ENGINE_COMMIT"] = saved
+
+
 def selftest(Session=None) -> int:
     _selftest_ast()
     if Session is None:
@@ -535,6 +706,7 @@ def selftest(Session=None) -> int:
     _selftest_replay_equivalence(Session)
     _selftest_heartbeat_beat(Session)
     _selftest_league_filter_and_identity(Session)
+    _selftest_queue_ahead(Session)
     print("engine_v2 selftest: ALL PROOFS PASS")
     return 0
 

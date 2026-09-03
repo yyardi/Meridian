@@ -64,9 +64,28 @@ compliant stream accrue in parallel with A1's gate.
 | `game_start_time` | ts null | **D1 pregame hours-to-tip fold** |
 | `quote_bid`, `quote_ask` | Price null | **PATIENCE — the resting quote at this obs, incl. unfilled requotes (the full stream)** |
 | `quote_event` | str | quote lifecycle: rested / requoted / withdrawn / held / filled_bid / filled_ask / none — PATIENCE requote behaviour |
-| `det_version` | str | **B's pin discipline: detector code version (commit) that produced the fields below** |
+| `our_bid_qty`, `our_ask_qty` | Qty null | **the fill-probability surface's SECOND axis: resting size AT our own quote price on each side — the queue we sit behind.** NULL when we hold no standing quote on that side (no queue) or no book sample backs the row. Sampled for QUOTED markets only, on a bounded cadence (see limitation below) |
+| `depth_fetched_at` | ts (tz) null | **staleness of the queue-ahead sample: `observed_at − depth_fetched_at`, carried on every row that reuses a cached book.** A consumer MUST check it against the staleness bound before using the queue number |
 | `det_in_window` | bool | live congestion detector: is this obs inside a confirmed window (opens t0+5s) |
 | `det_confirm_t0` | ts null | **B sign-off: the confirmed trigger's t0 AS A VALUE, not a boolean.** The true confirm instant is t0+5s, which falls BETWEEN observations; a boolean flag is quantized to obs times while offline replay computes exact instants, so they could never byte-match. Recording t0 pins the confirm identity exactly and gives the density-gated v2 its confirm times for free. NULL when no confirm is tied to this obs |
+
+**LIMITATION — queue-ahead depth (`our_bid_qty`/`our_ask_qty`), read this where
+you meet the field (manager 2026-09-03):** the queue-ahead is the resting size at
+*our own quote price*, which is the honest object for `P(fill | distance, queue-
+ahead)` — chosen over top-of-book size because the venue snapshot carries NO size
+at all (`Quote` = value+currency), so top-of-book would cost the identical book
+fetch while degrading exactly when we lean inside the touch, i.e. for its own
+test case. It is sampled from the venue book on a **bounded cadence**
+(`DEPTH_REFRESH_INTERVAL_SECONDS`, engine_v2), NOT per-observation and NOT joined
+from `book_levels` (that cross-stream point-in-time join is the hazard this
+project already paid for). So the number can be up to one refresh interval stale;
+`depth_fetched_at` makes that visible per row, and beyond
+`DEPTH_QUEUE_STALENESS_MAX_SECONDS` the queue-ahead is UNUSABLE, not merely stale.
+Both constants are D's convention (contemporaneous-depth semantics) and live as
+named constants so a change is one line. The fetch is read-only (proof 2: no
+order/auth/credential import) and off the decision path (proof 3: `record_cycle`
+never mutates `_standing`/fills), fail-open to NULL — coverage counted, never a
+stall of quoting.
 
 **Deliberately NOT stored — recomputed offline from the raw stream, to avoid
 freezing a version into the table:**
@@ -104,6 +123,14 @@ freezing a version into the table:**
    waits for A1). Landing the model/migration is separate and off-path.
 5. **Detector live** — the quoter runs B's `CongestionDetector.feed` on its own
    stream and records `det_in_window` / `det_confirm_t0` / `det_version`.
+6. **Queue-ahead depth, bounded and off-path** — for markets we are actively
+   quoting, record the resting size at our own price (`our_bid_qty`/
+   `our_ask_qty`) from a book fetched at most once per
+   `DEPTH_REFRESH_INTERVAL_SECONDS` and cached per market; stamp
+   `depth_fetched_at`. Read-only gateway client (no order/auth/credential — the
+   AST test still passes), off the decision path, fail-open to NULL. Request-rate
+   bound: `(quoted markets) / interval` — stated as arithmetic against the shared
+   ceiling in the deploy PR, not left to an adaptive cadence to absorb.
 
 ## Read embargo (amendment 10, 256c038)
 
