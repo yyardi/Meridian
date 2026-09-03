@@ -466,6 +466,154 @@ def m3_runs(fills: pd.DataFrame) -> None:
 # Mutation tests
 # --------------------------------------------------------------------------- #
 
+def m4_terminal_dispersion(fills: pd.DataFrame) -> None:
+    """c7's ruling 2: A-S's inventory penalty is a RISK-AVERSION term about
+    the dispersion of TERMINAL wealth. M1 measured the MEAN of per-fill
+    capture by |q| and found it flat — which is fully consistent with
+    "inventory doesn't move the average and fattens the tail." This tests
+    AS on its own object: per-MARKET settlement P&L, cut by the peak |q|
+    that market carried.
+
+    Per contract: a bid long at p returns S − p; an ask short at p returns
+    p − S (unit size, maker both ways, theta_maker = 0). Per market = the
+    sum over its fills. Markets with any unsettled fill are EXCLUDED and
+    counted — a partial book has no terminal wealth."""
+    hr("M4. TERMINAL DISPERSION BY INVENTORY — testing A-S on its own "
+       "object (mean was flat; the penalty is about the TAIL)")
+    f = fills.copy()
+    f["pnl"] = np.where(f.side == "bid", f.settlement - f.quote_price,
+                        f.quote_price - f.settlement)
+    unsettled = f.groupby("market_slug").settlement.apply(
+        lambda s: s.isna().any())
+    drop = set(unsettled[unsettled].index)
+    print(f"markets excluded for any unsettled fill: {len(drop)} of "
+          f"{f.market_slug.nunique()} (counted, not stitched)")
+    f = f[~f.market_slug.isin(drop)]
+    if f.empty:
+        print("no fully-settled markets — nothing to report")
+        return
+
+    per = f.groupby("market_slug").agg(
+        pnl=("pnl", "sum"), fills=("pnl", "size"),
+        game_id=("game_id", "first"),
+        peak_absq=("inv_abs", "max"))
+    per["peak_band"] = pd.cut(per.peak_absq, [-0.1, 1.1, 3.1, 9.1, 1e9],
+                              labels=["<=1", "2-3", "4-9", "10+"])
+    print(f"\nfully-settled markets: {len(per)} across "
+          f"{per.game_id.nunique()} games; total P&L "
+          f"${per.pnl.sum():+,.2f} (unit size)")
+    print(f"\n{'peak |q|':9s} {'mkts':>5s} {'mean':>8s} {'SD':>8s} "
+          f"{'worst':>9s} {'p10':>8s} {'p90':>8s} {'sum':>10s}")
+    for band, sub in per.groupby("peak_band", observed=True):
+        if len(sub) == 0:
+            continue
+        print(f"{str(band):9s} {len(sub):>5d} {sub.pnl.mean():>+8.2f} "
+              f"{sub.pnl.std():>8.2f} {sub.pnl.min():>+9.2f} "
+              f"{sub.pnl.quantile(.1):>+8.2f} {sub.pnl.quantile(.9):>+8.2f} "
+              f"{sub.pnl.sum():>+10.2f}")
+    print("\nthe five largest single-market losses, with the peak |q| each "
+          "carried (the ruin question in its rawest form):")
+    for r in per.nsmallest(5, "pnl").itertuples():
+        print(f"  {r.Index[:52]:52s} ${r.pnl:+8.2f} on {r.fills:>4d} fills, "
+              f"peak |q| {r.peak_absq:.0f}")
+    worst_decile = per.nsmallest(max(1, len(per) // 10), "pnl")
+    print(f"\nworst decile ({len(worst_decile)} markets): mean peak |q| "
+          f"{worst_decile.peak_absq.mean():.1f} vs {per.peak_absq.mean():.1f} "
+          f"overall; they carry ${worst_decile.pnl.sum():+,.2f} of the "
+          f"${per.pnl.sum():+,.2f} total")
+    print("\nreading (c7's framing): if SD and the worst decile grow with "
+          "peak |q| while the mean stays flat, inventory is a RUIN-CONTROL "
+          "problem, not a profit problem — and skew registers as a "
+          "tail/ruin lever on a $1,000 wallet, which the flat-mean finding "
+          "would otherwise have buried.")
+
+
+def m5_flattening_lean(con, fills: pd.DataFrame) -> None:
+    """c7's ruling 4, run first: were round trips AVAILABLE and refused?
+
+    v1 never leans to get flat. After a BID fill its standing ask stayed at
+    the touch (mid_at_quote + spread_at_quote/2 — both sides are born in
+    the same cycle, so the fills tape recovers the ask exactly). The
+    counterfactual: rest the offer k cents INSIDE that ask and ask whether
+    the engine's OWN fill rule (a newer observation's mid >= the offer)
+    would have crossed it within N seconds.
+
+    Cycle-resolution scan, deliberately: the engine fill-checks once per 5s
+    cycle against the newest observation, so scanning every 200ms tick
+    would flatter the counterfactual. Buckets are 5s and use the bucket's
+    last mid — exactly what a cycle would have seen.
+
+    Round-trip capture if flattened = lean_price − quote_price (maker both
+    sides, theta_maker = 0), against the actual outcome of that contract,
+    which was to ride to settlement."""
+    hr("M5. THE FLATTENING LEAN — were round trips available and refused? "
+       "(c7 ruling 4; cycle-resolution so the counterfactual can't flatter)")
+    f = fills[fills.settlement.notna()].copy()
+    if f.empty:
+        print("no settled fills — nothing to report")
+        return
+    # the standing quote's OTHER side at the moment of this fill
+    f["ask_at_quote"] = f.mid_at_quote + f.spread_at_quote / 2
+    f["bid_at_quote"] = f.mid_at_quote - f.spread_at_quote / 2
+    f["ride_pnl"] = np.where(f.side == "bid", f.settlement - f.quote_price,
+                             f.quote_price - f.settlement)
+
+    con.register("lean_fills", f[["market_slug", "filled_at", "side",
+                                  "quote_price", "ask_at_quote",
+                                  "bid_at_quote"]].reset_index(names="fid"))
+    for horizon in (30, 120):
+        print(f"\n--- flatten within {horizon}s "
+              f"(5s cycle resolution) ---")
+        print(f"{'lean':>6s} {'side':>4s} {'n':>7s} {'flattened':>10s} "
+              f"{'round-trip if flat':>22s} {'actual ride P&L':>22s}")
+        for k in (0.01, 0.02, 0.03, 0.05):
+            got = con.execute(f"""
+                WITH b AS (
+                  SELECT market_slug,
+                         time_bucket(INTERVAL '5 seconds', captured_at) bk,
+                         arg_max(mid, captured_at) AS mid
+                  FROM tk GROUP BY 1, 2
+                )
+                SELECT l.fid,
+                       max(CASE
+                         WHEN l.side = 'bid' AND b.mid >= l.ask_at_quote - {k}
+                           THEN 1
+                         WHEN l.side = 'ask' AND b.mid <= l.bid_at_quote + {k}
+                           THEN 1 ELSE 0 END) AS flattened
+                FROM lean_fills l JOIN b
+                  ON b.market_slug = l.market_slug
+                 AND b.bk > l.filled_at
+                 AND b.bk <= l.filled_at + INTERVAL '{horizon} seconds'
+                GROUP BY l.fid
+            """).df().set_index("fid").flattened
+            sub = f.copy()
+            sub["flat"] = sub.index.map(got).fillna(0).astype(bool)
+            for side in ("bid", "ask"):
+                ss = sub[sub.side == side]
+                if len(ss) == 0:
+                    continue
+                fl = ss[ss.flat]
+                if side == "bid":
+                    rt = (fl.ask_at_quote - k) - fl.quote_price
+                else:
+                    rt = fl.quote_price - (fl.bid_at_quote + k)
+                rt_by_g = {g: list(v) for g, v in rt.groupby(fl.game_id)}
+                ride_by_g = {g: list(v) for g, v
+                             in fl.ride_pnl.groupby(fl.game_id)}
+                print(f"{k * 100:>5.0f}c {side:>4s} {len(ss):>7d} "
+                      f"{ss.flat.mean():>9.1%} "
+                      f"{cm_str(rt_by_g):>22s} {cm_str(ride_by_g):>22s}")
+    print("\nreading: a high flatten rate with a round-trip capture better "
+          "than the ride says round trips WERE available and the no-exit "
+          "architecture — not adverse selection — is the primary cap on "
+          "this book's earnings. A low rate says the offsetting flow simply "
+          "was not there, and one-sided accumulation was structural rather "
+          "than chosen. Both columns are on the same fills, so they are "
+          "directly comparable; the ride column is real settled money and "
+          "the round-trip column is a counterfactual under the engine's own "
+          "fill rule.")
+
+
 def _f(mkt, side, t, game="g1", q=0.40, mq=0.42, sp=0.04, mf=0.39, s=1):
     return dict(market_slug=mkt, game_id=game, regime="ingame", side=side,
                 quote_price=q, mid_at_quote=mq, spread_at_quote=sp,
@@ -549,6 +697,45 @@ def selftest() -> int:
     check("M0 time-weighting = 30s at |q|=1 of 58s observable (0.52)",
           "TIME-WEIGHTED |q| = 0.52" in txt and "at q != 0: 51.7%" in txt)
 
+    # M5: a bid filled at 0.40 with the ask at 0.44 leans to 0.42 at k=2c.
+    # Tape rises to mid 0.43 at +10s -> flattened (0.43 >= 0.42), round
+    # trip = 0.42 − 0.40 = +2c. A tape that never reaches 0.42 must NOT
+    # flatten (the counterfactual cannot invent liquidity).
+    rise = pd.DataFrame([dict(market_slug="mR", captured_at=T(i),
+                              spread=0.04, event_period="Q2",
+                              mid=0.40 if i < 10 else 0.43)
+                         for i in range(60)])
+    flat_tape = rise.assign(mid=0.40, market_slug="mF")
+    con.register("tick2", pd.concat([rise, flat_tape]))
+    con.execute("DROP TABLE IF EXISTS tk")
+    con.execute("CREATE TEMP TABLE tk AS SELECT * FROM tick2")
+    lean_fills = pd.DataFrame([
+        _f("mR", "bid", T(0), q=0.40, mq=0.42, sp=0.04),
+        _f("mF", "bid", T(0), q=0.40, mq=0.42, sp=0.04)])
+    lean_fills["capture"] = -0.01
+    lean_fills["half_spread"] = 0.02
+    buf3 = _io.StringIO()
+    with contextlib.redirect_stdout(buf3):
+        m5_flattening_lean(con, lean_fills)
+    t3 = buf3.getvalue()
+    check("M5 flattens the rising tape and not the flat one (50%)",
+          "50.0%" in t3)
+    # restore the earlier tk for the remaining checks
+    con.execute("DROP TABLE IF EXISTS tk")
+    con.execute("CREATE TEMP TABLE tk AS SELECT * FROM ticks_df")
+
+    # M4: two markets, known settlement P&L and peak |q|
+    m4 = add_inventory(pd.DataFrame([
+        _f("mA", "bid", T(0), q=0.40, s=1), _f("mA", "bid", T(10), q=0.40, s=1),
+        _f("mB", "ask", T(0), q=0.60, s=1)]))
+    buf4 = _io.StringIO()
+    with contextlib.redirect_stdout(buf4):
+        m4_terminal_dispersion(m4)
+    t4 = buf4.getvalue()
+    # mA: two bids at .40 settling 1 -> +1.20 ; mB: ask .60 settling 1 -> -0.40
+    check("M4 settlement P&L arithmetic (+1.20 / -0.40, peak |q| 1 vs 0)",
+          "+0.80" in t4 and "-0.40" in t4)
+
     # M0 must not stitch: a market with no tick coverage contributes to the
     # fill-instant distribution but not the time-weighted one.
     nocov = add_inventory(pd.DataFrame([_f("mZZ", "bid", T(0))]))
@@ -619,6 +806,8 @@ def main() -> int:
     """).df().set_index("fid")
     ing["period"] = ing.index.map(st.event_period)
 
+    m5_flattening_lean(con, ing)      # c7 ruling 4: run first
+    m4_terminal_dispersion(ing)
     m0_inventory_path(con, ing)
     m1_inventory(ing)
     m2_placement(con, ing)
