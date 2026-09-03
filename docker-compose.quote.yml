@@ -97,30 +97,64 @@ services:
       MERIDIAN_RPS: "2"
     command: ["python", "-m", "core.feeds.stats_sweeper", "--interval", "3600"]
 
-  # ── GRIDIRON / CFB quoter (2026-09-03) ──────────────────────────────
+  # ── GRIDIRON / CFB policy A/B (2026-09-03, amendment "TWO ENGINES") ──────
   # The operator defined GRIDIRON as NFL **+ CFB**, and CFB plays FIRST:
-  # ~100 games this Saturday against NFL's opener on the 9th. Without this
-  # service the football program's first shadow fills would wait four extra
-  # days and skip a slate six times larger by game count.
+  # ~100 games this Saturday against NFL's opener on the 9th. This Saturday
+  # slate is the A/B's first substrate.
   #
-  # Same image, same engine_v2, same frozen-v1 quoting policy — only
-  # MERIDIAN_LEAGUE differs, and league is determined by SLUG on read and
-  # write. Its own heartbeat row (quote_engine_cfb) via service_quote_for,
-  # so it can neither collide with nor mask the WNBA or NFL engines. Its
-  # deploy commit is CFB's own substrate epoch.
-  #
-  # Fills are MODELLED, like every fill this program has produced. Recording
-  # only; no credentials mounted, nothing can trade.
+  # TWO ENGINES on the same image and the same CFB board (docs/gridiron/
+  # policy-variants.md): BASE and FLATTEN(k=1c). The other three arms became
+  # analysis CUTS on BASE's fills — no engine — so there are exactly two
+  # services here, not five. Both run core.quote.policy_engine (PolicyQuoterV2):
+  #   * BASE (MERIDIAN_QUOTE_POLICY=base) is v1's quoting UNCHANGED on the
+  #     decision path (proven BASE==v1) PLUS touch-at-fill recording. It runs
+  #     policy_engine rather than engine_v2 for exactly one reason: the cuts and
+  #     the phantom classification run on BASE's fills, and touch-at-fill
+  #     (best_bid/ask_at_fill, from the filling observation) is ONLY recorded by
+  #     policy_engine. Its heartbeat key is unchanged (quote_engine_cfb — 'base'
+  #     takes no suffix), so this switch is decision- and telemetry-transparent.
+  #   * FLATTEN (MERIDIAN_QUOTE_POLICY=flatten) leans the resting price by its
+  #     PHANTOM-TESTED inventory (real fills only). Own heartbeat key
+  #     (quote_engine_cfb_flatten) and own container, so it can neither collide
+  #     with nor mask BASE.
+  # League is by SLUG on read and write (amendment 12); each service's deploy
+  # commit is its own substrate epoch. Fills are MODELLED; recording only, no
+  # credentials mounted, nothing can trade.
   gridiron-cfb-engine:
     build:
       context: .
       args:
         GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-gridiron-cfb-engine
-    command: python -m core.quote.engine_v2
+    command: python -m core.quote.policy_engine
     environment:
       DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
       MERIDIAN_LEAGUE: cfb
+      MERIDIAN_QUOTE_POLICY: base
+      MERIDIAN_QUOTE_INTERVAL_SECONDS: "5"
+      MERIDIAN_QUOTE_SETTLE_EVERY_SECONDS: "600"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # FLATTEN(k=1c) on the SAME CFB board, in the SAME second, off the SAME image
+  # — the only difference from BASE is MERIDIAN_QUOTE_POLICY=flatten, so the
+  # comparison is within-second on identical markets. It is the only arm that
+  # changes the PRICES QUOTED (a price counterfactual a tape cannot answer),
+  # which is why it needs an engine and the selection policies do not. Its
+  # inventory is fed ONLY by phantom-surviving fills; at k=0 it selects the
+  # identical fill set to BASE (a shipped known-answer test in policy_engine).
+  gridiron-cfb-flatten:
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+    container_name: meridian-gridiron-cfb-flatten
+    command: python -m core.quote.policy_engine
+    environment:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      MERIDIAN_LEAGUE: cfb
+      MERIDIAN_QUOTE_POLICY: flatten
       MERIDIAN_QUOTE_INTERVAL_SECONDS: "5"
       MERIDIAN_QUOTE_SETTLE_EVERY_SECONDS: "600"
     depends_on:
