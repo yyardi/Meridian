@@ -32,6 +32,27 @@ bucket has a positive mean).
 
 **The bar: $100/month = $3.29/day = $23.03/week.**
 
+**EVERY CAPTURE FIGURE BELOW IS CONDITIONAL ON A MODELLED FILL.** The
+−1.60¢ baseline, the +0.11¢ target, the flattening deltas — none are wrong,
+all sit above a fill model with **two known optimisms and one unmeasured
+magnitude**: (a) the mid-cross rule books ~1.5¢/leg then the mid reverts,
+against +4.70¢ measured adverse selection on real resting orders; (b) queue
+position — median 1,000 contracts rest at our own quote price, holding time
+priority, so a crossing event cannot distinguish TRADE-THROUGH (queue
+consumed, we might have been reached) from CANCEL-THROUGH (queue evaporated,
+no trade happened at all), and depth favours the second. The quote engine is
+credential-free and has never placed an order: **`shadow_quote_fills` rows
+are the mid-cross rule's output, not venue executions.**
+
+**The real-fill count, run rather than assumed (rule 20 applied to the claim
+"we have none"): FIVE real resting limit orders exist** (`orders`, Aug 5–7,
+all `would_rest=true`, all at the touch): **3 EXPIRED unfilled, 2 FILLED —
+and both fills were PARTIAL (2.47 and 1.46 contracts).** So the honest
+statement is not "no real fill data" but "n=5, two-fifths filled, both
+partially" — statistically worth nothing on its own, and the partial fills
+are direct evidence of the queue mechanism: the market reached our price and
+consumed only part of the order.
+
 **(a) GRIDIRON maker capture — the ONLY candidate whose ceiling clears the
 bar on the 2026 calendar.** The arithmetic: at +0.5¢/contract-fill net,
 the bar is **≈4,600 net-positive contract-fills/week** (2,300 at +1.0¢).
