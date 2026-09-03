@@ -98,6 +98,12 @@ def check_containers() -> list[Check]:
         # heartbeat rows (pregame_recorder_nfl / live_recorder_nfl).
         "meridian-nfl-recorder": "GRIDIRON: NFL pregame board",
         "meridian-nfl-live-recorder": "GRIDIRON: NFL live ticks (0.5s)",
+        # The NFL quote engine (same engine_v2 as meridian-quote-engine, league
+        # nfl). Outside the WNBA freeze; beats as quote_engine_nfl. MISSING
+        # before the first slate means nothing quotes NFL and GRIDIRON's
+        # descriptive phase accrues zero fills — the whole reason it ships.
+        "meridian-gridiron-engine": "GRIDIRON: NFL quote engine (shadow, "
+                                    "engine_v2, league=nfl)",
         # Trade-tape trajectory sweepers (hourly, stats only). The WNBA one
         # polls an empty board until listings return — running is correct.
         "meridian-nfl-stats-sweeper": "GRIDIRON: NFL volume trajectory",

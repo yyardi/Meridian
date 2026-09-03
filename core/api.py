@@ -624,7 +624,9 @@ def status() -> dict:
     # scripts/health.py had until 2026-09-02. `healthy` deliberately ignores
     # them: absence here is a fact for the header dot, not a recorder failure.
     overlays = {}
-    for svc in ("pulse_engine", "quote_engine"):  # SERVICE_PULSE / SERVICE_QUOTE;
+    # quote_engine_nfl = GRIDIRON (service_quote_for('nfl')); an overlay like the
+    # others, absent until the NFL engine is deployed (before Sept 9).
+    for svc in ("pulse_engine", "quote_engine", "quote_engine_nfl"):  # SERVICE_PULSE / SERVICE_QUOTE(+nfl);
         # literals, not imports: pulling core.pulse.live in here would load the
         # whole engine module into the API process just to name a row key.
         entry = (beats or {}).get(svc)
