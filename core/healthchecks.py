@@ -243,8 +243,19 @@ def check_app_heartbeats() -> list[Check]:
                                 f"{interval:.0f}s cycle. The process is not running."))
         else:
             wrote = "n/a" if rows_written is None else f"{rows_written} rows"
+            # The interval is the SLEEP AFTER a cycle, not a period, so the
+            # real sampling cadence is (cycle + interval) and it stretches
+            # silently as a slate grows. This line used to print the
+            # configured interval labelled "cycle", which is the misreading
+            # itself; show the effective period, with its parts.
+            if cycle_s is None:
+                cadence = f"interval {interval:.0f}s"
+            else:
+                cadence = (f"every ~{float(cycle_s) + interval:.0f}s "
+                           f"(cycle {float(cycle_s):.0f}s + sleep "
+                           f"{interval:.0f}s)")
             checks.append(Check(OK, f"beat: {service}",
-                                f"{_fmt_age(age)} · cycle {interval:.0f}s · "
+                                f"{_fmt_age(age)} · {cadence} · "
                                 f"{wrote} last cycle"))
     return checks
 
