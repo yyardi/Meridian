@@ -35,6 +35,9 @@ from core.config import KalshiConfig
 from core.kalshi.analysis import gate_status
 from core.kalshi.mapping import (
     KALSHI_TO_ESPN,
+    KALSHI_TO_ESPN_NCAAF,
+    LEAGUE_CFB,
+    codes_from_sub_title,
     KALSHI_TO_ESPN_NFL,
     LEAGUE_NFL,
     LEAGUE_SERIES,
@@ -422,3 +425,55 @@ def test_gate_reports_but_never_concludes(polymarket_game):
     assert status["comparable_games"] <= status["discovered_games"]
     # And it never concludes on its own.
     assert status["gate_met"] is (status["comparable_games"] >= 10)
+
+
+# --------------------------------------------------------------------- #
+# NCAAF (college) — the venue's sub_title is the pairing authority
+# --------------------------------------------------------------------- #
+
+
+def test_sub_title_is_the_pairing_authority():
+    assert codes_from_sub_title("KCU vs MORE (Sep 3)") == ("KCU", "MORE")
+    assert codes_from_sub_title("MASS vs RUTG (Sep 3)") == ("MASS", "RUTG")
+    assert codes_from_sub_title("") is None
+    assert codes_from_sub_title(None) is None
+
+
+def test_ncaaf_codes_have_no_espn_identity():
+    """Values are None on purpose: Kalshi's college code space is not
+    ESPN's (4 of 11 games diverged on 2026-09-03), so `first_espn` must
+    raise rather than hand back a confident wrong abbreviation."""
+    assert KALSHI_TO_ESPN_NCAAF, "table must not be empty"
+    assert all(v is None for v in KALSHI_TO_ESPN_NCAAF.values())
+    parsed = parse_game_key("26SEP03MASSRUTG", LEAGUE_CFB)
+    assert parsed is not None
+    assert (parsed.first_code, parsed.second_code) == ("MASS", "RUTG")
+    with pytest.raises(UnknownTeamError):
+        _ = parsed.first_espn
+
+
+def test_ncaaf_variable_length_split():
+    """3+4, 4+4 and 4+3 all recovered — the shapes a fixed offset kills."""
+    for key, pair in (
+        ("26SEP03AKRWAKE", ("AKR", "WAKE")),
+        ("26SEP03MASSRUTG", ("MASS", "RUTG")),
+        ("26SEP03COLOGT", ("COLO", "GT")),
+    ):
+        parsed = parse_game_key(key, LEAGUE_CFB)
+        assert parsed is not None, key
+        assert (parsed.first_code, parsed.second_code) == pair
+
+
+def test_ncaaf_split_ambiguity_is_real_and_is_why_sub_title_leads():
+    """The measured hazard: MEM+ORE and ME+MORE are the same blob, so a
+    split alone would silently invent Memphis/Oregon out of
+    Maine/Morehead St. The venue's sub_title is what prevents it."""
+    codes = KALSHI_TO_ESPN_NCAAF
+    blob = "MEMORE"
+    splits = [
+        (blob[:i], blob[i:])
+        for i in range(1, len(blob))
+        if blob[:i] in codes and blob[i:] in codes
+    ]
+    assert len(splits) > 1, "expected the documented ambiguity"
+    assert codes_from_sub_title("MEM vs ORE (Sep 5)") == ("MEM", "ORE")

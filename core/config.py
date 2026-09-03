@@ -149,7 +149,16 @@ class KalshiConfig:
     # Cadence. 60s polling runs only inside the pregame window (the interval
     # the venue-gap comparison is pre-registered on); outside it the loop only
     # touches the local database, so idle cycles cost Kalshi nothing.
-    poll_interval_seconds: int = field(default_factory=lambda: _env_int("KALSHI_INTERVAL", 60))
+    #: 120s, not 60s: a college Saturday puts ~92-106 games in the poll
+    #: window at once (docs/infra/kalshi-poll-load.md), and at 3 requests
+    #: per game per cycle a 60s cadence asks for more than the 5/s bucket
+    #: will pass. The interval is the SLEEP AFTER a cycle, not a period —
+    #: see run_forever — so under load the effective sampling period is
+    #: (cycle + interval) and a too-short interval buys nothing but a
+    #: longer queue. Cheaper to lengthen the interval than to shrink the
+    #: pregame window: a longer interval costs resolution on tape we still
+    #: get, a shorter window costs tape that does not exist afterwards.
+    poll_interval_seconds: int = field(default_factory=lambda: _env_int("KALSHI_INTERVAL", 120))
     pregame_window_hours: float = field(
         default_factory=lambda: _env_float("KALSHI_PREGAME_HOURS", 6.0)
     )
