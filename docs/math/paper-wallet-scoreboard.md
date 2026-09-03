@@ -42,3 +42,21 @@ conversation; it justifies nothing else.
 
 *Results and dated ledger lines append below; the registration text above
 is signed and never edited.*
+
+## DATED LINE (2026-09-03, manager's interpretation ruling, RATIFIED by the author)
+
+Terms 2+3 admitted two accounting models; ruled and ratified: **(a) — one
+sizing per fill, both arms as parallel valuations of one activity, with
+the sizing balance being the CONCESSION-ARM balance.** Hope may value the
+book; it may never buy contracts. The author's completion, two
+consequences chosen now rather than discovered:
+
+1. **Concession-arm bankruptcy HALTS the ledger** — if the pessimistic
+   balance reaches zero, the wallet stops trading even while the
+   optimistic line shows profit, and the halt prints as a visible ledger
+   line. A LEGITIMATE scoreboard outcome, not a defect: a book that only
+   survives on the optimistic valuation is exactly the book the operator
+   asked this instrument to expose.
+2. **Cumulative toll paid is a dashboard line** — the arms' divergence
+   over time IS the measured concession cost in dollars; printing it
+   turns the project's most expensive lesson into a running meter.
