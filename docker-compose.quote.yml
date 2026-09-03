@@ -13,7 +13,14 @@
 # needed — the absence of POLYMARKET_* below is load-bearing.
 services:
   quote-engine:
-    build: .
+    build:
+      context: .
+      args:
+        # Required: deploy via scripts/deploy_engine.sh, which sets it from
+        # git. An empty value makes the engine refuse to start (amendment 12
+        # fail-closed) — that is the intended behaviour, not an outage to
+        # work around by unsetting the check.
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-quote-engine
     # engine_v2 = v1's quoting UNCHANGED (subclass inherits cycle(); replay-
     # equivalence proven byte-identical on the pinned Aug tape) + the
@@ -29,3 +36,23 @@ services:
     depends_on:
       - postgres
     restart: unless-stopped
+
+  # WNBA pregame trade-tape sweeper. Same module, league-parameterized; the
+  # board is EMPTY until listings return ~Sept 17, so starting it now costs
+  # nothing and captures the trajectory from the FIRST listing rather than
+  # from whenever someone remembers. The decision it protects (D): if the
+  # WNBA pregame board never trades, D1 would accrue for weeks toward a floor
+  # it cannot reach — and we would rather know that before spending the
+  # accrual than after.
+  wnba-stats-sweeper:
+    build: .
+    container_name: meridian-wnba-stats-sweeper
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: wnba
+      MERIDIAN_RPS: "2"
+    command: ["python", "-m", "core.feeds.stats_sweeper", "--interval", "3600"]

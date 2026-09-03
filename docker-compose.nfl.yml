@@ -51,3 +51,26 @@ services:
     # 0.5s, not the wnba 0.2s: first nights on a new league earn tighter
     # cadence only after the rate budget is observed under real load.
     command: ["sh", "-c", "alembic upgrade head && python -m core.live_recorder --interval 0.5"]
+
+  # Pregame trade-tape sweeper: hourly, stats only, no depth, no snapshots.
+  # Records the VOLUME TRAJECTORY of the NFL board — the only thing that
+  # separates "this market is dead" from "this market fills up late", and
+  # impossible to reconstruct later (the venue exposes a cumulative counter
+  # with no history). Measured 2026-09-02 at T-7: 14 of 18 NFL market types
+  # had NEVER traded; whether they fill by kickoff decides whether a maker
+  # has anywhere to stand.
+  nfl-stats-sweeper:
+    build: .
+    container_name: meridian-nfl-stats-sweeper
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: nfl
+      # Deliberately low: ~2,200 book calls an hour is a rounding error beside
+      # the recorders, and the counters are cumulative so cadence only bounds
+      # the growth curve's resolution.
+      MERIDIAN_RPS: "2"
+    command: ["python", "-m", "core.feeds.stats_sweeper", "--interval", "3600"]

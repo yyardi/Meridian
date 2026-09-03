@@ -254,6 +254,96 @@ def m1_spreads_nfl(df: pd.DataFrame) -> None:
               "number is pending, correctly")
 
 
+def m1b_width_x_flow(df: pd.DataFrame, stats: pd.DataFrame | None) -> None:
+    """THE CELL THAT DECIDES GRIDIRON: is any market type both WIDE and
+    TRADED?
+
+    Why this is the kill-line rather than one table among many. My WNBA
+    placement curve (analysis/mm_control_variables.py M2) found that per
+    cycle quoted, the measured-concession arm improves monotonically with
+    spread width and ONLY the >10c band is non-negative — so width is where
+    a maker's honest economics live. But width without flow is a desert: a
+    30c book that never trades pays nothing at any placement. The manager's
+    hand read at T-7 found the NFL MONEYLINE 0.5c wide (TIGHTER than WNBA's
+    1c winner) with $919k traded, while 14 OF 18 MARKET TYPES HAD NEVER
+    TRADED AT ALL. If that pattern holds — liquidity only where it is too
+    tight to earn, width only where nothing trades — the maker program has
+    no cell to stand in, and that is a finding worth having BEFORE size is
+    committed rather than after.
+
+    Consumes `market_trade_stats` (migration c3f7a91b28d4) when present.
+    COVERAGE LIMIT, stated because it shapes the read: those stats accrue
+    only where the DEPTH loop polls, i.e. LIVE games — so the pregame board's
+    volume growth is unrecorded unless a low-frequency stats-only sweep is
+    added. Day one is a pregame board; without that sweep this table can
+    show width but not flow until kickoff."""
+    hr("M1b. WIDTH x FLOW — is any market type both wide enough to earn and "
+       "traded enough to fill? (the GRIDIRON kill-line)")
+    two = df[df.best_bid.notna() & df.best_ask.notna()].copy()
+    if two.empty:
+        print("no two-sided rows yet")
+        return
+    two["spread_c"] = (two.best_ask - two.best_bid) * 100
+    # PER-MARKET (per rung), never per type. A type's MEDIAN width crossed
+    # with any-rung-traded would flag a type whose WIDE rungs are dead and
+    # whose TRADED rungs are tight — the exact false positive this table
+    # exists to avoid, and the reason the manager's market-level count
+    # (56/136 traded) is not the same statistic as their type-level one
+    # (4/18). The cell must be one rung that is BOTH.
+    per_mkt = two.groupby("market_slug").agg(
+        mtype=("sports_market_type", "first"),
+        spread_c=("spread_c", "median"))
+    if stats is None or stats.empty:
+        print("market_trade_stats NOT SUPPLIED — width only, flow unknown. "
+              "On a pregame board this is the expected state until either "
+              "kickoff or the stats-only sweep's rows land; the cross-tab "
+              "is the point, so a width-only run answers half the question.")
+        print(per_mkt.groupby("mtype").agg(
+            markets=("spread_c", "size"),
+            spread_p50_c=("spread_c", "median")).round(1).to_string())
+        return
+    latest = (stats.sort_values("captured_at").groupby("market_slug").last())
+    per_mkt["shares"] = per_mkt.index.map(latest.shares_traded).fillna(0.0)
+    per_mkt["notional"] = per_mkt.index.map(
+        latest.notional_traded).fillna(0.0)
+    per_mkt["traded"] = per_mkt.shares > 0
+    per_mkt["wide"] = per_mkt.spread_c > 10
+
+    tab = per_mkt.groupby("mtype").agg(
+        markets=("spread_c", "size"),
+        spread_p50_c=("spread_c", "median"),
+        traded=("traded", "sum"),
+        wide=("wide", "sum"),
+        WIDE_AND_TRADED=("mtype", "size"))   # placeholder, replaced below
+    tab["WIDE_AND_TRADED"] = per_mkt.groupby("mtype").apply(
+        lambda g: int((g.wide & g.traded).sum()), include_groups=False)
+    tab["notional"] = per_mkt.groupby("mtype").notional.sum()
+    print(tab.round(1).to_string())
+
+    cells = per_mkt[per_mkt.wide & per_mkt.traded]
+    print(f"\nRUNGS THAT ARE BOTH WIDE (>10c) AND TRADED: {len(cells)} of "
+          f"{len(per_mkt)} markets — THE ONLY CELLS A MAKER CAN EARN IN.")
+    if len(cells) == 0:
+        print("  NONE. On this read the board offers no rung where a maker "
+              "is both paid for width and given flow: liquidity sits where "
+              "it is too tight to earn, width sits where nothing trades. "
+              "That is the kill-line answer, and it is a finding, not a "
+              "null.")
+    else:
+        print(f"  median width {cells.spread_c.median():.0f}c, total "
+              f"notional ${cells.notional.sum():,.0f}; top by notional:")
+        for r in cells.nlargest(min(8, len(cells)), "notional").itertuples():
+            print(f"    {r.Index[:46]:46s} {r.spread_c:>5.0f}c  "
+                  f"${r.notional:>12,.0f}")
+        print("  These rungs — not their market TYPES — are what a GRIDIRON "
+              "placement arm would stand in; the type is not the tradable "
+              "object and a type-level read cannot see them.")
+    print(f"\ncomposition: {int(per_mkt.traded.sum())} traded / "
+          f"{int(per_mkt.wide.sum())} wide / {len(per_mkt)} markets. A maker "
+          f"cannot fill where nothing trades at any width or placement, and "
+          f"cannot earn where the spread is thinner than the concession.")
+
+
 def m5_sigma_nfl(df: pd.DataFrame) -> None:
     hr("M5. LADDER SHAPE — fitted (mu, sigma) REPORT-ONLY: no NFL fitted "
        "constants exist; comparison gated until a GRIDIRON R-series "
@@ -359,6 +449,48 @@ def selftest() -> int:
     check("clear flip caught (outside the one-score class)",
           g5.get("score_frame") is False)
 
+    # M1b: a board with one wide-and-traded type and one wide-but-dead type
+    # must name exactly the first and count the second as never-traded.
+    st = pd.DataFrame([
+        dict(market_slug=df.market_slug.iloc[0],   # a wide totals rung
+             captured_at=base, shares_traded=100.0, notional_traded=1000.0,
+             open_interest=50.0),
+        dict(market_slug=df.market_slug.iloc[1],
+             captured_at=base, shares_traded=0.0, notional_traded=0.0,
+             open_interest=0.0)])
+    wide = df.copy()
+    wide["best_bid"] = 0.30
+    wide["best_ask"] = 0.45          # 15c -> above the >10c bar
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        m1b_width_x_flow(wide, st)
+    tb = buf.getvalue()
+    check("M1b names the wide+traded RUNG (1 of the two seeded)",
+          "AND TRADED: 1 of" in tb)
+
+    # THE FALSE POSITIVE THIS TABLE EXISTS TO AVOID: a type whose WIDE rung
+    # is dead and whose TRADED rung is tight must yield ZERO cells, even
+    # though the type has both a wide rung and a traded rung.
+    mixed = df.copy()
+    m_wide, m_tight = df.market_slug.iloc[0], df.market_slug.iloc[1]
+    mixed.loc[mixed.market_slug == m_wide, ["best_bid", "best_ask"]] = [.30, .45]
+    mixed.loc[mixed.market_slug == m_tight, ["best_bid", "best_ask"]] = [.40, .41]
+    st2 = pd.DataFrame([
+        dict(market_slug=m_wide, captured_at=base, shares_traded=0.0,
+             notional_traded=0.0, open_interest=0.0),
+        dict(market_slug=m_tight, captured_at=base, shares_traded=500.0,
+             notional_traded=5000.0, open_interest=100.0)])
+    buf3 = io.StringIO()
+    with contextlib.redirect_stdout(buf3):
+        m1b_width_x_flow(mixed[mixed.market_slug.isin([m_wide, m_tight])], st2)
+    check("M1b refuses the wide-rung-dead/traded-rung-tight false positive",
+          "AND TRADED: 0 of" in buf3.getvalue())
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        m1b_width_x_flow(wide, None)
+    check("M1b degrades honestly with no stats (width only)",
+          "flow unknown" in buf2.getvalue())
+
     # sigma fit on the fabricated ladder recovers (44.5, 13.5)
     tot = df[df.sports_market_type == "football_team_full_game_total"]
     fit = probit_fit(tot.line, (tot.best_bid + tot.best_ask) / 2)
@@ -381,6 +513,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--snapshots", type=Path)
     ap.add_argument("--resolved", type=Path, default=None)
+    ap.add_argument("--trade-stats", type=Path, default=None,
+                    help="market_trade_stats export (migration "
+                         "c3f7a91b28d4) — enables the width x flow "
+                         "cross-tab, the GRIDIRON kill-line read")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
@@ -407,8 +543,15 @@ def main() -> int:
                          .fillna(False))
     resolved = pd.read_csv(args.resolved) if args.resolved else None
 
+    stats = None
+    if args.trade_stats is not None:
+        stats = pd.read_csv(args.trade_stats)
+        stats["captured_at"] = pd.to_datetime(stats.captured_at, utc=True,
+                                              format="ISO8601")
+
     gate = m0_gridiron_gate(df, resolved)
     m1_spreads_nfl(df)
+    m1b_width_x_flow(df, stats)
     nba.m2_depth(df, args.out)
     nba.m3_fees(df)          # venue-probed 0.06 on NFL; V9's gate stands
     m5_sigma_nfl(df)
