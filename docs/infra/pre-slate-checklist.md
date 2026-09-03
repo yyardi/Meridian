@@ -105,6 +105,17 @@ Every deployed engine's age must sit under 3× its interval and SHRINK
 back there after a restart. An age that grows while the container logs
 look healthy is exactly the 2026-09-02 signature.
 
+## 4c. Both quoters, every GRIDIRON deploy: host contention (amendment 12)
+
+The process split (frozen basketball quoter + separate GRIDIRON binary)
+removes the deterministic in-process cycle-budget channel and converts it
+into stochastic HOST-level contention: two quoters, four recorders and
+postgres share one m7i.large. **"Isolated process" is not "isolated
+machine."** So §4b's heartbeat check and the inter-decision-gap tripwire
+extend to BOTH quoters, printed pre/post every GRIDIRON deploy — a GRIDIRON
+change that slows the basketball quoter's loop is a contamination of A1's
+cohort by another route.
+
 ## 5. Next fills pin (after first slate)
 
 The next `quote_fills` export must carry `game_start_time` (D1's pregame

@@ -427,6 +427,27 @@ survive an endgame the way WNBA's do not (`bookless-endgames.md`). Those are
 tick-level facts and require the recorder to run against live NBA markets. **A
 listing is not a book.**
 
+### V31 — The public gateway exposes NO volume, trade, or price-history data
+
+Probed 2026-09-02 (research's "ask the venue, not the proxies" challenge,
+before designing any flow proxy). The `/v2/leagues/{league}/events` payload
+carries books (`bestBidQuote`/`bestAskQuote`), tick size, fee coefficient,
+min qty, lines and outcomes — and **no volume field, no trade count, no open
+interest, and no trade history**. Every plausible history/trades/stats path
+off the market id returns 404 (`/v2/markets/{id}` itself 404s — markets are
+reachable only nested inside their event).
+
+Consequence, load-bearing for GRIDIRON's flow question: **trade frequency is
+not directly observable from the public feed.** A wide book with no prints is
+a desert, so the honest measurements are (a) our own shadow-fill rate once a
+quoter observes the board, (b) quote-update frequency as an activity floor,
+and (c) **Kalshi's volume/OI on the SAME games**, which that venue does
+expose (325k contracts / ~170–190k OI on an NFL moneyline a week out) — the
+only direct flow observable available for these events. Whether the
+authenticated `api.polymarket.us` surfaces market-level volume is untested
+and belongs to the venue-facts owner; the quote path stays credential-free
+regardless.
+
 ### V30 — The tick tape's `event_score` can die before the game does
 
 **Measured 2026-09-02** (C's census mapper): in at least one game the tape's
