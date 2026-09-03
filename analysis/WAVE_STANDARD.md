@@ -371,6 +371,19 @@ before merge**, and the merge is refused if it would revert one.
    running the code you believe it is running, against the substrate you
    believe it is reading.
 
+   *SYMMETRY — added after the rule's own author broke it in the OPPOSITE
+   direction, hours later.* **An unprovenanced zero supports NO conclusion
+   in EITHER direction. Believing it and disbelieving it are the same
+   error**, because the zero carries no information about which explanation
+   holds and the reader supplies one either way. The manager read a CORRECT
+   zero (`discovered=0` meaning "no NEW games since last discovery") as a
+   stale-image failure and spent real time hunting a phantom; the earlier
+   specimens read broken zeros as quiet venues. Both readings were the
+   READER's contribution, not the data's. **The elegance is that one test
+   resolves both directions** — the positive control below separated
+   instrument-empty from world-empty in three of three cases, including one
+   where the answer was genuinely the world (Kalshi's WNBA season gap).
+
    *OPERATIONAL TEST, concrete enough to build:* a zero is evidence only
    when the instrument has demonstrated it can return non-zero ON THIS
    SUBSTRATE — a positive control. **Every zero-reporting monitor should
