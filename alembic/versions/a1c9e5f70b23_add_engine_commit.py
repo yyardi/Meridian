@@ -9,7 +9,7 @@ nullable (old rows carry NULL; the writer never writes NULL). Schema-additive
 per amendment 12 (ADD only; nothing the frozen binary touches is altered).
 
 Revision ID: a1c9e5f70b23
-Revises: c3f7a91b28d4
+Revises: d5b18e2c40a7
 Create Date: 2026-09-03
 """
 from collections.abc import Sequence
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'a1c9e5f70b23'
-down_revision: str | None = 'c3f7a91b28d4'
+down_revision: str | None = 'd5b18e2c40a7'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
