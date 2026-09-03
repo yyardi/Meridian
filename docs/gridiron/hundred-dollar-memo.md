@@ -63,6 +63,31 @@ queue truncation**, and the `fill_status` column said FILLED all along. The
 error was reading a numerator without its denominator and letting a
 quantity outvote the status field beside it.
 
+**AND THE CORRECTION'S OWN CORRECTION (same evening, D's ratios): the five
+were an unrepresentative sample, and the queue caveat DOES have real
+supporting evidence — from a different population.** Run over ALL 129 real
+passive executions in the operator's venue history, filled÷requested is
+**BIMODAL**: 68/129 (52.7%) sit at ≥99% — the decimal-dust artifact, which
+is all the five contained — but **59/129 (45.7%) are genuinely partial, 22
+of them filled under a tenth of what was asked, the smallest at 0.15%.**
+
+So: **state the caveat from the 129 with the ratios, never from the status
+field and never from the five.** Five observations manufactured a confident
+wrong generalisation in BOTH directions within one hour — first "both fills
+were partial, that's queue evidence" (wrong), then "fills complete, the
+queue wasn't binding" (right for the five, wrong as a generalisation).
+
+**Three candidate causes for an order that stops short, and only the first
+is queue evidence:** queue starvation, operator cancellation, or the price
+simply moving off our level. Nothing in the feed separates them.
+**"Reached and not completed" is established; "reached and starved" is
+not.**
+
+**The one-line summary that survives all of it: we have 129 real
+resting-order executions, they show substantial genuine partial fills, and
+that is the first evidence from ACTUAL VENUE EXECUTIONS — rather than from
+modelling — that the fill assumption is optimistic.**
+
 **(a) GRIDIRON maker capture — the ONLY candidate whose ceiling clears the
 bar on the 2026 calendar.** The arithmetic: at +0.5¢/contract-fill net,
 the bar is **≈4,600 net-positive contract-fills/week** (2,300 at +1.0¢).
