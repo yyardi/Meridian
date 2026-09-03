@@ -136,9 +136,40 @@ live simultaneously and all six could draw near cap at once.**
 Caps are PER PROCESS; the ceiling is PER IP. Three ways to reconcile, and
 one must happen before the 17th: bring the caps down, stagger the cadences,
 or measure actual concurrent draw and demonstrate the peak never lands.
-**Measuring is the honest option and nobody has done it** — the caps are a
-worst case, not an observation, and treating a worst case as a plan is what
-this section exists to prevent.
+**RESOLVED 2026-09-03 — and BOTH alarming numbers were artifacts.**
+
+The reconstruction (`analysis/gateway_concurrent_draw.py`, Aug 18–23) came
+back at **peak 60 req/s for the live recorder (500% of its cap) and an
+additive projection of 196 req/s against a 20 ceiling.** That cannot
+describe requests the venue saw. **Ground truth, checked directly: ZERO
+HTTP 429s and zero rate-limit rejections across every recorder's entire
+container life — including August's live WNBA slates when the live
+recorder ran at full tilt.** One book-fetch failure total.
+
+**So the reconstruction measures ROW-WRITE CLUSTERING, not request
+dispatch:** `captured_at` is a completion-time stamp, and concurrent
+fetches completing inside the same second inflate the apparent peak. It is
+the night's signature species once more — a number named "peak req/s" that
+counts rows stamped within one second.
+
+**And my own 31-vs-20 figure was the same error from the other side:** a
+sum of configured per-process caps is not a claim about dispatch either.
+Both the alarm and the measurement built to check it were measuring
+something other than what they were named for.
+
+**THE RIGHT INSTRUMENT IS THE VENUE'S OWN ANSWER: count 429s.** Direct,
+unambiguous, and already at zero. Standing check before and during the
+first simultaneous-live slate:
+
+```bash
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$MERIDIAN_SERVER 'for c in meridian-live-recorder meridian-recorder meridian-nfl-recorder meridian-nfl-live-recorder; do echo "$c 429s: $(sudo docker logs $c 2>&1 | grep -cE ""status": ?429|429 Too Many|RateLimit")"; done'
+```
+
+**Standing conclusion: no evidence of a rate problem. Zero rejections is
+not proof we can never breach — the observed conditions never included
+WNBA-live and NFL-live together — so the Sept 17 check is to WATCH FOR
+429s, not to reconstruct timestamps.** If they appear, lower caps or
+stagger cadences then, on evidence.
 
 ## 5. Next fills pin (after first slate)
 
