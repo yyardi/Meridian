@@ -209,3 +209,50 @@ across many positions that all resolve the same way on the day the tail
 lands. If the calibration says far rungs are overpriced, the legitimate uses
 are **correcting our fair value** or **adjusting quotes inside an
 inventory-bounded book** — never a naked short-tail position.
+
+## ADDENDUM 4 (2026-09-03) — DEPTH IS THE QUEUE AHEAD OF US, NOT CAPACITY (D)
+
+Measured while diagnosing a wallet sizing bug: depth at the quote price on
+the WNBA tape runs **median 1,000 contracts, p90 5,993, max 26,540.** The
+natural reading is "capacity." **The true reading is the opposite: recorded
+depth at our exact price is OTHERS' resting size, and it holds time
+priority.** A maker joining a price where 1,000 contracts already rest is
+1,001st in line and is reached only after every one of them trades.
+
+**Three consequences, all sharpening the picture unpleasantly:**
+
+1. **THE FILL-OPTIMISM BOUND WIDENS.** Fill optimism has been stated as the
+   mid-cross artifact (the rule books ~1.5¢/leg then the mid reverts, against
+   +4.70¢ measured adverse selection on real resting orders). **Queue
+   position is a SECOND, independent source of the same bias and it is in
+   none of our numbers.** Every fill-dependent result — capture, markout, the
+   flattening policy sim — inherits it.
+2. **FLATTENING GETS BETTER-MOTIVATED, NOT WORSE.** Leaning inside the touch
+   is precisely how a maker BUYS QUEUE POSITION: a price nobody else rests at
+   has no queue. So this measurement strengthens the structural case for the
+   lean while weakening the fill rates the sim assumed at the touch. The two
+   move in opposite directions and **no instrument currently nets them.**
+3. **THE GRIDIRON CELL BECOMES THREE-WAY.** Deep books at tight spreads are
+   the worst combination available to a maker: no width to earn, long queues
+   to wait in. So the cross-tab is not wide × traded but **WIDE × TRADED ×
+   SHALLOW.**
+
+**And the NFL board already has that cross-tab, from the T-7 hand read
+(one game, all 18 types) — top-of-book size beside spread and volume:**
+
+| market type | spread | bid×ask size | traded |
+|---|---|---|---|
+| full_game_winner | 0.5¢ | **14,852 × 15,111** | $919k |
+| full_game_spread | 5¢ | **87 × 90** | $11.5k |
+| full_game_total | 6¢ | **278 × 620** | $7.7k |
+| quarter/half rungs | 19–32¢ | 1–45 | **never traded** |
+
+**The moneyline is the trap the three-way frame predicts** — half a cent of
+width behind fifteen thousand contracts of queue. **The never-traded rungs
+are wide and shallow but have no counterparty.** The only cells that are
+simultaneously wide enough to earn, shallow enough to reach, and actually
+traded are the **main spread and total** — 5–6¢ wide, 87–620 deep, five
+figures of notional. That is one game and pregame, so it is a candidate and
+not a finding; but it is the first cell on the NFL board that survives all
+three constraints at once, and it is where the first slate's measurement
+should look first.
