@@ -73,6 +73,20 @@ EX = _exports_dir()
 FILLS = EX / "quote_fills_v1_20260902T161223Z.csv"
 TICKS = EX / "live_ticks_pulse_games_20260901T195202Z.csv.gz"
 
+# live_ticks_pulse_games covers only 147 of the 209 markets that have fills
+# (62 markets, 4,412 fills, 25% of the population, absent entirely). Both
+# the fill-side book lookup and the cycle denominator need the full
+# substrate, or the numerator and denominator describe different boards.
+TICK_SOURCES = f"""
+    SELECT market_slug, captured_at, best_bid, best_ask
+      FROM read_csv('{TICKS}')
+    UNION ALL SELECT column00, column05, column06, column07
+      FROM read_csv('{EX}/eval_market_snapshots.csv.gz', header=false)
+    UNION ALL SELECT column00, column05, column06, column07
+      FROM read_csv('{EX}/delta_market_snapshots.csv.gz', header=false)
+    UNION ALL SELECT market_slug, captured_at, best_bid, best_ask
+      FROM read_csv('{EX}/live_snapshots_since0820.csv.gz')"""
+
 BANDS = [(0.0, 0.02, "<=2c"), (0.02, 0.05, "2-5c"),
          (0.05, 0.10, "5-10c"), (0.10, 1.01, ">10c")]
 BOOK_MAX_AGE_S = 5.0
@@ -157,19 +171,25 @@ def main():
 
     con = duckdb.connect()
     con.execute("SET timezone='UTC'")
-    con.execute(f"""CREATE TEMP TABLE tk AS
-        SELECT market_slug, captured_at, best_bid, best_ask
-        FROM read_csv('{TICKS}')
-        WHERE is_live AND best_bid IS NOT NULL AND best_ask IS NOT NULL""")
+    con.execute(f"""CREATE TEMP TABLE tk AS SELECT * FROM ({TICK_SOURCES})
+        WHERE best_bid IS NOT NULL AND best_ask IS NOT NULL""")
     con.register("f", d.reset_index(names="fid"))
+    # BACKWARD join: the classifying book must be the one that existed at
+    # or before the fill. An earlier version of this negated the timestamps
+    # to work around DuckDB's ASOF direction and got `captured_at >=
+    # filled_at` instead -- a forward join whose one-sided age filter then
+    # admitted unbounded lookahead. It bit 123 fills (worst: a book from
+    # 25 hours later) on the partial substrate. age is now >= 0 by
+    # construction, so the cap means what it says.
     book = con.execute("""
-      WITH q AS (SELECT fid, market_slug, -epoch(filled_at) tneg FROM f)
+      WITH q AS (SELECT fid, market_slug, epoch(filled_at) t FROM f)
       SELECT q.fid, t.best_bid fb, t.best_ask fa,
-             -q.tneg - epoch(t.captured_at) age
+             q.t - epoch(t.captured_at) age
       FROM q ASOF JOIN (SELECT market_slug, best_bid, best_ask, captured_at,
-                               -epoch(captured_at) neg_t FROM tk) t
-        ON q.market_slug = t.market_slug AND t.neg_t <= q.tneg
+                               epoch(captured_at) ct FROM tk) t
+        ON q.market_slug = t.market_slug AND t.ct <= q.t
     """).df().set_index("fid")
+    assert (book.age >= 0).all(), "join must not look forward"
     d = d.join(book[book.age <= BOOK_MAX_AGE_S]).dropna(subset=["fa", "fb"])
 
     # phantom: the model's mid-cross fired while the far touch was still
