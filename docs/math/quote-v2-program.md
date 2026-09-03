@@ -554,3 +554,51 @@ redeploy time: zero fills, zero observation rows — amendment 11's
 boundary holds. **THE FREEZE RE-BINDS TO THE COMMIT CARRYING THIS LINE;
 the redeploy runs exactly it.** Everything else in the stage-2 line above
 (fv-WAITS, the embargo, the substrate start) carries forward unchanged.
+
+**AMENDMENT 12 (2026-09-02, author-drafted after the manager's architecture
+beat the author's own — "unnecessary beats satisfied" as the standard for a
+proof obligation).** AUTHORIZES, under amendment 11's pre-data regime:
+(i) ONE change to the frozen basketball quoter — a league filter, WNBA-only,
+applied on BOTH the observation read and the quote/write path — deployed
+with the full three-proof regime; (ii) a SEPARATE GRIDIRON quoter, own
+binary and container, NFL-only, free to iterate placement/skew/size under
+GRIDIRON's own registrations without ever touching the frozen binary again.
+**FREEZE SEMANTICS RESTATED: the freeze binds the BASKETBALL quoter's
+policy; GRIDIRON's binary lies outside it and is bounded by its own program
+registration.** The no-mid-accrual rule continues to bind the basketball
+binary absolutely.
+
+*Proof set for (i):* the three amendment-10 proofs PLUS a declared blind
+spot and its plant (rule 19). The replay pin contains no NFL rows, so the
+equivalence replay is byte-identical BY CONSTRUCTION — and for the same
+reason it structurally CANNOT exercise the filter's rejection branch.
+Declared, with the compensator named: a plant pair asserting the filter
+admits a WNBA slug and rejects an NFL slug, run before deploy. **A no-op
+proven only where the operand is absent proves nothing about the operand.**
+
+*NEW REQUIREMENT, BOTH BINARIES — ENGINE IDENTITY:* every fill and
+observation row stamps the writing binary's commit, and every cohort's gate
+ASSERTS A SINGLE ENGINE IDENTITY across its cohort. Until now "one binary
+per cohort" — amendment 10's entire purpose — has been a DEPLOYMENT-HISTORY
+claim with no witness in the data: no gate author could verify at read time
+that their cohort saw one policy, only trust a window-log narrative. That is
+a checker with no declared blind spot inside the freeze itself. With the
+stamp the freeze becomes verifiable by the person it protects, in the cohort
+they read, and a stray row is DETECTABLE rather than invisible. Cheap now,
+impossible retroactively — lands before the first NFL fill.
+
+*Cross-contamination rule:* cohort league membership is determined by SLUG,
+never by which process wrote the row — a mis-configured process cannot
+silently relabel data, and with engine identity a stray row is caught by two
+independent witnesses.
+
+*Residual channel, NAMED NOT ELIMINATED:* the split removes the
+deterministic in-process cycle-budget channel and converts it into
+stochastic HOST-level contention — two quoters, four recorders and postgres
+share one m7i.large. Monitor: §4b's heartbeat and inter-decision-gap
+telemetry extended to BOTH quoters, printed pre/post every GRIDIRON deploy.
+**"Isolated process" is not "isolated machine,"** and the checklist says so.
+
+*Schema discipline:* GRIDIRON may ADD tables and columns; it may never alter
+or remove a column the frozen binary reads or writes. A shared substrate is a
+shared dependency however separate the processes are.
