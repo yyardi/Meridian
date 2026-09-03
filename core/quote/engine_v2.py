@@ -42,11 +42,13 @@ import structlog
 from sqlalchemy import text
 
 from core.live_fv import parse_score
+from core.leagues import league_of_slug
 from core.quote.engine import (
     INGAME,
     MAX_OBSERVATION_AGE_SECONDS,
     CycleResult,
     ShadowQuoter,
+    require_engine_commit,
 )
 from core.quote.storage import QuoteV2Observation
 
@@ -112,6 +114,9 @@ class ShadowQuoterV2(ShadowQuoter):
         read_at = dt.datetime.now(UTC)
         out = []
         for r in rows:
+            lg = league_of_slug(r.market_slug)
+            if lg is None or lg.slug != self._league:
+                continue              # league filter (amendment 12), RECORD path
             bid, ask = float(r.best_bid), float(r.best_ask)
             if ask <= bid:
                 continue
@@ -194,7 +199,8 @@ class ShadowQuoterV2(ShadowQuoter):
                     quote_ask=None if q is None else Decimal(str(q.ask_price)),
                     quote_event="rested" if q is not None else "none",
                     det_version=self.detector_version, det_in_window=in_window,
-                    det_confirm_t0=confirm_t0))
+                    det_confirm_t0=confirm_t0,
+                    engine_commit=self._engine_commit))
             for r in rows:
                 s.add(r)
             s.commit()
@@ -230,9 +236,12 @@ class ShadowQuoterV2(ShadowQuoter):
         )
 
     def run_forever(self) -> None:
+        # FAIL-CLOSED (amendment 12): no unstamped observation/fill row ever.
+        self._engine_commit = require_engine_commit()
         log.info("quote_v2_started",
                  quote_interval_seconds=self.interval_seconds,
                  record_interval_seconds=self.record_interval_seconds,
+                 league=self._league, engine_commit=self._engine_commit,
                  note="quoting is frozen-v1 policy; recording only is added")
         last_quote = float("-inf")
         while not self._stop.is_set():
@@ -306,7 +315,9 @@ def _selftest_replay_equivalence(Session) -> None:
             f"v2 overrides quoting method {name} — replay equivalence not by construction"
     print("proof 1 (structural): v2 overrides no quoting method — quoting IS v1")
 
-    SLUG = "test-qv2-replay"
+    # WNBA-routable slug so the league filter (amendment 12) admits it — the
+    # replay equivalence runs on the frozen binary's own league.
+    SLUG = "tsc-wnba-test-qv2-replay"
     GAME = "qv2-replay-game"
 
     def _clean():
@@ -413,6 +424,109 @@ def _selftest_heartbeat_beat(Session) -> None:
           "cycle with v1's payload, and beats even when cycle() raises")
 
 
+def _selftest_league_filter_and_identity(Session) -> None:
+    """Amendment-12 compensators. (1) fail-closed: the engine refuses to start
+    without MERIDIAN_ENGINE_COMMIT. (2) the league-filter PLANT PAIR: the replay pin has no
+    NFL rows, so replay proves the filter byte-identical by construction but
+    CANNOT exercise its reject branch — a declared blind spot. So a plant pair
+    asserts the filter ADMITS a wnba slug and REJECTS an nfl slug, on the read
+    path (`_observations`) AND the write path (`_fill`). A no-op proven only
+    where the operand is absent proves nothing about the operand."""
+    import os
+
+    from core.quote.engine import (
+        BID, Observation, StandingQuote, require_engine_commit,
+    )
+
+    # (1) fail-closed on missing MERIDIAN_ENGINE_COMMIT
+    saved = os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
+    try:
+        raised = False
+        try:
+            require_engine_commit()
+        except RuntimeError:
+            raised = True
+        assert raised, "engine did not fail-closed on missing MERIDIAN_ENGINE_COMMIT"
+        os.environ["MERIDIAN_ENGINE_COMMIT"] = "deadbeefcafe"
+        assert require_engine_commit() == "deadbeefcafe"
+    finally:
+        if saved is None:
+            os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
+        else:
+            os.environ["MERIDIAN_ENGINE_COMMIT"] = saved
+    print("proof (fail-closed): engine refuses to start without MERIDIAN_ENGINE_COMMIT")
+
+    q = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
+                       settlement_lookup=lambda s: None)   # league defaults wnba
+    assert q._league == "wnba"
+    SLUG_W, SLUG_N, GAME = "tsc-wnba-flt-a", "aec-nfl-flt-b", "flt-game"
+
+    def _clean():
+        with Session() as s:
+            s.execute(text("delete from market_snapshots where market_slug in "
+                           "(:w,:n)"), {"w": SLUG_W, "n": SLUG_N})
+            s.commit()
+
+    # (2a) READ path: a wnba slug admitted, an nfl slug rejected
+    _clean()
+    try:
+        base = dt.datetime.now(UTC) - dt.timedelta(seconds=20)
+        with Session() as s:
+            for slug in (SLUG_W, SLUG_N):
+                s.execute(text("""
+                    insert into market_snapshots
+                        (market_slug, game_id, event_slug, sports_market_type,
+                         captured_at, best_bid, best_ask, is_live, event_period,
+                         event_score)
+                    values (:m,:g,'e','basketball_team_full_game_spread',:t,
+                            0.40,0.44,true,'Q3','55-50')
+                """), {"m": slug, "g": GAME, "t": base})
+            s.commit()
+        with Session() as s:
+            slugs = {o.market_slug for o in q._observations(s)}
+        assert SLUG_W in slugs, "READ filter dropped a wnba slug (admit failed)"
+        assert SLUG_N not in slugs, "READ filter admitted an nfl slug (reject failed)"
+        print("proof (league filter, READ): admits wnba, rejects nfl")
+    finally:
+        _clean()
+
+    # (2b) WRITE path: _fill admits a wnba standing, refuses an nfl standing
+    def _standing(slug):
+        return StandingQuote(market_slug=slug, game_id=GAME, regime="ingame",
+                             bid_price=0.40, ask_price=0.44, mid=0.42,
+                             spread=0.04, quoted_at=dt.datetime.now(UTC))
+
+    def _ob(slug):
+        return Observation(market_slug=slug, game_id=GAME,
+                           captured_at=dt.datetime.now(UTC), bid=0.40, ask=0.44,
+                           is_live=True)
+
+    q._fill(_standing(SLUG_W), _ob(SLUG_W), BID)   # must not raise
+    refused = False
+    try:
+        q._fill(_standing(SLUG_N), _ob(SLUG_N), BID)
+    except RuntimeError:
+        refused = True
+    assert refused, "WRITE filter did not refuse an nfl fill"
+    print("proof (league filter, WRITE): fills wnba, refuses nfl")
+
+    # (3) engine-identity: with MERIDIAN_ENGINE_COMMIT set, a written row carries the stamp
+    saved2 = os.environ.get("MERIDIAN_ENGINE_COMMIT")
+    os.environ["MERIDIAN_ENGINE_COMMIT"] = "stamptest99cafe"
+    try:
+        qs = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
+                            settlement_lookup=lambda s: None)
+        assert qs._engine_commit == "stamptest99cafe"
+        row = qs._fill(_standing(SLUG_W), _ob(SLUG_W), BID)
+        assert row.engine_commit == "stamptest99cafe", "fill row not stamped"
+    finally:
+        if saved2 is None:
+            os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
+        else:
+            os.environ["MERIDIAN_ENGINE_COMMIT"] = saved2
+    print("proof (engine-identity stamp): a written row carries the binary commit")
+
+
 def selftest(Session=None) -> int:
     _selftest_ast()
     if Session is None:
@@ -420,6 +534,7 @@ def selftest(Session=None) -> int:
         Session = get_sessionmaker(get_engine())
     _selftest_replay_equivalence(Session)
     _selftest_heartbeat_beat(Session)
+    _selftest_league_filter_and_identity(Session)
     print("engine_v2 selftest: ALL PROOFS PASS")
     return 0
 
