@@ -330,6 +330,14 @@ before merge**, and the merge is refused if it would revert one.
    limit orders compared to touch-joining quotes. **Every one was two
    numbers measuring different things placed on the same axis.**
 
+**RULES 21-23 ARE ONE DISEASE ON THREE SURFACES: SCRUTINY FOLLOWS COMFORT
+RATHER THAN RISK.** 21 guards results we WANT; 22 guards results that RELIEVE
+us, and results we PREDICTED; 23 guards names that SOUND RIGHT. In every case
+**plausibility buys immunity from the only check that would catch the error**,
+which inverts the relation scrutiny is supposed to have with risk. A new
+candidate in this family belongs filed under one of the three rather than
+numbered as a fourth. (Research agent's cut, 2026-09-03.)
+
 21. **The profit-mechanism audit. Any measured or simulated result showing a
    GAIN must name the counterparty and the reason they lose, and that
    mechanism must be the one under test.** A result whose profit arrives by a
@@ -402,6 +410,22 @@ before merge**, and the merge is refused if it would revert one.
    second source that shares the naming shares the error — which is why
    reading the docs is not a check.**
 
+   *FIELD VERSUS SUBSTRATE — the ordering explains DETECTABILITY, not merely
+   severity.* A mislabelled FIELD eventually contradicts something: a column at
+   odds with its neighbours leaves a seam. **A mislabelled SUBSTRATE is
+   perfectly self-consistent.** Every query returns a coherent, complete,
+   entirely wrong answer about a world that is not ours, with no internal
+   evidence anywhere to trip over. **Highest severity, lowest detectability** —
+   which puts substrate identity at the top of this family. *Specimen,
+   2026-09-03:* D, asked to read the CFB fill rate off production, checked
+   which database they were on and found a Docker-local `meridian` with ZERO
+   TABLES — no `market_snapshots`, no `shadow_quote_fills`. Their wording:
+   **"the connection's NAME asserts a database; only its CONTENTS evidence
+   which one."** *The one-line check that catches it:* **before trusting any
+   read from a connection, assert a KNOWN-NON-EMPTY LANDMARK on it.** Note
+   where the rules meet: for FIELDS this rule's test is an independent source;
+   **for SUBSTRATES the test is rule 22's positive control.**
+
    *SCOPE, deliberately small because "verify every constant" is
    unaffordable and would simply be ignored:* **(a) values that reach an
    operator's eyes**, because those become the shared mental model and
@@ -448,6 +472,23 @@ before merge**, and the merge is refused if it would revert one.
    carry its LAST-NON-ZERO timestamp and count.** A recorder that has never
    once found an NFL contract tells you nothing by reporting none; one that
    found fifty yesterday and zero today is reporting news.
+
+   *AGGRAVATING FACTOR — A PREDICTED ZERO IS CHECKED LESS THAN AN UNEXPECTED
+   ONE.* **Anticipation converts a reading into a confirmation:** the result
+   arrives pre-classified, and classification feels like comprehension. **A
+   caveat that names a possible artifact without naming its DISCRIMINATOR
+   builds a receptacle for that artifact.** Action, at prediction time: **when
+   you warn that an outcome would be ambiguous, state in the same breath the
+   check that would resolve it.** *Specimen, 2026-09-03:* the manager warned D
+   that an empty CFB fill read would be ambiguous, since the engine had never
+   written a live observation. D was in fact connected to an EMPTY DATABASE and
+   would have reported a false zero — **which would have arrived pre-equipped
+   with the manager's own explanation for it, and been MORE credible, not
+   less.** The warning created the category and not the filter; *"a zero is
+   possible, so confirm the connection before reporting one"* prevents it
+   outright. (Manager's self-implicating observation; research agent's cut as a
+   clause rather than a rule, on the test that a rule needs its own ACTION and
+   this one's action remains the positive control.)
 
    *RELATION TO ITS NEIGHBOURS:* rule 20 says count the condition before
    claiming your code addresses it; **this is the inverse case — the count
