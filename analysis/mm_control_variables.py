@@ -517,15 +517,106 @@ def m4_terminal_dispersion(fills: pd.DataFrame) -> None:
         print(f"  {r.Index[:52]:52s} ${r.pnl:+8.2f} on {r.fills:>4d} fills, "
               f"peak |q| {r.peak_absq:.0f}")
     worst_decile = per.nsmallest(max(1, len(per) // 10), "pnl")
-    print(f"\nworst decile ({len(worst_decile)} markets): mean peak |q| "
-          f"{worst_decile.peak_absq.mean():.1f} vs {per.peak_absq.mean():.1f} "
-          f"overall; they carry ${worst_decile.pnl.sum():+,.2f} of the "
-          f"${per.pnl.sum():+,.2f} total")
-    print("\nreading (c7's framing): if SD and the worst decile grow with "
-          "peak |q| while the mean stays flat, inventory is a RUIN-CONTROL "
-          "problem, not a profit problem — and skew registers as a "
-          "tail/ruin lever on a $1,000 wallet, which the flat-mean finding "
-          "would otherwise have buried.")
+    print(f"\nworst decile: mean peak |q| {worst_decile.peak_absq.mean():.1f} "
+          f"vs {per.peak_absq.mean():.1f} overall — the NON-CIRCULAR form "
+          f"of the tail claim (an association with an ex-ante observable).")
+    print("NOT REPORTED, deliberately: 'the worst decile carries more than "
+          "the net total, so the rest is profitable.' That decile is "
+          "selected ON THE DEPENDENT VARIABLE and the statement is close to "
+          "a tautology for any right-skewed loss distribution — it would "
+          "read as 'remove the tail and we have a business', which the "
+          "bucket means above refute: NO peak-|q| bucket has a positive "
+          "mean. The book is not profitable-except-for-a-tail; it is "
+          "flat-to-negative everywhere WITH a catastrophic tail "
+          "concentrated in high inventory. Only the second claim is "
+          "supported, and only the prospective cap (M6) can test it.")
+
+
+def m6_inventory_cap(fills: pd.DataFrame) -> None:
+    """PROSPECTIVE inventory cap — the run that decides whether the tail
+    finding means anything (c7's item 3, highest-value remaining).
+
+    A hard cap refuses any fill that would take |q| beyond K, walking each
+    market's fills IN TIME ORDER so the refusal changes the path exactly as
+    it would live. The whole book is then re-scored on the ACCEPTED fills
+    only — the foregone fills included by their absence, which is where
+    hindsight caps usually die: 110 of 209 markets reach peak |q| >= 10, so
+    a cap at 10 also refuses the money the non-worst of those markets
+    earned.
+
+    Prior from our own record, stated before the numbers: B's loss-cap
+    surface found no surviving cell, and the ride work's durable heuristic
+    is that on this venue wins and tails COHABIT the same states because
+    risk is priced through the contract price. A cap that survives here
+    would be the program's biggest result; a cap that dies teaches the same
+    lesson in a new place and narrows skew's justification to the
+    flattening form alone."""
+    hr("M6. PROSPECTIVE INVENTORY CAP — does refusing high-|q| fills "
+       "actually help, once the foregone fills are counted?")
+    f = fills[fills.settlement.notna()].copy()
+    f["pnl"] = np.where(f.side == "bid", f.settlement - f.quote_price,
+                        f.quote_price - f.settlement)
+    f["sgn"] = np.where(f.side == "bid", 1.0, -1.0)
+    f = f.sort_values(["market_slug", "filled_at"])
+
+    def run_cap(K: float) -> pd.DataFrame:
+        keep = []
+        for _, g in f.groupby("market_slug", sort=False):
+            q = 0.0
+            for idx, s in zip(g.index, g.sgn):
+                if abs(q + s) > K:
+                    continue            # the quote is not there; no fill
+                q += s
+                keep.append(idx)
+        return f.loc[keep]
+
+    base_per = f.groupby("market_slug").pnl.sum()
+    print(f"{'cap K':>7s} {'fills kept':>11s} {'refused':>9s} "
+          f"{'total P&L':>11s} {'delta':>9s} {'per-mkt SD':>11s} "
+          f"{'worst mkt':>10s}")
+    print(f"{'none':>7s} {len(f):>11d} {0:>9d} {f.pnl.sum():>+11.2f} "
+          f"{0.0:>+9.2f} {base_per.std():>11.2f} {base_per.min():>+10.2f}")
+    for K in (3, 5, 10, 20):
+        kept = run_cap(K)
+        per_k = kept.groupby("market_slug").pnl.sum()
+        # markets that vanish entirely score 0, not NaN — the cap's own
+        # consequence, counted
+        per_k = per_k.reindex(base_per.index).fillna(0.0)
+        print(f"{K:>7d} {len(kept):>11d} {len(f) - len(kept):>9d} "
+              f"{kept.pnl.sum():>+11.2f} "
+              f"{kept.pnl.sum() - f.pnl.sum():>+9.2f} "
+              f"{per_k.std():>11.2f} {per_k.min():>+10.2f}")
+    # Is the improvement MECHANISM or SAMPLE LUCK? A total delta can come
+    # from one game. Per-game deltas, game-clustered, are what separate
+    # "capping avoids adding to losers" from "capping happened to skip the
+    # markets that lost in these 13 games".
+    print("\nper-GAME delta (capped − uncapped), game-clustered — the check "
+          "that separates mechanism from sample luck:")
+    base_g = f.groupby("game_id").pnl.sum()
+    for K in (3, 5, 10, 20):
+        kept = run_cap(K)
+        gd = (kept.groupby("game_id").pnl.sum()
+              .reindex(base_g.index).fillna(0.0) - base_g)
+        c = clustered_mean({g: [v] for g, v in gd.items()})
+        n_pos = int((gd > 0).sum())
+        print(f"  K={K:<3d}: {n_pos}/{len(gd)} games improved; per-game "
+              f"delta {c.mean:+.2f} [{c.lo:+.2f}, {c.hi:+.2f}] $ (G="
+              f"{c.n_clusters})" if c else f"  K={K}: n/a")
+
+    print("\nreading: the cap earns its place only if TOTAL P&L improves — "
+          "SD falling alone is not a win, because refusing fills trivially "
+          "shrinks variance toward zero (a book that never trades has none). "
+          "The honest pairing is delta-P&L WITH per-market SD: variance "
+          "bought at an acceptable price in mean is the ruin-control case; "
+          "variance bought by giving up the book is not.")
+    print("\nAND THE CLUSTERED VERDICT GOVERNS: a total delta is a sum over "
+          "a handful of games. If the per-game row above shows a coin-flip "
+          "improvement count and a CI spanning zero, the cap is NOT "
+          "supported at the standard every other number in this program is "
+          "held to — whatever the total says. That is the same failure mode "
+          "as the worst-decile framing this file refuses to print: a "
+          "headline carried by a few observations. Report the total and the "
+          "clustered row TOGETHER or neither.")
 
 
 def m5_flattening_lean(con, fills: pd.DataFrame) -> None:
@@ -601,8 +692,15 @@ def m5_flattening_lean(con, fills: pd.DataFrame) -> None:
                 ride_by_g = {g: list(v) for g, v
                              in fl.ride_pnl.groupby(fl.game_id)}
                 print(f"{k * 100:>5.0f}c {side:>4s} {len(ss):>7d} "
-                      f"{ss.flat.mean():>9.1%} "
+                      f"<={ss.flat.mean():>8.1%} "
                       f"{cm_str(rt_by_g):>22s} {cm_str(ride_by_g):>22s}")
+    print("\nRATES ARE UPPER BOUNDS ('<='), c7's trace of the optimism one "
+          "step further than my own caveat: the mid-cross rule fills on "
+          "excursions a real resting order often would not get — the same "
+          "artifact that books ~1.5c/leg and then reverts — so it inflates "
+          "the flatten RATE as well as the price. Apples-to-apples against "
+          "the engine's own fills (which inherit the identical rule); "
+          "optimistic the moment it is projected onto real forward fills.")
     print("\nreading: a high flatten rate with a round-trip capture better "
           "than the ride says round trips WERE available and the no-exit "
           "architecture — not adverse selection — is the primary cap on "
@@ -736,6 +834,23 @@ def selftest() -> int:
     check("M4 settlement P&L arithmetic (+1.20 / -0.40, peak |q| 1 vs 0)",
           "+0.80" in t4 and "-0.40" in t4)
 
+    # M6: a cap at 1 on three same-side fills must keep exactly the first
+    # (|q| would exceed 1 on the second), and its P&L must be that fill's
+    # alone — the foregone fills counted by absence, not by hindsight.
+    cap_f = add_inventory(pd.DataFrame([
+        _f("mC", "bid", T(0), q=0.40, s=1),
+        _f("mC", "bid", T(10), q=0.40, s=1),
+        _f("mC", "bid", T(20), q=0.40, s=1)]))
+    buf5 = _io.StringIO()
+    with contextlib.redirect_stdout(buf5):
+        m6_inventory_cap(cap_f)
+    t5 = buf5.getvalue()
+    # uncapped: 3 fills x (1 - 0.40) = +1.80 ; K=3 keeps all (|q| max 3)
+    check("M6 uncapped total is +1.80 on 3 fills", "+1.80" in t5)
+    # K=3 keeps 3, K=5/10/20 keep 3 too -> refused 0 in every printed row
+    check("M6 cap K=3 keeps all three (|q| never exceeds 3)",
+          t5.count("+1.80") >= 2)
+
     # M0 must not stitch: a market with no tick coverage contributes to the
     # fill-instant distribution but not the time-weighted one.
     nocov = add_inventory(pd.DataFrame([_f("mZZ", "bid", T(0))]))
@@ -806,7 +921,8 @@ def main() -> int:
     """).df().set_index("fid")
     ing["period"] = ing.index.map(st.event_period)
 
-    m5_flattening_lean(con, ing)      # c7 ruling 4: run first
+    m6_inventory_cap(ing)             # c7 item 3: the deciding run
+    m5_flattening_lean(con, ing)
     m4_terminal_dispersion(ing)
     m0_inventory_path(con, ing)
     m1_inventory(ing)
