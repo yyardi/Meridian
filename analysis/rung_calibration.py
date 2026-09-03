@@ -162,6 +162,16 @@ def main() -> int:
           f"(price = mid at each rung's FIRST two-sided live tick)")
     tab = calibrate(mids)
     print(tab.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    print("""
+THE MIDDLE BAND IS THE CELL THAT WILL TEMPT THE NEXT READER, so it gets
+its constraint attached here rather than in a caveat further down. If
+0.35-0.65 shows realised below price, note two things before acting on
+it: (1) its clustered CI CONTAINS the price, so nothing is established;
+and (2) UNDER RULE 21 IT HAS NO NAMED COUNTERPARTY — nobody has said who
+systematically buys the middle of this board and why they lose. A gain
+whose counterparty is unnamed is an unfinished measurement, not an edge,
+and naming one is a hypothesis that must itself be measured. Until that
+exists, this cell is a number, not a finding.""")
     print("\ngap = realised − price. NEGATIVE in the low bands means "
           "longshots settle LESS often than their price implies, i.e. they "
           "are OVERPRICED — the favourite-longshot signature. CIs are on "
