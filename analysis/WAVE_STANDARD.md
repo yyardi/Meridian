@@ -531,6 +531,53 @@ numbered as a fourth. (Research agent's cut, 2026-09-03.)
    (Research agent's rule and mechanism; D's measurement, refutation of the
    manager's direction, and same-day self-retraction; A's schema route.)
 
+25. **A METRIC THAT MOVES WITH ACTIVITY CANNOT RANK POLICIES THAT DIFFER IN
+   ACTIVITY.**
+   When comparing policies that act at different rates, **any
+   activity-dependence in the metric that is not policy quality will rank the
+   activity instead.** Two failure modes, opposite in direction, one defect.
+
+   *MODE A — INFLATION BY ACTIVITY.* The measurement process manufactures
+   spurious events in proportion to activity, so **totals reward acting more.**
+   *Specimen:* the shadow fill model books phantom fills per quote, so total
+   P&L favours quoting more and handicaps every variant that quotes less —
+   which is why the variants registration makes per-fill capture the primary
+   metric rather than total P&L. (A's instrument-bias clause.)
+
+   *MODE B — DEGENERATE OPTIMUM.* A rate-normalised metric whose per-event
+   value carries a **uniform sign** attains its optimum at a degenerate
+   activity level, so **ratios reward acting less.** *Specimen, 2026-09-03:*
+   per-cycle P&L on a book where every per-fill cell is negative is maximised
+   by never quoting. **The >10c band simultaneously TOPS that table at
+   -0.010c/cycle and is the WORST per-fill cell on the board at -7.15c — it
+   wins by filling 0.0013 times per cycle, i.e. by barely being in the
+   market.** D's selftest encodes the limiting case: a band quoted 1000 times
+   that never fills scores 0.000 and beats every band that traded, so the
+   guard cannot be quietly removed.
+
+   *THE TEST — evaluate the metric at BOTH degenerate extremes: never act, and
+   act always. If either wins, the metric is ranking activity.*
+
+   *THE MITIGATION, identical for both modes: **never report the composite
+   alone.** Report the numerator, the denominator and the per-event mean
+   together, so the activity term stays visible instead of being absorbed.*
+
+   *THE STRUCTURE, named so it is recognisable outside trading:* the failure
+   needs **a numerator that accrues only on EVENTS, a denominator counting
+   OPPORTUNITIES, and a per-event value of uniform sign.** Then driving events
+   to zero drives the ratio to its bound. That shape appears well past P&L —
+   loss per session, damage per deployment, incidents per release — anywhere
+   *"we did less, so our rate improved"* can be true and useless.
+
+   *AND THE RESTRAINT THAT MUST TRAVEL WITH THE SPECIMEN, in the same sentence
+   as the number, every time:* **"wide is best" is REFUTED; "wide is worst" is
+   NOT ESTABLISHED** — n=483 and n=129 real fills with CIs spanning zero.
+   **Width leaves the lever list because the evidence that it was good is gone,
+   not because the wide end is bad.** (D's finding and wording; research
+   agent's unification of it with A's clause after the manager asked whether
+   the two were one rule — the class formed instead of a twenty-sixth entry
+   being shelved beside the twenty-fifth.)
+
    *OPERATIONAL TEST, concrete enough to build:* a zero is evidence only
    when the instrument has demonstrated it can return non-zero ON THIS
    SUBSTRATE — a positive control. **Every zero-reporting monitor should
