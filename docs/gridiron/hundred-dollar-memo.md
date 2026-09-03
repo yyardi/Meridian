@@ -103,3 +103,31 @@ settled P&L was about −$133. **The bound is the RUIN object (what cannot be
 exceeded); the realised distribution is the P&L object.** A wallet sizes on
 the first and forecasts on the second. Lower-bound caveats in the artifact:
 unit size, 4 games absent from the tick pin, exposure past the pin uncounted.
+
+## ADDENDUM 2 (2026-09-03) — the required capture is ~10× smaller than this memo assumed
+
+The concurrency measurement forces a re-read of the memo's own core
+arithmetic, and it moves in our favour. At v1's measured fill rate
+(17,032 fills / 13 games ≈ 1,310 per game) and NFL's ~69 games/month, the
+board offers on the order of **90,000 fills/month at unit size**.
+$100 ÷ 90,000 ≈ **0.11¢ per contract** — the memo's +0.5¢ working figure was
+conservative by roughly 5×.
+
+**So the honest statement of the whole enterprise is: the VOLUME clears the
+bar comfortably; the entire question is the SIGN.** Going from v1's measured
+−1.60¢ to +0.11¢ is still a 1.7¢ swing and remains unproven — but the target
+the levers must hit is a tenth of a cent, not half of one, and that is a
+materially different problem.
+
+Caveated properly: **NFL fill rates are UNKNOWN and plausibly much lower than
+WNBA's**, because 30¢-wide books get crossed far less often than 4¢ ones —
+which is exactly why the flow measurement ranks first in the day-one survey,
+and why the trade tape now records (V31/V32).
+
+**And flattening's strongest justification is now capital efficiency, not
+P&L.** Closing positions reduces peak concurrent exposure → frees wallet
+capacity → permits larger size → multiplies earnings per fill, on top of the
+variance reduction and the tail control. Three independent findings converge
+on the one capability the engine does not have. **If this program names a
+single build priority, it is flattening — and the reason is no longer "it
+might earn more" but "it is what lets the book be sized at all."**
