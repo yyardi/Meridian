@@ -698,30 +698,33 @@ def run_db() -> int:
     return 0
 
 
-def _depth_debug(n: int = 20, staleness_s: float = DEPTH_STALENESS_S) -> int:
-    """Instrument the depth-join predicate funnel for the first N zero-depth
-    fills — names which predicate collapses coverage, MEASURED on real data
-    rather than hypothesised (the 200x n_zero gap). Run against prod:
+def _depth_debug(n: int = 200, staleness_s: float = DEPTH_STALENESS_S) -> int:
+    """Predicate-funnel over a RANDOM sample of ALL in-game fills — locates where
+    the population drops, MEASURED against the SQL baseline. Run against prod:
 
         python -m core.quote.wallet --depth-debug [N]
 
-    Replicates _load_fills_with_depth's exact matcher (same float-4dp key, same
-    bisect + staleness), then for each zero-depth fill shows the count surviving
-    each successive predicate. The column that drops to 0 IS the cause:
-      * +side=0            -> side value / mapping
-      * +price[numeric]=0  -> the exact price is not in the book (tick/frame);
-                              'book prices present' shows what IS there vs quote
-      * +price[round4] != +price[numeric] -> float-4dp rounding (the price-repr
-                              hypothesis) diverges from NUMERIC equality
-      * +window=0 (price>0) -> staleness/time: the level exists but not near fill
-      * python_index_has_key=False while +price[numeric]>0 -> a Python-matcher
-                              bug (the float key), the smoking gun
-    The fill's quote_price is compared as NUMERIC (bound as its Decimal), never
-    via a float CAST that would itself inject the error we are testing for.
+    The manager's decisive fact: ~66% of a random sample of in-game fills have a
+    same-side, exact-price book level within the backward 120s window, yet the
+    wallet finds depth for 0.3%. The earlier version of this tool sampled only
+    ZERO-depth fills, so +window=0 held BY CONSTRUCTION (they were selected for
+    failing) — it could not locate the population's drop. This samples ALL
+    in-game fills and reports how many survive each successive predicate:
 
-    Read-only. Mirrors the DEPLOYED matcher; on prod (zero NULL captured_at) the
-    COALESCE below equals bl.captured_at, so the window count is exact."""
+        market -> +side -> +price[any time] -> +price+window[SQL baseline ~66%]
+        -> python_index_has_key -> python_matched[~0.3%]
+
+    The stage where the SQL baseline (~66%) and the Python matcher (~0.3%)
+    DIVERGE names the defect:
+      * python_index_has_key ~= SQL baseline, python_matched << it -> time/bisect
+      * python_index_has_key << SQL baseline                       -> key/build
+        (the float-4dp key, or the index load, misses rows the DB has)
+    Then it dumps the SQL-matches-but-Python-misses subset with, per fill, the
+    times the DB has for that (market,side,price) key vs the times the Python
+    index holds — the direct build/key comparison. Read-only; mirrors the
+    deployed matcher (COALESCE == bl.captured_at on prod's zero-NULL data)."""
     import bisect
+    import random
     from collections import defaultdict
 
     from sqlalchemy import text
@@ -757,32 +760,22 @@ def _depth_debug(n: int = 20, staleness_s: float = DEPTH_STALENESS_S) -> int:
             v.sort(key=lambda x: x[0])
             index[k] = ([t for t, _ in v], [q for _, q in v])
 
-        zeros = []
-        for r in rows:
-            bs = "bid" if r.side == "bid" else "offer"
-            key = (r.market_slug, bs, round(float(r.quote_price), 4))
-            depth = 0.0
-            hit = index.get(key)
-            if hit is not None:
-                times, qtys = hit
-                pos = bisect.bisect_right(times, r.filled_at) - 1
-                if pos >= 0 and times[pos] >= r.filled_at - dt.timedelta(
-                        seconds=staleness_s):
-                    depth = qtys[pos]
-            if depth <= 0:
-                zeros.append(r)
+        ingame = [r for r in rows if r.regime == "ingame"]
+        seed = 1729                      # fixed -> re-runs sample identically
+        sample = random.Random(seed).sample(ingame, min(n, len(ingame)))
+        print(f"book_levels loaded: {len(lvls):,}  |  in-game fills: "
+              f"{len(ingame):,}  |  random sample: {len(sample):,} (seed {seed})"
+              f"  |  staleness {staleness_s:.0f}s\n")
 
-        print(f"book_levels loaded in window: {len(lvls):,}  |  "
-              f"zero-depth fills: {len(zeros):,}/{len(rows):,} "
-              f"({(len(zeros) / len(rows) if rows else 0):.1%})  |  "
-              f"staleness {staleness_s:.0f}s  |  first {min(n, len(zeros))}:")
-
-        for i, r in enumerate(zeros[:n]):
+        reach = dict(market=0, side=0, price_any=0, window_sql=0,
+                     py_key=0, py_match=0)
+        defect = []                      # SQL matches, Python misses
+        for r in sample:
             bs = "bid" if r.side == "bid" else "offer"
             qpk = round(float(r.quote_price), 4)
-            p = {"m": r.market_slug, "bs": bs, "qp": r.quote_price, "qpk": qpk,
-                 "lo": r.filled_at - dt.timedelta(seconds=staleness_s),
-                 "hi": r.filled_at}
+            lo = r.filled_at - dt.timedelta(seconds=staleness_s)
+            p = {"m": r.market_slug, "bs": bs, "qp": r.quote_price,
+                 "lo": lo, "hi": r.filled_at}
 
             def cnt(where, _p=p):
                 return s.execute(text(
@@ -790,29 +783,69 @@ def _depth_debug(n: int = 20, staleness_s: float = DEPTH_STALENESS_S) -> int:
                     "JOIN market_snapshots ms ON ms.id = bl.snapshot_id "
                     "WHERE ms.market_slug = :m " + where), _p).scalar()
 
-            c_m = cnt("")
-            c_s = cnt("AND bl.side = :bs")
-            c_p = cnt("AND bl.side = :bs AND bl.price = :qp")
-            c_pk = cnt("AND bl.side = :bs AND round(bl.price, 4) = :qpk")
-            c_w = cnt("AND bl.side = :bs AND bl.price = :qp "
-                      "AND COALESCE(bl.captured_at, ms.captured_at) "
-                      "BETWEEN :lo AND :hi")
-            in_index = (r.market_slug, bs, qpk) in index
-            near = s.execute(text(
-                "SELECT bl.price AS price, count(*) AS c FROM book_levels bl "
-                "JOIN market_snapshots ms ON ms.id = bl.snapshot_id "
-                "WHERE ms.market_slug = :m AND bl.side = :bs "
-                "AND COALESCE(bl.captured_at, ms.captured_at) BETWEEN :lo AND :hi "
-                "GROUP BY bl.price ORDER BY c DESC LIMIT 8"), p).all()
+            has_market = cnt("") > 0
+            has_side = cnt("AND bl.side = :bs") > 0
+            has_price_any = cnt("AND bl.side = :bs AND bl.price = :qp") > 0
+            has_window = cnt("AND bl.side = :bs AND bl.price = :qp "
+                             "AND COALESCE(bl.captured_at, ms.captured_at) "
+                             "BETWEEN :lo AND :hi") > 0
 
-            print(f"\n[{i}] {r.market_slug} side={r.side}->{bs} "
-                  f"quote_price={r.quote_price} (float key {qpk}) "
-                  f"filled_at={r.filled_at.isoformat()}")
-            print(f"    funnel: market={c_m:,}  +side={c_s:,}  "
-                  f"+price[numeric]={c_p:,}  +price[round4]={c_pk:,}  "
-                  f"+window={c_w:,}  |  python_index_has_key={in_index}")
-            pr = ", ".join(f"{float(x.price):.4f}x{x.c}" for x in near) or "NONE"
-            print(f"    book prices present (this mkt+side, in window): {pr}")
+            key = (r.market_slug, bs, qpk)
+            py_key = key in index
+            py_match = False
+            if py_key:
+                times, qtys = index[key]
+                pos = bisect.bisect_right(times, r.filled_at) - 1
+                if pos >= 0 and times[pos] >= lo and qtys[pos] > 0:
+                    py_match = True
+
+            reach["market"] += has_market
+            reach["side"] += has_side
+            reach["price_any"] += has_price_any
+            reach["window_sql"] += has_window
+            reach["py_key"] += py_key
+            reach["py_match"] += py_match
+            if has_window and not py_match:
+                defect.append((r, bs, qpk, py_key))
+
+        N = len(sample)
+
+        def line(label, c):
+            print(f"    {label:34} {c:6,} / {N:,}  ({c / N:6.1%})" if N else label)
+
+        print("PREDICATE FUNNEL (random sample of in-game fills):")
+        line("reach market (any levels)", reach["market"])
+        line("+ side", reach["side"])
+        line("+ price [exact, any time]", reach["price_any"])
+        line("+ price + backward-120s [SQL base]", reach["window_sql"])
+        line("python_index_has_key", reach["py_key"])
+        line("python_matched (wallet depth>0)", reach["py_match"])
+        print(f"\n  SQL baseline {reach['window_sql'] / N:.1%} vs wallet "
+              f"{reach['py_match'] / N:.1%} — the gap. Divergence point above "
+              f"names the defect.\n")
+
+        print(f"SQL-MATCHES-BUT-WALLET-MISSES subset: {len(defect)} of {N}; "
+              f"first {min(12, len(defect))} detailed:")
+        for r, bs, qpk, py_key in defect[:12]:
+            lo = r.filled_at - dt.timedelta(seconds=staleness_s)
+            p = {"m": r.market_slug, "bs": bs, "qp": r.quote_price,
+                 "lo": lo, "hi": r.filled_at}
+            db_times = s.execute(text(
+                "SELECT COALESCE(bl.captured_at, ms.captured_at) AS t, "
+                "bl.quantity AS q FROM book_levels bl "
+                "JOIN market_snapshots ms ON ms.id = bl.snapshot_id "
+                "WHERE ms.market_slug = :m AND bl.side = :bs AND bl.price = :qp "
+                "AND COALESCE(bl.captured_at, ms.captured_at) BETWEEN :lo AND :hi "
+                "ORDER BY t"), p).all()
+            idx_times = index.get((r.market_slug, bs, qpk), ([], []))[0]
+            idx_in_win = [t for t in idx_times if lo <= t <= r.filled_at]
+            print(f"\n  {r.market_slug} side={r.side}->{bs} "
+                  f"quote_price={r.quote_price} (key {qpk}) "
+                  f"filled_at={r.filled_at.isoformat()}  py_index_has_key={py_key}")
+            print(f"    DB levels at this key in window: {len(db_times)} "
+                  f"(e.g. {[t.t.isoformat() for t in db_times[:3]]})")
+            print(f"    Python index times at this key in window: "
+                  f"{len(idx_in_win)} (e.g. {[t.isoformat() for t in idx_in_win[:3]]})")
     return 0
 
 
@@ -1102,11 +1135,11 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--db", action="store_true",
                     help="fold the live tables and print the scoreboard")
-    ap.add_argument("--depth-debug", nargs="?", type=int, const=20, default=None,
+    ap.add_argument("--depth-debug", nargs="?", type=int, const=200, default=None,
                     metavar="N",
-                    help="instrument the depth-join predicate funnel for the "
-                         "first N zero-depth fills (default 20) — names the "
-                         "predicate that collapses coverage, on real data")
+                    help="predicate funnel over a random sample of N in-game "
+                         "fills (default 200) — locates where the population "
+                         "drops vs the SQL baseline, on real data")
     args = ap.parse_args()
     if args.selftest:
         rc = _selftest_primitives()
