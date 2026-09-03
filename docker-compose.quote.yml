@@ -13,7 +13,14 @@
 # needed — the absence of POLYMARKET_* below is load-bearing.
 services:
   quote-engine:
-    build: .
+    build:
+      context: .
+      args:
+        # Required: deploy via scripts/deploy_engine.sh, which sets it from
+        # git. An empty value makes the engine refuse to start (amendment 12
+        # fail-closed) — that is the intended behaviour, not an outage to
+        # work around by unsetting the check.
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-quote-engine
     # engine_v2 = v1's quoting UNCHANGED (subclass inherits cycle(); replay-
     # equivalence proven byte-identical on the pinned Aug tape) + the
