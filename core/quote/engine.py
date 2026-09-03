@@ -52,7 +52,7 @@ import structlog
 from sqlalchemy import text
 
 from core import heartbeat as hb
-from core.leagues import default_league, league_of_slug
+from core.leagues import league_of_slug, strict_default_league
 from core.quote.adverse_selection import Quote
 from core.quote.storage import ASK, BID, INGAME, PREGAME, ShadowQuoteFill
 
@@ -185,7 +185,9 @@ class ShadowQuoter:
         #: GRIDIRON binary is this same engine with league='nfl'. The engine
         #: observes and quotes ONLY this league; the filter is on the read path
         #: (_observations) AND the write path (_fill). Default from MERIDIAN_LEAGUE.
-        self._league = (league or default_league().slug)
+        # strict_default_league RAISES on an unknown MERIDIAN_LEAGUE rather
+        # than silently becoming a second WNBA quoter (2026-09-03 incident).
+        self._league = (league or strict_default_league().slug)
         #: This binary's commit (amendment 12), stamped on every row. None only
         #: in tests that don't set the env; run_forever fail-closes in prod.
         self._engine_commit = (

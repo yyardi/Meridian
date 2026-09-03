@@ -83,6 +83,18 @@ LEAGUES: dict[str, League] = {
             "ported constants."
         ),
     ),
+    "cfb": League(
+        slug="cfb",
+        name="College Football",
+        espn_path="football/college-football",
+        recorded=True,
+        empty_state=(
+            "No CFB games recorded yet. Recording started 2026-09-03 ahead of "
+            "the Sept 5 slate — ~100 games in a single Saturday against NFL's "
+            "16 a week. Recording only: no model, no constants, no gates. "
+            "GRIDIRON covers NFL and CFB; the modelling attention is NFL's."
+        ),
+    ),
     "nba": League(
         slug="nba",
         name="NBA",
@@ -116,11 +128,36 @@ def get_league(slug: str | None) -> League:
 
 def default_league() -> League:
     """The configured default, falling back to WNBA if the env names a league
-    the table does not have — a bad env var should not take the board down."""
+    the table does not have — a bad env var should not take the board down.
+
+    **DISPLAY ONLY. Engines must use `strict_default_league()`.** See its
+    docstring: this fallback is correct for a dashboard and dangerous for a
+    writer.
+    """
     try:
         return get_league(DEFAULT_LEAGUE)
     except UnknownLeagueError:
         return LEAGUES["wnba"]
+
+
+def strict_default_league() -> League:
+    """The configured default, RAISING on an unknown league. For any process
+    that WRITES.
+
+    Why the two forms differ (2026-09-03, learned by shipping the bug): a
+    dashboard that falls back to WNBA on a bad env var shows the wrong board
+    and someone notices. **An ENGINE that falls back becomes a SECOND WNBA
+    QUOTER** — it collides on WNBA's heartbeat row, writes WNBA rows under a
+    different engine_commit, and thereby breaks the single-engine-identity
+    assertion that amendment 12 exists to guarantee. It announced itself as
+    `league=wnba` in its own startup line and was caught only because a human
+    read that line.
+
+    The file's own opening argument applies to itself: *an explicit table
+    fails loudly where a derivation fails silently* — and a silent fallback
+    is a derivation wearing a table's clothes.
+    """
+    return get_league(DEFAULT_LEAGUE)
 
 
 def league_of_slug(event_or_market_slug: str | None) -> League | None:
