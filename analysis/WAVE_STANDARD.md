@@ -195,7 +195,12 @@ before merge**, and the merge is refused if it would revert one.
    identically." (B's entry, research-endorsed; the R5 harness complied
    before the rule existed — generator plants asserting exact injected
    values — which is the pleasant way to discover a rule was already
-   necessary.)
+   necessary.) *Cross-ref, and they AGE TOGETHER: rule 20 is this rule's
+   COUNTERWEIGHT, not merely rule 16's complement — a plant without a count
+   may be a real mechanism that fires on nothing; a count without a plant
+   may be a broken query returning a comfortable zero. Rule 18 was one day
+   old when it manufactured the sensation rule 20 exists to puncture.
+   Amendments to either must notice the other.*
 
 19. **Every registered checker DECLARES ITS BLIND SPOTS — at least one
    class of defect it structurally cannot catch, stated where the checker
@@ -215,6 +220,78 @@ before merge**, and the merge is refused if it would revert one.
    found the bug by auditing their own instrument's structure, hours
    before any data existed to be corrupted. (Research proposed; manager
    elevated same day.)
+
+20. **Substrate-count duty (complement to rule 16). Before building anything
+   whose value depends on a condition, COUNT that condition on the substrate
+   it will run against.** A planted-case reproduction proves a mechanism CAN
+   produce the symptom; only a substrate count shows it is what fires on real
+   data — and a passing planted test produces the sensation of having
+   checked, which is exactly when the count gets skipped. A zero count does
+   not always forbid building: it forbids the CLAIM. It sets the label
+   (bugfix vs defensive hardening), and "fires on nothing today, guards a
+   silent failure tomorrow" is a legitimate label — stated in the code, not
+   only the PR. Rule 16: reproduce the known answer before reading live.
+   This: measure that the condition exists before asserting your code
+   addresses it. (D and A's rule, body verbatim; c7's name on the two
+   additions below.)
+
+   *Addition — the counterweight, and the general lesson (c7):* rule 20 is
+   rule 18's counterweight and they age together (see rule 18's cross-ref).
+   The lesson generalises beyond this pair: **registering a rule that creates
+   a hazard obliges us to register its counterweight beside it** — every
+   future rule should be asked, at adoption, what false confidence it
+   manufactures.
+
+   *Addition — the deferred-count clause (c7):* when the substrate does not
+   yet exist the count CANNOT run, so it is DEFERRED AND NAMED IN THE CODE,
+   and every claim the artifact makes is PROVISIONAL until it runs on first
+   data — the first-data count a required deliverable, not a good intention.
+   In an unmeasured domain, plants carry everything AND every substrate count
+   is deferred, therefore every claim is provisional until first data.
+   (Landed in GRIDIRON's registration, b4d4505, the program this was written
+   for.)
+
+   *Precedent, four agents, one species — which is what makes it a practice
+   rather than anyone's penance:* research's attrition misattribution (three
+   causes named, none run); A's NULL-timestamp diagnosis (disproven by a
+   production count: 15,254,061 depth rows, zero unstamped); the manager's
+   top-N-levels hypothesis; and the manager's "two different questions"
+   reading, flagged unverified pending its funnel. Each a mechanism reasoned
+   to and never counted. **A fourth hypothesis is not a diagnosis** — the
+   correction pattern is A's: after three failed hypotheses they shipped an
+   instrumented funnel and handed the measurement over rather than producing
+   a fourth guess.
+
+21. **The profit-mechanism audit. Any measured or simulated result showing a
+   GAIN must name the counterparty and the reason they lose, and that
+   mechanism must be the one under test.** A result whose profit arrives by a
+   different mechanism than the one being studied is measuring something
+   else, however real that something is.
+
+   The asymmetry it corrects: **we scrutinise losses because they feel like
+   bugs and accept gains because they feel like findings.** Every other rule
+   here polices measurement generally; this one polices the direction we are
+   least motivated to police.
+
+   Type specimens, both from one evening's flattening simulator, both
+   profitable, both wrong: (a) it sold BELOW THE BEST BID — a counterparty
+   the venue's post-only rejects outright, so the profit came from a trade
+   that cannot exist (+$10,313 on a −$182 book); (b) it leaned its ask
+   UNCONDITIONALLY, which is "quote to get short" rather than flattening — a
+   real counterparty, the wrong experiment (+$1,928).
+
+   And the audit applies to the audit: the story then told about where (b)'s
+   money came from — "far rungs mostly expire worthless" — was itself
+   unverified, and when measured (`analysis/rung_calibration.py`) the board
+   showed no such bias in either direction. **Naming a counterparty is a
+   hypothesis, not an answer; the rule is discharged when the mechanism is
+   measured, not when it is plausible.**
+
+   Magnitude is not a substitute. Both bugs were caught only because their
+   numbers were absurd; a subtler version returning a plausible +$300 would
+   have shipped. *"Where does this money come from, and who pays it?"*
+   catches both in one question, before magnitude enters. (D's rule, in
+   their words.)
 
 ## Hazard entry, appended 2026-09-02 (D + B; research-endorsed) — unbounded ffill fakes liquidity in dying books
 
