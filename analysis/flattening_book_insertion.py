@@ -43,6 +43,18 @@ k=0 fill set and v1's recorded real fills overlap only ~41% on (market,
 totals land within 2.4% of each other, which is an aggregate coincidence
 and not agreement. Do not quote this baseline as corroborating an
 independent read of the recorded tape; they are different quantities.
+
+THE CONSEQUENCE, STATED AS A PROHIBITION because it is the sentence
+somebody will write by accident: this file's numbers are internally
+valid and UNANCHORED to v1's measured economics. The k-curve figures
+(+$10.10 at k=1c, -2.94c/fill at k=0, -2.20c/fill at k=1c) live inside
+the replay's own world. They MUST NOT be placed beside the settlement
+read on the recorded tape (-3.38c/fill over 6,255 real fills) as though
+the pair described one board. Different procedures, different
+populations, 41% overlap -- it is precisely the comparison withdrawn
+above, and the numbers are close enough to look like they belong in one
+sentence. They do not. Compare k values to each other; compare the tape
+to itself.
 """
 import importlib.util
 import sys
