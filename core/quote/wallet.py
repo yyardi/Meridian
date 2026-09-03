@@ -166,6 +166,14 @@ class Fill:
     depth: float
     settlement: int | None = None
     settled_at: dt.datetime | None = None
+    #: Provenance of the matched depth level (set by the DB gather; defaults for
+    #: direct-construction tests). `depth_parent_stamped` is True when the level
+    #: was matched via its parent snapshot's stamp because its OWN stamp was NULL
+    #: — a pre-08-07 fetched-together row, where the parent stamp is exact (no
+    #: slower loop to backdate). `depth_staleness_s` is the chosen level's age at
+    #: fill time, so the parent-stamp relaxation is measured, never free.
+    depth_parent_stamped: bool = False
+    depth_staleness_s: float | None = None
 
 
 @dataclass
@@ -451,13 +459,28 @@ def _load_fills_with_depth(
 
     Depth-join (D's ruling, registered 6d4ce04): book_levels is ONE YES-frame
     book, so a BID quote joins side='bid' and an ASK joins side='offer', both at
-    price == quote_price (4dp exact; conservative-zero otherwise). Keyed on
-    book_levels.captured_at — depth samples on a slower loop and its own stamp is
-    the authority — with the staleness bound; NULL-stamped rows are counted OUT,
-    never inheriting the parent snapshot's stamp. Returns (fills, n_depth_absent,
-    n_total); depth absent (exact level not recorded fresh) -> depth 0 -> the
-    fill clips to zero, and that RATE is printed so the tick-neighbor artifact is
-    measurable (never a silent merge)."""
+    price == quote_price (4dp exact; conservative-zero otherwise), within the
+    staleness bound.
+
+    Time source (amended, ruling <pending D>): the level's OWN stamp
+    (book_levels.captured_at) is the authority whenever present — depth samples
+    on a slower loop than price since 2026-08-07, so its own stamp is the only
+    one that answers the ordering question, and the parent snapshot's stamp is
+    NEVER allowed to backdate it. But a NULL own-stamp does NOT mean "counted
+    out": on Supabase the pre-08-07 rows were fetched TOGETHER with the snapshot,
+    so their own stamp is genuinely NULL and the parent's captured_at IS their
+    exact time (no slower loop to backdate). COALESCE(own, parent) therefore
+    uses the own stamp when present and the parent stamp ONLY for those
+    fetched-together rows — recovering the historical tape that a bare
+    `IS NOT NULL` silently dropped (the ~200x n_zero gap, reproduced). The
+    relaxation is measured, not free: every parent-stamped match carries its
+    staleness (`depth_staleness_s`) and is counted (`_absent_meta`
+    `n_depth_parent_stamped`).
+
+    Returns (fills, n_depth_absent, n_total); depth absent (exact level not
+    recorded within the bound) -> depth 0 -> the fill clips to zero, and that
+    RATE is printed so the tick-neighbor artifact is measurable (never a silent
+    merge)."""
     import bisect
     from collections import defaultdict
 
@@ -474,26 +497,32 @@ def _load_fills_with_depth(
     markets = sorted({r.market_slug for r in rows})
     tmin = min(r.filled_at for r in rows) - dt.timedelta(seconds=staleness_s)
     tmax = max(r.filled_at for r in rows)
+    # Effective stamp = own stamp when present, parent snapshot's stamp only when
+    # the own stamp is NULL (the pre-08-07 fetched-together rows — parent is
+    # exact there). `parent_stamped` marks those matches so the relaxation is
+    # visible. market_snapshots.captured_at is NOT NULL, so COALESCE never is.
     lvls = session.execute(text("""
         SELECT ms.market_slug AS market_slug, bl.side AS side,
                bl.price AS price, bl.quantity AS quantity,
-               bl.captured_at AS captured_at
+               COALESCE(bl.captured_at, ms.captured_at) AS captured_at,
+               (bl.captured_at IS NULL) AS parent_stamped
         FROM book_levels bl
         JOIN market_snapshots ms ON ms.id = bl.snapshot_id
         WHERE ms.market_slug = ANY(:markets)
           AND bl.side IN ('bid','offer')
-          AND bl.captured_at IS NOT NULL          -- never inherit the parent stamp
-          AND bl.captured_at >= :tmin AND bl.captured_at <= :tmax
+          AND COALESCE(bl.captured_at, ms.captured_at) >= :tmin
+          AND COALESCE(bl.captured_at, ms.captured_at) <= :tmax
     """), {"markets": markets, "tmin": tmin, "tmax": tmax}).all()
 
     series: dict[tuple, list] = defaultdict(list)
     for lv in lvls:
         series[(lv.market_slug, lv.side, round(float(lv.price), 4))].append(
-            (lv.captured_at, float(lv.quantity)))
+            (lv.captured_at, float(lv.quantity), bool(lv.parent_stamped)))
     index: dict[tuple, tuple] = {}
     for k, s in series.items():
-        s.sort()
-        index[k] = ([t for t, _ in s], [q for _, q in s])
+        s.sort(key=lambda x: x[0])
+        index[k] = ([t for t, _, _ in s], [q for _, q, _ in s],
+                    [p for _, _, p in s])
 
     fills: list[Fill] = []
     n_absent = 0
@@ -501,13 +530,17 @@ def _load_fills_with_depth(
         book_side = "bid" if r.side == "bid" else "offer"
         key = (r.market_slug, book_side, round(float(r.quote_price), 4))
         depth = 0.0
+        parent_stamped = False
+        staleness = None
         hit = index.get(key)
         if hit is not None:
-            times, qtys = hit
+            times, qtys, parents = hit
             pos = bisect.bisect_right(times, r.filled_at) - 1  # newest <= fill
             if pos >= 0 and times[pos] >= r.filled_at - dt.timedelta(
                     seconds=staleness_s):
                 depth = qtys[pos]
+                parent_stamped = parents[pos]
+                staleness = (r.filled_at - times[pos]).total_seconds()
         if depth <= 0:
             n_absent += 1
         fills.append(Fill(
@@ -515,7 +548,9 @@ def _load_fills_with_depth(
             quote_price=float(r.quote_price), mid_at_fill=float(r.mid_at_fill),
             filled_at=r.filled_at, depth=depth,
             settlement=(None if r.settlement is None else int(r.settlement)),
-            settled_at=r.settled_at))
+            settled_at=r.settled_at,
+            depth_parent_stamped=(parent_stamped if depth > 0 else False),
+            depth_staleness_s=(staleness if depth > 0 else None)))
     return fills, n_absent, len(rows)
 
 
@@ -555,6 +590,13 @@ def _absent_meta(fills: list[Fill]) -> dict:
     wb_opt = [_wouldbe(f, 0.0) for f in absent]
     wb_conc = [_wouldbe(f, concession_for(f.regime)) for f in absent]
     ing_rate = (len(ingame_absent) / len(ingame)) if ingame else 0.0
+    # The parent-stamp relaxation, MEASURED: how many depth matches leaned on a
+    # fetched-together parent stamp (own stamp NULL), and how stale those chosen
+    # levels were. If this is a large share, the historical print is resting on
+    # the pre-08-07 tape — visible, not free.
+    ps = [f for f in fills if f.depth > 0 and f.depth_parent_stamped]
+    ps_stale = [f.depth_staleness_s for f in ps if f.depth_staleness_s is not None]
+    sized = [f for f in fills if f.depth > 0]
     return {
         "n_fills": n_total,
         "depth_absent": len(absent),
@@ -567,6 +609,11 @@ def _absent_meta(fills: list[Fill]) -> dict:
         "absent_wouldbe_opt_mean_c": (sum(wb_opt) / len(wb_opt) * 100) if wb_opt else 0.0,
         "absent_wouldbe_conc_mean_c": (sum(wb_conc) / len(wb_conc) * 100) if wb_conc else 0.0,
         "trigger_10pct_ingame": ing_rate > 0.10,
+        "n_depth_sized": len(sized),
+        "n_depth_parent_stamped": len(ps),
+        "depth_parent_stamped_rate": (len(ps) / len(sized)) if sized else 0.0,
+        "parent_stamped_staleness_max_s": max(ps_stale) if ps_stale else 0.0,
+        "parent_stamped_staleness_mean_s": (sum(ps_stale) / len(ps_stale)) if ps_stale else 0.0,
     }
 
 
@@ -656,6 +703,13 @@ def run_db() -> int:
             print("  *** TRIGGER: ingame depth-absent > 10% — build the "
                   "within-one-min_tick snap (its own column, never replacing "
                   "exact-match). ***")
+        if am["n_depth_parent_stamped"]:
+            print(f"  depth via fetched-together parent stamp: "
+                  f"{am['n_depth_parent_stamped']:,} of {am['n_depth_sized']:,} "
+                  f"sized ({am['depth_parent_stamped_rate']:.1%}) | staleness "
+                  f"mean {am['parent_stamped_staleness_mean_s']:.0f}s, max "
+                  f"{am['parent_stamped_staleness_max_s']:.0f}s — the pre-08-07 "
+                  f"relaxation (own stamp NULL, parent exact), measured not free")
 
     def _book(b):
         drawdown = 1.0 - (b.concession / b.seed) if b.seed else 0.0
