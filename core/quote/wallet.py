@@ -199,6 +199,10 @@ class LeagueBook:
     unrealized_conc: float
     n_open_marked: int
     n_open_unmarkable: int           # open, no current mid (coverage gap, counted)
+    #: Realized P&L per settlement DATE (ISO) per arm — term 5's daily line
+    #: (P&L vs $3.29/day). {date: delta}; today's + month-to-date derive from it.
+    daily_opt: dict = field(default_factory=dict)
+    daily_conc: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -228,6 +232,8 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
     eq_opt = eq_conc = float(seed)                    # realized equity (seed + settled P&L)
     res_opt = res_conc = 0.0                          # reserved open cost basis
     toll = 0.0
+    daily_opt: dict[str, float] = {}
+    daily_conc: dict[str, float] = {}
     halted = False
     halt_line: LedgerLine | None = None
     size: dict[int, int] = {}
@@ -275,6 +281,9 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
             eq_opt += r_opt
             eq_conc += r_conc
             toll += (r_opt - r_conc)
+            d = f.settled_at.date().isoformat()       # term-5 daily line
+            daily_opt[d] = daily_opt.get(d, 0.0) + r_opt
+            daily_conc[d] = daily_conc.get(d, 0.0) + r_conc
             # BANKRUPTCY HALT (51a4103): the concession bankroll gone (realized
             # equity <= 0) stops trading even while optimism shows profit — the
             # book that survives only on the optimistic valuation, made visible.
@@ -457,10 +466,38 @@ def gather(session, *, staleness_s: float = DEPTH_STALENESS_S):
     open_markets = {f.market_slug for f in fills if f.settlement is None}
     mids = _load_mids(session, open_markets)
     result = fold(fills, seeds=seeds, mids=mids)
+
+    # Depth-absent fills as their OWN LINE (D's remedy): count, share, and the
+    # capture they WOULD have carried at unit size — the suppression cost.
+    # exact-match clip-to-zero is capacity-conservative but P&L-SIGN-DEPENDENT:
+    # an absent fill contributes nothing, so on a NEGATIVE-capture book it
+    # FLATTERS the loss. This line says how much of the outcome is "we didn't
+    # trade" vs "we traded well". 10%-of-ingame is the pre-data trigger for the
+    # within-one-min_tick revisit (its own labelled column, never replacing
+    # exact-match).
+    absent = [f for f in fills if f.depth <= 0]
+    ingame = [f for f in fills if f.regime == "ingame"]
+    ingame_absent = [f for f in absent if f.regime == "ingame"]
+
+    def _wouldbe(f: Fill, conc: float) -> float:
+        return net_capture_mark(side=f.side, quote_price=f.quote_price,
+                                mid_at_fill=f.mid_at_fill) - conc
+
+    wb_opt = [_wouldbe(f, 0.0) for f in absent]
+    wb_conc = [_wouldbe(f, concession_for(f.regime)) for f in absent]
+    ing_rate = (len(ingame_absent) / len(ingame)) if ingame else 0.0
     meta = {
         "n_fills": n_total,
         "depth_absent": n_absent,
         "depth_absent_rate": (n_absent / n_total) if n_total else 0.0,
+        "n_ingame": len(ingame),
+        "ingame_absent": len(ingame_absent),
+        "ingame_absent_rate": ing_rate,
+        "absent_wouldbe_opt_sum": sum(wb_opt),
+        "absent_wouldbe_conc_sum": sum(wb_conc),
+        "absent_wouldbe_opt_mean_c": (sum(wb_opt) / len(wb_opt) * 100) if wb_opt else 0.0,
+        "absent_wouldbe_conc_mean_c": (sum(wb_conc) / len(wb_conc) * 100) if wb_conc else 0.0,
+        "trigger_10pct_ingame": ing_rate > 0.10,
         "staleness_s": staleness_s,
         "seeds": seeds,
     }
@@ -482,9 +519,24 @@ def run_db() -> int:
                   "(main checkout / prod).")
             return 0
         raise
-    print(f"paper wallet — {meta['n_fills']:,} fills; depth-absent (clip-to-zero) "
-          f"{meta['depth_absent']:,} = {meta['depth_absent_rate']:.1%} "
-          f"(exact-4dp level not recorded fresh within {meta['staleness_s']:.0f}s)")
+    print(f"paper wallet — {meta['n_fills']:,} fills")
+    # depth-absent as its own line (D): count, share, and would-be capture.
+    print(f"depth-absent (clip-to-zero): {meta['depth_absent']:,} "
+          f"({meta['depth_absent_rate']:.1%} of all, "
+          f"{meta['ingame_absent_rate']:.1%} of ingame) | would-be capture at "
+          f"unit size: opt ${meta['absent_wouldbe_opt_sum']:+.2f} "
+          f"({meta['absent_wouldbe_opt_mean_c']:+.2f}c/fill), conc "
+          f"${meta['absent_wouldbe_conc_sum']:+.2f} "
+          f"({meta['absent_wouldbe_conc_mean_c']:+.2f}c/fill) — the suppression "
+          f"cost we did not trade")
+    print("  NOTE: exact-4dp match is capacity-conservative but P&L "
+          "sign-dependent — an absent fill contributes nothing, so on a "
+          "negative-capture book it FLATTERS the loss (the would-be line above "
+          "is how much).")
+    if meta["trigger_10pct_ingame"]:
+        print("  *** TRIGGER: ingame depth-absent > 10% — build the "
+              "within-one-min_tick snap as its own labelled column (never "
+              "replacing exact-match). ***")
     if result.refused:
         print(f"REFUSED (unknown league, not folded): {len(result.refused)} fills")
     for slug, b in sorted(result.books.items()):
