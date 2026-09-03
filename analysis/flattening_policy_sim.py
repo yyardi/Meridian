@@ -96,11 +96,20 @@ def simulate(cycles: pd.DataFrame, k: float) -> pd.DataFrame:
             # 1. fills first, against the ALREADY-resting quote
             if stand is not None and r.bucket > stand[2]:
                 bp, ap, _ = stand
+                # PHANTOM CLASSIFICATION (the fill model's own artifact):
+                # a resting bid at bp, if actually present, forces
+                # best_bid >= bp, so the mid cannot reach it while ask > bp
+                # — the only real fill is the ask coming down. Symmetrically
+                # a resting ask at ap is really filled only if bid >= ap.
+                # Fills failing that are fills our own presence would have
+                # prevented, and they are ~64% of v1's tape.
                 if mid <= bp:
-                    out.append((m, "bid", bp, mid, r.bucket))
+                    out.append((m, "bid", bp, mid, r.bucket,
+                                bool(r.ask > bp + 1e-9)))
                     q += 1.0
                 if mid >= ap:
-                    out.append((m, "ask", ap, mid, r.bucket))
+                    out.append((m, "ask", ap, mid, r.bucket,
+                                bool(r.bid < ap - 1e-9)))
                     q -= 1.0
             # 2. requote at the touch (ask leaned k inside) while quotable.
             # POST-ONLY IS PHYSICS, NOT A DETAIL: a maker's ask must REST,
@@ -131,7 +140,7 @@ def simulate(cycles: pd.DataFrame, k: float) -> pd.DataFrame:
             else:
                 stand = None
     return pd.DataFrame(out, columns=["market_slug", "side", "quote_price",
-                                      "mid_at_fill", "filled_at"])
+                                      "mid_at_fill", "filled_at", "phantom"])
 
 
 def score(sim: pd.DataFrame, settle: pd.Series,
@@ -328,6 +337,35 @@ def main() -> int:
         sc = score(sim, settle, games)
         per_g = sc.groupby("game_id").pnl.sum()
         rows.append((k, len(sim), sc.pnl.sum(), per_g))
+    # THE PHANTOM-FILTERED CURVE — the pre-Saturday check.
+    # A leaned ask at A fills under the model when mid >= A, but really only
+    # when bid >= A. At quote time mid = A0 - s/2, so ANY lean k >= s/2
+    # satisfies the model IMMEDIATELY while reality still requires k >= s.
+    # Leans between s/2 and s are therefore pure artifact — and the k-curve's
+    # inflection landing at WNBA's s/2 (~2c) is exactly what a phantom-driven
+    # result would look like.
+    hr("THE SAME CURVE ON REAL FILLS ONLY (phantoms excluded)")
+    print(f"{'k':>5s} {'fills':>8s} {'phantom%':>9s} {'REAL':>8s} "
+          f"{'real settle P&L':>16s} {'delta vs k=0':>13s} "
+          f"{'per-game (clustered)':>26s}")
+    real_rows = []
+    for k in K_GRID:
+        sim = simulate(cycles, k)
+        sc = score(sim, settle, games)
+        rl = sc[~sc.phantom]
+        real_rows.append((k, len(sc), sc.phantom.mean(), len(rl),
+                          rl.pnl.sum(), rl.groupby("game_id").pnl.sum()))
+    rb = real_rows[0][5]
+    for k, n, pshare, nreal, tot, per_g in real_rows:
+        d_ = (per_g - rb).reindex(rb.index).fillna(0.0)
+        cm = clustered_mean({g: [v] for g, v in d_.items()})
+        ci = (f"{cm.mean:+.2f} [{cm.lo:+.2f}, {cm.hi:+.2f}]" if cm else "n/a")
+        print(f"{k*100:>4.0f}c {n:>8d} {pshare:>8.1%} {nreal:>8d} "
+              f"{tot:>+16.2f} {tot - real_rows[0][4]:>+13.2f} {ci:>26s}")
+    print("\nreading: if the shape SURVIVES phantom exclusion the small-lean")
+    print("result is economic and k=1c is hardened; if it changes, the")
+    print("registered parameter was chosen by an artifact.")
+
     b_pg = rows[0][3]
     print(f"{'k':>5s} {'fills':>8s} {'total P&L':>11s} {'delta vs k=0':>13s} "
           f"{'games improved':>15s} {'per-game delta (clustered)':>30s}")
