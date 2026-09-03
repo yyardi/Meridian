@@ -82,6 +82,14 @@ class ShadowQuoteFill(Base):
     #: failed", which changes nothing (the fill-watcher lesson).
     settlement: Mapped[int | None] = mapped_column(SmallInteger)
     settled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The writing binary's git commit (amendment 12), from the GIT_COMMIT
+    #: build-arg baked into the image; the engine FAILS TO START if it is absent
+    #: (fail-closed — a NULL stamp defeats the amendment). Makes "one binary per
+    #: cohort" verifiable in the data: a cohort gate asserts a single value
+    #: across its rows. Nullable in the column only for rows written before this
+    #: landed; the writer never writes NULL. League is SLUG-derived, never this —
+    #: the two are independent witnesses of a stray row.
+    engine_commit: Mapped[str | None] = mapped_column(String(40))
 
     __table_args__ = (
         CheckConstraint("regime in ('pregame','ingame')", name="ck_sqf_regime"),
@@ -199,6 +207,11 @@ class QuoteV2Observation(Base):
     #: instant t0+5s falls between observations, so a boolean could never
     #: byte-match offline replay. NULL when no confirm is tied to this obs.
     det_confirm_t0: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The writing binary's git commit (amendment 12) — same fail-closed
+    #: provenance stamp as ShadowQuoteFill.engine_commit, on every observation
+    #: row, so a gate can assert one engine identity across an observation
+    #: cohort. Nullable only for pre-amendment rows; the writer never writes NULL.
+    engine_commit: Mapped[str | None] = mapped_column(String(40))
 
     __table_args__ = (
         CheckConstraint(

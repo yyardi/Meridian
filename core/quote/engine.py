@@ -52,12 +52,36 @@ import structlog
 from sqlalchemy import text
 
 from core import heartbeat as hb
+from core.leagues import default_league, league_of_slug
 from core.quote.adverse_selection import Quote
 from core.quote.storage import ASK, BID, INGAME, PREGAME, ShadowQuoteFill
 
 log = structlog.get_logger(__name__)
 
 UTC = dt.timezone.utc
+
+
+#: The env the writer reads for its commit stamp. The Dockerfile takes
+#: `ARG GIT_COMMIT` and bakes it as this env at BUILD time, so a container
+#: always carries its image's commit and a plain `up -d` can't stamp a checkout
+#: commit onto older code. The writer reads the BAKED name, never the build-arg.
+ENGINE_COMMIT_ENV = "MERIDIAN_ENGINE_COMMIT"
+
+
+def require_engine_commit() -> str:
+    """The writing binary's git commit, from MERIDIAN_ENGINE_COMMIT (the
+    GIT_COMMIT build-arg baked into the image at build time; amendment 12).
+    FAIL-CLOSED: the engine refuses to start without it — a NULL provenance stamp
+    defeats the amendment whose whole job is provenance. Read at start and
+    stamped on every fill/observation row."""
+    commit = (os.environ.get(ENGINE_COMMIT_ENV) or "").strip()
+    if not commit:
+        raise RuntimeError(
+            f"{ENGINE_COMMIT_ENV} is absent — the quote engine refuses to start "
+            "(amendment 12: every fill/observation row stamps its binary; build "
+            "the image with --build-arg GIT_COMMIT=$(git rev-parse HEAD), which "
+            f"bakes {ENGINE_COMMIT_ENV}).")
+    return commit
 
 #: Heartbeat service name. Defined here rather than in core/heartbeat.py,
 #: which was carrying another session's uncommitted work when this shipped —
@@ -140,10 +164,20 @@ class ShadowQuoter:
         interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
         settle_every_seconds: float = DEFAULT_SETTLE_EVERY_SECONDS,
         settlement_lookup=None,
+        league: str | None = None,
     ) -> None:
         self._Session = sessionmaker
         self.interval_seconds = interval_seconds
         self.settle_every_seconds = settle_every_seconds
+        #: This binary's league (amendment 12). The frozen binary is WNBA; the
+        #: GRIDIRON binary is this same engine with league='nfl'. The engine
+        #: observes and quotes ONLY this league; the filter is on the read path
+        #: (_observations) AND the write path (_fill). Default from MERIDIAN_LEAGUE.
+        self._league = (league or default_league().slug)
+        #: This binary's commit (amendment 12), stamped on every row. None only
+        #: in tests that don't set the env; run_forever fail-closes in prod.
+        self._engine_commit = (
+            os.environ.get(ENGINE_COMMIT_ENV) or "").strip() or None
         #: slug -> bool|None ("settled to what?"). Production asks the PUBLIC
         #: gateway; tests inject. Explicit 0/1 only; anything else is not an
         #: answer (the fill-watcher lesson).
@@ -167,6 +201,11 @@ class ShadowQuoter:
         """), {"age": MAX_OBSERVATION_AGE_SECONDS}).all()
         out = []
         for r in rows:
+            lg = league_of_slug(r.market_slug)
+            if lg is None or lg.slug != self._league:
+                continue              # league filter (amendment 12), READ path:
+                                      # this binary observes only its own league;
+                                      # an unknown/other-league slug is dropped.
             bid, ask = float(r.best_bid), float(r.best_ask)
             if ask <= bid:
                 continue              # crossed/locked: nothing rests inside that
@@ -243,6 +282,15 @@ class ShadowQuoter:
         return result
 
     def _fill(self, standing: StandingQuote, ob: Observation, side: str) -> ShadowQuoteFill:
+        lg = league_of_slug(standing.market_slug)
+        if lg is None or lg.slug != self._league:
+            # league filter (amendment 12), WRITE path — a should-never-fire
+            # guard (the read path already dropped other-league slugs), so if it
+            # ever fires the binary is out of contract and must not write.
+            raise RuntimeError(
+                f"league filter (write path): {self._league} binary refused to "
+                f"fill {standing.market_slug} "
+                f"(routes to {lg.slug if lg else None})")
         price = standing.bid_price if side == BID else standing.ask_price
         log.info(
             "shadow_quote_fill",
@@ -262,6 +310,7 @@ class ShadowQuoter:
             mid_at_fill=Decimal(str(round(ob.mid, 4))),
             quoted_at=standing.quoted_at,
             filled_at=ob.captured_at,
+            engine_commit=self._engine_commit,
         )
 
     # ---- settlement ------------------------------------------------------- #
@@ -310,8 +359,12 @@ class ShadowQuoter:
         self._stop.set()
 
     def run_forever(self) -> None:
+        # FAIL-CLOSED (amendment 12): refuse to start without a commit stamp, so
+        # no unstamped row can ever be written in production.
+        self._engine_commit = require_engine_commit()
         log.info("quote_engine_started",
-                 interval_seconds=self.interval_seconds,
+                 interval_seconds=self.interval_seconds, league=self._league,
+                 engine_commit=self._engine_commit,
                  note="shadow only — no order exists behind anything this writes")
         while not self._stop.is_set():
             started = time.monotonic()
