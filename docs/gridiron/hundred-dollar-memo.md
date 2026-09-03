@@ -8,6 +8,28 @@ the paper-wallet scoreboard and the lever-replay wave (2ab891c) — the bar
 has a daily scoreboard and the levers have a ranking protocol; neither is
 evidence.** **Ratified by the author, with the error given its true shape (research agent, 2026-09-03): "Thursday" was an INHERITED calendar claim — asserted in a relay, repeated by the author into registration text without verification, caught by B at the venue (gameStartTime 2026-09-10 00:20Z). The author carries two memory scars named verify-against-the-venue and verify-clock-and-timezone, and still landed a relayed date into signed text on the day the whole registry learned to cut pointers into artifacts. The event-governs form was always the correct drafting; this flag says the author needed teaching twice.**
 
+## THE FRAME (D, 2026-09-03 — read this before the arithmetic)
+
+**v1 is not a market maker; it is a passive position accumulator with
+slightly better entry prices than mid.** It quotes two-sided, realises
+one-sided flow, and has NO MECHANISM TO CLOSE. Every other measurement is a
+consequence: it accumulates (time-weighted |q| 7.24) without that ordering
+the per-fill mean; the accumulation orders the TAIL (per-market settlement
+SD 0.35 → 6.45 across peak |q|); round trips were AVAILABLE and refused (up
+to 27–42% at a 1¢ lean, +1.44¢ round trip against −15.09¢ rides); and the
+un-closed positions aggregate to a ~$702 arithmetic worst case against a
+$1,000 wallet at unit size.
+
+**The one missing capability — FLATTENING — answers all three:** it converts
+high-variance rides into tight scalps, shrinks the inventory that orders the
+tail, and frees the wallet capacity that permits size.
+
+Recorded with equal prominence so no later reader revives them: the
+inventory CAP as a P&L lever is DEAD (game-clustered null, and no
+calendar — not even a full NFL season — can resolve it), and no reading of
+the tail supports "remove the tail and we have a business" (no peak-|q|
+bucket has a positive mean).
+
 **The bar: $100/month = $3.29/day = $23.03/week.**
 
 **(a) GRIDIRON maker capture — the ONLY candidate whose ceiling clears the
