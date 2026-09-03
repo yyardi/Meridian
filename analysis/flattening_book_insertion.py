@@ -60,9 +60,28 @@ PIN = "20260901T195202Z"
 FILLS = EX / "quote_fills_v1_20260902T161223Z.csv"
 TICKS = EX / f"live_ticks_pulse_games_{PIN}.csv.gz"
 
+# THE REPLAY GRID MUST COVER THE FILL POPULATION.
+# live_ticks_pulse_games alone contains only 147 of the 209 markets that
+# have fills — 62 markets, 4,412 fills (25%), are absent from it entirely.
+# They are WHOLE MISSING MARKETS, not gaps inside covered markets (checked:
+# zero fills in covered markets fail to join), so unioning the snapshot
+# feeds extends coverage rather than splicing cadences inside a market.
+# On the partial grid this k-curve reported a positive region of
+# {1c, 2c, 3c}; on the full grid it is {1c} alone. Coverage was load-
+# bearing for the conclusion, not a rounding detail.
+TICK_SOURCES = f"""
+    SELECT market_slug, captured_at, best_bid, best_ask
+      FROM read_csv('{TICKS}')
+    UNION ALL SELECT column00, column05, column06, column07
+      FROM read_csv('{EX}/eval_market_snapshots.csv.gz', header=false)
+    UNION ALL SELECT column00, column05, column06, column07
+      FROM read_csv('{EX}/delta_market_snapshots.csv.gz', header=false)
+    UNION ALL SELECT market_slug, captured_at, best_bid, best_ask
+      FROM read_csv('{EX}/live_snapshots_since0820.csv.gz')"""
 
-def load_cycles(markets):
-    """The same 5s cycle grid the k-curve was computed on."""
+
+def load_cycles(markets, sources=None):
+    """The 5s cycle grid, over the full tick substrate by default."""
     con = duckdb.connect()
     con.execute("SET timezone='UTC'")
     con.execute("CREATE TEMP TABLE wanted(m VARCHAR)")
@@ -73,8 +92,8 @@ def load_cycles(markets):
                    AS bucket,
                arg_max(best_bid, captured_at) AS bid,
                arg_max(best_ask, captured_at) AS ask
-        FROM read_csv('{TICKS}')
-        WHERE is_live AND best_bid IS NOT NULL AND best_ask IS NOT NULL
+        FROM ({sources or TICK_SOURCES})
+        WHERE best_bid IS NOT NULL AND best_ask IS NOT NULL
           AND market_slug IN (SELECT m FROM wanted)
         GROUP BY 1, 2 ORDER BY 1, 2
     """).df()
@@ -217,7 +236,19 @@ def main():
         "market_slug").set_index("market_slug").settlement
     games = real.drop_duplicates("market_slug").set_index(
         "market_slug").game_id
-    cycles = load_cycles(sorted(real.market_slug.unique()))
+    mkts = sorted(real.market_slug.unique())
+    cycles = load_cycles(mkts)
+
+    # COVERAGE GATE: a replay grid that omits markets silently answers a
+    # different question than the one asked. Report it, always.
+    covered = set(cycles.market_slug.unique())
+    missing = [m for m in mkts if m not in covered]
+    print(f"replay grid: {len(cycles):,} cycles over "
+          f"{len(covered)}/{len(mkts)} markets with fills")
+    if missing:
+        n_lost = int(real.market_slug.isin(missing).sum())
+        print(f"  WARNING: {len(missing)} markets absent from the grid "
+              f"({n_lost} fills, {n_lost/len(real):.1%} of the population)")
 
     print("\n=== FLATTEN k-curve: phantom-EXCLUDED vs order-INSERTED ===")
     print("excluded = phantoms dropped from P&L but still driving inventory")
