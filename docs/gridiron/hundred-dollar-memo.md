@@ -182,11 +182,24 @@ building it for the reasons that do not depend on the number.*
 
 ## DESCRIPTIVE QUESTION + ITS PROHIBITION (kept physically together, deliberately)
 
-**Question, testable on data we own:** do far rungs on this venue expire
-worthless often enough to be systematically overpriced — the
-favourite-longshot bias? It surfaced as a *profitable simulator bug* ("quote
-to get short prints money"), which is the most suspicious possible origin
-for an idea.
+**ANSWERED — NULL (D, 2026-09-03, `analysis/rung_calibration.py` @ dc3b6fc).**
+608 markets / 34 events, price at each rung's first two-sided live tick
+against realised settlement, event-clustered: **no band's CI excludes its
+own price — the board is not measurably miscalibrated anywhere.** The low
+tail runs OPPOSITE to the classic bias (rungs priced 6.2% settled 11.5%),
+which would make selling them a LOSING proposition rather than an edge. The
+only suggestive cell is the middle (0.35–0.65 priced 0.503, settled 0.391)
+and its CI still contains the price. **So the mechanism the bug appeared to
+exploit is not in the data; the +$1,928 was a directional accident of 34
+games.** The question below is kept with its answer and its prohibition
+because the sequence — profitable bug → plausible story → measured null —
+is the type specimen for rule 21.
+
+**The question as it was asked, testable on data we own:** do far rungs on
+this venue expire worthless often enough to be systematically overpriced —
+the favourite-longshot bias? It surfaced as a *profitable simulator bug*
+("quote to get short prints money"), which is the most suspicious possible
+origin for an idea.
 
 **Prohibition, in the same paragraph so it can never be quoted without it:
 selling far rungs is the most ruin-prone strategy available to us, and a
