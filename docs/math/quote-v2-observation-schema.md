@@ -65,27 +65,51 @@ compliant stream accrue in parallel with A1's gate.
 | `quote_bid`, `quote_ask` | Price null | **PATIENCE — the resting quote at this obs, incl. unfilled requotes (the full stream)** |
 | `quote_event` | str | quote lifecycle: rested / requoted / withdrawn / held / filled_bid / filled_ask / none — PATIENCE requote behaviour |
 | `our_bid_qty`, `our_ask_qty` | Qty null | **the fill-probability surface's SECOND axis: resting size AT our own quote price on each side — the queue we sit behind.** NULL when we hold no standing quote on that side (no queue) or no book sample backs the row. Sampled for QUOTED markets only, on a bounded cadence (see limitation below) |
-| `depth_fetched_at` | ts (tz) null | **staleness of the queue-ahead sample: `observed_at − depth_fetched_at`, carried on every row that reuses a cached book.** A consumer MUST check it against the staleness bound before using the queue number |
+| `depth_fetched_at` | ts (tz) null | when the queue-ahead sample was fetched (staleness = `observed_at − depth_fetched_at`); the SECONDARY/backstop gate |
+| `depth_best_bid`, `depth_best_ask` | Price null | **the PRIMARY validity gate (D): the touch in the sampled book AT `depth_fetched_at`. Compare to `best_bid`/`best_ask` (the touch at `observed_at`): SAME → queue-ahead exactly valid; DIFFERENT → unusable at ANY age.** Price identity, not elapsed time — in-play touch survival is median 2s / p90 17s, so no time threshold separates fresh from dead |
 | `det_in_window` | bool | live congestion detector: is this obs inside a confirmed window (opens t0+5s) |
 | `det_confirm_t0` | ts null | **B sign-off: the confirmed trigger's t0 AS A VALUE, not a boolean.** The true confirm instant is t0+5s, which falls BETWEEN observations; a boolean flag is quantized to obs times while offline replay computes exact instants, so they could never byte-match. Recording t0 pins the confirm identity exactly and gives the density-gated v2 its confirm times for free. NULL when no confirm is tied to this obs |
 
-**LIMITATION — queue-ahead depth (`our_bid_qty`/`our_ask_qty`), read this where
-you meet the field (manager 2026-09-03):** the queue-ahead is the resting size at
-*our own quote price*, which is the honest object for `P(fill | distance, queue-
-ahead)` — chosen over top-of-book size because the venue snapshot carries NO size
-at all (`Quote` = value+currency), so top-of-book would cost the identical book
-fetch while degrading exactly when we lean inside the touch, i.e. for its own
-test case. It is sampled from the venue book on a **bounded cadence**
-(`DEPTH_REFRESH_INTERVAL_SECONDS`, engine_v2), NOT per-observation and NOT joined
-from `book_levels` (that cross-stream point-in-time join is the hazard this
-project already paid for). So the number can be up to one refresh interval stale;
-`depth_fetched_at` makes that visible per row, and beyond
-`DEPTH_QUEUE_STALENESS_MAX_SECONDS` the queue-ahead is UNUSABLE, not merely stale.
-Both constants are D's convention (contemporaneous-depth semantics) and live as
-named constants so a change is one line. The fetch is read-only (proof 2: no
-order/auth/credential import) and off the decision path (proof 3: `record_cycle`
-never mutates `_standing`/fills), fail-open to NULL — coverage counted, never a
-stall of quoting.
+**LIMITATION & VALIDITY GATE — queue-ahead depth (`our_bid_qty`/`our_ask_qty`),
+read this where you meet the field (manager + D, 2026-09-03):** the queue-ahead is
+the resting size at *our own quote price*, the honest object for `P(fill |
+distance, queue-ahead)` — chosen over top-of-book size because the venue snapshot
+carries NO size at all (`Quote` = value+currency), so top-of-book would cost the
+identical book fetch while degrading exactly when we lean inside the touch, i.e.
+for its own test case. Sampled from the venue book (NOT joined from `book_levels`
+— that cross-stream point-in-time join is the hazard this project already paid
+for; this is the observation's own fresh read).
+
+**The validity gate is PRICE IDENTITY, not elapsed time (D).** Queue-ahead is a
+claim about the queue AT price P; it is valid while the market still quotes P (1s
+or 5min) and meaningless the instant the touch moves, at any age. WNBA in-play
+touch survival is median **2s**, p90 **17s** — no single time threshold separates
+fresh from dead. So the consumer's PRIMARY gate is `depth_best_bid/depth_best_ask`
+(the touch AT the sample) == `best_bid/best_ask` (the touch at observation): same
+→ exactly valid; different → unusable at any age. `DEPTH_QUEUE_STALENESS_MAX_SECONDS`
+is only a SECONDARY backstop (a touch that moved and coincidentally returned to
+the same price would pass price-identity wrongly). The writer drops on neither —
+it records the stamp + touch and lets the consumer judge (coverage counted).
+
+**Refresh** is touch-change-triggered with a floor (`DEPTH_REFRESH_INTERVAL_SECONDS`):
+refetch when the touch moved AND ≥ the floor elapsed, or past the backstop. The
+floor bounds the rate (naive touch-change on a 2s median ≈ 10 req/s; the floor
+caps it at `(quoted markets)/interval` = 4 req/s at 20/5s).
+
+**The cadence is a PURE BUDGET DIAL, not a data-quality knob (D):** because the
+gate is price identity, every retained queue number is exactly valid at any
+cadence — raising the floor only reduces COVERAGE (how many rows carry a usable
+number), never correctness. In-play usable coverage runs roughly 5s → ~30%, 10s →
+~20%, 30s → <10% (below ~20% the column can't support the P(fill|queue) curve, so
+10s is a defensible retreat under rate pressure and 30s is not). And the cost is
+ENTIRELY in-play: the pregame board is frozen (zero touch changes in 90s probes),
+so pregame sits ~100% price-valid on the backstop alone at ~zero request cost —
+expensive where the board is busy, free where it isn't. **CAVEAT (D):** the
+survival numbers are WNBA in-play; NFL in-play is unmeasured until the first slate
+— but the price-identity gate needs no constant to be right, so only cadence
+efficiency, not gate correctness, depends on the number holding for NFL. The fetch
+is read-only (proof 2) and off the decision path (proof 3), fail-open to NULL —
+never a stall of quoting.
 
 **Deliberately NOT stored — recomputed offline from the raw stream, to avoid
 freezing a version into the table:**
@@ -123,14 +147,26 @@ freezing a version into the table:**
    waits for A1). Landing the model/migration is separate and off-path.
 5. **Detector live** — the quoter runs B's `CongestionDetector.feed` on its own
    stream and records `det_in_window` / `det_confirm_t0` / `det_version`.
-6. **Queue-ahead depth, bounded and off-path** — for markets we are actively
-   quoting, record the resting size at our own price (`our_bid_qty`/
-   `our_ask_qty`) from a book fetched at most once per
-   `DEPTH_REFRESH_INTERVAL_SECONDS` and cached per market; stamp
-   `depth_fetched_at`. Read-only gateway client (no order/auth/credential — the
-   AST test still passes), off the decision path, fail-open to NULL. Request-rate
-   bound: `(quoted markets) / interval` — stated as arithmetic against the shared
-   ceiling in the deploy PR, not left to an adaptive cadence to absorb.
+6. **Queue-ahead depth, price-identity gated and off-path** — for markets we are
+   actively quoting, record the resting size at our own price (`our_bid_qty`/
+   `our_ask_qty`) + the touch at fetch (`depth_best_bid`/`depth_best_ask`, the
+   price-identity gate) + `depth_fetched_at`, from a book refetched touch-change-
+   triggered with a floor `DEPTH_REFRESH_INTERVAL_SECONDS` (backstop
+   `DEPTH_QUEUE_STALENESS_MAX_SECONDS`). Read-only gateway client (no
+   order/auth/credential — the AST test still passes), off the decision path,
+   fail-open to NULL. Worst-case draw `(quoted markets)/interval` ≤ 4 req/s at 5s
+   and ~20 active markets — ~20% of the 20 req/s ceiling, onto a gateway already
+   155% cap-oversubscribed (manager 2026-09-03). **Ship 5s (manager): the calendar
+   resolves the tension — Sept 9–16 is NFL-live / WNBA-DARK (~17 of the 31
+   configured req/s idle, the most headroom the system will ever have), which is
+   exactly the unrepeatable first-slate window this field exists for; Sept 17+ is
+   when both are live and the oversubscription bites, revisited with the
+   concurrent-draw measurement in hand.** The honest tradeoff of any higher
+   interval: MORE NULL queue-ahead rows via fail-open, and NULLs on the first
+   slate are unrecoverable in exactly the way this field was added to prevent —
+   the argument for 5s now and a measured revision later, not conservatism first
+   and regret after. Because the gate is price-identity, that revision is a pure
+   rate lever (density, not correctness).
 
 ## Read embargo (amendment 10, 256c038)
 

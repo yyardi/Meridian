@@ -214,10 +214,18 @@ class QuoteV2Observation(Base):
     our_ask_qty: Mapped[Decimal | None] = mapped_column(Qty)
     #: The instant the depth sample behind our_bid_qty/our_ask_qty was FETCHED
     #: (quoter clock). Staleness = observed_at - depth_fetched_at is carried on
-    #: EVERY row that reuses a cached sample, so a consumer sees how old the queue
-    #: number is; beyond D's staleness bound the queue-ahead is unusable, not
-    #: merely stale. NULL when no sample backs this row.
+    #: EVERY row that reuses a cached sample. NULL when no sample backs this row.
     depth_fetched_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The TOUCH (best bid / best ask) in the book sample AT depth_fetched_at —
+    #: the PRIMARY validity gate (D's convention 2026-09-03). Compare to
+    #: best_bid/best_ask (the touch at observed_at): SAME -> the queue-ahead is
+    #: exactly valid (the market still quotes our price's neighbourhood);
+    #: DIFFERENT -> unusable at ANY age (the touch moved, so the sample describes a
+    #: prior market state). Price identity, not elapsed time, because in-play touch
+    #: survival is median 2s / p90 17s — no time threshold separates fresh from
+    #: dead. NULL when no sample backs this row.
+    depth_best_bid: Mapped[Decimal | None] = mapped_column(Price)
+    depth_best_ask: Mapped[Decimal | None] = mapped_column(Price)
 
     # ---- congestion detector output (B) ---------------------------------- #
     #: The detector code version (commit) that produced the fields below —
