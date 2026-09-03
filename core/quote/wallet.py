@@ -124,26 +124,42 @@ def maker_fee_per_contract(quote_price: float) -> float:
 
 
 def size_fill(*, available: float, cost_basis: float,
-              depth: float) -> tuple[int, str]:
-    """Honest sizing (term 3): whole contracts capped by BOTH the free capital
-    (available / cost_basis) AND the recorded book depth at the quoted level.
-    Returns (size, cap) where cap names the binding constraint for the clipped
-    ledger line: 'depth' = the venue bound it, 'capital' = the $1,000 bound it
-    (the Sunday scoreboard signal), 'none' = neither clipped, 'zero' = nothing
-    takeable. `available` is the reservation-adjusted cash (realized equity minus
-    open cost basis); `cost_basis` is per-contract entry cost (stake, plus the
-    concession on the concession arm)."""
+              depth: float, quote_size: float) -> tuple[int, str]:
+    """Honest sizing (term 3): the STRATEGY's intended quote size, then CAPPED by
+    BOTH the recorded book depth at the quoted level AND the free capital. Depth
+    is a CAP on the strategy's size (term 7: "a fill exceeding recorded depth
+    clips and logs"), NEVER the size itself — sizing to `min(depth, capital)`
+    simulates a maker who takes the whole displayed book every fill, a strategy
+    nobody ran and no ledger funds (median recorded depth ~1,000 contracts would
+    consume a $500 ledger in one fill). v1 quoted ONE contract: shadow_quote_fills
+    records no size, so each fill is a unit event (Fill.quote_size defaults 1.0);
+    forward, the quoter's own size is the input and depth returns to the cap it
+    was registered as.
+
+    Returns (size, cap): 'none' = the full intended size was takeable; 'depth' =
+    the venue clipped below intent; 'capital' = the $1,000 clipped below intent;
+    'zero_depth'/'zero_capital'/'zero_both' = sized 0, SPLIT by which bound was
+    empty. That split is deliberate: one blended 'zero' counter conflated "no book
+    at our price" with "no free capital", and reading the blend as a depth
+    failure cost an evening — they are different facts and get different lines.
+    `available` is reservation-adjusted cash; `cost_basis` is per-contract entry
+    cost (stake, plus the concession on the concession arm)."""
+    want = int(floor(max(quote_size, 0.0)))
     depth_cap = int(floor(max(depth, 0.0)))
     affordable = (int(floor(max(available, 0.0) / cost_basis))
                   if cost_basis > 0 else 0)
-    size = max(min(depth_cap, affordable), 0)
+    size = max(min(want, depth_cap, affordable), 0)
     if size == 0:
-        return 0, "zero"
-    if depth_cap < affordable:
-        return size, "depth"
-    if affordable < depth_cap:
-        return size, "capital"
-    return size, "none"
+        no_depth = depth_cap <= 0
+        no_capital = affordable <= 0
+        if no_depth and not no_capital:
+            return 0, "zero_depth"
+        if no_capital and not no_depth:
+            return 0, "zero_capital"
+        return 0, "zero_both"        # both empty, or want==0 (quoted nothing)
+    if size < want:
+        return size, ("depth" if depth_cap <= affordable else "capital")
+    return size, "none"              # full intended size takeable
 
 
 # --------------------------------------------------------------------------- #
@@ -166,6 +182,12 @@ class Fill:
     depth: float
     settlement: int | None = None
     settled_at: dt.datetime | None = None
+    #: The STRATEGY's intended quote size for this fill — what depth and capital
+    #: then CAP. v1 quoted one contract and shadow_quote_fills records no size,
+    #: so a v1 fill is a unit event: default 1.0. A forward strategy that records
+    #: its own size sets this; depth stays the cap it was registered as, never the
+    #: size. (Sizing to full depth was the bug that voided the first wallet run.)
+    quote_size: float = 1.0
 
 
 @dataclass
@@ -216,6 +238,14 @@ class LeagueBook:
     peak_concurrent_contracts: int = 0
     tw_concurrent_markets: float = 0.0      # time-weighted mean over the ledger's span
     tw_concurrent_contracts: float = 0.0
+    #: n_zero SPLIT by reason (they sum to n_zero). Kept apart because a blended
+    #: zero counter read as a depth failure cost an evening: "no book at our
+    #: price" and "no free capital" are different facts. no_capital rising is the
+    #: money-runs-out signal (term 3's Sunday scoreboard); no_depth is the
+    #: depth-absent artifact (its own line already, _absent_meta).
+    n_zero_no_depth: int = 0
+    n_zero_no_capital: int = 0
+    n_zero_both: int = 0
 
 
 @dataclass
@@ -294,6 +324,7 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
     halt_line: LedgerLine | None = None
     size: dict[int, int] = {}
     n_fills = n_clip_depth = n_clip_res = n_zero = n_skipped = 0
+    n_zero_depth = n_zero_cap = n_zero_both = 0
     open_idx: list[int] = []
 
     for (t, _k, kind, i, f) in events:
@@ -306,10 +337,16 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
             cost_conc = stake + cc                    # concession-arm cost basis
             available = eq_conc - res_conc            # reservation-adjusted cash
             sz, cap = size_fill(available=available, cost_basis=cost_conc,
-                                depth=f.depth)
+                                depth=f.depth, quote_size=f.quote_size)
             size[i] = sz
             if sz == 0:
                 n_zero += 1
+                if cap == "zero_depth":
+                    n_zero_depth += 1                 # no book at our price
+                elif cap == "zero_capital":
+                    n_zero_cap += 1                   # money ran out (the signal)
+                else:
+                    n_zero_both += 1
             else:
                 n_fills += 1
                 if cap == "depth":
@@ -386,7 +423,9 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
         n_open_unmarkable=n_unmarkable,
         daily_opt=daily_opt, daily_conc=daily_conc,
         peak_concurrent_markets=peak_m, peak_concurrent_contracts=peak_c,
-        tw_concurrent_markets=tw_m, tw_concurrent_contracts=tw_c)
+        tw_concurrent_markets=tw_m, tw_concurrent_contracts=tw_c,
+        n_zero_no_depth=n_zero_depth, n_zero_no_capital=n_zero_cap,
+        n_zero_both=n_zero_both)
 
 
 def fold(fills: list[Fill], *, seeds: dict[str, float] | None = None,
@@ -662,7 +701,9 @@ def run_db() -> int:
         clip_rate = (b.n_clipped_reservation / b.n_fills) if b.n_fills else 0.0
         print(f"\n  [{b.slug}] seed ${b.seed:.2f}   fills {b.n_fills} "
               f"(depth-clip {b.n_clipped_depth}, capital-clip "
-              f"{b.n_clipped_reservation}, zero {b.n_zero})"
+              f"{b.n_clipped_reservation}, zero {b.n_zero} "
+              f"[no-depth {b.n_zero_no_depth}, no-capital {b.n_zero_no_capital}, "
+              f"both {b.n_zero_both}])"
               + ("   *** HALTED ***" if b.halted else ""))
         print(f"    optimistic ${b.optimistic:10.2f}  P&L ${b.optimistic - b.seed:+.2f}")
         print(f"    concession ${b.concession:10.2f}  P&L ${b.concession - b.seed:+.2f}"
@@ -741,17 +782,33 @@ def _selftest_primitives() -> int:
           mark_per_contract(side=ASK, quote_price=0.60, mid_now=0.55,
                             concession=0.0), 0.05)
 
-    # sizing: depth binds -> cap 'depth'; capital binds -> cap 'capital'
-    check("size: avail 100 / cost 0.40, depth 100 -> 100",
-          size_fill(available=100.0, cost_basis=0.40, depth=100)[0], 100)
-    check("size: depth 100 < affordable 250 -> cap 'depth'",
-          size_fill(available=100.0, cost_basis=0.40, depth=100)[1], "depth")
-    check("size: depth 1000 >= affordable 250 -> cap 'capital'",
-          size_fill(available=100.0, cost_basis=0.40, depth=1000)[1], "capital")
-    check("size: affordable 100/0.40=250",
-          size_fill(available=100.0, cost_basis=0.40, depth=1000)[0], 250)
-    check("size: no capital -> (0,'zero')",
-          size_fill(available=0.0, cost_basis=0.40, depth=1000), (0, "zero"))
+    # sizing: intended quote_size, then CAPPED by depth and by capital.
+    # v1 unit: want 1, plenty of depth+capital -> size 1, nothing clipped.
+    check("size: want 1, depth 100, afford 250 -> 1, cap 'none'",
+          size_fill(available=100.0, cost_basis=0.40, depth=100, quote_size=1),
+          (1, "none"))
+    # depth binds: want 1000 > depth 100 (< affordable 250) -> 100, cap 'depth'
+    check("size: want 1000 > depth 100 -> 100, cap 'depth'",
+          size_fill(available=100.0, cost_basis=0.40, depth=100, quote_size=1000),
+          (100, "depth"))
+    # capital binds: want 1000 > affordable 250 (< depth 1000) -> 250, 'capital'
+    check("size: want 1000, depth 1000, afford 250 -> 250, cap 'capital'",
+          size_fill(available=100.0, cost_basis=0.40, depth=1000, quote_size=1000),
+          (250, "capital"))
+    # depth is a CAP, never the target: want 1 with depth 1000 is still 1
+    check("size: want 1 with depth 1000 stays 1 (depth is a CAP, not target)",
+          size_fill(available=100.0, cost_basis=0.40, depth=1000, quote_size=1)[0],
+          1)
+    # zero split by reason
+    check("size: no capital -> (0,'zero_capital')",
+          size_fill(available=0.0, cost_basis=0.40, depth=1000, quote_size=1),
+          (0, "zero_capital"))
+    check("size: no depth -> (0,'zero_depth')",
+          size_fill(available=100.0, cost_basis=0.40, depth=0, quote_size=1),
+          (0, "zero_depth"))
+    check("size: no depth AND no capital -> (0,'zero_both')",
+          size_fill(available=0.0, cost_basis=0.40, depth=0, quote_size=1),
+          (0, "zero_both"))
 
     # maker fee is ~0 (theta_maker=0)
     check("maker fee @0.50 == 0", maker_fee_per_contract(0.50), 0.0)
@@ -794,9 +851,10 @@ def _selftest_fold() -> int:
     def T(sec):
         return t0 + dt.timedelta(seconds=sec)
 
-    # 1. clean winning bid, depth-clipped: hand-computed both arms + toll
+    # 1. clean winning bid, depth-clipped: hand-computed both arms + toll.
+    #    quote_size 1000 > depth 10 -> depth is the cap (the clip under test).
     f1 = Fill("tsc-wnba-ny-chi-1", "ingame", "bid", 0.40, 0.43, T(0),
-              depth=10, settlement=1, settled_at=T(3600))
+              depth=10, settlement=1, settled_at=T(3600), quote_size=1000)
     b = fold([f1], seeds={"wnba": 500.0}).books["wnba"]
     chk("clean: optimistic 506.00", abs(b.optimistic - 506.0) < 1e-9)
     chk("clean: concession 505.53", abs(b.concession - 505.53) < 1e-9)
@@ -808,14 +866,14 @@ def _selftest_fold() -> int:
     # 2. rule-18 fabricated-fill plant: a known extra fill moves the ledger by
     #    EXACTLY the computed amount (5 contracts x $0.70 = $3.50 optimistic).
     f2 = Fill("tsc-wnba-ny-chi-2", "ingame", "bid", 0.30, 0.35, T(1),
-              depth=5, settlement=1, settled_at=T(3600))
+              depth=5, settlement=1, settled_at=T(3600), quote_size=1000)
     b2 = fold([f1, f2], seeds={"wnba": 500.0}).books["wnba"]
     chk("plant fabricated: ledger moves by EXACTLY 3.50",
         abs((b2.optimistic - b.optimistic) - 3.50) < 1e-9)
 
     # 3. rule-18 depth-clip plant: book depth binds -> size = depth, cap 'depth'
     f3 = Fill("tsc-wnba-x-3", "ingame", "bid", 0.40, 0.43, T(0),
-              depth=3, settlement=1, settled_at=T(3600))
+              depth=3, settlement=1, settled_at=T(3600), quote_size=1000)
     b3 = fold([f3], seeds={"wnba": 500.0}).books["wnba"]
     chk("plant depth-clip: size=depth=3 -> opt 501.80, cap 'depth'",
         abs(b3.optimistic - 501.8) < 1e-9 and b3.n_clipped_depth == 1)
@@ -823,7 +881,7 @@ def _selftest_fold() -> int:
     # 3b. RESERVATION-clip plant (the Sunday signal): capital binds below depth.
     #     seed 1.0, cost 0.547 -> affordable 1 << depth 100 -> cap 'capital'.
     frc = Fill("tsc-wnba-rc-1", "ingame", "bid", 0.50, 0.50, T(0),
-               depth=100, settlement=None, settled_at=None)
+               depth=100, settlement=None, settled_at=None, quote_size=1000)
     brc = fold([frc], seeds={"wnba": 1.0}).books["wnba"]
     chk("plant reservation-clip: capital bound size to 1 (cap 'capital')",
         brc.n_clipped_reservation == 1 and brc.n_clipped_depth == 0
@@ -834,9 +892,9 @@ def _selftest_fold() -> int:
     #    seed 10, one bid@0.50 loss sized to depth 100: 18 contracts x $0.547 cost
     #    -> equity 10 - 9.846 = $0.154 < $2.00 (20% of $10) -> halt.
     fa = Fill("tsc-wnba-a-1", "ingame", "bid", 0.50, 0.50, T(0),
-              depth=100, settlement=0, settled_at=T(3600))
+              depth=100, settlement=0, settled_at=T(3600), quote_size=1000)
     fb = Fill("tsc-wnba-a-2", "ingame", "bid", 0.50, 0.50, T(7200),
-              depth=100, settlement=1, settled_at=T(10800))
+              depth=100, settlement=1, settled_at=T(10800), quote_size=1000)
     bk = fold([fa, fb], seeds={"wnba": 10.0}).books["wnba"]
     chk("plant bankruptcy: halted with a visible line",
         bk.halted and bk.halt_line is not None and bk.halt_line.kind == "halt")
@@ -854,7 +912,7 @@ def _selftest_fold() -> int:
 
     # 6. unrealized (term 4): open position marked at mid, NOT in realized balance
     fo = Fill("tsc-wnba-o-1", "ingame", "bid", 0.40, 0.43, T(0),
-              depth=10, settlement=None, settled_at=None)
+              depth=10, settlement=None, settled_at=None, quote_size=1000)
     bo = fold([fo], seeds={"wnba": 500.0},
               mids={"tsc-wnba-o-1": 0.46}).books["wnba"]
     chk("unrealized: realized balance unchanged at seed",
@@ -867,17 +925,48 @@ def _selftest_fold() -> int:
     # 5+3+2=10 contracts across 3 markets. Depth caps each size to its depth.
     fc = [
         Fill("tsc-wnba-c-1", "ingame", "bid", 0.40, 0.43, T(0),
-             depth=5, settlement=1, settled_at=T(30)),
+             depth=5, settlement=1, settled_at=T(30), quote_size=1000),
         Fill("tsc-wnba-c-2", "ingame", "bid", 0.40, 0.43, T(10),
-             depth=3, settlement=1, settled_at=T(40)),
+             depth=3, settlement=1, settled_at=T(40), quote_size=1000),
         Fill("tsc-wnba-c-3", "ingame", "bid", 0.40, 0.43, T(20),
-             depth=2, settlement=1, settled_at=T(50)),
+             depth=2, settlement=1, settled_at=T(50), quote_size=1000),
     ]
     bc = fold(fc, seeds={"wnba": 500.0}).books["wnba"]
     chk("concurrency: peak 10 contracts across 3 markets (overlap [20,30])",
         bc.peak_concurrent_contracts == 10 and bc.peak_concurrent_markets == 3)
     chk("concurrency: time-weighted within (0, peak]",
         0 < bc.tw_concurrent_contracts <= 10 and 0 < bc.tw_concurrent_markets <= 3)
+
+    # 7. THE SIZING FIX (v1 quoted ONE contract; depth is a CAP, not the target).
+    #    A unit fill (quote_size default 1.0) on a 1,000-deep book sizes to 1, and
+    #    its P&L is +0.60 (one contract), NOT +600 (the whole book).
+    fv = Fill("tsc-wnba-v-1", "ingame", "bid", 0.40, 0.43, T(0),
+              depth=1000, settlement=1, settled_at=T(3600))   # quote_size = 1.0
+    bv = fold([fv], seeds={"wnba": 500.0}).books["wnba"]
+    chk("sizing fix: unit fill on depth 1000 -> size 1, opt +0.60 (not +600)",
+        bv.n_fills == 1 and abs(bv.optimistic - 500.60) < 1e-9
+        and bv.n_clipped_depth == 0)
+    #    and the money does NOT run out after a handful of unit fills — the halt
+    #    was an artifact of taking the whole book, not v1's exposure.
+    many = [Fill(f"tsc-wnba-m-{i}", "ingame", "bid", 0.50, 0.50, T(i),
+                 depth=1000, settlement=None, settled_at=None) for i in range(20)]
+    bm = fold(many, seeds={"wnba": 500.0}).books["wnba"]
+    chk("sizing fix: 20 unit fills on $500 do NOT halt (was ~25 over-sized -> halt)",
+        not bm.halted and bm.n_fills == 20)
+
+    # 8. n_zero SPLIT by reason: depth-absent (no book) vs capital-starved (no
+    #    money) zero for DIFFERENT reasons and are counted apart — the conflated
+    #    counter is what read as a depth failure and cost an evening.
+    fzd = Fill("tsc-wnba-zd-1", "ingame", "bid", 0.40, 0.43, T(0),
+               depth=0, settlement=None, settled_at=None)      # no depth
+    bzd = fold([fzd], seeds={"wnba": 500.0}).books["wnba"]
+    chk("n_zero split: depth-absent -> n_zero_no_depth (not no_capital)",
+        bzd.n_zero == 1 and bzd.n_zero_no_depth == 1 and bzd.n_zero_no_capital == 0)
+    fzc = Fill("tsc-wnba-zc-1", "ingame", "bid", 0.90, 0.90, T(0),
+               depth=1000, settlement=None, settled_at=None)   # deep book, no money
+    bzc = fold([fzc], seeds={"wnba": 0.50}).books["wnba"]       # seed < one contract
+    chk("n_zero split: capital-starved -> n_zero_no_capital (not no_depth)",
+        bzc.n_zero == 1 and bzc.n_zero_no_capital == 1 and bzc.n_zero_no_depth == 0)
 
     # COHORT BOUNDARY (ruling ab8be48): live is forward-only from the seed, and
     # a league with no seed line is REFUSED (never defaulted) — the over-claim
