@@ -60,3 +60,20 @@ consequences chosen now rather than discovered:
 2. **Cumulative toll paid is a dashboard line** — the arms' divergence
    over time IS the measured concession cost in dollars; printing it
    turns the project's most expensive lesson into a running meter.
+
+## DATED LINE (2026-09-03, manager's ruling within model (a), for the author's morning ratification)
+
+"Ledger balance" for sizing means **cash accounting with open-exposure
+reservation**: available-to-size = concession-arm realized equity −
+Σ(open positions' cost basis), freed on settlement — never realized
+equity alone. Reason, arithmetic not taste: on a 12-game NFL Sunday at
+the memo's own operating point, intra-day open cost stacks past a $500
+ledger before evening settlements return; realized-equity sizing would
+let the paper book carry exposure a real $1,000 could not afford,
+inflating both arms on exactly the days the scoreboard matters most —
+the structural optimism leak, distinct from the valuation kind the arms
+already price. The real venue's rule is the model (bankroll = min(cash,
+buyingPower), cash consumed at fill). A reservation-clipped fill logs as
+clipped with its reason; that meter going visible on a big slate is
+itself scoreboard information — it answers the operator's "unless you
+need capital" with data.
