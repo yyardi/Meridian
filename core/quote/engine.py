@@ -92,14 +92,16 @@ SERVICE_QUOTE = "quote_engine"
 
 def service_quote_for(league: str, policy: str | None = None) -> str:
     """The heartbeat / health key for a quote engine — league AND policy, so each
-    of the GRIDIRON A/B's five arms writes its OWN heartbeat row and cannot
-    overwrite another's (a variant that silently overwrote another's heartbeat is
-    the same class as the down-vs-quiet-engine hole). WNBA keeps the bare
-    historical `quote_engine` (deployed/monitored on it); other leagues suffix
-    the league; a NON-BASE policy suffixes the policy on top. So:
-    wnba/base -> quote_engine; cfb/base -> quote_engine_cfb; cfb/patience ->
-    quote_engine_cfb_patience. 'wnba' and 'base' are hardcoded as the bare-name
-    identities deliberately — the key must not shift if a default changes."""
+    GRIDIRON A/B engine writes its OWN heartbeat row and cannot overwrite
+    another's (a variant that silently overwrote another's heartbeat is the same
+    class as the down-vs-quiet-engine hole). WNBA keeps the bare historical
+    `quote_engine` (deployed/monitored on it); other leagues suffix the league; a
+    NON-BASE policy suffixes the policy on top. So: wnba/base -> quote_engine;
+    cfb/base -> quote_engine_cfb; cfb/flatten -> quote_engine_cfb_flatten. The
+    amendment reduced the engines to two (base, flatten); this function is
+    unchanged and would key any future engine the same way. 'wnba' and 'base' are
+    hardcoded as the bare-name identities deliberately — the key must not shift if
+    a default changes."""
     base = SERVICE_QUOTE if league == "wnba" else f"{SERVICE_QUOTE}_{league}"
     if policy and policy != "base":
         return f"{base}_{policy}"

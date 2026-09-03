@@ -131,6 +131,12 @@ class ShadowQuoterV2(ShadowQuoter):
         #: state — NOT _standing and NOT fills, so replay equivalence (proof 1)
         #: and off-decision-path (proof 3) are untouched.
         self._book_cache: dict[str, tuple[dict, dt.datetime]] = {}
+        #: The GRIDIRON A/B policy this engine runs (docs/gridiron/policy-
+        #: variants.md). None for the plain recording engine (BASE == v1, no
+        #: stamp); PolicyQuoterV2 sets it so record_cycle stamps the observation
+        #: with the arm that produced it. Recording-only — it never touches
+        #: quoting, so the structural replay-equivalence proof is unaffected.
+        self._policy_name: str | None = None
 
     # ---- recording (OFF the decision path — never touches _standing/fills) - #
 
@@ -337,7 +343,8 @@ class ShadowQuoterV2(ShadowQuoter):
                     depth_best_ask=None if depth_ba is None else Decimal(str(depth_ba)),
                     det_version=self.detector_version, det_in_window=in_window,
                     det_confirm_t0=confirm_t0,
-                    engine_commit=self._engine_commit))
+                    engine_commit=self._engine_commit,
+                    policy=self._policy_name))
             for r in rows:
                 s.add(r)
             s.commit()
