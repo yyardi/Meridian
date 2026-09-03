@@ -211,6 +211,25 @@ validate each other by matching; if they truly measured one deterministic
 quantity on a fixed tape they would agree EXACTLY, and 2% would be a
 discrepancy rather than agreement.**
 
+**CHECKED AT THE ROW LEVEL rather than argued, and it is worse than "different
+constructions": the two sets overlap on only 2,462 fills — about 41% on
+(market, 5s bucket, side, price), and still only ~49% ignoring price entirely.
+They share fewer than half their members.** The replay re-derives quote
+placement from policy on a 5s grid; v1 ran on the raw tick stream with
+move-triggered requoting. **The totals landing 2.4% apart is an aggregate
+coincidence, and comparing per-fill means across populations sharing under half
+their members is not a replication.**
+
+**This also retracts an older milestone claim** — that the whole-book replay
+baseline and the fills-table read were "the first time the settlement economics
+were measured twice". They were **one quantity measured once, and a different
+quantity measured once, sitting next to each other.**
+
+**NOT retracted, so this does not over-correct in the other direction: the
+k-curve's internal comparisons stand.** Every k uses the same procedure on the
+same grid, so differences BETWEEN k values are real and k=0 is a valid
+within-procedure baseline arm — it is a control, not a replication of v1.
+
 What the closeness DOES support, and it is not nothing: **the economics do not
 depend sensitively on which quote path is used** — an engine's actual historical
 quotes and a policy replay of the same rule land within 2% on population and
