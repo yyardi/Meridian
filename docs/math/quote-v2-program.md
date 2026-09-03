@@ -602,3 +602,25 @@ telemetry extended to BOTH quoters, printed pre/post every GRIDIRON deploy.
 *Schema discipline:* GRIDIRON may ADD tables and columns; it may never alter
 or remove a column the frozen binary reads or writes. A shared substrate is a
 shared dependency however separate the processes are.
+
+**DATED LINE under amendment 11 (2026-09-03, manager — the pre-data test
+made explicit, and a correction to how I have been applying it).**
+Amendment 11 authorizes deploys "while zero fills AND zero observation rows
+exist." Read literally that is already false and was false when the
+amendment was written: `shadow_quote_fills` holds v1's 17,339 August rows
+and always will. The clause's own sentence supplies the reading — "a cohort
+begins at its FIRST RECORDED DATUM" — so the test is about the ACCRUING
+cohort, not the table's lifetime contents. **Stated explicitly: the
+pre-data test is (a) zero fills with `filled_at` after the current freeze
+commit's deploy instant, and (b) zero observation rows.** The August cohort
+is closed, ledgered, and its verdict delivered; it cannot be contaminated
+by a later binary.
+
+**The correction I owe the record:** both of tonight's earlier deploys were
+checked with a *recent-window* fill query, and I reported them as "zero
+fills" without noticing the literal reading would have said otherwise. I
+was already applying the accruing-cohort test — accidentally rather than by
+declaration. Naming it now makes it chosen instead of discovered, which is
+the standard this registry applies to everyone else. Verified at this
+deploy: newest fill 2026-08-22T04:16:05Z, fills since the 16:04Z restart =
+0, observation rows = 0. For the author's ratification.
