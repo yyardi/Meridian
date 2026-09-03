@@ -72,6 +72,44 @@ The recorder now prints `cycle_seconds` and `effective_period_seconds`
 every cycle and counts `kalshi_cycle_overran_interval` when the cycle
 alone outruns its interval.
 
+## What Saturday will actually sample at (measured model, not nominal)
+
+Effective throughput measured on tonight's real cycles — **4.09 req/s**
+(42 requests in 10.28s; the discovery cycle independently gives 4.19),
+which is the limiter and per-request latency combined, not the nominal
+5/s. At 3 requests per game per cycle:
+
+| date | peak games | cycle | period @60s | period @120s |
+|---|---|---|---|---|
+| 2026-09-05 | 92 (18:30Z) | 68s | 128s (2.1 min) | **188s (3.1 min)** |
+| 2026-09-12 | 106 (18:00Z) | 78s | 138s (2.3 min) | **198s (3.3 min)** |
+
+Across 09-05 the period runs 2.0–3.1 min, exceeding 3 min only in the
+17:30–18:30Z hour.
+
+**Verdict for the pregame series: not materially harmed.** A 6h pregame
+window at ~3 min sampling is ~116 samples per game, which is ample for
+pregame price movement. What IS coarse at 3 min is the in-game portion —
+and the window covers in-game only as a side effect of
+`occurrence_datetime` being the sole clock the venue publishes, not as a
+registered objective. If in-game college prices ever become the target,
+the cadence must be revisited before the data is trusted.
+
+**Assumption stated:** this holds only while ~4.09 req/s holds. Venue
+latency under a full Saturday (everyone polling at once) would stretch
+it, and the discovery cycle lands ~100+ extra requests when new games
+appear. Watch `effective_period_seconds` rather than re-deriving it.
+
+## The 120s is a stopgap, not a preference
+
+Recorded so nobody later reads it as a considered steady state: 120s was
+taken under a same-day deadline because predictability under load beat
+resolution on pregame tape. Now that the drift semantics are understood,
+120s is known to make an already-stretched period longer — it buys
+headroom by spending exactly what it was meant to protect. **The next
+move is tiering, not a third interval bump**, which would be treating the
+symptom twice.
+
 ## Follow-up: tiered cadence (the structurally right fix)
 
 A flat interval spends the same attention on a game six hours out as on
