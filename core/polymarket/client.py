@@ -49,6 +49,13 @@ from core.ratelimit import TokenBucket
 
 log = structlog.get_logger(__name__)
 
+#: A venue round trip slower than this is logged. Not a health rule — a
+#: TRACE, so silent throttling (slowed but not rejected) is visible at all.
+#: Chosen a-priori as ~10x a normal board call (the deployed recorder's own
+#: measured board call is ~158ms); it must be loose enough that normal
+#: operation is silent and tight enough that real degradation prints.
+VENUE_SLOW_REQUEST_MS = 1500.0
+
 
 class RateLimitedError(Exception):
     """HTTP 429 — a genuine rate limit, worth backing off for."""
@@ -89,10 +96,26 @@ class PolymarketGatewayClient:
             waited = self._bucket.acquire()
             if waited > 0.5:
                 log.debug("rate_limit_wait", seconds=round(waited, 2), path=path)
+            # VENUE ROUND-TRIP TIMING (2026-09-03). The 429 count answers
+            # REJECTIONS — and it is zero, partly because this client's own
+            # token bucket throttles us before the venue has to. It cannot
+            # answer SILENT THROTTLING: a venue that queues or slows our
+            # requests without rejecting them leaves no 429 and, until this
+            # line, no trace at all. Latency is that trace. Logged rather
+            # than persisted deliberately: no schema, no migration, no
+            # freeze interaction, and greppable on slate night, which is
+            # when it matters.
+            _t0 = time.monotonic()
             try:
                 resp = self._client.get(path, params=params)
             except httpx.HTTPError as exc:
                 raise TransientHTTPError(str(exc)) from exc
+            _elapsed_ms = (time.monotonic() - _t0) * 1000.0
+            if _elapsed_ms > VENUE_SLOW_REQUEST_MS:
+                log.info("venue_slow_request", path=path,
+                         elapsed_ms=round(_elapsed_ms, 1),
+                         threshold_ms=VENUE_SLOW_REQUEST_MS,
+                         bucket_wait_s=round(waited, 2))
 
             if resp.status_code == 429:
                 # Docs: stop, wait >= 1s, exponential backoff, max 3 retries.

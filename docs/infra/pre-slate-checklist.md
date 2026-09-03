@@ -165,6 +165,31 @@ first simultaneous-live slate:
 ssh -i ~/.ssh/meridian-aws.pem ubuntu@$MERIDIAN_SERVER 'for c in meridian-live-recorder meridian-recorder meridian-nfl-recorder meridian-nfl-live-recorder; do echo "$c 429s: $(sudo docker logs $c 2>&1 | grep -cE ""status": ?429|429 Too Many|RateLimit")"; done'
 ```
 
+**AND THE 429 COUNT ANSWERS ONLY HALF THE QUESTION (research, 2026-09-03).**
+It answers REJECTIONS decisively. **SILENT THROTTLING — the venue queuing or
+slowing us WITHOUT rejecting — was undetectable**, because no recorder path
+recorded venue round-trip time. A schema sweep found latency columns in
+exactly one table (`orders`, five rows, newest 2026-08-07). Note also WHY
+the 429 count is zero: this client enforces its own token bucket, so **we
+throttle ourselves before the venue has to** — which makes the absence of
+rejections weaker evidence than it first appears.
+
+**Closed 2026-09-03:** the gateway client now times every request and logs
+`venue_slow_request` above 1500ms (~10× a normal ~158ms board call), with
+the bucket wait beside it so our own throttling is distinguishable from the
+venue's. Logged, not persisted — no schema, no migration, no freeze
+interaction, greppable on slate night:
+
+```bash
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$MERIDIAN_SERVER 'for c in meridian-live-recorder meridian-nfl-live-recorder meridian-recorder meridian-nfl-recorder; do echo "$c slow: $(sudo docker logs $c --since 24h 2>&1 | grep -c venue_slow_request)"; done'
+```
+
+**So: 429 count = rejections; `venue_slow_request` = throttling. Both now
+instrumented.** Cycle-duration overrun in `service_heartbeats` remains an
+adjacent SYMPTOM — a smoke alarm mixed indistinguishably with every other
+cause of slow cycles, and it should be described as one, never cited as a
+throttling measurement.
+
 **Standing conclusion: no evidence of a rate problem. Zero rejections is
 not proof we can never breach — the observed conditions never included
 WNBA-live and NFL-live together — so the Sept 17 check is to WATCH FOR
