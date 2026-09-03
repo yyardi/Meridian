@@ -209,3 +209,36 @@ class QuoteV2Observation(Base):
         Index("ix_qv2_event_slug", "event_slug"),
         Index("ix_qv2_observed_at", "observed_at"),
     )
+
+
+class PaperWalletControl(Base):
+    """Append-only control ledger for the paper wallet
+    (docs/math/paper-wallet-scoreboard.md term 6): the ONLY mutations to the
+    wallet are dated lines here — the $500+$500 birth seeds and any operator
+    reset/resplit. Never edited or deleted; a reset is a new visible line, never
+    a fresh table. Per-fill P&L is NOT stored here — it is folded live from
+    shadow_quote_fills (single source of truth, no second resolution), and the
+    fold's bankruptcy halt is computed at read time, not persisted."""
+
+    __tablename__ = "paper_wallet_control"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True,
+                                    autoincrement=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+    #: The dated line's EFFECTIVE instant (birth for a seed; the operator-word
+    #: time for a reset/resplit) — the fold applies seeds/resets at this time.
+    effective_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False)
+    league: Mapped[str] = mapped_column(String(8), nullable=False)   # wnba | nfl
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)    # seed|reset|resplit
+    #: Dollars: the ledger's bankroll basis set by this line.
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    #: The operator word (or bootstrap note) that authorised the line.
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+    __table_args__ = (
+        CheckConstraint("kind in ('seed','reset','resplit')", name="ck_pwc_kind"),
+        Index("ix_pwc_league", "league"),
+        Index("ix_pwc_effective_at", "effective_at"),
+    )
