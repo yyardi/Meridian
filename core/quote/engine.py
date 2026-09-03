@@ -90,16 +90,20 @@ def require_engine_commit() -> str:
 SERVICE_QUOTE = "quote_engine"
 
 
-def service_quote_for(league: str) -> str:
-    """The heartbeat / health key for a league's quote engine. WNBA keeps the
-    bare historical name (deployed and monitored on `quote_engine` since before
-    amendment 12); every other league is suffixed so its engine writes its OWN
-    heartbeat row and cannot collide with or overwrite WNBA's. GRIDIRON (nfl)
-    therefore beats as `quote_engine_nfl` and is independently visible to
-    /api/status and scripts/health.py. 'wnba' is hardcoded as the bare-name
-    league deliberately — the key is an identity, not an env-derived default, so
-    it must not shift if MERIDIAN_LEAGUE's default ever changes."""
-    return SERVICE_QUOTE if league == "wnba" else f"{SERVICE_QUOTE}_{league}"
+def service_quote_for(league: str, policy: str | None = None) -> str:
+    """The heartbeat / health key for a quote engine — league AND policy, so each
+    of the GRIDIRON A/B's five arms writes its OWN heartbeat row and cannot
+    overwrite another's (a variant that silently overwrote another's heartbeat is
+    the same class as the down-vs-quiet-engine hole). WNBA keeps the bare
+    historical `quote_engine` (deployed/monitored on it); other leagues suffix
+    the league; a NON-BASE policy suffixes the policy on top. So:
+    wnba/base -> quote_engine; cfb/base -> quote_engine_cfb; cfb/patience ->
+    quote_engine_cfb_patience. 'wnba' and 'base' are hardcoded as the bare-name
+    identities deliberately — the key must not shift if a default changes."""
+    base = SERVICE_QUOTE if league == "wnba" else f"{SERVICE_QUOTE}_{league}"
+    if policy and policy != "base":
+        return f"{base}_{policy}"
+    return base
 
 #: Cycle cadence. 5s sees every requote-worthy move on the 1s tick stream
 #: without hammering the database; the fill rule is endpoint-based either way.
