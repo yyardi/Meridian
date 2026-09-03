@@ -2212,6 +2212,11 @@ def wallet_status() -> dict:
             "wouldbe_opt_mean_c": am["absent_wouldbe_opt_mean_c"],
             "wouldbe_conc_mean_c": am["absent_wouldbe_conc_mean_c"],
             "trigger_10pct_ingame": am["trigger_10pct_ingame"],
+            "n_depth_sized": am["n_depth_sized"],
+            "n_depth_parent_stamped": am["n_depth_parent_stamped"],
+            "depth_parent_stamped_rate": am["depth_parent_stamped_rate"],
+            "parent_stamped_staleness_max_s": am["parent_stamped_staleness_max_s"],
+            "parent_stamped_staleness_mean_s": am["parent_stamped_staleness_mean_s"],
         }
 
     def _book(b) -> dict:
@@ -2259,6 +2264,9 @@ def wallet_status() -> dict:
             "books": {slug: _book(b) for slug, b in historical.books.items()},
             "depth_absent": _absent(meta["historical_absent"]),
         },
+        # Anomaly (should be 0): NULL own-stamp at/after the own-stamp epoch —
+        # a broken invariant, counted out of the join. Nonzero = investigate.
+        "post_epoch_null_levels": meta.get("post_epoch_null_levels", 0),
         # Registered caveat (term 3): depth-sized numbers are per-fill optimistic
         # (recorded depth is others' resting size holding time priority).
         "caveat": ("instrument not evidence; depth-sized fills are per-fill "
