@@ -193,6 +193,10 @@ class KalshiRecorder:
         self._last_discovery: float | None = None
         #: ticker -> terms fingerprint of the latest kalshi_contracts row.
         self._terms_cache: dict[str, tuple] = {}
+        #: Cycles whose own duration exceeded their interval. Counted for
+        #: the life of the process because a single overrun is noise and a
+        #: rising count is the slate outgrowing the cadence.
+        self._cycle_overruns = 0
 
     # ------------------------------------------------------------------ #
     # One cycle
@@ -668,13 +672,37 @@ class KalshiRecorder:
                 log.error("kalshi_cycle_failed", error=str(exc), exc_info=True)
 
             interval = self.next_interval_seconds()
+            cycle_seconds = time.monotonic() - started
             # Every cycle, whatever the cycle did (B11).
             self._heartbeat.beat(
                 interval_seconds=interval,
                 rows_written=stats.snapshots_written,
-                cycle_seconds=time.monotonic() - started,
+                cycle_seconds=cycle_seconds,
             )
-            log.info("sleeping", seconds=interval)
+            # The interval is a SLEEP, not a period: nothing stacks and
+            # nothing is skipped, but the real sampling cadence is
+            # (cycle + interval) and it stretches silently as the slate
+            # grows. Print it every cycle, and count the case where the
+            # cycle alone outran its own interval — otherwise a recorder
+            # sampling every 3 minutes looks exactly like one sampling
+            # every 2 (rule 22: the degradation must be visible AS
+            # degradation).
+            effective_period = cycle_seconds + interval
+            if cycle_seconds > interval:
+                self._cycle_overruns += 1
+                log.warning(
+                    "kalshi_cycle_overran_interval",
+                    cycle_seconds=round(cycle_seconds, 1),
+                    interval_seconds=interval,
+                    effective_period_seconds=round(effective_period, 1),
+                    overruns_total=self._cycle_overruns,
+                    games_polled=stats.games_polled,
+                    events_requested=stats.events_requested,
+                )
+            log.info("sleeping", seconds=interval,
+                     cycle_seconds=round(cycle_seconds, 1),
+                     effective_period_seconds=round(effective_period, 1),
+                     cycle_overruns_total=self._cycle_overruns)
             waited = 0
             while waited < interval and not stopping["flag"]:
                 time.sleep(min(5, interval - waited))
