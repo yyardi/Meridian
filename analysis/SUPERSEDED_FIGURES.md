@@ -16,6 +16,34 @@ failure tonight, by 2:1.
 
 Scope: my figures only. Other agents' numbers are theirs to track.
 
+## How this file fails
+
+**It goes stale, and a stale version is worse than none.** A reader greps
+for a figure, finds nothing, and concludes it is live — absence from the
+dead list read as evidence of life. That is the unprovenanced-zero failure
+one level up, and this file manufactures it if it lags.
+
+The live-figures table below is the partial defence, because it inverts the
+check from "is this dead?" to "is this live?" — a figure in neither table is
+*unverified*, not safe. But that table lags too. **A figure absent from both
+tables tells you nothing at all.**
+
+The permanent fix is to generate both tables from the run record rather than
+maintain them by hand, which converts a document someone must remember to
+update into a guard that cannot lag. Hand-maintained is the right version to
+have tonight; it should not be the version that survives.
+
+## Maintaining it
+
+**Re-derive every row against the actual runs. Do not transcribe from
+memory or from a previous version of this file.** This registry is itself a
+computation, and it is subject to the rule it exists to serve: the last
+draft nearly shipped the placement retraction as two rows — capture basis
+and per-cycle settlement — which would have read as two separate findings
+rather than one claim retracted twice. A registry of corrections containing
+a miscount fails at the one job it has, and re-derivation is the only thing
+that caught it.
+
 | superseded | replaced by | why it moved |
 |---|---|---|
 | FLATTEN k=1¢ improvement **+$17.55** | **+$10.10** | exclusion method on a partial substrate; both defective |
