@@ -319,7 +319,8 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
         n_clipped_depth=n_clip_depth, n_clipped_reservation=n_clip_res,
         n_zero=n_zero, n_skipped_halt=n_skipped, unrealized_opt=un_opt,
         unrealized_conc=un_conc, n_open_marked=n_marked,
-        n_open_unmarkable=n_unmarkable)
+        n_open_unmarkable=n_unmarkable,
+        daily_opt=daily_opt, daily_conc=daily_conc)
 
 
 def fold(fills: list[Fill], *, seeds: dict[str, float] | None = None,
