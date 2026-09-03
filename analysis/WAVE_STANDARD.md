@@ -578,6 +578,30 @@ numbered as a fourth. (Research agent's cut, 2026-09-03.)
    the two were one rule — the class formed instead of a twenty-sixth entry
    being shelved beside the twenty-fifth.)
 
+**DESIGN DECISION, recorded before any tooling is written (2026-09-03): THE
+ESTIMAND TUPLE IS THE PRIMITIVE.** Supersession is a claim about IDENTITY — that
++$10.10 and +$30.43 are one figure at two times rather than two measurements.
+Nothing in a run record marks that, so a generated superseded-figures table
+would emit every number ever printed and be useless. **But the stable name that
+fixes it is the same object as the "same estimand" leg of the convergence test**,
+so one primitive mechanises three of tonight's failures rather than one:
+
+- **matched bases** — the basis travels with the figure instead of being
+  restated by hand (the failure behind a per-order rate quoted as per-event);
+- **convergence** — the same-estimand leg becomes checkable instead of argued
+  (the failure behind 6,403-vs-6,255, withdrawn at 41% overlap);
+- **supersession** — identity becomes declarable instead of inferred (the
+  failure behind a superseded −2.33¢ propagating).
+
+**Carry four fields with every reported figure: QUANTITY, POPULATION, UNIT,
+SELECTION PROCEDURE.** Two figures sharing the tuple are convergence
+candidates; a later one with the same tuple supersedes; quoting either carries
+its unit. **Build this rather than a supersession-specific naming scheme** —
+otherwise we end with three registries holding three notions of sameness, and
+the seams between them are the next thing someone reads wrong. *Deliberately
+NOT built tonight: it sits behind wiring the existing guards into the scoring
+path, because an unwired artifact reads as coverage it does not provide.*
+
 26. **A CORRECTION IS NOT A CERTIFICATE.**
    A repair arrives wearing the costume of scepticism and is itself an
    **unexamined result.** Most people have the inference backwards: **a
