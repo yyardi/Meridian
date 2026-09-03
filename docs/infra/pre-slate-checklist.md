@@ -123,6 +123,16 @@ fold needs it; the 09-02 pin lacked it). Use the full-column export path
 (`scripts/pin_tick_export.sh` gained the fee/book-tier columns for the
 survey — same lesson: pin MORE columns than today's question needs).
 
+**PIN MORE COLUMNS THAN TODAY'S QUESTION NEEDS (2026-09-03, promoted from
+advice to rule after paying for it THREE times in one evening):** the fills
+pin lacked `game_start_time` (blocked D1's pregame fold); the observation
+stream lacked depth (blocked the fill-probability surface); the snapshot
+pins lacked `id` (blocked the book-levels join, and a founding claim sat
+held on it until the query could be run live instead). **The marginal cost
+is bytes; the marginal value is every query nobody has thought of yet.**
+Every export carries its table's identity columns and join keys whether or
+not the current question uses them.
+
 **League pin (2026-09-02, D's self-reported hazard, export layer owns
 it):** `shadow_quote_fills` is mixed-league from GRIDIRON (077c0b9) on.
 Every v1-BASELINE export pins `league = WNBA` (event-slug prefix filter,
