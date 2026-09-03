@@ -427,7 +427,55 @@ survive an endgame the way WNBA's do not (`bookless-endgames.md`). Those are
 tick-level facts and require the recorder to run against live NBA markets. **A
 listing is not a book.**
 
-### V31 — The public gateway exposes NO volume, trade, or price-history data
+### V31 — Trade stats DO exist, on the book endpoint — and we discard them (CORRECTED)
+
+**First version of this entry was WRONG and is superseded in place; the error
+is instructive.** I probed `/v2/leagues/{league}/events`, found no volume
+field, and concluded the venue exposes no flow data. D probed the OTHER
+endpoint and found it: **`/v1/markets/{slug}/book` → `marketData.stats`
+carries `sharesTraded`, `notionalTraded`, `openInterest`, `lastTradePx`,
+`lastTradeQty`, `lastTradeSetTime`, and OHLC with set-times.** The recorder
+already fetches this response on every book poll and **parses the stats away**
+— `MarketData` declares only bids/offers (`extra="allow"`, so stats arrive and
+are never read). Zero extra HTTP cost to keep them; every poll before the fix
+is print history that cannot be recovered.
+
+Two lessons, both mine: an absence found at ONE endpoint is not an absence at
+the venue (the same species as V29/V30 — go to the artifact, and know which
+artifact); and a field can be present in a parsed payload and still invisible
+because the schema never declared it, which is the reverse of the usual
+missing-column trap. Book-row structure gotcha alongside: levels are
+`{"px": {"value": ...}, "qty": ...}` — **`px`, not `price`** (cost two failed
+probe runs).
+
+### V32 — The venue's REAL liquidity, and where it is not (2026-09-02)
+
+Measured from `marketData.stats`, one game per league, all market types:
+
+**NFL, one week pregame (`nfl-ne-sea-2026-09-09`, 136 markets, 18 types):**
+moneyline **$918,935 traded / OI 38,396 / 0.5¢ spread / ~15,000 contracts at
+each touch**; main spread $11,531 at 5¢; main total $7,668 at 6¢; and **14 of
+18 market types have NEVER TRADED — not thin, zero** (quarter totals, quarter
+spreads, half spreads/totals, team totals), quoting 19–32¢ wide with 1–45
+contracts showing. **The wide derivative books are wide because nothing trades
+there, and pregame that is the whole explanation** — the jump-risk hypothesis
+isn't needed to explain a market with no prints at all.
+
+**MLB, IN-PLAY (`mlb-tor-cle-2026-09-02`, ~2.5h into the game):** moneyline
+**$76,019,549 traded**; full-game spread **$1,755,450**; full-game total
+**$1,032,194**; first-five spread **$351,565**; first-five total **$65,241**.
+
+The comparison is the finding. **This venue is one to two orders of magnitude
+more liquid than the WNBA board every measurement we own was taken on** — and
+DERIVATIVE markets DO trade in-play (first-five rungs, six figures), so NFL's
+pregame desert does not predict its in-play behaviour; it predicts nothing
+about in-play at all. The maker-relevant band is neither the moneyline (0.5¢
+with 15k ahead of you in queue) nor the never-traded rungs (no counterparty),
+but the **5–6¢ spread/total markets carrying six-to-seven figures of in-play
+notional.** WNBA, where the entire research programme was calibrated, was the
+smallest pond available.
+
+### V31-superseded — (original text, kept for the amendment trail) The public gateway exposes NO volume, trade, or price-history data
 
 Probed 2026-09-02 (research's "ask the venue, not the proxies" challenge,
 before designing any flow proxy). The `/v2/leagues/{league}/events` payload
