@@ -32,6 +32,17 @@ the registered parameter.
 
 Scored on settlement, game-clustered CIs, same pinned substrate as the
 k-curve it is checking.
+
+WHAT k=0 IS, AND IS NOT. k=0 is a BASELINE ARM: the same procedure as
+every other k, on the same grid, so differences BETWEEN k values are
+meaningful. It is NOT a replication of what v1 did. This replay
+re-derives quote placement from policy on a 5s grid; v1 ran on the raw
+tick stream with move-triggered requoting. Checked at the row level, the
+k=0 fill set and v1's recorded real fills overlap only ~41% on (market,
+5s bucket, side, price) -- 2,462 shared out of 6,403 and 6,146. Their
+totals land within 2.4% of each other, which is an aggregate coincidence
+and not agreement. Do not quote this baseline as corroborating an
+independent read of the recorded tape; they are different quantities.
 """
 import importlib.util
 import sys
