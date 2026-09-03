@@ -49,13 +49,20 @@ MONTHLY_BAR = 100.0              # month-to-date bar
 #: concession arm. Same pins as roundtrip_ledger.py / scorecard.py / fills.py.
 CONCESSION_IN_GAME = 0.047
 CONCESSION_PREGAME = 0.021
-#: Bankruptcy floor. Under open-exposure reservation the book can never realize
-#: a loss larger than its equity (it never reserves more than it has), so the
-#: concession balance asymptotes to zero rather than crossing it — true
-#: insolvency is the knife-edge of total ruin. The halt fires within this
-#: epsilon of zero; the CONTINUOUS drawdown + capital-clip meters are the
-#: operative "book bleeding / $1,000 binds" signals (flagged to the manager).
-HALT_FLOOR = 1e-9
+#: Bankruptcy halt = OPERATIONAL ruin, not literal ruin (manager ruling,
+#: registered; supersedes the epsilon-at-zero version). Under reservation the
+#: book can never realize a loss larger than its equity, so concession equity
+#: asymptotes to zero rather than crossing it — an epsilon-at-zero halt would
+#: essentially never fire. The halt instead trips at 20% of seed remaining
+#: ($100 on a $500 ledger): at that point a single game's normal quoting
+#: (~tens of contracts at ~40c cost) consumes the whole available balance, so
+#: the book can no longer run the registered strategy at any density; and an
+#: 80% drawdown on a maker book whose edge is measured in cents is the strategy
+#: refuted on this bankroll, not a variance excursion. The two CONTINUOUS
+#: meters (concession-equity drawdown + capital-clip rate) are what the operator
+#: watches between halts; the clip-rate meter doubles as the "$1,000 binds"
+#: answer.
+HALT_DRAWDOWN_FRACTION = 0.20
 
 
 def route_league(market_slug: str | None) -> League | None:
@@ -264,13 +271,14 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
             # BANKRUPTCY HALT (51a4103): the concession bankroll gone (realized
             # equity <= 0) stops trading even while optimism shows profit — the
             # book that survives only on the optimistic valuation, made visible.
-            if eq_conc <= HALT_FLOOR and not halted:
+            if eq_conc < HALT_DRAWDOWN_FRACTION * seed and not halted:
                 halted = True
                 halt_line = LedgerLine(
                     league=slug, kind="halt", at=t,
-                    note=(f"concession-arm realized equity reached ${eq_conc:.2f}"
-                          f" — wallet HALTS trading (optimistic line ${eq_opt:.2f}"
-                          f": a book surviving only on optimism)"))
+                    note=(f"concession-arm equity ${eq_conc:.2f} fell below "
+                          f"{HALT_DRAWDOWN_FRACTION:.0%} of ${seed:.2f} seed "
+                          f"(operational ruin) — wallet HALTS trading (optimistic "
+                          f"line ${eq_opt:.2f}: a book surviving only on optimism)"))
 
     un_opt = un_conc = 0.0
     n_marked = n_unmarkable = 0
@@ -454,19 +462,19 @@ def _selftest_fold() -> int:
         brc.n_clipped_reservation == 1 and brc.n_clipped_depth == 0
         and brc.reserved_conc > 0)
 
-    # 4. bankruptcy plant (51a4103): total ruin drives concession equity to ~0 ->
-    #    HALT line prints and the next entry does not fold. Under reservation the
-    #    book cannot lose more than it holds, so this is the knife-edge terminal
-    #    case: seed = one contract's cost basis, that contract totally lost.
-    seed_ruin = 0.50 + CONCESSION_IN_GAME          # = one bid@0.50 concession cost
+    # 4. bankruptcy plant (registered): a loss drops concession equity below 20%
+    #    of seed (operational ruin) -> HALT line prints, next entry does not fold.
+    #    seed 10, one bid@0.50 loss sized to depth 100: 18 contracts x $0.547 cost
+    #    -> equity 10 - 9.846 = $0.154 < $2.00 (20% of $10) -> halt.
     fa = Fill("tsc-wnba-a-1", "ingame", "bid", 0.50, 0.50, T(0),
-              depth=1, settlement=0, settled_at=T(3600))
+              depth=100, settlement=0, settled_at=T(3600))
     fb = Fill("tsc-wnba-a-2", "ingame", "bid", 0.50, 0.50, T(7200),
-              depth=1, settlement=1, settled_at=T(10800))
-    bk = fold([fa, fb], seeds={"wnba": seed_ruin}).books["wnba"]
+              depth=100, settlement=1, settled_at=T(10800))
+    bk = fold([fa, fb], seeds={"wnba": 10.0}).books["wnba"]
     chk("plant bankruptcy: halted with a visible line",
         bk.halted and bk.halt_line is not None and bk.halt_line.kind == "halt")
-    chk("plant bankruptcy: concession equity ~0", bk.concession <= HALT_FLOOR)
+    chk("plant bankruptcy: concession equity < 20% of seed",
+        bk.concession < 0.20 * 10.0)
     chk("plant bankruptcy: post-halt entry did NOT fold",
         bk.n_skipped_halt == 1)
 
