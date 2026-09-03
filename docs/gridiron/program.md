@@ -127,8 +127,40 @@ where size concentrates. **The number may be measuring "seven days out
 versus mid-game" rather than "NFL versus WNBA"** — and it was about to
 become an entire program's founding claim.
 
-**The resolving query (D, running): WNBA pregame top-of-book from the tape
-they hold, matched on BOTH axes.** If NFL is still shallower like-for-like
+**RESOLVED 2026-09-03 (manager, run directly against prod — the join D
+lacked in the pins is available live): THE GAP COLLAPSES. The
+shallower-queue premise is NOT SUPPORTED and is withdrawn.**
+
+WNBA **pregame top-of-book** (`level_index = 0`, `is_live` false, 40,000
+random snapshots joined to their book rows), bucketed by time to tip:
+
+| window | rows | median qty | p90 |
+|---|---|---|---|
+| T-1d to T-5d | 2,646 | **110** | 1,110 |
+| under 24h | 4,749 | **450** | 10,034 |
+
+Against NFL's 87–620 top-of-book at T-7. **On a matched basis the two
+boards are in the same range — NFL is not measurably shallower, and may be
+deeper at comparable windows.** The original 2–10× gap was the calendar and
+the game state, exactly as suspected: WNBA depth GROWS as tip approaches
+(110 → 450 median), and the ~1,000 figure it was built on was in-play depth
+at our own quote price — the deepest state there is, compared against a
+board a week from kickoff.
+
+*Limits stated: the NFL side is one game hand-read at T-7 across its market
+types; the WNBA side is a 40k-row random sample. The windows still are not
+identical (WNBA lists later, so T-5+ is empty). This does not establish that
+NFL is DEEPER — it establishes that the claimed gap does not survive basis
+matching, which is all that was needed to stop it becoming a founding
+claim.*
+
+**Consequence: GRIDIRON starts with NO structural-advantage story, which is
+the correct state.** What survives is the refutation (NFL is not a
+wider-margin board) and the game-count argument, which needs no depth
+comparison. D's line stands: better to start with no advantage story than
+with one built on mismatched measurements.
+
+**The superseded resolving plan (D's, no longer needed):** If NFL is still shallower like-for-like
 the claim is real and strong; if the gap collapses, GRIDIRON's advantage
 argument needs a different foundation — and we learn that before it is
 registered rather than after. **Until it returns, the placement lever has
