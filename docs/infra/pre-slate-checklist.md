@@ -116,6 +116,30 @@ extend to BOTH quoters, printed pre/post every GRIDIRON deploy — a GRIDIRON
 change that slows the basketball quoter's loop is a contamination of A1's
 cohort by another route.
 
+## 4d. GATEWAY RATE BUDGET IS OVERSUBSCRIBED — reconcile before Sept 17
+
+Measured 2026-09-03 from the running containers. Configured per-process
+caps on Polymarket-gateway consumers:
+
+```
+recorder (wnba pregame)  5   live-recorder (wnba live)  12
+nfl-recorder             6   nfl-live-recorder           4
+nfl-stats-sweeper        2   wnba-stats-sweeper          2
+                                              TOTAL     31
+```
+
+**Against a 20 req/s per-IP ceiling — 155% oversubscribed.** Nothing
+breaches today only because both live recorders idle on empty boards (WNBA
+dark, NFL not until Sept 9). **Sept 17 is the first moment WNBA and NFL are
+live simultaneously and all six could draw near cap at once.**
+
+Caps are PER PROCESS; the ceiling is PER IP. Three ways to reconcile, and
+one must happen before the 17th: bring the caps down, stagger the cadences,
+or measure actual concurrent draw and demonstrate the peak never lands.
+**Measuring is the honest option and nobody has done it** — the caps are a
+worst case, not an observation, and treating a worst case as a plan is what
+this section exists to prevent.
+
 ## 5. Next fills pin (after first slate)
 
 The next `quote_fills` export must carry `game_start_time` (D1's pregame
