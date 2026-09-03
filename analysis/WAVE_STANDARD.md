@@ -384,6 +384,64 @@ before merge**, and the merge is refused if it would revert one.
    instrument-empty from world-empty in three of three cases, including one
    where the answer was genuinely the world (Kalshi's WNBA season gap).
 
+23. **A NAME IS A CLAIM, NOT A MEASUREMENT.**
+   A configured or well-named value asserts its own meaning, and that
+   assertion goes unchecked because **it does not look like a claim**. We
+   verify values and trust names — but the name is where the meaning lives,
+   and the meaning is what gets acted on.
+
+   *AGGRAVATING FACTOR — the better the name, the less it is checked.*
+   Nobody audits a field called `occurrence_datetime` on a clock question,
+   or an env var called `INTERVAL` on a cadence question. **Plausible naming
+   buys immunity from the only check that would catch it, which inverts the
+   usual relation between quality and scrutiny.**
+
+   *THE TEST — verify a name against a source that CANNOT INHERIT THE
+   ASSUMPTION.* ESPN's clock does not know what Kalshi calls its field; a
+   loop's observed period does not know what its env var is named. **A
+   second source that shares the naming shares the error — which is why
+   reading the docs is not a check.**
+
+   *SCOPE, deliberately small because "verify every constant" is
+   unaffordable and would simply be ignored:* **(a) values that reach an
+   operator's eyes**, because those become the shared mental model and
+   propagate into every decision taken on them; **(b) values that gate
+   whether data is captured at all**, because those failures are
+   UNRECOVERABLE — you cannot re-record last night.
+
+   *RELATION TO 22.* Rule 22 concerns ABSENCE — a zero that cannot
+   distinguish an empty world from an empty instrument. This concerns
+   PRESENCE — a value that is confidently, specifically, plausibly wrong.
+   **A zero announces itself as nothing; a named value announces itself as
+   a fact.** Shared parent: a reading whose interpretation is supplied by
+   the reader rather than by the data. The rules are cut apart because
+   their TESTS differ — 22's remedy is a positive control on the same
+   substrate, 23's is an independent source that cannot inherit the
+   assumption.
+
+   *SPECIMENS — five, in one night, across five subsystems, found by four
+   people.* (1) `occurrence_datetime` carried a kickoff+3h END stamp under a
+   name that says start; storing it as a start would have opened every
+   recording window three hours late and forfeited the whole pregame tape,
+   with nothing anywhere reporting an error. (2) `KALSHI_INTERVAL=60`
+   produced a ~124s period at 106 games, because the loop sleeps the
+   interval AFTER the cycle rather than sampling on it — no cliff, no
+   overrun, no alarm; the tape simply thins. (3) The healthcheck **printed
+   the configured interval under the label "cycle"** — **a checker that had
+   absorbed the error it exists to detect**, confirming the wrong model back
+   to the humans reading it (simultaneously a rule-19 failure: an undeclared
+   blind spot, namely that it cannot detect drift in the very quantity it
+   displays). (4) `ORDER_STATE_PARTIALLY_FILLED` read as queue truncation
+   when the values were 99.69% — decimal dust; recorded at the time as *"a
+   field's name asserts a mechanism; only its values evidence one,"* which
+   was this rule in embryo and was under-registered as a one-off. (5)
+   `n_zero` counting something adjacent to its name.
+
+   **A pattern found five times in one night by four people is not a rule
+   anyone needs persuading of — it is a description of how this codebase
+   fails.** (B's formulation and the manager's framing; the precedent line
+   and the cut are the research agent's.)
+
    *OPERATIONAL TEST, concrete enough to build:* a zero is evidence only
    when the instrument has demonstrated it can return non-zero ON THIS
    SUBSTRATE — a positive control. **Every zero-reporting monitor should
