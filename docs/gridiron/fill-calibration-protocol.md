@@ -56,7 +56,21 @@ narrower books make fills likelier.
 5. **Alternate sides** so no directional position accumulates.
 6. **LOG EVERY ORDER — the log IS the instrument:** time placed, market,
    side, your price, the best bid AND ask at that instant, time
-   cancelled-or-filled, filled yes/no, quantity filled.
+   cancelled-or-filled, filled yes/no, quantity filled, **and the QUOTED
+   SIZE already resting at your price (the queue ahead of you).**
+
+   *That last column is the highest-return field on the sheet.* Without it,
+   25 rows give a single number bounded to the cells chosen. With it, they
+   give **P(fill | queue depth)** — a curve evaluable at other cells' depths,
+   which is what makes the evening's result portable to markets nobody
+   placed an order in. Same evening, same orders, one more field.
+
+**Selection rule, pre-declared and now justified by measurement:** *the
+full-game spread and total of the recorded game, rung nearest the mid,
+alternating sides.* Those are the only NFL cells simultaneously TRADED and
+SHALLOW (5–6¢ wide, 87–620 deep). The moneyline is 0.5¢ wide behind ~15,000
+contracts — a touch-joiner is never reached there. The quarter rungs have
+never traded at all. Both would spend the evening measuring the wrong thing.
 
 ## Limits, stated up front so the result is not over-read
 

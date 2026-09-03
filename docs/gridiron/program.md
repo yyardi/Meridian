@@ -103,3 +103,34 @@ discarded trade tape, the volume-trajectory sweeper, and this permanent
 absence): **any league we don't record today is a league whose fills we can
 never calibrate later.** Recording precedes certainty that recording is
 needed.
+
+## DATED AMENDMENT (2026-09-03, research agent) — the PLACEMENT lever's premise is REFUTED; the replacement is better and is measured
+
+**REFUTED AS REGISTERED.** Placement entered the arm inventory on the
+argument that NFL quotes ~30¢ wide, making where-you-sit-inside-the-spread
+decisive in a way WNBA's 4¢ books never allowed. **D's width×flow read says
+the 30¢ cells are precisely the ones that have NEVER TRADED** — the quarter
+and half rungs are listed and dead. The cells carrying actual flow are the
+full-game spread and total at **5–6¢, comparable to WNBA rather than
+wider.** So *"NFL is a wide-book board"* is true only where nobody trades,
+and placement's registered justification does not survive.
+
+**REPLACEMENT PREMISE, built on measurement: NFL's traded cells are
+SHALLOWER, not wider — 87–620 contracts of depth against WNBA's median
+1,000 at the quote.** For a touch-joining maker the queue ahead matters far
+more than the spread's width: two-to-ten times less depth means being
+reached materially more often. **GRIDIRON's structural advantage is QUEUE
+DEPTH and GAME COUNT, not spread width.**
+
+**And it is directly testable rather than inferred** — the fill-calibration
+probe measures exactly this, which is why its pre-declared selection rule is
+*the full-game spread and total of the recorded game, rung nearest the mid,
+alternating sides*: the only cells simultaneously traded and shallow. The
+moneyline is 0.5¢ wide behind ~15,000 contracts, where a touch-joiner is
+never reached; the quarter rungs have never traded at all. Both would spend
+the evening measuring the wrong thing.
+
+**This STRENGTHENS the NFL case rather than weakening it:** shallow queues
+attack the exact assumption tonight established as the program's largest
+unmeasured error. The board's advantage turns out to be the one property our
+newest finding says matters most.
