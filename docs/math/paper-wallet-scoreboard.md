@@ -94,3 +94,28 @@ became a knife-edge that essentially never fires (A's catch). Ruled:
    refutation on this bankroll, not variance. The halt's ratified purpose
    (the enacted bar) transfers intact; the epsilon-at-zero form is
    superseded. X does not move once data exists.
+
+## DATED LINE (2026-09-03, D's depth-join rulings from the artifacts; for the author's morning batch)
+
+Term 3's "recorded book depth at the quoted level" is now pinned by the
+writer code and the data, not convention: book_levels is ONE YES-frame
+book per market stored verbatim from the venue (bids descending, offers
+ascending, level_index 0 = top). **A maker ASK joins side='offer' at
+price == quote_price; a BID joins side='bid' at quote_price** — the V28
+mechanics/economics divergence governs P&L direction, never book
+residence. **Price matching is EXACT at 4dp, clip-to-zero logged and
+counted** — at-or-through flatters in both directions (better-priced size
+fills before our level and was never ours; worse-priced size is reachable
+only after our level is consumed). The clip-to-zero rate prints every
+run; if the tick-neighbor artifact proves material, the revisit is a
+within-one-min_tick snap as its OWN labelled column, never silently
+merged.
+
+Two caveats CARRIED, not fixed: (1) recorded depth at our price is
+OTHERS' resting size holding time priority — treating it as our fill
+capacity is per-fill OPTIMISTIC; the truly pessimistic bound
+(traded-through volume) is not on this tape. Known optimism, stated.
+(2) The join keys on book_levels.captured_at (which can be SECONDS
+younger than its parent snapshot and is NULLABLE on old rows) with the
+staleness bound stated per the ffill-hazard rule; NULL-stamped rows are
+counted out, never inherited in.
