@@ -89,6 +89,18 @@ def require_engine_commit() -> str:
 #: scripts/health.py judge the beat (docs/math/quote-shadow.md, ops notes).
 SERVICE_QUOTE = "quote_engine"
 
+
+def service_quote_for(league: str) -> str:
+    """The heartbeat / health key for a league's quote engine. WNBA keeps the
+    bare historical name (deployed and monitored on `quote_engine` since before
+    amendment 12); every other league is suffixed so its engine writes its OWN
+    heartbeat row and cannot collide with or overwrite WNBA's. GRIDIRON (nfl)
+    therefore beats as `quote_engine_nfl` and is independently visible to
+    /api/status and scripts/health.py. 'wnba' is hardcoded as the bare-name
+    league deliberately — the key is an identity, not an env-derived default, so
+    it must not shift if MERIDIAN_LEAGUE's default ever changes."""
+    return SERVICE_QUOTE if league == "wnba" else f"{SERVICE_QUOTE}_{league}"
+
 #: Cycle cadence. 5s sees every requote-worthy move on the 1s tick stream
 #: without hammering the database; the fill rule is endpoint-based either way.
 DEFAULT_INTERVAL_SECONDS = float(os.environ.get("MERIDIAN_QUOTE_INTERVAL_SECONDS", "5"))
@@ -184,7 +196,7 @@ class ShadowQuoter:
         self._settlement_lookup = settlement_lookup or self._venue_settlement
         self._standing: dict[str, StandingQuote] = {}
         self._last_settle = float("-inf")
-        self._heartbeat = hb.Heartbeat(sessionmaker, SERVICE_QUOTE)
+        self._heartbeat = hb.Heartbeat(sessionmaker, service_quote_for(self._league))
         self._stop = threading.Event()
 
     # ---- data in ---------------------------------------------------------- #

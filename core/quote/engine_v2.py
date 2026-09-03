@@ -663,6 +663,18 @@ def _selftest_league_filter_and_identity(Session) -> None:
             os.environ["MERIDIAN_ENGINE_COMMIT"] = saved2
     print("proof (engine-identity stamp): a written row carries the binary commit")
 
+    # (4) league-aware heartbeat key (GRIDIRON): the nfl engine must beat on its
+    # OWN key, or it silently overwrites WNBA's heartbeat row and health.py can't
+    # see it. WNBA keeps the bare historical key (deployed/monitored on it).
+    from core.quote.engine import SERVICE_QUOTE, service_quote_for
+    qn = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
+                        settlement_lookup=lambda s: None, league="nfl")
+    assert service_quote_for("wnba") == SERVICE_QUOTE
+    assert qn._heartbeat.service == "quote_engine_nfl", qn._heartbeat.service
+    assert q._heartbeat.service == SERVICE_QUOTE, q._heartbeat.service
+    print("proof (heartbeat identity): nfl beats on quote_engine_nfl, wnba on "
+          "quote_engine — no cross-league heartbeat collision")
+
 
 def _selftest_queue_ahead(Session) -> None:
     """Queue-ahead recording (manager 2026-09-03; gate design D 2026-09-03). Part
