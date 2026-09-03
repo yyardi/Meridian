@@ -154,6 +154,16 @@ NFL is DEEPER — it establishes that the claimed gap does not survive basis
 matching, which is all that was needed to stop it becoming a founding
 claim.*
 
+**THE RESIDUAL MISMATCH IS SIGNED, AND IT POINTS AWAY FROM THE CLAIM (D).**
+The windows still differ — NFL at T-7 against WNBA at T-1 to T-5, because
+WNBA lists later. But the buckets say which way that bites: **WNBA depth
+GROWS toward tip (110 → 450), so a hypothetical WNBA T-7 bucket would be
+SHALLOWER than 110**, putting NFL's 87–620 further ahead, not behind.
+**Correcting the remaining confound moves the comparison further AGAINST
+the shallow-NFL claim**, so the imperfect match was never load-bearing —
+the withdrawal is not "unsupported at the bases we could match" but "the
+residual works the wrong way."
+
 **Consequence: GRIDIRON starts with NO structural-advantage story, which is
 the correct state.** What survives is the refutation (NFL is not a
 wider-margin board) and the game-count argument, which needs no depth

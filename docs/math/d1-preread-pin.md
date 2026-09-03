@@ -48,3 +48,23 @@ accrual. Evidence gathered and cited by the manager in
 the substrate table goes mixed-league with GRIDIRON's NFL recording, and
 this pin's buckets and capture basis are WNBA-derived. League filter keys
 on the event slug prefix.
+
+
+## DATED LINE (2026-09-03) — a SECOND, independent mechanism pointing the same way
+
+Measured while resolving an unrelated question: **WNBA pregame top-of-book
+depth GROWS toward tip — median 110 contracts at T-1 to T-5 days, 450
+inside 24 hours** (40,000 random pregame snapshots joined to their book
+rows, `level_index = 0`).
+
+D1's registered thesis argues for resting FAR from tip because informed
+flow needs information arrival and dead windows have none. **This adds an
+independent reason pointing the same way: dead windows also have THIN
+books, and thin books mean SHORT QUEUES.** A maker resting at T-3 is both
+less adversely selected AND closer to the front of a much smaller line —
+two different mechanisms, one conclusion.
+
+**When D1 reads, interpret it against BOTH**, not the concession story
+alone. Caveat carried: measured on WNBA, one basis, and it says nothing
+about whether anyone trades in those windows — **thin and quiet is still a
+desert.**
