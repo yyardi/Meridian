@@ -96,3 +96,33 @@ services:
       MERIDIAN_LEAGUE: wnba
       MERIDIAN_RPS: "2"
     command: ["python", "-m", "core.feeds.stats_sweeper", "--interval", "3600"]
+
+  # ── GRIDIRON / CFB quoter (2026-09-03) ──────────────────────────────
+  # The operator defined GRIDIRON as NFL **+ CFB**, and CFB plays FIRST:
+  # ~100 games this Saturday against NFL's opener on the 9th. Without this
+  # service the football program's first shadow fills would wait four extra
+  # days and skip a slate six times larger by game count.
+  #
+  # Same image, same engine_v2, same frozen-v1 quoting policy — only
+  # MERIDIAN_LEAGUE differs, and league is determined by SLUG on read and
+  # write. Its own heartbeat row (quote_engine_cfb) via service_quote_for,
+  # so it can neither collide with nor mask the WNBA or NFL engines. Its
+  # deploy commit is CFB's own substrate epoch.
+  #
+  # Fills are MODELLED, like every fill this program has produced. Recording
+  # only; no credentials mounted, nothing can trade.
+  gridiron-cfb-engine:
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+    container_name: meridian-gridiron-cfb-engine
+    command: python -m core.quote.engine_v2
+    environment:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      MERIDIAN_LEAGUE: cfb
+      MERIDIAN_QUOTE_INTERVAL_SECONDS: "5"
+      MERIDIAN_QUOTE_SETTLE_EVERY_SECONDS: "600"
+    depends_on:
+      - postgres
+    restart: unless-stopped

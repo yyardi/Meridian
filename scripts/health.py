@@ -111,6 +111,8 @@ def check_containers() -> list[Check]:
         # games/Saturday against NFL's 16/week; optionality, not attention.
         "meridian-cfb-recorder": "CFB pregame board (recording only)",
         "meridian-cfb-live-recorder": "CFB live ticks (1s, recording only)",
+        "meridian-gridiron-engine": "GRIDIRON quoter — NFL (shadow)",
+        "meridian-gridiron-cfb-engine": "GRIDIRON quoter — CFB (shadow)",
         "meridian-wnba-stats-sweeper": "WNBA volume trajectory (empty board "
                                        "until ~Sept 17)",
     }
