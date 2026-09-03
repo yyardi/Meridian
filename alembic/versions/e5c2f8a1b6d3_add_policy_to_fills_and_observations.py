@@ -7,8 +7,14 @@ observation name its arm. Additive + nullable (pre-A/B rows carry NULL; the
 variant engines always stamp it).
 
 Revision ID: e5c2f8a1b6d3
-Revises: c3e8a1d6b4f2
+Revises: b7e2f91a4c33
 Create Date: 2026-09-03
+
+Re-parented from c3e8a1d6b4f2 onto b7e2f91a4c33 (kalshi_start_time_source) after
+rebasing onto main: main's kalshi migration and this one both branched off
+c3e8a1d6b4f2, which would leave two alembic heads. This column-add is independent
+of the kalshi change, so a linear re-chain (not a merge migration) is the right
+fix; the policy column lands after the kalshi column.
 """
 from collections.abc import Sequence
 
@@ -17,7 +23,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e5c2f8a1b6d3'
-down_revision: str | None = 'c3e8a1d6b4f2'
+down_revision: str | None = 'b7e2f91a4c33'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
