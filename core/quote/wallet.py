@@ -504,6 +504,76 @@ def _selftest_fold() -> int:
     return 0 if ok else 1
 
 
+# The immutable Aug fills pin (manager-confirmed) and its ledgered known-answer.
+# The pin never carried a recorded checksum, so this selftest is its checksum of
+# record (manager). Repo-relative; a gitignored data artifact, so the check
+# skips where it is absent (worktrees) and runs where it is present (main
+# checkout / prod).
+_PIN_REL = "backups/exports/quote_fills_v1_20260902T161223Z.csv"
+_PIN_MD5 = "2083a93153d51738d7d472345548a08c"
+_LEDGER_INGAME_FILLS = 17032
+_LEDGER_CAPTURE_CENTS = -1.60            # optimistic net-capture mean, ledgered
+_LEDGER_CI_CENTS = (-1.69, -1.50)        # the ledgered clustered CI (containment)
+
+
+def _selftest_rule16() -> int:
+    """rule-16 KNOWN-ANSWER: reproduce the capture ledger's totals on both arms
+    from the immutable Aug pin.
+
+    Folded at the LEDGER'S basis — size = 1 contract, NO depth-cap, NO
+    reservation — because the pin carries no depth columns and the ledger's
+    -1.60c was computed per-contract. Depth-capping and reservation are FORWARD
+    behaviors; the rule-18 plants in _selftest_fold already prove they fire.
+    This check proves the ARITHMETIC CORE (both-arm capture, the YES-frame, the
+    ingame filter) matches the ledger. md5-gated: refuses on a changed pin.
+    """
+    import csv
+    import hashlib
+    from pathlib import Path
+
+    pin = Path(__file__).resolve().parents[2] / _PIN_REL
+    if not pin.exists():
+        print(f"rule-16 (Aug pin): SKIPPED — pin absent here ({_PIN_REL}); runs "
+              "where backups/exports/ is populated (main checkout / prod).")
+        return 0
+    md5 = hashlib.md5(pin.read_bytes()).hexdigest()
+    if md5 != _PIN_MD5:
+        print(f"rule-16 (Aug pin): REFUSED — md5 {md5} != pinned {_PIN_MD5}; the "
+              "pin changed and this selftest is its checksum of record.")
+        return 1
+
+    with open(pin) as f:
+        ing = [r for r in csv.DictReader(f) if r["regime"] == "ingame"]
+    n = len(ing)
+
+    def cap(r, concession):                # size=1, ledger basis (mark at fill)
+        return mark_per_contract(side=r["side"],
+                                 quote_price=float(r["quote_price"]),
+                                 mid_now=float(r["mid_at_fill"]),
+                                 concession=concession)
+
+    mean_opt = sum(cap(r, 0.0) for r in ing) / n
+    mean_conc = sum(cap(r, concession_for(r["regime"])) for r in ing) / n
+    lo, hi = _LEDGER_CI_CENTS
+    c1 = n == _LEDGER_INGAME_FILLS
+    c2 = (round(mean_opt * 100, 2) == _LEDGER_CAPTURE_CENTS
+          and lo <= mean_opt * 100 <= hi)
+    c3 = abs((mean_opt - mean_conc) - CONCESSION_IN_GAME) < 1e-9
+
+    print(f"rule-16: ingame fills {n} (ledger {_LEDGER_INGAME_FILLS}) "
+          f"-> {'OK' if c1 else 'FAIL'}")
+    print(f"rule-16: optimistic capture {mean_opt * 100:.4f}c "
+          f"(ledger {_LEDGER_CAPTURE_CENTS}c, CI {lo}..{hi}c) "
+          f"-> {'OK' if c2 else 'FAIL'}")
+    print(f"rule-16: concession capture {mean_conc * 100:.4f}c "
+          f"(= optimistic - 4.70c) -> {'OK' if c3 else 'FAIL'}")
+    ok = c1 and c2 and c3
+    print("RULE-16:", "PASS — the wallet reproduces the capture ledger's totals "
+          "on both arms from the pinned Aug fills; the arithmetic core is the "
+          "ledger's." if ok else "FAIL")
+    return 0 if ok else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
@@ -512,6 +582,8 @@ def main() -> int:
         rc = _selftest_primitives()
         print()
         rc |= _selftest_fold()
+        print()
+        rc |= _selftest_rule16()
         return rc
     print(__doc__)
     return 0
