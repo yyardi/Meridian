@@ -164,6 +164,39 @@ the shallow-NFL claim**, so the imperfect match was never load-bearing —
 the withdrawal is not "unsupported at the bases we could match" but "the
 residual works the wrong way."
 
+**SUPERSEDING READ (research agent, 2026-09-03, finer matching — replaces
+the manager's coarser buckets above).** Matched on BOTH axes AND on market
+type (pregame, top-of-book, full-game spread/total), median contracts by
+days-to-event:
+
+```
+NFL    spread  4–8d: 49   |  >8d: 40        total  4–8d: 43  |  >8d: 30
+WNBA   spread  2–4d: 50   |  1–2d: 110  |  0.5–1d: 110  |  <0.5d: 781
+```
+
+**WNBA spread at 2–4 days: 50. NFL spread at 4–8 days: 49.** The claimed
+2–10× gap was TIME-TO-EVENT, not league — and WNBA's own depth grows ~15×
+from a few days out to inside half a day. Strict matching is not even
+possible, since WNBA markets barely list 4+ days ahead. **Verdict: NOT
+SUPPORTED, DIRECTION UNCLEAR.** (This also corrects the manager's numbers:
+the "110 at T-1 to T-5" bucket mixed the 50 and 110 regimes, and the
+"87–620" NFL range mixed market types including the ~15,000-deep
+moneyline.)
+
+**PROVENANCE ON THE KILLING READ, since the same rule binds its author:
+this is a LIVE PROD READ dated 2026-09-03, not a pinned artifact.
+Sufficient to STOP a claim — declining to build needs less provenance than
+building — but NOTHING MAY BE BUILT ON IT until the export is cut and the
+query reproduces against a pin.**
+
+**And the question sharpens rather than disappears: NFL IN-PLAY depth is
+unmeasured and cannot exist before the first slate.** Given WNBA's ~15×
+pregame-to-tip growth, NFL's in-play queue could land anywhere from 40 to
+600+. **The fill probe's queue-depth column measures exactly that, on the
+night it matters** — so the thing the comparison tried to settle is
+answerable only by the experiment, which is a cleaner outcome than either
+version of the claim.
+
 **Consequence: GRIDIRON starts with NO structural-advantage story, which is
 the correct state.** What survives is the refutation (NFL is not a
 wider-margin board) and the game-count argument, which needs no depth
