@@ -649,6 +649,14 @@ class ServiceHeartbeat(Base):
     #: What the writer itself believed about game state this cycle. Readers
     #: with an independent game signal (ESPN) should prefer their own.
     game_live: Mapped[bool | None] = mapped_column(Boolean)
+    #: The git commit the WRITER is running (MERIDIAN_ENGINE_COMMIT, baked by the
+    #: Dockerfile ARG GIT_COMMIT). The deployed-code audit compares this against
+    #: the reference commit to detect a container silently running code older
+    #: than main — the failure class behind three of the night's bugs (a stale
+    #: image reporting a false zero, indistinguishable from a quiet venue). NULL
+    #: reads as UNKNOWN PROVENANCE (an image built without the arg — the exact
+    #: state we cannot otherwise see), never as "fine".
+    commit: Mapped[str | None] = mapped_column(String(40))
 
 
 class ModelCalibration(Base):

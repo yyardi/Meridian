@@ -42,6 +42,11 @@ import shutil
 import subprocess
 import sys
 
+from core.heartbeat import (
+    PROVENANCE_OK,
+    PROVENANCE_UNKNOWN,
+    provenance_verdict,
+)
 from core.healthchecks import (
     DEAD,
     OK,
@@ -143,6 +148,84 @@ def check_containers() -> list[Check]:
             checks.append(Check(DEAD, name.replace("meridian-", ""), status_text))
         else:
             checks.append(Check(OK, name.replace("meridian-", ""), f"{status_text} — {what}"))
+    return checks
+
+
+def _container_commit(name: str) -> str | None:
+    """The MERIDIAN_ENGINE_COMMIT baked into a running container, read from
+    docker inspect — the authoritative "what code is this actually running",
+    independent of anything the container reports to the DB. None if absent."""
+    try:
+        out = subprocess.run(
+            ["docker", "inspect", "--format",
+             "{{range .Config.Env}}{{println .}}{{end}}", name],
+            capture_output=True, text=True, timeout=10, check=False).stdout
+    except Exception:                                          # pragma: no cover
+        return None
+    for line in out.splitlines():
+        if line.startswith("MERIDIAN_ENGINE_COMMIT="):
+            return line.split("=", 1)[1].strip() or None
+    return None
+
+
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], capture_output=True, text=True,
+                          timeout=10, check=False)
+
+
+def check_deployed_code() -> list[Check]:
+    """Deployed-code audit (the failure class behind three of the night's bugs:
+    a container silently running code older than main, the dangerous shape being
+    a stale image reporting a false zero — indistinguishable from a quiet venue).
+
+    Compares each RUNNING container's baked commit against the deployed
+    checkout's HEAD, BY COMMIT IDENTITY (never grep-for-string):
+      * == HEAD                       -> OK
+      * ancestor of HEAD, behind by N -> WARN (stale, distance stated)
+      * not an ancestor (diverged)    -> DEAD (a finding)
+      * commit not in this repo       -> DEAD (unknown ref)
+      * NO stamp at all               -> WARN (UNKNOWN PROVENANCE — built without
+        the ARG, the exact state we otherwise cannot see; never read as fine)
+    Catches both a real stale deploy AND inventing one that isn't there."""
+    head = _git("rev-parse", "HEAD")
+    if head.returncode != 0:
+        return [Check(WARN, "deployed-code",
+                      f"cannot read git HEAD: {head.stderr.strip()[:60]}")]
+    ref = head.stdout.strip()
+    try:
+        names = subprocess.run(
+            ["docker", "compose", "ps", "--format", "{{.Name}}"],
+            capture_output=True, text=True, timeout=30, check=False
+        ).stdout.split()
+    except Exception as exc:                                   # pragma: no cover
+        return [Check(DEAD, "deployed-code", f"could not query docker: {exc}")]
+    if not names:
+        return [Check(WARN, "deployed-code", "no running containers to audit")]
+
+    checks: list[Check] = []
+    for name in sorted(names):
+        if name == "meridian-postgres":       # the stock image carries no stamp
+            continue
+        short = name.replace("meridian-", "")
+        commit = _container_commit(name)
+        base = provenance_verdict(commit, ref)   # shared identity core
+        if base == PROVENANCE_UNKNOWN:
+            checks.append(Check(WARN, short,
+                                "UNKNOWN PROVENANCE — no commit stamp "
+                                "(built without ARG GIT_COMMIT)"))
+        elif base == PROVENANCE_OK:
+            checks.append(Check(OK, short, f"{commit[:8]} == HEAD"))
+        # base == DRIFT: refine with git distance/ancestry (host-only add-on)
+        elif _git("merge-base", "--is-ancestor", commit, "HEAD").returncode == 0:
+            n = _git("rev-list", "--count", f"{commit}..HEAD").stdout.strip() or "?"
+            checks.append(Check(WARN, short,
+                                f"STALE — {commit[:8]} is {n} commits behind HEAD"))
+        elif _git("cat-file", "-e", commit).returncode == 0:
+            checks.append(Check(DEAD, short,
+                                f"DIVERGED — {commit[:8]} is not an ancestor of HEAD"))
+        else:
+            checks.append(Check(DEAD, short,
+                                f"UNKNOWN COMMIT — {commit[:8]} is not in this repo"))
     return checks
 
 
@@ -271,6 +354,9 @@ def main() -> int:
     groups: list[tuple[str, list[Check]]] = [
         ("Host", host),
         ("Containers", containers),
+        # Deployed-code audit: server-only (needs docker inspect + the deployed
+        # git checkout). "in main != in production" made enforceable.
+        *([("Deployed code", check_deployed_code())] if where == "server" else []),
         ("Data feeds", check_espn() + check_book_lines()),
         ("Heartbeats", check_app_heartbeats()),
         ("Databases", check_primary_db(live) + check_local_ticks(live)

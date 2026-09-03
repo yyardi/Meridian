@@ -30,6 +30,7 @@ so there is exactly one definition of dead.
 
 from __future__ import annotations
 
+import os
 import time
 
 import structlog
@@ -111,6 +112,27 @@ def verdict(
     return OK
 
 
+#: Deployed-code audit verdicts (a container running code older than main is the
+#: failure class behind three of the night's bugs).
+PROVENANCE_OK = "ok"            # reported commit == the reference
+PROVENANCE_DRIFT = "drift"      # reported != reference, both known — a finding
+PROVENANCE_UNKNOWN = "unknown"  # reported absent, or no reference to judge against
+
+
+def provenance_verdict(reported: str | None, reference: str | None) -> str:
+    """Commit-identity provenance check. Compares a service's reported commit
+    against a reference by IDENTITY, never by string-contains (a grep is adequate
+    for a specific bug, not a general check). An ABSENT reported commit is
+    UNKNOWN — an image built without the ARG, the exact state we otherwise cannot
+    see — never OK. An absent reference is also UNKNOWN (nothing to judge drift
+    against). Distance / ancestry (behind-by-N, not-an-ancestor) is computed by
+    the caller holding a git checkout (scripts/health.py); this is the identity
+    core both consumers share."""
+    if not reported or not reference:
+        return PROVENANCE_UNKNOWN
+    return PROVENANCE_OK if reported == reference else PROVENANCE_DRIFT
+
+
 class Heartbeat:
     """One writer's beat. Never raises; a heartbeat that can kill its service
     would be worse than no heartbeat.
@@ -126,6 +148,11 @@ class Heartbeat:
         self._error_log_seconds = error_log_seconds
         self._last_error_log = float("-inf")
         self._rows_total: int | None = None
+        #: The git commit this writer is running, reported on every beat for the
+        #: deployed-code audit. Baked by the Dockerfile (ARG GIT_COMMIT ->
+        #: MERIDIAN_ENGINE_COMMIT); read ONCE at construction (the running binary
+        #: cannot change commit without a restart). None -> unknown provenance.
+        self._commit = (os.environ.get("MERIDIAN_ENGINE_COMMIT") or "").strip() or None
 
     def beat(
         self,
@@ -153,6 +180,7 @@ class Heartbeat:
             "rows_written": rows_written,
             "rows_total": self._rows_total,
             "game_live": game_live,
+            "commit": self._commit,
         }
         try:
             with self._Session() as session:
