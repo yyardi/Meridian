@@ -65,6 +65,24 @@ LEAGUES: dict[str, League] = {
         recorded=True,
         empty_state="No games recorded yet.",
     ),
+    "nfl": League(
+        slug="nfl",
+        name="NFL",
+        espn_path="football/nfl",
+        # GRIDIRON records NFL live from 2026-09-02 (077c0b9); shadow_quote_fills
+        # is mixed-league from there on. This entry is the SLUG-ROUTING table
+        # only (league_of_slug + the dashboard + the paper wallet routing an NFL
+        # fill to the GRIDIRON ledger). GRIDIRON's modelling registrations —
+        # cohorts, saturation, gates — live in its OWN registry (docs/gridiron/),
+        # not here; adding the slug here does not import any NFL constant.
+        recorded=True,
+        empty_state=(
+            "No NFL games recorded yet — GRIDIRON's board fills on the first "
+            "slate (first game 2026-09-09). The model is a separate question: "
+            "NFL is an unmeasured domain, maker-only descriptive-first, no "
+            "ported constants."
+        ),
+    ),
     "nba": League(
         slug="nba",
         name="NBA",
