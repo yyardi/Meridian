@@ -192,6 +192,50 @@ before merge**, and the merge is refused if it would revert one.
    been permitted to establish one.** Declining to build needs less
    provenance than building.
 
+   *Corollary — ASK THE SYSTEM, DON'T RECONSTRUCT FROM ITS EXHAUST (found
+   by the manager and Quant A, 2026-09-03):* **when the system you are
+   measuring can answer your question directly, ask it before
+   reconstructing the answer from the traces it leaves.** Where rule 20
+   says count the phenomenon on the substrate before building the fix,
+   this says: **if the substrate reports the phenomenon itself, read that
+   report first** — a reconstruction is not merely extra work, it is
+   fragile in ways the direct answer is not.
+
+   *SCOPE, because both cases occur:* reconstruction is legitimate and
+   sometimes forced — when the system does not report the quantity at all.
+   **State which case you are in before you build.** And a direct report is
+   authoritative about what IT measures; confirm it answers your question
+   rather than an adjacent one.
+
+   **Specimens, and the pair is the point.** *The answer existed and was
+   not asked for:* request dispatch reconstructed from DB row-write stamps
+   read 60 req/s against a 12/s cap, while the venue's own HTTP 429 count
+   sat at ZERO across every recorder's life — the reconstruction inferred
+   dispatch from COMPLETION stamps, so concurrent completions in one second
+   read as simultaneous sends. **A completion-time stamp is never a
+   dispatch clock.** *The answer does not exist and reconstruction is
+   forced:* the venue emits nothing for a zero-fill cancel and offers no
+   order-status endpoint, so P(fill) is unobtainable by asking and the
+   operator's own written log becomes the instrument. **Same night,
+   opposite world, and the difference is entirely whether the system
+   reports the quantity.**
+
+   **The symmetry note, which is the sharpest part:** the ALARM (a sum of
+   configured per-process caps) and the INSTRUMENT built to check it (a
+   count of write completions) were **the same category error from
+   opposite sides** — neither a sum of caps nor a count of completions is a
+   dispatch claim.
+
+   *Cross-reference with the matched-bases corollary above: both are the
+   same disease — an instrument whose shape does not match the question —
+   approached from different directions. One compares two numbers that
+   measure different things; the other builds a number when the right one
+   was available. A reader who finds either should be pointed at the
+   other.* And the generalisation (A's): **"verify against the venue, not
+   adjacent sources" was written about documentation and extends to
+   measurement — the venue is authoritative about the venue, including
+   about how it is treating us.**
+
 18. **The synthetic plant: every mutation suite carries at least one
    SYNTHETIC PLANT asserting an exact expected value — a boundary instant, a
    known coefficient, a planted count — never only recovery-on-real-data.** A
