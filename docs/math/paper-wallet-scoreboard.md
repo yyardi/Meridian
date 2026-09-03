@@ -77,3 +77,20 @@ buyingPower), cash consumed at fill). A reservation-clipped fill logs as
 clipped with its reason; that meter going visible on a big slate is
 itself scoreboard information — it answers the operator's "unless you
 need capital" with data.
+
+## DATED LINE (2026-09-03, manager's ruling, for the author's morning ratification — the halt under reservation)
+
+Reservation rewrote what ruin means: a book that never reserves more than
+available can only ASYMPTOTE to zero, so the ratified zero-balance halt
+became a knife-edge that essentially never fires (A's catch). Ruled:
+
+1. **The live "bleeding" read is CONTINUOUS** — two dashboard meters:
+   concession-equity drawdown, and capital-clip rate (reservation-clips
+   as a share of fills; the "$1,000 binds" answer as a running number).
+2. **The discrete halt moves to concession equity < 20% of seed** ($100
+   on a $500 ledger), named a-priori: OPERATIONAL ruin — at $100 under
+   reservation a single game's normal quoting consumes the entire
+   available balance, and an 80% drawdown on cent-scale maker edges is
+   refutation on this bankroll, not variance. The halt's ratified purpose
+   (the enacted bar) transfers intact; the epsilon-at-zero form is
+   superseded. X does not move once data exists.
