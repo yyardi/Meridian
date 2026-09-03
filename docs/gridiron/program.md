@@ -115,9 +115,25 @@ full-game spread and total at **5–6¢, comparable to WNBA rather than
 wider.** So *"NFL is a wide-book board"* is true only where nobody trades,
 and placement's registered justification does not survive.
 
-**REPLACEMENT PREMISE, built on measurement: NFL's traded cells are
-SHALLOWER, not wider — 87–620 contracts of depth against WNBA's median
-1,000 at the quote.** For a touch-joining maker the queue ahead matters far
+**REPLACEMENT PREMISE — HELD, NOT REGISTERED (corrected within the hour by
+the author, after D caught a basis mismatch; the correction is landed here
+rather than by editing the claim away).** The proposed premise was: *NFL's
+traded cells are SHALLOWER, not wider — 87–620 contracts against WNBA's
+median 1,000 at the quote.* **That comparison places WNBA depth AT OUR
+QUOTE PRICE, IN-PLAY beside NFL TOP-OF-BOOK, PREGAME AT T-7 DAYS.** Two
+axes differ at once and either alone could produce a 2–10× gap: books a
+week from kickoff are thin everywhere, and in-play books at the touch are
+where size concentrates. **The number may be measuring "seven days out
+versus mid-game" rather than "NFL versus WNBA"** — and it was about to
+become an entire program's founding claim.
+
+**The resolving query (D, running): WNBA pregame top-of-book from the tape
+they hold, matched on BOTH axes.** If NFL is still shallower like-for-like
+the claim is real and strong; if the gap collapses, GRIDIRON's advantage
+argument needs a different foundation — and we learn that before it is
+registered rather than after. **Until it returns, the placement lever has
+its old premise refuted and NO replacement registered.** The text below is
+retained as the hypothesis under test, not as a justification: For a touch-joining maker the queue ahead matters far
 more than the spread's width: two-to-ten times less depth means being
 reached materially more often. **GRIDIRON's structural advantage is QUEUE
 DEPTH and GAME COUNT, not spread width.**

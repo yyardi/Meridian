@@ -360,7 +360,17 @@ trajectory sweeper, all three the same asymmetry: cheap now, impossible
 retroactively.
 
 
-## ADDENDUM 6 (2026-09-03) — NFL IS NOT A WIDER-MARGIN BOARD; IT IS A SHALLOWER-QUEUE ONE
+## ADDENDUM 6 (2026-09-03) — NFL IS NOT A WIDER-MARGIN BOARD (stands); "SHALLOWER-QUEUE" IS HELD, NOT ESTABLISHED
+
+**CORRECTION, same hour, before this informed anything:** the depth
+comparison below is a BASIS MISMATCH — WNBA depth at OUR QUOTE PRICE
+IN-PLAY against NFL TOP-OF-BOOK PREGAME AT T-7. Pregame books a week out
+are thin everywhere and in-play touch books are where size concentrates, so
+the gap may measure the calendar rather than the venue. **D is running the
+like-for-like query (WNBA pregame top-of-book, both axes matched). Until it
+returns, only the refutation stands: NFL is not a wider-margin board. The
+shallower-queue claim is a hypothesis under test.**
+
 
 The placement discussion above inherits a correction. **NFL's 30¢ cells are
 the ones that have never traded**; its traded cells (full-game spread and
