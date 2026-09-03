@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian — Paper Wallet</title>
+<style>
+  :root{--bg:#0a0c10;--panel:#11141b;--line:#1e2430;--txt:#d7dde8;--dim:#7c879b;
+        --faint:#4a5568;--pos:#26d07c;--neg:#ff5c62;--warn:#ffb020;--accent:#4c8dff;
+        --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:12px/1.5 var(--mono);
+       font-variant-numeric:tabular-nums}
+  header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:9px 14px;
+         background:var(--panel);border-bottom:1px solid var(--line);position:sticky;
+         top:0;z-index:9}
+  .brand{font-weight:700;letter-spacing:.14em}
+  nav a{color:var(--faint);text-decoration:none;margin-right:12px;font-size:11px;
+        padding:3px 8px;border-radius:3px}
+  nav a.on{color:var(--txt);background:#1a1f2b}
+  main{padding:16px;max-width:1100px;margin:0 auto}
+  h2{font-size:12px;letter-spacing:.06em;color:var(--dim);text-transform:uppercase;
+     margin:22px 0 8px}
+  .sub{color:var(--faint);font-size:10.5px;letter-spacing:0;text-transform:none}
+  .books{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.books{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px}
+  .card h3{margin:0 0 10px;font-size:13px;letter-spacing:.08em}
+  .card h3 .lg{color:var(--faint);font-size:10px;font-weight:400;letter-spacing:.04em}
+  .arm{display:flex;justify-content:space-between;align-items:baseline;
+       padding:6px 0;border-top:1px solid var(--line)}
+  .arm .lab{color:var(--dim)}
+  .arm .bal{font-size:16px}
+  .arm .pnl{font-size:11px;margin-left:8px}
+  .pos{color:var(--pos)} .neg{color:var(--neg)} .warn{color:var(--warn)}
+  .meters{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+  .m{background:#0d1017;border:1px solid var(--line);border-radius:4px;padding:7px 9px}
+  .m .k{color:var(--faint);font-size:9px;text-transform:uppercase;letter-spacing:.07em}
+  .m .v{font-size:14px;margin-top:2px}
+  .bar{color:var(--faint);font-size:9.5px}
+  .halt{margin-top:10px;padding:8px 10px;border:1px solid var(--neg);border-radius:4px;
+        background:#1a0e10;color:var(--neg);font-size:11px}
+  .toll{margin-top:10px;font-size:11px;color:var(--warn)}
+  .counts{margin-top:8px;color:var(--faint);font-size:10px}
+  .absent{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+          padding:12px 14px;margin-top:14px;font-size:11px}
+  .absent .k{color:var(--warn);font-weight:600}
+  .note{color:var(--faint);font-size:10px;margin-top:6px;line-height:1.5}
+  .trigger{color:var(--neg);font-weight:600;margin-top:6px}
+  .empty{color:var(--faint);padding:24px;text-align:center}
+  .asof{color:var(--faint);font-size:10px;margin-top:16px}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">MERIDIAN</span>
+  <nav><a href="/quote">quote</a><a href="/wallet" class="on">wallet</a>
+       <a href="/analytics">analytics</a></nav>
+  <span class="sub">the paper wallet — $1,000, two league ledgers, both fill arms.
+    an instrument, never evidence.</span>
+</header>
+<main>
+  <h2>Ledgers <span class="sub">— $500 each at birth · both arms on every number ·
+    the ~6¢/leg gap is the lesson, never hidden</span></h2>
+  <div id="books" class="books"><div class="empty">loading…</div></div>
+  <div id="absent"></div>
+  <div id="asof" class="asof"></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const NAMES = {wnba:"Meridian", nfl:"GRIDIRON"};
+const money = x => (x<0?"-$":"$") + Math.abs(x).toFixed(2);
+const signed = x => (x>=0?"+":"") + x.toFixed(2);
+const cls = x => x>0?"pos":(x<0?"neg":"");
+const todayISO = () => new Date().toISOString().slice(0,10);
+const thisMonth = () => new Date().toISOString().slice(0,7);
+
+function dailyMTD(daily){
+  // today's P&L (or the latest recorded day if none today) and month-to-date.
+  const dates = Object.keys(daily||{}).sort();
+  if(!dates.length) return {day:0, dayLabel:"—", mtd:0};
+  const t = todayISO();
+  const dayKey = (t in daily) ? t : dates[dates.length-1];
+  const mtd = dates.filter(d=>d.startsWith(thisMonth()))
+                   .reduce((a,d)=>a+daily[d],0);
+  return {day:daily[dayKey], dayLabel:dayKey, mtd};
+}
+
+function bookCard(slug, b, bars){
+  const dOpt = dailyMTD(b.daily_opt), dConc = dailyMTD(b.daily_conc);
+  const halt = b.halted ? `<div class="halt">■ HALTED — ${b.halt_note||""}</div>` : "";
+  return `<div class="card">
+    <h3>${NAMES[slug]||slug} <span class="lg">· ${slug} · seed ${money(b.seed)}</span></h3>
+    <div class="arm"><span class="lab">optimistic (shadow-fill)</span>
+      <span><span class="bal">${money(b.optimistic)}</span>
+      <span class="pnl ${cls(b.pnl_opt)}">${signed(b.pnl_opt)}</span></span></div>
+    <div class="arm"><span class="lab">concession (measured floor)</span>
+      <span><span class="bal">${money(b.concession)}</span>
+      <span class="pnl ${cls(b.pnl_conc)}">${signed(b.pnl_conc)}</span></span></div>
+    <div class="toll">toll paid (cumulative concession cost): ${money(b.toll)}
+      — the ~6¢/leg lesson, metered</div>
+    <div class="meters">
+      <div class="m"><div class="k">latest day P&amp;L (opt / conc)</div>
+        <div class="v"><span class="${cls(dOpt.day)}">${signed(dOpt.day)}</span> /
+          <span class="${cls(dConc.day)}">${signed(dConc.day)}</span></div>
+        <div class="bar">${dOpt.dayLabel} · bar $${bars.daily.toFixed(2)}/day</div></div>
+      <div class="m"><div class="k">month-to-date (opt / conc)</div>
+        <div class="v"><span class="${cls(dOpt.mtd)}">${signed(dOpt.mtd)}</span> /
+          <span class="${cls(dConc.mtd)}">${signed(dConc.mtd)}</span></div>
+        <div class="bar">bar $${bars.monthly.toFixed(0)}/mo</div></div>
+      <div class="m"><div class="k">concession drawdown</div>
+        <div class="v ${b.drawdown>0.5?"neg":(b.drawdown>0.2?"warn":"")}">${(b.drawdown*100).toFixed(1)}%</div>
+        <div class="bar">halt at 80% (20% of seed)</div></div>
+      <div class="m"><div class="k">capital-clip rate ($1,000 binds)</div>
+        <div class="v ${b.capital_clip_rate>0.1?"warn":""}">${(b.capital_clip_rate*100).toFixed(1)}%</div>
+        <div class="bar">reservation-bound / fills</div></div>
+    </div>
+    <div class="meters">
+      <div class="m"><div class="k">peak concurrent exposure</div>
+        <div class="v ${b.peak_open_contracts>=b.seed?"neg":(b.peak_open_contracts>=0.5*b.seed?"warn":"")}">${b.peak_open_contracts} ctr / ${b.peak_open_markets} mkt</div>
+        <div class="bar">~$${b.peak_open_contracts} worst case at unit size vs $${b.seed.toFixed(0)}</div></div>
+      <div class="m"><div class="k">time-weighted concurrency</div>
+        <div class="v">${b.tw_open_contracts.toFixed(1)} ctr / ${b.tw_open_markets.toFixed(1)} mkt</div>
+        <div class="bar">sizes the bankroll need</div></div>
+    </div>
+    <div class="arm" style="border-top:1px solid var(--line);margin-top:8px">
+      <span class="lab">unrealized (open, not in realized)</span>
+      <span><span class="${cls(b.unrealized_opt)}">${signed(b.unrealized_opt)}</span> /
+        <span class="${cls(b.unrealized_conc)}">${signed(b.unrealized_conc)}</span></span></div>
+    <div class="counts">${b.n_fills} sized fills · depth-clip ${b.n_clipped_depth} ·
+      capital-clip ${b.n_clipped_reservation} · zero ${b.n_zero} ·
+      reserved ${money(b.reserved)} · available ${money(b.available)}</div>
+    ${halt}
+  </div>`;
+}
+
+function absentPanel(a){
+  if(!a) return "";
+  const trig = a.trigger_10pct_ingame
+    ? `<div class="trigger">■ TRIGGER: ingame depth-absent &gt; 10% — build the
+       within-one-min_tick snap as its own labelled column (never replacing exact-match).</div>` : "";
+  return `<div class="absent">
+    <span class="k">depth-absent (clip-to-zero): ${a.count} fills</span>
+    — ${(a.rate*100).toFixed(1)}% of all, ${(a.ingame_rate*100).toFixed(1)}% of ingame.
+    Would-be capture at unit size: opt ${money(a.wouldbe_opt_sum)}
+    (${a.wouldbe_opt_mean_c.toFixed(2)}¢/fill), conc ${money(a.wouldbe_conc_sum)}
+    (${a.wouldbe_conc_mean_c.toFixed(2)}¢/fill) — the suppression cost we did not trade.
+    <div class="note">exact-4dp match is capacity-conservative but P&amp;L sign-dependent:
+      an absent fill contributes nothing, so on a negative-capture book it FLATTERS the
+      loss (the would-be line is how much). Depth-sized numbers are per-fill optimistic —
+      recorded depth is others' resting size holding time priority.</div>
+    ${trig}
+  </div>`;
+}
+
+async function load(){
+  let d;
+  try{ d = await (await fetch("/api/wallet")).json(); }
+  catch(e){ $("#books").innerHTML = `<div class="empty">wallet unavailable</div>`; return; }
+  if(!d.available || !Object.keys(d.books||{}).length){
+    $("#books").innerHTML = `<div class="empty">${d.note||"no fills yet — the wallet fills as the shadow book trades"}</div>`;
+    $("#absent").innerHTML = ""; return;
+  }
+  const order = ["wnba","nfl"];
+  const slugs = Object.keys(d.books).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+  $("#books").innerHTML = slugs.map(s=>bookCard(s, d.books[s], d.bars)).join("");
+  $("#absent").innerHTML = absentPanel(d.depth_absent);
+  const refused = d.refused ? ` · ${d.refused} unknown-league fills refused` : "";
+  $("#asof").textContent = `as of ${d.as_of||""}${refused} — ${d.caveat||""}`;
+}
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

@@ -2180,6 +2180,75 @@ def quote_status() -> dict:
     }
 
 
+@app.get("/api/wallet")
+def wallet_status() -> dict:
+    """The paper-wallet scoreboard (docs/math/paper-wallet-scoreboard.md), for
+    its page. **Read-only, display only — an instrument, never evidence.** Folds
+    shadow_quote_fills live through core.quote.wallet; both P&L arms always, the
+    toll meter, the drawdown + capital-clip 'bleeding' meters, and the
+    depth-absent suppression line, per league. Not league-tabbed: the wallet is
+    two ledgers shown side by side (money separation applies most of all)."""
+    from core.quote import wallet as W
+
+    try:
+        with _Session() as s:
+            result, meta = W.gather(s)
+    except Exception as exc:  # noqa: BLE001 — tables may be absent pre-deploy
+        m = str(exc).lower()
+        if ("does not exist" in m or "could not connect" in m
+                or "connection refused" in m):
+            return {"available": False, "note": "wallet tables not present yet",
+                    "books": {}, "bars": {"daily": W.DAILY_BAR,
+                                          "monthly": W.MONTHLY_BAR}}
+        raise
+
+    def _book(b) -> dict:
+        return {
+            "seed": b.seed,
+            "optimistic": b.optimistic, "concession": b.concession,
+            "pnl_opt": b.optimistic - b.seed, "pnl_conc": b.concession - b.seed,
+            "toll": b.toll,
+            "reserved": max(b.reserved_conc, 0.0),
+            "available": b.available_to_size,
+            "drawdown": (1.0 - b.concession / b.seed) if b.seed else 0.0,
+            "capital_clip_rate": (b.n_clipped_reservation / b.n_fills)
+                                 if b.n_fills else 0.0,
+            "halted": b.halted,
+            "halt_note": b.halt_line.note if b.halt_line else None,
+            "n_fills": b.n_fills, "n_clipped_depth": b.n_clipped_depth,
+            "n_clipped_reservation": b.n_clipped_reservation, "n_zero": b.n_zero,
+            "unrealized_opt": b.unrealized_opt,
+            "unrealized_conc": b.unrealized_conc,
+            "daily_opt": b.daily_opt, "daily_conc": b.daily_conc,
+            "peak_open_markets": b.peak_open_markets,
+            "peak_open_contracts": b.peak_open_contracts,
+            "tw_open_markets": b.tw_open_markets,
+            "tw_open_contracts": b.tw_open_contracts,
+        }
+
+    return {
+        "available": True,
+        "as_of": dt.datetime.now(UTC).isoformat(),
+        "bars": {"daily": W.DAILY_BAR, "monthly": W.MONTHLY_BAR},
+        "books": {slug: _book(b) for slug, b in result.books.items()},
+        "refused": len(result.refused),
+        "depth_absent": {
+            "count": meta["depth_absent"],
+            "rate": meta["depth_absent_rate"],
+            "ingame_rate": meta["ingame_absent_rate"],
+            "wouldbe_opt_sum": meta["absent_wouldbe_opt_sum"],
+            "wouldbe_conc_sum": meta["absent_wouldbe_conc_sum"],
+            "wouldbe_opt_mean_c": meta["absent_wouldbe_opt_mean_c"],
+            "wouldbe_conc_mean_c": meta["absent_wouldbe_conc_mean_c"],
+            "trigger_10pct_ingame": meta["trigger_10pct_ingame"],
+        },
+        # Registered caveat (term 3): depth-sized numbers are per-fill optimistic
+        # (recorded depth is others' resting size holding time priority).
+        "caveat": ("instrument not evidence; depth-sized fills are per-fill "
+                   "optimistic (others' resting size, time priority)"),
+    }
+
+
 #: A PULSE estimate older than this does not paint the board. The engine
 #: cycles every 1s and decides every few seconds during a live game, so ten
 #: minutes of silence means the game ended or the engine stopped — either
@@ -2647,6 +2716,11 @@ def analytics() -> dict:
 @app.get("/quote")
 def quote_page() -> FileResponse:
     return FileResponse(STATIC / "quote.html")
+
+
+@app.get("/wallet")
+def wallet_page() -> FileResponse:
+    return FileResponse(STATIC / "wallet.html")
 
 
 @app.get("/analytics")
