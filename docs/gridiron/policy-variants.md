@@ -476,6 +476,27 @@ book-inserted run and a naive run **must** select an identical fill set — veri
 at 4,321 fills and −$156.35 to the penny. Any engine that can run at k=0 gets
 that equality as a permanent assertion on the inventory path.
 
+## ★ GUARD-WIRING REQUIREMENT — before the slate, not after ★
+
+**Rule 25's guard was born from the width analysis, and the phantom flag is
+this experiment's central instrument. Building guards in response to a risk and
+then running the experiment without them is the whole failure re-enacted with
+better tooling.** So, binding on the scorer before the variants run:
+
+- **`report_composite()` on every per-arm figure** — no ratio prints without
+  numerator, denominator and per-event mean beside it.
+- **`degenerate_extremes_warning()` on any ratio used to RANK arms** — the arms
+  differ in activity by construction, which is exactly the condition under
+  which a ratio ranks activity rather than policy.
+- **phantom flag on every fill row and every cut**, reported with and without.
+
+**A guard that exists and is not called is a prose rule with extra steps — and
+it is worse than prose, because its existence reads as coverage.** Current
+state, derived rather than asserted, from `scripts/guard_coverage.py`:
+`PROSE=3 · UNWIRED=3 · WIRED=0`. **Every guard written tonight is currently
+wired into nothing.** That number is the acceptance criterion: it must show the
+25 and 22 rows WIRED before the slate is scored.
+
 ## Recording requirement
 
 `shadow_quote_fills` keeps `mid_at_fill` but discards the ask the engine held at
