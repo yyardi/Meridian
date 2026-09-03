@@ -83,6 +83,16 @@ DETECTOR_VERSION = "d1fb6de"
 #: median would hit ~10 req/s across 20 markets, over the ~5 req/s throttle and
 #: onto a gateway already 155% cap-oversubscribed (manager count 2026-09-03). The
 #: floor caps refetch at (quoted markets)/interval = 4 req/s at 20 markets / 5s.
+#: This floor is a PURE BUDGET DIAL, not a data-quality knob (D 2026-09-03):
+#: because the gate is price-identity, every RETAINED queue number is exactly
+#: valid at any cadence — raising the floor only reduces how many observations
+#: carry a usable number (coverage), never their correctness. In-play usable
+#: coverage off the WNBA survival curve is roughly: 5s -> ~30%, 10s -> ~20%,
+#: 30s -> <10% (below ~20% the column can't support the P(fill|queue) curve, so
+#: 10s is a defensible retreat under rate pressure and 30s is not). The cost is
+#: ENTIRELY in-play: the pregame board is frozen (zero touch changes in 90s
+#: probes), so pregame sits ~100% price-valid on the 60s backstop alone at ~zero
+#: request cost — expensive where the board is busy, free where it isn't.
 DEPTH_REFRESH_INTERVAL_SECONDS = 5.0     # floor between touch-triggered refetches
 #: Hard backstop: refetch at least this often even if the touch never moves (to
 #: catch same-price SIZE drift — rare, D: 3/54 pregame side-intervals), and the
