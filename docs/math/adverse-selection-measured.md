@@ -110,6 +110,54 @@ partitioning it.** Saturday: BASE + FLATTEN as engines, everything else as
 pre-declared cuts, FLATTEN additionally scored on dispersion and tail rather
 than mean.
 
+## FLATTEN's k, re-run on real fills — RESOLVED
+
+The parameter was re-derived with the phantom filter, scored on settlement
+(D's whole-book replay):
+
+| k | all-fills ΔP&L | real fills | real ΔP&L | per-game, clustered |
+|---:|---:|---:|---:|---|
+| **1¢** | +$76 | 5,295 | **+$17.55** | **+1.95¢ [−2.80, +6.70]** |
+| 2¢ | +$57 | 5,713 | −$38.98 | −4.33¢ [−11.12, +2.46] |
+| 3¢ | +$28 | 6,094 | −$37.83 | −4.20¢ [−11.61, +3.20] |
+| 5¢ | −$14 | 6,657 | −$50.85 | −5.65¢ [−12.81, +1.51] |
+
+**The positive region collapses from {1¢, 2¢, 3¢} to {1¢} alone.** On all fills
+2¢ and 3¢ merely looked less good; on real fills they were **underwater all
+along** and the artifact was hiding it. **k=1¢ stands as registered — hardened
+in the sense of surviving the artifact test, NOT in the sense of being proven
+positive: its per-game CI spans zero.**
+
+**The boundary was predicted correctly from a mechanism that turned out to be
+wrong, and the record should say so.** The manager predicted the flip at
+s/2 = 2¢ via *"a lean past half the spread manufactures an instant phantom."*
+The phantom share barely moves with k (61.9 / 65.0 / 66.5 / 65.8 / 63.8%) — **no
+jump at 2¢, so that mechanism is not operating**; the post-only clamp (lean
+capped at bid + one tick) removes the instant-fill regime before it can bite.
+**A correct boundary from a wrong mechanism is a coincidence until something
+else explains it.**
+
+The better explanation, which survives the clamp and should generalise:
+**s/2 is the distance from the touch to the mid.** Leaning more than s/2 means
+quoting THROUGH fair value — offering below the midpoint, paying to trade
+rather than being paid to. **That is economically bad whether or not any
+phantom is involved, and predicts the same boundary.**
+
+## Two independent measurements agree
+
+| instrument | population | settlement P&L / fill |
+|---|---:|---:|
+| fills table + book join (manager) | 6,255 real fills | **−3.38¢** |
+| whole-book replay (D) | 4,321 real fills | **−3.62¢** |
+
+Different code, different populations, neither author having seen the other's
+query — **a quarter of a cent apart.** After a night in which the headline moved
+because the measurement was wrong, two instruments agreeing is worth more than
+either alone. The contamination gap reproduces through both bases (D's −3.62¢
+real vs −1.87¢ all-fills; the manager's −3.38¢ real vs the ledgered blend).
+
+## Superseded note on FLATTEN's parameter
+
 **Open and blocking on FLATTEN's parameter:** leaning an ask from A₀ to A₀ − k
 satisfies the model's condition at quote time whenever **k ≥ s/2**, while
 reality needs **k ≥ s** — so any lean past half the spread manufactures an
