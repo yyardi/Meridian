@@ -137,11 +137,50 @@ capped at bid + one tick) removes the instant-fill regime before it can bite.
 **A correct boundary from a wrong mechanism is a coincidence until something
 else explains it.**
 
-The better explanation, which survives the clamp and should generalise:
-**s/2 is the distance from the touch to the mid.** Leaning more than s/2 means
-quoting THROUGH fair value — offering below the midpoint, paying to trade
-rather than being paid to. **That is economically bad whether or not any
-phantom is involved, and predicts the same boundary.**
+The manager's second explanation — *s/2 is the touch-to-mid distance, so
+leaning past it means quoting THROUGH fair value* — **is also REFUTED, by its
+own prediction.** If the boundary were spread capture reaching zero it would
+have to SCALE with each market's spread. Split by each market's own median
+quoted spread, real fills, per-fill settlement:
+
+| band | median s | s/2 predicts | measured best k |
+|---|---:|---:|---:|
+| tight <2.5¢ | 2.0¢ | ≤1.0¢ | 3¢ |
+| mid 2.5–4.5¢ | 3.5¢ | ≤1.7¢ | 1¢ |
+| wide >4.5¢ | 7.0¢ | ≤3.5¢ | 1¢ |
+
+**No scaling; if anything it runs inverse.** Two mechanisms proposed, two
+refuted by the data each predicted.
+
+**THE CLAMP RESOLVES THE ODD CELL AND UNIFIES THE PICTURE.** In a 2¢ market with
+a 1¢ tick, `max(A₀−k, bid+tick)` clamps every k ≥ 1¢ to the SAME quote. The
+tight band reads −3.03 / −3.21 / −2.89 / −3.02 across k = 1/2/3/5¢ — **four
+indistinguishable numbers because they are the same policy four times**, and its
+"best k = 3¢" is noise between identical quotes. The honest statement is about
+**EFFECTIVE lean = min(k, s − tick)**: once the clamp is accounted for, **~1¢ is
+best in every band; larger k only differs where the spread is wide enough to
+permit it, and that is exactly where it hurts.**
+
+**k=1¢ THEREFORE STANDS ON AN EMPIRICAL REGULARITY, NOT A MECHANISM** — it
+improves per-fill P&L in **all three** spread bands (tight −4.17→−3.03, mid
+−3.04→−2.82, wide −2.81→−1.13). Consistency across heterogeneous markets is a
+stronger basis than the aggregate that motivated it. **Registered as a
+regularity with two dead explanations behind it, rather than attaching a third
+story that might also fail** (D's call, and the right one).
+
+**★ THE CAVEAT THAT OUTRANKS THE PARAMETER: EVERY CELL IS NEGATIVE AT EVERY k.**
+The best cell on the board is wide-band k=1¢ at **−1.13¢/fill**. **Flattening
+improves a losing book; nothing here makes it a winning one.** The aggregate
++$17.55 at k=1¢ is a fill-count and mix effect, **not a per-fill positive** —
+which must be said plainly before *"FLATTEN is the only arm that leaves the
+losing family"* hardens into *"FLATTEN wins."* **It leaves the family by being
+less negative.**
+
+**PORTING TO GRIDIRON:** because the boundary does NOT scale with spread,
+expressing k as a fraction of spread would be wrong — **a fixed 1¢ is the
+correct default for NFL**, noting the clamp interaction: NFL's traded cells at
+5–6¢ leave room for a 1¢ lean to be a genuine 1¢, unlike WNBA's tight band where
+it was forced.
 
 ## Two independent measurements agree
 
