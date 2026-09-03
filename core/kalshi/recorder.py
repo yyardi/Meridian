@@ -50,14 +50,18 @@ from core.config import KALSHI, KalshiConfig
 from core.heartbeat import SERVICE_KALSHI, Heartbeat
 from core.kalshi.client import KalshiPublicClient
 from core.kalshi.mapping import (
+    LEAGUE_CFB,
     LEAGUE_SERIES,
+    SERIES_MONEYLINE_NCAAF,
     SERIES_MONEYLINE,
     SERIES_SPREAD,
     SERIES_TO_LEAGUE,
     SERIES_TO_MARKET_TYPE,
     SERIES_TOTAL,
     ParsedGameKey,
+    codes_from_sub_title,
     game_key_from_event_ticker,
+    local_date_from_game_key,
     parse_game_key,
 )
 from core.storage import (
@@ -80,7 +84,22 @@ UTC = dt.timezone.utc
 #: ~13 NFL games + ~4 WNBA games in the 6h pregame window x 3 series
 #: = ~51 requests per 60s cycle = 0.85 req/s sustained against the 5/s
 #: bucket (burst drains in ~10s); discovery adds 6 requests per 6h.
-POLLED_SERIES = LEAGUE_SERIES["wnba"] + LEAGUE_SERIES["nfl"]
+POLLED_SERIES = (LEAGUE_SERIES["wnba"] + LEAGUE_SERIES["nfl"]
+                 + LEAGUE_SERIES[LEAGUE_CFB])
+
+#: How far ahead a game may be and still get its venue occurrence stamp
+#: fetched. Leagues we do not quote have no Polymarket link, so their poll
+#: window depends on this; 3 days covers a Thu-through-Sat slate discovered
+#: on any weekday.
+VENUE_OCCURRENCE_HORIZON_DAYS = 3
+
+#: Kalshi's `occurrence_datetime` minus the real kickoff, MEASURED
+#: 2026-09-03 on both boards: college MASS/RUTG (ESPN 22:00Z, venue
+#: 01:00Z) and NFL NE/SEA (ESPN 00:20Z, venue 03:20Z) — +3h in both. The
+#: venue publishes no tip time, so a league without a Polymarket link has
+#: its window derived from this stamp with the offset applied EXPLICITLY
+#: rather than by pretending the stamp is a kickoff.
+VENUE_OCCURRENCE_AFTER_TIP = dt.timedelta(hours=3)
 
 #: Fields whose change means "the contract's terms changed" and earns a new
 #: kalshi_contracts row. Prices are deliberately absent.
@@ -134,7 +153,7 @@ def _stored_fingerprint(row: KalshiContract) -> tuple:
     return tuple(_fmt(getattr(row, f)) for f in _TERMS_FIELDS)
 
 
-class KalshiStats:
+class KalshiStats:  # noqa: D101 — counters, named at their use sites
     """Per-cycle counters, for logging and the health check."""
 
     def __init__(self) -> None:
@@ -144,6 +163,20 @@ class KalshiStats:
         self.games_discovered = 0
         self.games_matched = 0
         self.errors = 0
+        #: Pairing provenance. sub_title is the venue's own statement of
+        #: which two teams a game key means; the split is our inference.
+        self.pairs_from_sub_title = 0
+        self.pairs_from_split = 0
+        #: LOUD failures. A mismatch means the venue contradicted itself or
+        #: our split disagreed with the venue — never silently resolved.
+        self.pair_mismatches = 0
+        self.games_unparsed = 0
+        #: Requested-vs-returned, so a throttled cycle reads as a SHORTFALL
+        #: rather than as a quiet venue (rule 22).
+        self.events_requested = 0
+        self.events_returned = 0
+        self.markets_returned = 0
+        self.start_times_set = 0
 
 
 class KalshiRecorder:
@@ -219,6 +252,18 @@ class KalshiRecorder:
             contracts=stats.contracts_written,
             discovered=stats.games_discovered,
             matched=stats.games_matched,
+            # Provenance and shortfall counters, printed every cycle so a
+            # zero is never bare: pairs_* say HOW each game key was read,
+            # events_requested vs events_returned exposes throttling, and
+            # any mismatch/unparsed is a loud number rather than silence.
+            pairs_sub_title=stats.pairs_from_sub_title,
+            pairs_split=stats.pairs_from_split,
+            pair_mismatches=stats.pair_mismatches,
+            games_unparsed=stats.games_unparsed,
+            events_requested=stats.events_requested,
+            events_returned=stats.events_returned,
+            markets_returned=stats.markets_returned,
+            start_times_set=stats.start_times_set,
             errors=stats.errors,
             duration_s=round(time.monotonic() - started, 2),
         )
@@ -249,11 +294,8 @@ class KalshiRecorder:
 
         with self._Session() as session:
             for (league, key), event in seen.items():
-                parsed = parse_game_key(key, league)
+                parsed = self._resolve_pair(league, key, event, stats)
                 if parsed is None:
-                    # All-star exhibitions ('26JUL25SPNCOO') and anything else
-                    # that is not a franchise game. Not an error.
-                    log.debug("kalshi_game_key_unparsed", game_key=key)
                     continue
                 values = {
                     "game_key": parsed.game_key,
@@ -279,7 +321,109 @@ class KalshiRecorder:
                     stats.games_discovered += 1
             session.commit()
             self._link_polymarket(session, stats)
+            self._fill_venue_occurrence(session, stats, captured_at)
             session.commit()
+
+    def _resolve_pair(
+        self, league: str, key: str, event: dict[str, Any], stats: KalshiStats
+    ) -> ParsedGameKey | None:
+        """Which two teams a game key means — venue first, inference second.
+
+        College tickers concatenate 130+ variable-length codes with no
+        delimiter, so a SPLIT IS A GUESS and a wrong guess yields a
+        confident row for a game that never existed — the failure no
+        drop-counter can see. The event payload states both codes in its
+        `sub_title` ("KCU vs MORE (Sep 3)"), so that is the authority and
+        the split is only a cross-check. Every disagreement is counted and
+        logged at error level; none is silently resolved.
+        """
+        split = parse_game_key(key, league)
+        truth = codes_from_sub_title(event.get("sub_title"))
+        if truth is not None:
+            first, second = truth
+            teams = key[7:]
+            if first + second != teams:
+                # The venue contradicting itself: refuse rather than pick.
+                stats.pair_mismatches += 1
+                log.error(
+                    "kalshi_sub_title_disagrees_with_ticker",
+                    game_key=key, league=league,
+                    sub_title=event.get("sub_title"),
+                    codes=f"{first}+{second}", ticker_teams=teams,
+                )
+                return None
+            local_date = local_date_from_game_key(key)
+            if local_date is None:
+                stats.games_unparsed += 1
+                log.warning("kalshi_game_key_bad_date", game_key=key,
+                            league=league)
+                return None
+            if split is not None and (
+                split.first_code, split.second_code
+            ) != (first, second):
+                # Ground truth wins, but a split that would have been wrong
+                # is exactly the silent mis-pairing we are guarding against.
+                stats.pair_mismatches += 1
+                log.error(
+                    "kalshi_split_disagrees_with_sub_title",
+                    game_key=key, league=league,
+                    venue=f"{first}+{second}",
+                    split=f"{split.first_code}+{split.second_code}",
+                )
+            stats.pairs_from_sub_title += 1
+            return ParsedGameKey(
+                game_key=key, local_date=local_date, first_code=first,
+                second_code=second, league=league,
+            )
+        if split is not None:
+            stats.pairs_from_split += 1
+            return split
+        # All-star exhibitions ('26JUL25SPNCOO') and anything else that is
+        # not a franchise game. Counted and named, never silently skipped.
+        stats.games_unparsed += 1
+        log.warning("kalshi_game_key_unparsed", game_key=key, league=league,
+                    sub_title=event.get("sub_title"))
+        return None
+
+    def _fill_venue_occurrence(
+        self, session: Session, stats: KalshiStats, now: dt.datetime
+    ) -> None:
+        """Record the venue's own clock for leagues we do not quote.
+
+        `game_start_time` is populated only by the Polymarket link, and a
+        college game has no Polymarket slug — so without this every college
+        game would sit unpollable forever while the log said a cheerful
+        zero (rule 22's exact shape). What the venue gives is
+        `occurrence_datetime`, which is NOT a kickoff: measured at
+        kickoff + 3h on both boards. It is stored under its own name and
+        the window arithmetic applies the offset in the open.
+        """
+        horizon = now + dt.timedelta(days=VENUE_OCCURRENCE_HORIZON_DAYS)
+        games = session.scalars(
+            select(KalshiGame).where(
+                KalshiGame.league == LEAGUE_CFB,
+                KalshiGame.venue_occurrence_time.is_(None),
+                KalshiGame.local_date >= now - dt.timedelta(days=1),
+                KalshiGame.local_date <= horizon,
+            )
+        ).all()
+        for game in games:
+            event_ticker = f"{SERIES_MONEYLINE_NCAAF}-{game.game_key}"
+            try:
+                markets = self._client.get_markets(event_ticker)
+            except Exception as exc:
+                stats.errors += 1
+                log.error("kalshi_start_time_fetch_failed",
+                          event_ticker=event_ticker, error=str(exc))
+                continue
+            stamps = [
+                _parse_ts(m.get("occurrence_datetime")) for m in markets
+            ]
+            stamps = [s for s in stamps if s is not None]
+            if not stamps:
+                continue
+            game.venue_occurrence_time = min(stamps)
+            stats.start_times_set += 1
 
     @staticmethod
     def _espn_or_none(parsed: ParsedGameKey, which: str) -> str | None:
@@ -350,15 +494,25 @@ class KalshiRecorder:
         the comparison is pre-registered on pregame prices, and in-game 60s
         sampling would be quota spend with no registered question attached."""
         window = dt.timedelta(hours=self.config.pregame_window_hours)
-        return list(
-            session.scalars(
-                select(KalshiGame).where(
-                    KalshiGame.game_start_time.is_not(None),
-                    KalshiGame.game_start_time > now,
-                    KalshiGame.game_start_time <= now + window,
-                )
-            )
+        by_tip = select(KalshiGame).where(
+            KalshiGame.game_start_time.is_not(None),
+            KalshiGame.game_start_time > now,
+            KalshiGame.game_start_time <= now + window,
         )
+        # Leagues we do not quote have no tip time at all; their window is
+        # derived from the venue's occurrence stamp with the measured +3h
+        # offset applied explicitly. Equivalent to [tip - window, tip + 3h),
+        # so it also spans the game itself — a consequence of the only clock
+        # the venue publishes, stated rather than hidden.
+        by_occurrence = select(KalshiGame).where(
+            KalshiGame.game_start_time.is_(None),
+            KalshiGame.venue_occurrence_time.is_not(None),
+            KalshiGame.venue_occurrence_time > now,
+            KalshiGame.venue_occurrence_time
+            <= now + window + VENUE_OCCURRENCE_AFTER_TIP,
+        )
+        return list(session.scalars(by_tip)) + list(
+            session.scalars(by_occurrence))
 
     def _record_event(
         self,
@@ -370,7 +524,12 @@ class KalshiRecorder:
         captured_at: dt.datetime,
         stats: KalshiStats,
     ) -> None:
+        # Requested-vs-returned accounting (rule 22): a throttled or
+        # empty fetch must read as a SHORTFALL, not as a quiet venue.
+        stats.events_requested += 1
         markets = self._client.get_markets(event_ticker)
+        stats.events_returned += 1
+        stats.markets_returned += len(markets)
         market_type = SERIES_TO_MARKET_TYPE[series]
         for market in markets:
             ticker = str(market.get("ticker") or "")
