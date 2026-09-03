@@ -37,6 +37,46 @@ services:
       - postgres
     restart: unless-stopped
 
+  # GRIDIRON — the NFL quote engine. The SAME image and the SAME engine_v2 as
+  # the WNBA quote-engine above; the ONLY difference is MERIDIAN_LEAGUE=nfl,
+  # which routes the engine to quote/observe NFL slugs only (amendment 12: league
+  # is by slug on the read AND write paths) and gives it its own heartbeat key
+  # (quote_engine_nfl) and container so health.py/§4b see it independently. It is
+  # OUTSIDE the WNBA freeze — separate binary, separate container, NFL-only — so
+  # it needs no replay proof against the basketball tape. Deploy exactly like the
+  # WNBA engine so the identity stamp cannot be forgotten:
+  #
+  #     scripts/deploy_engine.sh gridiron-engine docker-compose.quote.yml
+  #
+  # Its DEPLOY COMMIT is GRIDIRON's substrate epoch (cohort ruling) — record the
+  # stamp the deploy reads back, don't infer it later.
+  #
+  # HONEST SCOPE (carry into GRIDIRON's registration, docs/gridiron/program.md):
+  # its fills are MODELLED, like every shadow fill this program has produced —
+  # the operator's hand probe remains the only source of REAL first-slate fill
+  # data. And the NFL board has never been measured: every claim built on this
+  # stream is PROVISIONAL until the first-data count runs (a required GRIDIRON
+  # deliverable), which cannot happen before the first slate — building blind, on
+  # purpose, with the debt recorded here where the deployer meets it.
+  gridiron-engine:
+    build:
+      context: .
+      args:
+        # Same fail-closed stamp as the WNBA engine (amendment 12): deploy via
+        # scripts/deploy_engine.sh, which sets GIT_COMMIT from git; empty makes
+        # the engine refuse to start.
+        GIT_COMMIT: ${GIT_COMMIT:-}
+    container_name: meridian-gridiron-engine
+    command: python -m core.quote.engine_v2
+    environment:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      MERIDIAN_LEAGUE: nfl
+      MERIDIAN_QUOTE_INTERVAL_SECONDS: "5"
+      MERIDIAN_QUOTE_SETTLE_EVERY_SECONDS: "600"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
   # WNBA pregame trade-tape sweeper. Same module, league-parameterized; the
   # board is EMPTY until listings return ~Sept 17, so starting it now costs
   # nothing and captures the trajectory from the FIRST listing rather than
