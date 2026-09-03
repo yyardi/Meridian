@@ -361,6 +361,40 @@ before merge**, and the merge is refused if it would revert one.
    catches both in one question, before magnitude enters. (D's rule, in
    their words.)
 
+22. **SILENT ABSENCE — a zero is the least self-validating result there is.**
+   A system reporting zero has two explanations it cannot distinguish:
+   **the world is empty, or the instrument is.** A non-zero result partially
+   validates its own instrument — something was found, so the thing was
+   looking. **A zero validates nothing, and is therefore the result that
+   most requires provenance and habitually receives the least.** Before a
+   zero counts as evidence of absence, establish that the instrument is
+   running the code you believe it is running, against the substrate you
+   believe it is reading.
+
+   *OPERATIONAL TEST, concrete enough to build:* a zero is evidence only
+   when the instrument has demonstrated it can return non-zero ON THIS
+   SUBSTRATE — a positive control. **Every zero-reporting monitor should
+   carry its LAST-NON-ZERO timestamp and count.** A recorder that has never
+   once found an NFL contract tells you nothing by reporting none; one that
+   found fifty yesterday and zero today is reporting news.
+
+   *RELATION TO ITS NEIGHBOURS:* rule 20 says count the condition before
+   claiming your code addresses it; **this is the inverse case — the count
+   ran and returned zero because the INSTRUMENT was empty, not the world.**
+   And it pairs with rule 21 (gains must name their counterparty): **21
+   guards results we WANT; 22 guards results that RELIEVE us. Both express
+   one principle — scrutiny should scale with how much a result comforts
+   you, and by default it scales the opposite way.**
+
+   *Specimens, 2026-09-03, all in one night:* Kalshi NFL logging
+   `discovered=0` indistinguishably from a quiet venue (stale image, found
+   by accident while verifying an unrelated branch — **detection was luck,
+   not process**); venue-timing code on main and absent from six running
+   containers; `analysis/` never COPY'd into any image; the wallet's
+   `n_zero` counting something adjacent to its name; the scorer's empty read
+   as a false all-clear. (Research agent's rule; the operator asked for the
+   night's failures to be audited systematically rather than patched.)
+
 ## Hazard entry, appended 2026-09-02 (D + B; research-endorsed) — unbounded ffill fakes liquidity in dying books
 
 **The trap:** joining or pivoting a tick tape and forward-filling quotes
