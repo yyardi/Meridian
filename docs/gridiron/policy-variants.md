@@ -225,8 +225,9 @@ settlement coverage:
 | phantom | 11,084 | **+0.951¢** |
 | real | 6,255 | **−3.376¢**, game-clustered **[−5.06, −1.78]**, 12 of 13 games losing |
 
-Two independent instruments agree: manager's fills-table read **−3.38¢**, D's
-whole-book replay **−3.62¢**.
+Manager's fills-table read **−3.38¢**; D's policy replay **−3.62¢**. **These
+are different constructions, not one quantity measured twice — see the
+characterisation in `docs/math/adverse-selection-measured.md`.**
 
 ## THE STRUCTURAL RULING — engines for PRICES, cuts for SELECTIONS
 
@@ -358,10 +359,12 @@ the two substrates (62.6% vs 63.9%), so **the headline was never at risk** — b
 the k-curve was, because it is a difference between policies and the missing
 quarter was not missing at random.
 
-**CONVERGENCE IMPROVED once coverage was right:** D's replay yields 6,403 fills
-at −2.94¢ against the manager's 6,255 at −3.38¢ — **population within 2%,
-per-fill economics within half a cent**, from two independently written
-instruments.
+**AGREEMENT IMPROVED once coverage was right:** D's replay yields 6,403 fills
+at −2.94¢ against the manager's 6,255 at −3.38¢ — population within 2%, per-fill
+economics within half a cent. **But these are DIFFERENT CONSTRUCTIONS (recorded
+fills versus a policy replay), so this is robustness to quote path, not two
+instruments agreeing on one measurement.** The word "convergence" was used three
+times before being audited and is withdrawn.
 
 **k=0 known-answer identity still holds exactly at full coverage: 6,403 fills,
 −$188.06, both methods, to the penny.** Coverage is now asserted and printed on

@@ -198,7 +198,25 @@ it was forced.
 | whole-book replay (D) | 4,321 real fills | **−3.62¢** |
 
 Different code, different populations, neither author having seen the other's
-query — **a quarter of a cent apart.** After a night in which the headline moved
+query — **a quarter of a cent apart.**
+
+**CHARACTERISED CAREFULLY, because "convergence" was the wrong word and it was
+used three times before being audited.** These two numbers do **not** estimate
+the same quantity. The manager's count reads the engine's OWN RECORDED FILLS
+from `shadow_quote_fills` and classifies them against the book. D's count comes
+from a REPLAYED k=0 POLICY that re-derives quote placement from the tape — D
+said so explicitly ("a third object again, not a subset count of your tape").
+**Two constructions that select different fill sets by construction cannot
+validate each other by matching; if they truly measured one deterministic
+quantity on a fixed tape they would agree EXACTLY, and 2% would be a
+discrepancy rather than agreement.**
+
+What the closeness DOES support, and it is not nothing: **the economics do not
+depend sensitively on which quote path is used** — an engine's actual historical
+quotes and a policy replay of the same rule land within 2% on population and
+half a cent per fill. That is robustness to quote path, **not** two instruments
+agreeing on one measurement. The stronger claim was asserted and is withdrawn.
+ After a night in which the headline moved
 because the measurement was wrong, two instruments agreeing is worth more than
 either alone. The contamination gap reproduces through both bases (D's −3.62¢
 real vs −1.87¢ all-fills; the manager's −3.38¢ real vs the ledgered blend).
