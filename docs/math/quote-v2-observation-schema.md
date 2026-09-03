@@ -129,8 +129,15 @@ freezing a version into the table:**
    `DEPTH_REFRESH_INTERVAL_SECONDS` and cached per market; stamp
    `depth_fetched_at`. Read-only gateway client (no order/auth/credential — the
    AST test still passes), off the decision path, fail-open to NULL. Request-rate
-   bound: `(quoted markets) / interval` — stated as arithmetic against the shared
-   ceiling in the deploy PR, not left to an adaptive cadence to absorb.
+   bound: `(quoted markets) / interval` ≈ 0.67 req/s at 30 s and ~20 quoted
+   markets. **Honest sum (manager, 2026-09-03): that ~3% adds to a PRE-EXISTING
+   gateway oversubscription — the configured per-process caps already total 31
+   req/s against a 20 req/s per-IP ceiling (155%).** It does not breach today
+   (both live recorders idle on empty boards), but Sept 17 is the first WNBA+NFL
+   simultaneous-live moment all consumers could draw near cap at once. The
+   oversubscription is a SEPARATE reconciliation item (caps down / cadences
+   staggered / measured peak proven under ceiling), NOT this change — recorded
+   here so the deployer meets the complete sum, not a clean-looking fraction.
 
 ## Read embargo (amendment 10, 256c038)
 
