@@ -122,9 +122,15 @@ The parameter was re-derived with the phantom filter, scored on settlement
 | 3¢ | +$28 | 6,094 | −$37.83 | −4.20¢ [−11.61, +3.20] |
 | 5¢ | −$14 | 6,657 | −$50.85 | −5.65¢ [−12.81, +1.51] |
 
-**The positive region collapses from {1¢, 2¢, 3¢} to {1¢} alone.** On all fills
-2¢ and 3¢ merely looked less good; on real fills they were **underwater all
-along** and the artifact was hiding it. **k=1¢ stands as registered — hardened
+**RETRACTED 2026-09-03, same day: the "positive region collapses to {1¢}
+alone" claim was an artifact of EXCLUSION.** Filtering phantoms from the score
+does not remove them from the POLICY — the simulator's inventory counted them,
+and inventory steers the lean, so phantom fills chose quote paths that exclusion
+cannot undo. **Re-run with the order inserted into the book, all of 1/2/3¢ beat
+k=0 and the curve is a clean monotone decay from a peak at 1¢.** k=1¢ is still
+best (+$30.43 over k=0, not +$17.55). **The dramatic finding was the artifact;
+the undramatic one was closer to right.** Known-answer check: at k=0 the two
+methods must and do agree to the penny (4,321 fills, −$156.35). **k=1¢ stands as registered — hardened
 in the sense of surviving the artifact test, NOT in the sense of being proven
 positive: its per-game CI spans zero.**
 

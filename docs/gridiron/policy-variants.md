@@ -252,7 +252,8 @@ WIDTH-FLOOR the binding arm.**
 - **BASE** — v1 unchanged. On NFL/CFB its job is to answer *does football behave
   differently from WNBA at all*, because on WNBA touch-joining is dead (below).
 - **FLATTEN(k=1¢)** — the only arm that leaves the losing family rather than
-  partitioning it. **k=1¢ re-derived on real fills and RETAINED.**
+  partitioning it. **k=1¢ re-derived by BOOK INSERTION and RETAINED** (see the correction
+  below — exclusion was not enough).
 
 **PRE-DECLARED CUTS on BASE's fills (3), fixed here before data:**
 - **WIDTH** — buckets ≤1.5 / 1.5–2.5 / 2.5–3.5 / 3.5–5.5 / >5.5¢ of quoted spread.
@@ -304,6 +305,56 @@ a spurious gradient. Cleaned, capture runs the other way monotonically
 is REFUTED; "wide is worst" is NOT ESTABLISHED** — n=483 and n=129 real fills in
 the wide bands, CIs spanning zero. **Width leaves the lever list because the
 evidence that it was good is gone, not because the wide end is bad.**
+
+## CORRECTION — exclusion cleans the scoring, not the policy
+
+**Filtering phantoms out of the P&L is NOT the same operation as putting our
+order into the book, and the difference bites whenever inventory steers
+quotes.** In the flattening simulator the inventory `q` is incremented by
+*every* model fill, phantoms included — it classifies them and still counts
+them — and `q` is the input to the inventory-conditional lean. **A phantom bid
+fill makes the sim "long", which leans the ask in, which changes every later
+quote and therefore every later fill.** Excluding those fills from the score
+afterwards cannot undo a quote path they chose.
+
+Re-run with the order actually inserted into the book (rule 24's real remedy):
+
+| k | excl. P&L | inserted P&L | ins. per-fill | ins. per-game (clustered) |
+|---:|---:|---:|---:|---|
+| 0¢ | −156.35 | −156.35 | −3.62¢ | +0.00 [+0.00, +0.00] |
+| **1¢** | −138.80 | **−125.92** | **−2.33¢** | **+3.38 [−3.28, +10.05]** |
+| 2¢ | −195.33 | −139.45 | −2.34¢ | +1.88 [−5.67, +9.43] |
+| 3¢ | −194.18 | −147.81 | −2.39¢ | +0.95 [−6.93, +8.82] |
+| 5¢ | −207.20 | −163.84 | −2.57¢ | −0.83 [−8.80, +7.14] |
+
+**RETAINED:** k=1¢ is still the best value on the board; improvement over k=0 is
+**+$30.43**, not the +$17.55 previously recorded.
+
+**RETRACTED:** the claim that the positive region *"collapses from {1¢, 2¢, 3¢}
+to {1¢} alone"*. That was an artifact of the exclusion method. **Under insertion
+all three beat k=0 and the curve is a clean monotone decay from a peak at 1¢,
+crossing zero between 3¢ and 5¢.** Exclusion penalised larger leans spuriously:
+phantom-inflated `|q|` made the sim lean more often and harder than the policy
+ever would, and those extra leaned quotes drew extra real fills that were bad —
+**the larger the k, the more inflation, which manufactured a cliff that is not
+there.**
+
+**THE LESSON THAT GENERALISES, and it is uncomfortable: the "collapse" was the
+more dramatic finding and the one that FELT like rigour** — it cut the positive
+region by two thirds. **It was the artifact. The less dramatic version was
+closer to right.** Removing data feels conservative; it is not neutral.
+
+*Known-answer check validating the new simulator against the reviewed one:* at
+k=0 there is no lean, so inventory cannot steer anything and phantom-driven `q`
+is inert — the two methods must select the identical fill set, **and they do to
+the penny (4,321 fills, −$156.35 both ways).** The selftest asserts this on a
+synthetic volatile walk so a future bug in the insertion path unrelated to
+phantoms is still caught.
+
+**Scope note: the BASE measurements elsewhere in this program are unaffected.**
+BASE does not lean, so inventory never steers its quotes and exclusion and
+insertion coincide exactly — as the k=0 row demonstrates. The contamination
+bites only where inventory feeds back into price.
 
 *Two mechanisms were proposed for the k boundary and both were refuted by their
 own predictions* (instant-phantom: phantom share is flat in k; through-the-mid:
