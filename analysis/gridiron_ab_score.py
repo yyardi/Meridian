@@ -316,6 +316,22 @@ FLATTEN_CAVEAT = (
     "flattening improves a losing book, it does not make a winning one. "
     "'FLATTEN leaves the losing family' means BY BEING LESS NEGATIVE.")
 
+#: SECONDARY metric that this scorer does NOT compute. Markout is a separate run
+#: deliberately (manager's call): folding its tick-tape join in here would couple
+#: two very different failure modes and the join is the part most likely to break.
+#: But a secondary metric in another file is one that quietly never gets run — so
+#: this notice prints UNCONDITIONALLY, every report, naming the command. An absent
+#: metric must not read as a metric that came back empty.
+MARKOUT_NOTICE = [
+    "!!! SECONDARY METRIC REQUIRED AND NOT INCLUDED HERE: markout at 30s/2m/10m.",
+    "    Markout is the amendment's POWERED secondary (lower variance, real",
+    "    power at this n) and this report is INCOMPLETE without it. It is a",
+    "    SEPARATE run on purpose (the tick-tape join is the fragile part):",
+    "        .venv/bin/python analysis/quote_v2_markout.py \\",
+    "            --fills <arm_fills.csv> --ticks <ticks.csv.gz>",
+    "    This line is not an empty result — it is a metric that has NOT been run.",
+]
+
 
 # --------------------------------------------------------------------------- #
 # Report
@@ -328,6 +344,7 @@ def render(base: list[Fill], flatten: list[Fill],
     out.append("=" * 72)
     out.append("GRIDIRON POLICY A/B — settlement-primary, game-clustered (rule 25 wired)")
     out.append("=" * 72)
+    out += MARKOUT_NOTICE          # leads the report — cannot be missed
 
     # ---- arms ----
     b, f = score_arm("BASE", base), score_arm("FLATTEN", flatten)
@@ -366,6 +383,8 @@ def render(base: list[Fill], flatten: list[Fill],
     out.append("\nCUT: PATIENCE (BASE's fills) — within 30s of a prior same-market fill:")
     out += rank_arms(patience_cut(base))
 
+    out.append("")
+    out += MARKOUT_NOTICE          # and closes it — the omission bookends the report
     return out
 
 
@@ -525,6 +544,9 @@ def _selftest() -> int:
         "clustered" in joined and "losing book" in joined)
     chk("render emits rule-22 coverage line for the LATENESS gap",
         "lateness:uncovered_fills" in joined)
+    chk("render emits the LOUD markout-NOT-INCLUDED notice (names the command)",
+        "REQUIRED AND NOT INCLUDED" in joined
+        and "quote_v2_markout.py" in joined)
 
     print("\nGRIDIRON A/B SCORER SELFTEST:",
           "PASS — settlement P&L known-answers hold, phantom test correct, "
