@@ -358,3 +358,17 @@ running before anyone is certain they're needed — arriving tonight from a
 third independent direction after the trade-tape capture and the volume
 trajectory sweeper, all three the same asymmetry: cheap now, impossible
 retroactively.
+
+
+## ADDENDUM 6 (2026-09-03) — NFL IS NOT A WIDER-MARGIN BOARD; IT IS A SHALLOWER-QUEUE ONE
+
+The placement discussion above inherits a correction. **NFL's 30¢ cells are
+the ones that have never traded**; its traded cells (full-game spread and
+total) sit at **5–6¢ — comparable to WNBA, not wider.** What differs is
+DEPTH: **87–620 contracts against WNBA's median 1,000 at the quote.**
+
+So the structural argument for this board is **queue depth and game count,
+not spread width** — and that is a stronger argument, not a weaker one,
+because shallow queues attack precisely the assumption established tonight
+as the program's largest unmeasured error. It is also directly testable by
+the fill-calibration probe rather than inferred.
