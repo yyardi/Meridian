@@ -262,6 +262,20 @@ before merge**, and the merge is refused if it would revert one.
    instrumented funnel and handed the measurement over rather than producing
    a fourth guess.
 
+   *Corollary — MATCHED BASES (c7, 2026-09-03, proposed as a corollary
+   rather than a new rule because the registry needs this where a reader
+   would look, not another number):* **no cross-population comparison
+   without matched bases; state each number's basis in the same sentence
+   that compares them.** Already a practice in this record without a name —
+   capture-vs-settlement, drop-vs-relinked linking policy, the census
+   commit pin. **Fifth instance of the night's signature species, and the
+   one that nearly became a program's founding claim:** WNBA depth at our
+   quote price in-play compared against NFL top-of-book pregame at T-7,
+   two axes differing at once. The others: depth read as capacity, a
+   crossing read as a trade, a status name read as a mechanism, patient
+   limit orders compared to touch-joining quotes. **Every one was two
+   numbers measuring different things placed on the same axis.**
+
 21. **The profit-mechanism audit. Any measured or simulated result showing a
    GAIN must name the counterparty and the reason they lose, and that
    mechanism must be the one under test.** A result whose profit arrives by a
