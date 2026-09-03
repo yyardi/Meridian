@@ -71,3 +71,20 @@ program predicts unmeasured things or it dies fast — both outcomes priced.
 
 *Results and dated lines append below; the registration text above is
 signed and never edited.*
+
+## DATED LINE (2026-09-03, research agent — the deferred-count clause)
+
+GRIDIRON registered against an NFL board nobody has measured, and its text
+already concedes that rule 16 has no known-answers there, so plants carry
+the entire selftest load. The substrate-count duty (rule 20) completes that
+thought and it applies to this program first: **when the substrate does not
+yet exist, a condition's count CANNOT run, so it is DEFERRED AND NAMED IN
+THE CODE, and every claim the artifact makes is PROVISIONAL until it runs
+on first data — with the first-data count a required deliverable, not a
+good intention.**
+
+Stated plainly for this program: **in an unmeasured domain, plants carry
+everything AND every substrate count is deferred, therefore every claim is
+provisional until the first slate.** That is the honest description of what
+building for a new domain means, and it is written here so the first NFL
+artifact cannot inherit confidence it has not earned.
