@@ -1,0 +1,642 @@
+"""The unstudied market-maker control variables — inventory skew, placement,
+toxicity — measured on the v1 fills tape. (Quant D, 2026-09-02.)
+
+    .venv/bin/python analysis/mm_control_variables.py --selftest
+    .venv/bin/python analysis/mm_control_variables.py
+        --fills FILLS.csv --ticks TICKS.csv.gz [--out DIR]
+
+v1 fixed all four MM control variables (placement, size, skew,
+participation); the registered arms study participation and a corner of
+placement. These three reads cover the rest, on data we already own, inside
+the lever wave's DESIGN-NOT-EVIDENCE framing: they shape which arms
+GRIDIRON prioritises and what magnitude to expect. The forward gates stay
+the only evidence.
+
+M1 — MARKOUT CONDITIONAL ON INVENTORY AT FILL (the skew question).
+Per market, v1's position path is the signed cumulative sum of its own
+fills (bid +1, ask −1, unit size; the quote engine has no exit — positions
+ride to settlement, so inventory ACCUMULATES over a market's life). Each
+fill is classified by the inventory it was taken INTO:
+    flat        inv_before == 0
+    adding      sign(fill) == sign(inv_before)   (exposure grows)
+    reducing    sign(fill) != sign(inv_before)   (exposure shrinks)
+plus |inv_before| as a magnitude ladder. Hypothesis under test: fills taken
+while already long are systematically worse — one-sided flow arrives in
+bursts and v1's symmetric requote kept standing in front of it. That is
+Avellaneda–Stoikov's inventory penalty (q·γ·σ²·(T−t)) tested rather than
+assumed. A FLAT result is equally valuable: it says the loss is pure
+per-fill adverse selection with no inventory dimension, skew is dead here,
+and PATIENCE's measured effect is standalone rather than skew wearing a
+time costume.
+
+M2 — THE PLACEMENT CURVE (fill rate × capture, by spread width).
+THE DENOMINATOR PROBLEM, STATED: fill RATE needs quotes PLACED, and the
+quote stream was never persisted (shadow_quote_fills is the only quote
+table). v1's rule is deterministic — both sides requoted to the touch every
+5s cycle whenever a two-sided book existed (engine.py:6-7, :68), verified
+100% at-touch on 17,032 births in the M4 read — so the denominator is
+DERIVED: 5s buckets in which the market had a two-sided live tick, from the
+tick pin, banded by that bucket's own spread. Rate = fills / cycles (each
+cycle places TWO quotes, one per side — stated, not divided away).
+The economic quantity is CAPTURE PER CYCLE QUOTED (rate × capture/fill),
+not capture per fill: a band that fills rarely but richly and a band that
+fills constantly but thinly are only comparable per unit of time quoted.
+Markets outside the tick pin have no denominator and are excluded, counted.
+
+M3 — TOXICITY PROXY: SAME-SIDE FILL RUNS.
+Consecutive fills on the same side within a short window per market
+(RUN_GAP_S), cut by run length. If long runs mark out much worse, that is
+order-flow toxicity in its crudest measurable form — the mechanism behind
+both M1 and PATIENCE — and it says whether a RUN-LENGTH trigger would beat
+a fixed time-based hold-off.
+
+All reads: in-game, league=WNBA (export rule 37e5f0d, re-asserted here),
+game-clustered, BOTH fill arms (optimistic modelled capture and the
+measured-concession floor, labelled, never mixed), rule-16 gated on the
+fills tape before anything is scored.
+
+**No in-sample result justifies capital. The forward test is the evidence.**
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from core.quote.adverse_selection import clustered_mean  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location(
+    "quote_v2_markout", Path(__file__).with_name("quote_v2_markout.py"))
+qvm = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(qvm)
+
+CYCLE_S = 5.0                    # v1's requote cadence (engine.py:68)
+QUOTES_PER_CYCLE = 2             # both sides, every cycle
+RUN_GAP_S = 30.0                 # fills this close continue a run
+MEASURED_CONCESSION = 0.0470     # static-study, per filled quote
+SPREAD_BANDS = [(0.0, 0.02, "<=2c"), (0.02, 0.05, "2-5c"),
+                (0.05, 0.10, "5-10c"), (0.10, 1.01, ">10c")]
+LEAGUE = "wnba"
+
+
+def hr(t: str) -> None:
+    print(f"\n{'=' * 78}\n{t}\n{'=' * 78}")
+
+
+def cm_str(vals: dict[str, list[float]], unit: str = "c") -> str:
+    c = clustered_mean(vals)
+    if c is None:
+        return "n/a"
+    return (f"{c.mean * 100:+.2f} [{c.lo * 100:+.2f}, {c.hi * 100:+.2f}]{unit}"
+            f" (n={c.n}, G={c.n_clusters})")
+
+
+def by_game(df: pd.DataFrame, col: str) -> dict[str, list[float]]:
+    sub = df[df[col].notna()]
+    return {g: list(v) for g, v in sub.groupby("game_id")[col]}
+
+
+def band_of(spread: float) -> str:
+    for lo, hi, name in SPREAD_BANDS:
+        if lo <= spread < hi:
+            return name
+    return ">10c"
+
+
+# --------------------------------------------------------------------------- #
+# M1 — inventory
+# --------------------------------------------------------------------------- #
+
+def add_inventory(fills: pd.DataFrame) -> pd.DataFrame:
+    """Signed position path per market. bid = +1 (long YES), ask = −1.
+
+    inv_before is the position carried INTO each fill; the class describes
+    what the fill did to exposure. Unit size throughout (v1 quoted one
+    contract per side), so the path is a cumulative count, not a notional.
+    """
+    f = fills.sort_values(["market_slug", "filled_at"]).copy()
+    f["signed"] = np.where(f.side == "bid", 1.0, -1.0)
+    f["inv_before"] = (f.groupby("market_slug")["signed"]
+                       .cumsum() - f["signed"])
+
+    def klass(row) -> str:
+        if row.inv_before == 0:
+            return "flat"
+        return ("adding" if np.sign(row.signed) == np.sign(row.inv_before)
+                else "reducing")
+
+    f["inv_class"] = [klass(r) for r in f.itertuples()]
+    f["inv_abs"] = f.inv_before.abs()
+    f["inv_mag"] = pd.cut(f.inv_abs, [-0.1, 0.1, 1.1, 3.1, 1e9],
+                          labels=["0", "1", "2-3", "4+"])
+    return f
+
+
+def m0_inventory_path(con, fills: pd.DataFrame) -> None:
+    """Does the Avellaneda-Stoikov inventory penalty APPLY to v1 at all?
+
+    RECONSTRUCTABILITY, stated first (c7's condition): the quote engine has
+    NO EXIT MECHANISM — it rests a bid and an offer each cycle and holds
+    whatever fills to settlement (core/quote/engine.py; ShadowQuoteFill
+    carries settlement, never an exit). So the position path is the signed
+    cumsum of a market's own fills and NOTHING ELSE: no exit rows to match,
+    no orphan-exit problem, no re-linked rows, no cap-semantics eras — those
+    are PULSE-ledger artifacts and none of them touch this tape. Flattening
+    happens only two ways: the opposite side of our own two-sided quote gets
+    hit, or the market settles. This is cleanly reconstructable, which is
+    why the answer below can be trusted at face value.
+
+    Time weighting: each fill starts a segment that ends at the next fill in
+    that market, and the LAST segment ends at the market's last two-sided
+    live tick in the pin (its observable end). Markets with no tick coverage
+    contribute to the fill-instant distribution but not the time-weighted
+    one — counted, not stitched."""
+    hr("M0. THE INVENTORY PATH — is the A-S inventory penalty operative "
+       "here at all? (gates the skew arm's priority)")
+    print("reconstruction: signed cumsum of each market's own fills; the "
+          "quote engine has NO exits (positions ride to settlement), so "
+          "there is nothing to match and nothing unreconstructable — the "
+          "PULSE ledger's orphan/re-link/cap-era problems do not exist on "
+          "this tape.\n")
+
+    f = fills.copy()
+    f["inv_after"] = f.inv_before + f.signed
+
+    # --- distribution of |q| at every fill instant -----------------------
+    at_fill = f.inv_before.abs()
+    print(f"|q| carried INTO each fill (n={len(f)}): mean {at_fill.mean():.2f}"
+          f", p50 {at_fill.median():.0f}, p90 {at_fill.quantile(.9):.0f}, "
+          f"max {at_fill.max():.0f}")
+    dist = at_fill.value_counts(normalize=True).sort_index()
+    shown = {int(k): f"{v:.1%}" for k, v in list(dist.items())[:6]}
+    print(f"  distribution: {shown}"
+          + (" ..." if len(dist) > 6 else ""))
+    print(f"  share of fills taken at |q| >= 2: "
+          f"{(at_fill >= 2).mean():.1%}  (|q| >= 4: "
+          f"{(at_fill >= 4).mean():.1%})")
+
+    # --- time-weighted |q| and time at nonzero ---------------------------
+    ends = con.execute("""
+        SELECT market_slug, max(captured_at) AS t_end FROM tk
+        GROUP BY 1
+    """).df().set_index("market_slug").t_end
+    segs = []
+    for m, g in f.sort_values("filled_at").groupby("market_slug"):
+        t_end = ends.get(m)
+        if pd.isna(t_end):
+            continue
+        times = list(g.filled_at) + [pd.Timestamp(t_end).tz_convert("UTC")]
+        held = list(g.inv_after)
+        for i, q in enumerate(held):
+            dt_s = (times[i + 1] - times[i]).total_seconds()
+            if dt_s > 0:
+                segs.append((m, g.game_id.iloc[0], abs(q), dt_s))
+    if not segs:
+        print("\nno tick-covered markets — time weighting unavailable")
+    else:
+        sd = pd.DataFrame(segs, columns=["market_slug", "game_id", "absq",
+                                         "seconds"])
+        tw = (sd.absq * sd.seconds).sum() / sd.seconds.sum()
+        nonzero = sd[sd.absq > 0].seconds.sum() / sd.seconds.sum()
+        ge2 = sd[sd.absq >= 2].seconds.sum() / sd.seconds.sum()
+        print(f"\nTIME-WEIGHTED |q| = {tw:.2f} over "
+              f"{sd.seconds.sum() / 3600:.1f} market-hours "
+              f"({sd.market_slug.nunique()} tick-covered markets)")
+        print(f"  share of quoted TIME at q != 0: {nonzero:.1%}; "
+              f"at |q| >= 2: {ge2:.1%}")
+        holds = sd[sd.absq > 0].seconds
+        if len(holds):
+            print(f"  holding duration while q != 0: p50 "
+                  f"{holds.median():.0f}s, p90 {holds.quantile(.9):.0f}s, "
+                  f"max {holds.max() / 60:.1f}min")
+
+    # --- the late cut -----------------------------------------------------
+    if "period" in f.columns:
+        late = f[~f.period.isin(["Q1", "Q2", "HT"])]
+        early = f[f.period.isin(["Q1", "Q2", "HT"])]
+        for name, sub in (("late (Q3/Q4/OT)", late), ("early (Q1/Q2/HT)",
+                                                      early)):
+            if len(sub) == 0:
+                continue
+            a = sub.inv_before.abs()
+            print(f"\n{name}: n={len(sub)}, |q| mean {a.mean():.2f}, "
+                  f"p90 {a.quantile(.9):.0f}, share |q|>=2 {(a >= 2).mean():.1%}")
+
+    print("\nTHE RULING THIS SUPPORTS: if v1 sat at |q| in {0,1} with short "
+          "holds, the A-S inventory penalty was never operative — skew "
+          "would fix a risk we do not carry, and placement/participation "
+          "stay the live levers. If v1 carried real inventory, "
+          "concentrated late, A-S earns its priority. The numbers above "
+          "answer it; the ranking is c7's.")
+
+
+def m1_inventory(fills: pd.DataFrame) -> None:
+    hr("M1. MARKOUT x INVENTORY AT FILL — is there a skew dimension? "
+       "(A-S inventory penalty, tested not assumed)")
+    print("position path = signed cumsum of a market's OWN fills (bid +1, "
+          "ask −1, unit size); the quote engine has no exit, so inventory "
+          "accumulates to settlement. inv_before = position carried INTO "
+          "the fill.\n")
+    print(f"{'class':10s} {'n':>7s} {'G':>3s}  {'capture (opt)':>28s} "
+          f"{'pess':>8s}  {'markout +2m':>28s}")
+    for k in ("flat", "adding", "reducing"):
+        sub = fills[fills.inv_class == k]
+        if len(sub) == 0:
+            continue
+        pess = sub.half_spread.mean() - MEASURED_CONCESSION
+        print(f"{k:10s} {len(sub):>7d} {sub.game_id.nunique():>3d}  "
+              f"{cm_str(by_game(sub, 'capture')):>28s} "
+              f"{pess * 100:>+7.2f}c  "
+              f"{cm_str(by_game(sub, 'markout_2m')):>28s}")
+
+    print("\nby |inventory| carried in (the magnitude ladder):")
+    for mag, sub in fills.groupby("inv_mag", observed=True):
+        if len(sub) == 0:
+            continue
+        print(f"  |inv|={str(mag):4s}: n={len(sub):>6d} "
+              f"capture {cm_str(by_game(sub, 'capture')):>26s}  "
+              f"markout+2m {cm_str(by_game(sub, 'markout_2m'))}")
+
+    # The directional form of the hypothesis: fills taken while ALREADY LONG
+    # vs already SHORT, so a one-sided-flow story is separable from a
+    # generic "big inventory is bad" story.
+    print("\ndirectional (sign of inventory carried in):")
+    for name, mask in (("already long  (inv>0)", fills.inv_before > 0),
+                       ("already short (inv<0)", fills.inv_before < 0),
+                       ("flat          (inv=0)", fills.inv_before == 0)):
+        sub = fills[mask]
+        if len(sub) == 0:
+            continue
+        print(f"  {name}: n={len(sub):>6d} "
+              f"capture {cm_str(by_game(sub, 'capture')):>26s}  "
+              f"markout+2m {cm_str(by_game(sub, 'markout_2m'))}")
+
+    print("\nthe paired form (adding − flat, per game — the cleanest read of "
+          "the skew claim, game-clustered on differences):")
+    for col in ("capture", "markout_2m"):
+        diffs = {}
+        for g, gs in fills.groupby("game_id"):
+            a = gs.loc[gs.inv_class == "adding", col].dropna()
+            fl = gs.loc[gs.inv_class == "flat", col].dropna()
+            if len(a) and len(fl):
+                diffs[g] = [a.mean() - fl.mean()]
+        print(f"  {col:11s}: {cm_str(diffs)}")
+    print("\nreading: a materially worse 'adding' row (and a paired diff "
+          "whose CI excludes zero) says inventory ORDERS outcomes and skew "
+          "is a real lever — and that PATIENCE may be partly crediting "
+          "skew's effect. Flat rows say the loss is pure per-fill adverse "
+          "selection, skew is dead here, and PATIENCE stands alone.")
+
+
+# --------------------------------------------------------------------------- #
+# M2 — placement curve
+# --------------------------------------------------------------------------- #
+
+def cycle_denominator(con, markets: list[str]) -> pd.DataFrame:
+    """5s buckets with a two-sided live book, per market x spread band.
+
+    DERIVED, not recorded: v1 quoted both sides to the touch every 5s cycle
+    whenever a two-sided book existed. Each bucket = one cycle = two quotes
+    placed. The bucket's spread is its LAST two-sided tick's spread (the
+    quote the cycle would have joined)."""
+    df = con.execute("""
+        WITH b AS (
+          SELECT market_slug,
+                 time_bucket(INTERVAL '5 seconds', captured_at) AS bucket,
+                 arg_max(spread, captured_at) AS spread
+          FROM tk
+          GROUP BY 1, 2
+        )
+        SELECT market_slug, bucket, spread FROM b
+    """).df()
+    df["band"] = df.spread.map(band_of)
+    return df
+
+
+def m2_placement(con, fills: pd.DataFrame) -> None:
+    hr("M2. THE PLACEMENT CURVE — fill rate x capture by spread width "
+       "(denominator DERIVED from the deterministic 5s cycle; the quote "
+       "stream was never persisted)")
+    cyc = cycle_denominator(con, sorted(fills.market_slug.unique()))
+    if len(cyc) == 0:
+        print("no tick coverage — no denominator; nothing to report")
+        return
+    covered = set(cyc.market_slug)
+    inpin = fills[fills.market_slug.isin(covered)]
+    print(f"markets with tick coverage: {len(covered)}; fills inside the "
+          f"pin: {len(inpin)}/{len(fills)} "
+          f"({len(fills) - len(inpin)} excluded, counted — the known "
+          f"4-of-13-game pin gap)")
+
+    fills2 = inpin.copy()
+    fills2["band"] = fills2.spread_at_quote.map(band_of)
+    cyc_n = cyc.groupby("band").size()
+    print(f"\n{'band':7s} {'cycles':>9s} {'fills':>7s} {'fills/cycle':>12s} "
+          f"{'capture/fill':>26s} {'capture/cycle':>14s} {'pess/cycle':>11s}")
+    for _, _, band in SPREAD_BANDS:
+        n_cyc = int(cyc_n.get(band, 0))
+        sub = fills2[fills2.band == band]
+        if n_cyc == 0 and len(sub) == 0:
+            continue
+        rate = len(sub) / n_cyc if n_cyc else np.nan
+        capf = sub.capture.mean() if len(sub) else np.nan
+        pessf = (sub.half_spread.mean() - MEASURED_CONCESSION
+                 if len(sub) else np.nan)
+        print(f"{band:7s} {n_cyc:>9d} {len(sub):>7d} {rate:>12.4f} "
+              f"{cm_str(by_game(sub, 'capture')):>26s} "
+              f"{rate * capf * 100:>+13.3f}c {rate * pessf * 100:>+10.3f}c")
+    print(f"\n(each cycle places {QUOTES_PER_CYCLE} quotes — one per side — "
+          f"so fills/cycle is per two-sided placement, not per quote. "
+          f"CAPTURE PER CYCLE is the comparable quantity: a band that fills "
+          f"rarely and richly vs one that fills constantly and thinly are "
+          f"only comparable per unit of time quoted.)")
+    print("SHAPE is the transferable output, not the level: WNBA's ~4c "
+          "in-play books left nowhere to stand but the touch. NFL quarter "
+          "totals quote ~30c wide, where joining the touch may never fill "
+          "and stepping inside makes the market — the question GRIDIRON's "
+          "placement arm inherits is whether capture/fill falls FASTER than "
+          "fill-rate rises as you cross bands.")
+
+
+# --------------------------------------------------------------------------- #
+# M3 — toxicity: same-side runs
+# --------------------------------------------------------------------------- #
+
+def add_runs(fills: pd.DataFrame) -> pd.DataFrame:
+    """Run index: consecutive same-side fills within RUN_GAP_S, per market."""
+    f = fills.sort_values(["market_slug", "filled_at"]).copy()
+    gap = f.groupby("market_slug").filled_at.diff().dt.total_seconds()
+    same = f.side.eq(f.groupby("market_slug").side.shift())
+    cont = same & (gap <= RUN_GAP_S)
+    f["run_id"] = (~cont.fillna(False)).cumsum()
+    f["run_pos"] = f.groupby("run_id").cumcount() + 1
+    lengths = f.groupby("run_id").size().rename("run_len")
+    f = f.join(lengths, on="run_id")
+    f["run_band"] = pd.cut(f.run_len, [0, 1, 2, 4, 1e9],
+                           labels=["1 (isolated)", "2", "3-4", "5+"])
+    return f
+
+
+def m3_runs(fills: pd.DataFrame) -> None:
+    hr(f"M3. TOXICITY PROXY — same-side fill runs (consecutive same-side "
+       f"fills within {RUN_GAP_S:.0f}s, per market)")
+    print(f"{'run length':14s} {'fills':>7s} {'runs':>6s} "
+          f"{'capture':>28s} {'markout +2m':>28s}")
+    for band, sub in fills.groupby("run_band", observed=True):
+        if len(sub) == 0:
+            continue
+        print(f"{str(band):14s} {len(sub):>7d} {sub.run_id.nunique():>6d} "
+              f"{cm_str(by_game(sub, 'capture')):>28s} "
+              f"{cm_str(by_game(sub, 'markout_2m')):>28s}")
+    print("\nby position WITHIN the run (is it the run, or just the tail?):")
+    for pos in (1, 2, 3):
+        sub = fills[fills.run_pos == pos]
+        if len(sub) == 0:
+            continue
+        print(f"  fill #{pos} of its run: n={len(sub):>6d} "
+              f"capture {cm_str(by_game(sub, 'capture')):>26s}  "
+              f"markout+2m {cm_str(by_game(sub, 'markout_2m'))}")
+    deep = fills[fills.run_pos >= 4]
+    if len(deep):
+        print(f"  fill #4+ of its run:  n={len(deep):>6d} "
+              f"capture {cm_str(by_game(deep, 'capture')):>26s}  "
+              f"markout+2m {cm_str(by_game(deep, 'markout_2m'))}")
+    print("\nreading: if markout degrades with run length AND with position "
+          "inside the run, the flow is toxic in bursts and a RUN-LENGTH "
+          "trigger (stand down after k same-side fills) is the natural "
+          "hold-off — testable against PATIENCE's fixed time-based form. "
+          "If only long runs are bad but position within them is flat, the "
+          "run length is a state marker, not a live trigger.")
+
+    # c7's second question: SIGNED PERSISTENCE — repeatedly hit on one side
+    # while the price trends away. This is the sequence-level adverse
+    # selection that skew fixes even in a world of informed flow, i.e. the
+    # case for skew that does NOT depend on the A-S penalty being operative.
+    hr("M3b. SIGNED PERSISTENCE — was v1 repeatedly hit on one side while "
+       "the price trended away? (the skew case that survives even if the "
+       "A-S inventory penalty is inoperative)")
+    rows = []
+    for rid, g in fills[fills.run_len >= 2].groupby("run_id"):
+        g = g.sort_values("filled_at")
+        first, last = g.iloc[0], g.iloc[-1]
+        # mid travel across the run, signed AGAINST the side being hit:
+        # a bid run with the mid falling is adverse (we kept buying into a
+        # fall); positive = the market moved against the whole run.
+        adverse = qvm.signed(first.side, first.mid_at_fill, last.mid_at_fill)
+        rows.append(dict(game_id=first.game_id, run_len=len(g),
+                         side=first.side, adverse_travel=adverse,
+                         span_s=(last.filled_at
+                                 - first.filled_at).total_seconds(),
+                         end_markout=last.markout_2m))
+    if not rows:
+        print("no multi-fill runs — nothing to report")
+        return
+    rr = pd.DataFrame(rows)
+    print(f"multi-fill same-side runs: {len(rr)} across "
+          f"{rr.game_id.nunique()} games; span p50 {rr.span_s.median():.0f}s")
+    print(f"  MID TRAVEL AGAINST the run (>0 = the market kept moving away "
+          f"through the whole run): "
+          f"{cm_str({g: list(v) for g, v in rr.groupby('game_id').adverse_travel})}")
+    print(f"  share of runs where the market moved against us end-to-end: "
+          f"{(rr.adverse_travel > 0).mean():.1%}")
+    for band, sub in rr.groupby(pd.cut(rr.run_len, [1, 2, 4, 1e9],
+                                       labels=["2", "3-4", "5+"]),
+                                observed=True):
+        if len(sub) == 0:
+            continue
+        print(f"  run length {str(band):4s}: n={len(sub):>5d} adverse travel "
+              f"{cm_str({g: list(v) for g, v in sub.groupby('game_id').adverse_travel})}")
+    print("\nreading: persistent adverse travel through same-side runs is "
+          "sequence-level adverse selection — the thing a skew rule fixes "
+          "directly (lean the quote away after being hit) regardless of "
+          "whether we ever CARRY enough inventory for the A-S penalty to "
+          "bind. Travel near zero says the runs are just clustering, and "
+          "the skew case rests entirely on M0's inventory answer.")
+
+
+# --------------------------------------------------------------------------- #
+# Mutation tests
+# --------------------------------------------------------------------------- #
+
+def _f(mkt, side, t, game="g1", q=0.40, mq=0.42, sp=0.04, mf=0.39, s=1):
+    return dict(market_slug=mkt, game_id=game, regime="ingame", side=side,
+                quote_price=q, mid_at_quote=mq, spread_at_quote=sp,
+                mid_at_fill=mf, quoted_at=pd.Timestamp(t),
+                filled_at=pd.Timestamp(t) + pd.Timedelta(seconds=1),
+                settlement=s)
+
+
+def selftest() -> int:
+    print("mutation test: the three control-variable instruments")
+    failures = 0
+
+    def check(name, ok):
+        nonlocal failures
+        print(f"  {name} -> {'ok' if ok else 'FAIL'}")
+        failures += 0 if ok else 1
+
+    base = "2026-08-20 01:00:00+00:00"
+    T = lambda s: pd.Timestamp(base) + pd.Timedelta(seconds=s)
+
+    # M1: known path bid,bid,ask,ask on one market ->
+    # inv_before 0,+1,+2,+1 ; classes flat,adding,reducing,reducing
+    seq = pd.DataFrame([
+        _f("m1", "bid", T(0)), _f("m1", "bid", T(10)),
+        _f("m1", "ask", T(20)), _f("m1", "ask", T(30))])
+    inv = add_inventory(seq)
+    check("inventory path 0,+1,+2,+1",
+          list(inv.inv_before) == [0.0, 1.0, 2.0, 1.0])
+    check("inventory classes flat/adding/reducing/reducing",
+          list(inv.inv_class) == ["flat", "adding", "reducing", "reducing"])
+
+    # inventory is PER MARKET — a second market restarts at flat
+    two = pd.DataFrame([_f("m1", "bid", T(0)), _f("m2", "bid", T(5))])
+    check("inventory is per-market (m2 starts flat)",
+          list(add_inventory(two).inv_before) == [0.0, 0.0])
+
+    # M3: runs — 3 same-side inside the gap, then a side flip, then a
+    # same-side fill outside the gap (new run)
+    runs = add_runs(pd.DataFrame([
+        _f("m1", "bid", T(0)), _f("m1", "bid", T(10)), _f("m1", "bid", T(20)),
+        _f("m1", "ask", T(25)),
+        _f("m1", "ask", T(300))]))
+    check("run lengths 3,3,3,1,1", list(runs.run_len) == [3, 3, 3, 1, 1])
+    check("run positions 1,2,3,1,1", list(runs.run_pos) == [1, 2, 3, 1, 1])
+
+    # M2 denominator: 60s of 1s ticks -> 12 five-second buckets
+    import duckdb
+    con = duckdb.connect()
+    con.execute("SET timezone='UTC'")
+    ticks = pd.DataFrame([
+        dict(market_slug="m1", captured_at=T(i), spread=0.04, mid=0.40)
+        for i in range(60)])
+    ticks["event_period"] = "Q2"
+    con.register("ticks_df", ticks)
+    con.execute("CREATE TEMP TABLE tk AS SELECT * FROM ticks_df")
+    cyc = cycle_denominator(con, ["m1"])
+    check("cycle denominator: 60s of ticks -> 12 five-second buckets",
+          len(cyc) == 12)
+    check("buckets banded by their own spread (4c -> 2-5c)",
+          set(cyc.band) == {"2-5c"})
+
+    # band boundaries are half-open and exhaustive
+    check("band boundaries", [band_of(x) for x in (0.01, 0.02, 0.05, 0.10,
+                                                   0.50)]
+          == ["<=2c", "2-5c", "5-10c", ">10c", ">10c"])
+
+    # M0 time-weighting: a market that sits at |q|=1 for 30s then flat for
+    # 30s must read time-weighted |q| = 0.5 and 50% of time at q != 0.
+    import contextlib, io as _io
+    tw_fills = add_inventory(pd.DataFrame([
+        _f("m1", "bid", T(0)), _f("m1", "ask", T(30))]))
+    tw_fills["markout_2m"] = np.nan
+    tw_fills["half_spread"] = 0.02
+    tw_fills["capture"] = -0.01
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        m0_inventory_path(con, tw_fills)
+    txt = buf.getvalue()
+    # segments: |q|=1 from fill1 (T+1) to fill2 (T+31) = 30s, then |q|=0
+    # from T+31 to the market's last tick (T+59) = 28s -> 30/58 = 0.517
+    check("M0 time-weighting = 30s at |q|=1 of 58s observable (0.52)",
+          "TIME-WEIGHTED |q| = 0.52" in txt and "at q != 0: 51.7%" in txt)
+
+    # M0 must not stitch: a market with no tick coverage contributes to the
+    # fill-instant distribution but not the time-weighted one.
+    nocov = add_inventory(pd.DataFrame([_f("mZZ", "bid", T(0))]))
+    nocov["markout_2m"] = np.nan
+    nocov["half_spread"] = 0.02
+    nocov["capture"] = -0.01
+    buf2 = _io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        m0_inventory_path(con, nocov)
+    check("M0 excludes uncovered markets from time weighting (no stitching)",
+          "time weighting unavailable" in buf2.getvalue())
+
+    print(f"mutation test: "
+          f"{'ALL OK' if failures == 0 else f'{failures} FAILURES'}")
+    return failures
+
+
+# --------------------------------------------------------------------------- #
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fills", type=Path)
+    ap.add_argument("--ticks", type=Path)
+    ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--selftest", action="store_true")
+    args = ap.parse_args()
+    if args.selftest:
+        return selftest()
+    if args.fills is None or args.ticks is None:
+        print("need --fills and --ticks; --selftest runs without data")
+        return 2
+
+    print("MM control variables — inventory / placement / toxicity")
+    print("design-not-evidence: shapes GRIDIRON's arm priorities and "
+          "expected magnitudes; the forward gates are the only evidence")
+    if selftest() != 0:
+        print("ABORT: mutation test failed")
+        return 1
+
+    fills = qvm.load_fills(args.fills)
+    if not qvm.rule16_gate(fills, rehearsal=False):
+        return 1
+
+    ing = fills[fills.regime == "ingame"].copy()
+    bad = ing[~ing.market_slug.str.contains(f"-{LEAGUE}-")]
+    if len(bad):
+        print(f"LOUD: {len(bad)} non-{LEAGUE} fills excluded (export pin "
+              f"37e5f0d violated)")
+        ing = ing[ing.market_slug.str.contains(f"-{LEAGUE}-")]
+
+    ing["half_spread"] = [qvm.signed(r.side, r.mid_at_quote, r.quote_price)
+                          for r in ing.itertuples()]
+    import duckdb
+    con = duckdb.connect()
+    con.execute("SET timezone='UTC'")
+    qvm.load_ticks(con, args.ticks, sorted(ing.market_slug.unique()))
+    ing = qvm.markouts(con, ing)
+    ing = add_inventory(ing)
+    ing = add_runs(ing)
+
+    # period at fill (for M0's late cut and any state read), from the tape
+    con.register("fills_st", ing[["market_slug", "filled_at"]]
+                 .reset_index(names="fid"))
+    st = con.execute("""
+        SELECT f.fid, t.event_period
+        FROM fills_st f ASOF JOIN tk t
+          ON f.market_slug = t.market_slug AND t.captured_at <= f.filled_at
+    """).df().set_index("fid")
+    ing["period"] = ing.index.map(st.event_period)
+
+    m0_inventory_path(con, ing)
+    m1_inventory(ing)
+    m2_placement(con, ing)
+    m3_runs(ing)
+
+    hr("STANDING STATEMENTS")
+    print("In-sample on the v1 WNBA fills pin, under the quote engine's own "
+          "fill model (optimism cuts the known way: it undercounts exactly "
+          "the fills that hurt). Both arms printed, never mixed. The M2 "
+          "denominator is DERIVED from a deterministic rule, not recorded — "
+          "its assumption is stated at the module head and inherits M4's "
+          "100%-at-touch verification.")
+    print("Multiple comparisons: three instruments x several cuts each; "
+          "rank by mechanism plausibility and effect size, never p-value.")
+    print("\nNo in-sample result justifies capital. The forward test is the "
+          "evidence.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
