@@ -1096,6 +1096,51 @@ def main() -> int:
     m2_placement(con, ing)
     m3_runs(ing)
 
+    hr("SYNTHESIS — one mechanism, seen from four ends")
+    print("""
+v1 IS NOT A MARKET MAKER; IT IS A PASSIVE POSITION ACCUMULATOR WITH
+SLIGHTLY BETTER ENTRY PRICES THAN MID. It quotes two-sided, realises
+one-sided flow, and has no mechanism to close — so the round trip that IS
+market making almost never happens, "capture" is an intermediate valuation
+of a position whose real P&L is settlement, and the −1.60c/fill is entry
+adverse selection on a book that then rides to the buzzer.
+
+Everything measured here is a consequence of that one architectural fact:
+
+  M0/M1  it accumulates (time-weighted |q| 7.24, 94% of time non-flat) —
+         and the accumulation does not order the per-fill MEAN.
+  M4     but it orders the TAIL: per-market settlement SD 0.35 -> 6.45
+         across the peak-|q| ladder, an ex-ante observable.
+  M5     round trips were AVAILABLE (up to 27-42% at a 1c lean) and
+         refused, at a round-trip capture of +1.44c against rides of
+         -15.09c with CIs an order of magnitude wider.
+  M7     and the un-closed positions aggregate: peak 702 contracts across
+         91 concurrent markets = a ~$702 arithmetic worst case against a
+         $1,000 wallet AT UNIT SIZE.
+
+THE ONE MISSING CAPABILITY ANSWERS ALL THREE PROBLEMS. Flattening —
+converting the position rather than refusing the fill — now carries three
+independent arguments:
+  1. ECONOMIC: it turns high-variance rides into tight positive scalps.
+  2. RISK: it shrinks the inventory that orders the tail.
+  3. CAPITAL EFFICIENCY: closing lowers peak concurrent exposure, which
+     frees wallet capacity, which permits size, which multiplies earnings
+     per fill. At unit size the book already ran ~70% wallet utilisation;
+     exposure is linear in size, so size 2 exceeds the wallet outright.
+     "How big should we quote" is now an ARITHMETIC question, not an
+     open one.
+
+AND THE TWO NUMBERS MUST NOT BE CONFLATED: a wallet SIZES on the bound
+(~$702, what cannot be exceeded) and FORECASTS on the realised
+distribution (~-$133 cumulative over 13 games). A reader who merges them
+will either panic or dismiss; both are printed, both are labelled.
+
+What did NOT survive, stated with equal prominence: the inventory CAP as a
+P&L lever (clustered null, and no calendar can resolve it), and any reading
+of the tail decomposition that implies "remove the tail and we have a
+business" — no peak-|q| bucket has a positive mean.
+""")
+
     hr("STANDING STATEMENTS")
     print("In-sample on the v1 WNBA fills pin, under the quote engine's own "
           "fill model (optimism cuts the known way: it undercounts exactly "
