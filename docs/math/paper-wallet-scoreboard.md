@@ -119,3 +119,24 @@ capacity is per-fill OPTIMISTIC; the truly pessimistic bound
 younger than its parent snapshot and is NULLABLE on old rows) with the
 staleness bound stated per the ffill-hazard rule; NULL-stamped rows are
 counted out, never inherited in.
+
+## DATED LINE (2026-09-03, manager's ruling — the wallet's cohort boundary)
+
+`shadow_quote_fills` holds v1's 17,032 August fills, and the gather loads
+fills unbounded, so the live wallet would silently fold a CLOSED verdict
+(v1's ledgered FAIL) into the operator's forward balance. Ruled, by the
+project's own cohort discipline (amendment 4: a cohort counts data
+recorded after its own registration instant):
+
+1. **The LIVE wallet is FORWARD-ONLY from its seed ledger line** — fills
+   with `filled_at` before the seed instant are out of cohort, counted
+   and reported as excluded, never folded into balance.
+2. **The August tape is reported ONCE as a labelled HISTORICAL print** —
+   "what $1,000 would have done under v1's blind policy" — beside the
+   scoreboard, never inside it. It is already the rule-16 known answer, so
+   it costs nothing to produce and it calibrates the operator's eye for
+   what the meters do under a book that is known to lose.
+
+Rationale: the bar is forward-looking, v1's verdict is closed, and a
+headline number that restates a known failure buries the signal the
+instrument exists to carry.
