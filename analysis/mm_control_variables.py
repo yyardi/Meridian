@@ -609,6 +609,51 @@ def m6_inventory_cap(fills: pd.DataFrame) -> None:
           "The honest pairing is delta-P&L WITH per-market SD: variance "
           "bought at an acceptable price in mean is the ruin-control case; "
           "variance bought by giving up the book is not.")
+    # POWER: a bare "not supported" invites re-litigation every month. The
+    # useful form is "not supported, here is the n that would settle it,
+    # and here is the league where that n exists."
+    print("\npower of this null (why the interval is wide, and what would "
+          "close it):")
+    for K in (5, 10):
+        kept = run_cap(K)
+        gd = (kept.groupby("game_id").pnl.sum()
+              .reindex(base_g.index).fillna(0.0) - base_g)
+        sd_g, mean_g = gd.std(ddof=1), gd.mean()
+        se = sd_g / np.sqrt(len(gd))
+        # two-sided alpha 0.05, power 0.80 -> (1.96 + 0.8416)^2 = 7.849
+        n_need = (7.849 * sd_g ** 2 / mean_g ** 2) if mean_g else np.inf
+        print(f"  K={K:<3d}: per-game delta {mean_g:+.2f}, SD {sd_g:.2f}, "
+              f"SE {se:.2f} on G={len(gd)} -> resolving an effect this size "
+              f"at 80% power needs ~{n_need:.0f} GAMES")
+    print("  what that means operationally, and it is WORSE than a "
+          "one-season wait: an NFL regular season is ~272 games (+13 "
+          "playoff), so ~295 at K=10 is MORE THAN A FULL SEASON and ~835 "
+          "at K=5 is roughly three. This effect is not resolvable on any "
+          "calendar that precedes the decisions it would inform — on WNBA "
+          "it is unreachable outright. CONSEQUENCE: the cap's P&L question "
+          "cannot be settled empirically in time, which is precisely why "
+          "the risk-limit justification below is not a fallback but the "
+          "ONLY available route. Nobody should re-litigate the P&L form on "
+          "any n we will have.")
+
+    print("\n=== DISPOSITION, three parts (c7's ruling; a risk limit and a "
+          "P&L lever are different objects and must not share a verdict) "
+          "===")
+    print("(a) CAP AS P&L LEVER — DEAD. Clustered null above, power stated. "
+          "It is not expected to make money and the evidence does not say "
+          "it does.")
+    print("(b) CAP AS RISK LIMIT — LIVE, and justified ARITHMETICALLY, not "
+          "statistically. 'Worst market -18.85 -> -4.28 at K=3' is a "
+          "GUARANTEE ABOUT THE SHAPE OF THE LOSS DISTRIBUTION, not an "
+          "estimate, and needs no CI; applying a significance test to a "
+          "bound is a category error (mine, corrected). Every desk runs "
+          "position limits that are not expected to earn — they exist to "
+          "make the worst case computable rather than hoped-for. Its "
+          "expected P&L COST is unmeasured, and the clustered CI above is "
+          "the honest bound ON THAT COST.")
+    print("(c) FLATTENING — the live P&L lever (M5), rates as upper "
+          "bounds. Convert the position; do not refuse the fill.")
+
     print("\nAND THE CLUSTERED VERDICT GOVERNS: a total delta is a sum over "
           "a handful of games. If the per-game row above shows a coin-flip "
           "improvement count and a CI spanning zero, the cap is NOT "
