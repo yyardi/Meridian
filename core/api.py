@@ -2212,6 +2212,11 @@ def wallet_status() -> dict:
             "wouldbe_opt_mean_c": am["absent_wouldbe_opt_mean_c"],
             "wouldbe_conc_mean_c": am["absent_wouldbe_conc_mean_c"],
             "trigger_10pct_ingame": am["trigger_10pct_ingame"],
+            "n_depth_sized": am["n_depth_sized"],
+            "n_depth_parent_stamped": am["n_depth_parent_stamped"],
+            "depth_parent_stamped_rate": am["depth_parent_stamped_rate"],
+            "parent_stamped_staleness_max_s": am["parent_stamped_staleness_max_s"],
+            "parent_stamped_staleness_mean_s": am["parent_stamped_staleness_mean_s"],
         }
 
     def _book(b) -> dict:
