@@ -49,6 +49,13 @@ MONTHLY_BAR = 100.0              # month-to-date bar
 #: concession arm. Same pins as roundtrip_ledger.py / scorecard.py / fills.py.
 CONCESSION_IN_GAME = 0.047
 CONCESSION_PREGAME = 0.021
+#: Bankruptcy floor. Under open-exposure reservation the book can never realize
+#: a loss larger than its equity (it never reserves more than it has), so the
+#: concession balance asymptotes to zero rather than crossing it — true
+#: insolvency is the knife-edge of total ruin. The halt fires within this
+#: epsilon of zero; the CONTINUOUS drawdown + capital-clip meters are the
+#: operative "book bleeding / $1,000 binds" signals (flagged to the manager).
+HALT_FLOOR = 1e-9
 
 
 def route_league(market_slug: str | None) -> League | None:
@@ -102,20 +109,27 @@ def maker_fee_per_contract(quote_price: float) -> float:
     return fee_per_contract(quote_price, is_maker=True)
 
 
-def clip_size(*, balance: float, side: str, quote_price: float,
-              depth: float) -> tuple[int, bool]:
-    """Honest sizing (term 3): the number of whole contracts capped by BOTH the
-    recorded book depth at the quoted level AND the ledger balance. Returns
-    (size, clipped) where clipped=True means depth bound the size below what the
-    balance could afford — logged by the caller, never silent."""
-    stake = stake_per_contract(side=side, quote_price=quote_price)
-    if stake <= 0:
-        return 0, False
-    affordable = floor(max(balance, 0.0) / stake)
+def size_fill(*, available: float, cost_basis: float,
+              depth: float) -> tuple[int, str]:
+    """Honest sizing (term 3): whole contracts capped by BOTH the free capital
+    (available / cost_basis) AND the recorded book depth at the quoted level.
+    Returns (size, cap) where cap names the binding constraint for the clipped
+    ledger line: 'depth' = the venue bound it, 'capital' = the $1,000 bound it
+    (the Sunday scoreboard signal), 'none' = neither clipped, 'zero' = nothing
+    takeable. `available` is the reservation-adjusted cash (realized equity minus
+    open cost basis); `cost_basis` is per-contract entry cost (stake, plus the
+    concession on the concession arm)."""
     depth_cap = int(floor(max(depth, 0.0)))
-    size = min(affordable, depth_cap)
-    clipped = size < affordable          # depth, not balance, was the binding cap
-    return max(size, 0), clipped
+    affordable = (int(floor(max(available, 0.0) / cost_basis))
+                  if cost_basis > 0 else 0)
+    size = max(min(depth_cap, affordable), 0)
+    if size == 0:
+        return 0, "zero"
+    if depth_cap < affordable:
+        return size, "depth"
+    if affordable < depth_cap:
+        return size, "capital"
+    return size, "none"
 
 
 # --------------------------------------------------------------------------- #
@@ -155,14 +169,17 @@ class LedgerLine:
 class LeagueBook:
     slug: str
     seed: float
-    optimistic: float                # realized balance, optimistic arm
+    optimistic: float                # realized balance, optimistic arm (seed + settled P&L)
     concession: float                # realized balance, concession arm (governs sizing)
     toll: float                      # cumulative $ divergence = optimistic - concession
+    reserved_conc: float             # open cost basis still tied up (concession arm)
+    available_to_size: float         # concession realized equity - reserved_conc
     halted: bool
     halt_line: LedgerLine | None
     n_fills: int                     # sized > 0
-    n_clipped: int                   # depth bound the size below balance-affordable
-    n_zero: int                      # sized 0 (unaffordable / no depth)
+    n_clipped_depth: int             # book depth bound the size (venue was the cap)
+    n_clipped_reservation: int       # capital bound the size ($1,000 was the cap)
+    n_zero: int                      # sized 0 (no depth / no free capital)
     n_skipped_halt: int              # entries refused because the book had halted
     unrealized_opt: float
     unrealized_conc: float
@@ -178,22 +195,29 @@ class WalletResult:
 
 def _fold_league(slug: str, fills: list[Fill], seed: float,
                  mids: dict[str, float]) -> LeagueBook:
-    # event-ordered so sizing at an entry sees the realized balance from every
-    # settlement that resolved before it. Ties: settle before entry (free the
-    # equity before the next entry sizes against it).
+    """Cash-flow fold with OPEN-EXPOSURE RESERVATION (manager ruling, registered
+    tonight; the real venue's rule = min(cash, buyingPower), cash consumed at
+    fill). available-to-size = concession realized equity − Σ(open cost basis);
+    cost is reserved at entry and freed at settlement. So the paper book can
+    never carry exposure a real $1,000 could not afford — the structural
+    optimism leak, closed. Both arms reserve their own cost basis, but SIZING is
+    governed by the concession (pessimistic) arm's available.
+
+    event-ordered so an entry sees every settlement that resolved before it."""
     events: list[tuple] = []
     for i, f in enumerate(fills):
         events.append((f.filled_at, 1, "entry", i, f))
         if f.settlement is not None and f.settled_at is not None:
             events.append((f.settled_at, 0, "settle", i, f))
-    events.sort(key=lambda e: (e[0], e[1]))
+    events.sort(key=lambda e: (e[0], e[1]))          # settle (0) before entry (1) at ties
 
-    opt = conc = float(seed)
+    eq_opt = eq_conc = float(seed)                    # realized equity (seed + settled P&L)
+    res_opt = res_conc = 0.0                          # reserved open cost basis
     toll = 0.0
     halted = False
     halt_line: LedgerLine | None = None
     size: dict[int, int] = {}
-    n_fills = n_clipped = n_zero = n_skipped = 0
+    n_fills = n_clip_depth = n_clip_res = n_zero = n_skipped = 0
     open_idx: list[int] = []
 
     for (t, _k, kind, i, f) in events:
@@ -201,41 +225,52 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
             if halted:
                 n_skipped += 1
                 continue
-            sz, clipped = clip_size(balance=conc, side=f.side,
-                                    quote_price=f.quote_price, depth=f.depth)
+            stake = stake_per_contract(side=f.side, quote_price=f.quote_price)
+            cc = concession_for(f.regime)
+            cost_conc = stake + cc                    # concession-arm cost basis
+            available = eq_conc - res_conc            # reservation-adjusted cash
+            sz, cap = size_fill(available=available, cost_basis=cost_conc,
+                                depth=f.depth)
             size[i] = sz
-            if clipped:
-                n_clipped += 1
             if sz == 0:
                 n_zero += 1
             else:
                 n_fills += 1
+                if cap == "depth":
+                    n_clip_depth += 1                 # the venue was the constraint
+                elif cap == "capital":
+                    n_clip_res += 1                   # $1,000 was the constraint
+                res_conc += sz * cost_conc
+                res_opt += sz * stake
                 if f.settlement is None:
                     open_idx.append(i)
-        else:  # settle
+        else:  # settle: free the reservation, book realized P&L on both arms
             sz = size.get(i, 0)
             if sz == 0:
                 continue
+            stake = stake_per_contract(side=f.side, quote_price=f.quote_price)
             cc = concession_for(f.regime)
+            res_conc -= sz * (stake + cc)
+            res_opt -= sz * stake
             r_opt = sz * realized_per_contract(
                 side=f.side, quote_price=f.quote_price,
                 settlement=f.settlement, concession=0.0)
             r_conc = sz * realized_per_contract(
                 side=f.side, quote_price=f.quote_price,
                 settlement=f.settlement, concession=cc)
-            opt += r_opt
-            conc += r_conc
+            eq_opt += r_opt
+            eq_conc += r_conc
             toll += (r_opt - r_conc)
-            # BANKRUPTCY HALT (registered 51a4103): the pessimistic book hitting
-            # zero stops trading even while the optimistic line shows profit —
-            # a legitimate, visible scoreboard outcome.
-            if conc <= 0 and not halted:
+            # BANKRUPTCY HALT (51a4103): the concession bankroll gone (realized
+            # equity <= 0) stops trading even while optimism shows profit — the
+            # book that survives only on the optimistic valuation, made visible.
+            if eq_conc <= HALT_FLOOR and not halted:
                 halted = True
                 halt_line = LedgerLine(
                     league=slug, kind="halt", at=t,
-                    note=(f"concession-arm balance reached ${conc:.2f} — wallet "
-                          f"HALTS trading (optimistic line ${opt:.2f}: a book "
-                          f"surviving only on optimism)"))
+                    note=(f"concession-arm realized equity reached ${eq_conc:.2f}"
+                          f" — wallet HALTS trading (optimistic line ${eq_opt:.2f}"
+                          f": a book surviving only on optimism)"))
 
     un_opt = un_conc = 0.0
     n_marked = n_unmarkable = 0
@@ -254,8 +289,10 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
         n_marked += 1
 
     return LeagueBook(
-        slug=slug, seed=float(seed), optimistic=opt, concession=conc, toll=toll,
-        halted=halted, halt_line=halt_line, n_fills=n_fills, n_clipped=n_clipped,
+        slug=slug, seed=float(seed), optimistic=eq_opt, concession=eq_conc,
+        toll=toll, reserved_conc=res_conc, available_to_size=eq_conc - res_conc,
+        halted=halted, halt_line=halt_line, n_fills=n_fills,
+        n_clipped_depth=n_clip_depth, n_clipped_reservation=n_clip_res,
         n_zero=n_zero, n_skipped_halt=n_skipped, unrealized_opt=un_opt,
         unrealized_conc=un_conc, n_open_marked=n_marked,
         n_open_unmarkable=n_unmarkable)
@@ -329,15 +366,17 @@ def _selftest_primitives() -> int:
           mark_per_contract(side=ASK, quote_price=0.60, mid_now=0.55,
                             concession=0.0), 0.05)
 
-    # sizing: depth binds -> clipped; balance binds -> not clipped
-    check("clip: balance 100 @0.40 stake, depth 100 -> size",
-          clip_size(balance=100.0, side=BID, quote_price=0.40, depth=100)[0], 100)
-    check("clip: depth 100 < affordable 250 -> clipped",
-          clip_size(balance=100.0, side=BID, quote_price=0.40, depth=100)[1], True)
-    check("clip: depth 1000 >= affordable 250 -> not clipped",
-          clip_size(balance=100.0, side=BID, quote_price=0.40, depth=1000)[1], False)
-    check("clip: affordable size (100/0.40=250)",
-          clip_size(balance=100.0, side=BID, quote_price=0.40, depth=1000)[0], 250)
+    # sizing: depth binds -> cap 'depth'; capital binds -> cap 'capital'
+    check("size: avail 100 / cost 0.40, depth 100 -> 100",
+          size_fill(available=100.0, cost_basis=0.40, depth=100)[0], 100)
+    check("size: depth 100 < affordable 250 -> cap 'depth'",
+          size_fill(available=100.0, cost_basis=0.40, depth=100)[1], "depth")
+    check("size: depth 1000 >= affordable 250 -> cap 'capital'",
+          size_fill(available=100.0, cost_basis=0.40, depth=1000)[1], "capital")
+    check("size: affordable 100/0.40=250",
+          size_fill(available=100.0, cost_basis=0.40, depth=1000)[0], 250)
+    check("size: no capital -> (0,'zero')",
+          size_fill(available=0.0, cost_basis=0.40, depth=1000), (0, "zero"))
 
     # maker fee is ~0 (theta_maker=0)
     check("maker fee @0.50 == 0", maker_fee_per_contract(0.50), 0.0)
@@ -388,8 +427,8 @@ def _selftest_fold() -> int:
     chk("clean: concession 505.53", abs(b.concession - 505.53) < 1e-9)
     chk("clean: toll 0.47 == opt-conc",
         abs(b.toll - 0.47) < 1e-9 and abs(b.toll - (b.optimistic - b.concession)) < 1e-9)
-    chk("clean: depth 10 clipped below affordable",
-        b.n_clipped == 1 and b.n_fills == 1)
+    chk("clean: depth 10 bound the size (cap 'depth')",
+        b.n_clipped_depth == 1 and b.n_clipped_reservation == 0 and b.n_fills == 1)
 
     # 2. rule-18 fabricated-fill plant: a known extra fill moves the ledger by
     #    EXACTLY the computed amount (5 contracts x $0.70 = $3.50 optimistic).
@@ -399,23 +438,35 @@ def _selftest_fold() -> int:
     chk("plant fabricated: ledger moves by EXACTLY 3.50",
         abs((b2.optimistic - b.optimistic) - 3.50) < 1e-9)
 
-    # 3. rule-18 clip plant: depth binds -> size = depth, logged clipped
+    # 3. rule-18 depth-clip plant: book depth binds -> size = depth, cap 'depth'
     f3 = Fill("tsc-wnba-x-3", "ingame", "bid", 0.40, 0.43, T(0),
               depth=3, settlement=1, settled_at=T(3600))
     b3 = fold([f3], seeds={"wnba": 500.0}).books["wnba"]
-    chk("plant clip: size=depth=3 -> opt 501.80, clipped logged",
-        abs(b3.optimistic - 501.8) < 1e-9 and b3.n_clipped == 1)
+    chk("plant depth-clip: size=depth=3 -> opt 501.80, cap 'depth'",
+        abs(b3.optimistic - 501.8) < 1e-9 and b3.n_clipped_depth == 1)
 
-    # 4. bankruptcy plant (51a4103): a loss drives the concession balance <= 0 ->
-    #    HALT line prints and the next entry does not fold.
-    fa = Fill("tsc-wnba-a-1", "ingame", "bid", 0.40, 0.40, T(0),
-              depth=100, settlement=0, settled_at=T(3600))
-    fb = Fill("tsc-wnba-a-2", "ingame", "bid", 0.40, 0.40, T(7200),
-              depth=100, settlement=1, settled_at=T(10800))
-    bk = fold([fa, fb], seeds={"wnba": 5.0}).books["wnba"]
+    # 3b. RESERVATION-clip plant (the Sunday signal): capital binds below depth.
+    #     seed 1.0, cost 0.547 -> affordable 1 << depth 100 -> cap 'capital'.
+    frc = Fill("tsc-wnba-rc-1", "ingame", "bid", 0.50, 0.50, T(0),
+               depth=100, settlement=None, settled_at=None)
+    brc = fold([frc], seeds={"wnba": 1.0}).books["wnba"]
+    chk("plant reservation-clip: capital bound size to 1 (cap 'capital')",
+        brc.n_clipped_reservation == 1 and brc.n_clipped_depth == 0
+        and brc.reserved_conc > 0)
+
+    # 4. bankruptcy plant (51a4103): total ruin drives concession equity to ~0 ->
+    #    HALT line prints and the next entry does not fold. Under reservation the
+    #    book cannot lose more than it holds, so this is the knife-edge terminal
+    #    case: seed = one contract's cost basis, that contract totally lost.
+    seed_ruin = 0.50 + CONCESSION_IN_GAME          # = one bid@0.50 concession cost
+    fa = Fill("tsc-wnba-a-1", "ingame", "bid", 0.50, 0.50, T(0),
+              depth=1, settlement=0, settled_at=T(3600))
+    fb = Fill("tsc-wnba-a-2", "ingame", "bid", 0.50, 0.50, T(7200),
+              depth=1, settlement=1, settled_at=T(10800))
+    bk = fold([fa, fb], seeds={"wnba": seed_ruin}).books["wnba"]
     chk("plant bankruptcy: halted with a visible line",
         bk.halted and bk.halt_line is not None and bk.halt_line.kind == "halt")
-    chk("plant bankruptcy: concession balance <= 0", bk.concession <= 0)
+    chk("plant bankruptcy: concession equity ~0", bk.concession <= HALT_FLOOR)
     chk("plant bankruptcy: post-halt entry did NOT fold",
         bk.n_skipped_halt == 1)
 
