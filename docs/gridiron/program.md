@@ -292,3 +292,36 @@ window called it "a deployment opportunity with an expiry date," which
 manufactures exactly the wrong pressure: A DEPLOYMENT AUTHORISATION IS NOT
 A RESOURCE TO BE CONSUMED BEFORE IT LAPSES.** An open authorisation is
 permission, not inventory.
+
+
+## SUBSTRATE EPOCH — GRIDIRON IS LIVE (2026-09-03)
+
+**The GRIDIRON quoter is deployed and running.** Read from the deployed
+container's own stamp rather than inferred, which is the whole purpose of
+engine identity:
+
+```
+engine_commit  b220d6df5317eb38dea74467df444292514e8ed0
+committer epoch 1788411180      (TZ=UTC git log -1 --format=%ct b220d6d)
+league         nfl
+heartbeat      quote_engine_nfl        (WNBA's `quote_engine` undisturbed)
+```
+
+**This commit is GRIDIRON's SUBSTRATE EPOCH** per amendment 12's cohort
+ruling: NFL cohorts count data first recorded after it. Both engines run
+the same binary and the same frozen-v1 quoting policy; only
+`MERIDIAN_LEAGUE` differs, and league membership is determined by SLUG on
+read and write, with `engine_commit` as the second independent witness.
+
+*A gap closed at deploy time and worth recording: the heartbeat key was a
+fixed constant, so a second engine would have OVERWRITTEN the first's
+heartbeat row and been invisible to `health.py` and checklist §4b — the
+same species as the health-surface blindness this project has hit before.
+Now `service_quote_for(league)`: WNBA keeps the bare historical
+`quote_engine`, NFL beats on `quote_engine_nfl`, and a proof pins them
+apart so a refactor cannot recollapse them.*
+
+**Carried where the deployer meets it: its fills are MODELLED.** The
+operator's hand probe remains the only source of REAL fill data from the
+first slate. And per the deferred-count clause, every claim GRIDIRON makes
+is PROVISIONAL until the first-data count runs on the first slate.
