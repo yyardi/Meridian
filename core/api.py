@@ -2261,6 +2261,9 @@ def wallet_status() -> dict:
             "books": {slug: _book(b) for slug, b in historical.books.items()},
             "depth_absent": _absent(meta["historical_absent"]),
         },
+        # Anomaly (should be 0): NULL own-stamp at/after the own-stamp epoch —
+        # a broken invariant, counted out of the join. Nonzero = investigate.
+        "post_epoch_null_levels": meta.get("post_epoch_null_levels", 0),
         # Registered caveat (term 3): depth-sized numbers are per-fill optimistic
         # (recorded depth is others' resting size holding time priority).
         "caveat": ("instrument not evidence; depth-sized fills are per-fill "

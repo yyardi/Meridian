@@ -29,9 +29,11 @@ from core.storage import get_sessionmaker
 from core.storage.base import get_engine
 
 UTC = dt.timezone.utc
-# Pre-08-07 era: this is when depth was fetched together with the snapshot, so
-# the fetched-together rows legitimately carry a NULL own-stamp.
+# Pre-epoch era (< DEPTH_OWNSTAMP_EPOCH = 2026-08-07): depth was fetched together
+# with the snapshot, so a NULL own-stamp legitimately means "parent is exact".
 T0 = dt.datetime(2026, 8, 3, 18, 0, 0, tzinfo=UTC)
+# Post-epoch: a NULL own-stamp here is a broken-invariant ANOMALY, gated out.
+T_POST = dt.datetime(2026, 8, 20, 18, 0, 0, tzinfo=UTC)
 TAG = "test-depthjoin"
 
 
@@ -69,6 +71,8 @@ def session():
             "0.6000", T0 + dt.timedelta(seconds=8))
         _mk(s, f"{TAG}-wrongpx", T0, "0.7000", None,
             "0.5500", T0 + dt.timedelta(seconds=5))          # level price != quote
+        _mk(s, f"{TAG}-postepoch", T_POST, "0.5000", None,   # NULL own AT/AFTER epoch
+            "0.5000", T_POST + dt.timedelta(seconds=5))      # -> anomaly, gated out
         s.commit()
         yield s
         s.rollback()
@@ -85,7 +89,7 @@ def session():
 
 @pytest.fixture(scope="module")
 def by_slug(session):
-    fills, _, _ = _load_fills_with_depth(session, staleness_s=DEPTH_STALENESS_S)
+    fills, _, _, _ = _load_fills_with_depth(session, staleness_s=DEPTH_STALENESS_S)
     return {f.market_slug: f for f in fills if f.market_slug.startswith(TAG)}
 
 
@@ -120,12 +124,29 @@ def test_exact_price_discipline_untouched(by_slug):
     assert f.depth == 0.0
 
 
+def test_post_epoch_null_is_gated_out_not_inherited(by_slug):
+    """A NULL own-stamp AT/AFTER the epoch is an anomaly: counted out, not
+    inherited (D's ruling — inheriting would backdate a row that isn't
+    fetched-together, and the staleness counter is blind to that)."""
+    f = by_slug[f"{TAG}-postepoch"]
+    assert f.depth == 0.0                        # gated out, NOT recovered
+    assert f.depth_parent_stamped is False
+
+
+def test_post_epoch_null_is_counted_as_anomaly(session):
+    """The gated-out post-epoch NULL is tallied loudly, not silently dropped."""
+    _, _, _, n_post_epoch_null = _load_fills_with_depth(
+        session, staleness_s=DEPTH_STALENESS_S)
+    assert n_post_epoch_null >= 1               # the -postepoch level
+
+
 def test_absent_meta_measures_the_relaxation(session):
     """The parent-stamp relaxation is counted and its staleness surfaced."""
-    fills, _, _ = _load_fills_with_depth(session, staleness_s=DEPTH_STALENESS_S)
+    fills, _, _, _ = _load_fills_with_depth(session, staleness_s=DEPTH_STALENESS_S)
     mine = [f for f in fills if f.market_slug.startswith(TAG)]
     meta = _absent_meta(mine)
-    # Two sized (together + ownstamp); exactly one via a parent stamp.
+    # Two sized (together + ownstamp); exactly one via a parent stamp. The
+    # post-epoch NULL is gated out (depth 0), so it is not among the sized.
     assert meta["n_depth_sized"] == 2
     assert meta["n_depth_parent_stamped"] == 1
     assert meta["depth_parent_stamped_rate"] == pytest.approx(0.5)
