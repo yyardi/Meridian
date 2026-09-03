@@ -74,3 +74,44 @@ services:
       # the growth curve's resolution.
       MERIDIAN_RPS: "2"
     command: ["python", "-m", "core.feeds.stats_sweeper", "--interval", "3600"]
+
+  # ── CFB RECORDING ONLY (2026-09-03). NOT a program, NOT a quoter. ──
+  # The operator's focus ruling stands: one league gets modelling attention.
+  # But RECORDING is not attention — it is optionality, and the permanent-
+  # absence lesson is absolute: of 99 hand-traded markets, the 51 outside
+  # wnba have no tape and never will, because nothing was recording them.
+  # Any league we don't record today is a league whose fills we can never
+  # calibrate later.
+  #
+  # Why CFB specifically, measured 2026-09-03: the venue lists 100 CFB
+  # events inside 4 days against NFL's 16/week — SIX TIMES the game count,
+  # 10,633 markets, and 11 of 36 sampled imminent markets have already
+  # traded ($65k notional across the sample). Individually thinner than
+  # NFL's board, which for a maker may be the POINT: tonight's finding is
+  # that queue-ahead is the binding constraint, and thin books have short
+  # queues. Many shallow boards may beat few deep ones. That is a testable
+  # claim and Saturday is the test — but only if the tape exists.
+  cfb-recorder:
+    build: .
+    container_name: meridian-cfb-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: cfb
+      MERIDIAN_RPS: "4"
+
+  cfb-live-recorder:
+    build: .
+    container_name: meridian-cfb-live-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: cfb
+      MERIDIAN_RPS: "4"
+    command: ["sh", "-c", "alembic upgrade head && python -m core.live_recorder --interval 1.0"]

@@ -107,6 +107,10 @@ def check_containers() -> list[Check]:
         # Trade-tape trajectory sweepers (hourly, stats only). The WNBA one
         # polls an empty board until listings return — running is correct.
         "meridian-nfl-stats-sweeper": "GRIDIRON: NFL volume trajectory",
+        # CFB: recording only, no program, no quoter (2026-09-03) — 100
+        # games/Saturday against NFL's 16/week; optionality, not attention.
+        "meridian-cfb-recorder": "CFB pregame board (recording only)",
+        "meridian-cfb-live-recorder": "CFB live ticks (1s, recording only)",
         "meridian-wnba-stats-sweeper": "WNBA volume trajectory (empty board "
                                        "until ~Sept 17)",
     }
