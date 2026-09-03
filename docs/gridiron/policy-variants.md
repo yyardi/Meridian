@@ -363,6 +363,38 @@ as an empirical regularity — it improves per-fill P&L in all three spread band
 — not as a mechanism.** Effective lean is `min(k, s − tick)`; the post-only
 clamp makes nominal k and effective k differ in tight books.
 
+## ★ FLATTEN's inventory input — a pre-implementation constraint ★
+
+**FLATTEN is the first STATEFUL policy this program has proposed.** Its lean is
+a function of inventory, so **inventory stops being a scoreboard and becomes a
+controller input.** That is the entire reason phantom exclusion repaired every
+v1 analysis and failed on FLATTEN.
+
+**v1 is stateless with respect to fills** — `core/quote/engine.py:200-225`
+requotes at `ob.bid`/`ob.ask` unconditionally, and there is no inventory
+variable anywhere in `core/quote`. So phantoms can corrupt v1's MEASUREMENT and
+cannot corrupt its POLICY. **FLATTEN breaks that immunity**, and if its counter
+is fed by the naive fill model **the engine will lean to flatten positions it
+does not hold — invisibly, because the shadow fill model and the shadow
+inventory agree with each other perfectly. A self-consistent wrong answer, which
+is the kind that survives review.** On the WNBA tape the two differ by 63.9%.
+
+**THE RULE: the P&L record and the position counter are DIFFERENT OBJECTS with
+different truth conditions.** One is the study's accounting convention; the
+other is a claim about what we own. **They must not be fed by a single fill
+stream** — the position counter carries its own predicate, and that predicate is
+the phantom test, so a fill can be SCORED while failing to MOVE INVENTORY.
+
+- **SHADOW (Saturday):** inventory is fed **only by fills that survive the
+  phantom test** — the book-inserted model, never the naive mid-cross one.
+- **LIVE (if ever):** inventory comes from **venue order confirmations**, full
+  stop.
+
+*Free known-answer test, from D's validation:* at k=0 the lean is inert, so a
+book-inserted run and a naive run **must** select an identical fill set — verified
+at 4,321 fills and −$156.35 to the penny. Any engine that can run at k=0 gets
+that equality as a permanent assertion on the inventory path.
+
 ## Recording requirement
 
 `shadow_quote_fills` keeps `mid_at_fill` but discards the ask the engine held at
