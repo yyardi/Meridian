@@ -49,6 +49,13 @@ MONTHLY_BAR = 100.0              # month-to-date bar
 #: concession arm. Same pins as roundtrip_ledger.py / scorecard.py / fills.py.
 CONCESSION_IN_GAME = 0.047
 CONCESSION_PREGAME = 0.021
+#: Depth-at-fill-time staleness bound (D's ffill-hazard rule). Depth samples on
+#: a slower loop than price and its own stamp (book_levels.captured_at, NOT the
+#: parent snapshot's) is the authority; a level older than this before the fill,
+#: or NULL-stamped (Supabase-era rows), is counted OUT — never inherited/ffill'd.
+#: A too-tight bound simply raises the clip-to-zero rate, which is printed, so
+#: the artifact is measurable rather than hidden.
+DEPTH_STALENESS_S = 120.0
 #: Bankruptcy halt = OPERATIONAL ruin, not literal ruin (manager ruling,
 #: registered; supersedes the epsilon-at-zero version). Under reservation the
 #: book can never realize a loss larger than its equity, so concession equity
@@ -332,6 +339,177 @@ def fold(fills: list[Fill], *, seeds: dict[str, float] | None = None,
 
 
 # --------------------------------------------------------------------------- #
+#  DB gather — build the Fill list from the live tables and fold (the --db path)
+# --------------------------------------------------------------------------- #
+
+def _effective_seeds(session) -> dict[str, float]:
+    """Per-league seed = the amount of the most recent control line (birth seed
+    or operator reset/resplit). Append-only, so 'most recent' is the effective
+    bankroll basis; leagues with no line fall back to SEED_PER_LEAGUE."""
+    from sqlalchemy import text
+    rows = session.execute(text("""
+        SELECT DISTINCT ON (league) league, amount
+        FROM paper_wallet_control
+        WHERE kind IN ('seed','reset','resplit')
+        ORDER BY league, effective_at DESC
+    """)).all()
+    return {r.league: float(r.amount) for r in rows}
+
+
+def _load_fills_with_depth(
+    session, *, staleness_s: float = DEPTH_STALENESS_S,
+) -> tuple[list[Fill], int, int]:
+    """shadow_quote_fills + the recorded book depth at each fill's quoted level.
+
+    Depth-join (D's ruling, registered 6d4ce04): book_levels is ONE YES-frame
+    book, so a BID quote joins side='bid' and an ASK joins side='offer', both at
+    price == quote_price (4dp exact; conservative-zero otherwise). Keyed on
+    book_levels.captured_at — depth samples on a slower loop and its own stamp is
+    the authority — with the staleness bound; NULL-stamped rows are counted OUT,
+    never inheriting the parent snapshot's stamp. Returns (fills, n_depth_absent,
+    n_total); depth absent (exact level not recorded fresh) -> depth 0 -> the
+    fill clips to zero, and that RATE is printed so the tick-neighbor artifact is
+    measurable (never a silent merge)."""
+    import bisect
+    from collections import defaultdict
+
+    from sqlalchemy import text
+
+    rows = session.execute(text("""
+        SELECT market_slug, game_id, regime, side, quote_price, mid_at_fill,
+               filled_at, settlement, settled_at
+        FROM shadow_quote_fills ORDER BY filled_at
+    """)).all()
+    if not rows:
+        return [], 0, 0
+
+    markets = sorted({r.market_slug for r in rows})
+    tmin = min(r.filled_at for r in rows) - dt.timedelta(seconds=staleness_s)
+    tmax = max(r.filled_at for r in rows)
+    lvls = session.execute(text("""
+        SELECT ms.market_slug AS market_slug, bl.side AS side,
+               bl.price AS price, bl.quantity AS quantity,
+               bl.captured_at AS captured_at
+        FROM book_levels bl
+        JOIN market_snapshots ms ON ms.id = bl.snapshot_id
+        WHERE ms.market_slug = ANY(:markets)
+          AND bl.side IN ('bid','offer')
+          AND bl.captured_at IS NOT NULL          -- never inherit the parent stamp
+          AND bl.captured_at >= :tmin AND bl.captured_at <= :tmax
+    """), {"markets": markets, "tmin": tmin, "tmax": tmax}).all()
+
+    series: dict[tuple, list] = defaultdict(list)
+    for lv in lvls:
+        series[(lv.market_slug, lv.side, round(float(lv.price), 4))].append(
+            (lv.captured_at, float(lv.quantity)))
+    index: dict[tuple, tuple] = {}
+    for k, s in series.items():
+        s.sort()
+        index[k] = ([t for t, _ in s], [q for _, q in s])
+
+    fills: list[Fill] = []
+    n_absent = 0
+    for r in rows:
+        book_side = "bid" if r.side == "bid" else "offer"
+        key = (r.market_slug, book_side, round(float(r.quote_price), 4))
+        depth = 0.0
+        hit = index.get(key)
+        if hit is not None:
+            times, qtys = hit
+            pos = bisect.bisect_right(times, r.filled_at) - 1  # newest <= fill
+            if pos >= 0 and times[pos] >= r.filled_at - dt.timedelta(
+                    seconds=staleness_s):
+                depth = qtys[pos]
+        if depth <= 0:
+            n_absent += 1
+        fills.append(Fill(
+            market_slug=r.market_slug, regime=r.regime, side=r.side,
+            quote_price=float(r.quote_price), mid_at_fill=float(r.mid_at_fill),
+            filled_at=r.filled_at, depth=depth,
+            settlement=(None if r.settlement is None else int(r.settlement)),
+            settled_at=r.settled_at))
+    return fills, n_absent, len(rows)
+
+
+def _load_mids(session, markets) -> dict[str, float]:
+    """Latest recorded mid per market — for marking OPEN positions (term 4)."""
+    from sqlalchemy import text
+    markets = list(markets)
+    if not markets:
+        return {}
+    rows = session.execute(text("""
+        SELECT DISTINCT ON (market_slug) market_slug, best_bid, best_ask
+        FROM market_snapshots
+        WHERE market_slug = ANY(:m)
+          AND best_bid IS NOT NULL AND best_ask IS NOT NULL
+        ORDER BY market_slug, captured_at DESC
+    """), {"m": markets}).all()
+    return {r.market_slug: (float(r.best_bid) + float(r.best_ask)) / 2.0
+            for r in rows}
+
+
+def gather(session, *, staleness_s: float = DEPTH_STALENESS_S):
+    """Fold the live tables into the wallet. Returns (WalletResult, meta) where
+    meta carries the clip-to-zero (depth-absent) count/rate D requires printed."""
+    seeds = _effective_seeds(session)
+    fills, n_absent, n_total = _load_fills_with_depth(
+        session, staleness_s=staleness_s)
+    open_markets = {f.market_slug for f in fills if f.settlement is None}
+    mids = _load_mids(session, open_markets)
+    result = fold(fills, seeds=seeds, mids=mids)
+    meta = {
+        "n_fills": n_total,
+        "depth_absent": n_absent,
+        "depth_absent_rate": (n_absent / n_total) if n_total else 0.0,
+        "staleness_s": staleness_s,
+        "seeds": seeds,
+    }
+    return result, meta
+
+
+def run_db() -> int:
+    from core.storage.base import get_engine
+    from core.storage import get_sessionmaker
+    try:
+        with get_sessionmaker(get_engine())() as s:
+            result, meta = gather(s)
+    except Exception as exc:  # noqa: BLE001 — DB may be unreachable from here
+        msg = str(exc).lower()
+        if ("does not exist" in msg or "could not connect" in msg
+                or "connection refused" in msg):
+            print("wallet tables not present / DB unreachable from here — the "
+                  "wallet runs where shadow_quote_fills + book_levels live "
+                  "(main checkout / prod).")
+            return 0
+        raise
+    print(f"paper wallet — {meta['n_fills']:,} fills; depth-absent (clip-to-zero) "
+          f"{meta['depth_absent']:,} = {meta['depth_absent_rate']:.1%} "
+          f"(exact-4dp level not recorded fresh within {meta['staleness_s']:.0f}s)")
+    if result.refused:
+        print(f"REFUSED (unknown league, not folded): {len(result.refused)} fills")
+    for slug, b in sorted(result.books.items()):
+        drawdown = 1.0 - (b.concession / b.seed) if b.seed else 0.0
+        clip_rate = (b.n_clipped_reservation / b.n_fills) if b.n_fills else 0.0
+        print(f"\n[{slug}] seed ${b.seed:.2f}   fills {b.n_fills} "
+              f"(depth-clip {b.n_clipped_depth}, capital-clip "
+              f"{b.n_clipped_reservation}, zero {b.n_zero})"
+              + ("   *** HALTED ***" if b.halted else ""))
+        print(f"  optimistic  ${b.optimistic:10.2f}   P&L ${b.optimistic - b.seed:+.2f}"
+              f"   (MTD bar ${MONTHLY_BAR:.0f})")
+        print(f"  concession  ${b.concession:10.2f}   P&L ${b.concession - b.seed:+.2f}"
+              f"   drawdown {drawdown:.1%}   capital-clip rate {clip_rate:.1%}")
+        print(f"  toll (cumulative concession cost) ${b.toll:.2f}   "
+              f"reserved ${max(b.reserved_conc, 0.0):.2f}   "
+              f"available ${b.available_to_size:.2f}")
+        print(f"  UNREALIZED (open, not in realized): optimistic "
+              f"${b.unrealized_opt:+.2f} / concession ${b.unrealized_conc:+.2f} "
+              f"({b.n_open_marked} marked, {b.n_open_unmarkable} no-mid)")
+        if b.halt_line is not None:
+            print(f"  HALT: {b.halt_line.note}")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 #  --selftest: the primitives, pure (the fold's rule-16 known-answer on the Aug
 #  pin lands with the DB gather). These must hold before any dollar is folded.
 # --------------------------------------------------------------------------- #
@@ -577,6 +755,8 @@ def _selftest_rule16() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--db", action="store_true",
+                    help="fold the live tables and print the scoreboard")
     args = ap.parse_args()
     if args.selftest:
         rc = _selftest_primitives()
@@ -585,6 +765,8 @@ def main() -> int:
         print()
         rc |= _selftest_rule16()
         return rc
+    if args.db:
+        return run_db()
     print(__doc__)
     return 0
 
