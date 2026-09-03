@@ -327,8 +327,71 @@ Re-run with the order actually inserted into the book (rule 24's real remedy):
 | 3¢ | −194.18 | −147.81 | −2.39¢ | +0.95 [−6.93, +8.82] |
 | 5¢ | −207.20 | −163.84 | −2.57¢ | −0.83 [−8.80, +7.14] |
 
-**RETAINED:** k=1¢ is still the best value on the board; improvement over k=0 is
-**+$30.43**, not the +$17.55 previously recorded.
+**SUPERSEDED — see the FINAL k-curve below; the +$30.43 figure came from a
+substrate missing 25% of the board.**
+
+### FINAL k-curve — insertion basis, FULL substrate (209/209 markets)
+
+**This is the third value recorded tonight and the only one with both fixes on
+complete coverage. The sequence is part of the record:**
+
+| | method | substrate | improvement over k=0 | positive region |
+|---|---|---|---:|---|
+| 1st | exclusion | partial (147/209) | +$17.55 | {1¢} |
+| 2nd | insertion | partial (147/209) | +$30.43 | {1¢, 2¢, 3¢} |
+| **3rd** | **insertion** | **full (209/209)** | **+$10.10** | **{1¢}** |
+
+| k | fills | P&L | per-fill | per-game (clustered) |
+|---:|---:|---:|---:|---|
+| 0¢ | 6,403 | −188.06 | −2.94¢ | +0.00 [+0.00, +0.00] |
+| **1¢** | 8,071 | **−177.96** | **−2.20¢** | **+0.78 [−3.77, +5.33]** |
+| 2¢ | 8,899 | −204.95 | −2.30¢ | −1.30 [−6.69, +4.10] |
+| 3¢ | 9,244 | −215.94 | −2.34¢ | −2.14 [−7.85, +3.56] |
+| 5¢ | 9,501 | −235.97 | −2.48¢ | −3.69 [−9.47, +2.10] |
+
+**THE COVERAGE HOLE:** the tick source used for the first two runs covered
+**147 of the 209 markets that have fills** — 62 markets and 4,412 fills, 25% of
+the population, absent entirely. Classifying on the union of all four tick
+sources reproduces the manager's independent count **to the row** (17,339
+classified, 63.9% phantom, 6,255 real), and the phantom share is stable across
+the two substrates (62.6% vs 63.9%), so **the headline was never at risk** — but
+the k-curve was, because it is a difference between policies and the missing
+quarter was not missing at random.
+
+**CONVERGENCE IMPROVED once coverage was right:** D's replay yields 6,403 fills
+at −2.94¢ against the manager's 6,255 at −3.38¢ — **population within 2%,
+per-fill economics within half a cent**, from two independently written
+instruments.
+
+**k=0 known-answer identity still holds exactly at full coverage: 6,403 fills,
+−$188.06, both methods, to the penny.** Coverage is now asserted and printed on
+every run, so a grid that silently omits markets cannot answer a different
+question again.
+
+**DISPOSITION: k=1¢ retained — structurally justified, statistically
+unresolved, deferred to NFL volume.** The case is WEAKER than either earlier
+number: **+$10.10 not +$30.43**, per-game **+0.78 [−3.77, +5.33]** spanning
+zero, **every cell negative per fill at every k, best −2.20¢.**
+
+**A second, smaller defect found on the way, with no effect on any published
+number:** an ASOF join negated timestamps to work around DuckDB's direction and
+landed on `captured_at >= filled_at` — **a forward join whose one-sided age
+filter admitted unbounded lookahead**, worst case a book from 25 hours *after*
+the fill. 123 fills on the partial substrate; zero on the union substrate, where
+every fill has a tick at its own timestamp. Fixed to a backward join with an
+assert, and the pattern had been propagated across several scripts.
+
+**★ THE PROCESS LESSON, which is worth more than the parameter ★**
+The first answer was **right for the wrong reason**. The retraction **fixed the
+reason and, on incomplete data, produced a wrong conclusion — and arrived with
+MORE confidence than the first, because it had a better derivation.**
+**Fixing defects one at a time and broadcasting after each fix manufactures a
+sequence of confident wrong numbers, each better-derived than the last.** After
+finding the insertion defect, the right move was to ask *what else is wrong*
+before reporting. **And the manager compounded it by publishing to main inside a
+twenty-minute window twice, on a single unreplicated report each time** — speed
+of correction is not a substitute for waiting until a correction is complete.
+
 
 **RETRACTED:** the claim that the positive region *"collapses from {1¢, 2¢, 3¢}
 to {1¢} alone"*. That was an artifact of the exclusion method. **Under insertion

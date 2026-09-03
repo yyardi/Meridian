@@ -128,7 +128,9 @@ does not remove them from the POLICY — the simulator's inventory counted them,
 and inventory steers the lean, so phantom fills chose quote paths that exclusion
 cannot undo. **Re-run with the order inserted into the book, all of 1/2/3¢ beat
 k=0 and the curve is a clean monotone decay from a peak at 1¢.** k=1¢ is still
-best (+$30.43 over k=0, not +$17.55). **The dramatic finding was the artifact;
+best, but **the improvement figure moved twice more: +$30.43 was itself measured
+on a substrate missing 25% of the board; at full coverage it is +$10.10 and the
+positive region is {1¢} alone.** See the registration's FINAL k-curve. **The dramatic finding was the artifact;
 the undramatic one was closer to right.** Known-answer check: at k=0 the two
 methods must and do agree to the penny (4,321 fills, −$156.35). **k=1¢ stands as registered — hardened
 in the sense of surviving the artifact test, NOT in the sense of being proven
