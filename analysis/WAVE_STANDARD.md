@@ -182,6 +182,16 @@ before merge**, and the merge is refused if it would revert one.
    the pointer against their own code before anything was built on it.
    (Proposed by the research agent; elevated by the manager same day.)
 
+   *Corollary — EVIDENTIARY LOAD (D's formulation, 2026-09-03): standards
+   scale with what a number is asked to CARRY. A live unpinned read is
+   SUFFICIENT TO STOP a claim and INSUFFICIENT TO FOUND one.* This resolves
+   the standing tension between "verify against the venue" and "pin
+   everything," which have read as competing duties: they are not, once the
+   standard is indexed to the claim's load. **Specimen, 2026-09-03: a live
+   prod read killed its own author's founding premise, and would not have
+   been permitted to establish one.** Declining to build needs less
+   provenance than building.
+
 18. **The synthetic plant: every mutation suite carries at least one
    SYNTHETIC PLANT asserting an exact expected value — a boundary instant, a
    known coefficient, a planted count — never only recovery-on-real-data.** A

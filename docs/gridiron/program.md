@@ -197,6 +197,30 @@ night it matters** — so the thing the comparison tried to settle is
 answerable only by the experiment, which is a cleaner outcome than either
 version of the claim.
 
+**THE TWO READS ARE A REPLICATION AND RECONCILE NUMERICALLY.** The manager
+sampled 40k snapshots (T-1→T-5d median 110, under-24h 450); the research
+agent bucketed finer (2–4d 50 / 1–2d 110 / 0.5–1d 110 / <0.5d 781).
+**Different methods, same conclusion, and the pooled 110 is exactly what
+the 50-and-110 buckets pool to.** A future reader meeting both numbers
+should be told they AGREE, not left to choose — the withdrawal is robust to
+either query being wrong.
+
+**EXCLUDED FROM THE RECORD — the totals series is noise and must not
+travel:** it runs 600 → 50 → 77 → 570 across buckets, which is not a depth
+curve. Only the SPREAD series (50 → 110 → 110 → 781, monotone and physical)
+should be quoted, and the verdict rests on its clean half. Flagged because
+the 600 would otherwise be cited someday as a WNBA depth figure.
+
+**THE SHARPER REASON THE QUESTION WENT TO THE PROBE (D's, replacing "we
+lacked matched bases"): WE LACKED THE RIGHT REGIME ENTIRELY.** WNBA depth
+grows ~15× from a few days out to inside half a day, and **the program
+quotes IN-PLAY — past the end of every pregame bucket either read
+measured.** So even a perfect pregame match would extrapolate across a 15×
+gradient into a regime no pregame data touches. **No export fixes that.**
+The probe's queue-depth column is not merely the best available
+instrument — it is the ONLY one that can measure the quantity, because
+in-play NFL depth does not exist until an NFL game is in play.
+
 **Consequence: GRIDIRON starts with NO structural-advantage story, which is
 the correct state.** What survives is the refutation (NFL is not a
 wider-margin board) and the game-count argument, which needs no depth
