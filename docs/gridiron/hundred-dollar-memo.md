@@ -46,12 +46,22 @@ are the mid-cross rule's output, not venue executions.**
 
 **The real-fill count, run rather than assumed (rule 20 applied to the claim
 "we have none"): FIVE real resting limit orders exist** (`orders`, Aug 5–7,
-all `would_rest=true`, all at the touch): **3 EXPIRED unfilled, 2 FILLED —
-and both fills were PARTIAL (2.47 and 1.46 contracts).** So the honest
-statement is not "no real fill data" but "n=5, two-fifths filled, both
-partially" — statistically worth nothing on its own, and the partial fills
-are direct evidence of the queue mechanism: the market reached our price and
-consumed only part of the order.
+all `would_rest=true`, all at the touch): **3 EXPIRED unfilled, 2 FILLED IN
+FULL.** So the honest statement is "n=5, two-fifths filled completely" —
+statistically worth nothing on its own, and **mild evidence the queue was
+NOT binding at these sizes**, which is the OPPOSITE direction from the
+caveat above. The caveat stands on the modelling argument alone and never
+needed this; these five orders are not evidence for it.
+
+*Correction, and it is the specimen the clause below is named for
+(2026-09-03, manager's error, caught by the research agent):* the first
+version of this paragraph called both fills PARTIAL and cited them as
+direct evidence of the queue mechanism. **They fill 2.4700/2.4778 and
+1.4600/1.4645 — 99.69% each. Order quantities carry 4 decimals and the
+venue reports fills at 2, so the residuals are DECIMAL TRUNCATION, not
+queue truncation**, and the `fill_status` column said FILLED all along. The
+error was reading a numerator without its denominator and letting a
+quantity outvote the status field beside it.
 
 **(a) GRIDIRON maker capture — the ONLY candidate whose ceiling clears the
 bar on the 2026 calendar.** The arithmetic: at +0.5¢/contract-fill net,
