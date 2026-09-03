@@ -153,3 +153,46 @@ variance reduction and the tail control. Three independent findings converge
 on the one capability the engine does not have. **If this program names a
 single build priority, it is flattening — and the reason is no longer "it
 might earn more" but "it is what lets the book be sized at all."**
+
+## ADDENDUM 3 (2026-09-03) — FLATTENING'S P&L CLAIM IS UNRESOLVED TOO
+
+Tested at the same standard that killed the inventory cap, and it comes back
+the same way. Whole-book policy simulation, game-clustered: **+$76 at a 1¢
+lean, decaying through 2¢/3¢, NEGATIVE by 5¢** — direction consistent and
+"small-lean-or-nothing" reproduced independently — but **only 5 of 9 games
+improve and the per-game CI spans zero at every k** (+8.46 [−12.59, +29.52]
+at best).
+
+**The subset test overstated by ~3×.** The +1.44¢/round-trip figure came
+from fills selected on having flattened; the whole-book policy earns ≈+0.5¢
+per fill. That gap IS the selection effect, now measured rather than
+suspected — and it is the correction owed to anyone (the operator included)
+who was told the +1.44¢ number without it.
+
+**THE BUILD PRIORITY DOES NOT CHANGE, BUT ITS JUSTIFICATION DOES.**
+Flattening remains the top build item **for arithmetic reasons, not P&L
+ones**: it frees concurrent capital (the only route past unit size on a
+$1,000 wallet) and it shrinks the inventory that orders the tail. Both are
+arithmetic and both survive the null — exactly as the risk limit's
+justification did. **Its earnings claim is DEFERRED to NFL volume.**
+
+Stated the way it should be repeated: *we tested our favourite lever at the
+standard that killed the previous one, it came back unresolved, and we are
+building it for the reasons that do not depend on the number.*
+
+## DESCRIPTIVE QUESTION + ITS PROHIBITION (kept physically together, deliberately)
+
+**Question, testable on data we own:** do far rungs on this venue expire
+worthless often enough to be systematically overpriced — the
+favourite-longshot bias? It surfaced as a *profitable simulator bug* ("quote
+to get short prints money"), which is the most suspicious possible origin
+for an idea.
+
+**Prohibition, in the same paragraph so it can never be quoted without it:
+selling far rungs is the most ruin-prone strategy available to us, and a
+$1,000 wallet with a stated survival condition cannot carry it.** Per-contract
+loss is bounded at $1, but a naked short-tail book concentrates that bound
+across many positions that all resolve the same way on the day the tail
+lands. If the calibration says far rungs are overpriced, the legitimate uses
+are **correcting our fair value** or **adjusting quotes inside an
+inventory-bounded book** — never a naked short-tail position.
