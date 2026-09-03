@@ -466,6 +466,71 @@ numbered as a fourth. (Research agent's cut, 2026-09-03.)
    fails.** (B's formulation and the manager's framing; the precedent line
    and the cut are the research agent's.)
 
+24. **THE COUNTERFACTUAL MUST CONTAIN ITSELF.**
+   **A simulation of an action must include that action's effect on the
+   environment it simulates.** Otherwise it scores a world in which you are
+   simultaneously *present enough to benefit* and *absent enough not to
+   perturb* — and that world does not exist.
+
+   *WHY 21-23 CANNOT CATCH IT.* Nothing is mislabelled and no reading is
+   misinterpreted. **Every check passes because the model IS coherent — it is
+   simply a model of a world we are not in.** Rules 21-23 guard the READING of
+   real data; this guards the CONSTRUCTION of imagined data, which is why it
+   sits outside their header rather than under it.
+
+   *ACTION: enumerate your action's effects on the environment, and insert
+   them BEFORE scoring.*
+
+   *SPECIMEN — the shadow fill model, measured 2026-09-03. It is not a rounding
+   error.* The model rests a bid at B against a recorded book that does not
+   contain it. **That absence is exactly what lets the recorded mid fall to
+   B**: in reality a live bid at B holds best_bid >= B, so the mid cannot reach
+   our own price while we are unfilled — the only route to a fill is the ask
+   coming down to us, which IS the real fill condition. The simulator
+   therefore books precisely the fills our own presence would have prevented.
+   Define **PHANTOM := mid <= B while ask > B**. Measured over 17,032 fills
+   (book at the fill instant, 100% coverage; quotes born at the touch
+   17,032/17,032 = 100.0%, so B = best_bid exactly):
+
+   - **PHANTOM SHARE 63.9%** (10,886 of 17,032; per-game median 63.4%, range
+     49.5-80.0%). On bid-side phantoms the ask sat a median **2.0c ABOVE our
+     bid** (p90 6.0c) — nobody was offering anywhere near us, and the model
+     filled us anyway.
+   - **Phantom capture max = +0.000c** — never-positive by construction,
+     confirmed to the cent across all 10,886.
+   - **TRUE CAPTURE IS -2.31c [-2.47, -2.14], NOT THE LEDGERED -1.60c.** The
+     ledger blends 6,146 real fills at -2.31c with 10,886 artifacts at -1.20c.
+     **Every capture number this program owns inherits that blend.**
+
+   *THE FIX IS ONE LINE AND MAKES MODEL AND REALITY COINCIDE:* insert the order
+   into the book before scoring — `best_bid -> max(best_bid, B)` — which
+   collapses the phantom rate to zero.
+
+   *THE TRAP THAT MAKES IT WORSE THAN A CONSTANT OFFSET: the artifact is not
+   uniform, so it manufactures spurious RANKINGS.* The manager derived that the
+   phantom rate should FALL with quoted spread (a phantom needs the bid to drop
+   between s/2 and a full s). **Measured, it RISES monotonically: 43.6% at
+   <=1.5c to 78.9% at >5.5c — because spread is not exogenous.** A wide quoted
+   spread marks a thin, fragile book; the required drop grows with s, but the
+   available drop grows faster. And since phantoms (-1.20c) are LESS bad than
+   real fills (-2.31c), **more phantoms means more upward flattery** — so
+   wide-spread policies are flattered and tight-spread-avoiding ones
+   handicapped, from one cause, in one slate. **A casualty, retracted the same
+   day:** the finding that per cycle quoted "wider is better, >10c the only
+   non-negative cell" was computed across exactly the width axis whose phantom
+   share runs 44% -> 79%. On real fills only it REVERSES: **-1.67c at <=1.5c,
+   worsening to -3.80c at >5.5c.** Quoting wide looked better only because
+   quoting wide manufactures more artifacts.
+
+   *RECORDING REQUIREMENT, so this stays checkable:* `shadow_quote_fills`
+   keeps `mid_at_fill` but DISCARDS the ask the engine held at the same
+   instant, so the phantom condition is not computable from the row. Record
+   **the touch at fill (best_bid_at_fill, best_ask_at_fill) from the same
+   observation the fill was judged against** — not re-joined from the tape
+   later, which would re-derive a value the engine already had and threw away.
+   (Research agent's rule and mechanism; D's measurement, refutation of the
+   manager's direction, and same-day self-retraction; A's schema route.)
+
    *OPERATIONAL TEST, concrete enough to build:* a zero is evidence only
    when the instrument has demonstrated it can return non-zero ON THIS
    SUBSTRATE — a positive control. **Every zero-reporting monitor should
