@@ -49,13 +49,44 @@
   .trigger{color:var(--neg);font-weight:600;margin-top:6px}
   .empty{color:var(--faint);padding:24px;text-align:center}
   .asof{color:var(--faint);font-size:10px;margin-top:16px}
+
+  /* ── Program × strategy nav (2026-09-03, operator: "Meridian is the WNBA,
+     Gridiron is NFL/CFB, Pulse is directional and Quote is market making").
+     The old flat nav listed three pages and implied nothing about how the
+     system is organised. Two axes, stated: WHICH BOOK (sport program) and
+     WHICH STRATEGY (what it does). ── */
+  .navwrap{display:flex;flex-direction:column;gap:2px}
+  .navrow{display:flex;align-items:baseline;gap:8px}
+  .navlbl{color:var(--faint);font-size:8.5px;letter-spacing:.1em;
+          text-transform:uppercase;min-width:64px}
+  .navrow a{color:var(--faint);text-decoration:none;font-size:11px;
+            padding:2px 8px;border-radius:3px}
+  .navrow a.on{color:var(--txt);background:#1a1f2b}
+  .navrow a:hover{color:var(--txt)}
+  .navrow .prog{font-weight:700;letter-spacing:.06em}
+  .navrow .kind{font-size:9px;color:var(--faint);letter-spacing:.04em}
 </style>
 </head>
 <body>
 <header>
   <span class="brand">MERIDIAN</span>
-  <nav><a href="/quote">quote</a><a href="/wallet" class="on">wallet</a>
-       <a href="/analytics">analytics</a></nav>
+  <div class="navwrap">
+    <div class="navrow">
+      <span class="navlbl">book</span>
+      <a class="prog " href="/?program=meridian">MERIDIAN</a><span class="kind">basketball · WNBA</span>
+      <a class="prog " href="/?program=gridiron">GRIDIRON</a><span class="kind">football · NFL + CFB</span>
+    </div>
+    <div class="navrow">
+      <span class="navlbl">strategy</span>
+      <a class="" href="/">PULSE</a><span class="kind">directional — takes a side</span>
+      <a class="" href="/quote">QUOTE</a><span class="kind">market making — quotes both</span>
+    </div>
+    <div class="navrow">
+      <span class="navlbl">books</span>
+      <a class=" on" href="/wallet">WALLET</a><span class="kind">$1,000 paper scoreboard</span>
+      <a class="" href="/analytics">MODEL VS MARKET</a>
+    </div>
+  </div>
   <span class="sub">the paper wallet — $1,000, two league ledgers, both fill arms.
     an instrument, never evidence.</span>
 </header>
