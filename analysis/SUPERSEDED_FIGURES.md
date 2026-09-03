@@ -33,6 +33,34 @@ maintain them by hand, which converts a document someone must remember to
 update into a guard that cannot lag. Hand-maintained is the right version to
 have tonight; it should not be the version that survives.
 
+### What the generator needs (spec, not yet built)
+
+Supersession is a claim about **identity** — that +$10.10 and +$30.43 are
+the same figure at two times, rather than two different measurements. A run
+record does not mark that, so it cannot be inferred; it has to be declared
+when a figure is first reported.
+
+Do **not** build a supersession-specific naming scheme. The identity needed
+here is the same one two other checks need, so one primitive serves three
+(research's cut, and it is the right one):
+
+A declared **estimand** carries four fields:
+
+| field | the question it answers | tonight's failure when absent |
+|---|---|---|
+| quantity | what is being measured | — |
+| population | over which rows | 6,255 vs 4,321 vs 4,835 "real fills" |
+| **unit** | the denominator | per-order 8% read as per-event 0.0055% |
+| selection procedure | how rows were chosen | replay vs recorded tape, 41% overlap |
+
+Then: two figures sharing the tuple are **convergence candidates** (the
+same-estimand leg becomes checkable instead of argued); a later figure with
+the same tuple **supersedes** the earlier; and quoting any figure carries
+its unit. Three of tonight's failures fall out of one mechanism.
+
+Building three registries with three notions of sameness would put the next
+misreading in the seams between them.
+
 ## Maintaining it
 
 **Re-derive every row against the actual runs. Do not transcribe from
