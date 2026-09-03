@@ -132,7 +132,8 @@ function bookCard(slug, b, bars){
       <span><span class="${cls(b.unrealized_opt)}">${signed(b.unrealized_opt)}</span> /
         <span class="${cls(b.unrealized_conc)}">${signed(b.unrealized_conc)}</span></span></div>
     <div class="counts">${b.n_fills} sized fills · depth-clip ${b.n_clipped_depth} ·
-      capital-clip ${b.n_clipped_reservation} · zero ${b.n_zero} ·
+      capital-clip ${b.n_clipped_reservation} · zero ${b.n_zero}
+      (no-depth ${b.n_zero_no_depth} · no-capital ${b.n_zero_no_capital} · both ${b.n_zero_both}) ·
       reserved ${money(b.reserved)} · available ${money(b.available)}</div>
     ${halt}
   </div>`;
