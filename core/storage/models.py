@@ -140,8 +140,16 @@ class MarketTradeStat(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     #: Plain join key, NOT a ForeignKey: market_snapshots is partitioned, so
-    #: its PK is not a referenceable unique constraint.
-    snapshot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    #: its PK is not a referenceable unique constraint. NULLABLE because the
+    #: pregame stats sweeper writes trade-tape rows with no snapshot of their
+    #: own — it polls books on a slow cadence purely to record the VOLUME
+    #: TRAJECTORY, which is the only thing that separates "this market is
+    #: dead" from "this market fills up late" and cannot be reconstructed
+    #: after the fact.
+    snapshot_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: Always populated by the sweeper; NULL on depth-loop rows, which carry
+    #: their market identity through snapshot_id.
+    market_slug: Mapped[str | None] = mapped_column(String(160), nullable=True)
     captured_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -160,6 +168,7 @@ class MarketTradeStat(Base):
 
     __table_args__ = (
         UniqueConstraint("snapshot_id", name="uq_market_trade_stat_snapshot"),
+        Index("ix_market_trade_stats_slug_time", "market_slug", "captured_at"),
     )
 
 
