@@ -122,3 +122,55 @@ $23–85k/board/year machine and how fast boards can be added — which is a
 business, and a real answer to give someone who says they will not stop.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+---
+
+## SUPERSEDING MEASUREMENT (D, 2026-09-03) — the constraint is ABSORPTION RATE, not depth
+
+**Depth was the wrong object.** Depth tells you what is VISIBLE; **rate
+tells you what actually transacts in the window you own.** A quote that
+requotes every 5 seconds owns 5 seconds.
+
+**MEASURED, 129 real resting orders (requested vs filled quantity over
+their own rest time):**
+
+```
+absorption rate, all orders:           median 0.050 contracts/second
+size-testing subset (requested ≥100):  median 0.193/s  (p90 5.71, max 145)
+WNBA only:                             median 0.008/s  (median rest 1,404s)
+```
+
+**What a 5-second quote cycle absorbs at those rates: ~0.25 contracts
+(all), ~1 contract (size-testers), 28–169 at the p90 of the most aggressive
+subset.** Against the ~170–530 contracts/quote the target requires, that is
+a shortfall of roughly **500× at the median.**
+
+**Why absorbed QUANTITY flatters and rate does not:** those orders absorbed
+a median of 34 contracts (155 for size-testers, max 7,285) — survivable
+sounding, until you see they rested a **median 495 seconds and p75 1.6
+HOURS** to get it.
+
+**PER LEAGUE PER WEEK at measured rates**, using v1's own quoting footprint
+(~16 markets/game × 13 games/wk × 2.5h live ≈ 250–500 market-hours/week):
+≈25k–50k contracts/week → **$250–500/week at +1¢**, half at +0.5¢. WNBA's
+own 0.008/s gives **$40–80/week.** Against ~$16,800/week for the corrected
+$286k target, that needs **34–67 leagues at measured rates.**
+
+**THE CAVEAT, AND ITS DIRECTION IS KNOWN: these are PATIENT orders, not
+touch-joining ones** (median rest 495s — the population finding). An order
+resting AT the touch absorbs faster than one resting away from it, so
+**every rate above is a LOWER BOUND for a quoter, plausibly by a large
+factor.** Granting an optimistic 10×, the requirement falls to ~3–7 leagues
+— which is within sight of the ~4 boards the clock permits, and is
+therefore the entire difference between "impossible" and "hard."
+
+**THAT IS EXACTLY WHAT THE HAND-PLACED FILL PROBE MEASURES.** It bounds
+this number from the other side, and it just became the most valuable
+instrument the program has. **No capital should be committed against a size
+assumption before it runs.**
+
+**And the caveat that leads: this is a ceiling on EXTRACTION, conditional
+on a positive capture we have never observed. A capacity ceiling times a
+negative edge is a loss ceiling.** Every capture number this program owns is
+negative or straddles zero. The measurement says how big the prize could be
+if the sign flips. It says nothing about the sign.
