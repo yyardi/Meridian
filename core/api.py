@@ -2192,15 +2192,27 @@ def wallet_status() -> dict:
 
     try:
         with _Session() as s:
-            result, meta = W.gather(s)
+            live, historical, meta = W.gather(s)
     except Exception as exc:  # noqa: BLE001 — tables may be absent pre-deploy
         m = str(exc).lower()
         if ("does not exist" in m or "could not connect" in m
                 or "connection refused" in m):
             return {"available": False, "note": "wallet tables not present yet",
-                    "books": {}, "bars": {"daily": W.DAILY_BAR,
-                                          "monthly": W.MONTHLY_BAR}}
+                    "live": {"seeded": False, "books": {}, "unseeded": []},
+                    "historical": {"books": {}},
+                    "bars": {"daily": W.DAILY_BAR, "monthly": W.MONTHLY_BAR}}
         raise
+
+    def _absent(am) -> dict:
+        return {
+            "count": am["depth_absent"], "rate": am["depth_absent_rate"],
+            "ingame_rate": am["ingame_absent_rate"],
+            "wouldbe_opt_sum": am["absent_wouldbe_opt_sum"],
+            "wouldbe_conc_sum": am["absent_wouldbe_conc_sum"],
+            "wouldbe_opt_mean_c": am["absent_wouldbe_opt_mean_c"],
+            "wouldbe_conc_mean_c": am["absent_wouldbe_conc_mean_c"],
+            "trigger_10pct_ingame": am["trigger_10pct_ingame"],
+        }
 
     def _book(b) -> dict:
         return {
@@ -2220,27 +2232,29 @@ def wallet_status() -> dict:
             "unrealized_opt": b.unrealized_opt,
             "unrealized_conc": b.unrealized_conc,
             "daily_opt": b.daily_opt, "daily_conc": b.daily_conc,
-            "peak_open_markets": b.peak_open_markets,
-            "peak_open_contracts": b.peak_open_contracts,
-            "tw_open_markets": b.tw_open_markets,
-            "tw_open_contracts": b.tw_open_contracts,
+            "peak_concurrent_markets": b.peak_concurrent_markets,
+            "peak_concurrent_contracts": b.peak_concurrent_contracts,
+            "tw_concurrent_markets": b.tw_concurrent_markets,
+            "tw_concurrent_contracts": b.tw_concurrent_contracts,
         }
 
     return {
         "available": True,
         "as_of": dt.datetime.now(UTC).isoformat(),
         "bars": {"daily": W.DAILY_BAR, "monthly": W.MONTHLY_BAR},
-        "books": {slug: _book(b) for slug, b in result.books.items()},
-        "refused": len(result.refused),
-        "depth_absent": {
-            "count": meta["depth_absent"],
-            "rate": meta["depth_absent_rate"],
-            "ingame_rate": meta["ingame_absent_rate"],
-            "wouldbe_opt_sum": meta["absent_wouldbe_opt_sum"],
-            "wouldbe_conc_sum": meta["absent_wouldbe_conc_sum"],
-            "wouldbe_opt_mean_c": meta["absent_wouldbe_opt_mean_c"],
-            "wouldbe_conc_mean_c": meta["absent_wouldbe_conc_mean_c"],
-            "trigger_10pct_ingame": meta["trigger_10pct_ingame"],
+        # LIVE wallet: forward-only from each seed line; refused if unseeded
+        # (ruling ab8be48). Never the August cohort.
+        "live": {
+            "seeded": meta["seeded"],
+            "unseeded": meta["unseeded"],
+            "seeds": meta["seeds"],
+            "books": {slug: _book(b) for slug, b in live.books.items()},
+            "depth_absent": _absent(meta["live_absent"]),
+        },
+        # HISTORICAL print: the full cohort, LABELLED — not the live balance.
+        "historical": {
+            "books": {slug: _book(b) for slug, b in historical.books.items()},
+            "depth_absent": _absent(meta["historical_absent"]),
         },
         # Registered caveat (term 3): depth-sized numbers are per-fill optimistic
         # (recorded depth is others' resting size holding time priority).

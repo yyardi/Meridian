@@ -212,10 +212,10 @@ class LeagueBook:
     #: reads as "how much bankroll the strategy actually needs", and any explicit
     #: cap is picked by arithmetic from THIS worst case, never from a transferred
     #: WNBA number.
-    peak_open_markets: int = 0
-    peak_open_contracts: int = 0
-    tw_open_markets: float = 0.0      # time-weighted mean over the ledger's span
-    tw_open_contracts: float = 0.0
+    peak_concurrent_markets: int = 0
+    peak_concurrent_contracts: int = 0
+    tw_concurrent_markets: float = 0.0      # time-weighted mean over the ledger's span
+    tw_concurrent_contracts: float = 0.0
 
 
 @dataclass
@@ -385,8 +385,8 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
         unrealized_conc=un_conc, n_open_marked=n_marked,
         n_open_unmarkable=n_unmarkable,
         daily_opt=daily_opt, daily_conc=daily_conc,
-        peak_open_markets=peak_m, peak_open_contracts=peak_c,
-        tw_open_markets=tw_m, tw_open_contracts=tw_c)
+        peak_concurrent_markets=peak_m, peak_concurrent_contracts=peak_c,
+        tw_concurrent_markets=tw_m, tw_concurrent_contracts=tw_c)
 
 
 def fold(fills: list[Fill], *, seeds: dict[str, float] | None = None,
@@ -424,18 +424,24 @@ def fold(fills: list[Fill], *, seeds: dict[str, float] | None = None,
 #  DB gather — build the Fill list from the live tables and fold (the --db path)
 # --------------------------------------------------------------------------- #
 
-def _effective_seeds(session) -> dict[str, float]:
-    """Per-league seed = the amount of the most recent control line (birth seed
-    or operator reset/resplit). Append-only, so 'most recent' is the effective
-    bankroll basis; leagues with no line fall back to SEED_PER_LEAGUE."""
+def _effective_seeds(session) -> dict[str, dict]:
+    """Per-league seed = the most recent control line (birth seed or operator
+    reset/resplit): its amount AND its effective instant. The effective instant
+    is the COHORT BOUNDARY (ruling ab8be48) — the LIVE wallet folds only fills at
+    or after it; the August tape is a separately-labelled historical print, not
+    the live balance. A league with NO control line has NO live wallet: it is
+    REFUSED, never defaulted (an unseeded wallet reporting a number is the
+    empty-verdict over-claim in another slot). Returns {league: {amount,
+    effective_at}}; empty means nothing is seeded."""
     from sqlalchemy import text
     rows = session.execute(text("""
-        SELECT DISTINCT ON (league) league, amount
+        SELECT DISTINCT ON (league) league, amount, effective_at
         FROM paper_wallet_control
         WHERE kind IN ('seed','reset','resplit')
         ORDER BY league, effective_at DESC
     """)).all()
-    return {r.league: float(r.amount) for r in rows}
+    return {r.league: {"amount": float(r.amount), "effective_at": r.effective_at}
+            for r in rows}
 
 
 def _load_fills_with_depth(
@@ -530,25 +536,14 @@ def _load_mids(session, markets) -> dict[str, float]:
             for r in rows}
 
 
-def gather(session, *, staleness_s: float = DEPTH_STALENESS_S):
-    """Fold the live tables into the wallet. Returns (WalletResult, meta) where
-    meta carries the clip-to-zero (depth-absent) count/rate D requires printed."""
-    seeds = _effective_seeds(session)
-    fills, n_absent, n_total = _load_fills_with_depth(
-        session, staleness_s=staleness_s)
-    open_markets = {f.market_slug for f in fills if f.settlement is None}
-    mids = _load_mids(session, open_markets)
-    result = fold(fills, seeds=seeds, mids=mids,
-                  now=dt.datetime.now(dt.timezone.utc))
-
-    # Depth-absent fills as their OWN LINE (D's remedy): count, share, and the
-    # capture they WOULD have carried at unit size — the suppression cost.
-    # exact-match clip-to-zero is capacity-conservative but P&L-SIGN-DEPENDENT:
-    # an absent fill contributes nothing, so on a NEGATIVE-capture book it
-    # FLATTERS the loss. This line says how much of the outcome is "we didn't
-    # trade" vs "we traded well". 10%-of-ingame is the pre-data trigger for the
-    # within-one-min_tick revisit (its own labelled column, never replacing
-    # exact-match).
+def _absent_meta(fills: list[Fill]) -> dict:
+    """Depth-absent as its OWN line (D's remedy): count, share, and the capture
+    the absent fills WOULD have carried at unit size — the suppression cost.
+    exact-match clip-to-zero is capacity-conservative but P&L-SIGN-DEPENDENT: an
+    absent fill contributes nothing, so on a negative-capture book it FLATTERS
+    the loss. 10%-of-ingame is the pre-data trigger for the within-one-min_tick
+    revisit (its own labelled column, never replacing exact-match)."""
+    n_total = len(fills)
     absent = [f for f in fills if f.depth <= 0]
     ingame = [f for f in fills if f.regime == "ingame"]
     ingame_absent = [f for f in absent if f.regime == "ingame"]
@@ -560,10 +555,10 @@ def gather(session, *, staleness_s: float = DEPTH_STALENESS_S):
     wb_opt = [_wouldbe(f, 0.0) for f in absent]
     wb_conc = [_wouldbe(f, concession_for(f.regime)) for f in absent]
     ing_rate = (len(ingame_absent) / len(ingame)) if ingame else 0.0
-    meta = {
+    return {
         "n_fills": n_total,
-        "depth_absent": n_absent,
-        "depth_absent_rate": (n_absent / n_total) if n_total else 0.0,
+        "depth_absent": len(absent),
+        "depth_absent_rate": (len(absent) / n_total) if n_total else 0.0,
         "n_ingame": len(ingame),
         "ingame_absent": len(ingame_absent),
         "ingame_absent_rate": ing_rate,
@@ -572,10 +567,65 @@ def gather(session, *, staleness_s: float = DEPTH_STALENESS_S):
         "absent_wouldbe_opt_mean_c": (sum(wb_opt) / len(wb_opt) * 100) if wb_opt else 0.0,
         "absent_wouldbe_conc_mean_c": (sum(wb_conc) / len(wb_conc) * 100) if wb_conc else 0.0,
         "trigger_10pct_ingame": ing_rate > 0.10,
-        "staleness_s": staleness_s,
-        "seeds": seeds,
     }
-    return result, meta
+
+
+def _live_cohort(fills: list[Fill], seeds: dict[str, dict]):
+    """Partition fills into the LIVE cohort — forward-only from each league's
+    seed instant, seeded leagues ONLY — and the list of UNSEEDED leagues (which
+    have fills but no seed line: refused, never defaulted). Pure (ruling
+    ab8be48). Returns (live_fills, unseeded)."""
+    by_league: dict[str, list[Fill]] = defaultdict(list)
+    for f in fills:
+        lg = route_league(f.market_slug)
+        if lg is not None:
+            by_league[lg.slug].append(f)
+    live: list[Fill] = []
+    for lg, s in seeds.items():
+        live.extend([f for f in by_league.get(lg, [])
+                     if f.filled_at >= s["effective_at"]])
+    unseeded = sorted(lg for lg in by_league if lg not in seeds)
+    return live, unseeded
+
+
+def gather(session, *, staleness_s: float = DEPTH_STALENESS_S, now=None):
+    """Fold the live tables into the wallet, with the COHORT BOUNDARY enforced
+    (ruling ab8be48). Returns (live, historical, meta):
+
+    * live: the operator's wallet — FORWARD-ONLY from each league's seed
+      instant, and ONLY for seeded leagues. A league with no control line is
+      REFUSED (listed in meta['unseeded']), never defaulted — an unseeded wallet
+      reporting a number is an over-claim.
+    * historical: the full-cohort fold (default seeds), a separately-LABELLED
+      print — e.g. v1's August tape driven to operational ruin. Never the live
+      balance.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    seeds = _effective_seeds(session)                       # {lg: {amount, effective_at}}
+    fills, _n_absent, _n_total = _load_fills_with_depth(
+        session, staleness_s=staleness_s)
+    mids = _load_mids(session, {f.market_slug for f in fills
+                                if f.settlement is None})
+
+    # LIVE: forward-from-seed, seeded leagues only (pure, regression-tested)
+    seed_amounts = {lg: s["amount"] for lg, s in seeds.items()}
+    live_fills, unseeded = _live_cohort(fills, seeds)
+    live = fold(live_fills, seeds=seed_amounts, mids=mids, now=now)
+
+    # HISTORICAL: the full cohort, labelled (default seeds)
+    historical = fold(fills, mids=mids, now=now)
+
+    meta = {
+        "seeded": bool(seeds),
+        "unseeded": unseeded,
+        "seeds": {lg: {"amount": s["amount"],
+                       "effective_at": s["effective_at"].isoformat()}
+                  for lg, s in seeds.items()},
+        "staleness_s": staleness_s,
+        "live_absent": _absent_meta(live_fills),
+        "historical_absent": _absent_meta(fills),
+    }
+    return live, historical, meta
 
 
 def run_db() -> int:
@@ -583,7 +633,7 @@ def run_db() -> int:
     from core.storage import get_sessionmaker
     try:
         with get_sessionmaker(get_engine())() as s:
-            result, meta = gather(s)
+            live, historical, meta = gather(s)
     except Exception as exc:  # noqa: BLE001 — DB may be unreachable from here
         msg = str(exc).lower()
         if ("does not exist" in msg or "could not connect" in msg
@@ -593,51 +643,58 @@ def run_db() -> int:
                   "(main checkout / prod).")
             return 0
         raise
-    print(f"paper wallet — {meta['n_fills']:,} fills")
-    # depth-absent as its own line (D): count, share, and would-be capture.
-    print(f"depth-absent (clip-to-zero): {meta['depth_absent']:,} "
-          f"({meta['depth_absent_rate']:.1%} of all, "
-          f"{meta['ingame_absent_rate']:.1%} of ingame) | would-be capture at "
-          f"unit size: opt ${meta['absent_wouldbe_opt_sum']:+.2f} "
-          f"({meta['absent_wouldbe_opt_mean_c']:+.2f}c/fill), conc "
-          f"${meta['absent_wouldbe_conc_sum']:+.2f} "
-          f"({meta['absent_wouldbe_conc_mean_c']:+.2f}c/fill) — the suppression "
-          f"cost we did not trade")
-    print("  NOTE: exact-4dp match is capacity-conservative but P&L "
-          "sign-dependent — an absent fill contributes nothing, so on a "
-          "negative-capture book it FLATTERS the loss (the would-be line above "
-          "is how much).")
-    if meta["trigger_10pct_ingame"]:
-        print("  *** TRIGGER: ingame depth-absent > 10% — build the "
-              "within-one-min_tick snap as its own labelled column (never "
-              "replacing exact-match). ***")
-    if result.refused:
-        print(f"REFUSED (unknown league, not folded): {len(result.refused)} fills")
-    for slug, b in sorted(result.books.items()):
+
+    def _absent_line(am):
+        print(f"depth-absent (clip-to-zero): {am['depth_absent']:,} "
+              f"({am['depth_absent_rate']:.1%} of all, "
+              f"{am['ingame_absent_rate']:.1%} of ingame) | would-be capture at "
+              f"unit size: opt ${am['absent_wouldbe_opt_sum']:+.2f} "
+              f"({am['absent_wouldbe_opt_mean_c']:+.2f}c/fill), conc "
+              f"${am['absent_wouldbe_conc_sum']:+.2f} "
+              f"({am['absent_wouldbe_conc_mean_c']:+.2f}c/fill) — suppression cost")
+        if am["trigger_10pct_ingame"]:
+            print("  *** TRIGGER: ingame depth-absent > 10% — build the "
+                  "within-one-min_tick snap (its own column, never replacing "
+                  "exact-match). ***")
+
+    def _book(b):
         drawdown = 1.0 - (b.concession / b.seed) if b.seed else 0.0
         clip_rate = (b.n_clipped_reservation / b.n_fills) if b.n_fills else 0.0
-        print(f"\n[{slug}] seed ${b.seed:.2f}   fills {b.n_fills} "
+        print(f"\n  [{b.slug}] seed ${b.seed:.2f}   fills {b.n_fills} "
               f"(depth-clip {b.n_clipped_depth}, capital-clip "
               f"{b.n_clipped_reservation}, zero {b.n_zero})"
               + ("   *** HALTED ***" if b.halted else ""))
-        print(f"  optimistic  ${b.optimistic:10.2f}   P&L ${b.optimistic - b.seed:+.2f}"
-              f"   (MTD bar ${MONTHLY_BAR:.0f})")
-        print(f"  concession  ${b.concession:10.2f}   P&L ${b.concession - b.seed:+.2f}"
-              f"   drawdown {drawdown:.1%}   capital-clip rate {clip_rate:.1%}")
-        print(f"  toll (cumulative concession cost) ${b.toll:.2f}   "
-              f"reserved ${max(b.reserved_conc, 0.0):.2f}   "
-              f"available ${b.available_to_size:.2f}")
-        print(f"  UNREALIZED (open, not in realized): optimistic "
-              f"${b.unrealized_opt:+.2f} / concession ${b.unrealized_conc:+.2f} "
-              f"({b.n_open_marked} marked, {b.n_open_unmarkable} no-mid)")
-        print(f"  CONCURRENCY (sizes the bankroll need): peak "
-              f"{b.peak_open_contracts} open contracts across "
-              f"{b.peak_open_markets} markets (~${b.peak_open_contracts} "
-              f"worst-case at unit size vs ${b.seed:.0f} seed); time-weighted "
-              f"{b.tw_open_contracts:.1f} contracts / {b.tw_open_markets:.1f} "
-              f"markets")
+        print(f"    optimistic ${b.optimistic:10.2f}  P&L ${b.optimistic - b.seed:+.2f}")
+        print(f"    concession ${b.concession:10.2f}  P&L ${b.concession - b.seed:+.2f}"
+              f"   drawdown {drawdown:.1%}   capital-clip {clip_rate:.1%}")
+        print(f"    toll ${b.toll:.2f}   unrealized opt ${b.unrealized_opt:+.2f} / "
+              f"conc ${b.unrealized_conc:+.2f}")
+        print(f"    concurrency: peak {b.peak_concurrent_contracts} contracts / "
+              f"{b.peak_concurrent_markets} markets (~${b.peak_concurrent_contracts}"
+              f" worst-case at unit size vs ${b.seed:.0f}); time-weighted "
+              f"{b.tw_concurrent_contracts:.1f}/{b.tw_concurrent_markets:.1f}")
         if b.halt_line is not None:
-            print(f"  HALT: {b.halt_line.note}")
+            print(f"    HALT: {b.halt_line.note}")
+
+    print("=== LIVE WALLET (forward-only from each seed line; bars "
+          f"${DAILY_BAR}/day, ${MONTHLY_BAR:.0f}/mo) ===")
+    if not meta["seeded"]:
+        print("  UNSEEDED — no live balance. Refusing to report rather than "
+              "default: write a seed line (paper_wallet_control) to begin. The "
+              "August tape is a historical print below, never the live balance.")
+    else:
+        if meta["unseeded"]:
+            print(f"  REFUSED (no seed line, not in the live wallet): "
+                  f"{', '.join(meta['unseeded'])}")
+        _absent_line(meta["live_absent"])
+        for b in sorted(live.books.values(), key=lambda x: x.slug):
+            _book(b)
+
+    print("\n=== HISTORICAL PRINT (full cohort — NOT the live balance; e.g. v1's "
+          "August tape) ===")
+    _absent_line(meta["historical_absent"])
+    for b in sorted(historical.books.values(), key=lambda x: x.slug):
+        _book(b)
     return 0
 
 
@@ -818,9 +875,30 @@ def _selftest_fold() -> int:
     ]
     bc = fold(fc, seeds={"wnba": 500.0}).books["wnba"]
     chk("concurrency: peak 10 contracts across 3 markets (overlap [20,30])",
-        bc.peak_open_contracts == 10 and bc.peak_open_markets == 3)
+        bc.peak_concurrent_contracts == 10 and bc.peak_concurrent_markets == 3)
     chk("concurrency: time-weighted within (0, peak]",
-        0 < bc.tw_open_contracts <= 10 and 0 < bc.tw_open_markets <= 3)
+        0 < bc.tw_concurrent_contracts <= 10 and 0 < bc.tw_concurrent_markets <= 3)
+
+    # COHORT BOUNDARY (ruling ab8be48): live is forward-only from the seed, and
+    # a league with no seed line is REFUSED (never defaulted) — the over-claim
+    # fix. Pure test of the partition.
+    aug = Fill("tsc-wnba-h-1", "ingame", "bid", 0.40, 0.43,
+               dt.datetime(2026, 8, 20, tzinfo=dt.timezone.utc), depth=5,
+               settlement=1, settled_at=dt.datetime(2026, 8, 20, 20,
+                                                     tzinfo=dt.timezone.utc))
+    sep = Fill("tsc-wnba-h-2", "ingame", "bid", 0.40, 0.43,
+               dt.datetime(2026, 9, 4, tzinfo=dt.timezone.utc), depth=5,
+               settlement=1, settled_at=dt.datetime(2026, 9, 4, 20,
+                                                     tzinfo=dt.timezone.utc))
+    live_u, unseeded_u = _live_cohort([aug, sep], {})
+    chk("cohort: unseeded -> live empty, league refused",
+        live_u == [] and unseeded_u == ["wnba"])
+    seed = {"wnba": {"amount": 500.0,
+                     "effective_at": dt.datetime(2026, 9, 3,
+                                                 tzinfo=dt.timezone.utc)}}
+    live_s, unseeded_s = _live_cohort([aug, sep], seed)
+    chk("cohort: seeded -> forward-only (drops the August fill)",
+        live_s == [sep] and unseeded_s == [])
 
     print("\nFOLD SELFTEST:", "PASS — both arms hand-reconciled, the toll meter "
           "is exactly opt-conc, a fabricated fill moves the ledger by the "

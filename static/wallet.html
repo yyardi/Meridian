@@ -60,10 +60,14 @@
     an instrument, never evidence.</span>
 </header>
 <main>
-  <h2>Ledgers <span class="sub">— $500 each at birth · both arms on every number ·
-    the ~6¢/leg gap is the lesson, never hidden</span></h2>
-  <div id="books" class="books"><div class="empty">loading…</div></div>
-  <div id="absent"></div>
+  <h2>Live wallet <span class="sub">— forward-only from each seed line · $500 each ·
+    both arms · an instrument, never evidence</span></h2>
+  <div id="live" class="books"><div class="empty">loading…</div></div>
+  <div id="liveAbsent"></div>
+  <h2 style="margin-top:28px">Historical print <span class="sub">— the full cohort
+    (v1's August tape under its blind policy), NOT the live balance</span></h2>
+  <div id="hist" class="books"></div>
+  <div id="histAbsent"></div>
   <div id="asof" class="asof"></div>
 </main>
 <script>
@@ -117,10 +121,10 @@ function bookCard(slug, b, bars){
     </div>
     <div class="meters">
       <div class="m"><div class="k">peak concurrent exposure</div>
-        <div class="v ${b.peak_open_contracts>=b.seed?"neg":(b.peak_open_contracts>=0.5*b.seed?"warn":"")}">${b.peak_open_contracts} ctr / ${b.peak_open_markets} mkt</div>
-        <div class="bar">~$${b.peak_open_contracts} worst case at unit size vs $${b.seed.toFixed(0)}</div></div>
+        <div class="v ${b.peak_concurrent_contracts>=b.seed?"neg":(b.peak_concurrent_contracts>=0.5*b.seed?"warn":"")}">${b.peak_concurrent_contracts} ctr / ${b.peak_concurrent_markets} mkt</div>
+        <div class="bar">~$${b.peak_concurrent_contracts} worst case at unit size vs $${b.seed.toFixed(0)}</div></div>
       <div class="m"><div class="k">time-weighted concurrency</div>
-        <div class="v">${b.tw_open_contracts.toFixed(1)} ctr / ${b.tw_open_markets.toFixed(1)} mkt</div>
+        <div class="v">${b.tw_concurrent_contracts.toFixed(1)} ctr / ${b.tw_concurrent_markets.toFixed(1)} mkt</div>
         <div class="bar">sizes the bankroll need</div></div>
     </div>
     <div class="arm" style="border-top:1px solid var(--line);margin-top:8px">
@@ -153,20 +157,39 @@ function absentPanel(a){
   </div>`;
 }
 
+const ORDER = ["wnba","nfl"];
+function renderBooks(books, bars){
+  const slugs = Object.keys(books||{}).sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+  return slugs.length ? slugs.map(s=>bookCard(s, books[s], bars)).join("") : "";
+}
 async function load(){
   let d;
   try{ d = await (await fetch("/api/wallet")).json(); }
-  catch(e){ $("#books").innerHTML = `<div class="empty">wallet unavailable</div>`; return; }
-  if(!d.available || !Object.keys(d.books||{}).length){
-    $("#books").innerHTML = `<div class="empty">${d.note||"no fills yet — the wallet fills as the shadow book trades"}</div>`;
-    $("#absent").innerHTML = ""; return;
+  catch(e){ $("#live").innerHTML = `<div class="empty">wallet unavailable</div>`; return; }
+  const bars = d.bars || {daily:3.29, monthly:100};
+  const live = d.live || {seeded:false, books:{}, unseeded:[]};
+  // LIVE — refuse to show a balance when unseeded (ruling ab8be48).
+  if(!d.available){
+    $("#live").innerHTML = `<div class="empty">${d.note||"wallet tables not present yet"}</div>`;
+    $("#liveAbsent").innerHTML = "";
+  } else if(!live.seeded){
+    $("#live").innerHTML = `<div class="empty">UNSEEDED — no live balance. Write a seed
+      line to begin; refusing to report rather than default. (The historical print
+      below is v1's tape, never the live balance.)</div>`;
+    $("#liveAbsent").innerHTML = "";
+  } else {
+    const bk = renderBooks(live.books, bars);
+    $("#live").innerHTML = bk || `<div class="empty">seeded, no live fills yet — the
+      wallet fills as the forward cohort trades</div>`;
+    const refused = (live.unseeded||[]).length
+      ? `<div class="note">refused (no seed line, not in the live wallet): ${live.unseeded.join(", ")}</div>` : "";
+    $("#liveAbsent").innerHTML = refused + (bk ? absentPanel(live.depth_absent) : "");
   }
-  const order = ["wnba","nfl"];
-  const slugs = Object.keys(d.books).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
-  $("#books").innerHTML = slugs.map(s=>bookCard(s, d.books[s], d.bars)).join("");
-  $("#absent").innerHTML = absentPanel(d.depth_absent);
-  const refused = d.refused ? ` · ${d.refused} unknown-league fills refused` : "";
-  $("#asof").textContent = `as of ${d.as_of||""}${refused} — ${d.caveat||""}`;
+  // HISTORICAL — labelled, never the live balance.
+  const hist = d.historical || {books:{}};
+  $("#hist").innerHTML = renderBooks(hist.books, bars) || `<div class="empty">no historical cohort</div>`;
+  $("#histAbsent").innerHTML = Object.keys(hist.books||{}).length ? absentPanel(hist.depth_absent) : "";
+  $("#asof").textContent = `as of ${d.as_of||""} — ${d.caveat||""}`;
 }
 load();
 setInterval(load, 15000);
