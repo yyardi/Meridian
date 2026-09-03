@@ -378,8 +378,23 @@ number:** an ASOF join negated timestamps to work around DuckDB's direction and
 landed on `captured_at >= filled_at` — **a forward join whose one-sided age
 filter admitted unbounded lookahead**, worst case a book from 25 hours *after*
 the fill. 123 fills on the partial substrate; zero on the union substrate, where
-every fill has a tick at its own timestamp. Fixed to a backward join with an
-assert, and the pattern had been propagated across several scripts.
+every fill has a tick at its own timestamp. Fixed with an assert.
+
+**The "propagated across several scripts" claim is WITHDRAWN — checked and
+false.** The negated-timestamp ASOF pattern appears in four other committed
+scripts (`exit_option_value`, `halftime_reanchor`,
+`pulse_execution_decomposition`, `quote_v2_markout`) and is **correct in all
+four**: they are markout joins, where forward IS the intended direction by
+definition, and in every case the derived gap is non-negative by construction
+and capped above. The defect was in exactly one place.
+
+**AND THE BUG IS NOT "A NEGATED ASOF JOIN" — the negation is fine and often
+necessary.** It is a **MISMATCH between the join's DIRECTION and the SIGN
+CONVENTION of the quantity you then filter on**, which turns a one-sided cap
+into a vacuous one. `age <= 5` reads like a freshness gate and was admitting
+books from 25 hours in the *future*. **The generalisable guard is one line:
+assert the age quantity is non-negative before applying any cap to it.** If the
+assert fires, the join points the other way from what the filter assumes.
 
 **★ THE PROCESS LESSON, which is worth more than the parameter ★**
 The first answer was **right for the wrong reason**. The retraction **fixed the
