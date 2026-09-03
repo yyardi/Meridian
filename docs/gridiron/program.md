@@ -88,3 +88,18 @@ everything AND every substrate count is deferred, therefore every claim is
 provisional until the first slate.** That is the honest description of what
 building for a new domain means, and it is written here so the first NFL
 artifact cannot inherit confidence it has not earned.
+
+## DATED LINE (2026-09-03) — the permanent-absence lesson does NOT repeat forward
+
+The WNBA-era recorder ran `MERIDIAN_LEAGUE=wnba` only, so of the operator's
+99 hand-traded markets just 45 have any tape: **nba 0 of 32, atp 0 of 8,
+ipl 0 of 5, mlb 0 of 2, four others 0.** Those fills are unmarkoutable
+forever — the data was never captured and cannot be recovered.
+
+**That is closed for GRIDIRON by construction: NFL recording is live from
+2026-09-02, so this program's markets carry tape from their first slate.**
+The general rule, arrived at tonight from three independent directions (the
+discarded trade tape, the volume-trajectory sweeper, and this permanent
+absence): **any league we don't record today is a league whose fills we can
+never calibrate later.** Recording precedes certainty that recording is
+needed.
