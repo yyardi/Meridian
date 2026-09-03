@@ -9,6 +9,12 @@ observable this venue offers (findings V31/V32): no gateway or authenticated
 endpoint exposes market volume. These fields were parsed and thrown away on
 every poll from the recorder's first day. Additive table; nothing existing
 changes.
+
+NO FOREIGN KEY on snapshot_id: `market_snapshots` is PARTITIONED, so its
+primary key does not provide a unique constraint an FK can reference
+("there is no unique constraint matching given keys" — caught deploying
+this). The column is a plain join key, exactly as depth rows relate to
+their snapshot.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -33,8 +39,6 @@ def upgrade() -> None:
         sa.Column("open_interest", sa.Numeric(18, 4), nullable=True),
         sa.Column("high_px", sa.Numeric(6, 4), nullable=True),
         sa.Column("low_px", sa.Numeric(6, 4), nullable=True),
-        sa.ForeignKeyConstraint(["snapshot_id"], ["market_snapshots.id"],
-                                ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("snapshot_id", name="uq_market_trade_stat_snapshot"),
     )

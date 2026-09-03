@@ -139,10 +139,9 @@ class MarketTradeStat(Base):
     __tablename__ = "market_trade_stats"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    snapshot_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("market_snapshots.id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    #: Plain join key, NOT a ForeignKey: market_snapshots is partitioned, so
+    #: its PK is not a referenceable unique constraint.
+    snapshot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     captured_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
