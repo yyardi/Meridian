@@ -249,3 +249,46 @@ the evening measuring the wrong thing.
 attack the exact assumption tonight established as the program's largest
 unmeasured error. The board's advantage turns out to be the one property our
 newest finding says matters most.
+
+
+## DATED LINE (2026-09-03) — NOTHING QUOTES NFL YET; the GRIDIRON binary is the gating build
+
+Traced as a consequence of the frozen quoter's league filter (correct, and
+it protects A1's cohort by code rather than by NFL's accidental absence):
+**the frozen quoter is WNBA-only, amendment 12's separate GRIDIRON binary
+does not exist — no container, no compose service — so NOTHING WILL QUOTE
+NFL on the first slate.** Phase 1 ("descriptive passes on accruing NFL
+shadow fills") would have zero fills.
+
+**First-slate deliverables, corrected:**
+- day-one survey (board structure, spreads, depth, flow) — **INTACT**, it
+  reads the recorded board and needs no quoter;
+- NFL shadow fills — **ZERO** until the GRIDIRON binary ships;
+- real fill data — **only** from the operator's hand-placed probe, if run.
+
+**Consequence for the probe, stated plainly: it is no longer a supplement
+to the first slate's data — without the GRIDIRON binary it is the ONLY fill
+data the first slate can produce**, and even with the binary it remains the
+only REAL fill data (shadow fills are modelled). That materially raises its
+value and the operator should be told so.
+
+**DECISION (manager): build and ship the GRIDIRON quoter before Sept 9.**
+Cheap and safe by construction — separate binary, separate container,
+NFL-only, outside the freeze, needing no proofs against the basketball tape.
+Contamination guards already stand: league by SLUG, `engine_commit` as the
+second witness, schema additive-only. **Its deploy commit becomes
+GRIDIRON's substrate epoch** per amendment 12's cohort ruling. If it cannot
+make Sept 9 cleanly the descriptive phase starts one slate later — which is
+survivable, and must be a DECISION rather than a discovery.
+
+## DATED LINE (2026-09-03) — on unused deployment authorisations
+
+The amendment-11 pre-data window was open tonight (zero observation rows,
+zero NFL fills) and **expires unused.** The only candidate to ride it was
+the venue-timing instrumentation, and the quoter does not need it — its
+only venue traffic is a 600s settlement lookup, nowhere near where
+throttling would surface. **Recorded because the framing that discovered the
+window called it "a deployment opportunity with an expiry date," which
+manufactures exactly the wrong pressure: A DEPLOYMENT AUTHORISATION IS NOT
+A RESOURCE TO BE CONSUMED BEFORE IT LAPSES.** An open authorisation is
+permission, not inventory.
