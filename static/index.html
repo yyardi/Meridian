@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian</title>
+<title>Algo</title>
 <style>
   :root{--bg:#0a0c10;--panel:#11141b;--line:#1e2430;--txt:#d7dde8;--dim:#7c879b;
         --faint:#4a5568;--pos:#26d07c;--neg:#ff5c62;--warn:#ffb020;--accent:#4c8dff;
@@ -11,10 +11,44 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);font:12px/1.5 var(--mono);
        font-variant-numeric:tabular-nums}
-  header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:9px 14px;
-         background:var(--panel);border-bottom:1px solid var(--line);position:sticky;
-         top:0;z-index:9}
-  .brand{font-weight:700;letter-spacing:.14em}.brand span{color:var(--accent)}
+  /* ── Header, rebuilt 2026-09-03 (operator: "this UI is unusable ... the top
+     ribbon is redundant and kinda fried").
+     THE REDUNDANCY WAS STRUCTURAL, not cosmetic: a league toggle (WNBA/NFL/NBA)
+     sat beside a BOOK row (MERIDIAN=WNBA, GRIDIRON=NFL+CFB) — the same axis
+     drawn twice, so picking a sport had two different controls that could
+     disagree. Leagues are now NESTED UNDER their book: one axis, two levels.
+     Second fix: every nav item carried an inline gloss ("directional — takes a
+     side"), which tripled the ribbon's width. Those moved to tooltips — still
+     one hover away, no longer competing with the thing they describe.
+     Third: navigation and health are different jobs, so they get different
+     rows instead of interleaving. ── */
+  header{background:var(--panel);border-bottom:1px solid var(--line);
+         position:sticky;top:0;z-index:9}
+  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px}
+  .hrow+.hrow{border-top:1px solid var(--line)}
+  .hsep{width:1px;height:15px;background:var(--line);flex:none}
+  .brand{font-weight:700;letter-spacing:.18em;font-size:13px}
+  .brand span{color:var(--accent)}
+
+  /* Book = which sport program. The primary axis; leagues hang off it. */
+  .bookgrp{display:flex;gap:3px}
+  .book{font:inherit;font-size:11px;font-weight:700;letter-spacing:.07em;
+        padding:4px 10px;border-radius:3px;background:transparent;
+        border:1px solid transparent;color:var(--faint);cursor:pointer}
+  .book:hover{color:var(--txt)}
+  .book.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+
+  /* Grouped links (strategy, books). The label is the axis name. */
+  .navgrp{display:flex;align-items:center;gap:3px}
+  .grplbl{color:var(--faint);font-size:8.5px;letter-spacing:.13em;
+          text-transform:uppercase;margin-right:3px}
+  .navgrp a{color:var(--faint);text-decoration:none;font-size:11px;
+            letter-spacing:.05em;padding:4px 9px;border-radius:3px}
+  .navgrp a:hover{color:var(--txt)}
+  .navgrp a.on{color:var(--txt);background:#1a1f2b}
+
+  /* Health lives on its own row, quieter than the navigation above it. */
+  .statusrow{gap:16px;padding:6px 14px;background:#0c0f15}
   nav a{color:var(--faint);text-decoration:none;margin-right:12px;font-size:11px;
         padding:3px 8px;border-radius:3px}
   nav a.on{color:var(--txt);background:#1a1f2b}
@@ -254,8 +288,31 @@
 </head>
 <body>
 <header>
-  <div class="brand">MERIDIAN</div>
+ <div class="hrow">
+  <div class="brand">ALGO</div>
+  <div class="hsep"></div>
+  <!-- Book, then the leagues INSIDE it. Clicking a book selects its first
+       recorded league; the sub-tabs then switch within that book. -->
+  <div class="bookgrp" id="bookgrp"></div>
   <div class="lg" id="lgtabs"></div>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">strategy</span>
+    <a class="on" href="/" title="PULSE — directional. Takes a side: picks a team and holds a position.">PULSE</a>
+    <a class="" href="/quote" title="QUOTE — market making. Quotes both sides and earns the spread, without a view on the game.">QUOTE</a>
+  </div>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">books</span>
+    <a class="" href="/wallet" title="The $1,000 paper scoreboard — simulated positions and running P&amp;L.">WALLET</a>
+    <a class="" href="/analytics" title="Model vs market — where our fair value disagrees with the venue's price.">MODEL</a>
+  </div>
+  <div id="tokwrap">
+    <input id="tok" type="password" placeholder="order token" autocomplete="off"
+           title="Server-side token from MERIDIAN_ORDER_TOKEN. Held in this tab only (sessionStorage), never persisted to disk.">
+  </div>
+ </div>
+ <div class="hrow statusrow">
   <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
   <!-- These two are DATA AGES — how old each recorder's newest row is — not
        anything about the games. The operator read "PREGAME 8m / LIVE 0s"
@@ -275,27 +332,7 @@
        header because every size on this page is a fraction of it, and a
        bankroll that has quietly stopped being true is invisible anywhere else. -->
   <div class="stat" id="s-bankroll-wrap" title="Account balance from Polymarket US, re-read from the venue every 60s."><span class="k">bankroll</span><span class="v num" id="s-bankroll">—</span></div>
-  <div class="navwrap">
-    <div class="navrow">
-      <span class="navlbl">book</span>
-      <a class="prog " href="/?program=meridian">MERIDIAN</a><span class="kind">basketball · WNBA</span>
-      <a class="prog " href="/?program=gridiron">GRIDIRON</a><span class="kind">football · NFL + CFB</span>
-    </div>
-    <div class="navrow">
-      <span class="navlbl">strategy</span>
-      <a class=" on" href="/">PULSE</a><span class="kind">directional — takes a side</span>
-      <a class="" href="/quote">QUOTE</a><span class="kind">market making — quotes both</span>
-    </div>
-    <div class="navrow">
-      <span class="navlbl">books</span>
-      <a class="" href="/wallet">WALLET</a><span class="kind">$1,000 paper scoreboard</span>
-      <a class="" href="/analytics">MODEL VS MARKET</a>
-    </div>
-  </div>
-  <div id="tokwrap">
-    <input id="tok" type="password" placeholder="order token" autocomplete="off"
-           title="Server-side token from MERIDIAN_ORDER_TOKEN. Held in this tab only (sessionStorage), never persisted to disk.">
-  </div>
+ </div>
 </header>
 
 <!-- Invisible until it matters. The old header pill announced HUMAN_CONFIRM /
@@ -2061,23 +2098,76 @@ let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
 // it: a link someone sent you should not repoint every future visit.
 if(QGAME && /^[a-z]+-/.test(QGAME)) LEAGUE = QGAME.split("-")[0];
 
+// BOOK = sport program; the leagues live inside it. Declared here rather than
+// derived from the league list because the grouping is an editorial fact about
+// how the desk is organised, not something /api/leagues knows. A league absent
+// from every book still renders — under "OTHER" — so adding a league to the
+// API can never make it silently disappear from the UI (rule 22: a missing
+// tab and an unmapped tab must not look the same).
+const BOOKS = [
+  {id:"meridian", label:"MERIDIAN", note:"basketball", leagues:["wnba","nba"]},
+  {id:"gridiron", label:"GRIDIRON", note:"football",   leagues:["nfl","cfb"]},
+];
+function bookOf(slug){
+  const b = BOOKS.find(b => b.leagues.includes(slug));
+  return b ? b.id : "other";
+}
+
 function mountLeagueTabs(onChange){
   return fetch("/api/leagues").then(r=>r.json()).then(d=>{
     if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
-    const el = document.getElementById("lgtabs");
-    if(el) el.innerHTML = d.leagues.map(l =>
-      `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
-               data-lg="${l.slug}"
-               title="${l.recorded?"":l.empty_state}">${l.name}</button>`).join("");
-    document.querySelectorAll(".lgt").forEach(b=>{
-      b.addEventListener("click", ()=>{
-        if(b.dataset.lg === LEAGUE) return;
-        LEAGUE = b.dataset.lg;
-        localStorage.setItem(LG_KEY, LEAGUE);
-        document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
-        onChange(LEAGUE);
+
+    // Any league the BOOKS table doesn't claim gets its own book rather than
+    // vanishing from the nav.
+    const books = BOOKS.map(b => ({...b, items: d.leagues.filter(l => b.leagues.includes(l.slug))}))
+                       .filter(b => b.items.length);
+    const orphans = d.leagues.filter(l => bookOf(l.slug) === "other");
+    if(orphans.length) books.push({id:"other", label:"OTHER", note:"unmapped", items:orphans});
+
+    const bookEl = document.getElementById("bookgrp");
+    const lgEl   = document.getElementById("lgtabs");
+
+    function paint(){
+      const active = bookOf(LEAGUE) === "other" && !books.some(b=>b.id==="other")
+                     ? books[0].id : bookOf(LEAGUE);
+      if(bookEl) bookEl.innerHTML = books.map(b =>
+        `<button class="book ${b.id===active?"on":""}" data-book="${b.id}"
+                 title="${b.label} — ${b.note}: ${b.items.map(i=>i.name).join(", ")}"
+        >${b.label}</button>`).join("");
+      const cur = books.find(b => b.id === active) || books[0];
+      // One league in a book needs no sub-tab — the book button already says it.
+      if(lgEl) lgEl.innerHTML = (cur && cur.items.length > 1) ? cur.items.map(l =>
+        `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
+                 data-lg="${l.slug}"
+                 title="${l.recorded?l.name:l.empty_state}">${l.name}</button>`).join("") : "";
+      wire();
+    }
+
+    function select(slug){
+      if(slug === LEAGUE) return;
+      LEAGUE = slug;
+      localStorage.setItem(LG_KEY, LEAGUE);
+      paint();
+      onChange(LEAGUE);
+    }
+
+    function wire(){
+      bookEl && bookEl.querySelectorAll(".book").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const b = books.find(x => x.id === btn.dataset.book);
+          if(!b) return;
+          // Prefer a league that actually has data, so switching books doesn't
+          // land the operator on an empty page when a live one was available.
+          const pick = (b.items.find(i => i.recorded) || b.items[0]).slug;
+          select(pick);
+        });
       });
-    });
+      lgEl && lgEl.querySelectorAll(".lgt").forEach(btn => {
+        btn.addEventListener("click", () => select(btn.dataset.lg));
+      });
+    }
+
+    paint();
     return LEAGUE;
   });
 }
