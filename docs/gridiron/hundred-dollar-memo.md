@@ -62,3 +62,44 @@ promise instead: by end of September the operator will know — with
 pre-registered numbers — whether this venue's NFL board can pay the bar,
 and if it can't, they'll know that too, in time to decide what ceases and
 what pivots.
+
+---
+
+## ADDENDUM (2026-09-03) — CAPITAL CAPACITY: the constraint nobody had computed
+
+The memo priced the EDGE and never priced the BALANCE SHEET. D measured it
+(51c252e), and on a binary venue it is arithmetic rather than statistics:
+per-contract loss is BOUNDED (a long at p loses at most p, a short at most
+1−p, so at most $1/contract at settlement), therefore **peak total open
+contracts IS the worst-case dollar exposure.**
+
+**Measured on the August WNBA tape, AT UNIT SIZE: peak 702 contracts across
+91 concurrent non-flat markets (~$702 against a $1,000 wallet); time-weighted
+262 contracts across 38.6 markets.** v1 was already near the wallet's
+arithmetic capacity while quoting ONE contract, on a SMALL slate.
+
+Consequences the memo now carries:
+
+1. **The AGGREGATE limit binds, not the per-market cap.** A per-market K
+   bounds one market; ruin comes from the sum across concurrent markets. Any
+   K chosen without the aggregate number bounds the wrong object.
+2. **The arithmetic is linear in size: at 2 contracts/quote the peak worst
+   case is ~$1,404 — more than the wallet exists.** So $1,000 supports unit
+   size and no more on a WNBA-sized slate.
+3. **NFL is WORSE, not better.** A Sunday lists ~12 concurrent games against
+   WNBA's ~4–5, so unit-size peak exposure plausibly runs $1,400–$2,100 —
+   **above the wallet at ONE contract per quote.** Re-measurement on the NFL
+   board is required before this sizes anything; the WNBA figure does not
+   transfer.
+4. **This does not break the wallet — it INSTRUMENTS it.** The reservation
+   rule already refuses fills beyond available balance, so the wallet clips
+   rather than blows up, and **the capital-clip rate IS the measurement of
+   how much bankroll the strategy actually requires.** The scoreboard answers
+   the capital question by running, not by arguing.
+
+Conservatism stated so the number stays usable: the bound assumes every open
+contract settles against us at once, while this tape's whole cumulative
+settled P&L was about −$133. **The bound is the RUIN object (what cannot be
+exceeded); the realised distribution is the P&L object.** A wallet sizes on
+the first and forecasts on the second. Lower-bound caveats in the artifact:
+unit size, 4 games absent from the tick pin, exposure past the pin uncounted.
