@@ -56,6 +56,29 @@ CONCESSION_PREGAME = 0.021
 #: A too-tight bound simply raises the clip-to-zero rate, which is printed, so
 #: the artifact is measurable rather than hidden.
 DEPTH_STALENESS_S = 120.0
+#: The instant depth split onto its own slower loop, so every book_level written
+#: from here on carries its OWN captured_at (models.py BookLevel.captured_at:
+#: "Stamped by EVERY writer since 2026-08-07"; the local partitioned table's PK
+#: forbids NULL). BEFORE this, depth was fetched TOGETHER with its snapshot, so a
+#: NULL own-stamp there means the parent snapshot's captured_at is the exact
+#: time — safe to inherit. AFTER this, a NULL own-stamp is an ANOMALY (broken
+#: invariant, e.g. a bad Supabase import via scripts/import_supabase_export.py),
+#: NOT a fetched-together row, and inheriting the parent stamp would BACKDATE it
+#: — so post-epoch NULLs are counted OUT and flagged loudly, never inherited.
+#:
+#: RULE-20 LABEL (read this before inferring a bug from the fix below): this is
+#: DEFENSIVE HARDENING, and it FIRES ON ZERO CURRENT ROWS. As of 2026-09-03
+#: production holds 15,254,061 book_levels rows, all stamped, with ZERO NULL
+#: captured_at (checked) — so the parent-stamp-inherit branch and the anomaly
+#: counter guard a state that does not exist in the data today. It is NOT a
+#: bugfix for an observed defect; do not read the COALESCE below as evidence that
+#: rows were being dropped. It exists so that IF a recorder change or a bad
+#: Supabase import (scripts/import_supabase_export.py) reintroduces fetched-
+#: together NULL-stamp rows, they are recovered rather than silently dropped —
+#: which would read as a thin book, P&L-FLATTERING on a losing book (silent AND
+#: biased). Inert-and-self-reporting beats silent-and-biased. (Rule 20: a zero
+#: count forbids the CLAIM, not the build — it sets this label, in the code.)
+DEPTH_OWNSTAMP_EPOCH = dt.datetime(2026, 8, 7, tzinfo=dt.timezone.utc)
 #: Bankruptcy halt = OPERATIONAL ruin, not literal ruin (manager ruling,
 #: registered; supersedes the epsilon-at-zero version). Under reservation the
 #: book can never realize a loss larger than its equity, so concession equity
@@ -188,6 +211,14 @@ class Fill:
     #: its own size sets this; depth stays the cap it was registered as, never the
     #: size. (Sizing to full depth was the bug that voided the first wallet run.)
     quote_size: float = 1.0
+    #: Provenance of the matched depth level (set by the DB gather; defaults for
+    #: direct-construction tests). `depth_parent_stamped` is True when the level
+    #: was matched via its parent snapshot's stamp because its OWN stamp was NULL
+    #: — a pre-08-07 fetched-together row, where the parent stamp is exact (no
+    #: slower loop to backdate). `depth_staleness_s` is the chosen level's age at
+    #: fill time, so the parent-stamp relaxation is measured, never free.
+    depth_parent_stamped: bool = False
+    depth_staleness_s: float | None = None
 
 
 @dataclass
@@ -485,18 +516,36 @@ def _effective_seeds(session) -> dict[str, dict]:
 
 def _load_fills_with_depth(
     session, *, staleness_s: float = DEPTH_STALENESS_S,
-) -> tuple[list[Fill], int, int]:
+) -> tuple[list[Fill], int, int, int]:
     """shadow_quote_fills + the recorded book depth at each fill's quoted level.
 
     Depth-join (D's ruling, registered 6d4ce04): book_levels is ONE YES-frame
     book, so a BID quote joins side='bid' and an ASK joins side='offer', both at
-    price == quote_price (4dp exact; conservative-zero otherwise). Keyed on
-    book_levels.captured_at — depth samples on a slower loop and its own stamp is
-    the authority — with the staleness bound; NULL-stamped rows are counted OUT,
-    never inheriting the parent snapshot's stamp. Returns (fills, n_depth_absent,
-    n_total); depth absent (exact level not recorded fresh) -> depth 0 -> the
-    fill clips to zero, and that RATE is printed so the tick-neighbor artifact is
-    measurable (never a silent merge)."""
+    price == quote_price (4dp exact; conservative-zero otherwise), within the
+    staleness bound.
+
+    Time source (amended, D-approved + gated): the level's OWN stamp
+    (book_levels.captured_at) is the authority whenever present — depth samples
+    on a slower loop than price since DEPTH_OWNSTAMP_EPOCH, so its own stamp is
+    the only one that answers the ordering question, and the parent snapshot's
+    stamp is NEVER allowed to backdate a slow-loop row. A NULL own-stamp is
+    handled by EPOCH, not blanket: before DEPTH_OWNSTAMP_EPOCH depth was fetched
+    TOGETHER with the snapshot, so the own stamp is genuinely NULL and the
+    parent's captured_at IS the exact time (safe to inherit); at/after the epoch
+    a NULL own-stamp is a broken-invariant ANOMALY (not fetched-together) whose
+    parent stamp WOULD backdate it, so it is counted OUT and flagged loudly (D's
+    ruling — the staleness counter is blind to a backdated row, which reads
+    healthy precisely because it was backdated).
+
+    DEFENSIVE HARDENING, INERT TODAY: production holds zero NULL-stamped rows
+    (see DEPTH_OWNSTAMP_EPOCH), so the inherit branch fires on nothing now. It is
+    NOT the fix for the ~200x n_zero gap (that gap is on fully-stamped rows and
+    is still under investigation via --depth-debug); it prevents a FUTURE silent,
+    P&L-flattering drop of imported fetched-together rows.
+
+    Returns (fills, n_depth_absent, n_total, n_post_epoch_null_levels); the last
+    is the anomaly count (should be 0). depth absent -> depth 0 -> the fill clips
+    to zero, and that RATE is printed so the artifact is measurable."""
     import bisect
     from collections import defaultdict
 
@@ -508,31 +557,50 @@ def _load_fills_with_depth(
         FROM shadow_quote_fills ORDER BY filled_at
     """)).all()
     if not rows:
-        return [], 0, 0
+        return [], 0, 0, 0
 
     markets = sorted({r.market_slug for r in rows})
     tmin = min(r.filled_at for r in rows) - dt.timedelta(seconds=staleness_s)
     tmax = max(r.filled_at for r in rows)
+    # Effective stamp = own stamp when present; the parent snapshot's stamp only
+    # for a NULL own-stamp BEFORE the epoch (fetched-together, parent exact). A
+    # NULL own-stamp at/after the epoch fails the gate below -> excluded from the
+    # match (counted out) and tallied as an anomaly, never inherited/backdated.
+    epoch = DEPTH_OWNSTAMP_EPOCH
     lvls = session.execute(text("""
         SELECT ms.market_slug AS market_slug, bl.side AS side,
                bl.price AS price, bl.quantity AS quantity,
-               bl.captured_at AS captured_at
+               COALESCE(bl.captured_at, ms.captured_at) AS captured_at,
+               (bl.captured_at IS NULL) AS parent_stamped
         FROM book_levels bl
         JOIN market_snapshots ms ON ms.id = bl.snapshot_id
         WHERE ms.market_slug = ANY(:markets)
           AND bl.side IN ('bid','offer')
-          AND bl.captured_at IS NOT NULL          -- never inherit the parent stamp
-          AND bl.captured_at >= :tmin AND bl.captured_at <= :tmax
-    """), {"markets": markets, "tmin": tmin, "tmax": tmax}).all()
+          AND (bl.captured_at IS NOT NULL OR ms.captured_at < :epoch)
+          AND COALESCE(bl.captured_at, ms.captured_at) >= :tmin
+          AND COALESCE(bl.captured_at, ms.captured_at) <= :tmax
+    """), {"markets": markets, "tmin": tmin, "tmax": tmax, "epoch": epoch}).all()
+
+    # Anomaly: NULL own-stamp AT/AFTER the epoch (invariant broken) — counted
+    # out above, tallied here so it is LOUD rather than a silent coverage dip.
+    n_post_epoch_null = session.execute(text("""
+        SELECT count(*) FROM book_levels bl
+        JOIN market_snapshots ms ON ms.id = bl.snapshot_id
+        WHERE ms.market_slug = ANY(:markets)
+          AND bl.side IN ('bid','offer')
+          AND bl.captured_at IS NULL AND ms.captured_at >= :epoch
+          AND ms.captured_at >= :tmin AND ms.captured_at <= :tmax
+    """), {"markets": markets, "tmin": tmin, "tmax": tmax, "epoch": epoch}).scalar()
 
     series: dict[tuple, list] = defaultdict(list)
     for lv in lvls:
         series[(lv.market_slug, lv.side, round(float(lv.price), 4))].append(
-            (lv.captured_at, float(lv.quantity)))
+            (lv.captured_at, float(lv.quantity), bool(lv.parent_stamped)))
     index: dict[tuple, tuple] = {}
     for k, s in series.items():
-        s.sort()
-        index[k] = ([t for t, _ in s], [q for _, q in s])
+        s.sort(key=lambda x: x[0])
+        index[k] = ([t for t, _, _ in s], [q for _, q, _ in s],
+                    [p for _, _, p in s])
 
     fills: list[Fill] = []
     n_absent = 0
@@ -540,13 +608,17 @@ def _load_fills_with_depth(
         book_side = "bid" if r.side == "bid" else "offer"
         key = (r.market_slug, book_side, round(float(r.quote_price), 4))
         depth = 0.0
+        parent_stamped = False
+        staleness = None
         hit = index.get(key)
         if hit is not None:
-            times, qtys = hit
+            times, qtys, parents = hit
             pos = bisect.bisect_right(times, r.filled_at) - 1  # newest <= fill
             if pos >= 0 and times[pos] >= r.filled_at - dt.timedelta(
                     seconds=staleness_s):
                 depth = qtys[pos]
+                parent_stamped = parents[pos]
+                staleness = (r.filled_at - times[pos]).total_seconds()
         if depth <= 0:
             n_absent += 1
         fills.append(Fill(
@@ -554,8 +626,10 @@ def _load_fills_with_depth(
             quote_price=float(r.quote_price), mid_at_fill=float(r.mid_at_fill),
             filled_at=r.filled_at, depth=depth,
             settlement=(None if r.settlement is None else int(r.settlement)),
-            settled_at=r.settled_at))
-    return fills, n_absent, len(rows)
+            settled_at=r.settled_at,
+            depth_parent_stamped=(parent_stamped if depth > 0 else False),
+            depth_staleness_s=(staleness if depth > 0 else None)))
+    return fills, n_absent, len(rows), int(n_post_epoch_null or 0)
 
 
 def _load_mids(session, markets) -> dict[str, float]:
@@ -594,6 +668,13 @@ def _absent_meta(fills: list[Fill]) -> dict:
     wb_opt = [_wouldbe(f, 0.0) for f in absent]
     wb_conc = [_wouldbe(f, concession_for(f.regime)) for f in absent]
     ing_rate = (len(ingame_absent) / len(ingame)) if ingame else 0.0
+    # The parent-stamp relaxation, MEASURED: how many depth matches leaned on a
+    # fetched-together parent stamp (own stamp NULL), and how stale those chosen
+    # levels were. If this is a large share, the historical print is resting on
+    # the pre-08-07 tape — visible, not free.
+    ps = [f for f in fills if f.depth > 0 and f.depth_parent_stamped]
+    ps_stale = [f.depth_staleness_s for f in ps if f.depth_staleness_s is not None]
+    sized = [f for f in fills if f.depth > 0]
     return {
         "n_fills": n_total,
         "depth_absent": len(absent),
@@ -606,6 +687,11 @@ def _absent_meta(fills: list[Fill]) -> dict:
         "absent_wouldbe_opt_mean_c": (sum(wb_opt) / len(wb_opt) * 100) if wb_opt else 0.0,
         "absent_wouldbe_conc_mean_c": (sum(wb_conc) / len(wb_conc) * 100) if wb_conc else 0.0,
         "trigger_10pct_ingame": ing_rate > 0.10,
+        "n_depth_sized": len(sized),
+        "n_depth_parent_stamped": len(ps),
+        "depth_parent_stamped_rate": (len(ps) / len(sized)) if sized else 0.0,
+        "parent_stamped_staleness_max_s": max(ps_stale) if ps_stale else 0.0,
+        "parent_stamped_staleness_mean_s": (sum(ps_stale) / len(ps_stale)) if ps_stale else 0.0,
     }
 
 
@@ -641,7 +727,7 @@ def gather(session, *, staleness_s: float = DEPTH_STALENESS_S, now=None):
     """
     now = now or dt.datetime.now(dt.timezone.utc)
     seeds = _effective_seeds(session)                       # {lg: {amount, effective_at}}
-    fills, _n_absent, _n_total = _load_fills_with_depth(
+    fills, _n_absent, _n_total, n_post_epoch_null = _load_fills_with_depth(
         session, staleness_s=staleness_s)
     mids = _load_mids(session, {f.market_slug for f in fills
                                 if f.settlement is None})
@@ -663,6 +749,9 @@ def gather(session, *, staleness_s: float = DEPTH_STALENESS_S, now=None):
         "staleness_s": staleness_s,
         "live_absent": _absent_meta(live_fills),
         "historical_absent": _absent_meta(fills),
+        # Anomaly (should be 0): NULL own-stamp at/after DEPTH_OWNSTAMP_EPOCH —
+        # a broken invariant, counted out of the join, surfaced loudly here.
+        "post_epoch_null_levels": n_post_epoch_null,
     }
     return live, historical, meta
 
@@ -695,6 +784,13 @@ def run_db() -> int:
             print("  *** TRIGGER: ingame depth-absent > 10% — build the "
                   "within-one-min_tick snap (its own column, never replacing "
                   "exact-match). ***")
+        if am["n_depth_parent_stamped"]:
+            print(f"  depth via fetched-together parent stamp: "
+                  f"{am['n_depth_parent_stamped']:,} of {am['n_depth_sized']:,} "
+                  f"sized ({am['depth_parent_stamped_rate']:.1%}) | staleness "
+                  f"mean {am['parent_stamped_staleness_mean_s']:.0f}s, max "
+                  f"{am['parent_stamped_staleness_max_s']:.0f}s — the pre-08-07 "
+                  f"relaxation (own stamp NULL, parent exact), measured not free")
 
     def _book(b):
         drawdown = 1.0 - (b.concession / b.seed) if b.seed else 0.0
@@ -717,6 +813,12 @@ def run_db() -> int:
         if b.halt_line is not None:
             print(f"    HALT: {b.halt_line.note}")
 
+    if meta.get("post_epoch_null_levels"):
+        print(f"*** ANOMALY: {meta['post_epoch_null_levels']:,} book_levels with "
+              f"NULL captured_at AT/AFTER {DEPTH_OWNSTAMP_EPOCH.date()} — the "
+              f"own-stamp invariant is broken (bad import?). These are counted "
+              f"OUT of the depth join, never inherited. Investigate. ***\n")
+
     print("=== LIVE WALLET (forward-only from each seed line; bars "
           f"${DAILY_BAR}/day, ${MONTHLY_BAR:.0f}/mo) ===")
     if not meta["seeded"]:
@@ -736,6 +838,121 @@ def run_db() -> int:
     _absent_line(meta["historical_absent"])
     for b in sorted(historical.books.values(), key=lambda x: x.slug):
         _book(b)
+    return 0
+
+
+def _depth_debug(n: int = 20, staleness_s: float = DEPTH_STALENESS_S) -> int:
+    """Instrument the depth-join predicate funnel for the first N zero-depth
+    fills — names which predicate collapses coverage, MEASURED on real data
+    rather than hypothesised (the 200x n_zero gap). Run against prod:
+
+        python -m core.quote.wallet --depth-debug [N]
+
+    Replicates _load_fills_with_depth's exact matcher (same float-4dp key, same
+    bisect + staleness), then for each zero-depth fill shows the count surviving
+    each successive predicate. The column that drops to 0 IS the cause:
+      * +side=0            -> side value / mapping
+      * +price[numeric]=0  -> the exact price is not in the book (tick/frame);
+                              'book prices present' shows what IS there vs quote
+      * +price[round4] != +price[numeric] -> float-4dp rounding (the price-repr
+                              hypothesis) diverges from NUMERIC equality
+      * +window=0 (price>0) -> staleness/time: the level exists but not near fill
+      * python_index_has_key=False while +price[numeric]>0 -> a Python-matcher
+                              bug (the float key), the smoking gun
+    The fill's quote_price is compared as NUMERIC (bound as its Decimal), never
+    via a float CAST that would itself inject the error we are testing for."""
+    import bisect
+    from collections import defaultdict
+
+    from sqlalchemy import text
+
+    from core.storage import get_sessionmaker
+    from core.storage.base import get_engine
+
+    with get_sessionmaker(get_engine())() as s:
+        rows = s.execute(text(
+            "SELECT market_slug, side, quote_price, filled_at, regime "
+            "FROM shadow_quote_fills ORDER BY filled_at")).all()
+        if not rows:
+            print("no shadow_quote_fills here.")
+            return 0
+        markets = sorted({r.market_slug for r in rows})
+        tmin = min(r.filled_at for r in rows) - dt.timedelta(seconds=staleness_s)
+        tmax = max(r.filled_at for r in rows)
+        lvls = s.execute(text("""
+            SELECT ms.market_slug AS market_slug, bl.side AS side,
+                   bl.price AS price, bl.quantity AS quantity,
+                   COALESCE(bl.captured_at, ms.captured_at) AS captured_at
+            FROM book_levels bl JOIN market_snapshots ms ON ms.id = bl.snapshot_id
+            WHERE ms.market_slug = ANY(:markets) AND bl.side IN ('bid','offer')
+              AND COALESCE(bl.captured_at, ms.captured_at) >= :tmin
+              AND COALESCE(bl.captured_at, ms.captured_at) <= :tmax
+        """), {"markets": markets, "tmin": tmin, "tmax": tmax}).all()
+        series: dict[tuple, list] = defaultdict(list)
+        for lv in lvls:
+            series[(lv.market_slug, lv.side, round(float(lv.price), 4))].append(
+                (lv.captured_at, float(lv.quantity)))
+        index: dict[tuple, tuple] = {}
+        for k, v in series.items():
+            v.sort(key=lambda x: x[0])
+            index[k] = ([t for t, _ in v], [q for _, q in v])
+
+        zeros = []
+        for r in rows:
+            bs = "bid" if r.side == "bid" else "offer"
+            key = (r.market_slug, bs, round(float(r.quote_price), 4))
+            depth = 0.0
+            hit = index.get(key)
+            if hit is not None:
+                times, qtys = hit
+                pos = bisect.bisect_right(times, r.filled_at) - 1
+                if pos >= 0 and times[pos] >= r.filled_at - dt.timedelta(
+                        seconds=staleness_s):
+                    depth = qtys[pos]
+            if depth <= 0:
+                zeros.append(r)
+
+        print(f"book_levels loaded in window: {len(lvls):,}  |  "
+              f"zero-depth fills: {len(zeros):,}/{len(rows):,} "
+              f"({(len(zeros) / len(rows) if rows else 0):.1%})  |  "
+              f"staleness {staleness_s:.0f}s  |  first {min(n, len(zeros))}:")
+
+        for i, r in enumerate(zeros[:n]):
+            bs = "bid" if r.side == "bid" else "offer"
+            qpk = round(float(r.quote_price), 4)
+            p = {"m": r.market_slug, "bs": bs, "qp": r.quote_price, "qpk": qpk,
+                 "lo": r.filled_at - dt.timedelta(seconds=staleness_s),
+                 "hi": r.filled_at}
+
+            def cnt(where, _p=p):
+                return s.execute(text(
+                    "SELECT count(*) FROM book_levels bl "
+                    "JOIN market_snapshots ms ON ms.id = bl.snapshot_id "
+                    "WHERE ms.market_slug = :m " + where), _p).scalar()
+
+            c_m = cnt("")
+            c_s = cnt("AND bl.side = :bs")
+            c_p = cnt("AND bl.side = :bs AND bl.price = :qp")
+            c_pk = cnt("AND bl.side = :bs AND round(bl.price, 4) = :qpk")
+            c_w = cnt("AND bl.side = :bs AND bl.price = :qp "
+                      "AND COALESCE(bl.captured_at, ms.captured_at) "
+                      "BETWEEN :lo AND :hi")
+            in_index = (r.market_slug, bs, qpk) in index
+            near = s.execute(text(
+                "SELECT bl.price AS price, count(*) AS c FROM book_levels bl "
+                "JOIN market_snapshots ms ON ms.id = bl.snapshot_id "
+                "WHERE ms.market_slug = :m AND bl.side = :bs "
+                "AND COALESCE(bl.captured_at, ms.captured_at) BETWEEN :lo AND :hi "
+                "GROUP BY bl.price ORDER BY c DESC LIMIT 8"), p).all()
+
+            print(f"\n[{i}] {r.market_slug} side={r.side}->{bs} "
+                  f"quote_price={r.quote_price} (float key {qpk}) "
+                  f"filled_at={r.filled_at.isoformat()}")
+            print(f"    funnel: market={c_m:,}  +side={c_s:,}  "
+                  f"+price[numeric]={c_p:,}  +price[round4]={c_pk:,}  "
+                  f"+window={c_w:,}  |  python_index_has_key={in_index}")
+            pr = ", ".join(f"{float(x.price):.4f}x{x.c}" for x in near) or "NONE"
+            print(f"    book prices present (this mkt+side, in window): {pr}")
     return 0
 
 
@@ -1073,6 +1290,11 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--db", action="store_true",
                     help="fold the live tables and print the scoreboard")
+    ap.add_argument("--depth-debug", nargs="?", type=int, const=20, default=None,
+                    metavar="N",
+                    help="instrument the depth-join predicate funnel for the "
+                         "first N zero-depth fills (default 20) — names the "
+                         "predicate that collapses coverage, on real data")
     args = ap.parse_args()
     if args.selftest:
         rc = _selftest_primitives()
@@ -1081,6 +1303,8 @@ def main() -> int:
         print()
         rc |= _selftest_rule16()
         return rc
+    if args.depth_debug is not None:
+        return _depth_debug(n=args.depth_debug)
     if args.db:
         return run_db()
     print(__doc__)

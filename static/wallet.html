@@ -144,6 +144,14 @@ function absentPanel(a){
   const trig = a.trigger_10pct_ingame
     ? `<div class="trigger">■ TRIGGER: ingame depth-absent &gt; 10% — build the
        within-one-min_tick snap as its own labelled column (never replacing exact-match).</div>` : "";
+  const ps = a.n_depth_parent_stamped
+    ? `<div class="note">depth via fetched-together parent stamp:
+       ${a.n_depth_parent_stamped} of ${a.n_depth_sized} sized
+       (${(a.depth_parent_stamped_rate*100).toFixed(1)}%) — staleness mean
+       ${a.parent_stamped_staleness_mean_s.toFixed(0)}s, max
+       ${a.parent_stamped_staleness_max_s.toFixed(0)}s. Pre-08-07 rows carry a
+       NULL own-stamp (depth fetched with the snapshot, so the parent stamp is
+       exact); the relaxation is measured, never free.</div>` : "";
   return `<div class="absent">
     <span class="k">depth-absent (clip-to-zero): ${a.count} fills</span>
     — ${(a.rate*100).toFixed(1)}% of all, ${(a.ingame_rate*100).toFixed(1)}% of ingame.
@@ -154,6 +162,7 @@ function absentPanel(a){
       an absent fill contributes nothing, so on a negative-capture book it FLATTERS the
       loss (the would-be line is how much). Depth-sized numbers are per-fill optimistic —
       recorded depth is others' resting size holding time priority.</div>
+    ${ps}
     ${trig}
   </div>`;
 }
