@@ -200,3 +200,133 @@ and never being filled. **Our quote-less levers address only the first.** A
 null would be evidence the loss lives in the other two, and both are already
 measured: inventory shows an 18× variance fan-out across peak position, and
 queue depth runs ~1,000 contracts ahead of us at our own price.
+
+
+---
+
+# AMENDMENT — TWO ENGINES, THREE CUTS (2026-09-03, BEFORE the first slate)
+
+**Registered before any CFB game has kicked off and before any arm has run.**
+The five-arm design above is superseded. Nothing here is fitted to a result
+from the slate it governs; every number cited comes from the WNBA tape, and the
+mechanism that forced the change (phantom fills, WAVE_STANDARD rule 24) was
+discovered today and is documented at `docs/math/adverse-selection-measured.md`.
+
+## Why the design changed
+
+**63.9% of our shadow fills could not have occurred.** The simulator rests an
+order against a recorded book that does not contain it, so the recorded bid can
+fall below our own price and drag the mid onto it while nobody was offering
+anywhere near us. Separated, on 17,339 fills at 100% classification and 100%
+settlement coverage:
+
+| population | n | settlement P&L / fill |
+|---|---:|---:|
+| phantom | 11,084 | **+0.951¢** |
+| real | 6,255 | **−3.376¢**, game-clustered **[−5.06, −1.78]**, 12 of 13 games losing |
+
+Two independent instruments agree: manager's fills-table read **−3.38¢**, D's
+whole-book replay **−3.62¢**.
+
+## THE STRUCTURAL RULING — engines for PRICES, cuts for SELECTIONS
+
+**Per-fill capture is a market fact at the fill instant. It does not depend on
+the engine's inventory or history.** Therefore a policy that only changes WHICH
+observed fills you keep is recoverable as a **cut on BASE's own fills** — no
+engine, no slot, and read on *all* of BASE's fills rather than a fifth of the
+slate. A policy that changes the PRICES QUOTED is not recoverable: you cannot
+ask a tape "what if we had offered a cent tighter" when we never did.
+
+**WIDTH, LATE-SUPPRESS and PATIENCE are selections → CUTS.
+FLATTEN is a price counterfactual → ENGINE.**
+
+Stated honestly: a cut answers *"would these fills have been better?"*; an arm
+answers *"would this policy have been better?"*, including path and inventory
+effects a cut cannot see. For the primary metric they are near-equivalent and
+the cut has ~5× the sample. **This dissolves the power constraint that made
+WIDTH-FLOOR the binding arm.**
+
+## The registered shape
+
+**ENGINES (2):**
+- **BASE** — v1 unchanged. On NFL/CFB its job is to answer *does football behave
+  differently from WNBA at all*, because on WNBA touch-joining is dead (below).
+- **FLATTEN(k=1¢)** — the only arm that leaves the losing family rather than
+  partitioning it. **k=1¢ re-derived on real fills and RETAINED.**
+
+**PRE-DECLARED CUTS on BASE's fills (3), fixed here before data:**
+- **WIDTH** — buckets ≤1.5 / 1.5–2.5 / 2.5–3.5 / 3.5–5.5 / >5.5¢ of quoted spread.
+- **LATENESS** — by `event_period`, late window versus the rest.
+- **PATIENCE** — fills arriving within 30s of a prior fill in the same market
+  versus the rest.
+
+## Metric ruling
+
+- **PRIMARY: settlement P&L.** Stated limit: on a binary held to expiry it is
+  dominated by directional variance, so **the effective sample is games, not
+  fills** — all CIs game-clustered.
+- **SECONDARY: markout at pre-named horizons.** Lower variance, real power at
+  this n, and it exhibits the mechanism directly.
+- **RETIRED: capture versus mid-at-fill.** Wrong for a maker in both
+  directions. The manager's "~61% of the loss is mechanical half-spread, true
+  loss ≈ −0.90¢" decomposition is **withdrawn** as a flattering heuristic.
+- **PHANTOM FLAG on every arm and every cut**, always reported.
+- **RULE 25 COMPLIANCE, binding on every comparison here:** the arms differ in
+  activity by construction, so **no composite may be reported alone.** Fill
+  count, opportunity count and per-event mean travel together, and every
+  ranking is checked at both degenerate extremes (never act / act always). A
+  metric that either extreme wins is ranking activity, not policy.
+
+## FLATTEN is scored on DISPERSION AND TAIL, not mean
+
+Its registered premise is inventory RISK — *"we accumulate and wear it"* — which
+a per-fill mean structurally cannot address. **The other version of the premise
+is already dead:** on real fills, capture by position before the fill is flat
+(0 → −2.305¢, 1–2 → −2.334¢, 3–5 → −2.340¢, 6–10 → −2.530¢, >10 → −1.791¢) and
+fills that ADD to a position (−2.310¢) are indistinguishable from those that
+REDUCE it (−2.293¢). **Inventory does not degrade fill quality.** What remains
+is the 18× dispersion fan-out by peak inventory, and that is what FLATTEN is
+for. Scoring it on mean would test a hypothesis nobody registered.
+
+**And the caveat that outranks the parameter: every cell is negative at every k.**
+Best on the board is wide-band k=1¢ at **−1.13¢/fill**. **Flattening improves a
+losing book; it does not make a winning one.** The aggregate +$17.55 at k=1¢ is
+a fill-count and mix effect, **not a per-fill positive.** *"FLATTEN leaves the
+losing family"* means **by being less negative** — it must not harden into
+*"FLATTEN wins."*
+
+## Why WIDTH is a cut and not a lever
+
+Its original hypothesis (*wide is better*) was a phantom artifact: the phantom
+share rises with spread (43.6% → 78.9%) and phantoms are less bad, manufacturing
+a spurious gradient. Cleaned, capture runs the other way monotonically
+(−1.666¢ → −3.800¢). **But the restraint travels with the number: "wide is best"
+is REFUTED; "wide is worst" is NOT ESTABLISHED** — n=483 and n=129 real fills in
+the wide bands, CIs spanning zero. **Width leaves the lever list because the
+evidence that it was good is gone, not because the wide end is bad.**
+
+*Two mechanisms were proposed for the k boundary and both were refuted by their
+own predictions* (instant-phantom: phantom share is flat in k; through-the-mid:
+the boundary does not scale with spread, 3¢/1¢/1¢ across bands). **k=1¢ stands
+as an empirical regularity — it improves per-fill P&L in all three spread bands
+— not as a mechanism.** Effective lean is `min(k, s − tick)`; the post-only
+clamp makes nominal k and effective k differ in tight books.
+
+## Recording requirement
+
+`shadow_quote_fills` keeps `mid_at_fill` but discards the ask the engine held at
+the same instant, so phantom status is **not computable from the row**. The
+variant engines record **the touch at fill (best_bid_at_fill, best_ask_at_fill)
+from the same observation the fill was judged against** — not re-joined from the
+tape afterwards. Without it, Saturday's phantom classification depends on a
+coverage-dependent join.
+
+## Pre-declared expectation
+
+**BASE on football is expected to lose**, in the −2 to −4¢/fill region, if
+football behaves like WNBA. **A BASE result near zero or positive is the
+surprise**, and would be the single most important read of the slate — it would
+say the venue, not the strategy, was the problem. FLATTEN is expected to be
+**less negative than BASE on dispersion**, not positive on mean.
+
+**No in-sample result justifies capital. The forward test is the evidence.**
