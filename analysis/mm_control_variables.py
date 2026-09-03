@@ -532,6 +532,98 @@ def m4_terminal_dispersion(fills: pd.DataFrame) -> None:
           "supported, and only the prospective cap (M6) can test it.")
 
 
+def m7_concurrent_exposure(con, fills: pd.DataFrame) -> None:
+    """A per-market cap does not bound the BOOK (c7's gap, measured rather
+    than flagged). Ruin comes from TOTAL exposure across CONCURRENT
+    markets: K per market x N simultaneous markets is the number that
+    touches a $1,000 wallet, and N was never measured — the 147/209 market
+    counts elsewhere in this file are CUMULATIVE, not concurrent.
+
+    Method: every fill is an event changing one market's q; every market
+    also ends (its last two-sided live tick — same convention as M0, so a
+    position stops counting when the market stops being observable rather
+    than riding forever). Walking that event stream globally gives, at each
+    instant, total |q| across all open markets and how many markets are
+    non-flat. Time weighting is by the interval each state was held.
+
+    The dollar reading is exact because of the bounded-loss property: total
+    |q| contracts can lose at most $1 each, so PEAK TOTAL |q| IS THE
+    ARITHMETIC WORST CASE FOR THE WHOLE BOOK in dollars."""
+    hr("M7. CONCURRENT BOOK EXPOSURE — what a $1,000 wallet actually faces "
+       "(a per-market cap bounds a market, not the book)")
+    f = fills.sort_values("filled_at").copy()
+    f["sgn"] = np.where(f.side == "bid", 1.0, -1.0)
+    ends = con.execute("SELECT market_slug, max(captured_at) t_end "
+                       "FROM tk GROUP BY 1").df().set_index(
+                           "market_slug").t_end
+    events: list[tuple] = []
+    for m, g in f.groupby("market_slug"):
+        q = 0.0
+        for t, s in zip(g.filled_at, g.sgn):
+            q += s
+            events.append((t, m, q))
+        t_end = ends.get(m)
+        if pd.notna(t_end):
+            te = pd.Timestamp(t_end)
+            te = te.tz_convert("UTC") if te.tzinfo else te.tz_localize("UTC")
+            events.append((te, m, 0.0))
+    if not events:
+        print("no events")
+        return
+    events.sort(key=lambda e: e[0])
+    live: dict[str, float] = {}
+    peak_abs = peak_n = 0.0
+    wsum = wn = wt = 0.0
+    prev_t = events[0][0]
+    peak_at = None
+    for t, m, q in events:
+        dt_s = (t - prev_t).total_seconds()
+        if dt_s > 0:
+            tot = sum(abs(v) for v in live.values())
+            n = sum(1 for v in live.values() if v != 0)
+            wsum += tot * dt_s
+            wn += n * dt_s
+            wt += dt_s
+        live[m] = q
+        tot = sum(abs(v) for v in live.values())
+        n = sum(1 for v in live.values() if v != 0)
+        if tot > peak_abs:
+            peak_abs, peak_at = tot, t
+        peak_n = max(peak_n, n)
+        prev_t = t
+    print(f"observed span {wt / 3600:.1f} hours across "
+          f"{f.market_slug.nunique()} markets / {f.game_id.nunique()} games")
+    print(f"  PEAK total |q| across all open markets: {peak_abs:.0f} "
+          f"contracts (at {peak_at})")
+    print(f"  peak concurrent NON-FLAT markets: {peak_n:.0f}")
+    print(f"  time-weighted total |q|: {wsum / wt:.1f} contracts; "
+          f"time-weighted non-flat markets: {wn / wt:.1f}")
+    print(f"\nTHE ARITHMETIC WALLET NUMBER: at most $1 of loss per contract, "
+          f"so this book's PEAK worst case was ~${peak_abs:.0f} and its "
+          f"time-weighted worst case ~${wsum / wt:.0f} — against a $1,000 "
+          f"wallet, at UNIT size.")
+    print("  scaling is the operator's decision and the arithmetic is "
+          "linear: at size S per fill the peak worst case is "
+          f"~${peak_abs:.0f} x S. A wallet that must survive its own worst "
+          "observed night sets S from that, not from a per-market K.")
+    print("\nHOW CONSERVATIVE THAT BOUND IS, stated so it is usable: it "
+          "assumes EVERY open contract settles against us at once. Real "
+          "books hold both directions across uncorrelated games, so the "
+          "realised figure is far smaller — this tape's entire cumulative "
+          "settled P&L over 13 games was about −$133 against a peak bound "
+          "of ~$702. The bound is the RUIN object (what cannot be exceeded) "
+          "and the realised distribution is the P&L object; a wallet sizes "
+          "on the first and forecasts on the second.")
+    print("\nCAVEATS: (1) unit size — v1 quoted one contract; (2) the span "
+          "is the tick pin's, so the 4 games outside it are absent and this "
+          "is a LOWER bound on true concurrency; (3) markets stop counting "
+          "at their last observable tick, so genuinely-held-to-settlement "
+          "exposure past the pin is not counted; (4) WNBA slates are small "
+          "— an NFL Sunday lists far more concurrent games, so this number "
+          "does not transfer and must be re-measured on the NFL board "
+          "before it sizes anything.")
+
+
 def m6_inventory_cap(fills: pd.DataFrame) -> None:
     """PROSPECTIVE inventory cap — the run that decides whether the tail
     finding means anything (c7's item 3, highest-value remaining).
@@ -653,6 +745,16 @@ def m6_inventory_cap(fills: pd.DataFrame) -> None:
           "the honest bound ON THAT COST.")
     print("(c) FLATTENING — the live P&L lever (M5), rates as upper "
           "bounds. Convert the position; do not refuse the fill.")
+    print("\nWHY THE BOUND ROUTE IS STRONGER HERE THAN ANYWHERE ELSE (c7; a "
+          "structural property of this venue our record had never stated): "
+          "ON A BINARY MARKET THE PER-CONTRACT LOSS IS BOUNDED. A long at p "
+          "loses at most p; a short at p loses at most (1−p); either way at "
+          "most $1 per contract at settlement. So a per-market cap of K "
+          "bounds that market's loss at ~$K ARITHMETICALLY — not in "
+          "expectation, not within a CI. In equities a position limit is a "
+          "heuristic against unbounded loss; here it is a hard guarantee. "
+          "That is why the risk-limit route works precisely where the "
+          "statistics cannot reach.")
 
     print("\nAND THE CLUSTERED VERDICT GOVERNS: a total delta is a sum over "
           "a handful of games. If the per-game row above shows a coin-flip "
@@ -896,6 +998,25 @@ def selftest() -> int:
     check("M6 cap K=3 keeps all three (|q| never exceeds 3)",
           t5.count("+1.80") >= 2)
 
+    # M7: two markets each reaching |q|=1 at overlapping times must peak at
+    # total 2, not 1 — the whole point of concurrency.
+    conc = pd.DataFrame([_f("mX", "bid", T(0)), _f("mY", "bid", T(2))])
+    con.execute("DROP TABLE IF EXISTS tk")
+    con.execute("""CREATE TEMP TABLE tk AS
+        SELECT 'mX' AS market_slug, ticks_df.captured_at, 0.4 AS mid,
+               0.04 AS spread, 'Q2' AS event_period FROM ticks_df
+        UNION ALL SELECT 'mY', ticks_df.captured_at, 0.4, 0.04, 'Q2'
+        FROM ticks_df""")
+    buf6 = _io.StringIO()
+    with contextlib.redirect_stdout(buf6):
+        m7_concurrent_exposure(con, conc)
+    t6 = buf6.getvalue()
+    check("M7 peaks at 2 concurrent contracts across 2 markets",
+          "PEAK total |q| across all open markets: 2" in t6
+          and "peak concurrent NON-FLAT markets: 2" in t6)
+    con.execute("DROP TABLE IF EXISTS tk")
+    con.execute("CREATE TEMP TABLE tk AS SELECT * FROM ticks_df")
+
     # M0 must not stitch: a market with no tick coverage contributes to the
     # fill-instant distribution but not the time-weighted one.
     nocov = add_inventory(pd.DataFrame([_f("mZZ", "bid", T(0))]))
@@ -966,6 +1087,7 @@ def main() -> int:
     """).df().set_index("fid")
     ing["period"] = ing.index.map(st.event_period)
 
+    m7_concurrent_exposure(con, ing)  # c7: the aggregate the wallet faces
     m6_inventory_cap(ing)             # c7 item 3: the deciding run
     m5_flattening_lean(con, ing)
     m4_terminal_dispersion(ing)
