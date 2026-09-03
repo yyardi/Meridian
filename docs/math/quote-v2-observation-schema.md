@@ -65,27 +65,46 @@ compliant stream accrue in parallel with A1's gate.
 | `quote_bid`, `quote_ask` | Price null | **PATIENCE — the resting quote at this obs, incl. unfilled requotes (the full stream)** |
 | `quote_event` | str | quote lifecycle: rested / requoted / withdrawn / held / filled_bid / filled_ask / none — PATIENCE requote behaviour |
 | `our_bid_qty`, `our_ask_qty` | Qty null | **the fill-probability surface's SECOND axis: resting size AT our own quote price on each side — the queue we sit behind.** NULL when we hold no standing quote on that side (no queue) or no book sample backs the row. Sampled for QUOTED markets only, on a bounded cadence (see limitation below) |
-| `depth_fetched_at` | ts (tz) null | **staleness of the queue-ahead sample: `observed_at − depth_fetched_at`, carried on every row that reuses a cached book.** A consumer MUST check it against the staleness bound before using the queue number |
+| `depth_fetched_at` | ts (tz) null | when the queue-ahead sample was fetched (staleness = `observed_at − depth_fetched_at`); the SECONDARY/backstop gate |
+| `depth_best_bid`, `depth_best_ask` | Price null | **the PRIMARY validity gate (D): the touch in the sampled book AT `depth_fetched_at`. Compare to `best_bid`/`best_ask` (the touch at `observed_at`): SAME → queue-ahead exactly valid; DIFFERENT → unusable at ANY age.** Price identity, not elapsed time — in-play touch survival is median 2s / p90 17s, so no time threshold separates fresh from dead |
 | `det_in_window` | bool | live congestion detector: is this obs inside a confirmed window (opens t0+5s) |
 | `det_confirm_t0` | ts null | **B sign-off: the confirmed trigger's t0 AS A VALUE, not a boolean.** The true confirm instant is t0+5s, which falls BETWEEN observations; a boolean flag is quantized to obs times while offline replay computes exact instants, so they could never byte-match. Recording t0 pins the confirm identity exactly and gives the density-gated v2 its confirm times for free. NULL when no confirm is tied to this obs |
 
-**LIMITATION — queue-ahead depth (`our_bid_qty`/`our_ask_qty`), read this where
-you meet the field (manager 2026-09-03):** the queue-ahead is the resting size at
-*our own quote price*, which is the honest object for `P(fill | distance, queue-
-ahead)` — chosen over top-of-book size because the venue snapshot carries NO size
-at all (`Quote` = value+currency), so top-of-book would cost the identical book
-fetch while degrading exactly when we lean inside the touch, i.e. for its own
-test case. It is sampled from the venue book on a **bounded cadence**
-(`DEPTH_REFRESH_INTERVAL_SECONDS`, engine_v2), NOT per-observation and NOT joined
-from `book_levels` (that cross-stream point-in-time join is the hazard this
-project already paid for). So the number can be up to one refresh interval stale;
-`depth_fetched_at` makes that visible per row, and beyond
-`DEPTH_QUEUE_STALENESS_MAX_SECONDS` the queue-ahead is UNUSABLE, not merely stale.
-Both constants are D's convention (contemporaneous-depth semantics) and live as
-named constants so a change is one line. The fetch is read-only (proof 2: no
-order/auth/credential import) and off the decision path (proof 3: `record_cycle`
-never mutates `_standing`/fills), fail-open to NULL — coverage counted, never a
-stall of quoting.
+**LIMITATION & VALIDITY GATE — queue-ahead depth (`our_bid_qty`/`our_ask_qty`),
+read this where you meet the field (manager + D, 2026-09-03):** the queue-ahead is
+the resting size at *our own quote price*, the honest object for `P(fill |
+distance, queue-ahead)` — chosen over top-of-book size because the venue snapshot
+carries NO size at all (`Quote` = value+currency), so top-of-book would cost the
+identical book fetch while degrading exactly when we lean inside the touch, i.e.
+for its own test case. Sampled from the venue book (NOT joined from `book_levels`
+— that cross-stream point-in-time join is the hazard this project already paid
+for; this is the observation's own fresh read).
+
+**The validity gate is PRICE IDENTITY, not elapsed time (D).** Queue-ahead is a
+claim about the queue AT price P; it stays exactly valid while the market still
+quotes P (1 s or 5 min) and is meaningless the instant the touch moves, at any
+age. A time threshold approximates that, and badly: WNBA in-play touch survival is
+median **2 s**, p90 **17 s** — no single number separates fresh from dead. So the
+**consumer's PRIMARY gate is `depth_best_bid/depth_best_ask` (the touch AT the
+sample) == `best_bid/best_ask` (the touch at observation)**: same → exactly valid;
+different → unusable at any age. `DEPTH_QUEUE_STALENESS_MAX_SECONDS` is only a
+SECONDARY backstop (a touch that moved away and coincidentally returned to the
+same price would pass price-identity wrongly; a sample older than the backstop is
+rejected regardless). The writer never drops on either — it records the stamp +
+the touch and lets the consumer judge (coverage counted, never hidden).
+
+**Refresh** is touch-change-triggered with a floor (`DEPTH_REFRESH_INTERVAL_SECONDS`):
+refetch when the touch has moved AND ≥ the floor has passed, or past the backstop.
+The floor bounds the rate — naive touch-change on a 2 s median would be ~10 req/s
+across 20 markets, over the throttle and onto an already-oversubscribed gateway
+(below); the floor caps it at `(quoted markets)/interval` = 4 req/s at 20/5 s.
+Both constants are D's convention, named so a change is one line. **CAVEAT (D):
+these survival numbers are WNBA in-play; NFL in-play is unmeasured until the first
+slate — but the price-identity gate needs no constant to be right, so only the
+refresh cadence's efficiency, not the gate's correctness, depends on the number.**
+The fetch is read-only (proof 2: no order/auth/credential import) and off the
+decision path (proof 3: `record_cycle` never mutates `_standing`/fills), fail-open
+to NULL — never a stall of quoting.
 
 **Deliberately NOT stored — recomputed offline from the raw stream, to avoid
 freezing a version into the table:**
@@ -125,19 +144,25 @@ freezing a version into the table:**
    stream and records `det_in_window` / `det_confirm_t0` / `det_version`.
 6. **Queue-ahead depth, bounded and off-path** — for markets we are actively
    quoting, record the resting size at our own price (`our_bid_qty`/
-   `our_ask_qty`) from a book fetched at most once per
-   `DEPTH_REFRESH_INTERVAL_SECONDS` and cached per market; stamp
-   `depth_fetched_at`. Read-only gateway client (no order/auth/credential — the
-   AST test still passes), off the decision path, fail-open to NULL. Request-rate
-   bound: `(quoted markets) / interval` ≈ 0.67 req/s at 30 s and ~20 quoted
-   markets. **Honest sum (manager, 2026-09-03): that ~3% adds to a PRE-EXISTING
-   gateway oversubscription — the configured per-process caps already total 31
-   req/s against a 20 req/s per-IP ceiling (155%).** It does not breach today
-   (both live recorders idle on empty boards), but Sept 17 is the first WNBA+NFL
-   simultaneous-live moment all consumers could draw near cap at once. The
-   oversubscription is a SEPARATE reconciliation item (caps down / cadences
-   staggered / measured peak proven under ceiling), NOT this change — recorded
-   here so the deployer meets the complete sum, not a clean-looking fraction.
+   `our_ask_qty`) + the touch at fetch (`depth_best_bid`/`depth_best_ask`, the
+   price-identity gate) + `depth_fetched_at`, from a book refetched touch-change-
+   triggered with a floor of `DEPTH_REFRESH_INTERVAL_SECONDS` (backstop
+   `DEPTH_QUEUE_STALENESS_MAX_SECONDS`). Read-only gateway client (no
+   order/auth/credential — the AST test still passes), off the decision path,
+   fail-open to NULL. Request-rate bound: `(quoted markets) / interval` ≤ **4 req/s
+   worst case** at 5 s and ~20 simultaneously-active quoted markets (only markets
+   whose touch moved within the window refetch; quiet markets ride the 60 s
+   backstop, far less). **Honest sum (manager, 2026-09-03): D's price-identity
+   refresh raised this addition from the earlier 30 s placeholder (~0.67 req/s) to
+   ≤4 req/s — ~20% of the 20 req/s ceiling in the worst case — and it lands on a
+   gateway whose configured per-process caps ALREADY total 31 req/s (155%
+   oversubscribed).** No breach today (both live recorders idle on empty boards),
+   but Sept 17 is the first WNBA+NFL simultaneous-live moment all consumers could
+   draw near cap at once, and the queue-ahead is no longer negligible against it.
+   The oversubscription is a SEPARATE reconciliation item (caps down / cadences
+   staggered / measured peak proven under ceiling — the concurrent-draw
+   measurement is in flight), NOT this change — recorded here so the deployer
+   meets the complete sum, not a clean-looking fraction.
 
 ## Read embargo (amendment 10, 256c038)
 
