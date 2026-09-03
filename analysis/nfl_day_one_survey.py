@@ -284,42 +284,64 @@ def m1b_width_x_flow(df: pd.DataFrame, stats: pd.DataFrame | None) -> None:
         print("no two-sided rows yet")
         return
     two["spread_c"] = (two.best_ask - two.best_bid) * 100
-    w = two.groupby("sports_market_type").agg(
-        markets=("market_slug", "nunique"),
-        spread_p50_c=("spread_c", "median"),
-        spread_p90_c=("spread_c", "quantile"))
+    # PER-MARKET (per rung), never per type. A type's MEDIAN width crossed
+    # with any-rung-traded would flag a type whose WIDE rungs are dead and
+    # whose TRADED rungs are tight — the exact false positive this table
+    # exists to avoid, and the reason the manager's market-level count
+    # (56/136 traded) is not the same statistic as their type-level one
+    # (4/18). The cell must be one rung that is BOTH.
+    per_mkt = two.groupby("market_slug").agg(
+        mtype=("sports_market_type", "first"),
+        spread_c=("spread_c", "median"))
     if stats is None or stats.empty:
         print("market_trade_stats NOT SUPPLIED — width only, flow unknown. "
               "On a pregame board this is the expected state until either "
-              "kickoff or a stats-only pregame sweep exists; the cross-tab "
+              "kickoff or the stats-only sweep's rows land; the cross-tab "
               "is the point, so a width-only run answers half the question.")
-        print(w.round(1).to_string())
+        print(per_mkt.groupby("mtype").agg(
+            markets=("spread_c", "size"),
+            spread_p50_c=("spread_c", "median")).round(1).to_string())
         return
-    latest = (stats.sort_values("captured_at")
-              .groupby("market_slug").last())
-    latest["mtype"] = latest.index.map(
-        df.drop_duplicates("market_slug").set_index("market_slug")
-        .sports_market_type)
-    fl = latest.groupby("mtype").agg(
-        traded_markets=("shares_traded", lambda s: int((s > 0).sum())),
-        shares=("shares_traded", "sum"),
-        notional=("notional_traded", "sum"),
-        oi=("open_interest", "sum"))
-    tab = w.join(fl, how="left").fillna(0)
-    tab["never_traded"] = tab.markets - tab.traded_markets
+    latest = (stats.sort_values("captured_at").groupby("market_slug").last())
+    per_mkt["shares"] = per_mkt.index.map(latest.shares_traded).fillna(0.0)
+    per_mkt["notional"] = per_mkt.index.map(
+        latest.notional_traded).fillna(0.0)
+    per_mkt["traded"] = per_mkt.shares > 0
+    per_mkt["wide"] = per_mkt.spread_c > 10
+
+    tab = per_mkt.groupby("mtype").agg(
+        markets=("spread_c", "size"),
+        spread_p50_c=("spread_c", "median"),
+        traded=("traded", "sum"),
+        wide=("wide", "sum"),
+        WIDE_AND_TRADED=("mtype", "size"))   # placeholder, replaced below
+    tab["WIDE_AND_TRADED"] = per_mkt.groupby("mtype").apply(
+        lambda g: int((g.wide & g.traded).sum()), include_groups=False)
+    tab["notional"] = per_mkt.groupby("mtype").notional.sum()
     print(tab.round(1).to_string())
-    earners = tab[(tab.spread_p50_c > 10) & (tab.traded_markets > 0)]
-    print(f"\nCELLS THAT ARE BOTH WIDE (>10c p50) AND TRADED: "
-          f"{len(earners)} of {len(tab)} market types")
-    if len(earners) == 0:
-        print("  NONE — on this read the board offers no cell where a maker "
-              "is both paid for width and given flow. That is the "
-              "kill-line answer, and it is a finding, not a null.")
+
+    cells = per_mkt[per_mkt.wide & per_mkt.traded]
+    print(f"\nRUNGS THAT ARE BOTH WIDE (>10c) AND TRADED: {len(cells)} of "
+          f"{len(per_mkt)} markets — THE ONLY CELLS A MAKER CAN EARN IN.")
+    if len(cells) == 0:
+        print("  NONE. On this read the board offers no rung where a maker "
+              "is both paid for width and given flow: liquidity sits where "
+              "it is too tight to earn, width sits where nothing trades. "
+              "That is the kill-line answer, and it is a finding, not a "
+              "null.")
     else:
-        print("  " + ", ".join(earners.index.astype(str)))
-    print(f"\nnever-traded markets: {int(tab.never_traded.sum())} of "
-          f"{int(tab.markets.sum())} — a maker cannot fill where nothing "
-          f"trades at any width or placement.")
+        print(f"  median width {cells.spread_c.median():.0f}c, total "
+              f"notional ${cells.notional.sum():,.0f}; top by notional:")
+        for r in cells.nlargest(min(8, len(cells)), "notional").itertuples():
+            print(f"    {r.Index[:46]:46s} {r.spread_c:>5.0f}c  "
+                  f"${r.notional:>12,.0f}")
+        print("  These rungs — not their market TYPES — are what a GRIDIRON "
+              "placement arm would stand in; the type is not the tradable "
+              "object and a type-level read cannot see them.")
+    print(f"\ncomposition: {int(per_mkt.traded.sum())} traded / "
+          f"{int(per_mkt.wide.sum())} wide / {len(per_mkt)} markets. A maker "
+          f"cannot fill where nothing trades at any width or placement, and "
+          f"cannot earn where the spread is thinner than the concession.")
 
 
 def m5_sigma_nfl(df: pd.DataFrame) -> None:
@@ -438,13 +460,31 @@ def selftest() -> int:
              open_interest=0.0)])
     wide = df.copy()
     wide["best_bid"] = 0.30
-    wide["best_ask"] = 0.45          # 15c p50 -> above the >10c bar
+    wide["best_ask"] = 0.45          # 15c -> above the >10c bar
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         m1b_width_x_flow(wide, st)
     tb = buf.getvalue()
-    check("M1b names a wide+traded cell and counts never-traded",
-          "BOTH WIDE" in tb and "never-traded markets:" in tb)
+    check("M1b names the wide+traded RUNG (1 of the two seeded)",
+          "AND TRADED: 1 of" in tb)
+
+    # THE FALSE POSITIVE THIS TABLE EXISTS TO AVOID: a type whose WIDE rung
+    # is dead and whose TRADED rung is tight must yield ZERO cells, even
+    # though the type has both a wide rung and a traded rung.
+    mixed = df.copy()
+    m_wide, m_tight = df.market_slug.iloc[0], df.market_slug.iloc[1]
+    mixed.loc[mixed.market_slug == m_wide, ["best_bid", "best_ask"]] = [.30, .45]
+    mixed.loc[mixed.market_slug == m_tight, ["best_bid", "best_ask"]] = [.40, .41]
+    st2 = pd.DataFrame([
+        dict(market_slug=m_wide, captured_at=base, shares_traded=0.0,
+             notional_traded=0.0, open_interest=0.0),
+        dict(market_slug=m_tight, captured_at=base, shares_traded=500.0,
+             notional_traded=5000.0, open_interest=100.0)])
+    buf3 = io.StringIO()
+    with contextlib.redirect_stdout(buf3):
+        m1b_width_x_flow(mixed[mixed.market_slug.isin([m_wide, m_tight])], st2)
+    check("M1b refuses the wide-rung-dead/traded-rung-tight false positive",
+          "AND TRADED: 0 of" in buf3.getvalue())
     buf2 = io.StringIO()
     with contextlib.redirect_stdout(buf2):
         m1b_width_x_flow(wide, None)
