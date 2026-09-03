@@ -252,6 +252,16 @@ class KalshiGame(Base):
 
     polymarket_event_slug: Mapped[str | None] = mapped_column(String(200))
     game_start_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Kalshi's own `occurrence_datetime`, verbatim. NOT a tip time and
+    #: deliberately not stored in `game_start_time`: measured 2026-09-03 it
+    #: is **kickoff + 3h** in both college (MASS/RUTG: ESPN 22:00Z, venue
+    #: 01:00Z) and the NFL (NE/SEA: ESPN 00:20Z, venue 03:20Z), i.e. the
+    #: expected settlement stamp. It exists because leagues we do not quote
+    #: have no Polymarket slug and therefore no `game_start_time` at all —
+    #: this is the only clock the venue gives us for them, and it is named
+    #: for what it is so nobody later reads it as a kickoff.
+    venue_occurrence_time: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True))
     espn_game_id: Mapped[str | None] = mapped_column(String(32))
 
     first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
