@@ -203,6 +203,19 @@ class LeagueBook:
     #: (P&L vs $3.29/day). {date: delta}; today's + month-to-date derive from it.
     daily_opt: dict = field(default_factory=dict)
     daily_conc: dict = field(default_factory=dict)
+    #: Concurrency (D's 51c252e, the binding constraint): the peak and
+    #: time-weighted count of simultaneously-OPEN markets and contracts in this
+    #: ledger. Peak contracts is the arithmetic worst-case dollar exposure at
+    #: unit size (per-contract loss <= $1 on a binary); it is what sizes the
+    #: bankroll need, and nobody had it until now. The reservation rule already
+    #: CLIPS aggregate exposure to the ledger's equity — so the capital-clip rate
+    #: reads as "how much bankroll the strategy actually needs", and any explicit
+    #: cap is picked by arithmetic from THIS worst case, never from a transferred
+    #: WNBA number.
+    peak_open_markets: int = 0
+    peak_open_contracts: int = 0
+    tw_open_markets: float = 0.0      # time-weighted mean over the ledger's span
+    tw_open_contracts: float = 0.0
 
 
 @dataclass
@@ -211,8 +224,51 @@ class WalletResult:
     refused: list[Fill] = field(default_factory=list)   # unknown-league (term 1)
 
 
+def _concurrency(intervals: list[tuple], now: dt.datetime):
+    """Peak and time-weighted concurrent open MARKETS and CONTRACTS from a list
+    of (open_at, close_at, size, market_slug) — a sweep line over the open
+    intervals. close_at is the settlement instant, or `now` for a still-open
+    position. Contracts sum size; markets count distinct slugs currently open
+    (ref-counted, so overlapping positions in one market count the market once).
+    Time-weighted = the integral over the ledger's active span / that span."""
+    if not intervals:
+        return 0, 0, 0.0, 0.0
+    events: list[tuple] = []
+    for (a, b, sz, mkt) in intervals:
+        b = b or now
+        if b < a:
+            b = a
+        events.append((a, +1, sz, mkt))
+        events.append((b, -1, sz, mkt))
+    events.sort(key=lambda e: (e[0], e[1]))          # close (-1) before open (+1) at ties
+    cur_contracts = 0
+    mkt_refs: dict[str, int] = {}
+    peak_c = peak_m = 0
+    area_c = area_m = 0.0
+    prev_t = events[0][0]
+    span = (events[-1][0] - events[0][0]).total_seconds()
+    for (t, delta, sz, mkt) in events:
+        dt_s = (t - prev_t).total_seconds()
+        if dt_s > 0:
+            area_c += cur_contracts * dt_s
+            area_m += len([m for m, c in mkt_refs.items() if c > 0]) * dt_s
+        prev_t = t
+        if delta > 0:
+            cur_contracts += sz
+            mkt_refs[mkt] = mkt_refs.get(mkt, 0) + 1
+        else:
+            cur_contracts -= sz
+            mkt_refs[mkt] = mkt_refs.get(mkt, 0) - 1
+        open_m = len([m for m, c in mkt_refs.items() if c > 0])
+        peak_c = max(peak_c, cur_contracts)
+        peak_m = max(peak_m, open_m)
+    tw_c = (area_c / span) if span > 0 else float(peak_c)
+    tw_m = (area_m / span) if span > 0 else float(peak_m)
+    return peak_m, peak_c, tw_m, tw_c
+
+
 def _fold_league(slug: str, fills: list[Fill], seed: float,
-                 mids: dict[str, float]) -> LeagueBook:
+                 mids: dict[str, float], now: dt.datetime) -> LeagueBook:
     """Cash-flow fold with OPEN-EXPOSURE RESERVATION (manager ruling, registered
     tonight; the real venue's rule = min(cash, buyingPower), cash consumed at
     fill). available-to-size = concession realized equity − Σ(open cost basis);
@@ -312,6 +368,14 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
                                           mid_now=mid, concession=cc)
         n_marked += 1
 
+    # concurrency (D's binding constraint): open intervals of every sized
+    # position — settled ones close at settled_at, open ones at `now`.
+    intervals = [
+        (fills[i].filled_at, fills[i].settled_at, size[i], fills[i].market_slug)
+        for i in range(len(fills)) if size.get(i, 0) > 0
+    ]
+    peak_m, peak_c, tw_m, tw_c = _concurrency(intervals, now)
+
     return LeagueBook(
         slug=slug, seed=float(seed), optimistic=eq_opt, concession=eq_conc,
         toll=toll, reserved_conc=res_conc, available_to_size=eq_conc - res_conc,
@@ -320,18 +384,26 @@ def _fold_league(slug: str, fills: list[Fill], seed: float,
         n_zero=n_zero, n_skipped_halt=n_skipped, unrealized_opt=un_opt,
         unrealized_conc=un_conc, n_open_marked=n_marked,
         n_open_unmarkable=n_unmarkable,
-        daily_opt=daily_opt, daily_conc=daily_conc)
+        daily_opt=daily_opt, daily_conc=daily_conc,
+        peak_open_markets=peak_m, peak_open_contracts=peak_c,
+        tw_open_markets=tw_m, tw_open_contracts=tw_c)
 
 
 def fold(fills: list[Fill], *, seeds: dict[str, float] | None = None,
-         mids: dict[str, float] | None = None) -> WalletResult:
+         mids: dict[str, float] | None = None,
+         now: dt.datetime | None = None) -> WalletResult:
     """Fold shadow fills into the paper wallet: route by league (unknown =
     REFUSE, recorded), size each fill pessimistically (concession-arm balance),
-    settle realized P&L on both arms, mark open positions UNREALIZED. Pure over
-    its inputs — the DB gather builds the Fill list (depth from book_levels,
-    mids from the latest snapshot) and the seeds from the control ledger."""
+    settle realized P&L on both arms, mark open positions UNREALIZED, and measure
+    open-exposure concurrency. Pure over its inputs — the DB gather builds the
+    Fill list (depth from book_levels, mids from the latest snapshot), the seeds
+    from the control ledger, and `now` (open positions close there for the
+    concurrency sweep; defaults to the latest timestamp in the fills)."""
     seeds = seeds or {}
     mids = mids or {}
+    if now is None:
+        stamps = [f.settled_at or f.filled_at for f in fills]
+        now = max(stamps) if stamps else dt.datetime.now(dt.timezone.utc)
     refused: list[Fill] = []
     by_league: dict[str, list[Fill]] = defaultdict(list)
     for f in fills:
@@ -342,7 +414,7 @@ def fold(fills: list[Fill], *, seeds: dict[str, float] | None = None,
         by_league[lg.slug].append(f)
     books = {
         slug: _fold_league(slug, lg_fills,
-                           seeds.get(slug, SEED_PER_LEAGUE), mids)
+                           seeds.get(slug, SEED_PER_LEAGUE), mids, now)
         for slug, lg_fills in by_league.items()
     }
     return WalletResult(books=books, refused=refused)
@@ -466,7 +538,8 @@ def gather(session, *, staleness_s: float = DEPTH_STALENESS_S):
         session, staleness_s=staleness_s)
     open_markets = {f.market_slug for f in fills if f.settlement is None}
     mids = _load_mids(session, open_markets)
-    result = fold(fills, seeds=seeds, mids=mids)
+    result = fold(fills, seeds=seeds, mids=mids,
+                  now=dt.datetime.now(dt.timezone.utc))
 
     # Depth-absent fills as their OWN LINE (D's remedy): count, share, and the
     # capture they WOULD have carried at unit size — the suppression cost.
@@ -557,6 +630,12 @@ def run_db() -> int:
         print(f"  UNREALIZED (open, not in realized): optimistic "
               f"${b.unrealized_opt:+.2f} / concession ${b.unrealized_conc:+.2f} "
               f"({b.n_open_marked} marked, {b.n_open_unmarkable} no-mid)")
+        print(f"  CONCURRENCY (sizes the bankroll need): peak "
+              f"{b.peak_open_contracts} open contracts across "
+              f"{b.peak_open_markets} markets (~${b.peak_open_contracts} "
+              f"worst-case at unit size vs ${b.seed:.0f} seed); time-weighted "
+              f"{b.tw_open_contracts:.1f} contracts / {b.tw_open_markets:.1f} "
+              f"markets")
         if b.halt_line is not None:
             print(f"  HALT: {b.halt_line.note}")
     return 0
@@ -725,6 +804,23 @@ def _selftest_fold() -> int:
         abs(bo.optimistic - 500.0) < 1e-9 and abs(bo.concession - 500.0) < 1e-9)
     chk("unrealized: marked 10*(0.46-0.40)=0.60, labelled separate",
         abs(bo.unrealized_opt - 0.60) < 1e-9 and bo.n_open_marked == 1)
+
+    # CONCURRENCY (D's binding constraint): 3 distinct markets, overlapping open
+    # intervals [0,30] [10,40] [20,50] -> all three open over [20,30] -> peak =
+    # 5+3+2=10 contracts across 3 markets. Depth caps each size to its depth.
+    fc = [
+        Fill("tsc-wnba-c-1", "ingame", "bid", 0.40, 0.43, T(0),
+             depth=5, settlement=1, settled_at=T(30)),
+        Fill("tsc-wnba-c-2", "ingame", "bid", 0.40, 0.43, T(10),
+             depth=3, settlement=1, settled_at=T(40)),
+        Fill("tsc-wnba-c-3", "ingame", "bid", 0.40, 0.43, T(20),
+             depth=2, settlement=1, settled_at=T(50)),
+    ]
+    bc = fold(fc, seeds={"wnba": 500.0}).books["wnba"]
+    chk("concurrency: peak 10 contracts across 3 markets (overlap [20,30])",
+        bc.peak_open_contracts == 10 and bc.peak_open_markets == 3)
+    chk("concurrency: time-weighted within (0, peak]",
+        0 < bc.tw_open_contracts <= 10 and 0 < bc.tw_open_markets <= 3)
 
     print("\nFOLD SELFTEST:", "PASS — both arms hand-reconciled, the toll meter "
           "is exactly opt-conc, a fabricated fill moves the ledger by the "

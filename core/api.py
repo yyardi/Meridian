@@ -2220,6 +2220,10 @@ def wallet_status() -> dict:
             "unrealized_opt": b.unrealized_opt,
             "unrealized_conc": b.unrealized_conc,
             "daily_opt": b.daily_opt, "daily_conc": b.daily_conc,
+            "peak_open_markets": b.peak_open_markets,
+            "peak_open_contracts": b.peak_open_contracts,
+            "tw_open_markets": b.tw_open_markets,
+            "tw_open_contracts": b.tw_open_contracts,
         }
 
     return {
