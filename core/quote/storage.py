@@ -71,9 +71,24 @@ class ShadowQuoteFill(Base):
     quote_price: Mapped[Decimal] = mapped_column(Price, nullable=False)
     mid_at_quote: Mapped[Decimal] = mapped_column(Price, nullable=False)
     spread_at_quote: Mapped[Decimal] = mapped_column(Price, nullable=False)
-    #: The observation that filled us, for the static-study-comparable mark:
-    #: net capture = (mid_at_quote − quote_price) ± (mid_at_fill − mid_at_quote).
+    #: The observation that filled us. (Capture-vs-mid-at-fill is RETIRED as a
+    #: metric by the amendment — wrong for a maker in both directions — but the
+    #: field stays: it is a recorded fact about the filling observation, and the
+    #: mid is still the reference for markout at pre-named horizons.)
     mid_at_fill: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    #: The TOUCH (best bid/ask) of the SAME observation the fill was judged
+    #: against — recorded from that observation, NEVER re-joined from the tape.
+    #: These are the phantom test: a bid fill is REAL iff best_ask_at_fill <=
+    #: quote_price (the ask really came to us), an ask fill iff best_bid_at_fill
+    #: >= quote_price; the mid-cross rule books the rest as PHANTOMS (the recorded
+    #: bid fell onto our price while no one offered near us). For FLATTEN this is
+    #: a CORRECTNESS PRECONDITION, not a classification nicety: the inventory
+    #: counter moves only on REAL fills, so a wrong or absent touch makes FLATTEN
+    #: lean to flatten a position it does not hold — a self-consistent wrong
+    #: answer. Nullable only for rows written before touch-at-fill; the recording
+    #: engines always stamp both.
+    best_bid_at_fill: Mapped[Decimal | None] = mapped_column(Price)
+    best_ask_at_fill: Mapped[Decimal | None] = mapped_column(Price)
 
     quoted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     filled_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -92,11 +107,12 @@ class ShadowQuoteFill(Base):
     #: the two are independent witnesses of a stray row.
     engine_commit: Mapped[str | None] = mapped_column(String(40))
     #: The QUOTING POLICY that produced this row (GRIDIRON parallel A/B,
-    #: docs/gridiron/policy-variants.md): base / patience / late_suppress /
-    #: width_floor / flatten. The five arms share the same image and the same
-    #: engine_commit, so engine_commit CANNOT tell them apart — this is the field
-    #: that makes a row name its arm; an unstamped comparison is unscoreable.
-    #: NULL only on pre-A/B rows; the variant engines always stamp it.
+    #: docs/gridiron/policy-variants.md): base / flatten. The amendment reduced
+    #: the engines to two (the other arms became analysis cuts on BASE's fills);
+    #: both engines share the same image and engine_commit, so engine_commit
+    #: CANNOT tell them apart — this is the field that makes a row name its arm,
+    #: and an unstamped comparison is unscoreable. NULL only on pre-A/B rows; the
+    #: recording engines always stamp it.
     policy: Mapped[str | None] = mapped_column(String(16))
 
     __table_args__ = (
@@ -249,11 +265,12 @@ class QuoteV2Observation(Base):
     #: cohort. Nullable only for pre-amendment rows; the writer never writes NULL.
     engine_commit: Mapped[str | None] = mapped_column(String(40))
     #: The QUOTING POLICY that produced this row (GRIDIRON parallel A/B,
-    #: docs/gridiron/policy-variants.md): base / patience / late_suppress /
-    #: width_floor / flatten. The five arms share the same image and the same
-    #: engine_commit, so engine_commit CANNOT tell them apart — this is the field
-    #: that makes a row name its arm; an unstamped comparison is unscoreable.
-    #: NULL only on pre-A/B rows; the variant engines always stamp it.
+    #: docs/gridiron/policy-variants.md): base / flatten. The amendment reduced
+    #: the engines to two (the other arms became analysis cuts on BASE's fills);
+    #: both engines share the same image and engine_commit, so engine_commit
+    #: CANNOT tell them apart — this is the field that makes a row name its arm,
+    #: and an unstamped comparison is unscoreable. NULL only on pre-A/B rows; the
+    #: recording engines always stamp it.
     policy: Mapped[str | None] = mapped_column(String(16))
 
     __table_args__ = (
