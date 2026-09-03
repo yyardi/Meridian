@@ -426,7 +426,7 @@ def _selftest_heartbeat_beat(Session) -> None:
 
 def _selftest_league_filter_and_identity(Session) -> None:
     """Amendment-12 compensators. (1) fail-closed: the engine refuses to start
-    without GIT_COMMIT. (2) the league-filter PLANT PAIR: the replay pin has no
+    without MERIDIAN_ENGINE_COMMIT. (2) the league-filter PLANT PAIR: the replay pin has no
     NFL rows, so replay proves the filter byte-identical by construction but
     CANNOT exercise its reject branch — a declared blind spot. So a plant pair
     asserts the filter ADMITS a wnba slug and REJECTS an nfl slug, on the read
@@ -438,23 +438,23 @@ def _selftest_league_filter_and_identity(Session) -> None:
         BID, Observation, StandingQuote, require_engine_commit,
     )
 
-    # (1) fail-closed on missing GIT_COMMIT
-    saved = os.environ.pop("GIT_COMMIT", None)
+    # (1) fail-closed on missing MERIDIAN_ENGINE_COMMIT
+    saved = os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
     try:
         raised = False
         try:
             require_engine_commit()
         except RuntimeError:
             raised = True
-        assert raised, "engine did not fail-closed on missing GIT_COMMIT"
-        os.environ["GIT_COMMIT"] = "deadbeefcafe"
+        assert raised, "engine did not fail-closed on missing MERIDIAN_ENGINE_COMMIT"
+        os.environ["MERIDIAN_ENGINE_COMMIT"] = "deadbeefcafe"
         assert require_engine_commit() == "deadbeefcafe"
     finally:
         if saved is None:
-            os.environ.pop("GIT_COMMIT", None)
+            os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
         else:
-            os.environ["GIT_COMMIT"] = saved
-    print("proof (fail-closed): engine refuses to start without GIT_COMMIT")
+            os.environ["MERIDIAN_ENGINE_COMMIT"] = saved
+    print("proof (fail-closed): engine refuses to start without MERIDIAN_ENGINE_COMMIT")
 
     q = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
                        settlement_lookup=lambda s: None)   # league defaults wnba
@@ -510,9 +510,9 @@ def _selftest_league_filter_and_identity(Session) -> None:
     assert refused, "WRITE filter did not refuse an nfl fill"
     print("proof (league filter, WRITE): fills wnba, refuses nfl")
 
-    # (3) engine-identity: with GIT_COMMIT set, a written row carries the stamp
-    saved2 = os.environ.get("GIT_COMMIT")
-    os.environ["GIT_COMMIT"] = "stamptest99cafe"
+    # (3) engine-identity: with MERIDIAN_ENGINE_COMMIT set, a written row carries the stamp
+    saved2 = os.environ.get("MERIDIAN_ENGINE_COMMIT")
+    os.environ["MERIDIAN_ENGINE_COMMIT"] = "stamptest99cafe"
     try:
         qs = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
                             settlement_lookup=lambda s: None)
@@ -521,9 +521,9 @@ def _selftest_league_filter_and_identity(Session) -> None:
         assert row.engine_commit == "stamptest99cafe", "fill row not stamped"
     finally:
         if saved2 is None:
-            os.environ.pop("GIT_COMMIT", None)
+            os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
         else:
-            os.environ["GIT_COMMIT"] = saved2
+            os.environ["MERIDIAN_ENGINE_COMMIT"] = saved2
     print("proof (engine-identity stamp): a written row carries the binary commit")
 
 

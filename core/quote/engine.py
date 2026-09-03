@@ -61,18 +61,26 @@ log = structlog.get_logger(__name__)
 UTC = dt.timezone.utc
 
 
+#: The env the writer reads for its commit stamp. The Dockerfile takes
+#: `ARG GIT_COMMIT` and bakes it as this env at BUILD time, so a container
+#: always carries its image's commit and a plain `up -d` can't stamp a checkout
+#: commit onto older code. The writer reads the BAKED name, never the build-arg.
+ENGINE_COMMIT_ENV = "MERIDIAN_ENGINE_COMMIT"
+
+
 def require_engine_commit() -> str:
-    """The writing binary's git commit, from the GIT_COMMIT build-arg baked into
-    the image (amendment 12). FAIL-CLOSED: the engine refuses to start without
-    it — a NULL provenance stamp defeats the amendment whose whole job is
-    provenance. Read at start and stamped on every fill/observation row."""
-    commit = (os.environ.get("GIT_COMMIT") or "").strip()
+    """The writing binary's git commit, from MERIDIAN_ENGINE_COMMIT (the
+    GIT_COMMIT build-arg baked into the image at build time; amendment 12).
+    FAIL-CLOSED: the engine refuses to start without it — a NULL provenance stamp
+    defeats the amendment whose whole job is provenance. Read at start and
+    stamped on every fill/observation row."""
+    commit = (os.environ.get(ENGINE_COMMIT_ENV) or "").strip()
     if not commit:
         raise RuntimeError(
-            "GIT_COMMIT is absent — the quote engine refuses to start "
-            "(amendment 12: every fill/observation row stamps its binary; the "
-            "container must be built with --build-arg GIT_COMMIT=$(git rev-parse "
-            "HEAD)).")
+            f"{ENGINE_COMMIT_ENV} is absent — the quote engine refuses to start "
+            "(amendment 12: every fill/observation row stamps its binary; build "
+            "the image with --build-arg GIT_COMMIT=$(git rev-parse HEAD), which "
+            f"bakes {ENGINE_COMMIT_ENV}).")
     return commit
 
 #: Heartbeat service name. Defined here rather than in core/heartbeat.py,
@@ -167,8 +175,9 @@ class ShadowQuoter:
         #: (_observations) AND the write path (_fill). Default from MERIDIAN_LEAGUE.
         self._league = (league or default_league().slug)
         #: This binary's commit (amendment 12), stamped on every row. None only
-        #: in tests that don't set GIT_COMMIT; run_forever fail-closes in prod.
-        self._engine_commit = (os.environ.get("GIT_COMMIT") or "").strip() or None
+        #: in tests that don't set the env; run_forever fail-closes in prod.
+        self._engine_commit = (
+            os.environ.get(ENGINE_COMMIT_ENV) or "").strip() or None
         #: slug -> bool|None ("settled to what?"). Production asks the PUBLIC
         #: gateway; tests inject. Explicit 0/1 only; anything else is not an
         #: answer (the fill-watcher lesson).
