@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian — Paper Wallet</title>
+<title>Algo — Wallet</title>
 <style>
   :root{--bg:#0a0c10;--panel:#11141b;--line:#1e2430;--txt:#d7dde8;--dim:#7c879b;
         --faint:#4a5568;--pos:#26d07c;--neg:#ff5c62;--warn:#ffb020;--accent:#4c8dff;
@@ -50,45 +50,49 @@
   .empty{color:var(--faint);padding:24px;text-align:center}
   .asof{color:var(--faint);font-size:10px;margin-top:16px}
 
-  /* ── Program × strategy nav (2026-09-03, operator: "Meridian is the WNBA,
-     Gridiron is NFL/CFB, Pulse is directional and Quote is market making").
-     The old flat nav listed three pages and implied nothing about how the
-     system is organised. Two axes, stated: WHICH BOOK (sport program) and
-     WHICH STRATEGY (what it does). ── */
-  .navwrap{display:flex;flex-direction:column;gap:2px}
-  .navrow{display:flex;align-items:baseline;gap:8px}
-  .navlbl{color:var(--faint);font-size:8.5px;letter-spacing:.1em;
-          text-transform:uppercase;min-width:64px}
-  .navrow a{color:var(--faint);text-decoration:none;font-size:11px;
-            padding:2px 8px;border-radius:3px}
-  .navrow a.on{color:var(--txt);background:#1a1f2b}
-  .navrow a:hover{color:var(--txt)}
-  .navrow .prog{font-weight:700;letter-spacing:.06em}
-  .navrow .kind{font-size:9px;color:var(--faint);letter-spacing:.04em}
+  /* ── Header, rebuilt 2026-09-03 (operator: "this UI is unusable ... the top
+     ribbon is redundant and kinda fried"). The league toggle and the BOOK row
+     were the SAME AXIS drawn twice; leagues are now nested under their book.
+     Inline glosses moved to tooltips. Nav and health get separate rows. ── */
+  header{background:var(--panel);border-bottom:1px solid var(--line);
+         position:sticky;top:0;z-index:9;display:block;padding:0}
+  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px}
+  .hrow+.hrow{border-top:1px solid var(--line)}
+  .hsep{width:1px;height:15px;background:var(--line);flex:none}
+  .brand{font-weight:700;letter-spacing:.18em;font-size:13px}
+  .bookgrp{display:flex;gap:3px}
+  .book{font:inherit;font-size:11px;font-weight:700;letter-spacing:.07em;
+        padding:4px 10px;border-radius:3px;background:transparent;
+        border:1px solid transparent;color:var(--faint);cursor:pointer}
+  .book:hover{color:var(--txt)}
+  .book.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .navgrp{display:flex;align-items:center;gap:3px}
+  .grplbl{color:var(--faint);font-size:8.5px;letter-spacing:.13em;
+          text-transform:uppercase;margin-right:3px}
+  .navgrp a{color:var(--faint);text-decoration:none;font-size:11px;
+            letter-spacing:.05em;padding:4px 9px;border-radius:3px}
+  .navgrp a:hover{color:var(--txt)}
+  .navgrp a.on{color:var(--txt);background:#1a1f2b}
+  .statusrow{gap:16px;padding:6px 14px;background:#0c0f15}
 </style>
 </head>
 <body>
 <header>
-  <span class="brand">MERIDIAN</span>
-  <div class="navwrap">
-    <div class="navrow">
-      <span class="navlbl">book</span>
-      <a class="prog " href="/?program=meridian">MERIDIAN</a><span class="kind">basketball · WNBA</span>
-      <a class="prog " href="/?program=gridiron">GRIDIRON</a><span class="kind">football · NFL + CFB</span>
-    </div>
-    <div class="navrow">
-      <span class="navlbl">strategy</span>
-      <a class="" href="/">PULSE</a><span class="kind">directional — takes a side</span>
-      <a class="" href="/quote">QUOTE</a><span class="kind">market making — quotes both</span>
-    </div>
-    <div class="navrow">
-      <span class="navlbl">books</span>
-      <a class=" on" href="/wallet">WALLET</a><span class="kind">$1,000 paper scoreboard</span>
-      <a class="" href="/analytics">MODEL VS MARKET</a>
-    </div>
+ <div class="hrow">
+  <div class="brand">ALGO</div>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">strategy</span>
+    <a class="" href="/" title="PULSE — directional. Takes a side: picks a team and holds a position.">PULSE</a>
+    <a class="" href="/quote" title="QUOTE — market making. Quotes both sides and earns the spread, without a view on the game.">QUOTE</a>
   </div>
-  <span class="sub">the paper wallet — $1,000, two league ledgers, both fill arms.
-    an instrument, never evidence.</span>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">books</span>
+    <a class="on" href="/wallet" title="The $1,000 paper scoreboard — simulated positions and running P&amp;L.">WALLET</a>
+    <a class="" href="/analytics" title="Model vs market — where our fair value disagrees with the venue price.">MODEL</a>
+  </div>
+ </div>
 </header>
 <main>
   <h2>Live wallet <span class="sub">— forward-only from each seed line · $500 each ·
