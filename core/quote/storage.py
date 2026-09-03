@@ -91,6 +91,13 @@ class ShadowQuoteFill(Base):
     #: landed; the writer never writes NULL. League is SLUG-derived, never this —
     #: the two are independent witnesses of a stray row.
     engine_commit: Mapped[str | None] = mapped_column(String(40))
+    #: The QUOTING POLICY that produced this row (GRIDIRON parallel A/B,
+    #: docs/gridiron/policy-variants.md): base / patience / late_suppress /
+    #: width_floor / flatten. The five arms share the same image and the same
+    #: engine_commit, so engine_commit CANNOT tell them apart — this is the field
+    #: that makes a row name its arm; an unstamped comparison is unscoreable.
+    #: NULL only on pre-A/B rows; the variant engines always stamp it.
+    policy: Mapped[str | None] = mapped_column(String(16))
 
     __table_args__ = (
         CheckConstraint("regime in ('pregame','ingame')", name="ck_sqf_regime"),
@@ -241,6 +248,13 @@ class QuoteV2Observation(Base):
     #: row, so a gate can assert one engine identity across an observation
     #: cohort. Nullable only for pre-amendment rows; the writer never writes NULL.
     engine_commit: Mapped[str | None] = mapped_column(String(40))
+    #: The QUOTING POLICY that produced this row (GRIDIRON parallel A/B,
+    #: docs/gridiron/policy-variants.md): base / patience / late_suppress /
+    #: width_floor / flatten. The five arms share the same image and the same
+    #: engine_commit, so engine_commit CANNOT tell them apart — this is the field
+    #: that makes a row name its arm; an unstamped comparison is unscoreable.
+    #: NULL only on pre-A/B rows; the variant engines always stamp it.
+    policy: Mapped[str | None] = mapped_column(String(16))
 
     __table_args__ = (
         CheckConstraint(
