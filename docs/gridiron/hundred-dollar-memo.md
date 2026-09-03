@@ -312,3 +312,49 @@ figures of notional. That is one game and pregame, so it is a candidate and
 not a finding; but it is the first cell on the NFL board that survives all
 three constraints at once, and it is where the first slate's measurement
 should look first.
+
+## ADDENDUM 5 (2026-09-03) — THE FIRST REAL-FILL MARKOUT, AND WHY IT CARRIES NO EVIDENTIAL WEIGHT
+
+**Reported for completeness; explicitly denied evidential weight about any
+quoter.** 44 real venue executions from the operator's hand-trade history
+passed a local-cadence test and marked out **−0.76¢ at +30s [−3.26,
++1.74]** — the program's first measurement from actual fills rather than
+modelling.
+
+**The confound query killed it, and the reason IS the answer.**
+Distance-from-touch at placement returned zero measurable placements — no
+book within 120s of insertion — because **rest time from insertion to fill
+runs median 495s, p75 5,661s (1.6 HOURS), max 3.7 DAYS; 48% rested over ten
+minutes, 29% over an hour.** Most placements precede any live tape. These
+are **patient human limit orders, not touch-joining quotes.** v1's engine
+requotes every 5 seconds.
+
+**A 1.6-hour resting order and a 5-second quote differ in exactly the
+dimension that generates adverse selection**, so −0.76¢ measures patient
+limit placement and says nothing about a quoter. The arithmetic holds — the
+lower bound −3.26 does exclude −4.70 — but **an interval excluding a number
+measured on a different animal is not evidence about that number.** The
+4.70¢ exclusion is a POPULATION MISMATCH, not a finding, and both the
+"concession may be too harsh" and "the modelled drift is an artifact"
+claims are withdrawn.
+
+**Consequence, stated plainly: the program owns NO real fill data from a
+touch-joining quoter and cannot until one places real orders.** The
+terminal remedy is sharper than "some real resting orders" — it is real
+orders placed BY THE STRATEGY BEING MEASURED, because no sample size
+reconciles patient limits with 5-second quotes.
+
+## THE OPERATIONAL LESSON THAT SURVIVES (and generalises past its own thread)
+
+`MERIDIAN_LEAGUE=wnba` means every non-WNBA market the operator ever
+hand-traded has **no tape and never will**: wnba 45 of 48 slugs have ticks;
+**nba 0 of 32, atp 0 of 8, ipl 0 of 5, mlb 0 of 2, four others 0.** The 45
+is not a subsample of an obtainable population — it IS the population,
+permanently, and the 32 NBA hand-trades are unmarkoutable forever.
+
+**Any league we don't record today is a league whose fills we can never
+calibrate later.** That is the strongest argument for GRIDIRON's recorders
+running before anyone is certain they're needed — arriving tonight from a
+third independent direction after the trade-tape capture and the volume
+trajectory sweeper, all three the same asymmetry: cheap now, impossible
+retroactively.
