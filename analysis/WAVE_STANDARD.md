@@ -578,6 +578,55 @@ numbered as a fourth. (Research agent's cut, 2026-09-03.)
    the two were one rule — the class formed instead of a twenty-sixth entry
    being shelved beside the twenty-fifth.)
 
+26. **A CORRECTION IS NOT A CERTIFICATE.**
+   A repair arrives wearing the costume of scepticism and is itself an
+   **unexamined result.** Most people have the inference backwards: **a
+   correction is evidence the result was REACHABLE BY A FLAWED PATH, which
+   raises the prior that other flawed paths reached it too.**
+
+   *ACTION: after finding a defect, audit the INPUTS — not just the step you
+   fixed — before reporting the corrected number. A fix is PROVISIONAL until
+   something other than the correction itself has validated it.*
+
+   *SPECIMEN, 2026-09-03 — three values in one evening, each after fixing a
+   real defect:* **+$17.55 {1¢}** (exclusion, substrate missing 25% of the
+   board) → **+$30.43 {1¢,2¢,3¢}** (insertion defect fixed, same partial
+   substrate) → **+$10.10 {1¢}** (both fixed, full coverage). **The first
+   answer was right for the wrong reason; the second fixed the reason and
+   produced a wrong conclusion, arriving with MORE confidence because it had a
+   better derivation.** The coverage hole was orthogonal to the defect being
+   fixed and surfaced only when someone went looking for a different seam.
+
+   *COROLLARY — THE PUBLISHER'S HALF, and it belongs here rather than in its
+   own rule because **the failure required BOTH halves.*** An analyst
+   iterating fast is just work; a publisher landing fast is fine when numbers
+   are stable. **The damage came from the coupling: a fast publisher converts
+   an incomplete corrector's provisional states into permanent artifacts
+   faster than they can stabilise.** Splitting this across two rules would let
+   each half read as survivable, which is exactly how the interaction returns.
+   **A single unreplicated report is not a publication trigger. The analyst's
+   confidence is not the publication criterion; the RESULT'S STABILITY is** — a
+   number that has moved twice today is unstable however well-derived its
+   current value. **When a number has moved during a session, land the
+   SEQUENCE — every value with the defect that produced it — never the endpoint
+   presented as if it were the first answer.**
+
+   *RELATION:* same family as rule 22's anticipation clause — credibility
+   drawn from context rather than evidence — but a **different action** (22:
+   name the discriminator when you predict an ambiguous outcome; 26: audit the
+   inputs before reporting a fix), so it is a rule and not a clause, by the
+   test adopted for 23.
+
+   *A LATE SPECIMEN OF ITS OWN COROLLARY, minutes after it landed:* the manager
+   described two different constructions — recorded fills versus a policy
+   replay — as **"two independent instruments converging"**, three times, before
+   auditing the word. **If both estimated one deterministic quantity on a fixed
+   tape they would agree exactly; 2% would be a discrepancy, not agreement.**
+   A corrected number described with an unaudited word. (Derived independently
+   by the research agent and the manager from the same incident without
+   conferring — which is itself the corroboration that this is a class rather
+   than a story about one night.)
+
    *OPERATIONAL TEST, concrete enough to build:* a zero is evidence only
    when the instrument has demonstrated it can return non-zero ON THIS
    SUBSTRATE — a positive control. **Every zero-reporting monitor should
