@@ -144,7 +144,8 @@ from core.heartbeat import SERVICE_LIVE, Heartbeat
 from core.polymarket.client import PolymarketGatewayClient
 from core.polymarket.schemas import Event, EventsResponse, Market
 from core.recorder import _parse_ts
-from core.storage import BookLevel, MarketSnapshot, get_engine, get_sessionmaker
+from core.storage import (BookLevel, MarketSnapshot, MarketTradeStat,
+                          get_engine, get_sessionmaker)
 
 log = structlog.get_logger(__name__)
 
@@ -395,6 +396,9 @@ class DepthSampler:
         self._client = client
         self._Session = sessionmaker
         self._max_levels = max_book_levels
+        #: Trade-tape rows accumulated by _fetch during one depth cycle and
+        #: flushed with that cycle's book levels (one DB round trip, not two).
+        self._pending_stats: list[dict] = []
         self._near_seconds = near_seconds
         self._deep_seconds = deep_seconds
         self._concurrency = concurrency
@@ -469,15 +473,24 @@ class DepthSampler:
                 rows.extend(levels)
 
         written = 0
-        if rows:
+        stats_rows, self._pending_stats = self._pending_stats, []
+        if rows or stats_rows:
             with self._Session() as session:
-                session.execute(
-                    pg_insert(BookLevel)
-                    .values(rows)
-                    .on_conflict_do_nothing(constraint="uq_book_level")
-                )
+                if rows:
+                    session.execute(
+                        pg_insert(BookLevel)
+                        .values(rows)
+                        .on_conflict_do_nothing(constraint="uq_book_level")
+                    )
+                    written = len(rows)
+                if stats_rows:
+                    session.execute(
+                        pg_insert(MarketTradeStat)
+                        .values(stats_rows)
+                        .on_conflict_do_nothing(
+                            constraint="uq_market_trade_stat_snapshot")
+                    )
                 session.commit()
-                written = len(rows)
         self.books_written += written
 
         log.info(
@@ -505,6 +518,26 @@ class DepthSampler:
         data = book.market_data
         if data is None:
             return []
+
+        # The venue's trade tape rides free in this same response and was
+        # discarded here on every poll until 2026-09-02 (findings V31/V32).
+        # It is the ONLY flow observable this venue offers, and a poll that
+        # goes unrecorded is print history that cannot be recovered.
+        st = data.stats
+        if st is not None:
+            _v = lambda q: q.value if q is not None else None
+            self._pending_stats.append({
+                "snapshot_id": snapshot_id,
+                "captured_at": captured_at,
+                "last_trade_px": _v(st.last_trade_px),
+                "last_trade_qty": st.last_trade_qty,
+                "last_trade_at": st.last_trade_at,
+                "shares_traded": st.shares_traded,
+                "notional_traded": _v(st.notional_traded),
+                "open_interest": st.open_interest,
+                "high_px": _v(st.high_px),
+                "low_px": _v(st.low_px),
+            })
 
         rows: list[dict] = []
         for side, entries in (("bid", data.bids), ("offer", data.offers)):

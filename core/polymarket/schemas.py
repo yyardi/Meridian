@@ -15,6 +15,7 @@ defeat the point.
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -149,12 +150,47 @@ class BookEntry(BaseModel):
         return _to_decimal(v)
 
 
+class MarketStats(BaseModel):
+    """The venue's own trade tape for a market, carried in every book response.
+
+    THE ONLY FLOW OBSERVABLE THIS VENUE OFFERS. Neither the public gateway's
+    events payload nor any authenticated endpoint exposes market volume
+    (findings V31, and B's 16-endpoint sweep) — this object, riding free in a
+    response the depth loop already pays for, is the sole path to knowing
+    whether a market trades at all. Differencing `shares_traded` across polls
+    gives trade ARRIVALS at the depth cadence; `last_trade_at` dates the most
+    recent print. Declared here because `extra="allow"` meant these fields
+    arrived parsed and were silently discarded on every poll since the
+    recorder was written.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    last_trade_px: Quote | None = Field(default=None, alias="lastTradePx")
+    last_trade_qty: Decimal | None = Field(default=None, alias="lastTradeQty")
+    last_trade_at: dt.datetime | None = Field(default=None, alias="lastTradeSetTime")
+    shares_traded: Decimal | None = Field(default=None, alias="sharesTraded")
+    notional_traded: Quote | None = Field(default=None, alias="notionalTraded")
+    open_interest: Decimal | None = Field(default=None, alias="openInterest")
+    open_px: Quote | None = Field(default=None, alias="openPx")
+    close_px: Quote | None = Field(default=None, alias="closePx")
+    high_px: Quote | None = Field(default=None, alias="highPx")
+    low_px: Quote | None = Field(default=None, alias="lowPx")
+
+    @field_validator("last_trade_qty", "shares_traded", "open_interest",
+                     mode="before")
+    @classmethod
+    def _parse(cls, v: Any) -> Decimal | None:
+        return _to_decimal(v)
+
+
 class MarketData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     market_slug: str | None = Field(default=None, alias="marketSlug")
     bids: list[BookEntry] = Field(default_factory=list)
     offers: list[BookEntry] = Field(default_factory=list)
+    stats: MarketStats | None = None
 
 
 class BookResponse(BaseModel):

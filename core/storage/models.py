@@ -116,6 +116,54 @@ class MarketSnapshot(Base):
     )
 
 
+class MarketTradeStat(Base):
+    """The venue's trade tape for one market at one book poll.
+
+    THE ONLY FLOW OBSERVABLE THIS VENUE OFFERS (findings V31/V32): no gateway
+    or authenticated endpoint exposes market volume, so these fields — which
+    ride free in the book response the depth loop already fetches — are the
+    sole path to knowing whether a market trades. They were parsed and
+    discarded on every poll from the recorder's first day until 2026-09-02.
+
+    `shares_traded` and `notional_traded` are CUMULATIVE venue counters:
+    differencing consecutive rows for a market gives trade ARRIVALS over the
+    interval, which is the flow measurement. `last_trade_at` dates the most
+    recent print, so "never traded" is distinguishable from "quiet lately" —
+    the distinction the whole GRIDIRON width-vs-flow question turns on.
+
+    One row per (snapshot, market): the poll's own `captured_at` is kept
+    rather than the parent snapshot's, for the same reason BookLevel keeps
+    its own — depth runs on a slower loop than price.
+    """
+
+    __tablename__ = "market_trade_stats"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("market_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    captured_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_trade_px: Mapped[Decimal | None] = mapped_column(Price, nullable=True)
+    last_trade_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)
+    last_trade_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    shares_traded: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)
+    notional_traded: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 4), nullable=True
+    )
+    open_interest: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)
+    high_px: Mapped[Decimal | None] = mapped_column(Price, nullable=True)
+    low_px: Mapped[Decimal | None] = mapped_column(Price, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", name="uq_market_trade_stat_snapshot"),
+    )
+
+
 class BookLevel(Base):
     """Order book depth for a snapshot — many rows per snapshot."""
 

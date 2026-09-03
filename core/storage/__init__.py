@@ -4,6 +4,7 @@ from core.storage.base import Base, get_database_url, get_engine, get_sessionmak
 from core.storage.models import (
     AccountBalance,
     BookLevel,
+    MarketTradeStat,
     InjuryPoll,
     InjuryReport,
     KalshiContract,
@@ -27,6 +28,7 @@ __all__ = [
     "AccountBalance",
     "Base",
     "BookLevel",
+    "MarketTradeStat",
     "InjuryPoll",
     "InjuryReport",
     "KalshiContract",
