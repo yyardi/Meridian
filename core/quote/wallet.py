@@ -698,6 +698,124 @@ def run_db() -> int:
     return 0
 
 
+def _depth_debug(n: int = 20, staleness_s: float = DEPTH_STALENESS_S) -> int:
+    """Instrument the depth-join predicate funnel for the first N zero-depth
+    fills — names which predicate collapses coverage, MEASURED on real data
+    rather than hypothesised (the 200x n_zero gap). Run against prod:
+
+        python -m core.quote.wallet --depth-debug [N]
+
+    Replicates _load_fills_with_depth's exact matcher (same float-4dp key, same
+    bisect + staleness), then for each zero-depth fill shows the count surviving
+    each successive predicate. The column that drops to 0 IS the cause:
+      * +side=0            -> side value / mapping
+      * +price[numeric]=0  -> the exact price is not in the book (tick/frame);
+                              'book prices present' shows what IS there vs quote
+      * +price[round4] != +price[numeric] -> float-4dp rounding (the price-repr
+                              hypothesis) diverges from NUMERIC equality
+      * +window=0 (price>0) -> staleness/time: the level exists but not near fill
+      * python_index_has_key=False while +price[numeric]>0 -> a Python-matcher
+                              bug (the float key), the smoking gun
+    The fill's quote_price is compared as NUMERIC (bound as its Decimal), never
+    via a float CAST that would itself inject the error we are testing for.
+
+    Read-only. Mirrors the DEPLOYED matcher; on prod (zero NULL captured_at) the
+    COALESCE below equals bl.captured_at, so the window count is exact."""
+    import bisect
+    from collections import defaultdict
+
+    from sqlalchemy import text
+
+    from core.storage import get_sessionmaker
+    from core.storage.base import get_engine
+
+    with get_sessionmaker(get_engine())() as s:
+        rows = s.execute(text(
+            "SELECT market_slug, side, quote_price, filled_at, regime "
+            "FROM shadow_quote_fills ORDER BY filled_at")).all()
+        if not rows:
+            print("no shadow_quote_fills here.")
+            return 0
+        markets = sorted({r.market_slug for r in rows})
+        tmin = min(r.filled_at for r in rows) - dt.timedelta(seconds=staleness_s)
+        tmax = max(r.filled_at for r in rows)
+        lvls = s.execute(text("""
+            SELECT ms.market_slug AS market_slug, bl.side AS side,
+                   bl.price AS price, bl.quantity AS quantity,
+                   COALESCE(bl.captured_at, ms.captured_at) AS captured_at
+            FROM book_levels bl JOIN market_snapshots ms ON ms.id = bl.snapshot_id
+            WHERE ms.market_slug = ANY(:markets) AND bl.side IN ('bid','offer')
+              AND COALESCE(bl.captured_at, ms.captured_at) >= :tmin
+              AND COALESCE(bl.captured_at, ms.captured_at) <= :tmax
+        """), {"markets": markets, "tmin": tmin, "tmax": tmax}).all()
+        series: dict[tuple, list] = defaultdict(list)
+        for lv in lvls:
+            series[(lv.market_slug, lv.side, round(float(lv.price), 4))].append(
+                (lv.captured_at, float(lv.quantity)))
+        index: dict[tuple, tuple] = {}
+        for k, v in series.items():
+            v.sort(key=lambda x: x[0])
+            index[k] = ([t for t, _ in v], [q for _, q in v])
+
+        zeros = []
+        for r in rows:
+            bs = "bid" if r.side == "bid" else "offer"
+            key = (r.market_slug, bs, round(float(r.quote_price), 4))
+            depth = 0.0
+            hit = index.get(key)
+            if hit is not None:
+                times, qtys = hit
+                pos = bisect.bisect_right(times, r.filled_at) - 1
+                if pos >= 0 and times[pos] >= r.filled_at - dt.timedelta(
+                        seconds=staleness_s):
+                    depth = qtys[pos]
+            if depth <= 0:
+                zeros.append(r)
+
+        print(f"book_levels loaded in window: {len(lvls):,}  |  "
+              f"zero-depth fills: {len(zeros):,}/{len(rows):,} "
+              f"({(len(zeros) / len(rows) if rows else 0):.1%})  |  "
+              f"staleness {staleness_s:.0f}s  |  first {min(n, len(zeros))}:")
+
+        for i, r in enumerate(zeros[:n]):
+            bs = "bid" if r.side == "bid" else "offer"
+            qpk = round(float(r.quote_price), 4)
+            p = {"m": r.market_slug, "bs": bs, "qp": r.quote_price, "qpk": qpk,
+                 "lo": r.filled_at - dt.timedelta(seconds=staleness_s),
+                 "hi": r.filled_at}
+
+            def cnt(where, _p=p):
+                return s.execute(text(
+                    "SELECT count(*) FROM book_levels bl "
+                    "JOIN market_snapshots ms ON ms.id = bl.snapshot_id "
+                    "WHERE ms.market_slug = :m " + where), _p).scalar()
+
+            c_m = cnt("")
+            c_s = cnt("AND bl.side = :bs")
+            c_p = cnt("AND bl.side = :bs AND bl.price = :qp")
+            c_pk = cnt("AND bl.side = :bs AND round(bl.price, 4) = :qpk")
+            c_w = cnt("AND bl.side = :bs AND bl.price = :qp "
+                      "AND COALESCE(bl.captured_at, ms.captured_at) "
+                      "BETWEEN :lo AND :hi")
+            in_index = (r.market_slug, bs, qpk) in index
+            near = s.execute(text(
+                "SELECT bl.price AS price, count(*) AS c FROM book_levels bl "
+                "JOIN market_snapshots ms ON ms.id = bl.snapshot_id "
+                "WHERE ms.market_slug = :m AND bl.side = :bs "
+                "AND COALESCE(bl.captured_at, ms.captured_at) BETWEEN :lo AND :hi "
+                "GROUP BY bl.price ORDER BY c DESC LIMIT 8"), p).all()
+
+            print(f"\n[{i}] {r.market_slug} side={r.side}->{bs} "
+                  f"quote_price={r.quote_price} (float key {qpk}) "
+                  f"filled_at={r.filled_at.isoformat()}")
+            print(f"    funnel: market={c_m:,}  +side={c_s:,}  "
+                  f"+price[numeric]={c_p:,}  +price[round4]={c_pk:,}  "
+                  f"+window={c_w:,}  |  python_index_has_key={in_index}")
+            pr = ", ".join(f"{float(x.price):.4f}x{x.c}" for x in near) or "NONE"
+            print(f"    book prices present (this mkt+side, in window): {pr}")
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 #  --selftest: the primitives, pure (the fold's rule-16 known-answer on the Aug
 #  pin lands with the DB gather). These must hold before any dollar is folded.
@@ -984,6 +1102,11 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--db", action="store_true",
                     help="fold the live tables and print the scoreboard")
+    ap.add_argument("--depth-debug", nargs="?", type=int, const=20, default=None,
+                    metavar="N",
+                    help="instrument the depth-join predicate funnel for the "
+                         "first N zero-depth fills (default 20) — names the "
+                         "predicate that collapses coverage, on real data")
     args = ap.parse_args()
     if args.selftest:
         rc = _selftest_primitives()
@@ -992,6 +1115,8 @@ def main() -> int:
         print()
         rc |= _selftest_rule16()
         return rc
+    if args.depth_debug is not None:
+        return _depth_debug(n=args.depth_debug)
     if args.db:
         return run_db()
     print(__doc__)
