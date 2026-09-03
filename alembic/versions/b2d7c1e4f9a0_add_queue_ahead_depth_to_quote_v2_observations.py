@@ -45,9 +45,20 @@ def upgrade() -> None:
     op.add_column('quote_v2_observations',
                   sa.Column('depth_fetched_at', sa.DateTime(timezone=True),
                             nullable=True))
+    # The touch AT the sample's fetch — the price-identity validity gate (D's
+    # convention): same as best_bid/best_ask -> queue-ahead exactly valid;
+    # different -> unusable at any age (in-play touch survival is median 2s).
+    op.add_column('quote_v2_observations',
+                  sa.Column('depth_best_bid', sa.Numeric(precision=6, scale=4),
+                            nullable=True))
+    op.add_column('quote_v2_observations',
+                  sa.Column('depth_best_ask', sa.Numeric(precision=6, scale=4),
+                            nullable=True))
 
 
 def downgrade() -> None:
+    op.drop_column('quote_v2_observations', 'depth_best_ask')
+    op.drop_column('quote_v2_observations', 'depth_best_bid')
     op.drop_column('quote_v2_observations', 'depth_fetched_at')
     op.drop_column('quote_v2_observations', 'our_ask_qty')
     op.drop_column('quote_v2_observations', 'our_bid_qty')

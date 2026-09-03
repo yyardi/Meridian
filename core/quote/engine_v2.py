@@ -65,21 +65,36 @@ DEFAULT_RECORD_INTERVAL_SECONDS = 1.0
 #: congestion_detector commit at deploy.
 DETECTOR_VERSION = "d1fb6de"
 
-#: Queue-ahead depth sampling (manager 2026-09-03: option 1, scope-a, cadence-b).
-#: The book is fetched for a QUOTED market at most once per this interval and
-#: cached; every observation in between reuses it and carries the sample's
-#: staleness (observed_at - depth_fetched_at). PLACEHOLDER — the refresh interval
-#: and the staleness bound below are D's convention (contemporaneous-depth
-#: semantics); they are named so D's answer is a one-line change, not a rewrite.
-#: Bounded cadence keeps the request rate well under the shared ceiling: rate =
-#: (quoted markets) / interval; e.g. 20 quoted markets / 30s = 0.67 req/s.
-DEPTH_REFRESH_INTERVAL_SECONDS = 30.0
-#: Beyond this age a row's queue-ahead is UNUSABLE, not merely stale (a consumer
-#: gate checks observed_at - depth_fetched_at against it). D's to set; carried so
-#: the number lives in one place. Not enforced at write time — the writer records
-#: the stamp and lets the consumer judge, so the raw sample is never silently
-#: dropped (coverage counted, never hidden).
-DEPTH_QUEUE_STALENESS_MAX_SECONDS = 90.0
+#: Queue-ahead depth sampling (manager 2026-09-03: option 1, scope-a, cadence-b;
+#: constants + gate design D's convention, 2026-09-03).
+#:
+#: The PRIMARY validity gate is PRICE IDENTITY, not elapsed time (D's measurement:
+#: WNBA in-play touch survival is median 2s, p90 17s — no single time threshold
+#: separates fresh from dead when survival is that skewed). Queue-ahead is a claim
+#: about the queue AT price P; it is exactly valid while the market still quotes P
+#: (1s or 5min) and meaningless the instant the touch moves, at any age. So each
+#: row carries the touch AT the sample's fetch (`depth_best_bid`/`depth_best_ask`)
+#: beside the touch at observation (`best_bid`/`best_ask`): SAME touch -> the queue
+#: number is exactly valid; DIFFERENT -> unusable regardless of age. That is
+#: "lying vs lagging" as an exact predicate rather than a threshold.
+#:
+#: REFRESH is touch-change-triggered (refetch when the touch has moved since the
+#: sample) with a FLOOR so the rate stays bounded: naive touch-change on a 2s
+#: median would hit ~10 req/s across 20 markets, over the ~5 req/s throttle and
+#: onto a gateway already 155% cap-oversubscribed (manager count 2026-09-03). The
+#: floor caps refetch at (quoted markets)/interval = 4 req/s at 20 markets / 5s.
+DEPTH_REFRESH_INTERVAL_SECONDS = 5.0     # floor between touch-triggered refetches
+#: Hard backstop: refetch at least this often even if the touch never moves (to
+#: catch same-price SIZE drift — rare, D: 3/54 pregame side-intervals), and the
+#: consumer's SECONDARY gate — the touch coincidentally returning to the same
+#: price after moving away would pass price-identity wrongly, so a sample older
+#: than this is unusable even on a price match. Not enforced at write time (the
+#: writer records the stamp; the consumer judges — coverage counted, never hidden).
+DEPTH_QUEUE_STALENESS_MAX_SECONDS = 60.0
+#: CAVEAT (D): the survival numbers above are WNBA in-play. NFL in-play touch
+#: survival is unmeasured until the first slate — but the price-identity gate needs
+#: no constant to be right, so it is robust to that gap; only the refresh cadence's
+#: efficiency (not its correctness) depends on the number holding for NFL.
 
 
 def _epoch_seconds(t: dt.datetime) -> float:
@@ -170,11 +185,13 @@ class ShadowQuoterV2(ShadowQuoter):
             self._confirms_seen[game_id] = 0
         return det
 
-    def _fetch_book_levels(self, market_slug: str) -> dict | None:
-        """One venue book read -> {(side, price@4dp): total_qty}. Uses the
-        READ-ONLY gateway client (no order/auth/credential import — proof 2; the
-        same client v1 uses for settlement). Fail-open: any error -> None, never
-        a crash or a stall of the record loop."""
+    def _fetch_book_levels(self, market_slug: str):
+        """One venue book read -> ({(side, price@4dp): total_qty}, (best_bid,
+        best_ask)). The touch (best_bid = highest bid px, best_ask = lowest offer
+        px) rides along so the row can carry the touch AT fetch for the price-
+        identity gate. READ-ONLY gateway client (no order/auth/credential import —
+        proof 2; the client v1 uses for settlement). Fail-open: any error ->
+        None, never a crash or a stall of the record loop."""
         from collections import defaultdict
 
         from core.polymarket.client import PolymarketGatewayClient
@@ -189,38 +206,58 @@ class ShadowQuoterV2(ShadowQuoter):
         if md is None:
             return None
         out: dict = defaultdict(float)
-        for side, entries in (("bid", md.bids), ("offer", md.offers)):
+        bids, offers = [], []
+        for side, entries, prices in (("bid", md.bids, bids),
+                                      ("offer", md.offers, offers)):
             for be in entries:
                 if be.px is None or be.px.value is None or be.qty is None:
                     continue
-                out[(side, round(float(be.px.value), 4))] += float(be.qty)
-        return dict(out)
+                px = round(float(be.px.value), 4)
+                out[(side, px)] += float(be.qty)
+                prices.append(px)
+        touch = (max(bids) if bids else None, min(offers) if offers else None)
+        return dict(out), touch
 
     def _queue_ahead(self, market_slug: str, bid_price, ask_price,
-                     now: dt.datetime):
-        """Queue-ahead qty at OUR quote price on each side, from a bounded-cadence
-        book sample (manager 2026-09-03, option 1). Refreshes the per-market
-        cache at most once per DEPTH_REFRESH_INTERVAL_SECONDS; reuses it
-        otherwise and reports the sample's FETCH instant so staleness is visible
-        on every row. Read-only, off the decision path (never touches _standing/
-        fills), fail-open. Returns (our_bid_qty, our_ask_qty, depth_fetched_at) —
-        any may be None (no sample, or no standing quote on that side)."""
+                     obs_bid: float, obs_ask: float, now: dt.datetime):
+        """Queue-ahead qty at OUR quote price each side (manager 2026-09-03,
+        option 1) + the touch AT fetch for the price-identity gate (D's
+        convention 2026-09-03).
+
+        REFRESH is touch-change-triggered with a floor: refetch when no cache, OR
+        the observation's touch has moved off the cached sample's touch AND at
+        least DEPTH_REFRESH_INTERVAL_SECONDS have passed (the floor that bounds
+        the rate — naive touch-change on a 2s in-play median would be ~10 req/s),
+        OR the sample is older than DEPTH_QUEUE_STALENESS_MAX_SECONDS (backstop
+        for same-price size drift). Between refetches the cached sample is reused
+        and every row carries its fetch instant + touch, so the consumer applies
+        the exact price-identity gate itself. Read-only, off the decision path,
+        fail-open. Returns (our_bid_qty, our_ask_qty, depth_fetched_at,
+        depth_best_bid, depth_best_ask) — any may be None."""
         cached = self._book_cache.get(market_slug)
-        if cached is None or (now - cached[1]).total_seconds() \
-                >= DEPTH_REFRESH_INTERVAL_SECONDS:
-            levels = self._fetch_book_levels(market_slug)
-            if levels is None:
-                return None, None, None
-            self._book_cache[market_slug] = (levels, now)
-            cached = self._book_cache[market_slug]
-        levels, fetched_at = cached
+        obs_touch = (round(float(obs_bid), 4), round(float(obs_ask), 4))
+        refetch = cached is None
+        if not refetch:
+            _levels, ctouch, cfetched = cached
+            elapsed = (now - cfetched).total_seconds()
+            touch_moved = ctouch != obs_touch
+            refetch = ((touch_moved and elapsed >= DEPTH_REFRESH_INTERVAL_SECONDS)
+                       or elapsed >= DEPTH_QUEUE_STALENESS_MAX_SECONDS)
+        if refetch:
+            fetched = self._fetch_book_levels(market_slug)
+            if fetched is None:
+                return None, None, None, None, None
+            levels, touch = fetched
+            self._book_cache[market_slug] = (levels, touch, now)
+        levels, touch, fetched_at = self._book_cache[market_slug]
 
         def at(side, price):
             if price is None:
                 return None
             return levels.get((side, round(float(price), 4)), 0.0)
 
-        return at("bid", bid_price), at("offer", ask_price), fetched_at
+        return (at("bid", bid_price), at("offer", ask_price), fetched_at,
+                touch[0], touch[1])
 
     def record_cycle(self) -> int:
         """Write one observation row per live market. Runs B's detector on the
@@ -255,11 +292,11 @@ class ShadowQuoterV2(ShadowQuoter):
                 # quote -> no queue to be behind -> NULL). Bounded-cadence book
                 # sample; off the decision path; fail-open to NULL.
                 if q is None:
-                    bidq = askq = depth_at = None
+                    bidq = askq = depth_at = depth_bb = depth_ba = None
                 else:
-                    bidq, askq, depth_at = self._queue_ahead(
+                    bidq, askq, depth_at, depth_bb, depth_ba = self._queue_ahead(
                         o["market_slug"], q.bid_price, q.ask_price,
-                        o["observed_at"])
+                        o["bid"], o["ask"], o["observed_at"])
                 rows.append(QuoteV2Observation(
                     market_slug=o["market_slug"], game_id=o["game_id"],
                     event_slug=o["event_slug"],
@@ -286,6 +323,8 @@ class ShadowQuoterV2(ShadowQuoter):
                     our_bid_qty=None if bidq is None else Decimal(str(bidq)),
                     our_ask_qty=None if askq is None else Decimal(str(askq)),
                     depth_fetched_at=depth_at,
+                    depth_best_bid=None if depth_bb is None else Decimal(str(depth_bb)),
+                    depth_best_ask=None if depth_ba is None else Decimal(str(depth_ba)),
                     det_version=self.detector_version, det_in_window=in_window,
                     det_confirm_t0=confirm_t0,
                     engine_commit=self._engine_commit))
@@ -616,12 +655,12 @@ def _selftest_league_filter_and_identity(Session) -> None:
 
 
 def _selftest_queue_ahead(Session) -> None:
-    """Queue-ahead recording (manager 2026-09-03): the POSITIVE path (the proofs
-    above only exercise fail-open-to-NULL because the offline book fetch 404s).
-    With a known book sample: (1) a QUOTED market's row carries our_bid_qty /
-    our_ask_qty at our own price + depth_fetched_at; (2) an UNQUOTED market's row
-    is NULL (no queue to be behind); (3) the per-market cache bounds the fetch —
-    two record cycles in one refresh window fetch ONCE (the rate guarantee)."""
+    """Queue-ahead recording (manager 2026-09-03; gate design D 2026-09-03). Part
+    A (via record_cycle): a QUOTED market's row carries our_bid_qty/our_ask_qty at
+    our price + depth_fetched_at + the TOUCH at fetch (depth_best_bid/ask, the
+    price-identity gate); an UNQUOTED row is NULL. Part B (direct, controlled
+    time): the refresh logic — touch-change-triggered with a floor that bounds the
+    rate, plus the staleness backstop."""
     import os
 
     from core.quote.engine import StandingQuote
@@ -642,13 +681,13 @@ def _selftest_queue_ahead(Session) -> None:
     try:
         q = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
                            settlement_lookup=lambda s: None)
-        # a KNOWN book, and a call counter to prove the cache bounds fetches
+        # a KNOWN book (levels + touch), and a counter to prove the cache bounds fetches
         calls = {"n": 0}
         known = {("bid", 0.4000): 500.0, ("offer", 0.4400): 300.0}
 
         def fake_fetch(slug):
             calls["n"] += 1
-            return known
+            return known, (0.4000, 0.4400)         # (levels, touch)
         q._fetch_book_levels = fake_fetch          # monkeypatch the venue read
 
         # we ARE quoting SLUG_Q at bid 0.40 / ask 0.44; NOT quoting SLUG_U
@@ -670,26 +709,61 @@ def _selftest_queue_ahead(Session) -> None:
             s.commit()
 
         q.record_cycle()
-        q.record_cycle()          # second cycle, same refresh window
+        q.record_cycle()          # second cycle, same window, touch unchanged
 
         with Session() as s:
             rows = {r.market_slug: r for r in s.execute(text(
                 "select distinct on (market_slug) market_slug, our_bid_qty, "
-                "our_ask_qty, depth_fetched_at from quote_v2_observations "
-                "where market_slug in (:q,:u) order by market_slug, id desc"),
+                "our_ask_qty, depth_fetched_at, depth_best_bid, depth_best_ask "
+                "from quote_v2_observations where market_slug in (:q,:u) "
+                "order by market_slug, id desc"),
                 {"q": SLUG_Q, "u": SLUG_U}).all()}
 
         rq = rows[SLUG_Q]
         assert float(rq.our_bid_qty) == 500.0, f"our_bid_qty {rq.our_bid_qty} != 500"
         assert float(rq.our_ask_qty) == 300.0, f"our_ask_qty {rq.our_ask_qty} != 300"
         assert rq.depth_fetched_at is not None, "depth_fetched_at not stamped"
+        assert float(rq.depth_best_bid) == 0.40 and float(rq.depth_best_ask) == 0.44, \
+            "touch at fetch not recorded (price-identity gate would be blind)"
         ru = rows[SLUG_U]
         assert ru.our_bid_qty is None and ru.our_ask_qty is None, \
             "unquoted market carried a queue-ahead (should be NULL — no queue)"
         assert calls["n"] == 1, \
             f"cache did not bound the fetch: {calls['n']} fetches in one window"
-        print("proof (queue-ahead): quoted row carries our-price depth + stamp; "
-              "unquoted is NULL; cache bounds the fetch to once per window")
+        print("proof (queue-ahead A): quoted row carries our-price depth + touch@fetch "
+              "+ stamp; unquoted is NULL; unchanged touch reuses the sample")
+
+        # Part B: refresh logic, direct with controlled time + a moving touch.
+        q2 = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
+                            settlement_lookup=lambda s: None)
+        c2 = {"n": 0}
+        cur = {"touch": (0.4000, 0.4400)}
+
+        def fake2(slug):
+            c2["n"] += 1
+            lv = {("bid", cur["touch"][0]): 500.0, ("offer", cur["touch"][1]): 300.0}
+            return lv, cur["touch"]
+        q2._fetch_book_levels = fake2
+        M = "tsc-wnba-qa-refresh"
+        t0 = dt.datetime(2026, 9, 17, 19, 0, 0, tzinfo=UTC)
+
+        def call(dsec, obs):
+            q2._queue_ahead(M, obs[0], obs[1], obs[0], obs[1],
+                            t0 + dt.timedelta(seconds=dsec))
+
+        call(0, (0.40, 0.44))                       # no cache -> fetch
+        assert c2["n"] == 1, "first call did not fetch"
+        call(2, (0.40, 0.44))                       # same touch, +2s -> reuse
+        assert c2["n"] == 1, "reused-window fetched again"
+        call(3, (0.41, 0.45))                       # touch MOVED but +3s (<5s floor) -> no refetch
+        assert c2["n"] == 1, f"floor breached: refetched at 3s ({c2['n']})"
+        cur["touch"] = (0.41, 0.45)
+        call(6, (0.41, 0.45))                       # touch moved AND +6s (>=5s) -> refetch
+        assert c2["n"] == 2, f"touch-change refresh did not fire at 6s ({c2['n']})"
+        call(70, (0.41, 0.45))                      # same touch, +64s since fetch (>=60 backstop) -> refetch
+        assert c2["n"] == 3, f"staleness backstop did not fire ({c2['n']})"
+        print("proof (queue-ahead B): touch-change refresh fires past the floor, the "
+              "floor bounds the rate, and the staleness backstop catches a quiet market")
     finally:
         _clean()
         if saved is None:
