@@ -1,4 +1,62 @@
+# ★ RETRACTED — the favourite–longshot finding was a one-sided-sampling artifact ★
+
+**2026-09-04, same day. The +7.88¢ / +7.19¢ edge and the entire band structure
+are WITHDRAWN.** Research demanded a known-answer check before anything was
+built on it; the check failed, and the mechanism is now measured.
+
+## The check, and why it is decisive
+
+**In a complete two-sided binary market, aggregate miscalibration is ZERO by
+construction** — every contract sold to an overpaying buyer was bought from a
+counterparty, so YES and NO errors must cancel. Our sample showed a **+6.80¢
+one-directional tilt**, impossible for a complete market and therefore proof of
+a selected subset.
+
+**Restricting to the 243 markets where BOTH sides are present:**
+
+| | |
+|---|---:|
+| side A mispricing | **−8.33¢** |
+| side B mispricing | **+8.20¢** |
+| **net** | **−0.126¢ ≈ 0** |
+
+**Where both sides are observable, prices are calibrated to a tenth of a cent.**
+The apparent 10¢ bias was *which side of each binary happened to be in the
+table*. The 880 moneyline/total rows carrying the tilt (+10.39¢) are one-sided
+observations whose complement we never recorded — calling them overpriced is the
+same as noting that the losing side of a fair coin lost.
+
+## Refuted, and the mechanism that was also wrong
+
+**REFUTED:** the +7.88¢ and corrected +7.19¢ edges; the band structure; the
+claim that this venue shows an exploitable favourite–longshot bias; and the
+Bartlett & O'Hara corroboration, since we were not measuring what they measured.
+
+**The proposed MECHANISM was itself wrong.** Research hypothesised the selector
+was our dedup rule — "drop the lower slug" keeps `pos` over `neg`
+alphabetically. **Measured: `pos` and `neg` are exactly balanced, 352 each, at
++2.15¢ and +2.46¢.** The dedup selected nothing; the selection is upstream, in
+which markets ever had a complement recorded. *Right conclusion, wrong
+mechanism — the third time today.*
+
+**SURVIVES:** the construction correction (1,002 positions, not 142,683 — the
+table holds 117.6 rows per market) and **crossing the spread = −6.49¢**, which
+makes post-only an arithmetic necessity rather than a preference. Neither
+depends on the calibration being right.
+
+## Rule candidate
+
+**A calibration measured on one side of a two-sided market is not a
+calibration.** The forced-zero aggregate is a free known-answer check costing
+one query, and it must be printed FIRST, before any band table, on every
+calibration this program runs from now on.
+
+---
+
 # The favourite–longshot bias, and the first positive result — 2026-09-04
+
+**★ EVERYTHING BELOW IS SUPERSEDED BY THE RETRACTION ABOVE ★**
+
 
 **PULSE is refuted as a fair value. The market's own mid is mispriced in a
 large, price-dependent, exploitable shape. Our quoter centres on the mid, so it
