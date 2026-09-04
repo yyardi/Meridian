@@ -463,3 +463,65 @@ is the wrong trade.
 **The CONFIRMED band stays in the rule, explicitly marked unreachable at the
 recommended sample**, rather than being deleted. Deleting it would hide that
 the probe cannot fully close A1 at any price the wallet allows.
+
+## AMENDMENT 3 — sidedness, not method. And my Leg B argument was an artifact.
+
+B resolved the four-way n disagreement and it was never four methods:
+
+    Clopper-Pearson, ONE-sided 95%     n = 299
+    rule of three (approximates it)    n = 300
+    Clopper-Pearson, TWO-sided 95%     n = 368
+    Wilson, two-sided 95%              n = 381
+
+    sidedness  299 -> 368  = +23%   (same method)
+    method     368 -> 381  = +3.5%  (same alpha)
+
+**The 27% spread is ~85% sidedness and ~15% method.** Amendment 2 pinned the
+method and left sidedness implicit, which pinned the smaller half. Verified
+independently: Clopper-Pearson upper bound for 0/n is `1 - alpha^(1/n)`, giving
+299 at alpha=0.05 and 368 at alpha=0.025.
+
+**Registered: ONE-SIDED 95%, n = 299**, and the sidedness is named in every
+citation of this number. All three Leg A bands are on the *upper* bound of a
+violation rate — nobody wants a lower bound on how often the venue violated —
+so the question is one-sided by construction, and a two-sided interval silently
+applies a 97.5% standard while the document says 95%.
+
+The switch must be stated loudly because the program's convention elsewhere
+(`clustered_mean`) is two-sided 95%. Two numbers both labelled "95%" meaning
+different things is precisely the basis-does-not-travel failure catalogued
+today. **This is adopted because it matches the question, and it would be
+adopted identically if it pushed n up.**
+
+### ★ My recommendation of n=100 is WITHDRAWN. It rested on an artifact.
+
+Amendment 2 recommended n=100 because reaching CONFIRMED appeared to require
+halving the window to 5 minutes, which would have halved Leg B's crossing
+episodes. **That constraint dissolves under one-sided.** No window shortening
+is needed, and Leg B data scales with total standing time (n x window), not
+with n alone:
+
+    n=100 x 10-min   1,000 order-min   ~348 episodes    worst case $278
+    n=299 x 10-min   2,990 order-min  ~1,041 episodes   worst case $832
+
+**n=299 at the SAME window dominates n=100 on both legs simultaneously** — it
+reaches CONFIRMED on Leg A *and* triples Leg B. My "trading away the only test
+of sufficiency" argument was correct about the trade and wrong that the trade
+existed; it was an artifact of a sidedness convention, not a fact about the
+design.
+
+**So the choice is now purely capital appetite, and it is the operator's:**
+
+    n=100   ~$278   dominated on the science; Leg A cannot return CONFIRMED
+    n=299   ~$832   reaches CONFIRMED, 3x Leg B; worst case is 83% of the wallet
+
+I do not recommend between them. $832 as a worst case against a $1,000 wallet
+is a risk judgement, not an analytical one, and the worst case assumes every
+fill settles maximally against us, which cannot occur. What I will say is that
+**n=100 is now dominated rather than cheaper-but-adequate**, and it should not
+be presented as the analytically preferred option.
+
+**Caps must be rescaled at n=299.** §7's 4 concurrent orders / 5 fills per order
+/ 400-contract stop were sized for n=100. At n=299 the total-contract stop
+becomes the binding control and should be set from the wallet directly, not
+from the order count.
