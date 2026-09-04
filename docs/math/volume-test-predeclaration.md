@@ -273,6 +273,39 @@ that consumption is *indicated* — one significant route, one same-signed
 non-significant route, both under-counting by construction — and not
 established.
 
+### Amendment 5a — the witness is UNINFORMATIVE, not disconfirming (B, arithmetic)
+
+The primary's relative elevation is 1.206x. Applied to the witness's own base
+rate of 6.8% that predicts **+1.40pp**, and the witness measured +0.83pp
+[-1.21, +2.87]. **The predicted value sits inside the measured interval.** In
+relative terms the witness spans [0.822x, 1.422x], containing both the null
+(1.000x) and the primary (1.206x). Separating them needs a half-width under
+0.70pp against the 2.04pp it has — roughly 8x the cells.
+
+So no route disagreed; one route was too blunt to speak. **This restores
+nothing** — "indicated, not established" stands, and an uninformative witness
+is not a supportive one — but "the witness did not corroborate" must not be
+read as "a second route contradicted it".
+
+## ★ AMENDMENT 6 — PHASE SPLIT. Prediction pinned BEFORE the run.
+
+B's falsification, so the witness's early-game bias is not a post-hoc rescue.
+The witness fires only on a NEW session low; late in a game, after the price
+has ratcheted, B is likelier to sit above the running low, so late-game
+consumption is invisible to it **by construction**.
+
+Split the primary's excess by game phase (the thirds already in the design).
+The mapping is fixed here, before the numbers exist:
+
+| primary effect by phase | reading |
+|---|---|
+| concentrated LATE | the witness samples the wrong part of the game; its shortfall is explained and the finding survives at its current strength |
+| roughly UNIFORM | the witness should have seen its share; the shortfall is **unexplained and counts against** the finding |
+| concentrated EARLY | the witness was best placed to see it and did not; **counts strongly against** |
+
+Late-concentration is independently predicted by the program's ride-tail loss
+map, so it is not a free parameter — it is a commitment that could fail.
+
 ---
 
 No in-sample result justifies capital. The forward test is the evidence.
