@@ -210,3 +210,145 @@ BATCHES, not board refreshes — 694 rows share one timestamp, and a full pass
 over 1,477 markets takes ~2 stamps. Renamed. The number was right; the name was
 a claim it did not support, and a reader consulting it once under pressure reads
 the name.)*
+
+---
+
+# Third family: the bias is in the statistic's own expectation — no cut at all
+
+**The first family is about CUTS: a statistic sliced by X over an X-selected
+population. This one has no cut in it.** A single number, compared against
+zero, where zero was never the right comparison. Added 2026-09-04, caught
+**before** the observed value existed — the only instance of the day for which
+that is true, and the reason it is worth its own heading.
+
+## The instance
+
+D's accumulator hypothesis needed a statistic for *"was our position on the
+right side of the outcome, relative to what the market believed when we took it
+on?"* The one declared, before any null was generated:
+
+```
+per real fill i:   x_i = side_i × (s_m(i) − mid_at_fill_i)
+                   side = +1 for a bid fill (long YES), −1 for an ask fill
+S = mean_i x_i,  in cents
+```
+
+Measuring against the mid rather than our quote price deliberately strips our
+execution edge, leaving only the direction question. **I declared that a fair
+accumulator scores S = 0.** That was wrong, and nothing about the statistic is
+wrong — only the baseline I attached to it.
+
+## The derivation, which needs no data at all
+
+Under a fair market, a market's outcome has expectation equal to the market's
+own belief: `E[s_m] = p_m`, taking `p_m` as the mean mid across our fills in
+that market. Substituting:
+
+```
+E[S | fair] = mean_i side_i × (p_m(i) − mid_i)
+```
+
+Write each fill's mid as its market's mean plus a deviation, `mid_i = p_m + d_i`:
+
+```
+E[S | fair] = − mean_i ( side_i × d_i )
+```
+
+**So the fair-market expectation of S is exactly the negative of the covariance
+between our trading direction and the price level within a market** — and the
+fill rule guarantees that covariance is non-zero and negative. A resting bid
+fills only when the mid comes DOWN to it, so bid fills (side = +1) sit at low
+mids (d < 0). A resting ask fills only when the mid comes UP, so ask fills
+(side = −1) sit at high mids (d > 0). Both products are negative, so both
+sides contribute the *same sign* to E[S], and the expectation is positive.
+
+Measured on the 13,651 real fills:
+
+| | mean mid at fill | market's mean mid | contribution |
+|---|---:|---:|---:|
+| bid fills (long) | 0.4591 | 0.4897 | **+3.05¢** |
+| ask fills (short) | 0.5467 | 0.5136 | **+3.30¢** |
+
+```
+E[S | fair]  =  +3.174¢     (closed form, no settlements read)
+resampling null mean = +3.176¢   (4,000 draws)
+```
+
+**An analytic value and a simulated one agreeing to the third decimal is a
+proof with a check attached.** A fair market scores +3.17¢ on this statistic.
+Comparing S against zero would read a fair result as a 3-cent edge — on a
+−3.4¢ effect, the entire answer.
+
+## Why this one is different, and worse
+
+The five in the first family announce themselves once you look: they are
+gradients, and a suspiciously clean monotone column invites suspicion. **This
+one has no shape to notice.** It is a single number, and a single number
+compared against the wrong constant looks exactly like a single number compared
+against the right one. There is no tell in the output — the check has to happen
+before the output exists.
+
+It also cannot be caught afterwards. **Once the observed value exists, a
+3-cent offset is indistinguishable from a finding somebody was hoping for.**
+This is the concrete argument for building nulls *first* rather than as
+validation: not that it is more rigorous, but that after the fact the
+information needed to catch it is gone.
+
+## The rule
+
+> **Before comparing a statistic to zero, derive what a fair process scores on
+> it. If the population was selected by the price path — and every fill
+> population is — the answer is usually not zero, and it is usually derivable
+> with no data beyond the selection rule itself.**
+
+The recurring shape, stated so it fires on the next one: **any statistic that
+compares an outcome against a per-observation reference price, aggregated over
+a population whose direction correlates with that reference price, has a
+non-zero fair-market expectation equal to that covariance.** Reference prices
+that qualify: mid at fill, mid at quote, arrival price, VWAP over a window that
+includes your own trades.
+
+## What to do about it
+
+1. **Derive `E[statistic | fair]` in closed form before generating anything.**
+   If it is not zero, the bar is that value, and the write-up says so in the
+   sentence that reports the result — never "S versus zero".
+2. **Check the closed form against a simulation.** Agreement to the third
+   decimal turns an argument into a verification; disagreement means one of
+   them encodes an assumption you did not intend.
+3. **Resample at the level the randomness lives.** Settlement is constant
+   within a market here (0 of 564 markets carry two values), so a per-fill
+   interval over 13,651 fills is `√(13,651/564) ≈ 4.9×` too narrow. The null
+   inherits the dependence for free; a per-row CI manufactures significance.
+4. **State the firewall explicitly rather than asking to be trusted on it.** A
+   null built by someone who has seen the answer is a weaker null. For this
+   one: construction (a) never reads observed settlements, (b) reads them only
+   to permute and evaluates no identity permutation, no observed value is
+   computed anywhere in the script, and the author had not seen it.
+5. **Mutation-test the null itself** (rule 4). It must read inside its own band
+   on a fair synthetic and decisively outside on an injected effect. The step
+   gets skipped because a null feels like infrastructure; it is an instrument.
+
+## A by-product worth keeping: two nulls disagreeing is information
+
+Two constructions were built because the manager asked for both, on the
+grounds that disagreement would be informative. It was:
+
+| null | centre | 95% band |
+|---|---:|---|
+| (a) resample each market's outcome at its own mean mid | +3.18¢ | [+2.15, +4.24] |
+| (b) permute observed outcomes across markets, within p-decile strata | +2.18¢ | [+1.31, +3.12] |
+
+Near-identical dispersion, centres 0.99¢ apart. **(a) assumes the mid is
+calibrated and draws outcomes from it; (b) inherits the observed outcome rate
+within each price decile and breaks only the pairing between markets and
+outcomes. The gap is therefore the contribution of the market's own
+calibration error over our fills** — a quantity neither null was built to
+measure, visible only because both were built.
+
+**(b) is the primary bar** for a position question, because it does not
+additionally assume calibration, which is a separate claim carrying its own
+evidence. (a) belongs beside it as the sensitivity that adds that assumption.
+
+*(Instance and derivation: B. Both-constructions instruction and the ruling on
+(b): MGR. Artifact: `analysis/accumulator_martingale_null.py`.)*
