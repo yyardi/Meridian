@@ -53,8 +53,24 @@
   .explain b{color:var(--txt)}
   .accruing{display:inline-block;padding:1px 7px;border-radius:3px;font-size:9.5px;
             letter-spacing:.06em;background:#16243a;border:1px solid #2c4a7a;color:#cfe2ff}
-  .verdictPASS{color:var(--pos);font-weight:700}
-  .verdictFAIL{color:var(--neg);font-weight:700}
+  /* The verdict is the server's and stays verbatim — but it was rendering as a
+     huge red word that dominated a page whose real news is the live numbers.
+     Chip, not headline. */
+  .verdictPASS,.verdictFAIL{display:inline-block;font-size:10px;font-weight:700;
+     letter-spacing:.08em;padding:2px 7px;border-radius:3px;border:1px solid}
+  .verdictPASS{color:var(--pos);border-color:var(--pos);background:#0d1f18}
+  .verdictFAIL{color:var(--neg);border-color:#5a2a2a;background:#1f1010}
+  .livestrip{display:flex;gap:20px;flex-wrap:wrap;padding:10px 12px;margin-bottom:16px;
+     background:var(--panel);border:1px solid var(--line);border-radius:4px}
+  .live{display:flex;flex-direction:column;gap:2px}
+  .lk{color:var(--faint);font-size:9px;letter-spacing:.1em;text-transform:uppercase}
+  .lv{font-size:17px;font-weight:600}
+  details.explain summary{cursor:pointer;color:var(--faint);font-size:11px;
+     padding:6px 0;list-style:none}
+  details.explain summary::-webkit-details-marker{display:none}
+  details.explain summary:before{content:"\25B8 ";color:var(--accent)}
+  details.explain[open] summary:before{content:"\25BE "}
+  details.explain p{font-size:11px;color:var(--faint);line-height:1.6;margin:6px 0}
   .meter{height:4px;background:#1a2029;border-radius:2px;overflow:hidden;margin-top:4px}
   .meter i{display:block;height:100%;background:var(--accent)}
   .sideB{color:#3fd48f}.sideA{color:#ff9ba0}
@@ -115,15 +131,29 @@
 </header>
 
 <div class="wrap">
-  <div class="explain">
-    <b>What QUOTE is.</b> A shadow market-maker: it posts both sides at the touch,
-    earns the spread when both fill, and pays <b>adverse selection</b> — the book
-    moves against a resting quote before it can be pulled (measured −2.74¢ per fill
-    in-game on the static study). The whole experiment is whether <b>requoting every
-    5s</b> flips that sign. <b>Nothing is sent</b>: fills are simulated against the
-    recorded book, and the pre-registered verdict
-    (<code>docs/math/quote-shadow.md</code>) stays <b>NO DATA</b> until each regime
-    reaches its floor — nothing here is a performance claim before then.
+  <!-- Was an eight-line paragraph the operator could not read past. The content
+       is real but it is REFERENCE, not status: it belongs behind a disclosure,
+       and the live numbers belong above it. -->
+  <details class="explain">
+    <summary><b>What QUOTE is</b> — a shadow market-maker. Nothing is sent.</summary>
+    <p>It posts both sides at the touch and earns the spread when both fill. It pays
+    <b>adverse selection</b>: the book moves against a resting quote before it can be
+    pulled. Fills are simulated against the recorded book — no order ever reaches the
+    venue. The pre-registered verdict (<code>docs/math/quote-shadow.md</code>) stays
+    NO DATA until each regime reaches its floor.</p>
+    <p><b>2026-09-03:</b> 63.9% of simulated fills were <b>phantoms</b> — fills that
+    could not have happened, because the recorded book does not contain our own order.
+    Real fills settle at <b>&minus;3.38&cent;</b>. See
+    <code>docs/math/adverse-selection-measured.md</code>.</p>
+  </details>
+
+  <!-- LIVE strip. The operator's complaint was "nothing live updating": the page
+       polled every 10s but nothing on it visibly moved. These four tick. -->
+  <div class="livestrip">
+    <div class="live"><span class="lk">fills tonight</span><span class="lv num" id="l-fills">—</span></div>
+    <div class="live"><span class="lk">observations</span><span class="lv num" id="l-obs">—</span></div>
+    <div class="live"><span class="lk">quoting now</span><span class="lv num" id="l-quoting">—</span></div>
+    <div class="live"><span class="lk">last fill</span><span class="lv" id="l-last">—</span></div>
   </div>
 
   <h2>Per-regime capture vs the pre-registered floors <span class="dimc"
@@ -213,13 +243,27 @@ async function load(){
   $("#s-quoting").textContent = `${d.quotable_now}/${d.observed_now}`;
   $("#s-fills").textContent = hb ? (hb.fills_total ?? "—") : "—";
 
+  // The live strip. Everything here moves on the 10s poll, which is the point.
+  const ft = hb ? (hb.fills_total ?? null) : null;
+  $("#l-fills").textContent   = ft == null ? "—" : ft.toLocaleString();
+  $("#l-obs").textContent     = d.observed_now != null ? d.observed_now.toLocaleString() : "—";
+  $("#l-quoting").textContent = `${d.quotable_now ?? "—"}`;
+  const lastFill = (d.fills && d.fills.length) ? d.fills[0] : null;
+  $("#l-last").textContent = lastFill && lastFill.filled_at
+    ? agef((Date.now() - new Date(lastFill.filled_at).getTime())/1000) + " ago"
+    : (ft ? "idle" : "—");
+
   const names = Object.keys(d.regimes);
   $("#regimes").innerHTML = names.length
     ? `<div class="kpis">${names.map(n=>regimeCard(n, d.regimes[n], d.floors)).join("")}</div>`
     : '<div class="empty">no fills recorded yet — the engine has not simulated anything</div>';
 
   const quoting = d.quoting.filter(q => inLeague(q.market_slug));
-  $("#qnote").textContent = ` — ${quoting.length} ${LEAGUE.toUpperCase()} markets inside the quotable band (${d.quotable_now} across leagues, of ${d.observed_now} observed). Reconstructed from the same observations through the engine's own code; the engine's memory is not readable from here.`;
+  // Was a three-line sentence where a count belonged. The caveat is real and
+  // now lives in the title attribute rather than across the page.
+  const qn = document.getElementById("qnote");
+  qn.textContent = ` — ${quoting.length} in ${LEAGUE.toUpperCase()}, ${d.quotable_now} across leagues`;
+  qn.title = `Reconstructed from the same observations through the engine's own code; the engine's own memory is not readable from here. ${d.observed_now} observations seen.`;
   $("#quoting").innerHTML = quoting.length ? `<table><thead><tr>
       <th class="l">Market</th><th class="l">Regime</th><th>Bid</th><th>Ask</th>
       <th>Spr</th><th>Data age</th>
