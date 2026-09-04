@@ -175,7 +175,38 @@ def build_features(g: pd.DataFrame) -> pd.DataFrame:
     feat["total"] = home.total
     feat["over"] = (home.total > home.closing_total).astype(int)
     feat["push"] = (home.total == home.closing_total)
+    # --- spread and moneyline targets, with their own baselines -------------
+    # closing_spread is HOME-FRAME, NEGATIVE = home favoured (verified in R1b:
+    # P(home win | spread <= -5) = 0.764). Home covers iff margin + spread > 0.
+    feat["home_margin"] = home.team0_score - home.team1_score
+    feat["closing_ml_home"] = home.closing_ml_home
+    feat["closing_ml_away"] = home.closing_ml_away
+    feat["cover"] = ((feat.home_margin + feat.closing_spread) > 0).astype(int)
+    feat["push_spread"] = (feat.home_margin + feat.closing_spread) == 0
+    feat["home_win"] = (feat.home_margin > 0).astype(int)
     return feat.reset_index()
+
+
+def devig_home(ml_home: pd.Series, ml_away: pd.Series) -> pd.Series:
+    """American moneylines -> proportional de-vigged P(home). The ONLY target
+    here with a real price, so the ONLY one whose baseline is not 0.5."""
+    def implied(ml):
+        ml = ml.astype(float)
+        return np.where(ml < 0, -ml / (-ml + 100.0), 100.0 / (ml + 100.0))
+    qh, qa = implied(ml_home), implied(ml_away)
+    return pd.Series(qh / (qh + qa), index=ml_home.index)
+
+
+#: target -> (label, target column, push column, baseline description). The
+#: baseline is 0.5 for totals and spreads BECAUSE the export carries the line
+#: but no price and a closing line is the balance point; for the moneyline a
+#: price EXISTS, so the baseline is its de-vigged implied probability and the
+#: test is the real "beat the market's price" one.
+TARGETS = {
+    "totals": ("over", "push", "0.5 (closing total is the balance point; no price in the export)"),
+    "spread": ("cover", "push_spread", "0.5 (closing spread is the balance point; no price)"),
+    "moneyline": ("home_win", None, "de-vigged closing moneyline (a REAL price)"),
+}
 
 
 FEATURES = ["closing_total", "closing_spread", "season", "month",
@@ -187,13 +218,47 @@ LINE_ONLY = ["closing_total", "closing_spread", "season", "month"]
 
 
 def walk_forward(feat: pd.DataFrame, cols: list[str], shuffle: bool = False,
-                 seed: int = SEED) -> pd.DataFrame:
-    """Expanding-window by season. Fit on seasons < k, predict season k."""
+                 seed: int = SEED, target: str = "totals") -> pd.DataFrame:
+    """Expanding-window by season. Fit on seasons < k, predict season k.
+
+    The baseline is target-specific and NOT always 0.5: totals and spreads have
+    no price in this export so their balance-point baseline is 0.5, while the
+    moneyline carries a real price whose de-vigged probability is the baseline.
+    """
     from sklearn.ensemble import HistGradientBoostingClassifier
+    ycol, pushcol, _ = TARGETS[target]
     rng = np.random.default_rng(seed)
-    d = feat[~feat.push].copy()
-    if shuffle:  # the temporal placebo: destroy the target within season
-        d["over"] = d.groupby("season").over.transform(lambda s: rng.permutation(s.values))
+    d = feat.copy()
+    if pushcol:
+        d = d[~d[pushcol]]
+    if target == "moneyline":
+        d = d.dropna(subset=["closing_ml_home", "closing_ml_away"]).copy()
+        d["baseline_p"] = devig_home(d.closing_ml_home, d.closing_ml_away)
+        # The design is "put the line in as a feature and learn the RESIDUAL".
+        # For totals/spread the line already is a feature; for the moneyline it
+        # was NOT, so the model was being asked to beat a price it could not see.
+        cols = list(cols) + ["baseline_p"]
+    else:
+        d["baseline_p"] = 0.5
+    d = d.copy()
+    if shuffle:
+        # THE PLACEBO MUST PERMUTE THE TARGET AND ITS BASELINE **TOGETHER**.
+        # Found by the placebo reading "MODEL BEATS THE LINE" on the moneyline:
+        # that was a defect in this test, not a leak. Shuffling y alone leaves a
+        # PRICED baseline pointing at the old outcome, so the baseline's Brier
+        # collapses (0.2078 -> 0.2827) and a know-nothing model "wins" against a
+        # baseline that has been broken rather than beaten. Permuting the (y,
+        # baseline) PAIR destroys only the features->target link, which is what
+        # the placebo is for. Harmless where the baseline is the constant 0.5,
+        # and essential where it is a real price.
+        idx = d.groupby("season").cumcount()  # stable within-season position
+        pairs = d[[ycol, "baseline_p"]].to_numpy()
+        out_pairs = np.empty_like(pairs)
+        for s in d.season.unique():
+            m = (d.season == s).to_numpy()
+            out_pairs[m] = pairs[m][rng.permutation(int(m.sum()))]
+        d[ycol] = out_pairs[:, 0]
+        d["baseline_p"] = out_pairs[:, 1]
     out = []
     for k in EVAL_SEASONS:
         tr, te = d[d.season < k], d[d.season == k]
@@ -202,11 +267,11 @@ def walk_forward(feat: pd.DataFrame, cols: list[str], shuffle: bool = False,
         m = HistGradientBoostingClassifier(max_depth=4, learning_rate=0.05, max_iter=300,
                                            min_samples_leaf=50, l2_regularization=1.0,
                                            random_state=seed)
-        m.fit(tr[cols], tr.over)
+        m.fit(tr[cols], tr[ycol])
         p = m.predict_proba(te[cols])[:, 1]
-        out.append(te.assign(p=p, brier=(p - te.over) ** 2, base=(0.5 - te.over) ** 2,
-                             diff=(p - te.over) ** 2 - (0.5 - te.over) ** 2,
-                             train_seasons=len(tr)))
+        y = te[ycol].to_numpy(float)
+        out.append(te.assign(p=p, brier=(p - y) ** 2, base=(te.baseline_p - y) ** 2,
+                             diff=(p - y) ** 2 - (te.baseline_p - y) ** 2))
     return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
 
 
@@ -217,8 +282,36 @@ def report_result(ev: pd.DataFrame, label: str, indent: str = "") -> None:
     cm = clustered_mean({g: [v] for g, v in zip(ev.game_id, ev["diff"])})
     verdict = ("MODEL BEATS THE LINE" if cm.hi < 0 else
                "model worse than the line" if cm.lo > 0 else "spans zero — no edge shown")
-    print(f"{indent}{label:<32s} Brier {ev.brier.mean():.5f} vs 0.25000 | "
+    print(f"{indent}{label:<32s} Brier {ev.brier.mean():.5f} vs {ev.base.mean():.5f} | "
           f"diff {cm.mean:+.5f} [{cm.lo:+.5f}, {cm.hi:+.5f}] n={len(ev):,} -> {verdict}")
+
+
+def main_all() -> None:
+    """All three targets, same machinery, each with its own correct baseline."""
+    g = pd.read_csv(GAMES)
+    feat = build_features(g)
+    print("=== THREE TARGETS, ONE PIPELINE, THREE BASELINES ===")
+    print("Totals and spreads have NO price in this export, so their baseline is the")
+    print("balance point 0.5. The MONEYLINE has a real price, so its baseline is the")
+    print("de-vigged implied probability — that is the true 'beat the market' test.\n")
+    for tgt in ["totals", "spread", "moneyline"]:
+        ycol, pushcol, basedesc = TARGETS[tgt]
+        d = feat if not pushcol else feat[~feat[pushcol]]
+        print(f"--- {tgt.upper()} · baseline = {basedesc}")
+        print(f"    n={len(d):,}, base rate {d[ycol].mean():.4f}"
+              + (f", pushes {int(feat[pushcol].sum())}" if pushcol else ""))
+        ev = walk_forward(feat, FEATURES, target=tgt)
+        report_result(ev, "  full features", indent="  ")
+        report_result(walk_forward(feat, LINE_ONLY, target=tgt), "  line-only control", indent="  ")
+        report_result(walk_forward(feat, FEATURES, shuffle=True, target=tgt),
+                      "  TEMPORAL PLACEBO", indent="  ")
+        ev = ev.assign(conf=(ev.p - ev.baseline_p).abs())
+        for lo_b, hi_b, lab in BANDS:
+            report_result(ev[(ev.conf >= lo_b) & (ev.conf < hi_b)],
+                          f"  deviation {lab}", indent="    ")
+        print(f"    model p: mean {ev.p.mean():.4f} sd {ev.p.std():.4f} "
+              f"range [{ev.p.min():.3f}, {ev.p.max():.3f}]\n")
+    print(CAPITAL_LINE)
 
 
 def main_fit() -> None:
@@ -313,9 +406,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--fit", action="store_true")
+    ap.add_argument("--all-targets", action="store_true")
     a = ap.parse_args()
     if a.selftest:
         selftest()
+    elif a.all_targets:
+        main_all()
     elif a.fit:
         main_fit()
     else:
