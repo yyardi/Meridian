@@ -32,6 +32,40 @@ null substrate run through a defective rule yields a correct number and a wrong
 reading, exactly as a real one does. **It is caught only by auditing the rule
 against what was already known when it was written.**
 
+**THE STAGE-FOUR CHECK — one computation, four readings.** Take the *achievable
+outcome range* of the design, project it onto the decision rule's branches, and
+inspect the image:
+
+| what the image looks like | the defect |
+|---|---|
+| a **single branch** | **PREDETERMINED** — every possible outcome gives the same verdict |
+| **adverse branch at the best case** | **INVERTED** |
+| **a branch outside the image** | **DEAD BRANCH** — a verdict the design can never return |
+| spans branches, **interval too wide** | **CANNOT DISCRIMINATE** |
+
+*My first version of this check was the last row only — "compute the interval
+width and ask whether the threshold can distinguish the branches" — and that is
+exactly why it missed the predetermined case. **Clause-adding is the list form,
+and a list can always have a fifth; the projection closes it.***
+
+★ **The instance with capital attached.** The resting-order probe's rule at the
+planned **n=40**: the upper bound ranges from 8.81% (zero violations) to 100%,
+so **all 41 possible outcomes return REFUTED.** The probe would have spent real
+money computing an answer fixed before the first order rested, and reported the
+phantom criterion destroyed on a flawless run. Withdrawn for n≥60, n=100
+recommended. **And the fix does not fully clear it**: CONFIRMED needs an upper
+bound below 1%, first reachable at **n=368**, so at n=100 a rule advertised as
+three-band is structurally **two-band** — a DEAD BRANCH, the same species as the
+one just withdrawn. Defensible if stated; not defensible if advertised.
+
+★ **AND THE DISCOVERY RATE IS ABOUT OUR ATTENTION, NOT ABOUT TONIGHT.** Three
+decision-rule defects appeared in one evening against **zero** before anyone
+looked — because **no null catches them, so nothing in the existing machinery
+was ever pointed at this axis.** Consequence, stated plainly: **every
+pre-registration already in the record was written without this check.** The
+back-catalogue is unaudited on stage four, and the check is one computation
+each.
+
 > **This preface said "three stages is all there are" and a fourth was found
 > within the hour — by which time I had promoted the closed-set claim to the top
 > of a document about not trusting claims.** Both the claim and its
