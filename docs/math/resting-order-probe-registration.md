@@ -525,3 +525,63 @@ be presented as the analytically preferred option.
 / 400-contract stop were sized for n=100. At n=299 the total-contract stop
 becomes the binding control and should be set from the wallet directly, not
 from the order count.
+
+## ★ AMENDMENT 4 — the binomial assumed independence. ALL FOUR n FIGURES ARE VOID.
+
+B's objection, and it is fatal to Amendments 2 and 3 alike: **every n we computed
+(299 / 300 / 368 / 381) came from a binomial interval, which treats the orders as
+independent.** They are not. This programme maintains `clustered_mean`
+specifically because its observations are not, and I repriced a binomial without
+asking whether independence held.
+
+**This is my own §3 error one level up.** §3 says: *"Ticks inside one order are
+heavily correlated; the honest effective N is orders, not ticks."* Correct, and
+it stops one level short. **Orders inside one game are also correlated** — a
+venue misbehaving for a stretch, a feed degrading, one session's book behaving
+unusually. I congratulated the document on catching the unit error while
+committing it at the next level up.
+
+### The allocation dominates the order count, and §7 never specified it
+
+CFB in-game span is ~3.3h = 198 minutes. At 10-minute windows one market hosts
+~19 sequential orders, so 6–8 markets per game is **120–150 orders per game**.
+§7's "n orders" says nothing about how they are spread, and that choice decides
+the test:
+
+    299 orders, design effect 1 + (m-1)*rho at rho = 0.05
+
+    allocation                         G     m    deff   eff n   bound
+    concentrated: 2 games              2   150    8.45      35   8.48%   <- fails even SUPPORTED
+    moderate: 20 games                20    15    1.70     176   1.71%
+    spread: 100 games                100     3    1.10     272   1.10%
+
+    perfectly clustered (rho = 1): effective n = GAMES
+      G=20 -> 15.0%    G=100 -> 3.0%    G=300 -> 1.0%
+
+**299 orders concentrated in 2 games is worth ~35 independent observations and
+cannot reach even the SUPPORTED band. The same 299 orders spread 3-per-game
+across 100 games is worth ~272 and nearly reaches CONFIRMED.** Same capital,
+same window, same order count — a factor of ~8 in information, decided by a
+parameter the registration never mentioned.
+
+### Registered: the sample requirement is GAMES, not orders
+
+    n >= 100 GAMES, <= 3 orders per game, 10-minute windows
+
+Tomorrow's CFB slate carries 103 games, which is exactly this structure. The
+binding constraint is **breadth of games, not depth of orders**, and any
+future citation must give the allocation alongside the count.
+
+### Pilot evidence on clustering — real but far too thin to settle it
+
+The two violations in the 25-order pilot fall in **different markets, different
+games, 168.5 hours apart**, across 19 distinct markets. That is consistent with
+independence and is **two events**. It cannot estimate rho, and rho is what the
+whole table above turns on. The honest position is that rho is unmeasured, the
+design must be robust to it being non-zero, and the probe should report a
+cluster-robust interval with df = games-1 rather than a binomial.
+
+**Amendments 2 and 3's cost tables are void as stated**, since they priced order
+counts under an independence assumption that was never checked. The sidedness
+argument itself survives — the question is one-sided by construction — but it
+may not be cashed as a saving until rho is bounded.
