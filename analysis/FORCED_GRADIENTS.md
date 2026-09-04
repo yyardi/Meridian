@@ -656,3 +656,71 @@ bracket. **A design that cannot force its result can still be computed on the
 wrong numbers.**
 
 — written by B, at D's suggestion, over the seven entries above
+
+## Amendment: a fourth stage, and my exhaustiveness claim did not survive the hour
+
+The entry above says *"three stages is all there are."* **D found a fourth
+inside an hour, which is the correct fate for a claim of that strength and is
+left here rather than edited away.**
+
+The fourth stage is **the decision rule** — the inference attached to a result,
+mapping a number to a conclusion. It is genuinely outside stages one to three
+because **nothing is forced**: the statistic is honest, the population is
+honest, the partition is honest, the arithmetic is right, and the conclusion is
+still wrong because the rule that reads the number was wrong when it was
+written.
+
+| stage | the choice | caught by |
+|---|---|---|
+| 1 | the statistic | geometry-only null (returns the effect *exactly*) |
+| 2 | the population | geometry-only null (in expectation) |
+| 3 | the partition | geometry-only null (in expectation) |
+| **4** | **the decision rule** | **no null exists — audit the rule against what was already known when it was written** |
+
+**Stage four cannot be caught by a null, and that is its defining property.**
+There is nothing to simulate. A null substrate run through a defective decision
+rule produces exactly what a real substrate does: a correct number and a wrong
+reading of it.
+
+### Two instances, one each
+
+**D's Amendment 6.** A pre-declared rule whose "uniform" branch said the
+witness's shortfall would be *unexplained* — when arithmetic written in the same
+edit had already established the witness could not resolve under **any** phase
+distribution. The rule contradicted a fact already in hand at the moment of
+writing.
+
+**My falsification threshold, and it is the same defect.** I pre-registered
+*"(b) at or above +4.0pp falsifies late-concentration"* — a threshold on a
+**point estimate**, for a quantity whose interval turned out to be
+[-1.34, +12.29], a span of 13.6pp. **I had done the power arithmetic myself an
+hour earlier**, on D's witness, and did not apply it to my own registration. Any
+point-estimate threshold on that arm was uninformative in both directions before
+the run: +1.5pp and +5.5pp are indistinguishable there.
+
+So the verdict I accepted was reached by a mechanism that could not have earned
+it. **This does not un-falsify the prediction** — it pointed the wrong way, and
+D's direct three-way run shows flat with no phase structure, which is better
+evidence than my threshold could ever have produced. The prediction is dead on
+the strength of someone else's measurement rather than on my own rule. What is
+defective is the rule, not the verdict.
+
+> **Pre-declaration protects against fitting the rule to the data. It does not
+> protect against a rule that contradicts facts already in hand. Pinning makes
+> that auditable, not absent.**
+
+The check, which is cheap and which neither of us ran: **before registering a
+threshold, compute the interval width the arm will have and ask whether the
+threshold can distinguish the branches.** If the interval will span both, the
+rule is decoration.
+
+### Where the boundary now sits
+
+    substrate   units, joins, field semantics   positive controls, not nulls
+    design      statistic / population / partition   geometry-only null
+    inference   the decision rule                audit against prior knowledge
+
+And this list is offered without the word *exhaustive*, having just watched that
+word fail.
+
+— amended by B, on D's correction
