@@ -350,7 +350,8 @@ select
        'age_seconds', round(extract(epoch from now() - beat_at)::numeric, 1),
        'interval_seconds', interval_seconds,
        'rows_written', rows_written,
-       'game_live', game_live)), '{}'::jsonb)
+       'game_live', game_live,
+       'commit', "commit")), '{}'::jsonb)   -- deployed-code audit; quoted (reserved word)
      from service_heartbeats)
 """)
 
@@ -526,6 +527,12 @@ def _heartbeat_report(beats: dict) -> dict:
     """Verdicts for every expected writer, from the beats the primary DB holds
     plus the live recorder's local one. A service with no row has never run
     this code or is dead — DEAD either way."""
+    # Deployed-code audit: this API's own commit is the reference — a service
+    # whose reported commit differs is running different code than the API
+    # (drift); an absent commit is UNKNOWN PROVENANCE. This is the in-container
+    # CONSISTENCY view (are all services the same build as me); scripts/health.py
+    # does the fuller drift-vs-git-HEAD check host-side.
+    ref = (os.environ.get("MERIDIAN_ENGINE_COMMIT") or "").strip() or None
     report: dict[str, dict] = {}
     for service in heartbeat.APP_DB_SERVICES:
         entry = beats.get(service)
@@ -540,6 +547,8 @@ def _heartbeat_report(beats: dict) -> dict:
             "stale_after_seconds": round(heartbeat.stale_after_seconds(interval), 1),
             "rows_written": entry.get("rows_written"),
             "verdict": heartbeat.verdict(age, interval),
+            "commit": entry.get("commit"),
+            "provenance": heartbeat.provenance_verdict(entry.get("commit"), ref),
         }
     # The fill watcher is judged only where it could have started: ordering
     # enabled in THIS process (token set — the same gate the order endpoint
@@ -624,6 +633,7 @@ def status() -> dict:
     # scripts/health.py had until 2026-09-02. `healthy` deliberately ignores
     # them: absence here is a fact for the header dot, not a recorder failure.
     overlays = {}
+    ref = (os.environ.get("MERIDIAN_ENGINE_COMMIT") or "").strip() or None  # audit reference
     # quote_engine_nfl = GRIDIRON (service_quote_for('nfl')); an overlay like the
     # others, absent until the NFL engine is deployed (before Sept 9).
     for svc in ("pulse_engine", "quote_engine", "quote_engine_nfl"):  # SERVICE_PULSE / SERVICE_QUOTE(+nfl);
@@ -639,6 +649,8 @@ def status() -> dict:
                 "age_seconds": age,
                 "interval_seconds": interval,
                 "verdict": heartbeat.verdict(age, interval),
+                "commit": entry.get("commit"),
+                "provenance": heartbeat.provenance_verdict(entry.get("commit"), ref),
             }
 
     value = {
