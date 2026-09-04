@@ -145,8 +145,48 @@ wallet-allowed price" was an artifact of the two-sided convention, and the trade
 between legs is not forced. The table above is kept because *the reasoning that
 produced it was sound on its inputs* — the inputs were the convention.
 
-**The recommendation is unchanged, and the reason it is unchanged matters more
-than the price.** The author who removed the constraint stated two guards on
+★★ **AND THE RECOMMENDATION DID NOT SURVIVE EITHER — its second reason inverts.**
+Leg B scales with **total standing time (n × window)**, not with n, so more
+orders at the *same* window means **more** crossing episodes, not the same
+number:
+
+| design | order-minutes | Leg B episodes | worst case |
+|---|---:|---:|---:|
+| n=100 × 10-min | 1,000 | ~348 | $278 |
+| n=299 × 10-min | 2,990 | **~1,041** | $832 |
+
+**The larger design reaches the stronger verdict on one leg AND triples the
+other. It dominates on both simultaneously.** The "trading away the only test of
+sufficiency" argument was right that the trade would be wrong and **wrong that
+the trade existed** — the trade was an artifact of the sidedness convention, not
+a fact about the design. *Both* of the recommendation's reasons are gone: the
+wallet one because the constraint dissolved, the leg one because it inverts.
+
+★ **AND "3× THE CAPITAL" IS TRUE OF BOTH FIGURES AND MISLEADING ABOUT ONE:**
+
+| | small | large | difference |
+|---|---:|---:|---:|
+| **worst-case exposure** (solvency bound) | $278 | $832 | — |
+| **expected P&L cost** (at −3.4¢/fill) | $11.83 | $35.38 | **$23.55** |
+
+The worst case assumes **every** fill settles maximally against us, which cannot
+occur. **The expected cost of the better design is thirty-five dollars; the
+difference between the designs is twenty-four.** What $832 measures is an **83%
+worst-case draw on a $1,000 wallet — a solvency question, not a cost question.**
+
+> **State exposure and expected cost separately. A single "3× the capital"
+> collapses a $24 expected difference and an 83% solvency draw into one number
+> that answers neither.** Which of the two decides it is the reader's risk
+> appetite, and that is not the analyst's to assume.
+
+★ **BUT NOTE THE ORDER OF OPERATIONS: the domination argument is robust to the
+independence question above; the specific n is not.** "More orders at the same
+window is better on both legs" holds however the interval is computed. **"n=299
+reaches the stronger verdict" assumes independent orders and is the least
+conservative of the four figures.** The direction survives; the number is
+pending.
+
+**The original recommendation's remaining merit, and the reason it mattered:** The author who removed the constraint stated two guards on
 their own argument, both in the cheaper direction:
 
 1. **It is not price-driven** and would be identical if one-sidedness pushed n
