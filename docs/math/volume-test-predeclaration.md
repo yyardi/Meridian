@@ -382,3 +382,30 @@ I expect the primary on new-session-low intervals to be **at least as large as
 If that is right, the witness disagrees on shared ground and "indicated" is
 generous. I would rather record that prediction and be wrong than record it
 after seeing the answer.
+
+### Amendment 7 RESULT — my prediction was WRONG, and c7's first branch holds
+
+    PRIMARY, all cells (reference)        nT=1,450  treat 25.17%  +4.13% [+1.33%, +6.93%]  excl 0
+    PRIMARY, new-session-low cells only   nT=   42  treat 69.05% -11.90% [-25.86%, +2.05%] spans 0
+    WITNESS, same cells (shared ground)   nT=   42  treat 83.33%  -5.95% [-20.71%, +8.81%] spans 0
+
+**I predicted the primary would hold at >= +4.24% on the witness's population.
+It fell to -11.90%.** The reasoning was that new session lows are seller-driven
+and should be enriched for consumption. Wrong.
+
+**c7's first branch holds: on shared ground the two routes AGREE** — both
+negative point estimates, both spanning zero. So the witness does not
+contradict the primary. The "a second route disagreed" reading is now
+positively excluded rather than merely unsupported.
+
+**But the shared ground is SATURATED and tiny, which is a third independent
+reason the witness was never going to speak.** Base rates on new-low cells are
+69% (primary) and 83% (witness) in the treatment arm — a new session low
+essentially IS a print at or below a touch-joining quote, so nearly every such
+cell scores positive in BOTH arms. There is no headroom for treatment to exceed
+control, and n=42. A ceiling effect on 42 cells cannot corroborate anything.
+
+**Net position, unchanged in strength:** the primary's +4.24% comes from the
+non-new-low population, where the witness cannot speak at all — not from
+population where they disagree. "Indicated, not established" stands exactly as
+before, with one worry removed rather than any support added.
