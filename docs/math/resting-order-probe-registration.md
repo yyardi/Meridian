@@ -31,6 +31,39 @@ credit for. `ask <= B` says *someone offered at or below our price*, not that
 −3.4c is measured over a population we would not fully have received. The
 probe must test both legs or it certifies half the claim.
 
+### A2 is not only a count problem — a named prediction, sign fixed in advance
+
+My first framing ("a count problem, not a per-fill problem") was wrong in the
+unfavourable direction, and the manager's correction is registered here as a
+falsifiable prediction rather than a caveat:
+
+> **P1.** The fills we would actually have received are **not a random
+> subset** of the 6,255. A small order fills when the cross is large enough to
+> sweep the queue ahead of it, so realization is **selected on crossing
+> size** — and crossing size is the classic correlate of informed flow. The
+> realized subset should therefore be **worse per fill** than the full "real"
+> set, not merely smaller. **Predicted sign: realized markout < unrealized
+> markout.**
+
+The schema note sharpens this. `quote_v2_observations.our_bid_qty` is
+documented as the resting size *at* our own quote price — "the queue we sit
+behind (all of it has time priority; we just joined)". **We are always last in
+queue at a price that already existed.** So P1's mechanism is the default
+case, not an edge case.
+
+**The countervailing mechanism, stated so the test can discriminate.** When
+the touch moves to a price where nobody is resting, a quote posted there is
+*first* in queue and fills on any cross, including small ones. If most of our
+fills come from newly-created levels, queue-ahead is ~0, selection is weak,
+and P1 is small. This is measurable directly: the distribution of
+`our_bid_qty` at fill time separates the two worlds. A probe that finds
+queue-ahead mostly zero refutes P1 without needing a real order.
+
+**Falsification.** If realized fills mark out indistinguishably from
+unrealized crossing episodes, P1 is dead and the count-only framing was
+right. If they mark out worse, the mechanism is confirmed and −3.4c is
+optimistic per fill as well as in count.
+
 ## 2. What rests on it
 
 The real/phantom separation (63.9% phantom), the −3.4c real-fill settlement
@@ -146,16 +179,64 @@ not weeks.
 5. **Size.** A 1-contract order may sit at the back of every queue and never
    fill, understating Leg B. Record size and treat Leg B as conditional on it.
 
-## 7. Cheapest discriminating version
+## 7. This is a proposal to the operator, with the capital stated
 
-One contract, resting at the touch, in ~6–8 markets per game across 6 games,
-maintained through the game with re-quoting on touch moves. Record book top
-with sizes at native cadence plus full order lifecycle.
+**Neither the manager nor I can place or modify a real order. The system is
+shadow-mode and a DB constraint enforces it.** The pilot's 25 passive orders
+were the operator's. So §7–8 are a request for the operator to spend, and the
+number they should read is a dollar figure, not anyone's adjective for it.
 
-That is ~40–50 orders, which is the Leg A sample above, and it accumulates
-Leg B episodes at ~21/quote-hour for free. **It requires no new strategy —
-only instrumentation around orders we are already able to place**, since the
-pilot's 25 orders show real passive resting orders have been placed before.
+**My first "cheapest version" was wrong and I am correcting it here.** I
+proposed resting continuously in 6–8 markets through a game. At the measured
+20.9 fills per standing-quote hour, six games × 2 hours × 8 markets is ~96
+quote-hours and **~2,000 fills** — not the ~40 I implied. Continuous quoting
+is a trading programme, not a probe.
+
+**The bounded design.** An order rests for a fixed window, then stops,
+whether or not it filled — so Leg B keeps its denominator (crossing episodes
+without a fill), which cancelling on first fill would destroy.
+
+At 0.348 fills per standing minute, for 48 orders:
+
+| window | expected fills | worst-case capital | expected P&L at −3.4c |
+|---|---|---|---|
+| 5 min | ~84 | $67 | −$2.9 |
+| **10 min** | **~167** | **$134** | **−$5.7** |
+| 20 min | ~334 | $267 | −$11.4 |
+
+Worst-case capital = contracts × max(p, 1−p), and the quotable band caps
+that at $0.80 per contract. It assumes every fill settles maximally against
+us, which cannot happen but is the number the operator should be shown.
+
+**Recommended: 10-minute windows, 48 orders, hard stop at 200 contracts —
+worst case $160, expected −$6.** Caps to enforce in code, not by intention:
+max 4 concurrent resting orders, max 5 fills per order, hard total-contract
+stop that cancels everything on breach.
+
+**What it needs recorded** is in §4. `quote_v2_observations` already carries
+much of it (see §10), so the new instrumentation is the order lifecycle, not
+the book.
+
+## 7a. The wide-market arm is blocked on a config decision, not on design
+
+Confound §6.4 is stronger than I wrote it. We do not merely *happen* not to
+quote wide markets — `MAX_SPREAD = 0.15` in
+`core/quote/adverse_selection.py` gates them out, and there are zero fills
+above 15c across all 38,465 in either league. The line sits between the CFB
+board's median (11c) and its p75 (30c).
+
+So the wide-market arm **cannot be run at all unless that constant is
+changed**, and that is the operator's decision rather than a design choice
+available to this registration. Two consequences:
+
+- If the gate stands, the probe confirms A1 only where we already live, and
+  every "touch-joining is dead as a family" statement remains scoped to the
+  tight corner. That scope should be written into the claim, not left implied.
+- Evidence from *below* the gate argues against a hidden opportunity: real
+  fills at >=5c run −5.71c [−8.89, −2.52] over 1,044 fills, worse than the
+  tight corner, with real share falling monotonically from 48% at <=1c to
+  ~20% at 5c+. That is the direction P1's informed-flow mechanism predicts.
+  It is not evidence about >15c, where we have never been allowed to look.
 
 ## 8. Closure clause
 
@@ -179,27 +260,62 @@ bands are evaluated once, at closure.
   A1 is one assumption in the classifier; confirming it does not certify the
   rest of the pipeline.
 
-## 10. If real resting orders are not available
+## 10. The proxy version — what runs with no real order at all
 
-If the system is shadow-mode by DB or config constraint and no new orders can
-be placed, the best available proxy is the **historical passive-order
-reconstruction**: every real order in `venue_activities` with
-`passiveExecution`, its rest window, and the book through that window. That
-is the pilot, scaled — currently 25 BUY orders.
+Since we are shadow-mode, this is the version that can start today. It is
+better than I first thought, because part of the instrument already exists.
 
-State plainly what it cannot do:
-- It is **conditioned on execution** — every order in it filled, so it cannot
-  measure Leg B at all (the denominator, crossing episodes without a fill,
-  is missing by construction).
-- It cannot be sized to a target; we get whatever the strategies happened to
-  place, all BUY, all in markets they chose.
-- It is retrospective, so book cadence is whatever was recorded, and a
-  one-tick violation may be invisible.
+**For Leg A — the historical passive-order reconstruction.** Every real order
+in `venue_activities` with `passiveExecution`, its rest window, and the book
+through it. This is the pilot, scaled: currently 25 BUY orders, 2 violations.
 
-**It can bound Leg A and nothing else.** That is genuinely useful — Leg A is
-the assumption the phantom share depends on — but the record should then say
-the phantom share is supported by a proxy conditioned on execution, and that
-A2, the sufficiency leg, remains entirely untested.
+What it cannot do:
+- **Conditioned on execution** — every order in it filled. Orders that rested
+  and never traded are structurally absent, and those are where a stale book
+  is most likely.
+- Cannot be sized to a target; we get whatever the strategies placed, all BUY,
+  in markets they chose.
+- Retrospective, so book cadence is whatever was recorded and a one-tick
+  violation may be invisible.
+
+It bounds Leg A and, being execution-conditioned, **cannot measure Leg B at
+all** — the denominator (crossing episodes without a fill) is missing by
+construction.
+
+**★ For Leg B — `quote_v2_observations.our_bid_qty` / `our_ask_qty`.** This
+changes the picture. Those columns record the **queue ahead of us at our own
+quote price**, from the observation's own fresh depth fetch (not joined from
+`book_levels`, so no cross-stream point-in-time hazard), gated by price
+identity: `depth_best_bid/ask` equal to the touch at `observed_at` means the
+sample is valid, different means unusable at any age.
+
+That is the Leg B input, available without placing anything. The estimator:
+
+    P(fill | cross) ~= P(crossing size > queue-ahead at our price)
+
+Both distributions are measurable — queue-ahead from these columns, crossing
+size from the trade prints. It yields a **quantitative bound on how much of
+the 6,255 we would actually have received**, and it directly tests P1's
+mechanism: if `our_bid_qty` is mostly zero we are usually first in queue,
+selection is weak and P1 is small; if it is typically large, realization is
+strongly size-selected and −3.4c is optimistic per fill too.
+
+Coverage caveat: the table began 2026-09-04 and covers 532 of 833 fill
+markets, so it describes the recent, covered subset — the same partial-
+substrate hazard that has bitten this program twice. Check coverage before
+quoting any number off it.
+
+**What the proxy still cannot rule out, and it is the important residue:**
+it estimates whether a cross would have *reached* us. It cannot establish
+that our order was *in the book at all* — that is A1, and only a real order
+tests it — nor that our presence would not have changed the flow (§6.1).
+
+**So: the proxy bounds A2 quantitatively and A1 only through an
+execution-conditioned sample of 25 orders. Until the operator chooses to
+spend on real resting orders, the −3.4c carries a permanent asterisk, and
+the honest form of that asterisk is: "the population is an upper bound whose
+realized fraction is estimated, not measured, and the mechanical premise is
+supported by 25 orders that all filled."**
 
 ---
 
