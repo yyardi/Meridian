@@ -49,14 +49,19 @@ A1. *New games resemble the observed ones in per-game dispersion.* TESTED: the
     per-game sd is recomputed dropping each game in turn (jackknife), and the
     largest single-game influence is reported. If one game drives the sd, the
     projection inherits that fragility and the report says so.
-A2. *103 games produce real fills at the observed per-game rate.* PARTLY
-    TESTABLE: the real-fill yield distribution per game is reported (median,
-    IQR, min). Known risk, from the manager's earlier read: the CFB board is
-    median 11c wide, p75 30c, and real fills come almost entirely from the
-    tight corner — so a wider slate yields fewer real fills and the nominal
-    103 buys less than it looks like. The observed yield-vs-width relationship
-    is reported; whether TOMORROW's board is wider is NOT knowable today and is
-    named as an unresolved exposure rather than assumed away.
+A2. *103 games produce real fills at the observed per-game rate.* NOT TESTABLE
+    ON THIS PIN — see section 4, where the test I intended turns out to be
+    structurally vacuous. **And the sharper form of the assumption, which is
+    not a market question at all:** the engine refuses to quote above
+    `MAX_SPREAD = 0.15` (`core/quote/adverse_selection.py:137`; zero fills
+    above it in 38,465 rows, and the observed maximum is exactly 0.15, so the
+    gate binds rather than merely existing). The CFB board is median 11c wide
+    with p75 at 30c, so a material share of it sits ABOVE our own gate. The
+    real assumption is therefore *"will 103 games' worth of board sit below
+    15c at today's rate"* — and if tomorrow's slate is wider, yield drops for a
+    STRUCTURAL reason (a constant we chose) rather than a market one. The
+    coverage sensitivity in section 4b is the stand-in for the test that needs
+    a board-width pin nobody has yet.
 A3. *Games are the unit and they are not equally informative.* A game with 12
     real fills is a noisier contribution than one with 800. Reported as Kish
     effective cluster count G_eff = (SUM n_g)^2 / SUM(n_g^2), which says how
@@ -202,6 +207,17 @@ def report(d: pd.DataFrame) -> None:
     print("A2 IS UNTESTED ON THIS PIN, not tested-and-passed. What decides tomorrow's")
     print("yield is how much of a 103-game board is tight enough to quote at all, and")
     print("that quantity is not in this file.")
+
+    above = int((d.s_q > 0.15).sum())
+    print(f"\nTHE GATE, which makes A2 structural rather than market-driven: the engine")
+    print(f"refuses to quote above MAX_SPREAD=0.15 (core/quote/adverse_selection.py:137).")
+    print(f"Fills above it: {above} of {len(d):,}; observed max s_q = {d.s_q.max():.2f} — the")
+    print(f"gate BINDS. Against a board at median 11c / p75 30c, a material share of")
+    print(f"tomorrow's markets is above our own cutoff. So 'will the yield hold' is really")
+    print(f"'will 103 games' worth of board sit under 15c', and if it does not, the loss is")
+    print(f"OURS BY CONSTRUCTION rather than the market's. (Note the s_q distribution above")
+    print(f"is FILL-conditioned and so tighter than the quote distribution it came from;")
+    print(f"it bounds nothing about the board, which is the point.)")
 
     print("\n=== 4b. SO: SENSITIVITY TO COVERAGE, since A2 cannot be settled ===")
     print("If tomorrow's board is wider, fewer games clear the quoter's bar. The")
