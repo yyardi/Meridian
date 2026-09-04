@@ -155,6 +155,75 @@ and a high treatment share would be surprising rather than expected.
 The strong form survives but is thin: it can speak only to the ~20% of
 intervals that contain a print at all.
 
+## AMENDMENT 2 — 2026-09-04, N CORRECTION. The pre-declared 402 was wrong.
+
+**§2's "402 cells" was an artifact of a broken expression, not a fact.** The
+bucket index was computed as `filled_at.astype('int64') // 10**9 // 220` on a
+tz-aware column; the arithmetic collapsed and assigned **every fill to a single
+bucket**, so `groupby([market, bucket])` returned exactly one cell per market —
+402 markets, 402 "cells".
+
+The tell was visible and I recorded it: the cell count exactly equalled the
+market count, and a median per-market fill span of 3,362s cannot fit in one
+220s bucket. **I then "verified" it by re-running the same expression**, which
+of course reproduced it. Checking a number by repeating its own computation is
+not a check.
+
+**Correct count, from real poll intervals via an independent method
+(searchsorted against actual poll boundaries): 2,230 treatment cells**, of
+which 1,471 fall in strata that contain at least one control. Controls: 6,115.
+Games: 11.
+
+This correction went outward — 402 was quoted to the manager, into the export
+README, and into an operator alert. It is corrected in all of them.
+
+## AMENDMENT 3 — estimator, same date, before the result was read
+
+The pooled treatment-vs-control comparison originally implied by §4 is **not**
+matching: the arms differ in stratum composition (pooled duration medians 246s
+treat vs 88s control), so pooled rates carry the composition. The estimator is
+now explicitly **within-stratum**: each treatment cell is compared against its
+own stratum's control rate, and the per-cell excesses are game-clustered.
+
+The difference is not cosmetic. Pooled would have reported the primary as
+25% vs 11%; stratified reports 25.2% against a matched expectation of 21.0%.
+**The confound was worth about three times the effect.**
+
+---
+
+## RESULT — 2026-09-04
+
+    PRIMARY   print at/below B inside the interval
+      treatment 25.17%   matched-control 21.04%
+      EXCESS +4.13% [+1.33%, +6.93%]   excludes zero
+
+    SECONDARY any positive volume delta
+      treatment 64.69%   matched-control 52.22%
+      EXCESS +12.47% [+8.96%, +15.99%]  excludes zero
+
+**Reading, under the pre-declared rule.** The primary is elevated, so by §5
+this is evidence that consumption is real: the bids beneath our quote were, at
+least sometimes, traded through rather than pulled. Those are fills a real
+resting order could have received and the fill rule cannot book.
+
+**Three things that bound it, all pre-declared rather than discovered:**
+
+1. **The level-specific signal is a third of the market-wide one** (+4.13pp
+   against +12.47pp). That gap is exactly what the price-movement confound
+   predicts: most of the extra volume around our fills is *not* at or below our
+   bid. Had only the secondary been run, the effect would have looked three
+   times larger than the level-specific evidence supports.
+2. **+4.13pp is a LOWER bound.** `last_trade_px` shows only the last print
+   before each poll, so consuming trades that were not last are invisible. How
+   much larger the true share is cannot be recovered at this cadence.
+3. **It is a minority effect as measured.** ~75% of phantom-bid fills have no
+   observed print at or below B in their interval. Consumption is real and is
+   not the whole story of the phantom population.
+
+This does not overturn the geometry result; it qualifies its scope. The fill
+rule can only book fills with capture <= 0, and this shows the excluded
+population is not empty.
+
 ---
 
 No in-sample result justifies capital. The forward test is the evidence.
