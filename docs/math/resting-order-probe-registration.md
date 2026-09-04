@@ -585,3 +585,83 @@ cluster-robust interval with df = games-1 rather than a binomial.
 counts under an independence assumption that was never checked. The sidedness
 argument itself survives — the question is one-sided by construction — but it
 may not be cashed as a saving until rho is bounded.
+
+## AMENDMENT 5 — projection check on the corrected design. Four items, all verified here.
+
+The n=40 predetermination is gone: no branch predetermined, none dead, all
+verdicts reachable. These are what remains, each recomputed independently
+rather than taken from the report.
+
+### 5.1 CONFIRMED is a knife-edge and ONE SLATE CANNOT RELIABLY BUY IT
+
+    one-sided Clopper-Pearson, zero violations
+      n=298   1.0002%   SUPPORTED
+      n=299   0.9969%   CONFIRMED   <- threshold
+      n=309   0.9648%   CONFIRMED
+
+Tomorrow's slate is **103 games**, and `<= 3 orders per game` makes 309 a
+CEILING: **headroom is 10 orders against a requirement of 299**, and only if
+every game yields its full three. Four games short of full yield ends
+CONFIRMED before a single violation occurs.
+
+That is not predetermination and not a dead branch — it is a verdict reachable
+only if nothing whatever goes wrong, which a pre-registered band should not be.
+
+**Registered: CONFIRMED requires ACCUMULATION ACROSS SLATES**, with NFL from
+2026-09-09 as the second. Raising orders-per-game is the wrong fix — it raises
+m, which raises the design effect, which is precisely what Amendment 4 says to
+avoid. **More games beats more depth, and one Saturday does not have enough.**
+The probe is therefore explicitly not all-or-nothing on a single slate.
+
+### 5.2 ★ TWO REGISTERED METHODS DISAGREE — one must be named
+
+The registration named one-sided Clopper-Pearson AND cluster-robust at
+df = games-1. On identical data, one violation in 300 orders over 100 games:
+
+    one-sided Clopper-Pearson   1.571%   SUPPORTED
+    cluster-robust df=G-1       0.887%   CONFIRMED
+
+**Opposite verdicts.** Registering both means the verdict is chosen after the
+data exist — stage four wearing a different hat, in the document that has been
+cataloguing stage four all evening.
+
+**REGISTERED: one-sided Clopper-Pearson, as the sole verdict source.**
+
+The reason is not that it is conservative in this cell — it is that **the
+allocation makes it adequate.** CP assumes independence, which is exactly what
+Amendment 4 warned about. But `<= 3 orders per game` caps the design effect at
+`1 + (m-1)*rho = 1 + 2*rho` — about **1.10 at rho = 0.05, and at most 3.0 even
+at rho = 1**. The allocation bounds CP's understatement to something small and
+known, rather than leaving it unbounded.
+
+**This is conditional on the allocation and fails with it.** If orders per game
+are ever raised above 3, CP stops being adequate and the method must be
+revisited. The two constraints are one decision, not two.
+
+Cluster-robust may be reported as a DIAGNOSTIC beside it, never as a verdict.
+
+### 5.3 The cluster-robust interval collapses to zero width on the best case
+
+Zero violations makes every cluster residual zero, so the sandwich's meat is
+zero, the standard error is **exactly 0.000000**, and the interval is
+**[0, 0]** — the rate reported as exactly zero with no uncertainty, on
+precisely the outcome we most hope for. Verified: CP returns a finite 0.9936%
+on the same data.
+
+A zero-width interval is a broken computation being read as certainty. This is
+the second reason cluster-robust is not the verdict source, and if it is
+reported as a diagnostic **the zero-violation case must print "undefined"
+rather than [0, 0]**.
+
+### 5.4 The bands cannot be stated as violation COUNTS — a property, not a defect
+
+Under clustering the verdict depends on how violations distribute, not only on
+how many. Fifteen violations in 300 orders:
+
+    one per game, 15 games    6.99%   SUPPORTED
+    packed into 5 games       8.64%   REFUTED
+
+Correct behaviour — concentrated violations carry less information — but it
+means **no violation count maps to a verdict on its own.** Any statement of the
+form "k violations gives verdict X" is ill-formed and must not appear in the
+write-up. The bands are on the interval, never on the count.
