@@ -1226,3 +1226,62 @@ position than the other dissolutions leave, because it is the one place where
 
 > **When a result dissolves, price the version that would not have. A dissolution
 > that costs 37 games is a plan; one that costs a new instrument is a stop.**
+
+---
+
+# Thirteenth: two properties worth designing FOR, not just avoiding
+
+The note is twelve entries of things that go wrong. These two are things that
+went *right* and are reusable.
+
+## A design can fail to resolve exactly where the answer matters least
+
+A randomised-offset arm was added to measure a fill-intensity elasticity `g`,
+whose comparison against `1/h` decides the **sign** of a correction. Power:
+
+| true g | estimate | sign of (g − 1/h) resolved |
+|---:|---:|---:|
+| 20 | 19.8 | 100% |
+| 35 | 34.7 | 78% |
+| **50** | 49.0 | **8%** ← at the threshold |
+| 65 | 63.9 | 68% |
+| 90 | 88.4 | 100% |
+
+The 8% at the threshold is the **nominal false-positive rate — correct
+behaviour, not a failure.** And the structure makes the failure *benign*:
+
+    λ_trade = λ* + (h − 1/g)/d
+
+**When `g ≈ 1/h` the correction term is ≈ 0.** So the design cannot resolve the
+sign precisely in the region where the sign changes nothing, and **an
+unresolved result licenses acting at the uncorrected value** rather than leaving
+the parameter dangling.
+
+> **Check whether your design's blind spot coincides with its don't-care region.
+> If it does, "underpowered" is not a defect — it is a decision rule.** Most
+> designs are not this lucky; the point is to look, because it converts an
+> apparent weakness into a licence to act.
+
+*(And the augmented design split no existing verdict — the other leg's invariant
+held at every offset, so all units still contributed. **Adding a stratification
+does not necessarily cost the strata you already had; check rather than
+assume.**)*
+
+## The tell was the IMPOSSIBLE RESULT, not the arithmetic
+
+The same power harness first used `log(max(fills, 0.5) / time)` to dodge a
+log-of-zero. The floor biased the slope: at true `g = 50` it estimated 66 and
+**"resolved" a sign that is unresolvable at the threshold by construction.**
+
+Nothing in the arithmetic looked wrong. What flagged it was that **the result
+was structurally impossible** — a design cannot distinguish `g > 50` from
+`g = 50` when `g` is exactly 50. Replaced with a Poisson MLE on counts with a
+`log(time)` offset, which handles zero-fill cells and is near-unbiased.
+
+> **Know what your design CANNOT do, and treat any output that exceeds it as an
+> instrument fault before treating it as a finding.** An impossible result is a
+> stronger signal than an implausible one, and it needs no prior.
+
+Second instance in one evening of the same habit — *the instrument was the
+suspect before the finding was* — and both times it was the author's own
+harness. **That habit, not any particular number, is the thing to carry.**
