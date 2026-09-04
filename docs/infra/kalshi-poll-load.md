@@ -127,3 +127,74 @@ which reads exactly like a quiet venue. That is why the recorder now
 logs `events_requested` beside `events_returned` and `markets_returned`
 every cycle: a shortfall must be visible **as a shortfall**. Watch those
 two numbers diverge before trusting any Saturday volume figure.
+
+---
+
+## POST-SLATE FIX: the +3h window closes before every CFB game ends
+
+**Found by D, verified independently here, not landed tonight** — the
+manager held all recorder changes with the box facing 9.4× its largest
+load. This is the written-up recommendation.
+
+`VENUE_OCCURRENCE_AFTER_TIP = 3h` was measured correctly: Kalshi's
+`occurrence_datetime` really does sit at kickoff + 3h, on both boards.
+The error is using it as the window's CLOSING edge, because **a college
+football game does not finish in three hours.**
+
+In-game fill spans per game, from `quote_fills_classified_20260904T142200Z`
+(first in-game fill → last, so these UNDERSTATE the game, which starts
+earlier than our first fill):
+
+| league | games | median | max | over 3.0h | over 4.0h |
+|---|---:|---:|---:|---:|---:|
+| **CFB** | 11 | **3.48h** | 6.43h | **11 of 11** | 2 of 11 |
+| WNBA | 13 | 2.22h | (2.45h excl. one 27h outlier) | 1 of 13 | 1 of 13 |
+
+**Every CFB game we have recorded runs past the window's close**, by a
+median of ~29 minutes and more once the pre-first-fill portion is
+counted. Three hours covers WNBA comfortably and does not cover
+football, and **nothing in the constant's name says so** — the
+configured-is-not-measured shape again, this time in a duration that
+sounds obviously sufficient.
+
+**Why it matters more than the minutes suggest:** the truncated segment
+is the END of the game, which is exactly where this programme keeps
+locating the economics — the ride tail, the dying late-game books, the
+settlement-decisive fills. An instrument that reliably stops ~20-30
+minutes before every game ends samples the population it exists to
+measure with its most informative segment removed, and does so
+silently.
+
+### The fix, in preference order
+
+1. **State-driven with a generous cap (preferred).** Poll while any of
+   the event's markets remain unsettled, capped at
+   `occurrence + 3h` as a backstop. The venue tells us when the game is
+   over — Kalshi settles shortly after the whistle
+   (`settlement_timer_seconds` 90 on NCAAF) — so the normal case stops
+   itself and the cap only catches stragglers. Costs almost nothing
+   because polling ends at settlement rather than running a fixed tail.
+2. **Fixed tail (if a constant is required).** A tail of +1h clears
+   9 of 11 games; +3h clears 11 of 11. Do NOT read "4h is enough" from
+   the medians — the 6.43h game shows the tail is real.
+
+### The cost of the fixed tail, priced
+
+Concurrency, and therefore cadence, barely moves — the tail overlaps
+hours when most games have already closed:
+
+| date | now (9h window) | +1h tail | +3h tail |
+|---|---|---|---|
+| 2026-09-05 (103 games) | 92 games, 67s cycle | 95, 70s | 103, 76s |
+| 2026-09-12 (113 games) | 106 games, 78s cycle | 107, 78s | 113, 83s |
+
+At a 120s interval that moves the effective sampling period by under
+ten seconds on ~190s. **The tail is affordable; the truncation is not.**
+
+### Worth checking elsewhere
+
+The +3h convention came from a venue measurement, but a three-hour
+game-length assumption may appear in other places by coincidence rather
+than derivation. Our own fill recorder evidently does not use it (it
+produced the 3.48h spans above), but the constant looks like the kind
+of house default that spreads.
