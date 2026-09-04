@@ -374,10 +374,24 @@ our bid) and rank *differently* on power and on independence:
 VWAP and `last_trade_px` are **correlated instruments, not separate evidence**.
 The witness was weak *precisely because* it was independent. So:
 
-**If you want corroboration rather than a tighter interval, the answer is more
-cells on the weak independent route — not a sharper version of the primary.**
-Build the precision instrument if precision is what you need, label it as one,
-and never report it as confirming.
+**If you want corroboration rather than a tighter interval, a sharper version of
+the primary will not give it to you.** Build the precision instrument if
+precision is what you need, label it as one, and never report it as confirming.
+
+> ★ **AND "MORE CELLS ON THE WEAK ROUTE" — my own first answer — IS ALSO WRONG,
+> corrected the same evening by measurement.** On shared ground the weak route's
+> treatment base rates were **69% and 83%**: a new session low essentially *is*
+> the event being tested, so nearly every cell scores positive in both arms.
+> **There is no headroom for treatment to exceed control.** Extra cells shrink
+> the interval around a contrast that is structurally near zero.
+>
+> **A saturated instrument does not become informative by being run more.**
+>
+> The real requirement is harder than "more data": **corroboration needs an
+> instrument that fires where the outcome is NOT nearly guaranteed.** Check the
+> base rate in the region where two routes overlap *before* commissioning
+> collection on either — a ceiling effect and a power problem look identical
+> from the interval alone.
 
 ## And the convergence rule has TWO legs, not one
 
