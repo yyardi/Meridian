@@ -985,3 +985,54 @@ And this list is offered without the word *exhaustive*, having just watched that
 word fail.
 
 — amended by B, on D's correction
+
+---
+
+# Ninth: a scalar correlation is a test for MONOTONE dependence only
+
+Recorded 2026-09-04 by the author it nearly cost the result.
+
+Before bucketing drift by queue depth `q`, both of us predicted `q` would be
+spread-correlated — the reason we insisted on a geometry-only null first. **It is
+not correlated:** Pearson **−0.000**, Spearman **+0.023**.
+
+But median `q` by spread quintile runs:
+
+> **0.3 · 3 · 30 · 25 · 20**
+
+**A hundredfold, non-monotone swing that a scalar correlation cannot see.** Had
+the correlation been checked *instead of* building the null, it would have
+cleared the variable and talked us out of the only check that worked.
+
+> **A correlation coefficient tests for monotone dependence, not dependence. A
+> variable that swings a hundredfold across strata will pass it. Look at the
+> conditional distribution, not the coefficient.**
+
+*(Same shape as the two-bucket entry above, pointed at the author who wrote
+that one.)*
+
+## And the null refuted its own pre-declaration — by 13 standard errors
+
+The null was declared to centre on zero. **It centres on +0.0533¢** (sd 0.1776
+over 2,000 draws — thirteen SEs from zero) and is asymmetric.
+
+Cause: **35.6% of fills have `q = 0`**, so quintiles of a heavily-tied skewed
+variable are not five equal groups. **Comparing an observed Δλ to zero rather
+than to this distribution would have scored +0.4¢ as a finding.**
+
+> **When a statistic's null centre cannot be reasoned to, it must be simulated —
+> and "obviously zero" is exactly the case where nobody checks.**
+
+## Two defect species, and the first is not an arithmetic slip
+
+* **A FIREWALL HOLE.** A mutation test injected the synthetic effect onto the
+  **real** substrate and printed the recovered statistic — which is
+  `real Δ + injection`, so **it announced the answer before the measurement
+  script ran** (+1.0 came back +1.351). Fixed by injecting onto a *nulled*
+  substrate, which recovers +1.002 and +3.002. **An instrument that leaks the
+  answer while validating itself is a different species from a wrong
+  computation, and it is invisible in the output.**
+* **A TAUTOLOGICAL CHECK.** Regressing λ on the overshoot and reporting the
+  residual mean as +0.0000¢ — **OLS residuals have mean zero by construction.**
+  A check that cannot fail is not a check. Replaced with the smallest-overshoot
+  bucket, which can.
