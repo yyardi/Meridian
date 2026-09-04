@@ -1132,3 +1132,60 @@ times.
 from the reporting author's — headroom 10 orders against 9, distribution
 dependence 6.99%/8.64% against 7.374%/9.346% — same verdicts, same conclusions,
 and stated openly rather than left as a silent discrepancy in the record.)*
+
+---
+
+# Twelfth: a DIFFERENCE that fails to cancel — the sharpest instance yet
+
+Every earlier entry is a statistic, a population, a partition or a decision
+rule. This one is a **subtraction**, and it is the most deceptive of the set
+because pairing is normally the thing that *removes* contamination.
+
+A paired difference was computed to locate where a loss opens in time:
+
+    gap = settlement_pnl − drift(3600s)
+
+It came back **−4.239¢ [−6.395, −2.083] — excluding zero where neither of its
+two endpoints does.** That is exactly what a well-designed paired statistic
+looks like: the pairing cancelled the game-level noise and revealed the signal.
+
+**It is not. The `qp` does not cancel.**
+
+    settlement_pnl = (s − qp)        drift = (mid_h − mid_0)
+    gap = (s − qp) − (mid_h − mid_0) = (mid_0 − qp) + (s − mid_h)
+                                     = capture + tail
+
+Verified to **2.13e-14** on 4,212 rows:
+
+| term | value | |
+|---|---|---|
+| **gap** | **−4.239 [−6.395, −2.083]** | excludes zero |
+| **capture** | **−3.823 [−5.082, −2.564]** | **90.2% of it — RETIRED IDENTITY, ≤0 on 4,212/4,212 by the fill rule** |
+| tail: `settlement − mid(1h)` | −0.416 [−2.305, +1.474] | **spans zero** |
+
+**The difference cleared zero because one of its terms cannot be positive.** The
+part that carried the claim — does price move against us between the hour and
+settlement — **is not measured at all.**
+
+## The diagnostic
+
+> **When a difference clears zero and neither endpoint does, DECOMPOSE THE
+> DIFFERENCE BEFORE BELIEVING IT.** The power gain from pairing is real; so is
+> the risk that what the pairing cancels is the noise and what it leaves is the
+> artifact.
+
+Concretely: write the difference out in terms of its raw inputs and check what
+*fails* to cancel. Here the residue was the one quantity the programme had
+already retired as an identity — **and it arrived inside a statistic nobody had
+thought to check, because subtraction feels like cleaning.**
+
+## And a companion caution about "it reproduces"
+
+The same exchange produced an overstatement worth recording: a headline number
+was said to "reproduce almost exactly" at −3.125¢/−3.341¢ against −3.376¢.
+
+**What reproduced was the LEVEL, not the SIGNIFICANCE.** Both gated intervals
+spanned zero; only one ungated specification cleared, **by 0.026¢**.
+
+> **"It reproduces" is a claim about a point estimate. Say which — level or
+> significance — because at small G they routinely disagree.**
