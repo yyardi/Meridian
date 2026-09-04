@@ -1098,3 +1098,37 @@ The scenario builder allocated `k//3` events instead of `k`, producing apparent
 > **A surprising result about a design is first a hypothesis about your
 > harness.** Same shape as "repeating a computation is not checking it", one
 > level out: the anomaly was real, and it was in the instrument.
+
+## Eleventh: a method choice conditional on a design constraint is ONE decision
+
+The strongest correction of the sequence, and it changed a *reason* rather than
+a number.
+
+Two interval methods disagreed on identical data, so one had to be named. The
+recommendation was **Clopper-Pearson, "because it is conservative here."**
+
+> **"Conservative here" is a property of one cell, not of a method.**
+
+CP assumes **independence** — precisely what the clustering analysis had just
+warned against — so *on its own* it is the **anti-conservative** choice. The
+recommendation was right and the reason was backwards.
+
+**The actual justification is the allocation.** Capping units at ≤3 per cluster
+bounds the design effect at `1 + 2ρ` — about **1.10** at ρ = 0.05, and at most
+**3.0** even at ρ = 1. That bounds CP's understatement to something *small and
+known* rather than leaving it open.
+
+> **So the method is adequate only because the allocation is capped, and it
+> fails with it. Raise the cap and the interval is silently invalidated.**
+> Register them as **one decision**, not two — otherwise someone relaxes a
+> sampling constraint without noticing they have voided the estimator.
+
+This is the mirror of the stage-four family: not a rule that cannot fail, but a
+rule whose **validity depends on a parameter recorded somewhere else**. The
+defect surfaces only when the two are changed by different people at different
+times.
+
+*(Numbers recomputed independently rather than accepted: two differed trivially
+from the reporting author's — headroom 10 orders against 9, distribution
+dependence 6.99%/8.64% against 7.374%/9.346% — same verdicts, same conclusions,
+and stated openly rather than left as a silent discrepancy in the record.)*
