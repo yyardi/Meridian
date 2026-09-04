@@ -350,3 +350,52 @@ supported by 25 orders that all filled."**
 ---
 
 No in-sample result justifies capital. The forward test is the evidence.
+
+---
+
+## AMENDMENT 1 — my own decision rule was unreachable, and worse than unreachable
+
+Applying B's registration check (compute the interval width the arm will have,
+and ask whether the threshold can distinguish its branches) to §3's Leg A bands
+— `<1%` CONFIRMED, `1–8%` SUPPORTED, `>8%` REFUTED — at the §7 sample of ~40
+orders:
+
+    best possible outcome is ZERO violations; achievable 95% upper bound:
+      n =  25   13.32%
+      n =  40    8.76%      <- the planned sample
+      n =  60    6.02%
+      n = 100    3.70%
+      n = 300    1.26%
+      n = 500    0.76%      <- first n that can reach the CONFIRMED band
+
+**Two defects, and the second is severe.**
+
+1. The `<1%` CONFIRMED branch is **unreachable at any n below ~500.** As
+   written it is decoration.
+2. At n=40 a **perfect result — zero violations in every order — yields an
+   upper bound of 8.76%, which falls in the `>8%` REFUTED band.** The rule
+   returns "A1 REFUTED as used" on a flawless outcome. That is not merely an
+   underpowered rule, it is one whose branches are mis-ordered against what the
+   design can produce.
+
+**Corrected sample requirement.** The threshold that matters is 8%, because
+that is roughly where the phantom share moves by more than 5 points. To
+conclude the rate is below it, the upper bound must clear it:
+
+    n >= 60   upper bound 6.02%   MINIMUM for the rule to be able to say
+                                  anything favourable
+    n >= 100  upper bound 3.70%   comfortable
+    n >= 300  upper bound 1.26%   approaches the original CONFIRMED intent
+
+**§7's "~40 orders" is withdrawn and replaced by n >= 60, with n = 100
+recommended.** Re-pricing §7's capital at n=100 with the same 10-minute
+windows: ~348 expected fills, worst case ~$278, expected P&L ~-$11.8, hard stop
+400 contracts. Still small, and now attached to a rule that can return a
+favourable verdict.
+
+**The general check, which neither B nor I ran and both of us needed:** before
+registering a threshold, compute the interval the arm will actually have and
+ask whether the threshold can separate the branches. If the interval spans
+both, the rule is decoration. If the best achievable outcome lands in the
+adverse branch, the rule is inverted. Cheap, and it belongs at registration
+time rather than in the write-up.
