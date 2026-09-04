@@ -242,3 +242,78 @@ over, if it does. That is a pre-registration to write, not a run to do now, and
 the horizons must be named before anyone looks.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+## The survivorship confound: REAL IN DIRECTION, BOUNDED TOO SMALL TO MATTER
+
+Registered at df08095 before the read (`analysis/DRIFT_SURVIVORSHIP_REGISTRATION.md`).
+B raised it and declined to run it unregistered, which was correct.
+
+**The worry:** drift at horizon *h* only exists for fills with a tick at *t+h*.
+Late fills lose that window, and late fills are where terminal information
+concentrates — so "positive drift, negative settlement" might be two
+populations, not one paradox.
+
+**PRIMARY — real fills, settlement P&L, `clustered_mean`, clustered by game:**
+
+| horizon | subset | n | G | settlement |
+|---|---|---:|---:|---|
+| 300s | MEASURABLE | 13,518 | 24 | −2.787¢ [−4.227, −1.346] |
+| 300s | **CENSORED** | **133** | 21 | **−10.962¢ [−18.498, −3.427]** |
+| 60s | MEASURABLE | 13,163 | 24 | −2.879¢ [−4.264, −1.495] |
+| 60s | CENSORED | 488 | 22 | −2.518¢ [−8.140, +3.103] |
+
+**PREDICTION 1 IS CONFIRMED IN DIRECTION.** Censored fills at 300s settle
+**−10.96¢**, four times worse than measurable ones, and the interval excludes
+zero. B's mechanism is real: the fills that lose their drift window are the bad
+ones.
+
+**AND IT IS TOO SMALL TO EXPLAIN ANYTHING.** Censoring at 300s is **1.0%**
+(133 of 13,651). The aggregate bias is *rate × difference* = 0.010 × 8.176¢ =
+**0.08¢** on a −3.4¢ number. Even at the interval's most extreme (−18.5¢), the
+bound is 0.16¢. **This is the rare case where prediction 3's underpowered-null
+trap does not apply**: the censoring RATE is measured precisely, so the bias is
+bounded by rate alone regardless of how uncertain the difference is.
+
+*A note on why 300s is LESS censored than 60s (1.0% vs 3.6%), which looks
+backwards: the staleness cap is h/2, so the 300s acceptance window is 150s wide
+against 60s's 30s. Longer horizons have wider windows and catch more. Censoring
+here is mostly "no tick in that particular window", not "the game ended" — which
+weakens the survivorship story further.*
+
+**SECONDARY — settlement by C's pre-declared LATENESS bands, real fills:**
+
+| band | n | censoring | settlement |
+|---|---:|---:|---|
+| 0–30m | 3,555 | 0.1% | −1.693 [−4.646, +1.260] |
+| 30–60m | 2,902 | 0.1% | −3.409 [−6.526, −0.293] |
+| 60–90m | 2,267 | 0.2% | −0.317 [−2.978, +2.344] |
+| 90–120m | 2,002 | 0.9% | −4.711 [−8.725, −0.697] |
+| >120m | 2,841 | 3.0% | −4.768 [−7.418, −2.119] |
+
+Censoring rises with lateness exactly as B predicted (0.1% → 3.0%), and the two
+latest bands are the worst cells. **But it is non-monotonic** — 60–90m is
+−0.317¢ — with heavily overlapping intervals at G=24. **Candidate, not finding**,
+and it belongs to C's LATENESS cut rather than here. Multiple comparisons: five
+bands, one of many cuts run today.
+
+### So the paradox survives, and it is now the sharpest open question
+
+Real-fill drift is positive at every horizon on a population that is **99% of
+all real fills**, and those fills settle at −2.79¢. **The loss is not in the
+five minutes after the fill, and it is not survivorship.**
+
+B's attack, which I accept and which reframes rather than dissolves it: *300s is
+~3% of a football game.* Positive short-horizon drift refutes **fast
+picking-off** and says nothing about the terminal outcome. On a binary settling
+hours later, the informative trade can be one whose edge only resolves at the
+whistle. **We have measured that we are not being sniped — not that we are on
+the right side.**
+
+**And B's better instrument, recorded for whoever runs it next:** the ratio of
+drift to the excursion that produced the fill. Phantoms give back ~0.5× of their
+excursion in every width band (flat, corr 0.973 — the fourth forced gradient).
+Real fills give back only **0.04–0.18×**, varying with no pattern. *When someone
+actually crosses to us, the mid comes back far less than when nobody did.* That
+is the adverse-selection signature stated without a spread anywhere in it — and
+it needs matched horizons before it can be quoted as a number, which these are
+not.
