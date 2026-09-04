@@ -470,6 +470,30 @@ the effect is assumed to transfer between their populations.**
 > **Pre-declaration protects against fitting the RULE to the DATA. It does not
 > protect against a rule that was WRONG WHEN WRITTEN.**
 
+**A pre-declared decision rule can be wrong in three ways, and pre-registration
+defends against only the first:**
+
+| | | defended by pinning? |
+|---|---|---|
+| 1 | **fitted to the data** afterwards | **yes** |
+| 2 | **internally inconsistent** with facts already in hand when written | no |
+| 3 | **measuring a population the instrument cannot speak about** | no |
+
+Two and three are **design** errors. **Pinning makes them auditable, not
+absent** — it preserves them in a form that can be caught, which is worth having
+and is not the same as preventing them.
+
+Both were generated within one hour on 2026-09-04. (2) was an amendment whose
+decision rule contradicted arithmetic recorded in the same edit. (3) was a
+restriction conditioned on an **outcome** — the witness having actually fired —
+which is **collider conditioning**, and whose "saturation" was then reported as a
+property of the population when it was a description of the design error. Both
+withdrawn by their own author.
+
+**Check a new decision rule against (a) the arithmetic already in the document
+and (b) whether the instrument can speak about the population, before sealing
+it.**
+
 Observed the same evening: an amendment's decision rule contradicted arithmetic
 recorded in the same edit — a branch was pinned that an earlier amendment had
 already foreclosed. Sealing it first made the failure legible; it did not make
