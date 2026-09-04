@@ -74,6 +74,44 @@ interval.** Common -> (i) is real and the program's central number is
 measured on the losing half of the distribution. Near-absent -> (ii)
 holds and D's geometry stands as the answer.
 
+★ THE DECOMPOSITION, EXACT TO MACHINE PRECISION. Because we joined the
+touch on 100% of fills, B = m_quote - s/2, and therefore
+
+    capture  ==  E[dm]  +  s/2            (max error 1.11e-16 over 38,465)
+
+where dm is the signed mid move from quote to fill. So Rule A's
+expectation is NOT missing the maker's revenue — it contains it, and
+then buries it:
+
+  REAL fills (n=13,651, G=24, game-clustered)
+    RULE A   E[P&L|fair] = capture      -3.154c [-3.742, -2.567]
+       revenue term            + s/2    +1.256c [+1.175, +1.338]
+       forced move             + E[dm]  -4.411c [-4.982, -3.839]
+    RULE B   E[P&L|fair] = s/2          +1.256c   (uninformed arrival)
+    SWING between rules on IDENTICAL fills        +4.411c
+
+**The swing is larger than the headline effect it would replace.**
+
+★ WHY E[dm] IS ZERO UNDER RULE B AND CANNOT BE UNDER RULE A. Rule A's
+trigger is defined by the price reaching us, so `dm <= -s/2` holds on
+every filled path by construction — the mid MUST have fallen to B. It
+is not an estimate; it is the trigger written as a number. Rule B's
+trigger is the arrival of a sell order. If arrival is independent of
+the price path — the definition of uninformed flow — then tau is a
+stopping time independent of the martingale and optional stopping gives
+E[m_tau] = m_0, hence **E[dm] = 0** and E[P&L] = +s/2.
+
+So the sharpest statement of the whole question:
+
+> **Under Rule B, E[dm] IS the adverse selection — the thing worth
+> measuring. Under Rule A, E[dm] is the trigger — a selection we
+> imposed on ourselves. They are the same arithmetic and different
+> quantities, and only one of them is about the market.**
+
+Rule B with informed flow gives `s/2 - lambda`, and whether that is
+positive is the market-making question. **Our data cannot address it**,
+because every fill we hold was booked by Rule A.
+
 ★ WHAT THE QUEUE COUNTER DOES AND DOES NOT SETTLE. Being first in
 queue 1.2% of the time, median 28 contracts behind, bounds **how often**
 Rule B fills, not **what sign** they carry. It is evidence about the
@@ -83,6 +121,24 @@ $100/month whatever its edge per fill — and no evidence at all that
 one asks whether the measured number describes the strategy, the other
 asks whether the strategy could clear the bar. Conflating them would
 answer neither.
+
+There is a second queue effect that cuts deeper than rarity, and it
+runs AGAINST the strategy: to reach a 1-contract order sitting behind
+28, a market sell must be larger than 28 contracts, and larger sells
+are more likely to be informed. **Queue depth therefore raises lambda
+as well as lowering the fill rate** — Rule B's edge is `s/2 -
+lambda(q)` with lambda increasing in q. That makes the real strategy
+harder than the naive `s/2` suggests, without making Rule A a valid
+estimator of it.
+
+★ THE LIMIT THAT OUTRANKS EVERYTHING HERE. **Not one fill in this study
+has ever been checked against a real trade.** `market_trade_stats` is
+NFL-only, with zero overlap with `shadow_quote_fills` at any time, so
+no market we have ever quoted has trade data. This closed form says
+what each rule implies UNDER FAIR PRICING. It cannot say which rule the
+venue actually ran, and nothing in the recorded book can. The sign
+question about the SIMULATOR is settled; the sign question about
+TOUCH-JOINING is not, and is not currently answerable.
 """
 
 from __future__ import annotations
