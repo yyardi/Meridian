@@ -376,6 +376,15 @@ def timing_signature(d: pd.DataFrame) -> None:
     it is a different observable (time, not money) implied by the same mechanism,
     so agreement is corroboration rather than circularity.
 
+    ★ WHAT THIS CORROBORATES, AND WHAT IT CANNOT ★ It tests the MECHANISM
+    (phantoms are momentary quote noise; real fills wait for a seller to cross
+    down). It does **NOT** validate the phantom DEFINITION: `ask <= B` could be
+    the wrong criterion and would still produce this timing gap, because ANY
+    criterion correlated with dip-and-revert would. Only a resting-order probe
+    tests the definition itself — D is drafting that, and the two are
+    COMPLEMENTARY, NOT SUBSTITUTES. Quoting this signature as evidence that the
+    classification is correct would be exactly the overreach it cannot support.
+
     Stated honestly: both populations are conditioned on having filled, so this
     compares the timing of two filled populations, not fill probability.
     """
@@ -400,6 +409,10 @@ def timing_signature(d: pd.DataFrame) -> None:
                    "no separation in timing at this power — the mechanism's timing "
                    "prediction is NOT corroborated here, which is a real negative")
         print(f"reading: {verdict}")
+    print("SCOPE: this corroborates the MECHANISM on a different observable (seconds,")
+    print("not cents). It does NOT validate the phantom DEFINITION — any criterion")
+    print("correlated with dip-and-revert would produce the same gap. Only a")
+    print("resting-order probe tests the definition; the two are complementary.")
 
 
 def run_patience(d: pd.DataFrame) -> pd.DataFrame:
