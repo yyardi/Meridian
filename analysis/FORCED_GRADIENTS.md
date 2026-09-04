@@ -542,6 +542,45 @@ looked like it damaged both.
 The better outcome was the unbundled one: the instrument's attenuation is
 explained **without requiring the economics to cooperate.**
 
+## Seventh: a two-way split can INVENT a trend a three-way split does not have
+
+Recorded within the hour of the entry above, on the same result, by the same
+author — and I repeated it upward before it was checked.
+
+A prediction was falsified, and the falsification was described as being *"in
+the opposite direction — consumption is elevated more EARLY than late"*, from a
+**two-way** split: non-early +3.68pp (n=1,034) against early +5.48pp (n=469).
+**The arithmetic was exactly right.** The direct **three-way** run:
+
+| phase | relative | excess | n |
+|---|---:|---:|---:|
+| early | 1.249× | +5.48pp | 469 |
+| **middle** | **1.143×** | **+2.76pp** | 557 |
+| late | 1.233× | +4.78pp | 454 |
+
+**Flat. Late is indistinguishable from early.** The two-way split lumped a *low
+middle* with a *high late*, and the average of those looked like a decline.
+
+> **Collapsing an ordered variable into two buckets can manufacture a monotone
+> shape from a non-monotone one. The aggregate can be correct and the trend it
+> implies invented.**
+
+Two guards, both cheap:
+
+1. **Check the gap against its own error before naming a direction.** Here it
+   was +1.80pp with SE ≈ 4.19pp — **0.43 standard errors from zero.**
+   Under-powered *and* pointing at a structure that does not exist.
+2. **State the negative at the right strength.** "The imported mapping does not
+   carry over" is correct. "It runs the other way" is not, and recording it that
+   way would license someone reversing the original intuition — which the data
+   support no better than the original.
+
+## Decomposing a significant aggregate is not finding independent results
+
+Three sub-arms of a pooled result that already excluded zero, two of them
+clearing by 0.08pp and 0.07pp. **The pooled figure is the evidence; the arms are
+its decomposition, not three findings.**
+
 ## And two same-direction non-significant arms are not two-thirds of a confirmation
 
 Stated by the author whose result it constrains, at the moment the news turned
