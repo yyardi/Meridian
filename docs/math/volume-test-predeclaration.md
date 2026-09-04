@@ -117,4 +117,44 @@ where a trade did occur at our price.
 
 ---
 
+## AMENDMENT 1 — 2026-09-04, after §6 integrity checks, before any outcome
+
+Appended rather than edited in place, per §0. Two changes, both forced by what
+the integrity checks found.
+
+**(a) The cell is the real poll interval, not a synthetic 220s grid.** Polls
+are irregular and 42.3% of rows carry a NULL stats block, which must be
+skipped rather than read as zero volume. Skipping lengthens the surrounding
+interval. Measured on consecutive stats-bearing rows: 51,130 intervals,
+duration median 214s, p90 361s, **max 5,364s**. Counter is clean — zero
+negative deltas, so no resets.
+
+**(b) Matching MUST include interval duration.** A longer interval is more
+likely to contain a fill AND more likely to contain a trade, so duration is a
+common cause and was missing from §3. Without it the test would recover a
+duration effect and read it as consumption. Added as matching key (c),
+bucketed [<180s], [180–260s], [260–400s], [>400s].
+
+This is the fifth selection-on-a-common-cause found today. It was found by
+running the pre-declared integrity checks before the outcome, which is what
+they are for.
+
+**Ceiling revised downward by the staleness check.** `last_trade_at` runs
+median 800s against a ~214s interval; only **26.4%** of stats-bearing polls
+have their last trade inside their own interval, and 19.5% of intervals
+contain their own last print. So the median CFB rung trades about once every
+13 minutes.
+
+That is itself close to an answer, and it must be stated before the test
+rather than after: **there are not enough trades for most phantom-bid fills to
+correspond to one.** With trades arriving every ~800s and intervals ~214s
+long, the unconditional chance that any interval contains a trade is ~21%. The
+primary can therefore only ever confirm consumption for a minority of cells,
+and a high treatment share would be surprising rather than expected.
+
+The strong form survives but is thin: it can speak only to the ~20% of
+intervals that contain a print at all.
+
+---
+
 No in-sample result justifies capital. The forward test is the evidence.
