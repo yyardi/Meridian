@@ -585,3 +585,74 @@ its decomposition, not three findings.**
 
 Stated by the author whose result it constrains, at the moment the news turned
 favourable. **Removing an objection is not adding evidence.**
+
+---
+
+# Eighth: the three routes are one class, and it has three doors
+
+D asked for this to be written as one entry rather than three, and they are
+right that it is one thing. The note has accumulated the routes as they were
+found — the statistic (families one to three), the matched population (fifth),
+the partition (seventh) — which makes them read as three unrelated ways to be
+careless. They are not. **They are the same defect entering at three different
+stages of the same pipeline.**
+
+Every analysis in this programme has the same shape:
+
+| stage | the choice | how it forces the result | instance |
+|---|---|---|---|
+| 1 | **the statistic** | it reproduces its own inputs algebraically | `capture ≡ E[dm] + s/2`, max error 1.1e-16 |
+| 2 | **the population** | selection depends on the thing being measured | conditioning on `low_fell` — an outcome |
+| 3 | **the partition** | bucket edges determine the shape of the aggregate | a low middle averaged with a high late |
+
+**The pipeline framing is what makes the check exhaustive rather than a list of
+anecdotes.** Three stages is all there are: you choose what to compute, what to
+compute it over, and how to group it. Each stage can manufacture the signature
+by itself, and — this is the operational part — **a clean stage does not clear
+the others.** The note already says this for stages one and two: *"clean algebra
+plus dirty selection is still forced."* Stage three extends it. The phase result
+was a clean statistic over a clean population, and the bucketing invented the
+trend anyway.
+
+## The property, generalised to cover the partition
+
+The standing property covers stages one and two. It does not cover stage three:
+a two-way split is not "a population selected by an X-dependent rule", it is an
+aggregation choice, and it passes the check as written.
+
+> **Any result whose shape is determined by an analyst's choice — of statistic,
+> of population, or of partition — is guilty until proven innocent, and the
+> burden of proof is the same in all three cases: run the design on a substrate
+> with no phenomenon and the same geometry, and see whether the signature still
+> appears.**
+
+One diagnostic, three doors. For stage one the geometry-only null returns the
+effect *exactly*, because the statistic is an identity. For stages two and three
+it returns the effect **in expectation, not deterministically** — selection bias
+and partition bias are biases, not identities. That difference matters when
+reading a null: an exact reproduction is proof, while an approximate one is
+evidence whose strength depends on the null's own n.
+
+## Why they were found in this order, which is not an accident
+
+Stage one was found first because an identity announces itself once you write
+the algebra down. Stage two took three of us in sequence, because a collapsed
+population still produces a well-formed interval. Stage three took a direct
+three-way run to see, because **the aggregate was arithmetically correct** —
+there was nothing to find in the numbers themselves, only in the shape they were
+asked to carry.
+
+The tells get weaker as you move down the pipeline. That is the argument for
+checking all three stages by default rather than waiting for one to look wrong:
+by stage three there is nothing to look wrong.
+
+## What this does not claim
+
+These three stages exhaust where a *design* can force a result. They say nothing
+about the substrate being wrong, the join being wrong, or the units being wrong —
+tonight's `notional_traded` cents/dollars trap was none of the three and was
+caught by a positive control against the market's own `[low_px, high_px]`
+bracket. **A design that cannot force its result can still be computed on the
+wrong numbers.**
+
+— written by B, at D's suggestion, over the seven entries above
