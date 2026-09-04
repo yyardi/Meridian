@@ -224,6 +224,55 @@ This does not overturn the geometry result; it qualifies its scope. The fill
 rule can only book fills with capture <= 0, and this shows the excluded
 population is not empty.
 
+## AMENDMENT 4 — never-traded cells restored. Result survived.
+
+The instruction to skip NULL-stats rows was wrong: a missing block means the
+market **has not traded yet** (B: every market's first stats row carries
+volume > 0, 1,544/1,544; the block switches on at the first trade and never
+off, 0 interleaved gaps in 38,717). Those are the cleanest zero-volume
+observations in the export and the original design discarded them.
+
+Restored as genuine zero-volume cells in both arms. 2.7% of ask-unmoved
+phantom-bid fills sat in that territory.
+
+    before  EXCESS +4.13% [+1.33%, +6.93%]   n 1,471 / 6,115
+    after   EXCESS +4.24% [+1.26%, +7.22%]   n 1,503 / 6,372
+
+**The result survived a mis-specified substrate instruction**, which is worth
+recording as such rather than quietly restating the new number.
+
+## ★ AMENDMENT 5 — an INDEPENDENT witness, and it does NOT confirm the primary
+
+`last_trade_px` sees only the last print, and 81.1% of volume-bearing intervals
+hold two or more (median ~3.2). A fall in `low_px` is **unmaskable**: the
+session low is monotone, so a decrease during an interval witnesses a print at
+exactly that price inside it, and no later print can hide it. If the new low is
+<= B, a print at or below our bid provably occurred.
+
+This is a different route to the same fact — deliberately not the same
+computation twice.
+
+    PRIMARY   treatment 24.80%  control 20.56%  EXCESS +4.24% [+1.26, +7.22]  excludes zero
+    WITNESS   treatment  7.64%  control  6.81%  EXCESS +0.83% [-1.21, +2.87]  SPANS ZERO
+    SECONDARY treatment 63.72%  control 51.04%  EXCESS +12.68% [+8.91, +16.45] excludes zero
+
+**The independent check points the same way and does not reach significance.**
+On a relative scale the primary is 1.21x elevated and the witness 1.12x, so the
+sign agrees; the witness's interval includes zero.
+
+Why the witness is weaker, stated so it is not used as an excuse: it fires only
+on a NEW session low, which is a strict subset of prints at or below B (base
+rate 6.8% against the primary's 20.6%), and new lows get rarer as a session
+ratchets down, so it is biased toward early-game intervals. It is an
+under-powered instrument and its null is weak evidence.
+
+**Consequence for how this may be quoted.** The primary stands as the
+pre-declared reading, but the only independent route available does not
+corroborate it at significance. That is a real weakening. The honest summary is
+that consumption is *indicated* — one significant route, one same-signed
+non-significant route, both under-counting by construction — and not
+established.
+
 ---
 
 No in-sample result justifies capital. The forward test is the evidence.
