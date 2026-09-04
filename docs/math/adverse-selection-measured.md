@@ -434,3 +434,70 @@ UNWIRED at 22:46 yesterday), all three from `core/quote/report.py`.
   and warns that its argmax ranks inactivity. It fires on the live prod read.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+### Correction, same day — the estimator and the regime were unlabelled
+
+**Nothing above is retracted; the labels were missing and one of them was
+actively misleading.** D found all three within the hour, from the pinned export.
+
+**1. TWO ESTIMATORS ARE IN CIRCULATION AND THIS DOCUMENT NEVER SAID WHICH.**
+On identical rows (WNBA real fills, G=13, n=6,255):
+
+| estimator | reads |
+|---|---|
+| unweighted mean of game means + t(df=12) — *what a typical game looks like* | −3.419¢ [−5.062, −1.777] |
+| `core.quote.adverse_selection.clustered_mean` — POOLED mean, cluster-robust SE — *what a dollar deployed earns* | −3.376¢ [−4.746, −2.007] |
+
+**Every figure recorded in this document is the unweighted per-game one.** The
+blessed function the program has been citing all week is the other one. Both are
+defensible and they answer different questions; a comparison that mixes them is
+not. `core/quote/report.py` prints `clustered_mean` and now names it in its
+header. The pinned export's README carried the sentence *"if your read differs
+on WNBA, the difference is in your code, not in the tape"* — **that was wrong,
+it blamed the reader for an unlabelled choice of mine, and it is corrected.**
+
+Restating the day's numbers under BOTH, so nothing depends on the choice:
+
+| cohort | per-game | `clustered_mean` |
+|---|---|---|
+| WNBA real | −3.419¢ [−5.062, −1.777] | −3.376¢ [−4.746, −2.007] |
+| CFB real | −2.683¢ [−5.439, +0.073] | −2.435¢ [−5.045, +0.175] |
+| pooled 24 | −3.082¢ [−4.502, −1.661] | −2.866¢ [−4.269, −1.463] |
+
+**Every conclusion survives both.** CFB spans zero either way, pooled is negative
+either way, and the CFB−WNBA gap is inside noise either way.
+
+**2. THE SIGN COUNT IS REGIME-DEPENDENT, AND MECHANICALLY SO.** Six pregame real
+fills flip game 13002489. The recorded **12 of 13** is a *mixed-regime* count;
+the *in-game* count is **13 of 13**. Neither is wrong — they answer different
+questions, and the strategy is in-game market making, so the in-game count is
+the one that belongs beside an in-game P&L.
+
+| cohort | in-game only | all regimes |
+|---|---|---|
+| WNBA | **13/13 lose** | 12/13 lose |
+| CFB | 8/11 lose | 8/11 lose |
+| pooled | **21/24 lose** | 20/24 lose |
+
+The "20 of 24" stated above is the all-regime count; **in-game it is 21 of 24.**
+This also resolves a disagreement between two agents that looked like a
+substantive difference about a marginal game and was a filter difference.
+
+**3. CFB's SIGN COUNT WAS OMITTED and is weaker than WNBA's: 8 of 11**, against
+13 of 13. Directionally consistent with CFB's wider interval, and it belongs
+next to the mean precisely because the sign count is a separate statistic.
+
+**4. What the 100% row agreement does and does not establish.** D's independent
+tick substrate reproduces this classification on **17,339/17,339 = 100.000%** of
+WNBA rows. That validates the **implementation** and **cannot validate the
+phantom DEFINITION** — both constructions share the `ask ≤ B` criterion. Only a
+resting-order probe tests the definition, and that has not been run.
+
+**5. The CFB read has NOT been checked by a second construction.** D's
+whole-book replay needs a tick series and no CFB tick export exists. The
+classification agreement above is WNBA-only. Stated because the alternative is
+letting the WNBA agreement read as if it covered football.
+
+**And the caveat that outranks the arithmetic:** *"the escape hatch is not
+visible at 11 games"* has "not visible" doing real work — an interval ~5.5¢ wide
+could not have shown a 1–2¢ league difference even if one exists.
