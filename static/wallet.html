@@ -74,6 +74,17 @@
   .navgrp a:hover{color:var(--txt)}
   .navgrp a.on{color:var(--txt);background:#1a1f2b}
   .statusrow{gap:16px;padding:6px 14px;background:#0c0f15}
+  /* Balance header — the wallet's headline number, which the page did not have. */
+  .bal{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end;padding:16px 18px;
+       margin-bottom:18px;background:var(--panel);border:1px solid var(--line);border-radius:5px}
+  .ballab{color:var(--faint);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase}
+  .balbig{font-size:38px;font-weight:700;letter-spacing:-.02em;line-height:1.1;margin-top:4px}
+  .balsub{font-size:12px;margin-top:2px}
+  .balside{display:flex;flex-direction:column;gap:5px;margin-bottom:4px}
+  .balside div{display:flex;gap:10px;justify-content:space-between;min-width:210px}
+  .bk{color:var(--faint);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+  .bv{font-size:12px;font-weight:600}
+  .up{color:var(--pos)}.down{color:var(--neg)}
 </style>
 </head>
 <body>
@@ -95,7 +106,9 @@
  </div>
 </header>
 <main>
-  <h2>Live wallet <span class="sub">— forward-only from each seed line · $500 each ·
+  <div id="balance"></div>
+
+<h2>Live wallet <span class="sub">— forward-only from each seed line · $500 each ·
     both arms · an instrument, never evidence</span></h2>
   <div id="live" class="books"><div class="empty">loading…</div></div>
   <div id="liveAbsent"></div>
@@ -125,6 +138,11 @@ function dailyMTD(daily){
   return {day:daily[dayKey], dayLabel:dayKey, mtd};
 }
 
+// A missing field used to throw inside a template literal, which aborts the
+// whole render and leaves "loading…" on screen forever with no error. The
+// operator hit exactly that. fx() degrades one cell instead of the page.
+const fx = (v, n) => (typeof v === "number" && isFinite(v)) ? v.toFixed(n) : "—";
+
 function bookCard(slug, b, bars){
   const dOpt = dailyMTD(b.daily_opt), dConc = dailyMTD(b.daily_conc);
   const halt = b.halted ? `<div class="halt">■ HALTED — ${b.halt_note||""}</div>` : "";
@@ -142,24 +160,24 @@ function bookCard(slug, b, bars){
       <div class="m"><div class="k">latest day P&amp;L (opt / conc)</div>
         <div class="v"><span class="${cls(dOpt.day)}">${signed(dOpt.day)}</span> /
           <span class="${cls(dConc.day)}">${signed(dConc.day)}</span></div>
-        <div class="bar">${dOpt.dayLabel} · bar $${bars.daily.toFixed(2)}/day</div></div>
+        <div class="bar">${dOpt.dayLabel} · bar $${fx(bars.daily, 2)}/day</div></div>
       <div class="m"><div class="k">month-to-date (opt / conc)</div>
         <div class="v"><span class="${cls(dOpt.mtd)}">${signed(dOpt.mtd)}</span> /
           <span class="${cls(dConc.mtd)}">${signed(dConc.mtd)}</span></div>
-        <div class="bar">bar $${bars.monthly.toFixed(0)}/mo</div></div>
+        <div class="bar">bar $${fx(bars.monthly, 0)}/mo</div></div>
       <div class="m"><div class="k">concession drawdown</div>
-        <div class="v ${b.drawdown>0.5?"neg":(b.drawdown>0.2?"warn":"")}">${(b.drawdown*100).toFixed(1)}%</div>
+        <div class="v ${b.drawdown>0.5?"neg":(b.drawdown>0.2?"warn":"")}">${fx((b.drawdown||0)*100, 1)}%</div>
         <div class="bar">halt at 80% (20% of seed)</div></div>
       <div class="m"><div class="k">capital-clip rate ($1,000 binds)</div>
-        <div class="v ${b.capital_clip_rate>0.1?"warn":""}">${(b.capital_clip_rate*100).toFixed(1)}%</div>
+        <div class="v ${b.capital_clip_rate>0.1?"warn":""}">${fx((b.capital_clip_rate||0)*100, 1)}%</div>
         <div class="bar">reservation-bound / fills</div></div>
     </div>
     <div class="meters">
       <div class="m"><div class="k">peak concurrent exposure</div>
         <div class="v ${b.peak_concurrent_contracts>=b.seed?"neg":(b.peak_concurrent_contracts>=0.5*b.seed?"warn":"")}">${b.peak_concurrent_contracts} ctr / ${b.peak_concurrent_markets} mkt</div>
-        <div class="bar">~$${b.peak_concurrent_contracts} worst case at unit size vs $${b.seed.toFixed(0)}</div></div>
+        <div class="bar">~$${b.peak_concurrent_contracts} worst case at unit size vs $${fx(b.seed, 0)}</div></div>
       <div class="m"><div class="k">time-weighted concurrency</div>
-        <div class="v">${b.tw_concurrent_contracts.toFixed(1)} ctr / ${b.tw_concurrent_markets.toFixed(1)} mkt</div>
+        <div class="v">${fx(b.tw_concurrent_contracts, 1)} ctr / ${fx(b.tw_concurrent_markets, 1)} mkt</div>
         <div class="bar">sizes the bankroll need</div></div>
     </div>
     <div class="arm" style="border-top:1px solid var(--line);margin-top:8px">
@@ -202,15 +220,25 @@ function absentPanel(a){
   </div>`;
 }
 
-const ORDER = ["wnba","nfl"];
+const ORDER = ["cfb","nfl","wnba"];  // cfb was ABSENT — the only league with a live tape
 function renderBooks(books, bars){
   const slugs = Object.keys(books||{}).sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
   return slugs.length ? slugs.map(s=>bookCard(s, books[s], bars)).join("") : "";
 }
-async function load(){
+async function load(){ try { await _load(); }
+  catch(err){
+    // Silence is the bug. If the render throws, say so on the page.
+    $("#live").innerHTML = `<div class="empty" style="color:var(--neg)">
+      render error — ${String(err && err.message || err)}<br>
+      <span style="color:var(--faint)">the wallet data loaded; drawing it failed.
+      This message exists because the page used to sit on "loading…" instead.</span></div>`;
+    throw err;
+  }
+}
+async function _load(){
   let d;
   try{ d = await (await fetch("/api/wallet")).json(); }
-  catch(e){ $("#live").innerHTML = `<div class="empty">wallet unavailable</div>`; return; }
+  catch(e){ $("#live").innerHTML = `<div class="empty">wallet unavailable — ${e.message}</div>`; return; }
   const bars = d.bars || {daily:3.29, monthly:100};
   const live = d.live || {seeded:false, books:{}, unseeded:[]};
   // LIVE — refuse to show a balance when unseeded (ruling ab8be48).
@@ -230,6 +258,36 @@ async function load(){
       ? `<div class="note">refused (no seed line, not in the live wallet): ${live.unseeded.join(", ")}</div>` : "";
     $("#liveAbsent").innerHTML = refused + (bk ? absentPanel(live.depth_absent) : "");
   }
+  // TOTAL BALANCE — what the operator actually asked for: one number for the
+  // whole paper wallet, both arms, against the $1,000 birth seed. The per-book
+  // cards stay below; they were the only thing here and buried the headline.
+  const bs = Object.values(live.books || {});
+  if (bs.length) {
+    const seed = bs.reduce((a,b)=>a+b.seed,0);
+    const opt  = bs.reduce((a,b)=>a+b.optimistic,0);
+    const con  = bs.reduce((a,b)=>a+b.concession,0);
+    const nf   = bs.reduce((a,b)=>a+b.n_fills,0);
+    const toll = bs.reduce((a,b)=>a+b.toll,0);
+    const sign = v => (v>=0?"+":"") + "$" + Math.abs(v).toFixed(2);
+    const cls  = v => v>=0 ? "up" : "down";
+    $("#balance").innerHTML = `
+      <div class="bal">
+        <div class="balmain">
+          <div class="ballab">paper wallet — realistic fill rule</div>
+          <div class="balbig ${cls(con-seed)}">$${con.toFixed(2)}</div>
+          <div class="balsub ${cls(con-seed)}">${sign(con-seed)} of $${seed.toFixed(0)} seed
+            · ${((con/seed-1)*100).toFixed(1)}%</div>
+        </div>
+        <div class="balside">
+          <div><span class="bk">optimistic arm</span><span class="bv ${cls(opt-seed)}">$${opt.toFixed(2)} <small>${sign(opt-seed)}</small></span></div>
+          <div><span class="bk">fills</span><span class="bv">${nf.toLocaleString()}</span></div>
+          <div><span class="bk">toll paid</span><span class="bv">$${toll.toFixed(2)}</span></div>
+        </div>
+      </div>`;
+  } else {
+    $("#balance").innerHTML = "";
+  }
+
   // HISTORICAL — labelled, never the live balance.
   const hist = d.historical || {books:{}};
   $("#hist").innerHTML = renderBooks(hist.books, bars) || `<div class="empty">no historical cohort</div>`;
