@@ -131,11 +131,57 @@ understates the requirement — the cheapest one most of all.**
 > repricing anything in this programme, of all programmes."* **A saving is not
 > banked until the independence assumption behind it is settled.**
 
-**The open question, which no convention can answer:** how many distinct clusters
-do the orders span, and is a violation plausibly independent across orders within
-one? If the answer is "a handful", **the binomial framing needs replacing rather
-than retuning**, and the unreachable branch is unreachable for a reason far more
-fundamental than a budget.
+★★ **ANSWERED — AND IT WAS THE ALLOCATION, WHICH THE REGISTRATION NEVER
+SPECIFIED.** The same total order count is worth wildly different amounts of
+information depending on how it is spread across games. At a 3.3h in-game span
+and 10-minute windows, one market hosts ~19 sequential orders, so 6–8 markets in
+one game is 120–150 orders — **"299 orders" could be as few as two games.**
+
+Design effect `1 + (m−1)ρ` at ρ = 0.05:
+
+| allocation | G | orders/game | deff | effective n | bound |
+|---|---:|---:|---:|---:|---:|
+| **concentrated** | 2 | 150 | 8.45 | **35** | 8.48% — **fails even the weak verdict** |
+| moderate | 20 | 15 | 1.70 | 176 | 1.71% |
+| **spread** | 100 | 3 | 1.10 | **272** | **1.10%** |
+
+At perfect clustering (ρ = 1) the effective n **is** the game count: G=20 → 15%,
+G=100 → 3%, G=300 → 1%.
+
+**A factor of ~8 in information, decided by a parameter nobody had written
+down.**
+
+★★ **AND THE REALLOCATION IS FREE.** Same order count, same window, same total
+standing time — therefore **same capital (~$835 worst case) and the same
+crossing episodes on the other leg.** Only the spread changes.
+
+> **We were about to buy the worst possible arrangement of a fixed budget.**
+
+**The requirement is now GAMES, not orders: ≥100 games, ≤3 orders per game,
+10-minute windows.** *(And tomorrow's slate carries 103 games — the binding
+constraint turns out to be breadth, which the calendar already supplies.)*
+
+> **A sample size is not a count of observations, it is a count of INDEPENDENT
+> ones — and the allocation that decides which is often the parameter nobody
+> specified.** Before pricing a design, ask what its observations are spread
+> across. **And check whether the fix is free before treating it as a cost:**
+> here the entire factor of 8 was available at identical spend.
+
+★ **THE UNIT ERROR REPEATED ONE LEVEL UP.** The registration's own §3 says
+*"ticks inside one order are heavily correlated; the honest effective N is
+orders, not ticks."* Correct — and it stops exactly one level short. **Orders
+inside one game are correlated too.** The author's verdict on themselves: *"I
+congratulated the document on catching the unit error while committing it at the
+next level."* **Catching a unit error at level k is not evidence you have
+checked level k+1.**
+
+★ **AND ρ IS NOT ESTIMABLE FROM WHAT WE HAVE.** The pilot's two violations fall
+in different markets, different games, 168.5 hours apart, across 19 markets —
+consistent with independence, and **it is two events.** The whole table turns on
+ρ. So the design is made **robust to ρ ≠ 0 rather than assuming it away**: the
+probe reports a **cluster-robust interval at df = games − 1**, not a binomial.
+The earlier cost tables, which priced order counts under an unchecked
+independence assumption, are void as stated.
 
 ★★ **AND THE WALLET CONSTRAINT RECORDED ABOVE DISSOLVES UNDER THE CORRECT
 CONVENTION.** Repriced at n=299: **1,041 fills, worst case $833 — inside the
