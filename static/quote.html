@@ -156,7 +156,7 @@
     <div class="live"><span class="lk">last fill</span><span class="lv" id="l-last">—</span></div>
   </div>
 
-  <h2>Per-regime capture vs the pre-registered floors <span class="dimc"
+  <h2>Per-regime settlement vs the pre-registered floors <span class="dimc"
     style="text-transform:none;letter-spacing:0">· all leagues — the measurement is
     registered regime-split, not league-split</span></h2>
   <div id="regimes"><div class="empty">loading…</div></div>
@@ -206,7 +206,8 @@ const agef = sec => sec == null ? "—"
   : Math.round(sec/3600) + "h";
 
 function regimeCard(name, r, floors){
-  const fillPct = Math.min(100, r.n_settled / floors.fills * 100);
+  const _real = (r.populations||{}).real;
+  const fillPct = Math.min(100, (_real?_real.n_settled:0) / floors.fills * 100);
   const gamePct = Math.min(100, r.n_games / floors.games * 100);
   // The verdict is the server's, verbatim. This page never invents one —
   // rendering "accruing" while the report says NO DATA is the entire honesty
@@ -214,20 +215,30 @@ function regimeCard(name, r, floors){
   const v = r.at_floor
     ? `<span class="verdict${r.verdict.startsWith("PASS")?"PASS":"FAIL"}">${r.verdict}</span>`
     : `<span class="accruing" title="Pre-registered floors: ${floors.fills} settled fills AND ${floors.games} games per regime. Until both are met there is deliberately no performance verdict.">accruing — no verdict yet</span>`;
-  const cap = r.capture, roi = r.roi;
+  // Capture is GONE, not blanked. It is an identity (capture === -overshoot of
+  // the mid past our price), so it measured nothing; a dash in its old slot
+  // would read as "not enough data yet", which is the opposite of the truth.
+  const real = (r.populations||{}).real, phantom = (r.populations||{}).phantom;
+  const roi = real ? real.roi : null;
+  const pf = c => (c===null||c===undefined) ? "—" : (c>=0?"+":"") + c.toFixed(2) + "\u00A2";
   return `<div class="kpi">
     <div class="k">${name}</div>
     <div class="v">${v}</div>
-    <div class="k" style="margin-top:6px">${r.n_settled}/${floors.fills} settled fills</div>
+    <div class="k" style="margin-top:6px"
+      title="Floors bind on the REAL population only. A tape made mostly of phantoms must not buy a verdict.">
+      ${real?real.n_settled:0}/${floors.fills} settled REAL fills</div>
     <div class="meter"><i style="width:${fillPct}%"></i></div>
     <div class="k" style="margin-top:4px">${r.n_games}/${floors.games} games</div>
     <div class="meter"><i style="width:${gamePct}%"></i></div>
     <div class="k" style="margin-top:6px"
-      title="net capture per fill, marked at the next observation — the static study's own metric. CI is game-clustered; ${r.n_games} game(s) means it is nearly uninformative yet.">
-      capture/fill ${cap?cts(cap.mean):"—"}${cap?` <span class="dimc">[${cts(cap.lo)}, ${cts(cap.hi)}]</span>`:""}</div>
-    <div class="k" title="money at price on settled fills, game-clustered CI">
+      title="A phantom is a simulated fill that could not have happened: the model fills on mid<=B, reality needs ask<=B. The two populations carry OPPOSITE signs, so the blend is not a conservative estimate — it is a different number.">
+      phantom share ${r.phantom_share===null||r.phantom_share===undefined?"—":(r.phantom_share*100).toFixed(1)+"%"}</div>
+    <div class="k" title="PRIMARY metric: settlement P&amp;L per fill, real population only.">
+      settlement/fill ${pf(real?real.per_fill_cents:null)}
+      <span class="dimc">· phantom ${pf(phantom?phantom.per_fill_cents:null)} (not scored)</span></div>
+    <div class="k" title="money at price on settled REAL fills, game-clustered CI">
       roi ${roi?pct(roi.mean):"—"}${roi?` <span class="dimc">[${pct(roi.lo)}, ${pct(roi.hi)}]</span>`:""}
-      · staked $${num(r.staked)}</div>
+      · staked $${num(real?real.staked:0)}</div>
   </div>`;
 }
 
