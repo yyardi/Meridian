@@ -198,6 +198,52 @@ def check_masking(d: pd.DataFrame) -> None:
     print(f"   witness prints below the running session low.")
 
 
+def check_baseline_eligibility(d: pd.DataFrame) -> None:
+    """The correction to finding 3, and it cuts against finding 3.
+
+    Establishing that 34,917 in-game rows are confirmed zero-volume says what
+    they ARE. It does not make them admissible to D's baseline arm, and the
+    difference matters because the error runs in the flattering direction:
+    sweeping them in deflates the baseline occupancy and WIDENS the contrast.
+
+    D's baseline must be matched on the bid-side move, because both hypotheses
+    predict elevated volume in fill-containing intervals. A cell with no quote
+    at all, or a frozen quote, has no move to match on.
+    """
+    print("\n" + "=" * 72)
+    print("5. ARE THOSE ZEROS ADMISSIBLE TO A MOVE-MATCHED BASELINE?")
+    print("=" * 72)
+    d = d.copy()
+    first_trade = d[d.has_stats].groupby("market_slug").captured_at.min()
+    d["first_trade"] = d.market_slug.map(first_trade)
+    d["never_yet"] = (d.live & ~d.has_stats
+                      & (d.first_trade.isna() | (d.captured_at < d.first_trade)))
+    d["d_bid"] = d.groupby("market_slug").best_bid.diff()
+    add = d[d.never_yet]
+
+    a1 = add[add.best_bid.notna()]
+    a2 = a1[a1.d_bid.notna()]
+    a3 = a2[a2.d_bid.abs() > 1e-9]
+    a4 = a3[a3.d_bid < -1e-9]
+    for lbl, n in (("all never-yet-traded live rows", len(add)),
+                   ("  ...with a bid quoted at all", len(a1)),
+                   ("  ...with a previous bid to difference", len(a2)),
+                   ("  ...where the bid actually MOVED", len(a3)),
+                   ("  ...bid moved DOWN (seller-side)", len(a4))):
+        print(f"   {lbl:42s} {n:7,d}  ({n / len(add) * 100:5.1f}%)")
+    print(f"\n   markets surviving the move-matched step: "
+          f"{a3.market_slug.nunique():,} / {add.market_slug.nunique():,}")
+    print(f"   games surviving: {a3.game_id.nunique():,} / {add.game_id.nunique():,}")
+    print(f"\n   So the block contributes {len(a3):,} eligible rows, not {len(add):,}.")
+    print(f"   The other {len(add) - len(a3):,} are markets with no quote or a frozen")
+    print(f"   quote — guaranteed zeros from a different liquidity regime. They are")
+    print(f"   wider too: median spread 0.1000 against 0.0800 for traded markets,")
+    print(f"   42.6% over the 0.15 engine gate against 35.2%.")
+    print(f"   Including them wholesale moves the baseline in the direction that")
+    print(f"   flatters the result, which is the reason to bound it before the")
+    print(f"   number exists rather than after.")
+
+
 def main() -> int:
     path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_EXPORT
     d = load(path)
@@ -208,6 +254,7 @@ def main() -> int:
     check_cumulative(d)
     check_missingness(d)
     check_masking(d)
+    check_baseline_eligibility(d)
     print("\n" + "=" * 72)
     print("No fill/baseline contrast is computed here. That is D's test.")
     print("=" * 72)
