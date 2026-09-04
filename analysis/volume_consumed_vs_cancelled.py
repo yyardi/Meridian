@@ -46,9 +46,41 @@ FALL_BINS = [-np.inf, 0.0000001, 0.01, 0.02, 0.04, np.inf]
 DUR_BINS = [0, 180, 260, 400, np.inf]
 
 
-def build_intervals(d: pd.DataFrame) -> pd.DataFrame:
-    """Consecutive STATS-BEARING polls per market. NULL blocks are skipped,
-    never read as zero volume — the skip is why duration must be matched."""
+def build_intervals(d: pd.DataFrame, include_pretrade: bool = True
+                    ) -> pd.DataFrame:
+    """Consecutive STATS-BEARING polls per market, plus (by default) the
+    market's pre-first-trade period as genuine ZERO-VOLUME cells.
+
+    B's characterisation (2026-09-04): a missing stats block means the market
+    has NOT TRADED YET, not that data is missing — every market's first stats
+    row already carries volume > 0 (1,544/1,544), the block switches on at the
+    first trade and never off (0 interleaved gaps in 38,717). So pre-first-
+    trade polls are the CLEANEST negative observations in the export, and
+    discarding them drops exactly the arm that separates "our bid was hit"
+    from "the quote was pulled".
+
+    Amendment 4 corrects the original design, which skipped them.
+    """
+    pre = pd.DataFrame()
+    if include_pretrade:
+        first = (d[d.shares_traded.notna()].groupby("market_slug")
+                 .captured_at.min().rename("t_first"))
+        p = d.join(first, on="market_slug")
+        p = p[p.shares_traded.isna() & p.t_first.notna()
+              & (p.captured_at < p.t_first)].sort_values(
+                  ["market_slug", "captured_at"]).copy()
+        g = p.groupby("market_slug")
+        p["t0"] = g.captured_at.shift(1)
+        p["bb0"] = g.best_bid.shift(1)
+        pre = p[p.t0.notna()].copy()
+        pre["dur"] = (pre.captured_at - pre.t0).dt.total_seconds()
+        pre["dsh"] = 0.0                      # definitionally: no trade yet
+        pre["bid_fall"] = pre.bb0 - pre.best_bid
+        pre["B"] = pre.bb0
+        pre["print_inside"] = False
+        pre["print_at_or_below_B"] = False
+        pre["low_witness"] = False            # no trade yet, so no session low
+
     s = d[d.shares_traded.notna()].sort_values(
         ["market_slug", "captured_at"]).copy()
     g = s.groupby("market_slug")
@@ -64,6 +96,27 @@ def build_intervals(d: pd.DataFrame) -> pd.DataFrame:
                           & (iv.last_trade_at <= iv.captured_at))
     iv["print_at_or_below_B"] = iv.print_inside & (
         iv.last_trade_px <= iv.B + 1e-9)
+
+    # INDEPENDENT WITNESS (Amendment 5). last_trade_px sees only the LAST
+    # print, and 81.1% of volume-bearing intervals hold >=2 prints, so it
+    # speaks for about a third of the volume. A fall in the session low is
+    # UNMASKABLE: low_px is monotone down, so a decrease during an interval
+    # witnesses a print at exactly that price inside it, and no later print
+    # can hide it. If that new low is <= B, a print at or below our bid
+    # provably occurred. One-sided — it only sees prints below the running
+    # low — so it under-counts even more than the primary, which is why it
+    # is a confirmation route and not a replacement.
+    if "low_px" in s.columns:
+        low0 = s.groupby("market_slug").low_px.shift(1)
+        iv["low_witness"] = ((iv.low_px < low0.loc[iv.index] - 1e-9)
+                             & (iv.low_px <= iv.B + 1e-9)).fillna(False)
+    else:
+        iv["low_witness"] = False
+    if len(pre):
+        cols = ["market_slug", "game_id", "captured_at", "t0", "dur", "dsh",
+                "bid_fall", "B", "print_inside", "print_at_or_below_B",
+                "low_witness", "is_live"]
+        iv = pd.concat([iv[cols], pre[cols]], ignore_index=True)
     return iv
 
 
@@ -87,8 +140,16 @@ def _selftest() -> int:
         "last_trade_at": [t - pd.Timedelta(seconds=50), pd.NaT,
                           t + pd.Timedelta(seconds=300),
                           t - pd.Timedelta(seconds=10)],
+        # session low falls 0.55 -> 0.45 in the first interval (B=0.50),
+        # so a print at 0.45 provably happened at or below B; then it is
+        # flat, so the later interval must NOT witness anything.
+        "low_px": [0.55, np.nan, 0.45, 0.45],
     })
     iv = build_intervals(d)
+    check("a session-low FALL to <= B witnesses a print at/below B",
+          bool(iv.low_witness.iloc[0]))
+    check("a FLAT session low witnesses nothing",
+          not bool(iv.low_witness.iloc[1]))
     # the NULL row is skipped, so the surviving interval spans 400s not 200s
     check("a NULL stats block is skipped, not read as zero volume",
           len(iv) == 2 and abs(iv.dur.iloc[0] - 400.0) < 1e-9)
@@ -186,8 +247,11 @@ def main() -> None:
     # clustering is applied to the per-cell excesses.
     pool["vol"] = (pool.dsh > 0).astype(float)
     pool["prim"] = pool.print_at_or_below_B.astype(float)
+    pool["lowit"] = pool.low_witness.astype(float)
     print("\n=== RESULT — stratified, game-clustered (11 games) ===")
     for lab, col in (("PRIMARY   print at/below B inside interval", "prim"),
+                     ("WITNESS   session-low fall to <=B (unmaskable)",
+                      "lowit"),
                      ("SECONDARY any positive volume delta", "vol")):
         ctrl_rate = (pool[~pool.treat].groupby(keys)[col].mean()
                      .rename("cr").reset_index())
