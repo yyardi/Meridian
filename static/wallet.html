@@ -242,6 +242,14 @@ async function _load(){
   const bars = d.bars || {daily:3.29, monthly:100};
   const live = d.live || {seeded:false, books:{}, unseeded:[]};
   // LIVE — refuse to show a balance when unseeded (ruling ab8be48).
+  // The fold can be recomputing on first load; say so rather than sit silent.
+  if(d.computing){
+    $("#live").innerHTML = `<div class="empty">${d.note||"computing…"}<br>
+      <span style="color:var(--faint)">the wallet folds every fill against the
+      recorded book; the first pass takes a minute. This page refreshes itself.</span></div>`;
+    $("#liveAbsent").innerHTML = "";
+    return;
+  }
   if(!d.available){
     $("#live").innerHTML = `<div class="empty">${d.note||"wallet tables not present yet"}</div>`;
     $("#liveAbsent").innerHTML = "";

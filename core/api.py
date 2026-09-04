@@ -2182,8 +2182,63 @@ def quote_status() -> dict:
     }
 
 
+# ── Wallet cache (2026-09-04) ────────────────────────────────────────────
+# The wallet folds every shadow fill and depth-joins each one against
+# book_levels (19.7M rows). At 38k fills that takes MINUTES, and the page polls
+# every 15s — so /api/wallet never returned and the page sat on "loading..."
+# forever. It looked like a render bug and was a latency bug; before the wallet
+# was seeded the endpoint short-circuited on seeded=false and never did the
+# fold, which is why this only appeared once a seed line existed.
+#
+# The wallet is a DISPLAY instrument, so a minute-old fold is fine. What is not
+# fine is a request that hangs: the endpoint now ALWAYS returns immediately,
+# serving the last good value and refreshing in the background.
+_WALLET_CACHE: dict = {"value": None, "at": 0.0, "computing": False}
+_WALLET_TTL_S = 90.0
+_WALLET_LOCK = __import__("threading").Lock()
+
+
+def _wallet_refresh() -> None:
+    """Recompute the fold off-request. Failures leave the last good value."""
+    import time as _t
+    try:
+        value = _wallet_compute()
+        _WALLET_CACHE["value"] = value
+        _WALLET_CACHE["at"] = _t.time()
+    except Exception:  # noqa: BLE001 — a failed refresh must not kill the thread
+        log.exception("wallet_refresh_failed")
+    finally:
+        _WALLET_CACHE["computing"] = False
+
+
 @app.get("/api/wallet")
 def wallet_status() -> dict:
+    """Cached wrapper. NEVER blocks — see the note above."""
+    import threading
+    import time as _t
+    fresh = (_t.time() - _WALLET_CACHE["at"]) < _WALLET_TTL_S
+    if _WALLET_CACHE["value"] is not None and fresh:
+        return _WALLET_CACHE["value"]
+
+    with _WALLET_LOCK:
+        if not _WALLET_CACHE["computing"]:
+            _WALLET_CACHE["computing"] = True
+            threading.Thread(target=_wallet_refresh, daemon=True).start()
+
+    if _WALLET_CACHE["value"] is not None:
+        out = dict(_WALLET_CACHE["value"])
+        out["stale_s"] = round(_t.time() - _WALLET_CACHE["at"], 1)
+        return out
+    # First call ever: say so rather than hang. The page renders this state.
+    return {"available": False,
+            "note": "computing the fold for the first time — reload in a moment",
+            "computing": True,
+            "live": {"seeded": False, "books": {}, "unseeded": []},
+            "historical": {"books": {}},
+            "bars": {"daily": 3.29, "monthly": 100.0}}
+
+
+def _wallet_compute() -> dict:
     """The paper-wallet scoreboard (docs/math/paper-wallet-scoreboard.md), for
     its page. **Read-only, display only — an instrument, never evidence.** Folds
     shadow_quote_fills live through core.quote.wallet; both P&L arms always, the
