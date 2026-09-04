@@ -1,0 +1,149 @@
+"""The fill rule decides the sign — a closed form — 2026-09-04
+
+    .venv/bin/python analysis/fill_rule_sign_null.py [--exports DIR]
+
+D's geometry is correct and I reproduce it. The question is what it is
+correct ABOUT. Every geometry-only null built today held the fill rule
+fixed and varied something else; this one varies the fill rule itself.
+
+★ THE CLOSED FORM. Let B be our resting bid and m_t the mid. Fair
+pricing means E[s | F_t] = m_t.
+
+  RULE A (the simulator): fill at the first t with m_t <= B.
+      E[P&L] = E[m_tau] - B  <=  0     by the definition of tau.
+      Non-positive on every path. It cannot be positive.
+
+  RULE B (reality): a resting bid is filled when a SELL ORDER arrives
+  that reaches price B. Nothing else fills it.
+      E[P&L] = E[m_tau] - B - lambda
+      where m_tau >= B whenever our quote is not marketable, and lambda
+      is the expected adverse move conditional on being hit.
+      = (half-spread revenue) - (adverse selection cost).
+
+**Under the same fair market the two rules have opposite structural
+signs.** Rule B is the market-making business: earn the spread, pay
+adverse selection, and the whole question is which is larger. **Rule A
+deletes the revenue term by construction** and retains only the cost,
+so it can only ever return a negative number. A simulator built on
+Rule A does not represent market making; it represents "buy when the
+price falls to you", which is a different strategy with a different
+sign.
+
+★ THE CORRECTION THAT MATTERS FOR THE REMEDY. The profitable case is
+not misclassified as a phantom. **It is absent from the fills table
+entirely**, because the trigger that would have to fire never fires:
+
+    bid fills with mid_at_fill >  quote_price :      0 of 19,254
+    ask fills with mid_at_fill <  quote_price :      0 of 19,211
+    capture > 0, either population             :      0 of 38,465
+
+Phantoms are a different animal: for a phantom bid, our price ends up
+ABOVE the recorded best bid (100%) with the ask unmoved (median 0.0c)
+— the BID SIDE fell away beneath us. Real fills are the ones where the
+ASK came down through us (median -2.0c). Both are booked only when the
+mid reached our price, so **both carry E[P&L | fair] <= 0**: phantom
+mean capture -1.872c, real -3.154c, maximum +0.000c across the whole
+table.
+
+So no re-classification of these fills can recover the profitable case.
+Only trade data, or a different fill rule, can.
+
+★ WHY THE CLASSIFIER'S PREMISE LEAKS. `real <=> ask <= B` encodes
+"if the best ask is above B, no seller wanted to sell at B." That is
+true of PASSIVE sellers — resting offers — and false of AGGRESSIVE
+ones, who cross the spread by definition. A market sell hits the best
+bid wherever the ask happens to sit. The criterion therefore tests
+whether the BOOK crossed us, not whether a TRADE would have hit us,
+and those are different events.
+
+★ THE AMBIGUITY ONLY TRADES CAN SETTLE, stated as a test rather than an
+opinion. In the phantom-bid population the queue at our price fell away
+beneath us. Two causes, indistinguishable in book data:
+
+  (i)  CONSUMED — sellers traded through that level. Trades occurred at
+       or below B, so a real order resting there would very likely have
+       been filled, and filled while the ask was still high: the
+       profitable case.
+  (ii) CANCELLED — the other bids were pulled, no trade occurred. A
+       real order would still be resting, unfilled: a true phantom.
+
+`market_trade_stats.shares_traded` differenced across polls gives
+interval volume. **Condition on phantom bid fills with the ask
+approximately unmoved, and ask whether volume incremented in the
+interval.** Common -> (i) is real and the program's central number is
+measured on the losing half of the distribution. Near-absent -> (ii)
+holds and D's geometry stands as the answer.
+
+★ WHAT THE QUEUE COUNTER DOES AND DOES NOT SETTLE. Being first in
+queue 1.2% of the time, median 28 contracts behind, bounds **how often**
+Rule B fills, not **what sign** they carry. It is evidence about the
+VIABILITY of touch-joining — a strategy that rarely fills cannot make
+$100/month whatever its edge per fill — and no evidence at all that
+-3.4c estimates its P&L. Both questions matter and they are different:
+one asks whether the measured number describes the strategy, the other
+asks whether the strategy could clear the bar. Conflating them would
+answer neither.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+EXPORT_NAME = "quote_fills_classified_20260904T142200Z.csv"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--exports", type=Path, default=REPO / "backups/exports")
+    d = pd.read_csv(ap.parse_args().exports / EXPORT_NAME).rename(
+        columns={"pop": "population"})
+    d["mid_f"] = (d.bb + d.ba) / 2
+    d["ask_q"] = d.m_q + d.s_q / 2
+    d["bid_q"] = d.m_q - d.s_q / 2
+    d["capture"] = np.where(d.side == "bid", d.mid_f - d.qp, d.qp - d.mid_f)
+
+    print("# The fill rule decides the sign\n")
+    print("## 1. The profitable case is ABSENT, not misclassified\n")
+    b = d[d.side == "bid"]
+    a = d[d.side == "ask"]
+    print(f"* bid fills with mid_at_fill > quote: **{(b.mid_f > b.qp+1e-9).sum()}** "
+          f"of {len(b):,}")
+    print(f"* ask fills with mid_at_fill < quote: **{(a.mid_f < a.qp-1e-9).sum()}** "
+          f"of {len(a):,}")
+    print(f"* capture > 0 anywhere: **{(d.capture > 1e-9).sum()}** of "
+          f"{len(d):,}\n")
+    print("| population | n | mean capture = E[P&L\\|fair] | max |")
+    print("|---|---:|---:|---:|")
+    for p, g in d.groupby("population"):
+        print(f"| {p} | {len(g):,} | {g.capture.mean()*100:+.3f}c | "
+              f"{g.capture.max()*100:+.3f}c |")
+
+    print("\n## 2. The two populations are different events, both trigger-bound\n")
+    print("| population | side | joined touch at quote | qp > best bid at fill "
+          "| qp >= ask at fill | median ask move |")
+    print("|---|---|---:|---:|---:|---:|")
+    for p in ("phantom", "real"):
+        g = d[(d.population == p) & (d.side == "bid")]
+        print(f"| {p} | bid | {np.isclose(g.qp, g.bid_q).mean()*100:.0f}% | "
+              f"{(g.qp > g.bb+1e-9).mean()*100:.0f}% | "
+              f"{(g.qp >= g.ba-1e-9).mean()*100:.0f}% | "
+              f"{(g.ba-g.ask_q).median()*100:+.1f}c |")
+    print("\nPhantom: the BID side fell away beneath a quote that joined the "
+          "touch, ask unmoved. Real: the ASK came down through us. Neither is "
+          "the profitable case, which requires mid ABOVE our bid and is "
+          "unreachable by a trigger that fires on mid reaching our bid.\n")
+    print("No in-sample result justifies capital. The forward test is the "
+          "evidence.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
