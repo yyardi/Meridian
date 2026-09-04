@@ -58,6 +58,43 @@ bound below 1%, first reachable at **n=368**, so at n=100 a rule advertised as
 three-band is structurally **two-band** — a DEAD BRANCH, the same species as the
 one just withdrawn. Defensible if stated; not defensible if advertised.
 
+★ **AND THE REPAIR HIT A HARDER WALL THAN "MORE SAMPLE".** Costing the
+CONFIRMED-reachable design at 0.348 fills per standing minute, worst case =
+fills × $0.80:
+
+| design | fills | worst case | |
+|---|---:|---:|---|
+| n=100 × 10-min | ~348 | **$278** | Leg A tops out at SUPPORTED; **Leg B strongest** |
+| n=381 × 5-min | ~663 | $530 | Leg A can reach CONFIRMED; **Leg B halved** |
+| n=381 × 10-min | ~1,326 | **$1,061** | **breaches the $1,000 wallet** |
+
+**CONFIRMED is not purchasable at the registered window at any price the wallet
+allows.** It is reachable only by halving the window, which halves the very
+crossing episodes the *other* leg depends on. So the choice is not "spend more"
+— it is **a trade between legs**, and the leg being traded away (sufficiency)
+is the one with **no alternative instrument at all**, while the leg being
+upgraded already has a historical-reconstruction proxy.
+
+**CONFIRMED stays in the rule, marked unreachable at the recommended sample
+rather than deleted.** Deleting it would hide that the probe cannot fully close
+that leg at any wallet-permitted price — **which is a finding about the
+program's limits, not a defect in the registration.**
+
+★ **AND FOUR METHODS GAVE FOUR ANSWERS FOR THE SAME n — a 27% spread.**
+
+| method | n |
+|---|---:|
+| Clopper-Pearson (exact) | 299 |
+| rule of three (3/n) | 300 |
+| *(a fourth author's figure)* | 368 |
+| **Wilson** — registered, matching `clustered_mean`'s convention | **381** |
+
+> **A sample-size threshold is not a number, it is a number plus a method. Make
+> the method travel with it.** Two authors quoting 368 and 381 have a
+> *convention* disagreement if they used different intervals and an
+> *arithmetic* one if they used the same — and those need opposite responses.
+> Resolve which before either figure is quoted.
+
 ★ **AND THE DISCOVERY RATE IS ABOUT OUR ATTENTION, NOT ABOUT TONIGHT.** Three
 decision-rule defects appeared in one evening against **zero** before anyone
 looked — because **no null catches them, so nothing in the existing machinery
