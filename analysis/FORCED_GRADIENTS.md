@@ -12,12 +12,37 @@ sixth is caught by a check rather than by a peer.
 > no phenomenon and the same geometry, and see whether the signature still
 > appears.**
 
-**Three stages, and that is all there are:** you choose *what to compute*, *what
-to compute it over*, and *how to group it*. Each can manufacture the signature by
-itself, and **a clean stage does not clear the others.** The synthesis at the end
-of this note (eighth entry) works through all three with their instances, and
-explains why the tells get *weaker* down the pipeline — by stage three the
-aggregate is arithmetically correct and there is nothing to look wrong.
+**Three stages where a design can force a result** — you choose *what to
+compute*, *what to compute it over*, and *how to group it*. Each can manufacture
+the signature by itself, and **a clean stage does not clear the others.**
+
+**And a fourth locus where nothing is forced at all: THE DECISION RULE.**
+
+| stage | the choice | forced? | caught by a null? |
+|---|---|---|---|
+| 1 | **statistic** | yes — reproduces its own inputs | **yes, exactly** (identity) |
+| 2 | **population** | yes — selection depends on the measurand | yes, in expectation |
+| 3 | **partition** | yes — bucket edges set the shape | yes, in expectation |
+| 4 | **decision rule** | **no** | **NO — nothing to simulate** |
+
+Stage four is the inference attached to a result. Honest statistic, honest
+population, honest partition, correct arithmetic — **and the conclusion still
+wrong, because the rule reading the number was wrong when it was written.** A
+null substrate run through a defective rule yields a correct number and a wrong
+reading, exactly as a real one does. **It is caught only by auditing the rule
+against what was already known when it was written.**
+
+> **This preface said "three stages is all there are" and a fourth was found
+> within the hour — by which time I had promoted the closed-set claim to the top
+> of a document about not trusting claims.** Both the claim and its
+> counterexample are kept, here and in the eighth entry, because *a claim that
+> failed within the hour is worth more as a recorded failure than as a corrected
+> line*. **Read the list as the loci found so far, not as a closed set.**
+
+The synthesis at the end (eighth entry, with its amendment) works through all
+four with their instances, and explains why the tells get *weaker* down the
+pipeline — by stage three the aggregate is arithmetically correct and there is
+nothing to look wrong; by stage four there is nothing to simulate.
 
 *This property was originally written narrowly — "any statistic cut by a variable
 X, over a population selected by an X-dependent rule" — which covers stages one
