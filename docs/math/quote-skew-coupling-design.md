@@ -169,3 +169,80 @@ the work already queued would answer as a by-product.
 ---
 
 No in-sample result justifies capital. The forward test is the evidence.
+
+---
+
+## ★ CORRECTION — "fit λ\*, then quote below it" IS NOT GENERAL
+
+I over-claimed. §2's rule holds for the fill-intensity models I happened to try
+first and **reverses for steeper ones.** Working the optimality condition
+properly rather than reading it off a simulation:
+
+For a bid at `m + λd − h` with signal `d = fv − m`, expected edge per fill is
+`h + (λ* − λ)d`, and P&L per unit time is `ν(bid) · [h + (λ* − λ)d]`. Setting
+the derivative to zero:
+
+    λ_trade  =  λ*  +  (h − 1/g) / d ,        g ≡ d ln ν / d(price)
+
+where `g` is the **semi-elasticity of fill intensity to quote price** — the
+fractional increase in fill rate per unit of price improvement.
+
+    λ_trade < λ*   iff   g < 1/h
+    λ_trade > λ*   iff   g > 1/h
+
+**The direction is an empirical question, not a theorem.** Confirmed by
+simulation across intensity shapes (λ* = 0.360, h = 2¢, so 1/h = 50):
+
+    linear,      g ~ 1/h            argmax λ = 0.20   BELOW λ*
+    linear,      g ~ 1/(4h)         argmax λ = 0.20   BELOW λ*
+    exponential, g = 1/h exactly    argmax λ = 0.35   BELOW λ*
+    exponential, g = 1/(0.35h)      argmax λ = 0.40   ABOVE λ*
+
+So **"err low" was advice derived from an assumed response curve**, and the
+honest rule is:
+
+> Fit λ\*. Then move toward or away from it **by the measured sign of
+> `g − 1/h`.** With `h = 2¢` the threshold is `g = 50` per unit price — a 1¢
+> price improvement raising the fill rate by about 50%.
+
+This strengthens rather than weakens the case for measuring `g`: it decides the
+**sign** of the correction, not merely its size.
+
+## ★ WHAT THE PROBE MUST RECORD TO MAKE `g` FALL OUT — and the current design cannot
+
+**The probe as registered rests every order AT THE TOUCH.** It therefore
+observes fill intensity at exactly one price point and **cannot estimate `g`
+at all** — there is no variation in the independent variable.
+
+**The change: randomise each order's offset from the touch.** Assign each order
+an offset drawn from a pinned set, e.g. `{−1, 0, +1, +2}` ticks relative to the
+best bid (negative = more aggressive, inside the spread; positive = joining a
+worse level), subject to the post-only clamp.
+
+**Record per order:** `offset_ticks`, the touch at insert, **time at risk**
+(insert to fill-or-cancel, so a RATE is computable rather than a count), and
+the fill/no-fill outcome with size. Time at risk is the column that does not
+currently exist and without which `ν` is not a rate.
+
+Then `ln ν(offset)` regressed on `offset` gives `g` directly, clustered by game.
+
+**Why this is close to free:**
+
+- **Leg A is unaffected.** Its invariant — our order in the book forces
+  `best_bid >= B` — holds at any resting price, so randomising the offset does
+  not weaken it and arguably strengthens it by testing across price levels.
+- **Leg B improves.** Crossing episodes become *stratified by offset* instead
+  of pooled at one point, which is strictly more informative about the
+  sufficiency question.
+- **Capital falls slightly**, since orders posted at worse offsets fill less.
+
+**Rough power.** At ~300 orders split four ways, ~75 per offset and ~3.5
+expected fills per order gives ~260 fills per stratum; a relative rate SE near
+6% per stratum puts the slope SE on the order of a few units against a
+threshold of 50. Determining the **sign** of `g − 1/h` looks comfortable; the
+magnitude will be looser once game-clustered, and that is the number that sizes
+the gap rather than decides its direction.
+
+**So the coupling's open parameter is answerable as a by-product of the probe,
+but only if the probe stops holding its quote price constant.** That is one
+randomised column and one new timestamp, decided before it runs.
