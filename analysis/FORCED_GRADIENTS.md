@@ -1189,3 +1189,40 @@ spanned zero; only one ungated specification cleared, **by 0.026¢**.
 
 > **"It reproduces" is a claim about a point estimate. Say which — level or
 > significance — because at small G they routinely disagree.**
+
+## The sharpened form, and a shortcut that was offered and withdrawn
+
+> **A difference is only as clean as the terms that FAIL to cancel.**
+
+Two drifts were subtracted on the assumption that the reference price cancelled.
+**It half-cancelled**, and what survived was the one quantity the programme had
+already retired. *The pairing insight was correct — pairing within fills is
+where the power was — and the pairing brought the trigger with it.*
+
+**A shortcut was proposed and then withdrawn by its own author within the same
+message:** that a contaminated difference might announce itself by having a
+*tighter* interval than either endpoint. Checked on the motivating case — the
+gap's half-width sat **between** the two endpoints, so the tell does not fire.
+Offering it would have given a check that fails on precisely the case that
+prompted it.
+
+> **The decomposition is the only reliable check. There is no cheap tell.**
+
+## ★ AND THE PRICE OF "UNMEASURED", WHICH IS THE USEFUL PART
+
+"Unmeasured" should come with a cost, or it is just a shrug. The tail's clustered
+half-width is **2.87¢ at G=10**, and clustered SE scales ~1/√G:
+
+| to resolve | games needed |
+|---|---:|
+| a −3¢ tail from zero | **~37** |
+| −3¢ from −1¢ | ~82 |
+| ±0.5¢ | ~330 |
+
+**A 103-game slate reaches the first two.** So locating the loss in time is an
+**accrual problem, not an instrument problem** — which is a materially better
+position than the other dissolutions leave, because it is the one place where
+*more tape actually fixes something* rather than revealing another artifact.
+
+> **When a result dissolves, price the version that would not have. A dissolution
+> that costs 37 games is a plan; one that costs a new instrument is a stop.**
