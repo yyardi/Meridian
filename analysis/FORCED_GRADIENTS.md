@@ -171,3 +171,42 @@ prevalence is known cannot be large, however uncertain its severity.
 *(B raised the confound, named the right suspect precisely enough to rule it
 out, and then made this generalisation from having been directionally right and
 materially wrong.)*
+
+## A third instance in the alarm family, and the sharpest one
+
+The corrected alarm was tested on a "slate start" control and passed. **It would
+still have falsely ESCALATED three minutes into the slate** — the first moment
+anyone would ever run it.
+
+The query divided by a **fixed 10-minute window**. Three minutes after the first
+game goes live, `now() - 10 minutes` contains 3 minutes of data and 7 of
+nothing. Measured on real healthy data:
+
+| span in window | fixed-divisor reading | verdict | span-derived reading | verdict |
+|---:|---:|---|---:|---|
+| 9.98 min | 17.8 | FINE | 17.8 | FINE |
+| 2.95 min | 5.6 | **ESCALATE ✗** | 19.0 | FINE |
+| 0.96 min | 2.1 | **ESCALATE ✗** | 21.8 | INSUFFICIENT WINDOW |
+
+**Why every check missed it:** the slate-start control was fed a window
+containing ten full minutes of data. The production predicate cannot have that
+at slate start.
+
+> **A control that supplies the instrument with conditions the production path
+> cannot produce is not a control.**
+
+Testing "the first ten minutes" *with ten minutes of data* tests a different
+thing than the first ten minutes. Add to the fix list in this section:
+
+5. **Derive the denominator from the data's own span**, and refuse to interpret
+   below a minimum span. A nominal window is an assumption about data that may
+   not be there.
+6. **Build controls from the production predicate**, not from a hand-picked
+   window that satisfies it. If the control cannot be produced by the real
+   query at the real moment, it is testing something else.
+
+*(Also caught in the same pass: the column named `sweeps_per_min` counted write
+BATCHES, not board refreshes — 694 rows share one timestamp, and a full pass
+over 1,477 markets takes ~2 stamps. Renamed. The number was right; the name was
+a claim it did not support, and a reader consulting it once under pressure reads
+the name.)*
