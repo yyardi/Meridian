@@ -444,3 +444,34 @@ and the comparison stays uninformative for the power reason (5a) rather than
 becoming decisive.** I do not expect this to rescue or sink anything. Saying so
 in advance because my last prediction failed and the temptation after a failure
 is to predict something bolder.
+
+### Amendment 8 RESULT — expectation held; the witness's weakness was a pooling artifact
+
+    EARLY PHASE (the witness's own population, instruments distinct)
+      PRIMARY  nT=469  treat 27.51%  ctrl 22.03%  rel 1.249x  +5.48% [-1.34%, +12.29%]  spans 0
+      WITNESS  nT=469  treat 13.65%  ctrl  9.17%  rel 1.488x  +4.48% [-1.01%,  +9.96%]  spans 0
+
+    ALL PHASES (reference)
+      PRIMARY  nT=1,480  rel 1.206x  +4.24% [+1.26%, +7.22%]  excludes 0
+      WITNESS  nT=1,480  rel 1.122x  +0.83% [-1.21%,  +2.87%]  spans 0
+
+**My pinned expectation held on both counts**: the witness's early-phase excess
+is positive and does not clear zero, and the comparison remains uninformative
+for the power reason rather than becoming decisive.
+
+**The finding I did not predict: on the population where the witness can
+actually operate, its RELATIVE elevation (1.488x) EXCEEDS the primary's
+(1.249x).** The all-phase figure of 1.122x was diluted by late intervals where
+the witness structurally cannot fire — after the price has ratcheted, B sits
+above the running low and consumption is invisible to it by construction.
+
+So the witness's apparent weakness relative to the primary was **a pooling
+artifact**, not a disagreement. On clean shared ground the two instruments point
+the same way, with the independent one pointing slightly harder.
+
+**This is consistency, not corroboration.** Both intervals span zero at n=469.
+"Indicated, not established" is unchanged. What changes is that the witness can
+no longer be read as a mark against the finding in any of the three available
+framings: it does not contradict (Amendment 7, on contaminated ground), it
+cannot resolve (5a, power), and where it can operate it agrees in direction and
+exceeds in relative magnitude (here).
