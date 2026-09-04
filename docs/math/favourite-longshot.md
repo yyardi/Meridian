@@ -60,6 +60,38 @@ keeps it. This is a market-making edge specifically — which is why every
 taker-shaped test we ran (the dip signal: +0.62¢ at an unreachable price,
 −2.70¢ crossed) came back dead.
 
+## 3b. ★ CORRECTED — the construction, and what it cost ★
+
+Research challenged the construction before building on it: *"on a binary book
+at 30/70 both sides sit inside the 20–70 sell band, and selling both collects
+100 and pays 100."* **Two real defects, found because they asked.**
+
+**(a) The table holds 117.6 rows per market** — the same market re-predicted at
+~118 timestamps. The original "142,683 trades" was 1,584 markets resampled, not
+142,683 positions. **(b) 243 complementary pairs exist** — both sides of the
+same binary are present, so the rule could take both and wash.
+
+Corrected: **one row per market (earliest prediction), then drop the lower slug
+of any complementary pair** so both sides are never taken. 1,584 → 1,372
+markets → **1,002 positions across 88 games, 11.4 per game.**
+
+| | as first reported | **corrected** |
+|---|---|---|
+| positions | "142,683" | **1,002** |
+| posted at mid | +7.88¢ [+2.17, +13.59] | **+7.19¢ [+0.60, +13.78]** |
+| crossing the spread | +2.10¢ | **−6.49¢** |
+| games profitable | 52/88 | 51/88 |
+
+**The edge survives — the point estimate barely moves — but the interval now
+only just excludes zero, and the effective sample is 1,002 positions rather
+than the six-figure number implied.** Crossing goes from marginally positive to
+decisively negative, which *strengthens* the maker-only conclusion: **the bias
+is ~10¢ and the spread is ~9¢, so a taker pays away the entire edge.**
+
+**Rule 26, applied to ourselves: the sequence is the record.** The first number
+was not wrong so much as counted wrong, and it was published before anyone
+asked how it was built.
+
 ## 4. What this does NOT establish — the ways it still dies
 
 1. **IN-SAMPLE.** 88 games, one league, one month. No forward test.
