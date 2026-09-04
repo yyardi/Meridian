@@ -56,6 +56,55 @@ It also explains the shape that prompted the question:
   - loss entirely beyond 300s     — the overshoot is only realised at settlement
   - no informedness gradient      — no informed counterparty is involved
 
+★ THE SCOPE LIMIT: THIS DESCRIBES ONLY THE FILLS THE MODEL CAN BOOK
+-------------------------------------------------------------------
+`core/quote/engine.py:203` books a fill ONLY when `mid <= bid_price` (or
+`mid >= ask_price`). So capture <= 0 holds on every row **by construction of
+the instrument**, not as a fact about the market. Verified on all 38,465:
+capture > 0 on ZERO rows, in both populations (phantom mean -1.872c, real
+mean -3.154c).
+
+The case that makes a maker money — a seller crosses the spread and lifts our
+resting bid while the ask is still ABOVE it, so we bought below fair value —
+**produces no row at all.** It is absent, not misclassified: the engine never
+books it. (Phantoms are not that case either; they also have `mid <= B`.)
+
+And the classifier is misaligned in the same direction. `ask <= B` compares
+the current ask against our quote price, which was the best bid when we
+quoted — so it fires only when the market has fallen by at least the
+quote-time spread. That is SUFFICIENT for a real fill and NOT NECESSARY: a
+transient aggressive sell can hit a resting bid without the ask ever coming
+down. Had the engine booked such a fill, this criterion would have labelled
+it PHANTOM.
+
+So "real" selects sustained moves THROUGH our price and misses aggressive
+orders AT our price. Those are different economics — being run over by a move
+versus providing liquidity to a transient seller — and only the first is in
+this dataset.
+
+**Consequence for how this result may be quoted.** It is not evidence that
+touch-joining loses. It is evidence that the half of the distribution the fill
+rule can see must lose, and that its size is the overshoot. Whether the unseen
+half is rare or merely unobserved cannot be settled here.
+
+UNMEASURABLE ON THIS SUBSTRATE — 2026-09-04
+--------------------------------------------
+The discriminating test needs the venue's record of what actually traded.
+`market_trade_stats` is NFL-ONLY: zero markets shared with
+`shadow_quote_fills` ever, its whole history is 09-03/09-04, and even there
+`captured_at - last_trade_at` runs median 5,788s (1.6h), p90 3.4 days. **No
+trade data exists for any WNBA or CFB market at any time in this database.**
+
+So not one fill in this study has ever been checked against a real trade.
+Everything here — the separation, the -3.4c, this bar — is inference from the
+recorded BOOK. That is a limit of the substrate, not of the arithmetic, and no
+arithmetic on this substrate can close it.
+
+Indirect evidence that the unseen case is genuinely rare rather than merely
+invisible: the queue data (A2) puts us first in queue on 1.2% of cycles under
+the price-identity gate, median 28 contracts ahead. A transient one-lot sell
+would usually be absorbed by the size in front of us.
+
 WHAT IT DOES NOT SHOW
 ---------------------
 The residual CI is +-1.6c. A real mechanism worth up to ~1.5c/fill would be
@@ -64,6 +113,11 @@ invisible here. "No anomaly detected at n=24 games" is not "no anomaly".
 The bar assumes mid = E[settlement]. At a crossing instant the book is
 one-sided, so the mid may itself be a biased estimate — which is a reason the
 residual could be non-zero in either direction, not a reason to trust it more.
+
+The bar is also estimator-dependent. Simulated under a true martingale
+(`martingale_null_simulation.py`), the POOLED estimator used here scores ~0,
+while the mean-of-per-market-means scores -0.9c to -1.6c. "The bar is zero"
+is true for this aggregation and is not automatic.
 """
 import sys
 from pathlib import Path
