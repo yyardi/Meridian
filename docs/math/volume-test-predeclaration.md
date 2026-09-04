@@ -306,6 +306,79 @@ The mapping is fixed here, before the numbers exist:
 Late-concentration is independently predicted by the program's ride-tail loss
 map, so it is not a free parameter — it is a commitment that could fail.
 
+### Amendment 6 RESULT — roughly uniform. The late-concentration bet failed.
+
+    phase    nT     treat    ctrl    excess
+    early    469   27.51%  22.03%   +5.48% [-1.34%, +12.29%]  spans 0
+    middle   557   22.08%  19.32%   +2.77% [+0.08%,  +5.45%]  excludes 0
+    LATE     454   25.33%  20.55%   +4.78% [+0.07%,  +9.49%]  excludes 0
+
+The three are statistically indistinguishable and the largest point estimate is
+**early**, not late. So the effect is roughly uniform across game phase and the
+ride-tail-concentration prediction did not come true. Under the mapping pinned
+above, that is the branch that counts against.
+
+### ★ BUT MY OWN MAPPING WAS INTERNALLY INCONSISTENT, and that must be said
+
+Amendment 6's "uniform" branch reads *"the witness should have seen its share,
+so the shortfall is unexplained"*. **That branch was already foreclosed by
+Amendment 5a, which I wrote in the same edit.** 5a establishes that the
+witness's half-width (2.04pp) cannot separate the null from the primary's
+predicted +1.40pp under ANY phase distribution. A test the instrument cannot
+perform does not become performable because the effect is uniform.
+
+So I pinned a decision rule whose branch contradicted arithmetic I already had
+in hand. The pinning was correct procedure applied to a mis-specified rule,
+which is its own failure mode: **pre-declaration protects against fitting the
+rule to the data, not against a rule that was wrong when written.**
+
+**The correct reading, stated with that error accounted for:**
+
+- The witness's silence is fully explained by power alone (5a). It stands.
+- The early-game-bias story is an ADDITIONAL explanation, and the phase split
+  does **not** support it. That excuse is dead.
+- The finding is therefore neither strengthened nor further weakened by this
+  cut. What died is one of my proposed defences of the witness, not the
+  witness's silence, which never needed that defence.
+- **"Indicated, not established" is unchanged**, and the ride-tail prediction
+  failing is a small independent mark against reading too much into the
+  mechanism.
+
+## Robustness to B's eligibility predicate (not pre-declared — sensitivity only)
+
+    as reported (all cells)             +4.24% [+1.26%, +7.22%]   nT 1,480
+    quote at both ends                  +4.31% [+1.35%, +7.27%]   nT 1,480
+    bid actually MOVED                  +5.34% [+2.01%, +8.68%]   nT 1,188
+    bid moved DOWN (seller-side)        +7.83% [+1.97%, +13.69%]  nT   587
+
+Restricting to cells with a real bid-side move — the only ones a bid-move
+matched baseline can legitimately use — **strengthens** the effect, and it is
+largest exactly where the mechanism requires it (sellers hitting bids). B
+flagged the risk that ineligible cells would flatter the result; they were
+diluting it instead. These cuts were NOT pre-declared and are reported as
+sensitivities, not as the headline.
+
 ---
 
 No in-sample result justifies capital. The forward test is the evidence.
+
+## ★ AMENDMENT 7 — c7's matched-population test. Expected branch pinned first.
+
+The convergence rule's SAME-ESTIMAND leg is unestablished for the witness: it
+fires only on new session lows, so it may measure a different quantity than the
+all-interval primary. c7's fix: restrict the PRIMARY to the witness's own
+population and compare on shared ground.
+
+**My expectation, declared before looking, and it is the branch that hurts:**
+I expect the primary on new-session-low intervals to be **at least as large as
++4.24%**, not to fall to the witness's +0.83%. Two reasons:
+
+1. The phase split (Amendment 6) came back roughly uniform, so the
+   "gap is a phase effect" explanation has already lost its support.
+2. A new session low is made by sellers pushing the price down. That is
+   precisely where consumption should be MOST likely, not least — so the
+   witness's population should if anything be enriched for the phenomenon.
+
+If that is right, the witness disagrees on shared ground and "indicated" is
+generous. I would rather record that prediction and be wrong than record it
+after seeing the answer.
