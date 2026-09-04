@@ -314,3 +314,123 @@ and waiting loses 3.4¢ a fill on this tape**, that no selection within that
 family rescues it, and that the mechanism is adverse selection rather than
 mis-tuning. **No in-sample result justifies capital. The forward test is the
 evidence.**
+
+## ★ THE SEPARATION IS NOW CODE, AND IT READS 24 GAMES — 2026-09-04 ★
+
+Everything above was ad-hoc queries against prod. `core/quote/report.py` — the
+scoring path the QUOTE dashboard and `python -m core.quote.report` both read —
+**had no phantom classifier at all**, was already past its floors on the blend
+(38,465 settled fills / 24 games against floors of 500 / 10), and still printed
+capture. It would have scored tomorrow's slate on the blend. It no longer can:
+the floors and the verdict bind on `population='real'`, and the blend is never
+scored.
+
+### The substrate trap, which cost the first run and is reusable
+
+The obvious table for "the book at the fill instant" is `book_levels`. **It is
+the wrong one, and it fails quietly in the flattering direction.** `book_levels`
+is a **slow depth loop** sampled independently of the price loop. Measured
+against these fills it sits a **median 6.8 s and mean 13.3 s behind** the fill
+instant (max 128.6 s). Against the registered ≤5 s lookback that drops **73.6%
+of all fills and 93.6% of the September ones**, and the survivors are biased:
+
+| substrate | matched | phantom share | WNBA real fills |
+|---|---:|---:|---:|
+| `book_levels` (depth loop) | 26.4% | **84.9%** | 1,531 → wrong |
+| `market_snapshots.best_bid/ask` (price loop) | **100.0%** | **63.9%** | **6,255 → exact** |
+
+`market_snapshots` is the loop the fill was generated from, so the touch is at
+**age 0.0 s on 38,465/38,465 fills, in both eras**. The report now prints that
+max age beside the counts, so a future run on the wrong table says so out loud
+instead of returning a clean, wrong number.
+
+**The tell, reusable:** a coverage-dependent instrument that returns a *plausible*
+number. 84.9% is not absurd on its face; nothing in the output complained. It
+was caught only by refusing to compare it to anything until coverage was
+measured. Counts and composition before ratios — the third time on this feed.
+
+### Validation before any new claim
+
+The classifier is written independently of the manager's original query and
+reproduces it **to the digit** on WNBA: 17,339 fills, **6,255 real**, phantom
+share **63.9%**, real settlement **−3.376¢/fill**, clustered **−3.419¢
+[−5.062, −1.777]** on 13 games, phantom **+0.951¢**, **12 of 13 games lose**.
+Every one of those matches the recorded values above.
+
+### The 24-game read — the effect replicates and tightens
+
+Settlement P&L per fill, real population, mean of game means, game-clustered:
+
+| cohort | fills | G | mean | 95% CI |
+|---|---:|---:|---:|---|
+| WNBA (the recorded 13) | 6,255 | 13 | −3.419¢ | [−5.062, −1.777] |
+| **CFB (11 NEW games)** | **7,396** | **11** | **−2.683¢** | **[−5.439, +0.073]** |
+| **pooled** | **13,651** | **24** | **−3.082¢** | **[−4.502, −1.661]** |
+
+**20 of 24 games lose money on real fills.** The interval narrowed from 3.29¢
+wide to 2.84¢ wide and stayed entirely negative.
+
+### ★ THE PRE-REGISTERED SURPRISE IS TESTED, AND IT DOES NOT APPEAR ★
+
+*"BASE near zero on football"* was recorded above as **UNTESTED, not refuted** —
+settlement was unreadable at 6/11 games with a clustered CI of **[−41.9, +16.8]**.
+All 11 CFB games now carry settled real fills. The CI is **[−5.44, +0.07]**, a
+band **80× narrower**, and it sits on the losing side.
+
+**CFB − WNBA = +0.736¢, se 1.448, Welch t = +0.51, band [−2.29, +3.76].** There
+is **no evidence football is different**, and the surprise's own direction —
+football better — is not supported. Stated precisely: this does not prove the
+two leagues are identical; the band still admits a ±3¢ difference. It says the
+football escape hatch the registration hoped for **is not visible at 11 games**,
+and touch-joining loses on football at the same order as on basketball.
+
+The phantom share replicates across sports as the mechanism predicts, because it
+is a property of the SIMULATOR: **WNBA 63.9%, CFB 65.0%.**
+
+### The width gradient, checked from the other side
+
+The ruling above says capture's monotone width gradient was the instrument
+reproducing its own algebra, and predicts settlement will not be monotonic.
+Independently recomputed on 24 games of real fills:
+
+| quoted spread | n | settlement, clustered |
+|---|---:|---|
+| ≤1.5¢ | 6,660 | −1.974¢ [−4.089, +0.142] |
+| 1.5–2.5¢ | 2,741 | −1.609¢ [−4.106, +0.888] |
+| 2.5–3.5¢ | 1,486 | −6.716¢ [−9.424, −4.008] |
+| 3.5–5.5¢ | 1,445 | −3.411¢ [−6.975, +0.153] |
+| >5.5¢ | 1,319 | −5.609¢ [−9.106, −2.112] |
+
+**Not monotonic, CIs ~3¢ wide.** The prediction holds. *Note this cuts against
+the earlier reading that "a spread widens because informed flow is expected" —
+on settlement, the widest band is not the worst and the ordering is noise. That
+mechanism was argued from capture and does not survive the metric it was
+retired for.*
+
+### A unit trap in the record above
+
+The table at the top gives the ledgered blend as **−1.60¢**, and that is a
+**capture** number. On **settlement** — the primary metric — the WNBA blend is
+**−0.610¢** against −3.376¢ real: the blend understates the real loss by
+**5.5×**, not the ~2.1× the capture figures imply. Pinned as a test
+(`tests/test_quote_report.py`), because the two numbers look comparable and are
+not.
+
+### What is now enforced rather than written
+
+`scripts/guard_coverage.py`: rules **22, 23 and 25 are WIRED** (they were all
+UNWIRED at 22:46 yesterday), all three from `core/quote/report.py`.
+
+* **22** — no count in the report can print bare. A population that returns zero
+  prints `UNPROVEN INSTRUMENT`, because this run has no evidence that branch can
+  fire. Provenance is attached only to the quantity it belongs to: the first
+  wiring printed the regime's fill history beside a *population's* zero, which
+  makes the zero mis-readable and is worse than a bare zero.
+* **23** — the touch join is BACKWARD and its age is **asserted non-negative**,
+  not merely capped. D shipped a forward join today whose `age <= 5` admitted a
+  book from 25 hours *after* the fill; a one-sided cap on an age whose join
+  points the other way is vacuous and reads exactly like a freshness gate.
+* **25** — the staked-ROI prints its numerator, denominator and per-event mean,
+  and warns that its argmax ranks inactivity. It fires on the live prod read.
+
+**No in-sample result justifies capital. The forward test is the evidence.**
