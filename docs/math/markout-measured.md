@@ -23,6 +23,23 @@ below are consistent across horizons whose coverage differs by 23 points**,
 which is the only reassurance available that the missing rows are not driving
 them — it is not proof.
 
+**★ THE COVERAGE EXPOSURE IS CENTRE, NOT PRECISION — corrected 2026-09-04 after
+C caught the wrong framing here. ★** I first wrote that at 30s "the effective n
+is 82% of what the fill count suggests". For a fill-level estimator that is
+true; for the **game-clustered** estimator we standardised on it is
+second-order, because the binding unit is games and every game retains fills at
+every horizon. 18% fewer fills spread across the same games barely moves the
+interval.
+
+The real exposure is **bias in the level**. The dropped rows are markets that
+**stopped updating** — and a market that stopped updating is precisely the
+population whose subsequent price motion is near zero. Dropping them plausibly
+biases markout **away from zero**, in whichever direction the surviving rows
+run. That is invisible to any check that only reports precision, and it is the
+reason **60s (0.617¢ sd, 96.9% coverage) dominates 30s (0.652¢, 82.1%) on
+dispersion and coverage simultaneously** — there is no trade to make, so use 60s
+as the working horizon and treat 10s as the most exposed.
+
 ## The raw numbers
 
 | h | phantom | real | gap |
