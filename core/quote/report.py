@@ -226,6 +226,9 @@ class PopulationReport:
     staked: float
     returned: float
     roi_clustered: ClusteredMean | None
+    #: Settlement P&L in CENTS per fill, game-clustered. This is the PRIMARY
+    #: figure and it must never print without its interval.
+    pnl_clustered: ClusteredMean | None = None
 
     @property
     def at_floor(self) -> bool:
@@ -351,6 +354,7 @@ def build_report(session) -> dict[str, RegimeReport]:
     out: dict[str, RegimeReport] = {}
     for (regime, pop), fills in buckets.items():
         roi_by_game: dict[str, list[float]] = defaultdict(list)
+        cents_by_game: dict[str, list[float]] = defaultdict(list)
         pnl_by_game: dict[str, float] = defaultdict(float)
         staked = returned = 0.0
         n_settled = 0
@@ -365,6 +369,7 @@ def build_report(session) -> dict[str, RegimeReport]:
             returned += ret
             roi_by_game[f.game_id].append(ret / cost - 1.0)
             pnl_by_game[f.game_id] += ret - cost
+            cents_by_game[f.game_id].append((ret - cost) * 100.0)
             n_settled += 1
         rep = PopulationReport(
             regime=regime, population=pop,
@@ -372,6 +377,7 @@ def build_report(session) -> dict[str, RegimeReport]:
             n_games=len({f.game_id for f in fills if f.settlement is not None}),
             staked=staked, returned=returned,
             roi_clustered=clustered_mean(roi_by_game),
+            pnl_clustered=clustered_mean(cents_by_game),
         )
         rep._games_scored = len(pnl_by_game)
         rep._losing = sum(1 for v in pnl_by_game.values() if v < 0)
@@ -400,6 +406,15 @@ def format_report(reports: dict[str, RegimeReport], session=None) -> str:
     add("docs/math/adverse-selection-measured.md).  ABSENT: markout at pre-named")
     add("horizons, which the metric ruling names SECONDARY and this report does")
     add("not yet compute — stated so its absence is not read as a null result.")
+    add("ESTIMATOR, named because two are in circulation and they differ: this is")
+    add("`clustered_mean` — the POOLED mean with a game-cluster-robust SE, i.e.")
+    add("what a dollar deployed earns. The UNWEIGHTED mean of game means (what a")
+    add("TYPICAL GAME looks like) is a different number: on WNBA real fills the")
+    add("two read -3.376c [-4.746, -2.007] and -3.419c [-5.062, -1.777] on")
+    add("identical rows. Neither is wrong; a comparison that mixes them is.")
+    add("REGIME: sign counts and means below are PER REGIME. The in-game and")
+    add("mixed-regime counts genuinely differ — on WNBA, six pregame fills flip")
+    add("one game, giving 13/13 in-game against 12/13 mixed. Say which you mean.")
     add("")
 
     if not reports:
@@ -468,9 +483,14 @@ def format_report(reports: dict[str, RegimeReport], session=None) -> str:
 
         add(f"  staked -> returned           : ${r.staked:,.2f} -> ${r.returned:,.2f}")
         pf = r.per_fill_cents
-        if pf is not None:
-            add(f"  settlement P&L per fill      : {pf:+.3f}c   [PRIMARY]")
-        add(f"  games losing money           : {r._losing}/{r._games_scored}")
+        pc = r.pnl_clustered
+        if pc is not None:
+            add(f"  settlement P&L per fill      : {pc.mean:+.3f}c  "
+                f"95% CI [{pc.lo:+.3f}, {pc.hi:+.3f}]  (G={pc.n_clusters})  [PRIMARY]")
+        elif pf is not None:
+            add(f"  settlement P&L per fill      : {pf:+.3f}c   [PRIMARY, no interval]")
+        add(f"  games losing money           : {r._losing}/{r._games_scored}"
+            f"   (this regime only — see the estimator note)")
 
         # Rule 25. The staked-weighted ROI is a ratio whose numerator and
         # denominator both move with activity: a policy that barely trades can
