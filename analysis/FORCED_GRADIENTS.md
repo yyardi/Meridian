@@ -1036,3 +1036,65 @@ than to this distribution would have scored +0.4¢ as a finding.**
   residual mean as +0.0000¢ — **OLS residuals have mean zero by construction.**
   A check that cannot fail is not a check. Replaced with the smallest-overshoot
   bucket, which can.
+
+---
+
+# Tenth: three more stage-four species, found by pointing the check at a fixed design
+
+The projection check caught a **predetermined** rule earlier. Re-run against the
+*repaired* design it passed that test and failed three others — so the four
+readings in the preface are **necessary and not sufficient**.
+
+## A KNIFE-EDGE branch: reachable only if nothing goes wrong
+
+The strong verdict needs n ≥ 299; the design planned **300**.
+
+| n | best case | verdict |
+|---:|---:|---|
+| 300 | 0.9936% | CONFIRMED (planned) |
+| 299 | 0.9969% | CONFIRMED |
+| **298** | **1.0002%** | **SUPPORTED** |
+
+**Headroom: one observation.** And the per-cluster cap made 300 a **ceiling**,
+not a floor — so one cluster yielding two units instead of three **ends the
+strong verdict before a single adverse event occurs.**
+
+> **Not predetermined and not dead — reachable only on a flawless run. That is
+> not a property a pre-registered verdict may have.** Check the branch against
+> *attrition*, not only against the outcome range.
+
+## TWO REGISTERED METHODS = the verdict is chosen after the data
+
+The design named two interval methods. On **identical data at one violation**:
+Clopper-Pearson **1.571% → SUPPORTED**, cluster-robust **0.995% → CONFIRMED**.
+
+> **Registering two methods is registering none.** It is stage four wearing a
+> different hat: the verdict becomes selectable once the numbers exist. **Name
+> one.**
+
+## A DEGENERATE ESTIMATOR on the best case
+
+Zero violations ⇒ every residual is zero ⇒ the sandwich's meat is zero ⇒
+stderr 0 ⇒ interval **[0, 0]**.
+
+> **A zero-width interval is a broken computation being read as certainty — and
+> here it lands on exactly the outcome we most hope for.** Check every estimator
+> at the boundary of its own input range, not only in the middle.
+
+## And a property to STATE, not fix
+
+Under clustering the verdict depends on how events **distribute**, not only how
+many: 15 violations one-per-cluster → 7.374% (SUPPORTED); the same 15 packed
+into five clusters → 9.346% (REFUTED). Correct behaviour — concentrated events
+carry less information — **but the bands cannot be stated as counts alone**, or
+a reader will treat "15 violations" as a determinate verdict.
+
+## The harness defect that nearly became a fifth finding
+
+The scenario builder allocated `k//3` events instead of `k`, producing apparent
+**non-monotonicity** — more violations giving a *better* verdict. The author
+**checked the builder before reporting the anomaly.**
+
+> **A surprising result about a design is first a hypothesis about your
+> harness.** Same shape as "repeating a computation is not checking it", one
+> level out: the anomaly was real, and it was in the instrument.
