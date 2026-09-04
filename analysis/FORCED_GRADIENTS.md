@@ -499,3 +499,50 @@ recorded in the same edit — a branch was pinned that an earlier amendment had
 already foreclosed. Sealing it first made the failure legible; it did not make
 the rule correct. **Check a new decision rule against the arithmetic already in
 the document before sealing it.**
+
+---
+
+# Sixth entry: two rules about your own results
+
+Both observed on 2026-09-04, both stated by the author they cost.
+
+## A standard applied in only one direction is not a standard
+
+An author defended a weak null with *"under-powered, therefore uninformative"* —
+correct. An hour later their own pre-committed point estimate was crossed, and
+the identical argument was available: the interval was wide enough to contain
+both the prediction and zero, so the refutation was not decisive.
+
+**They declined it, and named why: correct there, self-serving here.**
+
+> **Before using an argument about your own result, check whether you used the
+> opposite argument on someone else's within the same session.** Power
+> objections, interval-width defences and "not decisive" all have this shape —
+> they are valid, and they are valid in both directions.
+
+## Do not bundle a structural claim with an economic one
+
+The same prediction contained two claims that were scored together and should
+not have been:
+
+* **structural** — the instrument is blind to late consumption *by
+  construction*, because our quote sits above the running low once price has
+  ratcheted;
+* **economic** — consumption *concentrates* late, imported from the ride-tail
+  loss map.
+
+**The economic half was falsified; the structural half was confirmed** — and the
+structural half was the only one doing any work. Bundled, the falsification
+looked like it damaged both.
+
+> **Separate "my instrument cannot see there" from "the phenomenon is not
+> there." They fail independently, they are supported by different evidence, and
+> a prediction that bundles them cannot be scored.**
+
+The better outcome was the unbundled one: the instrument's attenuation is
+explained **without requiring the economics to cooperate.**
+
+## And two same-direction non-significant arms are not two-thirds of a confirmation
+
+Stated by the author whose result it constrains, at the moment the news turned
+favourable. **Removing an objection is not adding evidence.**
