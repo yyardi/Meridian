@@ -93,10 +93,49 @@ on the **upper** bound of a violation rate — nobody wants a lower bound on how
 often the venue violated — so **the question is one-sided by construction**, and
 a two-sided interval buys 23% more sample for no inferential gain.
 
-> **A sample-size threshold is a number, a method, AND a sidedness. One author
-> pinned "Wilson" believing they had made the convention explicit — and pinned
-> the SMALLER HALF of the disagreement while leaving the larger half implicit.**
-> Naming a convention does not mean you named the one that is doing the work.
+> **A sample-size threshold is a number, a method, a sidedness, AND AN
+> INDEPENDENCE ASSUMPTION — and on this substrate the last is the one that has
+> historically been wrong.** One author pinned "Wilson" believing they had made
+> the convention explicit, and pinned the *smallest* of the four while leaving
+> the two larger ones implicit. **Naming a convention does not mean you named
+> the one that is doing the work.**
+
+★★ **AND THE INDEPENDENCE ASSUMPTION INVALIDATES ALL FOUR NUMBERS.** Verified in
+the code rather than argued:
+
+* **`clustered_mean` does not use Wilson.** It is a cluster-robust estimator with
+  a *t* critical value at df = G−1 (`core/quote/adverse_selection.py`), so the
+  consistency reason offered for Wilson was misattributed.
+* **Wilson *is* a house convention** — `core/pulse/win_curve.py:151` and
+  `core/backtest/exp_margin_shrinkage.py:57` — **but both call sites are
+  GAME-LEVEL binomials**: wins over resolved games, one observation per game,
+  independence plausible. `GATE_MIN_GAMES = 10` sits directly above one of them.
+
+**The probe counts ORDERS, many per game. That is the row-level case, not the
+game-level one.** And `clustered_mean`'s own docstring is the argument against
+using a binomial there:
+
+> *"One game emits ~130 ladder rows a second, all responding to the same score.
+> The row-level standard error treats them as ~130 independent observations…"*
+
+**A binomial interval over ~300 orders treats them as ~300 independent
+observations — the precise error `clustered_mean` was written to prevent,
+reappearing in a different estimator.** If violations cluster by game, market, or
+venue-state episode, the effective n is nearer the number of independent
+episodes than the number of orders, and **every one of the four figures
+understates the requirement — the cheapest one most of all.**
+
+> **The author who had just produced the cheapest figure withdrew it on this
+> grounds**, noting it is the least conservative of the four and therefore the
+> most wrong if orders cluster: *"I should have asked about clustering before
+> repricing anything in this programme, of all programmes."* **A saving is not
+> banked until the independence assumption behind it is settled.**
+
+**The open question, which no convention can answer:** how many distinct clusters
+do the orders span, and is a violation plausibly independent across orders within
+one? If the answer is "a handful", **the binomial framing needs replacing rather
+than retuning**, and the unreachable branch is unreachable for a reason far more
+fundamental than a budget.
 
 ★★ **AND THE WALLET CONSTRAINT RECORDED ABOVE DISSOLVES UNDER THE CORRECT
 CONVENTION.** Repriced at n=299: **1,041 fills, worst case $833 — inside the
