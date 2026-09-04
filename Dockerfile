@@ -19,6 +19,11 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY core ./core
 COPY strategies ./strategies
+# engine_v2.record_cycle imports analysis.congestion_detector. Without this the
+# import throws every cycle, the error is CAUGHT and logged as
+# quote_v2_record_failed, and the engine quotes on perfectly while recording
+# ZERO observations. Third occurrence of this exact omission in this project.
+COPY analysis ./analysis
 COPY alembic ./alembic
 COPY alembic.ini ./
 # The dashboard's static pages — core/api.py serves them from ../static.
