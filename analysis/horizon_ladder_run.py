@@ -142,27 +142,41 @@ def main() -> int:
     print("  at G=11 the gated real interval still spans zero.")
 
     print("\n" + "=" * 72)
-    print("★ §5 EXECUTED — and the PAIRED gap is what carries it")
+    print("★ §5 DOES NOT EXECUTE — the gap was 82% a retired identity")
     print("=" * 72)
     print("  POST-HOC CUT, flagged: real/phantom is a threshold on overshoot")
-    print("  relative to s/2. The registration named overshoot QUINTILES as the")
-    print("  secondary cut, not this one. Not pre-registered evidence.")
+    print("  relative to s/2, not the overshoot quintiles the registration named.")
     R = d[d.real].dropna(subset=RUNGS).copy()
     R["gap"] = R.d_settle - R.d_mid3600
-    g = cm(R, "gap")
-    l30, l36 = cm(R, "d_mid30"), cm(R, "d_mid3600")
-    print(f"  real balanced panel n {len(R):,}  games {R.game_id.nunique()}")
-    print(f"    drift 30s    {l30.mean:+.3f}c [{l30.lo:+.3f}, {l30.hi:+.3f}]")
-    print(f"    drift 3600s  {l36.mean:+.3f}c [{l36.lo:+.3f}, {l36.hi:+.3f}]  "
-          f"still rising, no turnover")
-    print(f"    settlement   {cm(R,'d_settle').mean:+.3f}c")
-    print(f"  ->  GAP settlement − drift(3600s) = {g.mean:+.3f}c "
-          f"[{g.lo:+.3f}, {g.hi:+.3f}]  "
-          f"{'EXCLUDES ZERO' if not (g.lo <= 0 <= g.hi) else 'spans zero'}")
-    print("  The gap is a PAIRED difference within the same fills, so it clears")
-    print("  zero where neither level does. The loss opens entirely AFTER the")
-    print("  last rung the ladder can see: it is not a price path inside the")
-    print("  hour, which is the terminal-outcome reading §5 commits to.")
+    R["capture"] = R.sign * (R.mid_fill - R.qp) * 100.0
+    R["tail_term"] = R.sign * (R.settlement - R.mid3600) * 100.0
+    # I reported the gap as the finding. It is not one. gap = (settlement - qp)
+    # - (mid_h - mid_0), and the qp does NOT cancel: it leaves mid_0 - qp, which
+    # IS capture, which the fill rule forces <= 0 on every row. The difference
+    # excluded zero because it embeds a quantity that cannot be positive.
+    # Caught by meridian-14; recorded rather than removed.
+    err = (R["gap"] - (R["capture"] + R["tail_term"])).abs().max()
+    print(f"  identity gap == capture + tail: max error {err:.2e} over {len(R):,} rows")
+    print(f"  capture <= 0 on {(R.capture <= 1e-12).sum():,}/{len(R):,} rows "
+          f"(max {R.capture.max():+.3f}c — it never even reaches zero)")
+    for nm, c in (("GAP (I reported this)", "gap"),
+                  ("  capture [RETIRED, <=0 always]", "capture"),
+                  ("  tail: settlement - mid(1h)", "tail_term")):
+        r = cm(R, c)
+        print(f"  {nm:32s} {r.mean:+7.3f} [{r.lo:+7.3f}, {r.hi:+7.3f}]  "
+              f"{'EXCLUDES ZERO' if not (r.lo <= 0 <= r.hi) else 'SPANS ZERO'}")
+    t = cm(R, "tail_term")
+    print(f"  capture is {cm(R,'capture').mean / cm(R,'gap').mean * 100:.1f}% of the gap.")
+    print("  THE TERM THE CLAIM NEEDS — does price move against us between the")
+    print(f"  hour and settlement — is {t.mean:+.3f}c [{t.lo:+.3f}, {t.hi:+.3f}].")
+    print("  UNMEASURED, not measured-and-zero. So WHERE the loss opens in time")
+    print("  is still unknown, and §5's premise is still not in evidence.")
+    hw = (t.hi - t.lo) / 2
+    print(f"\n  To measure it: half-width {hw:.2f}c at G={t.n_clusters}. Clustered SE")
+    print(f"  scales ~1/sqrt(G), so ~{t.n_clusters*(hw/1.5)**2:.0f} games to resolve a -3c")
+    print(f"  tail from zero and ~{t.n_clusters*(hw/1.0)**2:.0f} to tell -3c from -1c.")
+    print("  A 103-game CFB slate is reachable, so this is accrual, not a new")
+    print("  instrument.")
 
     print("\n" + "=" * 72)
     print("§6 THE POWER FLOOR travels with the conclusion")
