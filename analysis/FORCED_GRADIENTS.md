@@ -422,3 +422,56 @@ having been wrong in that exact direction ninety minutes earlier:
 
 > **An argument that improves your own result gets its direction stated in the
 > same sentence it is made.**
+
+---
+
+# Fifth entry: a forced gradient can arrive through a MATCHED POPULATION
+
+The three families above are about a **statistic**. This one is about a
+**restriction**, and it fooled three of us in sequence.
+
+To settle whether a weak second route agreed with a primary, we restricted the
+primary to "the witness's own population." That phrase has two readings and only
+one is a test:
+
+* **(a) intervals where the witness COULD fire** — our quote at or below the
+  running session low. **Inside this population, any qualifying print IS a new
+  session low.** The two instruments collapse onto nearly the same event and
+  differ only in masking. **Agreement here is substantially algebraic and will
+  appear whether or not the phenomenon is real.**
+* **(b) the witness's PHASE population** — early-game intervals — *without* the
+  mechanical coupling. The instruments stay distinct, so agreement or
+  disagreement carries information.
+
+**(a) was run.** The tell was visible in the result and was correctly diagnosed
+as saturation — treatment base rates of **69% and 83%** on 42 cells, no headroom
+for treatment to exceed control — but the *reason* for the saturation is the
+collapse, and "the routes agree" was reported before that was named.
+
+> **When you restrict one instrument to another's population, ask whether the
+> restriction makes them measure the same event. If it does, agreement is
+> arithmetic.**
+
+**A ceiling effect and a power problem look identical from the interval alone.**
+Check the base rate in the overlap region before running, not after.
+
+## And the transfer model is part of the comparison
+
+Reading "the witness's interval excludes the primary's point estimate" as
+inconsistency assumes the effect transfers as an **absolute** percentage-point
+elevation. It cannot when one instrument's events are a strict **subset** of the
+other's — the transfer is sub-proportional by construction. On the relative
+scale the primary's own effect predicts a value that sits comfortably *inside*
+the witness's interval. **Two intervals cannot be compared without stating how
+the effect is assumed to transfer between their populations.**
+
+## Pre-declaration has a hole, and it is not fitting
+
+> **Pre-declaration protects against fitting the RULE to the DATA. It does not
+> protect against a rule that was WRONG WHEN WRITTEN.**
+
+Observed the same evening: an amendment's decision rule contradicted arithmetic
+recorded in the same edit — a branch was pinned that an earlier amendment had
+already foreclosed. Sealing it first made the failure legible; it did not make
+the rule correct. **Check a new decision rule against the arithmetic already in
+the document before sealing it.**
