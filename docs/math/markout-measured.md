@@ -133,3 +133,95 @@ response can be asked at ~1/6 the dispersion. Neither is licence to restate a
 settlement question in markout terms because the interval is prettier.
 
 **No in-sample result justifies capital. The forward test is the evidence.**
+
+## ★ THE INFORMED-FLOW MECHANISM IS NOT VISIBLE IN THE ONE STATISTIC THAT IS CLEAN ★
+
+B established (`analysis/composition_gradient_is_forced.py`) that the
+classification rule is exactly **real ⟺ excess ≥ s/2**, at 100.0% agreement on
+38,465 fills — so **the spread sits on both sides of any composition statistic**,
+and a geometry-only null with no flow story reproduces the monotone
+"real share falls with width" decline on both boards. That retires the
+composition gradient the same way capture was retired, and B retracted their own
+supporting sentence rather than let it stand.
+
+B's proposed replacement is the right one, and it is what this study already
+had: **DRIFT = markout(h) − markout(0) = mid(t+h) − mid(t).** The quote price
+cancels algebraically. There is no `s`, no `qp` and no threshold anywhere in it
+— it is the mid's own subsequent motion, signed to our side.
+
+**Declared before looking:** horizons pre-named at bc85071; the registered width
+bands; real fills only; and the prediction that **if flow reaching us in wide
+markets is more informed, wide-band drift should DECREASE** (continue against
+us). Residual confound stated in advance: the statistic contains no `s`, but the
+population is selected by a rule that does.
+
+**REAL fills, drift by width (¢, positive = the mid moved our way):**
+
+| band | n | h=30s | h=300s |
+|---|---:|---|---|
+| ≤1.5¢ | 5,456 / 6,612 | +0.294 [−0.087, +0.675] | +0.534 [−0.062, +1.130] |
+| 1.5–2.5¢ | 2,199 / 2,727 | +0.747 [−0.003, +1.496] | +1.098 [+0.374, +1.822] |
+| 2.5–3.5¢ | 1,177 / 1,475 | +0.836 [+0.442, +1.230] | +0.492 [−0.297, +1.281] |
+| 3.5–5.5¢ | 1,155 / 1,422 | +0.219 [−0.160, +0.597] | +1.019 [+0.524, +1.514] |
+| >5.5¢ | 1,011 / 1,282 | +1.022 [+0.383, +1.660] | +1.225 [+0.371, +2.079] |
+
+**MY PREDICTION IS REFUTED.** Drift does not decrease with width. It is
+non-monotonic and flat-to-slightly-rising, with heavily overlapping intervals at
+G=24. **There is no evidence that the flow reaching us in wide markets is more
+informed.**
+
+That matters because the mechanism has now failed in every instrument that could
+carry it. *"A spread widens because informed flow is expected; joining a wide
+spread means standing in front of exactly that flow"* was argued from **capture**
+(an identity — retired), then replicated by the **width settlement gradient**
+(non-monotonic, ~3¢ CIs), then by **composition** (forced by `s/2` — retired by
+B), and now tested on **drift**, which is algebraically clean: **no support.**
+Four instruments, one surviving as a genuine test, and it does not find the
+effect. **Stated at its correct strength: this is absence of evidence at G=24
+with intervals ~1¢ wide, not evidence of absence — a real 0.5¢ gradient would
+not be visible here. But the mechanism should stop being asserted.**
+
+**PHANTOM fills, drift at h=300s, as the contrast:**
+
+| band | n | drift |
+|---|---:|---|
+| ≤1.5¢ | 6,294 | +0.969 [+0.554, +1.383] |
+| 1.5–2.5¢ | 4,636 | +1.006 [+0.519, +1.494] |
+| 2.5–3.5¢ | 3,607 | +1.701 [+1.289, +2.114] |
+| 3.5–5.5¢ | 4,967 | +2.613 [+2.095, +3.131] |
+| >5.5¢ | 5,027 | +3.385 [+2.918, +3.853] |
+
+Strongly monotone, intervals separating cleanly. **And it is very likely the
+residual confound rather than a finding**: for the mid to reach our price
+*without the ask following*, it must travel further in a wider market, and a
+larger excursion mechanically reverts further. The selection is `s`-dependent
+even though the statistic is not — exactly the caveat declared before the run.
+**Recorded as a candidate for the same forced-gradient treatment B applied to
+composition, not as a result.** The geometry-only null that would settle it has
+not been built.
+
+## ★ THE LARGER PROBLEM THIS EXPOSES ★
+
+**Real-fill drift is POSITIVE in every band, at every horizon** — the mid moves
+*our way* by +0.2 to +1.2¢ in the five minutes after a real fill. And the same
+fills settle at **−3.4¢**.
+
+So the loss is **not** in the immediate flow. Whatever takes 3.4¢ off a real
+fill happens *after* the horizon at which "adverse selection" is normally
+measured. This is consistent with the refutation of P2 above — the phantom/real
+divergence was still growing at 300s and had not settled.
+
+**This does not overturn the central result.** The settlement number is the
+money, it is measured, and it is negative on 21 of 24 games. What it overturns is
+the *narrative attached to it*: we have been calling this "adverse selection" and
+describing informed sellers crossing down and the price continuing. **The price
+does not continue at 10s, 30s, 60s or 300s — it comes back, slightly.** The
+mechanism is either much slower than any horizon measured here, or it is
+something other than short-horizon information.
+
+**Named as the next question rather than answered:** extend the horizon ladder
+past 300s — 15m, 1h, end-of-period — and find where a real fill's drift turns
+over, if it does. That is a pre-registration to write, not a run to do now, and
+the horizons must be named before anyone looks.
+
+**No in-sample result justifies capital. The forward test is the evidence.**
