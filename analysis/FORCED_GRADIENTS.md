@@ -144,3 +144,30 @@ cheaper:
    broke the original.
 4. **Give the alarm a NOT-STARTED branch.** `live_games = 0` must read as
    "metric undefined", never as a degradation. Rule 22, applied to the alarm.
+
+---
+
+# Corollary: killing a confound cheaply, without resolving it
+
+The inverse of the underpowered-null trap, and worth stating because the
+instinct it corrects — *"we cannot rule this out, the CI is huge"* — is common
+and wrong.
+
+> **When a bias decomposes into `rate × effect` and the RATE is measured
+> precisely, the bias is bounded however noisy the EFFECT is.**
+
+Demonstrated 2026-09-04 on the drift survivorship confound. Censored fills
+settle **−10.962¢ [−18.498, −3.427]** against measurable fills' −2.787¢ — an
+8.2¢ effect with a 15¢-wide interval, nowhere near resolved. But the censoring
+**rate** is 1.0% (133 of 13,651), measured exactly. So the aggregate bias is
+0.010 × 8.176 = **0.08¢** on a −3.4¢ number, and **0.16¢ even at the interval's
+most extreme edge.** The confound is real in direction and dead in magnitude,
+and no additional data was needed to say so.
+
+**The move:** before declaring a confound unresolvable, check whether it
+factorises and whether one factor is a count you already have. A confound whose
+prevalence is known cannot be large, however uncertain its severity.
+
+*(B raised the confound, named the right suspect precisely enough to rule it
+out, and then made this generalisation from having been directionally right and
+materially wrong.)*
