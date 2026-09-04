@@ -665,3 +665,90 @@ Correct behaviour — concentrated violations carry less information — but it
 means **no violation count maps to a verdict on its own.** Any statement of the
 form "k violations gives verdict X" is ill-formed and must not appear in the
 write-up. The bands are on the interval, never on the count.
+
+## AMENDMENT 6 — randomised quote offset, pinned. Projection re-run on the augmented design.
+
+**Why:** the coupling design's open parameter is `g = d ln ν / d(price)`, the
+fill-intensity semi-elasticity, and it decides the **sign** of the skew
+correction (`λ_trade < λ*` iff `g < 1/h`). The probe as registered rests every
+order at the touch, so it observes `ν` at one price point and **cannot estimate
+`g` at all** — no variation in the independent variable.
+
+### The change, pinned before it runs
+
+    offset_ticks ~ uniform{-1, 0, +1, +2} relative to the best bid,
+      negative = inside the spread (more aggressive), post-only clamp respected
+
+    RECORD per order: offset_ticks, touch-at-insert, fill outcome and size,
+      and TIME AT RISK (insert -> fill-or-cancel)
+
+**Time at risk is the column that does not exist today**, and without it `ν` is
+a count rather than a rate. That alone justifies the change.
+
+**Randomisation discipline (tonight's own lesson):** the offset is drawn from
+the fixed set above by a **seeded generator, with the seed and the drawn value
+recorded per order**, so the allocation is auditable afterwards. It must be
+**independent of market state** — an offset chosen by anything responsive to
+spread, volatility or inventory re-introduces exactly the selection this
+programme spent the day removing.
+
+### Four-door projection on the augmented design
+
+**No existing verdict is split.** Leg A's invariant — our order in the book
+forces `best_bid >= B` — holds at ANY resting price, so all ~300 orders
+contribute to Leg A regardless of offset. Leg B's primary can be pooled across
+offsets; stratifying it is a bonus, not a requirement. **Only the new `g`
+regression uses the four strata.**
+
+**Leg A's exposure improves.** Passive offsets rest longer, so total at-risk
+time rises even though order count is unchanged (simulated, g = 50, 10-min
+windows, 300 orders):
+
+    all at the touch (registered)   833 order-min at risk   fill share 97.0%
+    randomised offsets              979 order-min at risk   fill share 92.0%
+                                    => +17% exposure, ~5% fewer fills
+
+    per offset:  -1c  rate 0.574/min  mean life 1.74 min  filled 99.7%
+                  0c  rate 0.348/min  mean life 2.80 min  filled 96.9%
+                 +1c  rate 0.211/min  mean life 4.17 min  filled 87.6%
+                 +2c  rate 0.128/min  mean life 5.64 min  filled 71.7%
+
+So Leg A gains sensitivity, Leg B gains stratification, and **capital falls
+slightly** because fewer orders fill.
+
+### What the probe buys on `g`: the SIGN, not the magnitude
+
+Poisson fit on fill counts with a `log(time at risk)` offset, game-clustered,
+300 orders over 100 games (40 replications per point):
+
+    true g   mean est   mean se    bias    sign of (g - 1/h) resolved
+      20       19.8       5.3      -0.2         100%
+      35       34.7       5.5      -0.3          78%
+      50       49.0       5.6      -1.0           8%   <- at the threshold
+      65       63.9       5.8      -1.1          68%
+      90       88.4       6.3      -1.6         100%
+
+**The design resolves the sign when `g` is roughly 15 units or more from
+`1/h = 50` — about 30% away — and cannot near the threshold.** The 8% at
+`g = 50` exactly is the nominal false-positive rate, which is the correct
+behaviour rather than a failure.
+
+**And the failure is benign by construction.** `λ_trade = λ* + (h − 1/g)/d`, so
+when `g ≈ 1/h` the correction term is ≈ 0. **The design fails to resolve the
+sign exactly when the sign matters least.** An unresolved result therefore
+licenses quoting at `λ*` rather than leaving the parameter undetermined.
+
+The **magnitude** of `g` is estimated to about ±11 (2 SE), which is loose. So:
+the probe buys the direction of the skew correction, and only a rough size.
+The direction is the decision-relevant half.
+
+### A harness defect caught before it was reported
+
+My first power run used `log(max(fills, 0.5)/time)` to dodge log-of-zero. That
+floor biased the slope badly — at true `g = 50` it estimated 66 and "resolved"
+a sign that is unresolvable at the threshold by construction. **The tell was
+the impossible result, not the arithmetic.** Replaced with a Poisson MLE on
+counts with a `log(time)` offset, which handles zero-fill cells correctly and
+is near-unbiased. Recorded because the same class of harness error was caught
+by B an hour earlier, and both times the instrument was the suspect before the
+finding was.
