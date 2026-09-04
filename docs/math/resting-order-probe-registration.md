@@ -399,3 +399,67 @@ ask whether the threshold can separate the branches. If the interval spans
 both, the rule is decoration. If the best achievable outcome lands in the
 adverse branch, the rule is inverted. Cheap, and it belongs at registration
 time rather than in the write-up.
+
+## AMENDMENT 2 — the rule was PREDETERMINED at n=40, and CONFIRMED is wallet-bound
+
+B's structural version of the check, which subsumes the clause I proposed:
+**compute the achievable outcome range, project it onto the branch structure,
+and inspect the image.**
+
+    image is a single branch            -> PREDETERMINED (answer fixed before the run)
+    image includes adverse at best case -> INVERTED (success reports as failure)
+    a branch outside the image          -> DEAD BRANCH (decoration)
+    image spans branches but the
+      interval exceeds the band widths  -> CANNOT DISCRIMINATE
+
+**At n=40 the rule was PREDETERMINED, not merely inverted.** The upper bound
+runs from ~8.8% (zero violations) to 100%, so **all 41 possible outcomes return
+REFUTED.** The probe would have spent real capital to compute an answer fixed
+before the first order rested. That is worse than my own diagnosis and B's
+framing is what exposes it — I checked only the best case, which finds inversion
+but cannot find predetermination.
+
+**And n=100 has a dead branch.** CONFIRMED needs an upper bound below 1%, so at
+n=100 (best case ~3.6%) the achievable image is {SUPPORTED, REFUTED}. The rule
+is advertised as three-band and is structurally two-band.
+
+**PIN THE INTERVAL METHOD — the threshold moves with it, and we disagreed.**
+Smallest n whose best case reaches <1%:
+
+    Clopper-Pearson (exact)   n = 299
+    rule of three (3/n)       n = 300
+    Wilson                    n = 381   <- mine
+    (B computed 368, a fourth answer)
+
+**Registered method: Wilson**, matching `clustered_mean`'s convention elsewhere
+in this program, giving **n = 381**. Any future citation of "the n needed for
+CONFIRMED" must name the method; it is a 27% spread otherwise.
+
+### ★ CONFIRMED is not reachable within the wallet at the registered window
+
+At the measured 0.348 fills per standing minute, worst case = fills x $0.80:
+
+    n=100 x 10-min   ~348 fills   worst case   $278
+    n=381 x 10-min  ~1,326 fills  worst case $1,061   <- EXCEEDS the $1,000 wallet
+    n=381 x  5-min    ~663 fills  worst case   $530
+
+**So Leg A CONFIRMED cannot be bought at the registered 10-minute window
+without breaching the wallet at unit size.** It is reachable at 5-minute
+windows for ~$530 — but shorter windows halve the Leg B crossing episodes,
+which is the leg that tests sufficiency and has no other instrument.
+
+**That is a genuine trade-off and it is the operator's to make, not mine:**
+
+    (a) n=100, 10-min   ~$278   Leg A best outcome SUPPORTED; Leg B strongest
+    (b) n=381,  5-min   ~$530   Leg A can reach CONFIRMED; Leg B halved
+    (c) n=381, 10-min  ~$1,061  both strong; breaches the wallet at unit size
+
+**Recommendation: (a).** SUPPORTED is a real verdict — it says the phantom share
+carries a bounded error band — and Leg B is the leg with no alternative
+instrument, since A1 has the historical passive-order reconstruction as a proxy
+and A2 has nothing. Buying CONFIRMED by weakening the only test of sufficiency
+is the wrong trade.
+
+**The CONFIRMED band stays in the rule, explicitly marked unreachable at the
+recommended sample**, rather than being deleted. Deleting it would hide that
+the probe cannot fully close A1 at any price the wallet allows.
