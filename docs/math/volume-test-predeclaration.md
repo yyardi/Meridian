@@ -475,3 +475,40 @@ no longer be read as a mark against the finding in any of the three available
 framings: it does not contradict (Amendment 7, on contaminated ground), it
 cannot resolve (5a, power), and where it can operate it agrees in direction and
 exceeds in relative magnitude (here).
+
+### Amendment 9 — direct phase runs for BOTH instruments (B asked for late, not a derivation)
+
+                    nT    treat    ctrl     rel     excess CI
+    PRIMARY early   469  27.51%  22.03%  1.249x  [-1.34, +12.29]  spans
+    PRIMARY middle  557  22.08%  19.32%  1.143x  [+0.08,  +5.45]  excludes
+    PRIMARY LATE    454  25.33%  20.55%  1.232x  [+0.07,  +9.49]  excludes
+
+    WITNESS early   469  13.65%   9.17%  1.488x  [-1.01,  +9.96]  spans
+    WITNESS middle  557   4.31%   4.73%  0.912x  [-3.06,  +2.22]  spans
+    WITNESS LATE    454   5.51%   6.92%  0.796x  [-5.70,  +2.87]  spans
+
+**The two claims separate cleanly, and both answers are sharper than the
+approximation suggested.**
+
+**Economic claim — consumption concentrates late: FALSIFIED, with no trend at
+all.** The primary runs 1.249x / 1.143x / 1.232x. Late is not elevated; it is
+indistinguishable from early. And the non-early aggregate (~+3.68pp) obscured
+which bucket was low: it is MIDDLE (1.143x), not late. Lumping middle and late
+made a flat series look like a decline.
+
+**Structural claim — the witness goes blind late by construction: CONFIRMED,
+monotonically.** Its relative elevation decays 1.488x -> 0.912x -> 0.796x, and
+its firing rate collapses from 13.65% to 4.31%/5.51%. Once the price has
+ratcheted, B sits above the running low and consumption becomes invisible to it.
+
+So **the pooling artifact is now demonstrated rather than inferred**: the
+all-phase 1.122x is the average of an instrument that works early and is dead
+late, not a weak signal throughout.
+
+The sub-1.0 late witness values (0.912x, 0.796x) sit on 4-7% base rates with
+intervals spanning several points; they are noise around an instrument that has
+stopped firing, not evidence of a negative effect.
+
+Nothing here moves the headline. **"Indicated, not established" is unchanged**,
+and two same-direction non-significant arms are not two-thirds of a
+confirmation.
