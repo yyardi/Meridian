@@ -55,9 +55,39 @@ case, not an edge case.
 the touch moves to a price where nobody is resting, a quote posted there is
 *first* in queue and fills on any cross, including small ones. If most of our
 fills come from newly-created levels, queue-ahead is ~0, selection is weak,
-and P1 is small. This is measurable directly: the distribution of
-`our_bid_qty` at fill time separates the two worlds. A probe that finds
-queue-ahead mostly zero refutes P1 without needing a real order.
+and P1 is small.
+
+### MEASURED 2026-09-04 — and the validity gate decides the answer
+
+`qv2_queue_ahead_20260904T144200Z`, 623,036 rows carrying `our_bid_qty`:
+
+| | first in queue (qty=0) | median queue-ahead |
+|---|---|---|
+| ungated | **17.1%** | 15 |
+| bid-side price identity | 1.6% | 30 |
+| **both-side price identity (registered gate)** | **1.2%** | **28** |
+
+The depth sample is only valid when the touch has not moved since it was
+fetched — price identity, not elapsed time, because in-play touch survival is
+median 2s while these samples are median 11.4s old (p90 47.8s). 30.6% of rows
+fail that gate.
+
+**The zeros are almost entirely a staleness artifact:**
+
+    P(queue-ahead = 0 | touch UNCHANGED) =  1.2%
+    P(queue-ahead = 0 | touch MOVED)     = 53.0%
+    95.0% of all 106,560 zeros sit in stale-touch rows
+
+The mechanism is direct: when the touch moves, our quote price is no longer
+where the stale sample looked, so no size is recorded there and a spurious
+zero is manufactured.
+
+**So the countervailing mechanism is close to dead, and P1 is close to
+universal.** We are first in queue roughly **one time in eighty**, not one in
+six, and otherwise sit behind a median of 28 contracts. A 1-contract order
+needs a cross clearing ~28 before it reaches us, nearly always. This is now a
+measurement rather than an argument, and it did not come out the way I
+guessed when I registered the countervailing case.
 
 **Falsification.** If realized fills mark out indistinguishably from
 unrealized crossing episodes, P1 is dead and the count-only framing was
