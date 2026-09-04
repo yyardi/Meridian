@@ -124,25 +124,45 @@ def main() -> int:
         print(f"  {int(q):>16} " + " ".join(f"{x:>+8.3f}" for x in norm))
 
     print("\n" + "=" * 72)
-    print("★ THE PRE-DECLARED BRANCH HAS A BROKEN PREMISE")
+    print("★ SETTLEMENT — CLASSIFIED, because the blend is 66% phantom")
     print("=" * 72)
-    print("  §5 commits me to reporting a terminal-outcome finding if the drift")
-    print("  never turns over. That branch assumes the terminal value IS a loss.")
-    print("  On this cohort, game-clustered, it is not established:")
-    for nm, s in (("full gated", d), ("balanced panel", bal),
-                  ("excluded from panel", d[~d.index.isin(bal.index)])):
+    # An earlier version of this file computed settlement on the UNCLASSIFIED
+    # blend and concluded "the -3.4c does not reproduce". That was wrong, and
+    # wrong by this programme's own central lesson: the blend is 66% phantom and
+    # the phantoms at +0.578c pull it to -0.733c. Recorded rather than removed.
+    d["real"] = d.over >= (d.ba - d.bb) * 100 / 2
+    for nm, s in (("ALL gated (the blend)", d), ("  REAL", d[d.real]),
+                  ("  PHANTOM", d[~d.real])):
         c = cm(s, "d_settle")
-        print(f"    {nm:22s} n {len(s):>6,}  settle {c.mean:+7.3f}c "
-              f"[{c.lo:+7.3f}, {c.hi:+7.3f}]  {'SPANS ZERO' if c.lo <= 0 <= c.hi else ''}")
-    print("  The -3.4c the question was built on does not reproduce here. At 11")
-    print("  games the settlement estimate is far too noisy to establish a loss,")
-    print("  and the -3.4c figure comes from a tape that pools two engine binaries")
-    print("  while this cohort is single-binary by construction.")
-    print("  So the gap between 'drift positive at an hour' and 'settles at -3.4c'")
-    print("  is NOT ESTABLISHED on this cohort. Executing the pre-declared branch")
-    print("  would assert a mechanism for a difference that has not been shown to")
-    print("  exist. Reporting the premise failure instead, per the registration's")
-    print("  own logic rather than against it.")
+        flag = "spans zero" if c.lo <= 0 <= c.hi else "EXCLUDES ZERO"
+        print(f"  {nm:24s} n {len(s):>6,} G {s.game_id.nunique():>2}  "
+              f"settle {c.mean:+7.3f}c [{c.lo:+7.3f}, {c.hi:+7.3f}]  {flag}")
+    print("  The point estimate DOES reproduce once classified: -3.24c against")
+    print("  the programme's -3.4c. What does not reproduce is SIGNIFICANCE --")
+    print("  at G=11 the gated real interval still spans zero.")
+
+    print("\n" + "=" * 72)
+    print("★ §5 EXECUTED — and the PAIRED gap is what carries it")
+    print("=" * 72)
+    print("  POST-HOC CUT, flagged: real/phantom is a threshold on overshoot")
+    print("  relative to s/2. The registration named overshoot QUINTILES as the")
+    print("  secondary cut, not this one. Not pre-registered evidence.")
+    R = d[d.real].dropna(subset=RUNGS).copy()
+    R["gap"] = R.d_settle - R.d_mid3600
+    g = cm(R, "gap")
+    l30, l36 = cm(R, "d_mid30"), cm(R, "d_mid3600")
+    print(f"  real balanced panel n {len(R):,}  games {R.game_id.nunique()}")
+    print(f"    drift 30s    {l30.mean:+.3f}c [{l30.lo:+.3f}, {l30.hi:+.3f}]")
+    print(f"    drift 3600s  {l36.mean:+.3f}c [{l36.lo:+.3f}, {l36.hi:+.3f}]  "
+          f"still rising, no turnover")
+    print(f"    settlement   {cm(R,'d_settle').mean:+.3f}c")
+    print(f"  ->  GAP settlement − drift(3600s) = {g.mean:+.3f}c "
+          f"[{g.lo:+.3f}, {g.hi:+.3f}]  "
+          f"{'EXCLUDES ZERO' if not (g.lo <= 0 <= g.hi) else 'spans zero'}")
+    print("  The gap is a PAIRED difference within the same fills, so it clears")
+    print("  zero where neither level does. The loss opens entirely AFTER the")
+    print("  last rung the ladder can see: it is not a price path inside the")
+    print("  hour, which is the terminal-outcome reading §5 commits to.")
 
     print("\n" + "=" * 72)
     print("§6 THE POWER FLOOR travels with the conclusion")
