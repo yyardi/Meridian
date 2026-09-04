@@ -409,3 +409,38 @@ control, and n=42. A ceiling effect on 42 cells cannot corroborate anything.
 non-new-low population, where the witness cannot speak at all — not from
 population where they disagree. "Indicated, not established" stands exactly as
 before, with one worry removed rather than any support added.
+
+### ★ Amendment 7 IS CONTAMINATED — I conditioned on a post-treatment variable
+
+B's warning (arriving after the run) names two readings of "the witness's own
+population": (a) intervals where the witness COULD fire — B at or below the
+running session low — where any print at/below B IS a new low, so the two
+instruments collapse onto nearly the same event and agreement is largely
+algebraic; and (b) the witness's PHASE population, where they stay distinct.
+
+**I ran neither. I restricted on `low_fell` — the low actually having FALLEN
+during the interval — which is an OUTCOME, not a pre-condition.** Conditioning
+on the low having fallen conditions on a print having occurred at a new low,
+which is most of the event being measured. That is worse than (a): it is
+collider conditioning, not merely a coupled population.
+
+It also explains the saturation I reported as a curiosity: 69% and 83% base
+rates are not a feature of new-low intervals, they are what conditioning on the
+outcome produces. **My "third independent reason the witness cannot speak" was
+a description of my own design error.**
+
+Amendment 7's numbers are withdrawn as a test of agreement. What survives is
+only the negative observation that my pinned prediction (primary holds at
+>= +4.24%) was wrong on that population — and even that is on contaminated
+ground.
+
+### AMENDMENT 8 — the clean version, (b). Expectation pinned before the run.
+
+Compare primary and witness on the witness's PHASE population (early-game
+third), where the instruments remain distinct.
+
+**Expected: the witness early-phase excess is positive but does not clear zero,
+and the comparison stays uninformative for the power reason (5a) rather than
+becoming decisive.** I do not expect this to rescue or sink anything. Saying so
+in advance because my last prediction failed and the temptation after a failure
+is to predict something bolder.
