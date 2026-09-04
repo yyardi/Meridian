@@ -28,6 +28,36 @@ Below the gate the manager's prediction — near-zero real fills in wide
 cells — is REFUTED: 1,044 real fills at >=5c across 11 games and 276
 markets. The absence is not gradual; it is a wall at 15c.
 
+★ THE SIZE OF THE BLIND SPOT, measured by the manager on 13.0M live
+snapshot rows since 2026-08-18 (is_live, crossed books excluded):
+
+    CFB   43.24% of rows above MAX_SPREAD   1,244/1,439 markets (86.4%)
+    WNBA  10.22%                              559/696   markets (80.3%)
+
+Both are ROW shares, so time-weighted — the right weighting for "what
+fraction of quotable opportunity is refused", the wrong one for "how
+many markets are affected", hence both columns.
+
+★ THE HONEST SUMMARY, recorded here rather than left in a thread:
+**The system is blind to 43.2% of the live CFB board by row, by policy
+rather than by accident. Every "touch-joining is dead as a family"
+statement is scoped to the other 56.8%. The visible evidence gives NO
+reason to expect the blind region is better, and two monotone trends
+suggest it is worse — but extrapolating a trend past a boundary is a
+move this program has burned itself on, so the region remains
+UNMEASURED, not measured-and-dismissed.** That last clause is load
+bearing: "probably protecting us" is an inference from evidence that
+stops at the boundary, and a future reader must not be told the
+question was settled.
+
+CAVEAT ON ONE OF THOSE TWO TRENDS, added after testing it: the
+composition trend (real share falling with width) is largely FORCED by
+the fill rule's geometry and is not independent evidence about flow —
+see `analysis/composition_gradient_is_forced.py`. The settlement trend
+stands. So the honest count is closer to one-and-a-half trends than
+two, and the conclusion is unchanged in direction but weaker in
+support than when it was first written.
+
 WHAT THIS CENSUS CAN AND CANNOT SEE
 -----------------------------------
 The substrate is FILLS ONLY (`shadow_quote_fills`). It contains no
