@@ -292,7 +292,17 @@ def _monotonic(xs: list[float]) -> bool:
 def run_width(d: pd.DataFrame) -> pd.DataFrame:
     d = d.copy()
     d["b"] = _band(d.s_q, WIDTH_EDGES, WIDTH_LABELS)
-    return cut_table(d, "b", WIDTH_LABELS, "WIDTH (quoted spread at quote)")
+    t = cut_table(d, "b", WIDTH_LABELS, "WIDTH (quoted spread at quote)")
+    print("★ THE `phantom` COLUMN IS FORCED IN THIS CUT AND MUST NOT BE READ AS A FINDING.")
+    print("The classification rule is exactly `real <=> excess >= s/2` (B, 2026-09-04), so")
+    print("SPREAD SITS ON BOTH SIDES: a wider band mechanically raises the bar a fill must")
+    print("clear to count as real, and the phantom share therefore MUST rise with width.")
+    print("The monotone gradient here is the criterion restating itself — the same species")
+    print("as the retired capture gradient. It is printed because the design doc requires a")
+    print("phantom flag on every cut, NOT because it measures anything. (In the LATENESS and")
+    print("PATIENCE cuts the bands are not spread-based, so their phantom columns are")
+    print("empirical rather than forced — the distinction is exact, not a hedge.)")
+    return t
 
 
 #: The manager's independent WIDTH read, quoted as the known answer this

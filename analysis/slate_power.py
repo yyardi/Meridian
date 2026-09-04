@@ -124,6 +124,55 @@ def kish(counts: np.ndarray) -> float:
     return float(counts.sum() ** 2 / (counts ** 2).sum())
 
 
+#: Per-game sd on CFB real fills, from docs/math/markout-measured.md (4a2cb1b).
+#: SETTLEMENT IS PRIMARY. These are reported beside it and may not promote it.
+MARKOUT_SD = {"settlement": (4.102, 1.000), "markout 10s": (1.034, 0.759),
+              "markout 30s": (0.652, 0.821), "markout 60s": (0.617, 0.969),
+              "markout 300s": (0.846, 0.989)}  # (per-game sd cents, coverage)
+
+
+def markout_second_pass(hw_settlement: float, g_nom: int, g_eff: float) -> None:
+    """The same question on a SECONDARY metric — reported, never promoted.
+
+    Declared before computing: this is a RATIO-SCALED projection. I hold
+    markout's per-game sd but not its fills, so the half-width is scaled from
+    settlement's measured half-width by the sd ratio. That assumes the
+    within-game correlation structure is similar across metrics; it is an
+    approximation and it is labelled as one rather than presented as a measured
+    interval.
+    """
+    print("\n=== 4c. SECOND PASS — MARKOUT, BESIDE SETTLEMENT AND NOT ABOVE IT ===")
+    print("Settlement is PRIMARY: it is the money. Markout is SECONDARY and a tighter")
+    print("interval around a proxy may not promote it — choosing a metric by its variance")
+    print("is the trade capture made and lost. Ratio-scaled from settlement's measured")
+    print("half-width by per-game sd (an approximation, labelled as one).")
+    rows = []
+    for name, (sd, cov) in MARKOUT_SD.items():
+        ratio = sd / MARKOUT_SD["settlement"][0]
+        hw_today = hw_settlement * ratio
+        n_eff = 103 * (g_eff / g_nom)
+        hw_103 = project_hw(hw_today, g_eff, n_eff)
+        rows.append({"metric": name, "per_game_sd_c": sd, "coverage": cov,
+                     "HW_today_c": hw_today, "HW_at_+103_c": hw_103,
+                     "vs -6c 80% power": "YES" if hw_103 <= 2.6 / POWER_FACTOR else "NO"})
+    print(pd.DataFrame(rows).to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+    print("\nCOVERAGE, and why it costs less here than it looks: the staleness cap drops")
+    print("24% of fills at 10s and 18% at 30s. For a FILL-level estimator that is a direct")
+    print("sample loss; for a GAME-CLUSTERED one it is second-order, because the binding")
+    print("unit is games and every game retains fills at every horizon. The real exposure")
+    print("is not precision but CENTRE: the dropped rows are markets that stopped updating,")
+    print("which is not random, and a market that stopped updating plausibly has a markout")
+    print("near zero — so dropping them could bias the metric AWAY from zero. This module")
+    print("projects precision only (A4) and is silent on that; it is named because a")
+    print("coverage note that only mentions n would understate the problem.")
+    print("Recommended basis if a markout projection is ever used: 60s — sd 0.617c at 96.9%")
+    print("coverage dominates 30s (0.652c at 82.1%) on both axes at once.")
+    print("Standing limit, from the metric's own doc: 54% of the phantom/real markout gap")
+    print("is already present at h=0, i.e. the classification criterion restating itself.")
+    print("That does not touch this projection (it uses REAL fills' dispersion only) but it")
+    print("does mean markout's phantom-vs-real GAP is not clean evidence about anything.")
+
+
 def report(d: pd.DataFrame) -> None:
     print("=== COMPOSITION (before any ratio) ===")
     real = d[d["pop"] == REAL]
@@ -233,6 +282,8 @@ def report(d: pd.DataFrame) -> None:
     print("The comparison survives deep coverage loss, which is the robustness that")
     print("matters more than the headline: the answer does not depend on the number")
     print("103 being right, only on it not collapsing by an order of magnitude.")
+
+    markout_second_pass(hw_now, g_nom, g_eff)
 
     print("\n=== 5. THE CENTRE IS TRANSPLANTED, AND THAT IS A SEPARATE EXPOSURE ===")
     cfb_cm = clustered_mean({g: v.pnl_c.tolist() for g, v in cfb.groupby("game_id")})
