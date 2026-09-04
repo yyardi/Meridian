@@ -79,6 +79,64 @@ REDUCE it (−2.293¢). **This kills "inventory makes our fills worse" and leave
 per-fill mean structurally cannot see, and it is the version FLATTEN was
 registered on.
 
+## ★ CAPTURE IS AN IDENTITY, NOT A MEASUREMENT — 2026-09-03, later ★
+
+**Retiring capture was right for a weaker reason than the real one.** We retired
+it as "wrong for a maker in both directions". It is worse than wrong:
+
+`capture = mid_at_fill − quote_price`, and the fill rule only fires once the mid
+reaches the quote, so the s/2 terms cancel and
+
+> **capture ≡ −(overshoot of the mid past our price)**
+
+Measured on 6,146 real WNBA fills: **corr(capture, −overshoot) = +1.0000, mean
+absolute residual 0.0000¢. Zero degrees of freedom.** It is not a measurement of
+anything; it is a restatement of the crossing geometry. Its ceiling of −0.50¢ is
+**half the venue's price increment**, not a fee.
+
+**CONSEQUENCE 1 — cross-board capture comparisons carry NO economic content.** A
+capture gap between two boards says only that their mids jump different discrete
+distances when they cross. **Football mids plausibly step larger than basketball
+mids. That is microstructure, not economics.** The claim "CFB is 1.5¢ worse than
+WNBA", made from capture, is **withdrawn — not downgraded to directional.**
+
+**CONSEQUENCE 2 — the width gradient's "replication" is the instrument
+reproducing its own algebra.** Spread appears on both sides of the identity, so
+the gradient is **forced**. Same fills, both metrics:
+
+| band | n | CAPTURE | SETTLEMENT |
+|---|---:|---|---|
+| ≤1.5¢ | 2,610 | −1.67 [−1.80, −1.55] | −4.10 [−6.80, −1.40] |
+| 1.5–2.5¢ | 1,248 | −2.23 [−2.44, −2.01] | −2.29 [−6.24, +1.66] |
+| 2.5–3.5¢ | 943 | −2.68 [−2.94, −2.42] | −4.61 [−7.46, −1.76] |
+| 3.5–5.5¢ | 829 | −3.06 [−3.44, −2.68] | −1.85 [−5.80, +2.11] |
+| >5.5¢ | 516 | −3.80 [−4.25, −3.35] | −5.96 [−10.09, −1.82] |
+
+**Capture perfectly monotonic with ~0.3¢ CIs; settlement not monotonic with ~8¢
+CIs. Identical fills.** *The tell, reusable:* **CIs an order of magnitude too
+tight for a noisy economic quantity.** A result that replicates because it
+**cannot fail** is not a replication.
+
+**★ THE ASYMMETRY, which is the transferable lesson ★** The phantom-rate
+replication (CFB 64.4% vs WNBA 63.9%) and the width-gradient "replication" look
+like the same kind of evidence and are **opposites**. The phantom rate IS the
+claim — it is a property of the SIMULATOR, and finding it stable across two
+sports confirms exactly what the mechanism predicts. The width gradient is the
+instrument reproducing its own algebra. **Same word, opposite epistemic status.**
+
+*Does overshoot at least predict settlement?* Per game on WNBA where both exist:
+Pearson **−0.096** (p=0.755), Spearman −0.066 (p=0.831), n=13 games. In terciles
+it runs backwards. **Stated precisely: the IDENTITY is deterministic and
+decisive and needs no sample; the correlation test is WEAK — 13 games cannot
+exclude a moderate relationship — so it shows NO EVIDENCE that overshoot
+predicts settlement, not proof that it cannot.** The case rests on the identity.
+
+**UNTOUCHED: the pre-registered surprise is UNTESTED, not refuted.** *"BASE near
+zero on football"* is a claim about SETTLEMENT, and settlement is unreadable at
+6/11 games settled (clustered CI **[−41.9, +16.8]**). **Football may still be
+better, worse, or the same. Capture cannot tell us.** (D's identity and tests,
+`analysis/capture_is_not_a_proxy.py`.)
+
 ## Metric ruling
 
 **Capture-vs-mid-at-fill is RETIRED.** For a maker it is wrong in both
