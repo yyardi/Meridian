@@ -6,9 +6,25 @@ sixth is caught by a check rather than by a peer.
 
 ## The property
 
-> **On this substrate, any statistic cut by a variable X, over a population
-> selected by an X-dependent rule, is guilty until proven innocent — and the
-> burden of proof is a geometry-only null.**
+> **Any result whose shape is determined by an analyst's choice — of STATISTIC,
+> of POPULATION, or of PARTITION — is guilty until proven innocent, and the
+> burden of proof is the same in all three: run the design on a substrate with
+> no phenomenon and the same geometry, and see whether the signature still
+> appears.**
+
+**Three stages, and that is all there are:** you choose *what to compute*, *what
+to compute it over*, and *how to group it*. Each can manufacture the signature by
+itself, and **a clean stage does not clear the others.** The synthesis at the end
+of this note (eighth entry) works through all three with their instances, and
+explains why the tells get *weaker* down the pipeline — by stage three the
+aggregate is arithmetically correct and there is nothing to look wrong.
+
+*This property was originally written narrowly — "any statistic cut by a variable
+X, over a population selected by an X-dependent rule" — which covers stages one
+and two only. **A two-way split is neither a statistic nor a selection rule; it
+is an aggregation choice, and the phase error passed the narrow property as
+written.** The narrow form is kept here because its failure is itself an
+instance: a guard can be forced by its own scope.*
 
 The general form is C's, and the generality is the point. Written narrowly as
 *"cut by spread"*, someone cuts by quote-age over a population selected by a
