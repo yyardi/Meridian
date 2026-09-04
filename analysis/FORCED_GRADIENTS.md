@@ -352,3 +352,59 @@ evidence. (a) belongs beside it as the sensitivity that adds that assumption.
 
 *(Instance and derivation: B. Both-constructions instruction and the ruling on
 (b): MGR. Artifact: `analysis/accumulator_martingale_null.py`.)*
+
+---
+
+# Fourth entry: power and independence do not rank together
+
+Not a forced gradient — it belongs here because **the temptation is identical**:
+ship the tighter number and call it a confirmation.
+
+Three instruments read the same underlying fact (did a trade print at or below
+our bid) and rank *differently* on power and on independence:
+
+| instrument | base rate | power | independent of `last_trade_px`? |
+|---|---:|---|---|
+| `last_trade_px` | 20.6% | most (one print/interval) | — (it *is* the primary) |
+| interval **VWAP** | higher | **more** — all the interval's volume | **NO** — same trade tape |
+| **`low_px` fall** | 6.8% | **least** | **YES** — extremes are a different mechanism |
+
+> **VWAP buys resolution. It does not buy a second opinion.**
+
+VWAP and `last_trade_px` are **correlated instruments, not separate evidence**.
+The witness was weak *precisely because* it was independent. So:
+
+**If you want corroboration rather than a tighter interval, the answer is more
+cells on the weak independent route — not a sharper version of the primary.**
+Build the precision instrument if precision is what you need, label it as one,
+and never report it as confirming.
+
+## And the convergence rule has TWO legs, not one
+
+**Same estimand** *and* **independent route.** The witness established the
+second and left the first open: it fires only on a new session low and is biased
+toward early-game intervals, so **if consumption varies by game phase it
+measures early-game consumption while the primary measures all-phase
+consumption — two different quantities, between which neither agreement nor
+disagreement is informative.**
+
+That ambiguity is cheap to resolve and the resolution is a filter, not an
+instrument: **restrict the PRIMARY to the witness's own population.** If the
+primary drops to the witness's level they agree within it and the gap is a phase
+effect; if it holds, the witness disagrees on shared ground. Either way it
+converts an underpowered null into a matched-population comparison, which is the
+only form in which a weak route can speak.
+
+## The reason attached to a downgrade decides the next action
+
+"A second route **contradicted** it" argues for **dropping** the line.
+"The second route **could not resolve**" argues for **funding more cells** on
+it. Same number, opposite actions. **State which one you have.**
+
+## A portable version of the flattering-direction check
+
+Not a virtue, a procedure, and stated that way by the author who used it after
+having been wrong in that exact direction ninety minutes earlier:
+
+> **An argument that improves your own result gets its direction stated in the
+> same sentence it is made.**
