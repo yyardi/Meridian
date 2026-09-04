@@ -131,6 +131,39 @@ lambda(q)` with lambda increasing in q. That makes the real strategy
 harder than the naive `s/2` suggests, without making Rule A a valid
 estimator of it.
 
+★ AND THE DISCRIMINATING TEST IS NOT AVAILABLE — the question is
+UNDETERMINED, not underpowered. The consumed-vs-cancelled ambiguity in
+the phantom population has no book-only resolution:
+
+  * an uninformed market sell consumes the top bid, nobody's fair value
+    changes, so the ask stays — the PROFITABLE case;
+  * a maker pulls the bid, no trade occurs, the ask stays because only
+    one side was pulled — a TRUE phantom.
+
+Both remove size at our price and leave the ask alone. Depth would
+separate them, but `book_levels` sits a median 6.8s behind a 200ms
+event. Reversion does not: replenishment after a sell and a requote
+after a pull revert on the same timescale, and phantom drift measures
+~0.5x excursion, which fits either.
+
+A cross-rung co-movement test was proposed and its SIGN is ambiguous
+rather than merely weak: an automated maker quotes the whole ladder and
+pulls it at once (co-movement from CANCELLATION), while an uninformed
+seller wants one strike (isolation from CONSUMPTION) — the opposite of
+the intuitive reading. Which way it runs depends on who supplies bid
+liquidity, which is unmeasured. A test whose sign flips on an
+unmeasured fact cannot discriminate.
+
+**What would answer it, going forward:** Kalshi publishes per-contract
+`volume` and `open_interest`, real trade counters for the same GAMES.
+They cannot be joined historically because the Kalshi recorder polls
+pregame only — its window closes at tip — so no in-game Kalshi data
+exists for any game in this study. The CFB recorder polls through the
+game (its window runs to `venue_occurrence_time` = kickoff + 3h), so
+once that lands, differenced volume gives independent evidence of
+whether selling actually occurred in a game-window. Population-level,
+not per-fill, and it needs no new plumbing.
+
 ★ THE LIMIT THAT OUTRANKS EVERYTHING HERE. **Not one fill in this study
 has ever been checked against a real trade.** `market_trade_stats` is
 NFL-only, with zero overlap with `shadow_quote_fills` at any time, so
