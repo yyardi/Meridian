@@ -512,3 +512,30 @@ stopped firing, not evidence of a negative effect.
 Nothing here moves the headline. **"Indicated, not established" is unchanged**,
 and two same-direction non-significant arms are not two-thirds of a
 confirmation.
+
+### Amendment 9a — GUARD on the phase table (B). It reads more supportive than it is.
+
+Reconciliation first, verified independently: the n-weighted phase excess is
+**+4.2416pp** against the published pooled **+4.24pp** on the same nT=1,480. The
+decomposition is internally consistent.
+
+**But the three arms are not three findings.** They are sub-arms of a pooled
+result that already excluded zero, so decomposing it and finding pieces
+marginally significant adds no evidence — it describes where the pooled effect
+sits. And the two that "clear" do so at the boundary: middle by **0.08pp**, late
+by **0.07pp**.
+
+> **The pooled +4.24pp is the evidence. The arms are its shape.** Anyone citing
+> "significant in two of three phases" as corroboration is counting the pooled
+> result twice.
+
+This guard cuts against the finding, which is why it is recorded next to the
+table rather than in a discussion section below it.
+
+A second lesson from the same table, and it is general: **a pooled figure
+spanning a non-monotone structure will imply a trend that none of its parts
+have.** The "non-early" aggregate (+3.68pp) averaged a LOW middle (+2.76pp) with
+a HIGH late (+4.78pp) and read as a decline from early. The aggregate was
+arithmetically correct and the shape it suggested was invented. Bucket
+boundaries chosen to test a hypothesis can manufacture that hypothesis's
+signature.
