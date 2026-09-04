@@ -80,20 +80,44 @@ rather than deleted.** Deleting it would hide that the probe cannot fully close
 that leg at any wallet-permitted price — **which is a finding about the
 program's limits, not a defect in the registration.**
 
-★ **AND FOUR METHODS GAVE FOUR ANSWERS FOR THE SAME n — a 27% spread.**
+★ **THE 27% SPREAD IN n RESOLVED — AND IT WAS 85% SIDEDNESS, NOT METHOD.**
 
-| method | n |
-|---|---:|
-| Clopper-Pearson (exact) | 299 |
-| rule of three (3/n) | 300 |
-| *(a fourth author's figure)* | 368 |
-| **Wilson** — registered, matching `clustered_mean`'s convention | **381** |
+| | n | |
+|---|---:|---|
+| Clopper-Pearson, **one-sided** 95% | **299** | |
+| Clopper-Pearson, two-sided 95% | 368 | ← +23% from **sidedness alone**, same method |
+| Wilson, two-sided 95% | 381 | ← +3.5% from **method** |
 
-> **A sample-size threshold is not a number, it is a number plus a method. Make
-> the method travel with it.** Two authors quoting 368 and 381 have a
-> *convention* disagreement if they used different intervals and an
-> *arithmetic* one if they used the same — and those need opposite responses.
-> Resolve which before either figure is quoted.
+**~85% of the disagreement was sidedness; ~15% was method.** All three bands are
+on the **upper** bound of a violation rate — nobody wants a lower bound on how
+often the venue violated — so **the question is one-sided by construction**, and
+a two-sided interval buys 23% more sample for no inferential gain.
+
+> **A sample-size threshold is a number, a method, AND a sidedness. One author
+> pinned "Wilson" believing they had made the convention explicit — and pinned
+> the SMALLER HALF of the disagreement while leaving the larger half implicit.**
+> Naming a convention does not mean you named the one that is doing the work.
+
+★★ **AND THE WALLET CONSTRAINT RECORDED ABOVE DISSOLVES UNDER THE CORRECT
+CONVENTION.** Repriced at n=299: **1,041 fills, worst case $833 — inside the
+$1,000 wallet**, at the registered 10-minute window, with **no halving and no
+cost to the other leg's crossing episodes.** So "not purchasable at any
+wallet-allowed price" was an artifact of the two-sided convention, and the trade
+between legs is not forced. The table above is kept because *the reasoning that
+produced it was sound on its inputs* — the inputs were the convention.
+
+**The recommendation is unchanged, and the reason it is unchanged matters more
+than the price.** The author who removed the constraint stated two guards on
+their own argument, both in the cheaper direction:
+
+1. **It is not price-driven** and would be identical if one-sidedness pushed n
+   *up*. **Choosing a convention BECAUSE it fits the budget is stage four in the
+   other direction** — the same shape as widening a band because the design can
+   reach it.
+2. **It removes one of two reasons, not the recommendation.** The second reason
+   is independent and stronger: the leg being traded away has *no alternative
+   instrument*, while the one being upgraded already has a proxy. **Removing a
+   constraint is not reversing a recommendation.**
 
 ★ **AND THE DISCOVERY RATE IS ABOUT OUR ATTENTION, NOT ABOUT TONIGHT.** Three
 decision-rule defects appeared in one evening against **zero** before anyone
