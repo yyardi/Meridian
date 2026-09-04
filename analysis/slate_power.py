@@ -176,13 +176,23 @@ def markout_second_pass(hw_settlement: float, g_nom: int, g_eff: float) -> None:
 def report(d: pd.DataFrame) -> None:
     print("=== COMPOSITION (before any ratio) ===")
     real = d[d["pop"] == REAL]
+    # A league absent from the slate is normal, not an error: WNBA is on a World
+    # Cup break and tomorrow's export is football-only. clustered_mean returns
+    # None below 2 clusters, and calling .mean on it crashed the module on a
+    # single-league slate — found by analysis/dry_run.py before the CFB slate.
     for sport in ["WNBA", "CFB"]:
         s = real[real.sport == sport]
+        if s.empty:
+            print(f"{sport}: 0 real fills — league ABSENT from this slate (not an error)")
+            continue
         gm = s.groupby("game_id").pnl_c.mean()
         cm = clustered_mean({g: v.pnl_c.tolist() for g, v in s.groupby("game_id")})
+        interval = (f"pooled {cm.mean:+.3f}c [{cm.lo:+.3f}, {cm.hi:+.3f}]" if cm
+                    else f"pooled n/a — {s.game_id.nunique()} game(s), fewer than the 2 "
+                         f"clusters an interval needs")
+        sd = f"{gm.std(ddof=1):.3f}c" if len(gm) > 1 else "n/a (1 game)"
         print(f"{sport}: {len(s):,} real fills / {s.game_id.nunique()} games · "
-              f"pooled {cm.mean:+.3f}c [{cm.lo:+.3f}, {cm.hi:+.3f}] · "
-              f"per-game mean sd {gm.std(ddof=1):.3f}c")
+              f"{interval} · per-game mean sd {sd}")
 
     cfb = real[real.sport == "CFB"]
     counts = cfb.groupby("game_id").size()
@@ -289,8 +299,12 @@ def report(d: pd.DataFrame) -> None:
     cfb_cm = clustered_mean({g: v.pnl_c.tolist() for g, v in cfb.groupby("game_id")})
     wnba = real[real.sport == "WNBA"]
     w_cm = clustered_mean({g: v.pnl_c.tolist() for g, v in wnba.groupby("game_id")})
-    print(f"The brief's -3.4c is the WNBA number ({w_cm.mean:+.3f}c). CFB's own estimate")
-    print(f"today is {cfb_cm.mean:+.3f}c [{cfb_cm.lo:+.3f}, {cfb_cm.hi:+.3f}] — it SPANS ZERO.")
+    w_txt = (f"the WNBA number ({w_cm.mean:+.3f}c)" if w_cm else
+             "the WNBA number, NOT PRESENT on this slate — so it cannot even be "
+             "restated here, let alone verified")
+    print(f"The brief's -3.4c is {w_txt}. CFB's own estimate")
+    print(f"today is {cfb_cm.mean:+.3f}c [{cfb_cm.lo:+.3f}, {cfb_cm.hi:+.3f}] — it SPANS ZERO."
+          if cfb_cm else "today has too few CFB clusters for an interval.")
     print("This module projects PRECISION and is silent on the centre (A4). Tomorrow")
     print("resolves CFB's effect wherever it truly sits; it does not verify -3.4c, and")
     print("a football slate is not evidence about a basketball number.")

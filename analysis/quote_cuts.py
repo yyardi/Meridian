@@ -201,10 +201,21 @@ def load_fills(path: str = PIN) -> pd.DataFrame:
 
     d["sport"] = np.where(d.market_slug.str.contains("wnba"), "WNBA", "CFB")
     w = d[d.sport == "WNBA"]
-    assert len(w) == 17339 and (w["pop"] == REAL).sum() == 6255, "WNBA known-answer failed"
+    # The WNBA known-answer is a property of the FULL pin, not of every slate.
+    # A single-league (all-CFB) export has zero WNBA rows and a carved subset has
+    # a partial cohort; asserting unconditionally made this module REFUSE TO RUN
+    # on a football-only slate — found by analysis/dry_run.py before the CFB
+    # slate, not during it. The check still fires whenever it CAN, and says so
+    # when it cannot, rather than silently passing.
+    if len(w) == 17339:
+        assert (w["pop"] == REAL).sum() == 6255, "WNBA known-answer failed on the full cohort"
+        ka = "WNBA known-answer 17,339/6,255 ✓"
+    elif len(w) == 0:
+        ka = "WNBA known-answer NOT CHECKABLE (0 WNBA rows — single-league slate)"
+    else:
+        ka = f"WNBA known-answer NOT CHECKABLE (partial cohort: {len(w):,} of 17,339 rows)"
     print(f"invariants asserted: book_age_s=0 on {len(d):,}/{len(d):,} · pnl identity to "
-          f"{pnl_err:.1e} · pop reproduces classify_fill on {len(d):,}/{len(d):,} · "
-          f"WNBA known-answer 17,339/6,255 ✓")
+          f"{pnl_err:.1e} · pop reproduces classify_fill on {len(d):,}/{len(d):,} · {ka}")
 
     age_err = (d.quote_age_s - (d.filled_at - d.quoted_at).dt.total_seconds()).abs().max()
     assert age_err < 1.0, f"quote_age_s disagrees with filled_at-quoted_at by {age_err}s"
