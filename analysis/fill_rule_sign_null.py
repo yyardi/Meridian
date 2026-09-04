@@ -131,47 +131,58 @@ lambda(q)` with lambda increasing in q. That makes the real strategy
 harder than the naive `s/2` suggests, without making Rule A a valid
 estimator of it.
 
-★ AND THE DISCRIMINATING TEST IS NOT AVAILABLE — the question is
-UNDETERMINED, not underpowered. The consumed-vs-cancelled ambiguity in
-the phantom population has no book-only resolution:
+★ THE DISCRIMINATING TEST IS APPROACHABLE AFTER ALL — CORRECTED
+2026-09-04, and the correction is recorded rather than edited away
+because an earlier version of this file said the opposite.
 
-  * an uninformed market sell consumes the top bid, nobody's fair value
-    changes, so the ask stays — the PROFITABLE case;
-  * a maker pulls the bid, no trade occurs, the ask stays because only
-    one side was pulled — a TRUE phantom.
+**What this file previously said:** that the consumed-vs-cancelled
+question was UNDETERMINED, on the stated premise that no trade data
+existed for any market we have quoted. **That premise was wrong.**
+`market_trade_stats` rows written by the live recorder are keyed on
+`snapshot_id` with `market_slug` NULL — only the hourly sweeper sets the
+slug — so a slug-filtered read returns the sweeper's NFL rows alone.
+Joined through `snapshot_id` the table holds **91,391 live-recorder
+rows, all CFB, 1,695 markets**, covering **624 of our 833 fill markets
+and all 21,126 CFB fills across all 11 games**, cadence median 220s,
+21.2% of intervals carrying volume, and a monotone cumulative counter
+(0 negative deltas). (Found by MGR.)
 
-Both remove size at our price and leave the ask alone. Depth would
-separate them, but `book_levels` sits a median 6.8s behind a 200ms
-event. Reversion does not: replenishment after a sell and a requote
-after a pull revert on the same timescale, and phantom drift measures
-~0.5x excursion, which fits either.
+**So the corrected status:** the question is NOT answerable at per-fill
+resolution — a 3.7-minute interval cannot attribute a trade to one
+200ms fill — but it IS approachable at interval resolution over the
+entire CFB population, with a direct volume observation rather than an
+inference from book shape. The population-level form: do intervals
+containing phantom-bid fills with the ask unmoved carry more volume
+than matched intervals without such fills?
 
-A cross-rung co-movement test was proposed and its SIGN is ambiguous
-rather than merely weak: an automated maker quotes the whole ladder and
-pulls it at once (co-movement from CANCELLATION), while an uninformed
-seller wants one strike (isolation from CONSUMPTION) — the opposite of
-the intuitive reading. Which way it runs depends on who supplies bid
-liquidity, which is unmeasured. A test whose sign flips on an
-unmeasured fact cannot discriminate.
+**Two limits that survive the correction, and they bound what a
+positive result may claim:**
+ 1. Volume in an interval is volume ANYWHERE in that market's book, not
+    volume at our price B. Unless the table also carries a last-trade
+    PRICE, "a trade happened" is weaker than "a trade happened at or
+    below B", which is the event that would have filled a real order.
+ 2. At 21.2% base occupancy and ~3.7-minute buckets, a fill-containing
+    interval overlaps a lot of non-fill time, so the contrast is
+    diluted toward the null. A null result is therefore weak evidence,
+    while a positive one is meaningful.
 
-**What would answer it, going forward:** Kalshi publishes per-contract
-`volume` and `open_interest`, real trade counters for the same GAMES.
-They cannot be joined historically because the Kalshi recorder polls
-pregame only — its window closes at tip — so no in-game Kalshi data
-exists for any game in this study. The CFB recorder polls through the
-game (its window runs to `venue_occurrence_time` = kickoff + 3h), so
-once that lands, differenced volume gives independent evidence of
-whether selling actually occurred in a game-window. Population-level,
-not per-fill, and it needs no new plumbing.
+The cross-rung co-movement substitute is withdrawn and its objection
+stands but is now moot: its SIGN was ambiguous, because a ladder-wide
+maker pulls every rung on one decision (co-movement from CANCELLATION)
+while an uninformed seller wants one strike (isolation from
+CONSUMPTION) — the opposite of the intuitive reading, turning on an
+unmeasured fact about who supplies bid liquidity. Direct volume does
+not have that problem.
 
-★ THE LIMIT THAT OUTRANKS EVERYTHING HERE. **Not one fill in this study
-has ever been checked against a real trade.** `market_trade_stats` is
-NFL-only, with zero overlap with `shadow_quote_fills` at any time, so
-no market we have ever quoted has trade data. This closed form says
-what each rule implies UNDER FAIR PRICING. It cannot say which rule the
-venue actually ran, and nothing in the recorded book can. The sign
-question about the SIMULATOR is settled; the sign question about
-TOUCH-JOINING is not, and is not currently answerable.
+★ THE LIMIT THAT STILL OUTRANKS EVERYTHING HERE. **Not one fill in this
+study has yet been checked against a real trade.** The trade data
+exists (above) but the check has not been run, so every number in this
+programme — the phantom separation, the -3.4c, D's bar, this closed
+form — remains inference from the recorded book. This derivation says
+what each rule implies UNDER FAIR PRICING; it cannot say which rule the
+venue actually ran. **The sign question about the SIMULATOR is settled
+in closed form. The sign question about TOUCH-JOINING is open, and now
+has a route to an answer.**
 """
 
 from __future__ import annotations
