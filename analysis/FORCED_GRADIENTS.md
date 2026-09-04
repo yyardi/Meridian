@@ -87,3 +87,60 @@ phantom/real markout gap is the classification criterion restating itself.
 Markout is now the low-variance metric, so someone will reach for that gap
 precisely because its intervals are tight. **That is the sixth instance waiting
 to happen.**
+
+---
+
+# Second family: the threshold and the measurement are not the same quantity
+
+A different failure with the same fingerprint — **an artifact that runs green
+while measuring something other than what its author believes.** Added because
+c7 hit it on 2026-09-04 *inside the alarm built to catch the other family*.
+
+## The instance
+
+The CFB live-recorder alarm was built to fire when snapshot cadence degrades.
+The **baseline** was derived from a **median** (median snaps per market-minute =
+2.0). The **query** was written as a **mean** (rows ÷ markets). On a healthy
+11-game control those are:
+
+| statistic | healthy value |
+|---|---:|
+| median writes/market/min | **1.90** |
+| mean writes/market/min | **8.36** |
+| p90 | 17.8 |
+| max | 178 |
+
+Writes are **change-triggered**, so an active market writes 178 times a minute
+and a quiet one 5. **The mean measures market ACTIVITY; the median measures
+recorder CADENCE.** The alarm's `ESCALATE below 1.2` threshold, applied to a
+statistic that reads 8.36 when healthy, **would have required a sevenfold
+degradation before firing.**
+
+It was caught only because the alarm was exercised on a healthy control before
+being needed. *An alarm first exercised during the incident is not an alarm.*
+
+## The same fingerprint, five times in one day
+
+Per-order vs per-tick · spread-cut vs spread-selected · estimator vs estimator ·
+regime vs regime · median vs mean. **In every case the arithmetic was correct
+and the two quantities were not the same thing.** None of them would have been
+caught by re-reading the number.
+
+## The fix, which differs from the first family's
+
+The forced-gradient fix is a **geometry-only null**. This one's is narrower and
+cheaper:
+
+1. **Compute the threshold with the identical expression the alarm will run.**
+   Not the same concept — the same code path. A baseline derived one way and
+   applied another is two quantities wearing one name.
+2. **Exercise the alarm on a healthy control before it is needed**, and on more
+   than one, at different loads. Two independent healthy controls agreeing to
+   two decimals is what made the corrected version trustworthy.
+3. **Report two axes when one can be confounded by activity.** The corrected
+   alarm reports sweeps/min (the loop's own health, independent of market
+   activity) *and* median writes/market/min (what actually lands). A quiet board
+   depresses the second and not the first — and that confusion is exactly what
+   broke the original.
+4. **Give the alarm a NOT-STARTED branch.** `live_games = 0` must read as
+   "metric undefined", never as a degradation. Rule 22, applied to the alarm.
