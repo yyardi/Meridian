@@ -364,8 +364,13 @@ function meter(now, floor){
 async function loadPulse(){
   const el = document.getElementById("pulsebody");
   try{
-    const d = await (await fetch("/api/pulse")).json();
-    if(!d.n_decisions){
+    /* fetch resolves on a 500 — without this the failure lands in the JSON
+       parse and renders as the same tidy "unavailable" that hid a two-week
+       outage of this endpoint. */
+    const r = await fetch("/api/pulse");
+    if(!r.ok) throw new Error("/api/pulse failed: HTTP " + r.status);
+    const d = await r.json();
+    if(d.available === false || !d.n_decisions){
       el.innerHTML = `<div style="padding:18px;text-align:center;color:var(--faint)">
         No decisions yet — the PULSE era begins with its first live game.<br>
         <span style="font-size:10.5px">Its record accrues here against the registered
@@ -377,7 +382,16 @@ async function loadPulse(){
       : `<span style="background:#16243a;border:1px solid #2c4a7a;color:#cfe2ff;border-radius:3px;
            padding:1px 7px;font-size:9.5px;letter-spacing:.06em">accruing — no verdict yet</span>`;
     const cm = c => c ? `${pct(c.mean,2)} <span class="dimc">[${pct(c.lo,2)}, ${pct(c.hi,2)}]</span>` : "—";
-    el.innerHTML = `<div class="kpis">
+    /* The endpoint reports ONE estimates version — the newest — because v1
+       and v2 are different models and blending them is the era-separation bug
+       PR #23 deleted. Say so: unlabelled, these counts read as PULSE's whole
+       record when an earlier model's record is being excluded. */
+    const older = d.n_versions > 1
+      ? ` · ${d.n_versions - 1} earlier version${d.n_versions > 2 ? "s" : ""} not shown — different model, separate record`
+      : "";
+    el.innerHTML = `<div style="font-size:10px;letter-spacing:.08em;color:var(--faint);padding:0 2px 4px">
+      ESTIMATES ${(d.version||"?").toUpperCase()}${older}</div>
+    <div class="kpis">
       <div class="kpi"><div class="k">standing</div><div class="v">${v}</div>
         <div class="n">first decision ${d.first_decision ? new Date(d.first_decision).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"}</div></div>
       <div class="kpi"><div class="k">filled entries</div><div class="v">${d.n_entry_fills}/${d.floors.entry_fills}</div>
@@ -393,7 +407,9 @@ async function loadPulse(){
           trip roi ${cm(d.trip_roi)} · ride roi ${cm(d.ride_roi)}</div></div>
     </div>`;
   } catch(e){
-    el.innerHTML = '<div style="padding:18px;text-align:center;color:var(--faint)">/api/pulse unavailable</div>';
+    el.innerHTML = `<div style="padding:18px;text-align:center;color:var(--warn)">
+      PULSE panel failed to load — ${String(e.message || e)}.<br>
+      <span style="font-size:10.5px;color:var(--faint)">This is a broken endpoint, not an empty record.</span></div>`;
   }
 }
 loadPulse();

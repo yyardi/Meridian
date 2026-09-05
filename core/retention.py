@@ -218,17 +218,43 @@ def ensure_partitions(conn, parent: str, months: list[dt.datetime]) -> list[str]
 #: Parent-level index definitions, mirroring core/storage/models.py. Unique
 #: constraints are declared inline in the CREATE so their names — which
 #: ON CONFLICT clauses reference — are identical to the originals.
-_SNAPSHOT_INDEXES = [
-    ("ix_market_snapshots_captured_at", "(captured_at)"),
-    ("ix_market_snapshots_market_slug", "(market_slug)"),
-    ("ix_market_snapshots_event_slug", "(event_slug)"),
-    ("ix_market_snapshots_game_id", "(game_id)"),
-    ("ix_market_snapshots_slug_time", "(market_slug, captured_at)"),
-]
-_BOOK_INDEXES = [
-    ("ix_book_levels_snapshot_id", "(snapshot_id)"),
-    ("ix_book_levels_captured_at", "(captured_at)"),
-]
+def live_indexes(conn, parent: str) -> list[tuple[str, str]]:
+    """(name, CREATE statement) for every PLAIN index on `parent`, read from
+    the catalog and retargeted at ``{parent}_new``.
+
+    This used to be two hardcoded lists, and a hardcoded list is a copy of the
+    schema that drifts from it. Migration f3a8c1d92e47 added two partial
+    indexes — the pair that took /api/picks from 4.75s to 0.42s — and never
+    updated the copy, so a conversion would have dropped them silently. The
+    only symptom would be the page going slow again, weeks later.
+
+    Constraint-backed indexes are excluded because `migrate()` declares those
+    itself: the primary key must GAIN the partition key, and the unique
+    constraints are recreated by name.
+
+    `pg_get_indexdef` is reused verbatim rather than reassembled, so UNIQUE,
+    the access method, operator classes, collations, INCLUDE columns and the
+    WHERE predicate all survive whether or not anyone thought about them.
+    """
+    rows = conn.execute(text("""
+        SELECT c.relname, pg_get_indexdef(c.oid)
+        FROM pg_index x
+        JOIN pg_class c ON c.oid = x.indexrelid
+        JOIN pg_class t ON t.oid = x.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public' AND t.relname = :t
+          AND NOT x.indisprimary
+          AND NOT EXISTS (SELECT 1 FROM pg_constraint k
+                          WHERE k.conindid = x.indexrelid)
+        ORDER BY c.relname
+    """), {"t": parent}).all()
+    out = []
+    for name, ddl in rows:
+        marker = f" ON public.{parent} "
+        if marker not in ddl:                     # unexpected shape; refuse
+            raise RuntimeError(f"cannot retarget index {name}: {ddl}")
+        out.append((name, ddl.replace(marker, f" ON public.{parent}_new ", 1)))
+    return out
 
 
 def verify_swap(conn, parent: str) -> tuple[int, int]:
@@ -312,21 +338,30 @@ def migrate(engine, *, now: dt.datetime | None = None) -> dict:
             "alter table book_levels drop constraint if exists "
             "book_levels_snapshot_id_fkey"
         ))
+        # Read the index set off the live table, immediately before the
+        # rename frees its names — never from a list someone has to remember
+        # to update.
+        snapshot_indexes = live_indexes(conn, "market_snapshots")
+        book_indexes = live_indexes(conn, "book_levels")
+        log.info("indexes_to_rebuild",
+                 market_snapshots=[n for n, _ in snapshot_indexes],
+                 book_levels=[n for n, _ in book_indexes])
+
         _rename_away(conn, "market_snapshots",
-                     ["uq_snapshot_market_time"], [n for n, _ in _SNAPSHOT_INDEXES],
+                     ["uq_snapshot_market_time"], [n for n, _ in snapshot_indexes],
                      pkey="market_snapshots_pkey")
         _rename_away(conn, "book_levels",
-                     ["uq_book_level"], [n for n, _ in _BOOK_INDEXES],
+                     ["uq_book_level"], [n for n, _ in book_indexes],
                      pkey="book_levels_pkey")
 
         _create_partitioned(conn, "market_snapshots", months,
                             unique="constraint uq_snapshot_market_time "
                                    "unique (market_slug, captured_at)",
-                            indexes=_SNAPSHOT_INDEXES)
+                            indexes=snapshot_indexes)
         _create_partitioned(conn, "book_levels", months,
                             unique="constraint uq_book_level unique "
                                    "(snapshot_id, side, level_index, captured_at)",
-                            indexes=_BOOK_INDEXES)
+                            indexes=book_indexes)
 
         copied = {}
         for parent in PARENTS:
@@ -370,7 +405,10 @@ def _rename_away(conn, table: str, constraints: list[str], indexes: list[str],
 
 
 def _create_partitioned(conn, parent: str, months: list[dt.datetime],
-                        *, unique: str, indexes: list[tuple[str, str]]) -> None:
+                        *, unique: str,
+                        indexes: list[tuple[str, str]]) -> None:
+    """`indexes` are (name, full CREATE statement already retargeted at
+    ``{parent}_new``), as returned by `live_indexes`."""
     conn.execute(text(
         f"create table {parent}_new (like {parent} including defaults) "
         f"partition by range (captured_at)"
@@ -379,8 +417,8 @@ def _create_partitioned(conn, parent: str, months: list[dt.datetime],
         f"alter table {parent}_new add primary key (id, captured_at), "
         f"add {unique}"
     ))
-    for name, cols in indexes:
-        conn.execute(text(f"create index {name} on {parent}_new {cols}"))
+    for _name, ddl in indexes:
+        conn.execute(text(ddl))
     for ms in months:
         conn.execute(text(
             f"create table {partition_name(parent, ms)} partition of {parent}_new "

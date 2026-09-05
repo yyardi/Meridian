@@ -512,3 +512,88 @@ def test_only_human_confirm_is_ever_posted(html):
     body = _fn(html, "async function sendOrder(){")
     assert 'mode: "HUMAN_CONFIRM"' in body
     assert "AUTONOMOUS" not in body
+
+
+# --------------------------------------------------------------------------- #
+# Nothing scored is a state, not a verdict
+# --------------------------------------------------------------------------- #
+#
+# 2026-09-05. On an era with no scored rows the results KPIs rendered:
+#
+#     GAMES  0    0 ROWS · ~NULL/GAME
+#     MODEL VS MARKET  MARKET    BRIER NULL VS NULL
+#     diagnostic only: win rate — · direction null
+#
+# Three `null`s reaching a reader, and one thing worse than a null: the page
+# announced that the MARKET beat the model on zero observations. The server
+# was right — `brier_model`/`brier_market`/`rows_per_game` are None when
+# there is nothing to divide by. The page turned "not comparable" into a
+# result, because `a != null && b != null && a < b` is false both when the
+# model loses and when nothing was measured, and only one of those is
+# "market".
+#
+# The fix follows this codebase's own rule, the one /quote and /api/pulse are
+# built on: the server decides, the page renders. `brier_verdict` is the
+# server's, three-state, and null means null.
+
+
+def test_the_server_decides_the_brier_comparison_not_the_page(client):
+    """A verdict computed in JavaScript is a verdict with no test."""
+    d = client.get("/api/results").json()["summary"]
+    assert "brier_verdict" in d, (
+        "the comparison must ship from the server, like every other verdict "
+        "on this dashboard")
+
+
+def test_nothing_scored_is_reported_as_no_verdict(client):
+    """On an empty era there is nothing to compare, and the payload must say
+    so rather than defaulting to a winner."""
+    d = client.get("/api/results").json()["summary"]
+    if d["brier_model"] is None or d["brier_market"] is None:
+        assert d["brier_verdict"] is None, (
+            "no scored rows means no verdict — not 'market'")
+
+
+def test_the_verdict_is_three_state_and_matches_the_briers():
+    """Lower Brier is better. Pinned on the function so the mapping cannot
+    quietly invert (the `absent-variable, green suite` failure mode)."""
+    from core.api import _brier_verdict
+
+    assert _brier_verdict(0.20, 0.21) == "model"
+    assert _brier_verdict(0.21, 0.20) == "market"
+    assert _brier_verdict(0.20, 0.20) == "market", (
+        "a tie is not a win for the model — the market is the thing to beat")
+    assert _brier_verdict(None, 0.21) is None
+    assert _brier_verdict(0.20, None) is None
+    assert _brier_verdict(None, None) is None
+
+
+def test_the_page_renders_the_servers_verdict_and_computes_none(html):
+    """Asserted on the property, not the vocabulary: the block may DISPLAY
+    both Brier values — that is the sub-line — it may not COMPARE them.
+    A first draft banned the string `brier_market` outright and failed on the
+    label it was written to protect (the proxy-check mistake test_quote_page
+    documents)."""
+    import re
+
+    body = _block(html, "$(\"#rk\").innerHTML = [", "].map(([k,v,n])")
+    assert "s.brier_verdict" in body, "the page must render the server's call"
+    comparison = re.search(
+        r"brier_(model|market)\s*[<>]|[<>]\s*s\.brier_(model|market)", body)
+    assert comparison is None, (
+        f"the page compares the Brier values itself ({comparison.group(0)!r}) "
+        "instead of rendering the verdict it was handed")
+
+
+def test_no_null_reaches_the_reader_in_the_results_kpis(html):
+    """Every nullable field the block interpolates is guarded. The server
+    returns None for each of them on an era with no rows, and `${null}` is
+    the string "null"."""
+    body = _block(html, "$(\"#rk\").innerHTML = [", "money at price decides</span>`;")
+    for field in ("rows_per_game", "brier_model", "brier_market",
+                  "direction_rate_DIAGNOSTIC", "brier_verdict"):
+        i = body.index(field)
+        window = body[max(0, i - 120):i + 120]
+        assert "==null" in window or "??" in window or "!=null" in window, (
+            f"{field} is interpolated unguarded — it renders as 'null' on an "
+            "era with nothing scored")

@@ -1208,6 +1208,20 @@ def _era_window(s, era: str):
     return boundary, None, meta
 
 
+def _brier_verdict(model: float | None, market: float | None) -> str | None:
+    """Which side priced the outcome better, or None when nothing was scored.
+
+    Three states, because "not comparable" is not "market". The page used to
+    compute this as `model != null && market != null && model < market`,
+    which collapses no-data into a market win and announced one on zero
+    observations (2026-09-05). Lower Brier is better; a tie goes to the
+    market, which is the thing to beat.
+    """
+    if model is None or market is None:
+        return None
+    return "model" if model < market else "market"
+
+
 @app.get("/api/results")
 def results(limit: int = 2000, era: str = "pulse",
             include_rows: bool = False) -> dict:
@@ -1348,8 +1362,11 @@ def results(limit: int = 2000, era: str = "pulse",
                 "n_bets": money_bets,
                 "n_games": len(money_games),
             },
-            "brier_model": round(se_model / n_scored, 4) if n_scored else None,
-            "brier_market": round(se_market / n_scored, 4) if n_scored else None,
+            "brier_model": (bm := round(se_model / n_scored, 4) if n_scored else None),
+            "brier_market": (bk := round(se_market / n_scored, 4) if n_scored else None),
+            # The comparison ships from here, like every other verdict on the
+            # dashboard. None means nothing was scored — never "market".
+            "brier_verdict": _brier_verdict(bm, bk),
             # DIAGNOSTIC ONLY (C11): a flat win rate compared to a 0.524
             # breakeven is a category error on ~30¢ tail bets — the portfolio
             # is designed to lose most bets and get paid multiples on hits.
@@ -2475,6 +2492,11 @@ def pulse_status() -> dict:
     nothing that could disagree with `python -m core.pulse.live_report`.
     Below the floors the page renders counts and an accruing state, never a
     performance number.
+
+    ONE REPORT PER ESTIMATES VERSION, keyed like `/api/quote`'s `regimes`.
+    v1 and v2 are different models; a combined figure is the era-separation
+    bug PR #23 deleted, so no count, ROI or verdict exists at the top level
+    to be rendered by accident.
     """
     from core.pulse.live_report import (
         FLOOR_ENTRY_FILLS,
@@ -2505,6 +2527,13 @@ def pulse_status() -> dict:
 
     return {
         "floors": {"entry_fills": FLOOR_ENTRY_FILLS, "games": FLOOR_GAMES},
+        # WHICH version these numbers are. It was already computed to select
+        # the report and then dropped, so the page could not say whose record
+        # it was showing: a reader saw "PULSE" and got the newest model's
+        # counts with no sign an earlier one existed and was deliberately
+        # excluded. `n_versions` is how they learn that.
+        "version": _version,
+        "n_versions": len(_reports),
         "n_decisions": r.n_decisions,
         "n_entries": r.n_entries,
         "n_entry_fills": r.n_entry_fills,
