@@ -23,7 +23,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
@@ -819,7 +819,8 @@ def board(include_finished: bool = False, league: str | None = None) -> dict:
 
 
 @app.get("/api/history/{market_slug}")
-def history(market_slug: str, limit: int = 60) -> dict:
+def history(market_slug: str,
+            limit: int = Query(60, ge=1, le=2000)) -> dict:
     """Recent mid-price history for one market — drives the sparklines."""
     with _Session() as s:
         rows = s.execute(
@@ -1223,7 +1224,7 @@ def _brier_verdict(model: float | None, market: float | None) -> str | None:
 
 
 @app.get("/api/results")
-def results(limit: int = 2000, era: str = "pulse",
+def results(limit: int = Query(2000, ge=1, le=20000), era: str = "pulse",
             include_rows: bool = False) -> dict:
     """Resolved live predictions — what the model called, and what happened.
 
@@ -1918,7 +1919,7 @@ def cancel_order(order_id: int, request: Request) -> dict:
 
 
 @app.get("/api/orders/recent")
-def recent_orders(limit: int = 25) -> dict:
+def recent_orders(limit: int = Query(25, ge=1, le=500)) -> dict:
     """Real orders with their venue-truth fill state, plus attached exits.
 
     This is what the picks page's order panel reads. `fill_status` of null
@@ -2583,7 +2584,8 @@ def _league_or_400(slug: str | None):
 
 
 @app.get("/api/games")
-def games(league: str | None = None, limit: int = 60, era: str = "pulse") -> dict:
+def games(league: str | None = None, limit: int = Query(60, ge=1, le=500),
+          era: str = "pulse") -> dict:
     """Games this league's model has shadow-traded, newest first.
 
     Driven by `shadow_orders`: a game the model never decided anything in has
