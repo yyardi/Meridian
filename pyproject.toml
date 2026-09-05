@@ -26,6 +26,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The CFB fair-value trainer. An EXTRA, not a runtime dependency: no service
+# imports xgboost, so the recorder/API/engine images stay unchanged and none
+# of them rebuild for it. Installed only by the trainer image
+# (docker-compose.trainer.yml), which exists because the box's only Python
+# outside the containers is .venv-health and it has neither of these.
+# numpy/scipy/pandas/statsmodels are already runtime deps and are reused.
+model = [
+    "xgboost>=2.0",
+    "scikit-learn>=1.4",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",

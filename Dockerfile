@@ -29,7 +29,15 @@ COPY alembic.ini ./
 # The dashboard's static pages — core/api.py serves them from ../static.
 COPY static ./static
 
-RUN pip install --no-cache-dir -e .
+# Extras are opt-in per image: services build with none, the trainer builds
+# with `model` (xgboost + scikit-learn). Keeps the recorder/API images small
+# and means adding a modelling dependency never rebuilds a running service.
+ARG INSTALL_EXTRAS=""
+RUN if [ -n "$INSTALL_EXTRAS" ]; then \
+      pip install --no-cache-dir -e ".[$INSTALL_EXTRAS]"; \
+    else \
+      pip install --no-cache-dir -e .; \
+    fi
 
 # Migrations run before the recorder starts — never hand-run against prod.
 CMD ["sh", "-c", "alembic upgrade head && python -m core --json-logs"]
