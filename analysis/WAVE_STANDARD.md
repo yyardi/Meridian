@@ -634,6 +634,51 @@ numbered as a fourth. (Research agent's cut, 2026-09-03.)
    when it can actually look. (Research agent's rule and instrument; manager's
    dilution and API-status specimens; the operator saw it first.)
 
+28. **AN INSTRUMENT NEEDS A REACHABLE STATE THAT MEANS "I CANNOT ANSWER" —
+   AND ONE WHOSE REFUSAL HAS NEVER FIRED ON REAL DATA HAS NOT BEEN SHOWN TO
+   HAVE ONE.**
+
+   This is the general form of most of rules 21–27, and it arrived by
+   unification rather than by a new failure. **Every expensive error in this
+   programme has the same shape: absence had nowhere to go, so it went into an
+   answer.** The favourite–longshot +7.88¢, the cross-venue 7¢, the pooled
+   WNBA+CFB positive, the manager's "+12.43¢, excludes zero" — **not one of
+   them was capable of returning "I don't know."** A two-valued instrument
+   facing a three-valued world must put the third value somewhere, and it
+   always lands on the side that looks like a result.
+
+   *THE POSITIVE FORM, and these are all the same design move:* `NOT_STARTED`,
+   `INSUFFICIENT_WINDOW`, `UNATTRIBUTED`, `UNDERPOWERED`, `THIN — not a
+   verdict`, `excluded_stale`, `excluded_unknown_freshness`. Each makes "I
+   cannot answer" **reachable**, and each prints its own count so a refusal is
+   loud rather than a silent drop.
+
+   *THE TEST, which is the part with teeth: a refusal state that has only ever
+   fired in a selftest is an assertion, not behaviour.* Ours became behaviour
+   on 2026-09-05: `NOT_STARTED` on an empty live board, `excluded_stale` on
+   **1,782 of 1,782** aligned play/price rows during a 4½-hour venue freeze,
+   and `UNDERPOWERED` on **our own 18 games against a 25-game floor** —
+   the harness declining to score the very experiment it was built for.
+
+   *THE SPECIMEN THAT PROVES THIS IS NOT PARANOIA — the research agent wrote
+   the bug again ONE HOUR AFTER CATALOGUING IT*, in a throwaway freeze check:
+   `'STILL FROZEN' if pct is not None and pct < 5 else 'RECOVERED'`. With no
+   live games `pct` was `None`, so **the ABSENCE OF A MEASUREMENT fell through
+   to the positive verdict** and it printed `RECOVERED` for a venue nobody had
+   observed. At the same instant the hardened alarm — same question, refusal
+   state reachable — printed `VERDICT=NOT_STARTED` and was right. **The person
+   who knows this failure best still reproduces it whenever they write
+   something quick.** The discipline cannot live in knowing; it has to live in
+   the instrument.
+
+   *COROLLARY — DEFAULTING MISSING-TO-GOOD IS THE SAME BUG WEARING A SAFER
+   NAME.* "We didn't check" is not "it was fine". A freshness flag that is
+   absent must exclude, not pass; a comparison that could not look must not
+   increment `differ`; a percentage that is `None` must not reach the
+   healthy branch. (Research agent's unification and specimen; manager's
+   read on the refusal; sibling of rule 22's silent absence and rule 27's
+   three-valued comparison.)
+
 **DESIGN DECISION, recorded before any tooling is written (2026-09-03): THE
 ESTIMAND TUPLE IS THE PRIMITIVE.** Supersession is a claim about IDENTITY — that
 +$10.10 and +$30.43 are one figure at two times rather than two measurements.
