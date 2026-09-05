@@ -68,6 +68,12 @@ from core.audit.wnba_trade_sheet import (
     build_rows,
     parse_activity,
 )
+# The ISO fallback in `export_fetched_at`. Reused rather than reimplemented,
+# the way core/live_recorder.py reuses it: one timestamp parser, one set of
+# edge cases. It was CALLED here without ever being imported — a NameError on
+# every envelope whose stamp is not the venue's compact form, which no fixture
+# had ever written (ruff F821 flagged it; the suite could not).
+from core.recorder import _parse_ts
 
 log = structlog.get_logger(__name__)
 

@@ -320,3 +320,67 @@ def test_few_games_reports_no_data_rather_than_a_verdict():
     assert "NO DATA" in verdict
     assert "PASS" not in verdict
     assert f"{GATE_MIN_GAMES - 3} more games" in verdict
+
+
+def _sqrt_time_line(report: str) -> str:
+    """The robustness row — the one comparison priced from a sigma rather than
+    from the empirical cells. Located by position in the Result block, not by
+    the label, because the label is what these tests are about."""
+    same = [l for l in report.splitlines() if l.strip().startswith("same,")]
+    rest = [l for l in same if "last tick" not in l]
+    return rest[0] if rest else ""
+
+
+def test_an_unfitted_report_names_the_sigma_it_fell_back_to():
+    """`run_study` prices `comparisons_fitted`, `comparisons_anchored` and
+    `deviations` with `fit.sigma if fit else RULE_OF_THUMB_SIGMA`. When the
+    fit fails, the report said only "Not fitted — too few usable cells" and
+    then printed a line labelled "fitted curve" anyway, computed from a
+    fallback it never named.
+
+    The value was already sitting in `format_report` as a local nobody read —
+    ruff F841 since the day it was written. Every number is correct and the
+    frame is wrong, which is the V14/V15/V16 shape this file exists for.
+    """
+    from core.pulse.win_curve import RULE_OF_THUMB_SIGMA, Study, format_report
+
+    cells = _cells_with("half", "1-3", 0.42)
+    quotes = [_quote(40, 42, 0.10, slug=f"wnba-g{i}-2026-08-06") for i in range(3)]
+    comparisons = compare(quotes, cells=cells)
+    study = Study(states=[], cells=cells, sigma=None, quotes=quotes, skips={},
+                  comparisons=comparisons, comparisons_last_tick=comparisons,
+                  comparisons_fitted=comparisons, comparisons_anchored=[],
+                  deviations=[])
+    report = format_report(study)
+    part = report.split("PART 1 — implied per-sqrt-minute sigma")[1].split("PART")[0]
+    assert "Not fitted" in part
+    assert "rule of thumb" in part.lower(), (
+        "the fallback sigma that priced everything below must be NAMED, not "
+        "left for the reader to assume was fitted")
+
+    # And the line it priced must not call itself fitted. A first draft
+    # asserted on `f"{RULE_OF_THUMB_SIGMA:.2f}"` == "2.00" and passed against
+    # the UNFIXED report — "2.00" occurs by coincidence in a page of numbers.
+    priced = _sqrt_time_line(report)
+    assert priced, "the robustness line must still be printed"
+    assert "fitted curve" not in priced, (
+        f"{priced!r} calls itself fitted on a report that says Not fitted")
+    assert f"{RULE_OF_THUMB_SIGMA:.2f}" in priced, (
+        "it must name the sigma it actually used")
+
+
+def test_a_fitted_report_still_calls_the_robustness_line_fitted(monkeypatch):
+    """The other half: when there IS a fit, the label must not have been
+    softened into uselessness."""
+    from core.pulse.win_curve import SigmaFit, Study, format_report
+
+    cells = _cells_with("half", "1-3", 0.42)
+    quotes = [_quote(40, 42, 0.10, slug=f"wnba-g{i}-2026-08-06") for i in range(3)]
+    comparisons = compare(quotes, cells=cells)
+    fit = SigmaFit(sigma=1.73, n_points=12, r_squared=0.9, points=[])
+    study = Study(states=[], cells=cells, sigma=fit, quotes=quotes, skips={},
+                  comparisons=comparisons, comparisons_last_tick=comparisons,
+                  comparisons_fitted=comparisons, comparisons_anchored=[],
+                  deviations=[])
+    report = format_report(study)
+    assert "fitted curve" in _sqrt_time_line(report)

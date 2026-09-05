@@ -790,3 +790,45 @@ def test_a_lagging_attribution_db_is_reported_but_not_fatal():
     ok, lines = preflight(at, at, at, at - dt.timedelta(days=6), _LIVE_GW)
     assert ok
     assert any("read unknown" in l for l in lines)
+
+
+# --------------------------------------------------------------------------- #
+# export_fetched_at: the branch no fixture ever took
+# --------------------------------------------------------------------------- #
+#
+# 2026-09-05. `export_fetched_at` parses the venue tooling's compact stamp
+# (20260826T040141Z) and falls back to `_parse_ts` for anything else — a name
+# the module never imports and never defines. Every fixture in this file
+# writes the compact form, so the fallback had never run, and the P&L-of-record
+# preflight carried a guaranteed NameError on any other timestamp shape.
+#
+# ruff has said F821 about it the whole time. The suite could not.
+
+
+def test_an_iso_timestamp_in_the_envelope_parses_rather_than_raising(tmp_path):
+    from scripts.export_wnba_trades import export_fetched_at
+
+    f = tmp_path / "iso.json"
+    f.write_text(json.dumps({"pages": [], "fetched_at": "2026-08-26T04:01:41Z"}))
+    assert export_fetched_at(f) == dt.datetime(2026, 8, 26, 4, 1, 41, tzinfo=UTC)
+
+
+def test_the_compact_venue_stamp_still_wins(tmp_path):
+    """The format the venue tooling actually writes, unchanged."""
+    from scripts.export_wnba_trades import export_fetched_at
+
+    f = tmp_path / "compact.json"
+    f.write_text(json.dumps({"pages": [], "fetched_at": "20260826T040141Z"}))
+    assert export_fetched_at(f) == dt.datetime(2026, 8, 26, 4, 1, 41, tzinfo=UTC)
+
+
+def test_an_unparseable_stamp_is_none_not_an_exception(tmp_path):
+    """A flat dump has no envelope and no stamp; garbage must read the same
+    way — 'no export time known', which the preflight then refuses on. It
+    must not take the export down with a NameError."""
+    from scripts.export_wnba_trades import export_fetched_at
+
+    for stamp in ("not a timestamp", ""):
+        f = tmp_path / "bad.json"
+        f.write_text(json.dumps({"pages": [], "fetched_at": stamp}))
+        assert export_fetched_at(f) is None, stamp
