@@ -1728,17 +1728,24 @@ function loadResults(){
   // breakeven is a category error on ~30¢ tail bets — the portfolio is built
   // to lose most bets and get paid multiples on hits. Win rate and direction
   // rate survive only as labelled diagnostics below.
-  const beat = s.brier_model!=null && s.brier_market!=null && s.brier_model < s.brier_market;
+  // Every one of these is null on an era with nothing scored, and `${null}`
+  // renders the word "null". The Brier COMPARISON is the server's call
+  // (summary.brier_verdict, three-state): a page that derives it from two
+  // nulls announces a market win on zero observations, which is what this
+  // block did until 2026-09-05.
+  const dash = v => v==null ? "—" : v;
   const m = s.money || {};
   const roi = m.roi==null ? "—" : (m.roi>0?"+":"")+(m.roi*100).toFixed(1)+"%";
   $("#rk").innerHTML = [
-    ["Games", s.n_games, `${s.rows} rows · ~${s.rows_per_game}/game`],
+    ["Games", s.n_games, s.rows_per_game==null
+      ? `${s.rows} rows` : `${s.rows} rows · ~${s.rows_per_game}/game`],
     ["Real bets", s.n_bets, `${s.n_no_bet} rows were no-bet`],
     ["Money at price", roi,
      `$${(m.staked??0).toFixed(2)} staked → $${(m.returned??0).toFixed(2)} · `
      + `${m.n_bets??0} bets / ${m.n_games??0} games · taker entry, 1 contract, no fees`],
-    ["Model vs market", beat?"model":"MARKET",
-     `Brier ${s.brier_model} vs ${s.brier_market}`],
+    ["Model vs market", s.brier_verdict==null ? "—" : (s.brier_verdict==="model" ? "model" : "MARKET"),
+     s.brier_verdict==null ? "nothing scored in this window"
+       : `Brier ${dash(s.brier_model)} vs ${dash(s.brier_market)}`],
   ].map(([k,v,n])=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>
       <div class="k" style="margin-top:2px">${n}</div></div>`).join("");
   // One line; the C11 explanation lives in the tooltip and, in full, on
@@ -1746,7 +1753,7 @@ function loadResults(){
   $("#rnote").innerHTML = `<span class="dimc" style="font-size:10.5px"
       title="A flat win rate on ~30¢ bets is the C11 category error — most tail bets are supposed to lose — and direction scores a side, not a bet. Money at price is the number that decides anything.">diagnostic only: win rate ${
       s.bet_win_rate_DIAGNOSTIC==null?"—":s.bet_win_rate_DIAGNOSTIC.toFixed(3)} · direction ${
-      s.direction_rate_DIAGNOSTIC} · neither is performance — money at price decides</span>`;
+      dash(s.direction_rate_DIAGNOSTIC)} · neither is performance — money at price decides</span>`;
 
   });
 }

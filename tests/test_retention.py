@@ -78,6 +78,33 @@ def test_nothing_recent_is_ever_detachable():
 _Session = get_sessionmaker(get_engine())
 
 
+def _indexes(conn, table: str) -> dict[str, str]:
+    """{name: shape} for every PLAIN index on `table`.
+
+    Constraint-backed indexes are excluded: the primary key deliberately
+    CHANGES shape in the conversion (a partitioned table's PK must contain the
+    partition key) and the unique constraints are declared explicitly by
+    `migrate()`, with their own test below. What is left is exactly the set
+    that used to be hand-copied into `_SNAPSHOT_INDEXES`.
+
+    `shape` is the definition from `USING` onward, so it carries the access
+    method, the columns AND the partial predicate — a plain index under a
+    partial index's name is a different index, not the same one.
+    """
+    rows = conn.execute(text("""
+        SELECT c.relname, pg_get_indexdef(c.oid)
+        FROM pg_index x
+        JOIN pg_class c ON c.oid = x.indexrelid
+        JOIN pg_class t ON t.oid = x.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public' AND t.relname = :t
+          AND NOT x.indisprimary
+          AND NOT EXISTS (SELECT 1 FROM pg_constraint k
+                          WHERE k.conindid = x.indexrelid)
+    """), {"t": table}).all()
+    return {name: d[d.index(" USING "):] for name, d in rows}
+
+
 @pytest.fixture(scope="module", autouse=True)
 def partitioned_db():
     """Run the REAL conversion on the suite's per-run database.
@@ -87,14 +114,19 @@ def partitioned_db():
     copy, swap, count-verify) on a disposable target, and the routing tests
     below then run against genuinely partitioned tables. On the operator's
     converted mirror it is a no-op.
+
+    Yields the pre-conversion index sets so the survival test below has
+    something to compare against, or `{}` when there was nothing to convert.
     """
     from core.retention import migrate
 
     with get_engine().connect() as c:
         already = is_partitioned(c, "market_snapshots")
+        before = {} if already else {
+            t: _indexes(c, t) for t in ("market_snapshots", "book_levels")}
     if not already:
         migrate(get_engine())
-    yield
+    yield before
 
 
 needs_partitions = pytest.mark.usefixtures("partitioned_db")
@@ -139,6 +171,35 @@ def _snap(captured_at):
         sports_market_type="basketball_team_full_game_total",
         best_bid=Decimal("0.5"), best_ask=Decimal("0.52"), is_live=True,
     )
+
+
+def test_every_index_survives_the_conversion(partitioned_db):
+    """The conversion rebuilds the table; whatever it does not rebuild is
+    GONE, silently, on the operator's mirror.
+
+    2026-09-05: `_SNAPSHOT_INDEXES` was a hand-kept copy of the table's index
+    set, and migration f3a8c1d92e47's two partial indexes — the ones that took
+    /api/picks from 4.75s to 0.42s in production — were never added to it. A
+    conversion would have dropped them and nothing would have said so; the
+    only symptom is the page getting slow again.
+
+    Compared by SHAPE, not just by name: a plain index under a partial
+    index's name reintroduces the full scan the partial one exists to
+    prevent."""
+    if not partitioned_db:
+        pytest.skip("database was already partitioned — no before-state to "
+                    "compare against")
+    with get_engine().connect() as c:
+        for table, before in partitioned_db.items():
+            after = _indexes(c, table)
+            # A partitioned parent's indexes read as ON ONLY the parent.
+            norm = {n: d.replace(" ONLY ", " ") for n, d in after.items()}
+            for name, shape in before.items():
+                assert name in norm, (
+                    f"{table}.{name} did not survive the partition conversion")
+                assert norm[name] == shape.replace(" ONLY ", " "), (
+                    f"{table}.{name} came back a different index:\n"
+                    f"  before: {shape}\n  after:  {norm[name]}")
 
 
 @needs_partitions
