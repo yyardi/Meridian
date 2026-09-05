@@ -578,6 +578,62 @@ numbered as a fourth. (Research agent's cut, 2026-09-03.)
    the two were one rule — the class formed instead of a twenty-sixth entry
    being shelved beside the twenty-fifth.)
 
+27. **MEASURE THE QUESTION, NOT THE THING NEXT TO IT.**
+   **An instrument that reports on something ADJACENT to your question will
+   read healthy through the failure you built it for**, and it reads healthy
+   *confidently*, because it is working exactly as written.
+
+   *SPECIMENS — 2026-09-05, one venue outage, four instruments, four people,
+   inside ninety minutes.* Polymarket's quote feed froze at 17:40Z: ~3,000 live
+   CFB markets, 21 games, **0.0% of quotes moved for 2.5 hours** while scores
+   and periods updated normally. What each of us actually measured:
+
+   | who | the question | what the instrument tested |
+   |---|---|---|
+   | operator | is the venue working? | **does the app look down** (correct, and first) |
+   | manager | is the venue working? | **does the API answer** — got HTTP 401, reported healthy |
+   | research | is the tape good? | **does the recording loop run** — batches/min, writes/market: FINE throughout |
+   | the alarm | is the tape alive? | **does the venue call return an object** |
+
+   **The operator was right and was overruled by two instruments that were
+   measuring adjacent quantities.** An API that answers is not a feed that
+   lives; a loop that writes is not a tape that moves.
+
+   *THE CLOSING SPECIMEN IS THE IMPORTANT ONE: the fourth failure happened
+   INSIDE THE INSTRUMENT BUILT TO CATCH THE FIRST THREE*, and its author had
+   already named the failure mode and written the correct branch for it. **The
+   error survives knowing about it.**
+
+   *COROLLARY A — THREE-VALUED COMPARISON. A comparison has THREE outcomes:
+   agree, differ, and COULD NOT LOOK. A boolean is a decision to discard one of
+   them.* The alarm's verdict logic had all three branches; its comparison used
+   `agree += same; disagree += (not same)`, so a failed venue read
+   (`venue=None`) incremented **disagree** — and the guard written for exactly
+   this case never fired, because the None reads had already populated the
+   bucket it checked. **It concluded our recorder was broken and told an
+   operator to ACT on a working system.** The correct attribution, measured at
+   scale instead of four samples: **400 markets compared, 400 matched, 0
+   differed — VENUE_FROZEN.** *Require a minimum of SUCCESSFUL comparisons
+   before any verdict, and never let absence reach the differ branch.*
+
+   *COROLLARY B — WIDENING A WINDOW TO CHECK AN ANOMALY CAN DILUTE IT BELOW
+   DETECTION, AND THE WIDER READ FEELS MORE RIGOROUS.* The manager saw zero
+   movement in a 15-minute window at 18:20Z, widened to 60 minutes to check it,
+   found 970 of 4,641 markets had moved, and reported **"false alarm"** to the
+   operator — **the wider window straddled the 17:40Z onset and every one of
+   those moves predated the freeze.** *When widening a window to test an
+   anomaly, the widened window must not cross the suspected onset; if the onset
+   is unknown, BUCKET rather than widen.* A bucketed read shows the step; a
+   widened read averages it away. (Sibling of the aggregate-invents-the-shape
+   entry.)
+
+   *THE WORKING METRIC, for reuse:* **percentage of live markets whose (bid,
+   ask) changed in the last 10 minutes.** Healthy CFB reads 26–41%; it read
+   **0.0% in every five-minute bucket** for 2.5 hours. **`<5% moved while games
+   are live` → ESCALATE**, and the venue comparison attributes it — but only
+   when it can actually look. (Research agent's rule and instrument; manager's
+   dilution and API-status specimens; the operator saw it first.)
+
 **DESIGN DECISION, recorded before any tooling is written (2026-09-03): THE
 ESTIMAND TUPLE IS THE PRIMITIVE.** Supersession is a claim about IDENTITY — that
 +$10.10 and +$30.43 are one figure at two times rather than two measurements.
