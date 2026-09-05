@@ -1285,3 +1285,55 @@ was structurally impossible** — a design cannot distinguish `g > 50` from
 Second instance in one evening of the same habit — *the instrument was the
 suspect before the finding was* — and both times it was the author's own
 harness. **That habit, not any particular number, is the thing to carry.**
+
+---
+
+# Fourteenth: sim-ARTIFACT versus real-COST — the distinction that outranks the magnitudes
+
+A simulator audit naturally produces a signed ledger: each divergence marked
+optimistic or pessimistic, and a net. **That framing hides the question that
+actually matters.**
+
+> **Ask of every optimistic term: does going LIVE escape it, or inherit it?**
+
+| kind | the simulator… | a live arm… | example |
+|---|---|---|---|
+| **sim-ARTIFACT** | does something live would not | **ESCAPES it** | booking fills the venue would never have given us |
+| **real-COST** | omits a cost the production pipeline **has** | **INHERITS it** | queue position, decision latency, post-fill adverse selection |
+
+**The dangerous terms are the real-cost ones**, and they are the ones an audit is
+least likely to flag, because nothing in the simulator looks wrong — the cost is
+simply absent from a system that does have it.
+
+Measured on this substrate, both uncorrected:
+
+* **queue position** — we fill regardless of size ahead of us; median **15**
+  contracts ahead, p90 **850**.
+* **decision latency** — quotes rest on prices a median **7.7 s** old (p95
+  37.9 s), against an assumed ~260 ms. **17–30× the qualitative estimate.**
+
+Neither vanishes when we stop simulating. **They become real money.**
+
+## And the naive read of the latency instrument was the trap
+
+Raw `observed_at − source_captured_at` reads **mean 57.5 s**. That is not
+latency — the consumer re-reads the same upstream snapshot while the source is
+silent (mean 4.6 reads per source, max 580), so the gap accumulates until fresh
+data arrives. **True pipeline latency is the FIRST observation of each distinct
+source: p50 4.46 s.**
+
+> **When a staleness metric averages over repeated reads of one source, it
+> measures upstream silence, not your own lag. Deduplicate to first-touch.**
+
+Same shape as the gated/ungated queue split — **the raw number was the trap in
+both, and in both the correct figure required naming which population you meant.**
+
+## The instrument existed and had never been pointed at the question
+
+`source_captured_at`'s own docstring names this decomposition — *"latency
+decomposition (quoter stall vs upstream silence)"* — as one of three reasons the
+column exists. **It was written for exactly this and never used for it.**
+
+> **Before building an instrument, grep the schema for one somebody already
+> built. A column with a docstring explaining what it is for is a stronger lead
+> than any design.**
