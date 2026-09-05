@@ -22,10 +22,16 @@ THE TWO TRAPS, both measured rather than assumed
 -------------------------------------------------
 1. ESPN's scoreboard DEFAULTS to `groups=80` (FBS). Fetching "all games" and
    "FBS games" returns the identical list, which reads as "there are no FCS
-   games" — a clean, confident, wrong zero. FCS is `groups=81` and its event
-   ids are disjoint from FBS. Measured on our own board: FCS is 33.8% of CFB
-   fill volume across 23 of 47 games, so treating it as absent would silently
-   drop a third of the business.
+   games" — a clean, confident, wrong zero. FCS is `groups=81`.
+   AND THE TWO SETS OVERLAP: 48 of 126 games appear in both, because an
+   FBS-vs-FCS game belongs to each division. Labelling by whichever scoreboard
+   answered first therefore encodes FETCH ORDER as division, and reading that
+   as FCS-vs-FCS overstates the out-of-population share by more than
+   twentyfold. Measured on our own board, the true three-way split is
+   FBS-v-FBS 64.7%, CROSS 33.8%, FCS-v-FCS 1.5% of fill volume — and CFBD's
+   FBS data covers the first two, because an FBS team's games are in CFBD
+   whatever the opponent's division. So the genuinely uncovered population is
+   one game, not a third of the board.
 2. Slug/event dates are VENUE-LOCAL; ESPN's event date is UTC, so a night
    kickoff lands on the next UTC day. Exact-date matching left 45.3% of fills
    unclassified — including games known to exist (utep-okl, col-gtech,
@@ -45,8 +51,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 SCOREBOARD = ("https://site.api.espn.com/apis/site/v2/sports/football/"
               "college-football/scoreboard")
-#: 80 = FBS (ESPN's DEFAULT, hence trap 1), 81 = FCS. Ids are disjoint.
+#: 80 = FBS (ESPN's DEFAULT, hence trap 1), 81 = FCS.
+#: THESE SETS OVERLAP. A `groups` filter is not a partition: an FBS-vs-FCS
+#: game is listed under BOTH divisions, correctly. Measured 2026-09-05: 48 of
+#: 126 games were in both (NAU @ ARIZ, INST @ PUR, NICH @ KSU ...). Labelling
+#: by "whichever scoreboard I saw it in first" therefore produces a division
+#: that depends on fetch order — and reading it as FCS-vs-FCS overstates the
+#: out-of-population share by more than twentyfold (33.8% vs the true 1.5%).
 GROUPS = {"FBS": 80, "FCS": 81}
+
+#: The real taxonomy, and the one that decides training coverage:
+#:   FBS   both teams FBS          — CFBD covers it
+#:   CROSS one of each             — CFBD covers it too, because an FBS team's
+#:                                   games are in CFBD whatever the opponent.
+#:                                   This is the BLOWOUT TAIL (49.5-pt spreads).
+#:   FCS   both teams FCS          — genuinely outside an FBS training set
+DIVISIONS = ("FBS", "CROSS", "FCS")
 
 
 def _norm(s: str | None) -> str:
@@ -61,7 +81,10 @@ def fetch_espn(days_back: int) -> list[dict]:
 
     today = dt.datetime.now(dt.timezone.utc).date()
     out: list[dict] = []
-    seen: set[str] = set()
+    by_id: dict[str, dict] = {}
+    #: membership per scoreboard — the OVERLAP is what identifies a cross-
+    #: division game, so we must not let the first fetch claim the id.
+    seen_in: dict[str, set[str]] = {"FBS": set(), "FCS": set()}
     with httpx.Client(timeout=30.0) as c:
         for back in range(days_back + 1):
             d = (today - dt.timedelta(days=back)).strftime("%Y%m%d")
@@ -75,9 +98,9 @@ def fetch_espn(days_back: int) -> list[dict]:
                           file=sys.stderr)
                     continue
                 for e in (r.json().get("events") or []):
-                    if e["id"] in seen:
+                    seen_in[div].add(e["id"])
+                    if e["id"] in by_id:
                         continue
-                    seen.add(e["id"])
                     comps = (e.get("competitions") or [{}])[0].get("competitors", [])
                     if len(comps) != 2:
                         continue
@@ -94,10 +117,17 @@ def fetch_espn(days_back: int) -> list[dict]:
                         }
                     if "home" not in side or "away" not in side:
                         continue
-                    out.append({"espn_game_id": e["id"],
-                                "date": dt.date.fromisoformat(e["date"][:10]),
-                                "division": div,
-                                "home": side["home"], "away": side["away"]})
+                    by_id[e["id"]] = {
+                        "espn_game_id": e["id"],
+                        "date": dt.date.fromisoformat(e["date"][:10]),
+                        "home": side["home"], "away": side["away"]}
+
+    # Division is decided by MEMBERSHIP IN BOTH SETS, not by fetch order.
+    for gid, g in by_id.items():
+        in_fbs, in_fcs = gid in seen_in["FBS"], gid in seen_in["FCS"]
+        g["division"] = ("CROSS" if (in_fbs and in_fcs)
+                         else "FBS" if in_fbs else "FCS")
+        out.append(g)
     return out
 
 
