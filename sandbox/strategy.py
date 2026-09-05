@@ -14,8 +14,12 @@ WHAT WE KNOW, encoded here rather than in a doc nobody opens:
     (theta = -0.0125) and charges takers (+0.06). Crossing destroys the trade.
   * We have NO FAIR VALUE. `quote_at_touch` copies the market's own prices.
     That is the central weakness: a maker without a pricing model is a mirror.
-    PULSE was tested as the missing opinion and is WORSE than the market mid
-    (40.53c vs 39.01c mean error), so it cannot fill the hole.
+    PULSE is the candidate opinion and its status is UNDECIDED. Its LEVEL is
+    worse than the mid (40.53c vs 39.01c mean error) — but that is the wrong
+    test for a maker, which needs to know which way to LEAN, not what to price.
+    On the right test (at a fixed price, do its 'cheap' markets settle above its
+    'rich' ones?) it scores +8.55c, game-clustered CI [-4.66, +21.76] over 88
+    games: positive, unproven, and WNBA-only. See docs/math/pulse-direction.md.
   * Fills that really happen lose 2.0-3.2c (measured against trade prints).
     Fills our simulator invents "profit" +0.6c. The gap is the whole problem.
   * One-sided fills are the loss mechanism: >=80% one-way loses 10.91c against
