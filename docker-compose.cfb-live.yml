@@ -1,0 +1,34 @@
+# College-football signal side. Separate overlay from espn-live because it is
+# a different sport with a different payload shape and its own tables.
+#
+#     docker compose -f docker-compose.yml -f docker-compose.cfb-live.yml up -d cfb-live-recorder
+#
+# Why it exists: on 2026-09-05 we held 56,948 CFB shadow fills across 48 games
+# and zero rows of CFB game state. The market was recorded and the game was
+# not, so no fair value model for football was possible at all.
+#
+# The WNBA recorder cannot cover this. Its SUMMARY_URL is a module constant
+# pinned to basketball/wnba, and — the part that would have failed silently —
+# `summary.plays` is EMPTY for football, whose plays live under `drives`. A
+# basketball parser here writes nothing while every heartbeat stays green.
+#
+# No credentials exist to mount: ESPN is unauthenticated. Reads ESPN, writes
+# only its own three tables. Deploy stays operator-gated between slates.
+services:
+  cfb-live-recorder:
+    build: .
+    container_name: meridian-cfb-live-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # LOCAL, like every recorder: signals join the tick stream in replays.
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      # A 68-game Saturday runs ~20 concurrent live games: scoreboard/60s plus
+      # summary/20s per live game is ~1.0 req/s of this 3.
+      ESPN_RPS: "3"
+      ESPN_LEAGUE_PATH: "football/college-football"
+    # alembic upgrade first: these tables are newer than any running deploy.
+    # Concurrent upgrades are safe (advisory lock).
+    command: ["sh", "-c", "alembic upgrade head && python -m core.feeds.espn_cfb_recorder"]
