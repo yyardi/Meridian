@@ -855,20 +855,18 @@ def test_only_the_api_endpoint_imports_the_order_client():
     correct — but it must be a decision someone made on purpose, and this test
     is where they have to say so.
     """
-    import pathlib
+    from repo_tree import rel, repo_files
 
-    root = pathlib.Path(__file__).parent.parent
     # core/fill_watcher.py added 2026-08-05, on purpose: it submits the
     # pre-authorized exits — orders whose every term a human fixed on the
     # ticket, which the watcher may only transmit when the entry fills.
     allowed = {"core/api.py", "core/polymarket/client.py", "core/fill_watcher.py"}
-    offenders = []
-    for path in root.rglob("*.py"):
-        rel = path.relative_to(root).as_posix()
-        if rel.startswith((".venv", "tests/")) or rel in allowed:
-            continue
-        if "PolymarketOrderClient" in path.read_text():
-            offenders.append(rel)
+    offenders = [
+        r for path in repo_files(".py")
+        if (r := rel(path)) not in allowed
+        and not r.startswith("tests/")
+        and "PolymarketOrderClient" in path.read_text()
+    ]
     assert not offenders, f"these modules can now place orders: {offenders}"
 
 

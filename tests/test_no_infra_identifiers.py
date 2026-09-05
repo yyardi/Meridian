@@ -23,12 +23,10 @@ from pathlib import Path
 
 import pytest
 
-_REPO = Path(__file__).resolve().parent.parent
+from repo_tree import rel, repo_files
 
-_SCANNED_SUFFIXES = {".py", ".sh", ".md", ".yml", ".yaml", ".toml", ".json",
-                     ".html", ".js", ".cfg", ".ini", ".txt"}
-_SKIP_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
-              "node_modules", "backups"}
+_SCANNED_SUFFIXES = (".py", ".sh", ".md", ".yml", ".yaml", ".toml", ".json",
+                     ".html", ".js", ".cfg", ".ini", ".txt")
 
 PATTERNS = {
     # 12 consecutive digits is an AWS account id, and `meridian-backups-<id>`
@@ -77,14 +75,13 @@ def _scrub_line(line: str) -> str:
 
 
 def _files():
-    for path in sorted(_REPO.rglob("*")):
-        if not path.is_file() or path.suffix not in _SCANNED_SUFFIXES:
-            continue
-        if set(path.parts) & _SKIP_DIRS:
-            continue
+    """Tracked files only. What is public is what git carries — and a walk of
+    the directory also picks up virtualenvs, caches and nested checkouts,
+    whose contents are neither ours nor published (see `repo_tree.py`)."""
+    for path in repo_files(*_SCANNED_SUFFIXES):
         if path.name == Path(__file__).name:          # this file names patterns
             continue
-        yield path, path.relative_to(_REPO).as_posix()
+        yield path, rel(path)
 
 
 @pytest.mark.parametrize("label", sorted(PATTERNS))

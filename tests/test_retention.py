@@ -117,6 +117,22 @@ def clean_rows():
         _wipe(s)
 
 
+#: A timestamp inside a month the conversion actually creates. `migrate()`
+#: covers [min(captured_at) … now] plus MONTHS_AHEAD, so on the suite's EMPTY
+#: per-run database that set STARTS at the current month — anything earlier
+#: routes to `_default`. These tests were written in August 2026 with the
+#: month hardcoded, and began failing on 2026-09-01 for that reason alone.
+#: Deriving the month from the clock is what they always meant.
+_MONTH = month_start(dt.datetime.now(UTC))
+_SNAPS_PARTITION = partition_name("market_snapshots", _MONTH)
+_BOOK_PARTITION = partition_name("book_levels", _MONTH)
+
+
+def _in_month(hour: int) -> dt.datetime:
+    """Day 3 of the current month — every month has one."""
+    return _MONTH + dt.timedelta(days=2, hours=hour)
+
+
 def _snap(captured_at):
     return MarketSnapshot(
         captured_at=captured_at, market_slug=SLUG,
@@ -127,14 +143,13 @@ def _snap(captured_at):
 
 @needs_partitions
 def test_rows_route_to_their_month_partition(clean_rows):
-    aug = dt.datetime(2026, 8, 3, 1, 0, tzinfo=UTC)
     with _Session() as s:
-        s.add(_snap(aug))
+        s.add(_snap(_in_month(1)))
         s.commit()
         part = s.execute(text(
             "select tableoid::regclass::text from market_snapshots "
             "where market_slug = :m"), {"m": SLUG}).scalar()
-    assert part == "market_snapshots_y2026m08"
+    assert part == _SNAPS_PARTITION
 
 
 @needs_partitions
@@ -156,8 +171,7 @@ def test_on_conflict_idempotency_survives_partitioning(clean_rows):
     the conversion must keep both the name and the semantics."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    at = dt.datetime(2026, 8, 3, 2, 0, tzinfo=UTC)
-    values = dict(captured_at=at, market_slug=SLUG, is_live=True)
+    values = dict(captured_at=_in_month(2), market_slug=SLUG, is_live=True)
     with _Session() as s:
         for _ in range(2):
             s.execute(pg_insert(MarketSnapshot).values(**values)
@@ -173,7 +187,7 @@ def test_on_conflict_idempotency_survives_partitioning(clean_rows):
 def test_book_levels_partitioned_and_unique_constraint_survives(clean_rows):
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    at = dt.datetime(2026, 8, 3, 3, 0, tzinfo=UTC)
+    at = _in_month(3)
     with _Session() as s:
         s.add(_snap(at))
         s.commit()
@@ -188,7 +202,7 @@ def test_book_levels_partitioned_and_unique_constraint_survives(clean_rows):
         part, n = s.execute(text(
             "select tableoid::regclass::text, count(*) from book_levels "
             "where snapshot_id = :s group by 1"), {"s": sid}).one()
-    assert part == "book_levels_y2026m08"
+    assert part == _BOOK_PARTITION
     assert n == 1
 
 
