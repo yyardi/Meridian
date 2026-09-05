@@ -867,7 +867,12 @@ def format_report(study: Study, *, show_teams: bool = False) -> str:
     add("PART 1 — implied per-sqrt-minute sigma")
     add("-" * 78)
     if fit is None:
-        add("  Not fitted — too few usable cells.")
+        # `run_study` still priced comparisons_fitted, comparisons_anchored and
+        # the team deviations — with RULE_OF_THUMB_SIGMA. Saying only "not
+        # fitted" leaves a reader to assume the lines below came from a fit.
+        add("  Not fitted — too few usable cells. Every line below that needs")
+        add(f"  a sigma used the RULE OF THUMB, {sigma:.2f} points per")
+        add("  sqrt(minute) — not a fit to this data.")
     else:
         add(f"  model                        : P(win) = Phi( margin / (sigma * sqrt(minutes_left)) )")
         add(f"  fitted sigma                 : {fit.sigma:.3f} points per sqrt(minute)")
@@ -1017,10 +1022,12 @@ def format_report(study: Study, *, show_teams: bool = False) -> str:
     if fx:
         fx_cl = clustered_mean(fx_by_game)
         fx_ci = f"[{fx_cl.lo:+.4f}, {fx_cl.hi:+.4f}]" if fx_cl else "n/a"
-        add(f"    same, fitted curve not cells    : {sum(fx) / len(fx):+.4f}  {fx_ci}")
-    add("    (The gate uses the empirical cells. The fitted-curve line is shown")
-    add("     because the sqrt-time model does not hold one sigma across all")
-    add("     three boundaries; if the two rows disagree, that misfit is why.)")
+        label = ("fitted curve not cells   " if fit else
+                 f"rule-of-thumb sigma {sigma:.2f}")
+        add(f"    same, {label} : {sum(fx) / len(fx):+.4f}  {fx_ci}")
+    add("    (The gate uses the empirical cells. The sqrt-time line is shown")
+    add("     because the model does not hold one sigma across all three")
+    add("     boundaries; if the two rows disagree, that misfit is why.)")
     add(f"    mean spread at the boundary     : "
         f"{sum(c.quote.spread for c in study.comparisons) / len(study.comparisons):.4f}")
     add("")
