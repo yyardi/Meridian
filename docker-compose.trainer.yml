@@ -1,0 +1,35 @@
+# The CFB fair-value trainer. A ONE-OFF RUNNER, not a service.
+#
+#     docker compose -f docker-compose.yml -f docker-compose.trainer.yml \
+#       run --rm trainer python3 -m cfb.train --help
+#
+# Why it exists: the model fit needs xgboost + scikit-learn, and the box's
+# only Python outside the containers is .venv-health, which has neither (nor
+# cryptography). Rather than mutate a host venv, the trainer gets its own
+# image built with the `model` extra. No running service gains a dependency.
+#
+# `restart: no` and no `depends_on` health gate beyond postgres: this runs to
+# completion and exits. It writes no venue orders and holds no credentials —
+# it reads recorded tape and writes model artifacts to a mounted directory.
+services:
+  trainer:
+    build:
+      context: .
+      args:
+        INSTALL_EXTRAS: "model"
+    image: meridian-trainer
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      # Set on the host if/when a CollegeFootballData key exists. Absent is
+      # fine: the trainer runs on OUR OWN recorded tape without it; the key
+      # only unlocks the 2014+ FBS historical backfill.
+      CFBD_API_KEY: "${CFBD_API_KEY:-}"
+    volumes:
+      - ./cfb:/app/cfb          # trainer code
+      - ./artifacts:/app/artifacts   # fitted models land here
+    working_dir: /app
+    command: ["python3", "-c", "import xgboost, sklearn; print('trainer image ready:', xgboost.__version__, sklearn.__version__)"]
