@@ -216,7 +216,11 @@ class ShadowQuoter:
         out = []
         for r in rows:
             lg = league_of_slug(r.market_slug)
-            if lg is None or lg.slug != self._league:
+            # A read-only caller (the dashboard) binds this as a plain function
+            # with self=None so no engine and no writer is built. It wants EVERY
+            # league; an ENGINE always has one and still filters to it.
+            want = getattr(self, "_league", None) if self is not None else None
+            if lg is None or (want is not None and lg.slug != want):
                 continue              # league filter (amendment 12), READ path:
                                       # this binary observes only its own league;
                                       # an unknown/other-league slug is dropped.

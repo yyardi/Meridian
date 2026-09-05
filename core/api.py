@@ -2483,7 +2483,16 @@ def pulse_status() -> dict:
     )
 
     with _Session() as s:
-        r = build_report(s)
+        # build_report returns one report PER ESTIMATES VERSION (era separation,
+        # PR #23) and must never be blended. This endpoint shows the NEWEST
+        # version; the API previously treated the dict as a single report and
+        # 500'd on every call, which is why the PULSE page showed nothing.
+        _reports = build_report(s)
+        if not _reports:
+            return {"available": False, "note": "no PULSE decisions recorded yet",
+                    "floors": {"entry_fills": FLOOR_ENTRY_FILLS, "games": FLOOR_GAMES}}
+        _version = sorted(_reports)[-1]
+        r = _reports[_version]
         bounds = s.execute(text(
             "SELECT min(decided_at), max(decided_at) FROM pulse_decisions"
         )).one()
