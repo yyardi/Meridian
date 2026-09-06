@@ -151,7 +151,40 @@ def _selftest() -> int:
                    [(a, b, c) for a, b, c in got] if "spread" in ln_text]
         check("a median SPREAD is not flagged as needing a basis",
               not flagged)
+
+        # ★ main() ITSELF, on a path outside ROOT and with an UNLABELLED hit
+        # to reach the reporting branch. The bare relative_to(ROOT) that used
+        # to live there raised ValueError on every such path; the default
+        # no-argument run builds ROOT-anchored paths and never reached it, so
+        # a whole entry point was broken while the selftest stayed green.
+        import contextlib
+        import io
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                rc = main([str(p)])
+            ok = rc == 0 and "UNLABELLED" in buf.getvalue()
+        except Exception as exc:                       # noqa: BLE001
+            ok = False
+            print(f"    main() raised {type(exc).__name__}: {exc}")
+        check("main() runs on a path outside ROOT and reports", ok)
     return fails
+
+
+def _display(p: pathlib.Path) -> str:
+    """Path as the user would name it, whatever they passed.
+
+    ★ This existed as a bare relative_to(ROOT) and CRASHED on any relative
+    argument, because the no-argument default builds ROOT-anchored paths and
+    nothing else was ever exercised. The selftest covers scan(); it did not
+    cover main(), so the whole argument path shipped untested and broken.
+    That is the same defect as an untested loader, in the guard written to
+    catch untested claims.
+    """
+    try:
+        return str(p.resolve().relative_to(ROOT))
+    except ValueError:
+        return str(p)
 
 
 def main(argv: list[str]) -> int:
@@ -169,7 +202,7 @@ def main(argv: list[str]) -> int:
                 counts[state] += 1
                 if state == "UNLABELLED":
                     unlabelled.append(
-                        (str(f.relative_to(ROOT)), ln, line.strip()[:90]))
+                        (_display(f), ln, line.strip()[:90]))
 
     total = sum(counts.values())
     print(f"cent figures scanned: {total:,}")
