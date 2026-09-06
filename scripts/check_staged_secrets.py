@@ -167,10 +167,27 @@ def _install() -> int:
                        capture_output=True, text=True).stdout.strip()
     hook = os.path.join(d, "hooks", "pre-commit")
     os.makedirs(os.path.dirname(hook), exist_ok=True)
-    body = ("#!/bin/sh\n"
-            "# Installed by scripts/check_staged_secrets.py --install\n"
-            'exec python3 "$(git rev-parse --show-toplevel)"'
-            "/scripts/check_staged_secrets.py\n")
+    # The hook must work from a WORKTREE CHECKED OUT ON AN OLDER BRANCH, where
+    # this script does not exist in the tree. Resolving it from
+    # --show-toplevel crashes there; the commit is still blocked (fail-closed
+    # is right) but the error is cryptic and every such worktree breaks.
+    # So: try this worktree, then the main checkout beside the common git dir,
+    # and only then refuse with an explanation.
+    body = """#!/bin/sh
+# Installed by scripts/check_staged_secrets.py --install
+top=$(git rev-parse --show-toplevel 2>/dev/null)
+common=$(git rev-parse --git-common-dir 2>/dev/null)
+main=$(cd "$common/.." 2>/dev/null && pwd)
+for c in "$top/scripts/check_staged_secrets.py" "$main/scripts/check_staged_secrets.py"; do
+  if [ -f "$c" ]; then exec python3 "$c"; fi
+done
+echo "pre-commit: check_staged_secrets.py not found in this worktree or in" >&2
+echo "  $main -- refusing the commit (fail closed)." >&2
+echo "  This worktree is probably on a branch predating the guard." >&2
+echo "  Rebase onto main, or run with --no-verify only if you are certain" >&2
+echo "  the diff contains no infra identifiers or credentials." >&2
+exit 1
+"""
     with open(hook, "w") as f:
         f.write(body)
     os.chmod(hook, 0o755)
