@@ -143,3 +143,54 @@ Declared now so it is falsifiable:
   of disagreement by the last 15 minutes.
 
 G will be quoted on every row it ever produces.
+
+---
+
+## 5. THE EMIT CONTRACT (A's money conversion)
+
+One row per CANDIDATE rung, not per fired rung — A needs the abstains to compute
+`E[(|edge| - tau)+]` over the rule, and a file containing only winners is a
+selection effect wearing a schema.
+
+    game_id            cluster key. MONEY CLUSTERS BY GAME, NEVER BY RUNG.
+    market_slug        the rung
+    sports_market_type winner | spread | total  -- tau's first argument
+    line               signed, for the coherence filter and for diagnosis
+    mid                (bid+ask)/2  -- FORECAST comparison ONLY, never P&L
+    touch              the price we would transact at: ask if buying, bid if
+                       selling. THIS is what tau is evaluated at and what P&L
+                       uses.
+    model_p            the model's probability for this rung's event
+    y                  settlement 0/1, NULL until the game resolves
+    side               buy | sell, from sign(model_p - mid)
+    trade_flag         the rule's predicate, §1
+    abstain_reason     which test rejected it, or NULL if traded
+
+### ★ ONE CORRECTION TO A's FORMULA, AND IT IS ROUGHLY A FACTOR OF TWO
+
+A proposed `realized = sign(edge) * (y - venue_p) - tau(type, price)`. If
+`venue_p` is the mid, **that books entry at a price nobody fills at.** From §0:
+
+    median |edge| 1.46pp      median half-spread 1.00pp
+
+**The half-spread is about two thirds of the typical edge.** Entering at the mid
+and settling against truth overstates P&L by roughly the half-spread on every
+trade, which on these numbers is most of it. This is c7's registered separation —
+mid for the forecast comparison, touch for any P&L — and it is why both columns
+are emitted rather than one `venue_p`.
+
+So: `edge_for_decision = model_p - touch`, and `realized = sign * (y - touch) - tau(type, touch)`.
+
+### WHAT I CANNOT EMIT YET, STATED SO IT IS NOT ASSUMED
+
+**There is no scored model on ladders.** The identity predicts P(home wins), a
+winner-market quantity; porting it to a spread rung needs the scale surface, and
+**neither scale surface has a sound selector** (see `ladder_shape_test.py`) —
+d5's kickoff was first-SEEN, mine was a batch `is_live` flip, and my defensible
+cohort is ONE game. So `model_p` cannot be filled today.
+
+`tau` for CFB spread is itself G=1 tonight.
+
+**The schema is real and the rule is registered; the data behind both is not.**
+Emitting a file now would produce a money number whose every input is
+provisional, and the format's readiness is not the study's readiness.
