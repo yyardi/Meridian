@@ -107,3 +107,56 @@ Two things it does **not** say:
 The 54/week CFB rate is the 94% WNBA capture applied to football and is an
 **upper** estimate. The 09-12 slate tests it, and that test is upstream of this
 table.
+
+---
+
+# ★ CONVENTION SENSITIVITY: the 58 is not robust
+
+ce asked whether the money half-width is convention-sensitive the way lambda*
+was (0.219 -> 0.364, with the bar between). **It is worse.**
+
+    convention                      n      point       95% CI          hw    G@point
+    all filled rows (mine)      1,944   +4.761pp  [-1.46,+10.98]   6.216pp        58
+    earliest per market           399   +2.516pp  [-4.27, +9.30]   6.786pp       247
+    latest per market             399   +0.449pp  [-5.32, +6.22]   5.769pp     5,622
+    earliest per (market, side)   551   +3.156pp  [-0.18, +6.49]   3.335pp        38
+    latest per (market, side)     551   +3.040pp  [+0.35, +5.74]   2.695pp        27
+    earliest per game              34   -3.294pp  [-17.2,+10.61]  13.905pp       606
+
+    point estimate  -3.294 to +4.761 pp   (spread 8.055pp, AND IT CHANGES SIGN)
+    half-width       2.695 to 13.905 pp
+    games at point      27 to 5,622       (a 208x range)
+
+**One convention excludes zero** — `latest per (market, side)`, +3.040pp
+[+0.345, +5.735]. **It is also the convention with a look-ahead problem**: the
+last decision in a market is taken when the game has moved toward its outcome,
+which is the defect diagnosed on the horizon ladder. Its significance should
+not be trusted, and it is the only significant cell of six.
+
+## ★ BUT UNLIKE lambda*, THERE IS A PRINCIPLED TIEBREAK
+
+For a **forecast** comparison, deduping is right: many rows share one outcome,
+so counting them all double-counts the evidence. That is why the Brier work
+deduped.
+
+**For a MONEY statistic the question does not arise the same way. Every fill is
+a separate real trade with real P&L.** Deduping discards realised money. If we
+filled 57 times in a game we earned or lost on all 57, not on one.
+
+So **all filled rows is the correct population for the point estimate** — it is
+the money actually made — and the shared-outcome dependence is handled where it
+belongs, in the game-clustered interval rather than by throwing away trades.
+
+**That is a principled reason to prefer one convention, and no such reason
+existed for lambda*.** The sensitivity is real and must travel with the number,
+but it is not the same situation as a statistic with no canonical form.
+
+## What this does to the ladder
+
+The **58 stands as the estimate under the defensible convention**, and the
+ladder should be quoted with the range attached: *the same question costs
+27–5,622 games depending on how fills are counted, and the count that
+corresponds to money earned gives 58.*
+
+Anyone quoting 58 without that range will budget wrong, and anyone quoting the
++3.040pp significant cell is quoting the one convention with look-ahead in it.
