@@ -187,7 +187,44 @@ matching the WNBA winner proxy (~1.93pp) — the winner τ is fee-dominated near
 competitive prices in both leagues. **Pregame only**; the in-game winner spread
 PULSE trades is Wednesday's opener, and only if a1's live recorder holds.
 
-**Fork status — NOT a collapse to one branch (d5's correction).** My earlier
+## Leg 1, the venue baseline — available for CFB spread, awaiting the model
+
+The winner route is dead on CFB (coverage), so leg 1 is now the **spread** route
+(d5's re-sited identity). c7 supplied the venue side:
+
+    Brier(venue), CFB spread, settled, near-money (mid ∈ [0.35, 0.65])
+      = 0.25221   (obs 174,765, markets 221, G=11; out-of-fold base rate 0.29813)
+
+**The conversion is ready to complete the moment the spread model is scored on the
+same outcomes and rungs:** per market `e² = Brier(venue) − Brier(model) =
+0.25221 − Brier(model)`; per-trade edge `√(e²)` (RMS, an upper bound on mean |edge|);
+money `= E[(|edge| − τ_spread)⁺]` over the selection rule; `τ_spread ≈ 2.0pp` (CFB
+G=1) / ~2.4pp (NFL pregame) / ~3.5pp (WNBA).
+
+**Four caveats travel with the baseline:**
+1. **Near-money is admissible for the DIFFERENCE, not the level** (c7/ce). A price
+   near 0.5 scores ~0.25 whatever the venue knows, so 0.25221 is *not* a venue-skill
+   claim; but `Brier(venue) − Brier(model) = e²` is well-defined at the same
+   rungs/outcomes, and the tautology bites the level, not the difference. Do not
+   quote c7's +0.046 / +0.068 skill numbers — they are theirs and span zero.
+2. **The ladder is not independent** (c7). ~48 rungs per game resolve from one
+   margin, so the 174,765 near-money observations carry **11 games** of information.
+   Any interval must cluster by game or it is ~100× too narrow.
+3. **Calibration is unestablished at G=11** (c7). The venue-calibration gap CI spans
+   zero, wide enough to miss a 20-point error; the identity assumes the venue is
+   calibrated, that is untested, and any e² inherits the assumption — it belongs in
+   the caption.
+4. **Model side pending.** B's shape test is NOT MEASURED at G=5; d5's identity is
+   built but unscored — both wait on games with a pre-kickoff snapshot and a live
+   tape. So leg 1 stands as **"here is the baseline and here is what it would take,"**
+   not a number: score the spread model out-of-fold on these 221 markets at these
+   rungs, and `e² = 0.25221 − Brier(model)` drops straight in.
+
+---
+
+## Fork status — NOT a collapse to one branch (d5's correction)
+
+My earlier
 "transfer to NFL, cheaper than a spread model" was too strong. d5 answered the
 instrument question by measurement, and the case for (a) is **not** coverage — it is
 **falsifiability**: on a **single line** (the winner, or one spread line) the
