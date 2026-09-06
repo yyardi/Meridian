@@ -160,3 +160,74 @@ above is defined on the tape's own timestamps.
 venue recorder is restored, **the whole slate is captured, not just the quotable
 band.** The 43.24% of the CFB board that the quote engine gates out by policy is
 present on the venue tape.
+
+---
+
+# ★ THE PRE-FLIGHT CONDITION I JUST ADDED IS BROKEN. REPLACED.
+
+Debugger tested it against known-bad days **before it mattered**, which is the
+only way this gets caught. It passes the one day it existed to catch.
+
+    09-06, recorder dead all day        25 stamps   median gap 2,076s   FAIL (right)
+    09-05 whole day, died 22:08Z    13,175 gaps     median gap  2.72s   PASS  <-- wrong
+    09-05 slate window 16:00-24:00Z  6,099 gaps     median gap  3.16s   PASS  <-- wrong
+
+09-05 is the day CFB venue recording died mid-slate: **372 of 480 slate minutes
+covered, ~110 minutes with no tape at all**, and my condition reports PASS.
+
+## Why no threshold on a median fixes it
+
+**An outage of any length contributes exactly ONE gap.** In the slate window
+there were 6,099 gaps and exactly three exceeded 60s. A median is the 3,050th
+value; three outliers cannot move it, and p99 lands at 10s — on my boundary by
+coincidence rather than by design.
+
+**The statistic measures the spacing of stamps that EXIST and is nearly blind to
+stamps that are ABSENT**, which is the thing being tested. That is arithmetic,
+not an empirical accident, and it holds at every threshold.
+
+**And my second criterion does not save it either**: "<50% uptime = not
+measured" passes at 77.5% minute-coverage. **On the exact day the recorder died
+mid-slate, both stated criteria pass and the slate would have been reported as
+measured.**
+
+## ★ THE REPLACEMENT — three conditions, each doing a different job
+
+All computed on the slate window (16:00–24:00Z) from the venue tape's own
+`captured_at` stamps for CFB markets. **All three must hold.**
+
+1. **CADENCE — median inter-stamp gap < 10s.** Distinguishes the ~1s live tape
+   from the ~900s sweep. This is what the original condition was actually good
+   for, and it is kept for that job only.
+2. **CONTINUITY — maximum inter-stamp gap <= 60s.** Fires on any outage over a
+   minute. On 09-05 the max was **2,487s against ~4s healthy — a 600x
+   separation**, so the test is not delicate.
+3. **COVERAGE — minutes containing at least one stamp >= 95% of slate minutes.**
+   Catches an accumulation of short outages that no single maximum would flag.
+   09-05 was 77.5%.
+
+**Any one of (2) or (3) separates 09-05 from a healthy slate.** Both are kept
+because they fail on different shapes: one long hole versus many small ones.
+
+## What I could not verify, stated rather than implied
+
+**I could not reproduce Debugger's test on my own data.** My only local
+substrate with `captured_at` is `book_trade_joined` — **810 distinct stamps
+against their 13,175**, already containing a ten-hour overnight gap, and my
+injected-outage mutation moved nothing because the injection landed inside that
+existing gap. It is the wrong table: the book/trade join, not the raw snapshot
+tape.
+
+**So I am accepting their measurement on the mechanism rather than on my
+reproduction.** The mechanism needs no data — one outage is one gap, and a
+median over thousands cannot see it. But the specific figures above are theirs,
+not mine, and I have not independently confirmed them.
+
+## Provenance note
+
+Debugger could not locate this registration and tested a paraphrase. It **is**
+pushed — `analysis/slate_0912_preregistration.md` on
+`origin/quant-b/live-regime-cuts` — and I have confirmed the paraphrase matched
+my literal wording ("median inter-stamp gap under 10 seconds"), so their result
+transfers. Worth knowing that a pushed non-main branch was not findable by
+search.
