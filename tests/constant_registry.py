@@ -70,6 +70,10 @@ class Constant:
     dataset: str = ""            # MEASURED: the table/export
     method: str = ""             # MEASURED: how, in words, not the doc's own expression
     n: int = 0                   # MEASURED: sample size
+    population: str = ""         # MEASURED: the PREDICATE defining the rows.
+                                 # "settled = strict post row" vs "post OR
+                                 # untied P4 0:00" swung a cohort 18 -> 31,
+                                 # a 72% move on an unstated definition.
     changes_if: str = ""         # POLICY: what would move it
     caveat: str = ""             # PROVISIONAL: why it is known-wrong
     registration: str = ""       # PROVISIONAL: what will settle it
@@ -126,6 +130,40 @@ def _tracked() -> set[str]:
     return set(out.splitlines())
 
 
+#: A module-level constant worth registering looks like this. Deliberately
+#: crude: the point is to COUNT what exists, not to judge it.
+_CANDIDATE = "core"
+
+
+def find_candidates(tracked=None) -> list[tuple[str, str, float]]:
+    """Every module-level UPPER_CASE numeric assignment in tracked core/ files.
+
+    ★ WHY THIS EXISTS. A hand-seeded registry reporting "0 unsourced" is a
+    clean bill of health produced by ABSENCE — the same presence-blind-to-
+    absence failure this repo has hit all day, inside the instrument built to
+    catch provenance failures. The registry cannot tell you what it does not
+    contain, so something has to count what is out there.
+    """
+    files = _tracked() if tracked is None else tracked
+    out: list[tuple[str, str, float]] = []
+    for rel in sorted(f for f in files
+                      if f.startswith(_CANDIDATE + "/") and f.endswith(".py")):
+        try:
+            tree = ast.parse((REPO / rel).read_text())
+        except (SyntaxError, FileNotFoundError):
+            continue
+        for node in tree.body:                       # module level only
+            if not isinstance(node, ast.Assign):
+                continue
+            for t in node.targets:
+                if (isinstance(t, ast.Name) and t.id.isupper()
+                        and isinstance(node.value, ast.Constant)
+                        and isinstance(node.value.value, (int, float))
+                        and not isinstance(node.value.value, bool)):
+                    out.append((rel, t.id, float(node.value.value)))
+    return out
+
+
 def gate(registry=REGISTRY, tracked=None) -> list[str]:
     """Hard failures only. Returns reasons; empty means pass."""
     bad: list[str] = []
@@ -151,6 +189,10 @@ def gate(registry=REGISTRY, tracked=None) -> list[str]:
                        f"{actual} — the registry has drifted from the code")
         if c.kind is Kind.MEASURED and not (c.dataset and c.method and c.n > 0):
             bad.append(f"{c.name}: claims MEASURED without dataset+method+n")
+        if c.kind is Kind.MEASURED and not c.population:
+            bad.append(f"{c.name}: claims MEASURED without a POPULATION "
+                       "predicate — which rows counted is the definition, and "
+                       "an unstated one swung a cohort 18 -> 31 on 2026-09-06")
         if c.kind is Kind.PROVISIONAL and not (c.caveat and c.registration):
             bad.append(f"{c.name}: claims PROVISIONAL without a caveat and a "
                        "registration to settle it")
@@ -159,6 +201,15 @@ def gate(registry=REGISTRY, tracked=None) -> list[str]:
                        "change it")
         if c.kind is Kind.UNSOURCED and not c.owner:
             bad.append(f"{c.name}: UNSOURCED with no owner")
+    # THE CRAWLER MUST WORK, or a small inventory reads as a clean bill of
+    # health. Every registered constant must be findable by the search; if it
+    # is not, the search is broken and its coverage number is meaningless.
+    found = {(site, name) for site, name, _ in find_candidates(tracked)}
+    for c in registry:
+        if c.site.startswith(_CANDIDATE + "/") and (c.site, c.name) not in found:
+            bad.append(f"{c.name}: registered but the crawler does not find "
+                       f"it in {c.site} — the search is broken, so any "
+                       "coverage figure it reports is worthless")
     n = sum(1 for c in registry if c.kind is Kind.UNSOURCED)
     if n > UNSOURCED_CEILING:
         bad.append(f"{n} unsourced constant(s) against a ceiling of "
@@ -177,7 +228,18 @@ def report(registry=REGISTRY) -> str:
             if kind is Kind.UNSOURCED:
                 out.append(f"      OWES A DERIVATION — owner: {c.owner or '???'}")
     n = sum(1 for c in registry if c.kind is Kind.UNSOURCED)
-    out += ["", f"UNSOURCED: {n} (ceiling {UNSOURCED_CEILING}, may only fall)"]
+    cands = find_candidates()
+    reg_sites = {(c.site, c.name) for c in registry}
+    unregistered = [x for x in cands if (x[0], x[1]) not in reg_sites]
+    out += ["",
+            f"UNSOURCED: {n} (ceiling {UNSOURCED_CEILING}, may only fall)",
+            "",
+            f"COVERAGE: {len(reg_sites)} registered of {len(cands)} module-level "
+            f"constants found in {_CANDIDATE}/",
+            f"  {len(unregistered)} UNREGISTERED — this number, not the "
+            "unsourced count, is what a clean report is hiding behind.",
+            "  A small inventory is a failure of the SEARCH until shown "
+            "otherwise; the crawler is gated on finding every registered one."]
     tmpl = next((c for c in registry if c.kind is Kind.PROVISIONAL), None)
     if tmpl:
         out += ["",

@@ -117,3 +117,55 @@ def test_the_report_points_at_the_template():
 def test_the_report_carries_the_count_and_the_ceiling():
     out = report()
     assert f"UNSOURCED: 0 (ceiling {UNSOURCED_CEILING}, may only fall)" in out
+
+
+# ------------------------------------------------------------------ #
+# The search must work, or a small inventory is a clean bill of health
+# ------------------------------------------------------------------ #
+
+
+def test_the_crawler_actually_finds_things():
+    """★ THE SMOKE TEST. A registry of four hand-picked entries reporting
+    "0 unsourced" is a pass produced by ABSENCE — the same
+    presence-blind-to-absence failure this repo hit all day, inside the
+    instrument built to catch provenance failures. If the crawler returns
+    nothing, every coverage figure it prints is worthless."""
+    from constant_registry import find_candidates
+
+    found = find_candidates()
+    assert len(found) > 50, (
+        f"crawler found only {len(found)} constants in core/ — a small "
+        "inventory is a failure of the SEARCH until shown otherwise")
+    assert ("core/pulse/win_curve.py", "RULE_OF_THUMB_SIGMA", 2.0) in found
+
+
+def test_a_registered_constant_the_crawler_cannot_see_fails():
+    """If the search cannot find something we KNOW is there, the search is
+    broken and its coverage number means nothing."""
+    c = Constant("NOT_A_MODULE_LEVEL_NAME", 1.0, "core/quote/engine.py",
+                 Kind.POLICY, changes_if="x")
+    bad = gate((c,), tracked=TRACKED | {"core/quote/engine.py"})
+    assert any("the search is broken" in b for b in bad), bad
+
+
+def test_the_report_states_coverage_not_just_the_unsourced_count():
+    """The unsourced count is the flattering number. Coverage is the honest
+    one, and both have to be on the page."""
+    out = report()
+    assert "COVERAGE:" in out and "UNREGISTERED" in out
+    assert "failure of the SEARCH" in out
+
+
+# ------------------------------------------------------------------ #
+# A number with an unstated predicate
+# ------------------------------------------------------------------ #
+
+
+def test_a_measured_claim_without_a_population_predicate_fails():
+    """2026-09-06: a cohort quoted as 18 was 31 under the module's documented
+    rule — a 72% swing on an unstated definition. Which rows counted IS the
+    definition, and it is more commonly missing than the dataset."""
+    c = Constant("FLOOR_GAMES", 10, "core/pulse/live_report.py", Kind.MEASURED,
+                 dataset="pulse_decisions", method="counted", n=28)
+    bad = gate((c,), tracked=TRACKED)
+    assert any("without a POPULATION predicate" in b for b in bad), bad
