@@ -112,3 +112,104 @@ on decision-path changes, which are rare; everything else can deploy whenever.
 ---
 
 No in-sample result justifies capital. The forward test is the evidence.
+
+---
+
+## 6. ★ The failure mode fired the same day it was written — measured, not hypothetical
+
+§4's caveat said equal `decision_hash` does not mean comparable fills. The
+2026-09-05 slate supplied the instance within the hour:
+
+    hour   games  markets     rows       FILLS
+    17:00     16     2655  1,138,926     4,937
+    18:00     17     2807  1,171,813         0
+    19:00     29     4448  1,181,502         3   <- peak of the slate
+    21:00     16     2599  1,252,211         0
+
+**Recording never faltered and volume ROSE.** Fills fell ~1000x at a constant
+`decision_hash`, with the code byte-identical throughout.
+
+The mechanism is arithmetic (a1): `engine.py:260` books on `mid <= bid`, which
+with a positive spread requires the mid to FALL THROUGH our bid. A frozen book
+cannot produce that, so a frozen board yields zero fills no matter how much
+volume the recorder writes.
+
+**So the sentence is no longer a caution, it is a measurement**: on 2026-09-05
+the code agreed exactly and the fills went to zero.
+
+## 7. The minimum regime stamp — two dimensions, each earned by an observed failure
+
+A regime stamp answers what `decision_hash` cannot: were these two windows
+*comparable markets*. The temptation is a rich schema nobody validates. The
+disciplined version is the smallest set that catches the failures we have
+actually seen.
+
+**Dimension 1 — BOOK UPDATE FRACTION.** Share of live markets showing more
+than one distinct (bid, ask) pair in the window. Measured on the freeze it
+separated **0.0% against 74.4%** — total separation, not marginal, which is
+the strongest possible case for a stamp dimension. Catches the 09-05 failure.
+
+**Dimension 2 — SPREAD DISTRIBUTION** (median and p75 of quoted spread across
+live markets). Catches the board-composition failure: CFB median 11c against
+WNBA's 4c, identical hash, different economics — the spread sets both which
+markets are quotable and how large the overshoot is when a fill books.
+
+**That is the whole minimum.** Volatility, rung density and time-to-settlement
+are all plausible third dimensions and none of them has yet produced a failure
+that dimensions 1 and 2 would miss. **Rule for adding a third: only when a
+pooling error is observed that neither existing dimension catches.** A stamp
+grows on evidence, not on imagination.
+
+### ★ The hazard that constrains the design
+
+**A regime stamp must record the market's STATE, not our RESULTS.** The
+tempting dimension is something like "how often the mid crossed down through a
+touch" — it is closest to what the fill rule needs, and it is computable from
+the tape without our quotes. It is still wrong, because it is a near-proxy for
+our own fill rate: pooling only windows with similar fill rates conditions on
+the outcome and makes the comparison tautological.
+
+So prefer exogenous, upstream quantities — does the book update, how wide is
+it — over anything that approximates how well we would have done. Both
+dimensions above satisfy that; the discarded one does not.
+
+## 8. Closing the two blind spots — costed, and both estimates were wrong
+
+### Dependency versions: cheap to implement, expensive in fragmentation
+
+The decision path's third-party imports are exactly **three**: `scipy 1.18.0`,
+`sqlalchemy 2.0.51`, `structlog 26.1.0`. Hashing resolved versions is one line.
+
+**But `scipy` is used only at `adverse_selection.py:320` and `:339`, both
+`stats.t.ppf` for confidence intervals — pure SCORING.** The quotable band
+uses none of it. So a naive dependency hash would fragment every cohort on a
+scipy bump, for a library that cannot touch a quote. That is the disease this
+whole scheme exists to cure, reintroduced one level down.
+
+**Real cost** = curate the dependency list the same way `DECISION_FILES` is
+curated: named, with a written reason each, drift-guarded against new imports.
+Cheap, but it is curation work rather than a lockfile hash. A lockfile hash
+specifically is the wrong instrument — it moves on dev-only bumps.
+
+### ORM / schema: mostly already closed, and not via the ORM
+
+The decision path does **not** reach the database through the ORM. It uses raw
+`text("""...""")` SQL literals at `engine.py:207, 354, 364` — **which are
+inside a file the hash already covers.** Any change to what the engine asks for
+already moves `decision_hash`, for free.
+
+**Residual, and it is narrower than "a schema hash":** a schema change that
+alters what those queries RETURN without changing their TEXT — a column's
+semantics changing under a stable name, a view redefinition, a trigger. A full
+schema hash would fragment on every additive migration and is the wrong trade.
+The proportionate instrument is the existing validity discipline: a second
+independent source (the migration history) checked against the deploy log, not
+a hash.
+
+### The unifying point
+
+Files, environment variables, dependencies — **at every level the structural
+closure is wrong in the same direction**, because it tracks what the code
+mentions rather than what the decision uses. Each level needs the same
+treatment: a named list, a written reason per entry, and a drift guard that
+fails the build when something new appears unclassified.
