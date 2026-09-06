@@ -18,7 +18,34 @@ L = -34.5 up to 0.755 at L = +34.5 on the first ladder inspected, monotone
 increasing, which fixes the handicap reading. It agrees with d5's independently
 written `link(mid) = (mu + L)/sigma`.
 
-## ★ THE SIGMA SURFACE HERE IS NOT A RIVAL TO d5's. THEIRS IS THE AUTHORITY.
+## ★ NEITHER SIGMA SURFACE HAS A SOUND SELECTOR. THE SLOPE IS OPEN.
+
+**Supersedes commit 0e3116d, which named d5's the authority, and supersedes the
+reversal that would name mine.** Both cohorts are selected wrongly and both are
+rescued by the same 09-05 board freeze.
+
+* **d5's, n=14:** their `kick` was the first moment the recorder SAW a game, so
+  all 14 "kickoffs" are 22:08-22:09Z and every game was already in progress
+  (P2 at 14-0, P4 at 49-3). Zero of 14 seen at 0-0.
+* **Mine, n=5:** anchored on the first LIVE ROW, which is a venue flag, not an
+  event. **Four of my five share the first-live stamp 2026-09-06 01:07:28.867523
+  to the microsecond** — a batch flag flip. Across the export, 19 of 24 games
+  share a stamp with another and 15 share the export's own first row.
+
+And my pregame windows are frozen on those same four (0-2.4% of markets showing
+more than one distinct mid). **Only game 16505 has both a unique first-live
+stamp and a moving board, so the defensible cohort is ONE game.**
+
+I told d5 to anchor on an event rather than a flag, and then anchored on a flag.
+
+The values on both sides may still be right — a frozen board carries its last
+pregame quotes, so these are pregame ladders in fact. But that is luck, not
+provenance, and **the slope disagreement (0.0623 vs 0.1182) is unresolved rather
+than adjudicated.** d5's shipped module stays the usable artifact because it has
+n and a provenance banner; this file's refit is a 1-defensible-game check and
+must not be quoted as a rival.
+
+## ★ THE OLD HEADING, KEPT SO THE SUPERSEDED CLAIM IS VISIBLE
 
 `core/gridiron/scale.py` ships `sigma = 13.19 + 0.1182*|game_spread|` on n=14
 with corr +0.948 and a sensitivity analysis across four filter choices. **That is
@@ -191,10 +218,11 @@ def main() -> int:
 
     # ---- THE THREE CRITERIA -------------------------------------------------
     _, a_in, b_in = surface(adm)
-    print(f"\n  ★ THE AUTHORITY IS d5's MODULE: sigma = 13.19 + 0.1182*|game_spread|,")
-    print(f"    n=14, corr +0.948, core/gridiron/scale.py. USE THAT ONE.")
-    print(f"    My refit on these {len(adm)} ladders is {a_in:.2f} + {b_in:.4f}*|mu| and is a")
-    print(f"    CHECK ON THEIRS, not a rival surface. Larger n wins; do not quote mine.")
+    print(f"\n  ★ NEITHER SURFACE HAS A SOUND SELECTOR — the slope is OPEN.")
+    print(f"    d5: 13.19 + 0.1182*|spread|, n=14, kickoff = first-SEEN, all mid-game.")
+    print(f"    mine: {a_in:.2f} + {b_in:.4f}*|mu|, n={len(adm)}, of which 4 share one")
+    print(f"    batch first-live stamp and have FROZEN pregame boards. Defensible: 1 game.")
+    print(f"    Both rescued by the 09-05 freeze. Use d5's module; quote neither slope.")
     res = []
     for _, r in adm.iterrows():
         s_loo, _, _ = surface(adm, drop=r.gid)
