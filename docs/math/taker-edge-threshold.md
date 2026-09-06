@@ -5,58 +5,58 @@ clears it — the same order that closed the cross-venue question.
 
 **The headline inverts the expectation this was commissioned under.** The
 required edge is not "far outside our confidence interval". It is **far inside
-it** — 25× smaller than the interval's own width. The problem is not that the
+it** — **19-25× smaller** than the interval's own width, depending on which τ
+you use, and **every candidate τ lands in that range** (see the supersession
+notice below: the value is unestablished, the order of magnitude is not). The problem is not that the
 model falls short of the threshold. It is that **the instrument we have been
 using cannot resolve a tradeable edge at all.**
 
-## ⚠️ THE HALF-SPREAD INPUT WAS WITHDRAWN. τ IS 3.07 pp, NOT 2.69.
+## ⛔ τ IS UNESTABLISHED FOR WNBA AND CFB. 3.07 pp IS WITHDRAWN, AND SO IS 2.69.
 
-**Superseded 2026-09-06 by c7's audit.** Every number on this page scales off
-one input, and the input this page was published with — `s = 1.193¢` — **had no
-owner and has been withdrawn.** c7 stated it was not theirs and that they never
-measured it; neither c7 nor A could source it. It nonetheless set every figure
-below, including the published 57.8% breakeven floor.
+**2026-09-06. Do not quote a τ from this page for WNBA or CFB.** Not a
+corrected number — no number.
 
-The replacement arrived ambiguous — described as both a half-spread and a full
-spread in successive messages, which moved τ in opposite directions and is why
-this page carried a three-way table rather than a number. **c7's audit resolves
-it: the half-spread is `s = 1.569¢`.**
+The published **2.69 pp** rested on `s = 1.193¢`. I superseded it with **3.07 pp**
+on `s = 1.569¢`, re-deriving 3.07 from this page's own fee model rather than
+taking it on report. **The arithmetic was right and the input was wrong**, twice
+over:
 
-| | half-spread | τ at p = 0.50 |
-|---|---:|---:|
-| published (withdrawn) | 1.193¢ | 2.69 pp |
-| **corrected** | **1.569¢** | **3.07 pp** |
+**First, a population mismatch inside the making work.** `1.193¢` was never
+unsourceable: it is `mean(s_q)/2` over the **22,062 guarded real fills** that
+also produce `|A| = 1.634¢`. `1.569¢` is the same statistic over **all 73,964
+fills**. Pairing a guarded `|A|` with an all-fills `H` is the error, and it is
+mine — the making floor returns to **57.8%**.
 
-**The correction runs AGAINST us: +0.38 pp, a harder bar.** That direction is
-the reason to trust it rather than to re-open it — an error that made trading
-easier would deserve more scrutiny than one that makes it harder.
+**Second, and this is why neither value can simply be swapped back: both are
+maker-side numbers in a taker-side formula.** `1.193¢` is the half-spread **we
+quoted, on fills we made, under a one-sided maker guard**. τ is what it costs
+**to cross**. There is no reason a taker's half-spread should inherit a
+distribution selected by our own resting orders. **So 3.07 pp is not
+established and 2.69 pp never was**, and the correction that produced 3.07
+propagated the defect instead of fixing it.
 
-**3.07 pp is still not a scalar.** τ varies by market type by roughly a factor
-of seven — winner ~0.5 pp, spread ~2.0 pp, total ~3.5 pp on A's CFB tape — and
-the blend behind `s = 1.569¢` was never recorded. See the surface caveat below
-before quoting any single number from this page.
+| | status |
+|---|---|
+| **WNBA τ** | **UNESTABLISHED** — pending a taker-side half-spread with a stated population |
+| **CFB τ** | **UNESTABLISHED** — withdrawn separately; measured on the frozen 09-05 tape |
+| NFL τ | A's figures, labelled pregame at every mention, measured on a named book |
 
-**A spread quoted without "full" or "half" attached is not a measurement, it is
-two measurements.** That is the same label-the-policy failure this project has
-hit on estimators and on P&L conventions, arriving on a venue microstructure
-constant.
+**This is the third term in one family, and the mechanism generalises:** the
+making floor's numerator and denominator both lacked an aggregation entry, only
+the numerator was fixed, and **τ escaped because it lives in a different
+document.** A correction travels to the pages that quote a number, not to the
+pages that quote the input.
 
-**CFB: withdrawn, unmeasured, awaiting tonight's tape.** A withdrew the CFB
-taker bar. It had been measured on the frozen 09-05 tape, where 99% of markets
-with ≥20 snapshots showed ≤2 distinct book states — a spread computed from a
-board nobody was quoting. There is no CFB number on this page and there should
-not be one until a live tape supports it. **Every figure below is WNBA.**
+**What survives, and it is what this page is for.** Direction is unaffected:
+every candidate value — 2.69, 3.07, and the per-type spread of 0.5 to 3.5 —
+**exceeds the 1.20 pp that λ\* = 0.15 buys**, and a larger τ only makes clearing
+harder. **The negative conclusions below do not depend on which number is
+right.** They depend on τ being of order 1-3 pp, which every reading agrees on.
+What cannot be quoted is a *value*.
 
-**What survives regardless, and it is the argument this page is for:** τ stays
-in the 2.5–3.5 pp band, an order of magnitude above the 0.0009-scale Brier
-improvements the accuracy work resolves, and above the 1.20 pp that λ* = 0.15
-buys. **The direction of every conclusion below is unchanged.**
-
-One second-order effect is worth stating because it is counterintuitive: a
-HIGHER bar is EASIER to detect, so the games required to resolve it falls from
-21,039 to **12,401**. The bar moved away from us and the instrument's relative
-coarseness fell from 25× to 19×. Both are true and neither rescues the
-programme — 12,401 games is still ~46 NFL seasons.
+Every figure below is computed at `s = 1.569¢` and is therefore **illustrative
+of the machinery, not a bar anyone should trade against.** They are left in
+place rather than deleted so the supersession trail stays legible.
 
 ## ⚠️ τ IS A SURFACE OVER (TYPE, PRICE). EVERY SCALAR ON THIS PAGE IS A MIXTURE.
 
