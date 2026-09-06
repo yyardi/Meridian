@@ -101,14 +101,31 @@ removed it from the feature list this afternoon, and exactly what makes it a
 
 ## RESULT — play-level Brier, out-of-fold, held out by game (n 3,642, G 28)
 
-    game state only  (7 features)        0.08061
-    anchor only      (1 parameter)       0.07413   <-
+**★ POPULATION, added 2026-09-06 after this table was quoted elsewhere without
+one.** These rows are the 28-game fit set joined to ESPN state on game clock with
+`merge_asof(direction="nearest", tolerance=30s)`. That join is **not** the one
+used by `analysis/c7_identity_test.py`, which is `direction="forward"` — nearest
+can match a state up to 30s in the FUTURE. Do not stack this table against that
+one; different population (n 3,642 vs 14,458), different cohort predicate, and
+`down`/`distance` exist here and not there.
+
+    game state only  (7 features)        0.08061   reproduced exactly 2026-09-06
+    anchor only      (1 parameter)       0.07413   <- WITHDRAWN, see below
     state + constrained anchor           0.10443
-    ESPN                                 0.06942
+    ESPN                                 0.06942   reproduced exactly 2026-09-06
 
     vs ESPN:  state only    -0.01119 [-0.04316, +0.02077]  tie
               anchor only   -0.00472 [-0.06355, +0.05412]  tie
               state+anchor  -0.03502 [-0.15963, +0.08959]  tie
+
+**★ THE 0.07413 ROW IS WITHDRAWN.** Re-running on the identical population
+(nearest/30s, n 3,642, G 28 — confirmed by `p_base` and `ESPN` reproducing to
+five decimals) a game-level out-of-fold logistic on `live_spread` gives
+**0.05609**, not 0.07413. I cannot identify what construction produced 0.07413
+and it should not be quoted. The claim it supported — that one pregame parameter
+beats seven game-state features — **survives and strengthens** under every
+construction tried (0.05609 nearest/30s, 0.06371 forward/60s, both below the
+0.08061 state-only row), so the finding stands and only the figure is bad.
 
 **A single logistic parameter on the pregame spread, using no in-game state at
 all, beats a seven-feature model of down, distance, field position, clock and
