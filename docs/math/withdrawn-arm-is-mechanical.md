@@ -85,13 +85,26 @@ one population guaranteed to flatter us.
   separate** the halves on Brier. That is a different estimand from the P&L
   figures above and does not supersede them, but it is the more conservative
   reading of the same data and it came from shared code.
-- **Provenance of +4.761pp, pinned because it was mis-identified twice in
-  relay.** It is *"side-signed P&L on the YES scale at the quoted
-  `limit_price`, game-clustered"* — a **P&L/contract** figure, **limit**-
-  anchored. It is **not** `pulse_branch_scoring.py`'s Brier(market) −
-  Brier(model): that quantity's entered/declined differences are ~0.002–0.003
-  per `3441cc1`, two orders of magnitude away. So the comparison here is
-  P&L against P&L, in the same family, and apt.
+- **Provenance of +4.761pp — settled by REPRODUCTION, after three conflicting
+  identifications in relay.** Computing `s·(S − limit_price)·100`,
+  game-clustered, on the pinned export returns:
+
+  | arm | n | G | reproduced | published |
+  |---|---:|---:|---:|---:|
+  | filled | 1,944 | 34 | **+4.761pp** | +4.761pp |
+  | withdrawn | 1,019 | 33 | **+10.857pp** | +10.857pp |
+
+  Exact to three decimals on both. It is a **P&L** statistic — side-signed on
+  the YES scale at the quoted limit price — and **not**
+  `pulse_branch_scoring.py`'s Brier(market) − Brier(model), whose
+  entered/declined differences are ~0.002–0.003 per `3441cc1`, two orders of
+  magnitude away. It is committed, in
+  `analysis/pulse_money_and_the_taker_join.md` at `3dbe88a`.
+  - My clustered half-width comes out **5.900** against the published 6.216 —
+    a small estimator difference, not a point-estimate one. It changes no
+    verdict (filled spans zero either way, withdrawn excludes it either way)
+    but it is unreconciled and named rather than smoothed over.
+  - So the comparison here is P&L against P&L, and apt.
   - Consequence, via the anchor rule: because that base is **limit**-anchored,
     the gross 4.70¢ is the *correct* charge against it. No overcharge there.
   - The document carrying it is headed **"MY VERSION, pending reconciliation
