@@ -96,12 +96,34 @@ the realised figure.
 **This retracts a direction I asserted.** I told the manager the flat rate
 "understates, never overstates", so the pessimistic branch was a lower bound.
 That rested entirely on convexity from book-walking. With no book-walking the
-premise is void and the conclusion does not follow — and measured, the charge
-runs the other way.
+premise is void and the conclusion does not follow.
 
-Stated carefully: markout-at-fill and QUOTE's feed-lag concession are **not
-demonstrably the same estimand**, so this does not refute 4.70¢. What it does
-refute is my claim to know the sign of the error.
+### And the 2.60× was a category error — the two agree
+
+Reconciled against the constant's provenance (`adverse_selection.py`,
+`E[−dmid | filled]`, 30s, quote-anchored — from Quant A). Both are the same
+decomposition; I had compared different lines of it.
+
+| term | PULSE, per leg | QUOTE |
+|---|---:|---:|
+| half-spread (favourable, earned by resting) | +3.004¢ | +1.96¢ |
+| **adverse mid move** | **4.545¢** [4.199, 4.891] | **4.70¢** |
+| net (= half-spread − adverse move) | −1.541¢ | −2.74¢ |
+
+**4.70¢ sits inside my interval.** −1.541 = 3.004 − 4.545 and −2.74 = 1.96 −
+4.70; the net figures differ only because PULSE rests into a wider spread.
+Median elapsed decision→fill is 34s against QUOTE's fixed 30s horizon.
+
+So **4.70¢ is not too high as a gross adverse-move estimate** — PULSE's own
+fills reproduce it. What is wrong is its *application*:
+`4.70¢ × Σ contracts` charges the gross adverse move while omitting the
+**+3.004¢ per leg of spread that resting at the touch actually earns**. The
+net execution cost on PULSE's own fills is **−1.541¢ per leg / −1.825¢ per
+contract**.
+
+Whether to net the spread credit is a modelling choice — it depends on whether
+the alpha term is already mid-anchored, which I have not verified — but it is
+not a 2.6× calibration error in the constant, and I withdraw that framing.
 
 ## The cadence blocker was real, and is moot here
 
