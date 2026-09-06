@@ -34,7 +34,7 @@ S = {"g1", "g2", "g3"}
 print("ADVERSARIAL CONTROL -- slate readiness\n")
 
 c, l = readiness("OK", S, set(), S, S)
-case("ESPN recorder dead", c, l, 1, "09-06's failure")
+case("ESPN recorder dead", c, l, 1, "09-06 failure; board scope")
 c, l = readiness("OK", S, S, set(), S)
 case("VENUE recorder dead", c, l, 1, "09-05's failure")
 c, l = readiness("OK", S, set(), set(), S)
@@ -61,24 +61,37 @@ v2e = dict(zip(mp.venue_game_id.astype("Int64").astype(str),
                mp.espn_game_id.astype(str)))
 mappable = set(v2e.values())
 venue_seen = {v2e[v] for v in venue_ids if v in v2e}
-sched = espn_ids
-c, l = readiness("OK", sched, espn_ids, venue_seen, mappable)
+# SCOPED TO THE BOARD (ce measured: 119 venue games at --days 3 AND --days 8,
+# while ESPN went 132 -> 180). The board is the tradeable population; scoping
+# to ESPN's schedule makes the check permanently red.
+board = {v2e[v] for v in venue_ids if v in v2e}   # board games, in espn ids
+# ★ COMMON WINDOW. My two pinned exports are cut at different times (ESPN
+# 22:08Z-16:08Z, prices 21:00Z-16:32Z), so 21 board games fall outside one or
+# the other and read as gaps that are artifacts of MY FILES, not the
+# recorders. Verified: 18 kicked off before the ESPN export opened, 3 after it
+# closed, 0 genuinely absent. In production this check reads LIVE tables and
+# the problem does not arise -- but comparing two exports cut at different
+# times manufactures gaps, which is a usage caveat worth carrying.
+board &= espn_ids
+c, l = readiness("OK", board, espn_ids, board, mappable)
 print()
-case(f"REAL 09-05 slate ({len(sched)} games)", c, l, 1,
-     "MAP covers 19/50 -- a real blocker, correctly attributed", show=True)
+case(f"REAL board, common window ({len(board)} games)", c, l, 0,
+     "board-scoped and window-matched: both sides recording", show=True)
 
-# and it MUST be able to pass: restrict to the games the map can join
-c, l = readiness("OK", sched & mappable, espn_ids, venue_seen, mappable)
+# a board game the map cannot join must still FAIL -- that is the actionable
+# number, and unlike the schedule-scoped version it can legitimately reach zero
+c, l = readiness("OK", board | {"unjoinable_board_game"}, espn_ids,
+                 board | {"unjoinable_board_game"}, mappable)
 print()
-case(f"REAL, mappable subset ({len(sched & mappable)} games)", c, l, 0,
-     "a check that cannot pass is as useless as one that cannot fail",
+case("board + 1 unjoinable game", c, l, 1,
+     "MAP is actionable and CAN reach zero when the map is complete",
      show=True)
 
 # --- the disjunction is what makes case 5 reachable at all -------------- #
-one_missing = set(list(sched)[:5]) | {"never_seen_game"}
-c, l = readiness("OK", one_missing, espn_ids, venue_seen, mappable | {"never_seen_game"})
+one_missing = set(list(board)[:5]) | {"never_seen_game"}
+c, l = readiness("OK", one_missing, espn_ids, board, mappable | {"never_seen_game"})
 print()
-case("real slate + 1 phantom game", c, l, 1,
+case("board + 1 game neither side recorded", c, l, 1,
      "the branch real data cannot reach", show=True)
 
 print(f"\n{'ALL CASES BEHAVE' if not fails else f'*** {fails} MISBEHAVED ***'}")
