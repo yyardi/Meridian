@@ -139,6 +139,16 @@ decided game, which is d5's 0.169 failure in a different disguise.
     settled STRICT = has a 'post' row                              28 games -> cohort 18
     settled LOOSE  = post OR (period>=4 AND clock 0:00 AND untied) 44 games -> cohort 31
 
+    OUTCOME ROW (both predicates) = THE LAST ROW IN TIME ORDER, never the first
+    'post' row. See check_settlement().
+
+**★ A COHORT PREDICATE THAT DOES NOT NAME THE OUTCOME ROW IS TWO COHORTS.** ce's
+point and it was a real gap here: the two rules above select which GAMES are
+scored and say nothing about which ROW supplies `y`. Since ESPN un-posts, those
+are independent choices and the row selector is worth more than the predicate —
+"has a post row" plus first-post inverts a winner, "has a post row" plus last-row
+does not. Both were previously documented as one rule. State them together.
+
 LOOSE is what `cfb-state-substrate.md` specifies and what d5's module uses, so
 this composes with their pipeline. Both are computed below; G and predicate are
 printed on every row. Export vintage is named because d5 gets 16 where ce gets 18
