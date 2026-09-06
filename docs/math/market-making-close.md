@@ -74,12 +74,14 @@ above the ≈31.4% ceiling.
 > can cross to us with the ask held and drift against us afterward. So the realized
 > benign earning is ≤ s_q/2 ⟹ true r\* ≥ 51.0%. The caveat widens the close.
 
-> **BLEND behind H = 1.569¢, recorded so the pooled figure is reconstructible.**
-> 1.569¢ is a mixture across market types (winner **3.1%** @ 0.68¢ mean, spread
-> **38.7%** @ 1.75¢, total **58.1%** @ 1.50¢ — half-spreads). It is ~97% spread and
-> total, so the pooled H is essentially a spread/total number; the winner type
-> barely contributes. A per-type floor would need a per-type A (not computed here),
-> but the blend is now on record — the same discipline the withdrawn 1.193¢ lacked.
+> **BLEND behind H = 1.569¢, recorded and reconstructed.** H is a *mean*, so it
+> blends linearly and genuinely reconstructs from the per-type means: winner
+> **3.1%** @ 0.68¢, spread **38.7%** @ 1.75¢, total **58.1%** @ 1.50¢ →
+> 0.031·0.68 + 0.387·1.75 + 0.581·1.50 = **1.570¢** ✓. It is ~97% spread and total,
+> so the pooled H is essentially a spread/total number; the winner type barely
+> contributes. A per-type floor would need a per-type A (not computed here), but the
+> blend is on record — the discipline the withdrawn 1.193¢ lacked. (The pooled
+> *median* 1.00¢ is a direct number, not a blend — medians are not linear.)
 
 ---
 
