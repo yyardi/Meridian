@@ -1,5 +1,13 @@
 # The concession is applied per contract — and the size term is not there
 
+> **Intervals below are ~5% too narrow.** They were computed with an inline
+> estimator using z = 1.96 and no finite-sample correction; the correct
+> construction for few clusters is CR1 √(G/(G−1)) with t at df = G−1
+> (1.054× at G = 34, 1.216× at G = 10). Point estimates are unaffected and **no
+> conclusion here changes** — widening only strengthens the central claim, that
+> QUOTE's 4.70¢ sits *inside* the measured 4.545¢ interval. Cause and re-issued
+> figures: [my-clustered-intervals-were-narrow](my-clustered-intervals-were-narrow.md).
+
 `analysis/pulse_execution_decomposition.py:285` charges the pessimistic
 execution rule as a flat rate times total size:
 

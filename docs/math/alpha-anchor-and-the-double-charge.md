@@ -1,5 +1,13 @@
 # Alpha is anchored on the fill mid — so the pessimistic rule charges the same move twice
 
+> **The two intervals below are ~5% too narrow** (inline estimator, z = 1.96,
+> no finite-sample correction; correct is CR1 √(G/(G−1)) with t at df = G−1).
+> Point estimates and every dollar total are unaffected, and the load-bearing
+> results here are identities and totals rather than intervals, so **nothing
+> changes**. The ride/trip comparison was already reported as underpowered and
+> widening reinforces that. See
+> [my-clustered-intervals-were-narrow](my-clustered-intervals-were-narrow.md).
+
 **Question:** should the +3.004¢/leg of spread that resting at the touch earns
 be netted against the execution charge?
 

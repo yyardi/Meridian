@@ -1,5 +1,15 @@
 # The |edge| gradient: two mechanisms, not one, and the outcome axis cannot see either
 
+> **Intervals below are ~5–9% too narrow.** Computed with an inline estimator
+> using z = 1.96 and no finite-sample correction; the correct construction for
+> few clusters is CR1 √(G/(G−1)) with t at df = G−1 (1.054× at G = 34, 1.091×
+> at G = 21, 1.216× at G = 10). Point estimates are unaffected. **No conclusion
+> changes**, but two are closer than they read: the q3/q4 calibration errors
+> still exclude zero after widening, q4 only just (−0.087 → about [−0.167,
+> −0.008]). The drift/half-spread ratio is re-issued at −1.809 [−1.901, −1.716]
+> and still excludes the mechanical null of −1.0. Cause and full re-issue:
+> [my-clustered-intervals-were-narrow](my-clustered-intervals-were-narrow.md).
+
 Three sightings were proposed as one mechanism — "the more confident the model,
 the worse the result": PULSE's disagreement>5¢ cut being the worst slice,
 withdrawn orders beating filled ones, and realised markout worsening with

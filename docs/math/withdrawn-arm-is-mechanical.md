@@ -1,5 +1,13 @@
 # The withdrawn arm looks better because the price ran away — so do not reweight toward it
 
+> **Some intervals below are ~5% too narrow.** The ones that carry the argument
+> are re-issued and correct: the withdrawn mid move is **+3.713¢ [+2.547,
+> +4.879]** (still excluding zero) and the paired difference is **+52.206pp,
+> about [+8.8, +95.6]** under t(32) (still excluding zero). Remaining marginal
+> intervals used an inline estimator with z = 1.96 and no finite-sample
+> correction. Point estimates are unaffected and **no conclusion changes**.
+> See [my-clustered-intervals-were-narrow](my-clustered-intervals-were-narrow.md).
+
 The reported pair: filled **+4.761pp** [−1.455, +10.978], withdrawn
 **+10.857pp** [+7.554, +14.160], read as *"the bets we wanted are the ones
 nobody would take"* and proposed as the basis for reweighting the score toward
