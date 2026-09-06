@@ -161,8 +161,18 @@ def spread_anchor(prices: pd.DataFrame, game_map: pd.DataFrame,
     rather than taking any single listed line — the crossing is the market's
     own estimate and a listed line is only the nearest rung to it.
 
-    The regex pins **full-game** markets: 1h/2h/1q/2q/3q/4q spreads share the
-    prefix and would otherwise be mixed into a game-level feature.
+    The regex pins **full-game** markets: only 4,553 of 8,088 `asc-` markets are
+    full-game; 1h/2h/1q/2q/3q/4q share the prefix and would otherwise be mixed
+    into a game-level feature with no error and no null — a wrong number in a
+    right-shaped column. Pinned by `test_quarter_and_half_spreads_are_excluded`
+    rather than by this paragraph, because construction-safety is invisible both
+    when it holds and when it breaks.
+
+    **The bracket filter is not free and is not silent here.** Measured on the
+    2026-09-05 board: 14 games reach this stage, **12 keep an anchor and 2 are
+    dropped because their ladder does not bracket 0.5** — 14% of the stage, on a
+    cohort where 12 is the whole result. Games with fewer than 2 quoted lines
+    would also drop; none did.
     """
     q = prices.dropna(subset=["best_bid", "best_ask", "game_id"]).copy()
     q["vid"] = q.game_id.astype(int)

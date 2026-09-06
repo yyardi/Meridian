@@ -73,3 +73,35 @@ def test_a_stale_price_is_dropped_rather_than_carried():
 def test_confidence_floor_excludes_the_game():
     X = build(*_frames("2026-09-05T22:09:50", "2026-09-05T22:10:00"), min_confidence=0.99)
     assert X.empty
+
+
+# --------------------------------------------------------------------- #
+# The spread anchor must be FULL-GAME only.
+#
+# Only 4,553 of 8,088 `asc-` markets are full-game; 1h/2h/1q/2q/3q/4q share the
+# prefix. Mixing a first-quarter line into a game-level feature produces no
+# error and no null — a wrong number in a right-shaped column. The moneyline
+# anchor is 132/132 full-game, so it was safe BY CONSTRUCTION rather than by
+# care, and construction-safety is invisible when it holds and when it breaks.
+# --------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("slug, is_full", [
+    ("asc-cfb-abchr-txtech-2026-09-05-pos-22pt5", True),
+    ("asc-cfb-abchr-txtech-2026-09-05-neg-7", True),
+    ("asc-cfb-abchr-txtech-2026-09-05-1h-pos-22pt5", False),
+    ("asc-cfb-abchr-txtech-2026-09-05-2h-pos-22pt5", False),
+    ("asc-cfb-abchr-txtech-2026-09-05-1q-pos-22pt5", False),
+    ("asc-cfb-abchr-txtech-2026-09-05-4q-neg-3pt5", False),
+])
+def test_quarter_and_half_spreads_are_excluded(slug, is_full):
+    from core.gridiron.fit import FULL_GAME_SPREAD
+    assert bool(FULL_GAME_SPREAD.match(slug)) is is_full, slug
+
+
+def test_the_line_sign_and_fraction_are_recovered():
+    from core.gridiron.fit import FULL_GAME_SPREAD
+    m = FULL_GAME_SPREAD.match("asc-cfb-a-b-2026-09-05-neg-13pt5")
+    assert m.group(3) == "neg" and m.group(4) == "13" and m.group(5) == "5"
+    m = FULL_GAME_SPREAD.match("asc-cfb-a-b-2026-09-05-pos-7")
+    assert m.group(3) == "pos" and m.group(4) == "7" and m.group(5) is None
