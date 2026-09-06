@@ -212,9 +212,38 @@ A caught this in my first version, which subtracted the full tau from a
 touch-anchored P&L and charged the crossing twice — about 1.00pp on these
 ladders, against a median edge of 1.46pp.
 
-**I therefore need the FEE COMPONENT separately from the tau surface.** A scalar
-tau cannot be decomposed downstream and guessing `fee = tau - median_half_spread`
-would import my population's spreads into their surface.
+**The fee component is now settled and needs no surface at all.** A supplied it
+as an analytic form and **I verified it independently rather than attributing
+it**, on venue-REPORTED fees from a different league and date range
+(`wnba-trades-2026-08-17/25`, 153 fee-bearing trades):
+
+    fee = 0.06 * p * (1 - p) * size
+
+    implied coefficient, median            0.06061   (A: 0.060000)
+    corr(ratio, p)                         +0.1603   (0 == shape correct)
+    on trades with fee >= $0.10 (n=59), median |relative error|:
+
+        0.06*p*(1-p)        1.42%     57/59 within 5%    <- verified
+        0.06*min(p,1-p)    56.71%      0/59
+        0.06*p             76.00%      0/59
+        0.06 flat         328.57%      0/59
+
+**The three rival functional forms fail by 40x to 230x**, so this is a
+verification that could have come out otherwise — which is the standard my own
+amendment demands of a second measurement. Price bands 0.2-0.8 give ratios
+0.9921-1.0133; the 1.08-1.11 at the extremes is cent-rounding on tiny fees, not
+a shape error, and it shrinks on the larger trades.
+
+### The split, settled
+
+* **fee** — analytic, `0.06*p*(1-p)`, no population, verified above.
+* **half_spread** — OBSERVED per rung as `touch - mid`, already in this schema.
+* **tau = half_spread + fee** — an AGGREGATE bar for "how good must the model
+  be", never an input to per-rung money. Reconstructing tau per rung would import
+  A's venue-book aggregate into my per-rung observations.
+
+    realized_rung = sign(model_p - touch) * (y - touch)
+                    - 0.06 * touch * (1 - touch)
 
 ### WHAT I CANNOT EMIT YET, STATED SO IT IS NOT ASSUMED
 
