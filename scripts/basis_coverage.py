@@ -79,6 +79,16 @@ INTERVAL = re.compile(
 #: How far above a figure a header may sit and still be taken to cover it.
 LOOKBACK = 12
 
+#: The number that matters is not zero, it is whether this RISES. The six
+#: standing offenders are artefacts this guard should not try to label: a
+#: concession constant, an f-string column header, a CI *width* rather than an
+#: estimate, and cross-references to figures defined elsewhere. Driving them to
+#: zero would mean annotating things that have no basis to name.
+#:
+#: Raise this only with the reason in the same commit. Lowering it after a real
+#: fix locks the improvement in.
+BASELINE_UNLABELLED = 6
+
 SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules", "backups"}
 
 
@@ -166,6 +176,19 @@ def main(argv: list[str]) -> int:
     for k in ("LABELLED", "INHERITED", "UNLABELLED"):
         share = counts[k] / total if total else 0.0
         print(f"  {k:11s} {counts[k]:>5,}  {share:6.1%}")
+
+    n = counts["UNLABELLED"]
+    if n > BASELINE_UNLABELLED:
+        print(f"\n  *** REGRESSION: {n} UNLABELLED against a baseline of "
+              f"{BASELINE_UNLABELLED} (+{n - BASELINE_UNLABELLED}) ***")
+        print("  A new one is not automatically a defect — check it against")
+        print("  the artefact classes in the docstring first, and if it is one,")
+        print("  raise BASELINE_UNLABELLED with the reason in the same commit.")
+    elif n < BASELINE_UNLABELLED:
+        print(f"\n  improved: {n} against a baseline of "
+              f"{BASELINE_UNLABELLED}; lower the baseline to lock it in.")
+    else:
+        print(f"\n  at baseline ({BASELINE_UNLABELLED}).")
 
     if unlabelled:
         print(f"\nUNLABELLED (first 15 of {len(unlabelled)}):")
