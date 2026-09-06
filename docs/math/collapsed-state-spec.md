@@ -44,7 +44,74 @@ limit, and it is why the 600s stream guard reports ABSENT.
 **So do not change when ABSENT fires.** When it does, look back 60 minutes and
 ask whether anything is still writing at sweep cadence.
 
-## The statistic: per-market poll rate
+## ★ v2: the statistic is a COUNT, and needs no denominator at all
+
+**Superseding the `poll_hz` design below.** c7 held the wiring because
+`poll_rate(rows, markets, window)` needs a market count and every source is
+poisoned — `is_live` is never cleared (C16), and a post-guard count collapses
+alongside the numerator. They were right to hold. The fix is not a better
+denominator; it is not needing one.
+
+**Their proposed `RECENT_ACTIVITY_H` does not survive a slate boundary.**
+Measured at the restore — a healthy recorder on a quiet Sunday:
+
+| denominator | markets | poll_hz | vs threshold |
+|---|---:|---:|---:|
+| true live count | 166 | 0.19378 | 49.7× above |
+| RECENT_ACTIVITY_H (6h) | 5,028 | 0.00640 | **1.6× above** |
+
+A **30.3× inflation**, because a 6-hour lookback holds markets from games that
+have finished. That exceeds the threshold's 14× margin, so it is not a near
+miss: the *pre-incident healthy rate* of 0.0552 Hz divided by 30.3 is
+0.0018 Hz — **COLLAPSED on a healthy recorder**. It passed here only because
+the restore happened to run 3.5× faster than pre-incident.
+
+**And the numerator was a mixture too.** Rows per market in the healthy hour
+are **bimodal**, not skewed:
+
+| p10 | p25 | p50 | p75 | p90–p100 | mean |
+|---:|---:|---:|---:|---:|---:|
+| 2 | 2 | **2** | 115 | **1,012** | 198.6 |
+
+59% of markets get ≤2 rows an hour — the sweep touching them — while a second
+mode sits at 1,012/hour, one poll per 3.56s. So total-rows/total-markets is an
+average across two populations whose ratio moves with the slate. c7's
+denominator disease was in the numerator as well.
+
+**The statistic: count the markets polled above sweep cadence.**
+
+```
+COLLAPSED  ⇔  rows > 0  AND  n_live == 0
+n_live = #{markets with more rows than sweep cadence would produce}
+```
+
+| window | n_live | state |
+|---|---:|---|
+| healthy hour | **2,586** | OK |
+| collapse hour | **0** | COLLAPSED |
+| collapse +5h, +11h | **0** | COLLAPSED |
+| restore, quiet Sunday | **166** (all) | OK |
+
+Categorical, not a cut on a continuous statistic. The one parameter,
+`LIVE_ROWS_PER_HOUR`, only has to separate sweep (1–2/hour) from live
+(1,012/hour): **collapsed reads 0 at every cut from 3 to 300/hour** while
+healthy and restored stay non-zero throughout. A corridor, not a tuned
+constant.
+
+No denominator, no market count, no `is_live`, no mixture — and a slate
+boundary cannot inflate a count. The counts come from the same query that
+already produces `rows`.
+
+A partial failure (a few markets live, thousands dropped) is deliberately
+**not** COLLAPSED; that is coverage, and it belongs to the coverage check.
+This state means the fast writer is gone entirely.
+
+7-case adversary re-run on v2, all passing, including the slate-boundary case
+that killed v1 and the disabled-control.
+
+---
+
+## v1, superseded: per-market poll rate
 
 ```
 poll_hz = rows / (window_seconds × live_markets)
