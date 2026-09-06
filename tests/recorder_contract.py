@@ -161,6 +161,33 @@ def judge(cycle: Cycle) -> Verdict:
                   f"{cycle.work_identified} work-item(s) identified and "
                   f"{w.name!r} attempted 0 rows — attempted counts rows BUILT, "
                   "so zero means the recorder produced nothing to write")
+    # An APPEND_ONLY writer must produce ONE row per work-item, so anything
+    # short of that is a fault — not merely zero.
+    #
+    # ★ THE RULE IS A DISJUNCTION, and neither half is sufficient (D's finding,
+    # verified by a1). Each is blind to a failure the other catches:
+    #     3 of 5 games throwing  -> plays_attempted = 40, so the ATTEMPTED
+    #                               half never fires; state_rows 2 < 5 catches it
+    #     parse returning empty  -> state_rows == live_games, so this half
+    #                               never fires; plays_attempted == 0 catches it
+    # `state_rows == live_games` is code-guaranteed rather than data-dependent:
+    # CfbGameState has no UniqueConstraint (only an Index) and `ns = 1` is set
+    # in Python, so it carries no dedupe confound.
+    #
+    # CAVEAT, stated rather than tuned around: `parse_game_state` returns None
+    # when a payload has no `header.competitions`, giving ns=0 with no
+    # exception — a false positive for this half. a1 owns making that raise;
+    # until it does, a short count can mean a payload shape rather than a
+    # fault, and this rule is a strong signal rather than an exact one.
+    for w in cycle.writes:
+        if (w.kind is Kind.APPEND_ONLY and w.countable
+                and w.counts is Counts.WRITTEN
+                and 0 < w.rows < cycle.work_identified):
+            fault("SHORT_APPEND",
+                  f"{w.name!r} wrote {w.rows} rows for "
+                  f"{cycle.work_identified} work-item(s) — an append-only "
+                  "writer owes one per item, so a short count means some "
+                  "items produced nothing")
     for w in cycle.writes:
         if (w.kind is Kind.APPEND_ONLY and w.countable and w.rows == 0
                 and w.counts is Counts.WRITTEN):
