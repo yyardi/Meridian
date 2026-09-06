@@ -198,7 +198,7 @@ def load_state() -> pd.DataFrame:
     S["zero_clock"] = S.display_clock.astype(str).str.strip().isin(
         ["0:00", "00:00", "0.0", "0:00.0"])
     S["is_post"] = S.state.astype(str).str.lower().eq("post")
-    return S
+    return mark_phantom(S)
 
 
 def settled(S: pd.DataFrame, loose: bool) -> set[str]:
@@ -342,7 +342,33 @@ def cm_series(s: pd.Series):
 
 EXPORT_COLS = ["gid", "first_seen_at", "reg_left", "period", "display_clock",
                "home", "away", "home_score", "away_score", "clock_is_stale",
+               "score_reverted_window",
                "anchor", "espn_k", "espn_home_win_pct", "ident_0", "y"]
+
+
+def mark_phantom(S: pd.DataFrame) -> pd.DataFrame:
+    """Flag rows whose SCORE was later retracted by ESPN.
+
+    ce measured 23 backward score steps across 19 of 52 games, every one exactly
+    -3 or -6, standing 22-204s, with ESPN's win probability following the phantom
+    the whole way (max |jump| at the revert: 41.6pp).
+
+    Scores are append-only, so a row whose score exceeds the minimum over all
+    LATER rows in its game was retracted. Reverse cummin, shifted to exclude self.
+
+    AGGREGATE IMPACT IS NIL, PER-ROW IMPACT IS NOT. 395 rows (2.73%) across 16 of
+    31 games; dropping them moves identity-vs-ESPN +0.02455 -> +0.02496 and
+    identity-vs-anchor +0.02042 -> +0.02087. But |ident - ESPN| on those rows
+    reaches 41.01pp, so any PER-ROW study against prices must drop them: a 41pp
+    phantom disagreement beside a real price move reads as a tradeable edge.
+    """
+    S = S.sort_values(["gid", "t"]).reset_index(drop=True)
+    ph = pd.Series(False, index=S.index)
+    for c in ("home_score", "away_score"):
+        future_min = S[::-1].groupby("gid")[c].cummin()[::-1]
+        ph |= S[c] > future_min.groupby(S.gid).shift(-1)
+    S["score_reverted_window"] = ph.fillna(False)
+    return S
 
 
 def export(D: pd.DataFrame, path: str) -> None:
@@ -357,10 +383,13 @@ def export(D: pd.DataFrame, path: str) -> None:
     """
     E = D.copy()
     E["clock_is_stale"] = (E.reg_left >= 3540) & ((E.home_score != 0) | (E.away_score != 0))
+    n_ph = int(E.score_reverted_window.sum())
     E[EXPORT_COLS].sort_values(["gid", "first_seen_at"]).to_csv(path, index=False)
     n_stale = int(E.clock_is_stale.sum())
     print(f"  wrote {path}: {len(E):,} rows, G {E.gid.nunique()}, "
           f"{n_stale} rows flagged clock_is_stale ({n_stale/len(E)*100:.1f}%)")
+    print(f"  {n_ph} rows flagged score_reverted_window ({n_ph/len(E)*100:.2f}%) -- ESPN "
+          f"retracted those scores; |ident-ESPN| there reaches 41pp. DROP for per-row work.")
     print("  FRAME: every probability column is P(HOME WINS), not P(YES).")
 
 
