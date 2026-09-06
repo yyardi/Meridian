@@ -1043,6 +1043,38 @@ page does), so a document dated after the result cannot be mistaken for one
 dated before it.
 
 
+#### `GroupBy.first()` fabricates a row that never existed
+
+`pandas.GroupBy.first()` returns the first **non-null value of each column
+independently**, not the first row. On
+
+```
+[{t: 1, x: nan}, {t: 2, x: 5}]   ->  first() gives {t: 1, x: 5}
+                                     head(1) gives {t: 1, x: nan}
+```
+
+it yields a record that is in no source row. So `sort_values(t).groupby(k).first()`
+— the obvious spelling of "the earliest decision per market" — **silently mixes
+fields across decisions wherever a column has nulls.** It never raises, the row
+count is right, and the dtypes are right.
+
+**Use `.head(1)` / `.tail(1)`.** `.first()` and `.last()` are column-wise
+reductions whose names imply row semantics.
+
+**Found twice on 2026-09-06, independently, from different symptoms**: once
+while packaging a scoring module, once because two slices of a table came out
+byte-identical when they could not have been. Neither discovery came from
+reading the call — both came from **refusing to accept a suspicious
+coincidence**, which is the only symptom this defect produces.
+
+**And the check that matters is against already-published work.** The same call
+sat in a merged λ* analysis ([math/public-wp-models.md](math/public-wp-models.md)).
+Re-run rather than assumed harmless: its `dropna` happened to run *before* the
+groupby, so no nulls existed to assemble across, all columns were identical in
+100% of markets, and **λ* was unchanged at −0.0224**. The mechanism is why it
+was safe — not the fact that the number looked the same. A merged result resting
+on a silent defect is worse than the defect.
+
 #### A frozen subject list answers a question about the past
 
 At 01:52Z on 2026-08-26 a watcher fired **"SLATE DONE — deploy window open."** It
