@@ -1,12 +1,15 @@
 # Passive market-making: the close
 
 **VERDICT (name the line, always).** Against the break-even floor — benign fills
-must be **≥ 57.8%** of fills received — the measured benign ceiling of **23.7%**
-(an upper bound) cannot clear it, and inverting the formula shows **no
-passive-maker earnings assumption reopens it**. So against A's 48%/57.8% floor,
-passive joining **cannot break even**. Against c7's independently-registered **10%
-kill line**, the same 23.7% does **not** kill. The verdict flips on which line, so
-the line is named at every claim below.
+must be **≥ 51.0%** of fills received (H = our quoted half-spread, **1.569¢**
+per-fill; see §1) — the measured benign ceiling of **23.7%** (an upper bound,
+≤35.8% clustering-widened) cannot clear it. So against the 51.0% floor, passive
+joining **cannot break even**. Against c7's independently-registered **10% kill
+line**, the same 23.7% does **not** kill. The verdict flips on which line, so the
+line is named at every claim below. The floor holds on every *measurable* fill
+population (48.3–57.2%); the one assumption that would reopen it — a benign
+round-trip capturing the **full** quoted spread (r\* = 34.2%) — is a different
+strategy from resting-to-settlement, not passive joining (§4).
 
 Substrates: the floor is from the shadow **fills** (settlement P&L); the ceiling
 is from c7's **book tape** (depth transitions). Different substrates — not one
@@ -43,14 +46,27 @@ fills-weighted cluster-robust sandwich):**
 > the −1.634¢ above; every rebate-inclusive figure was ~0.28¢ too generous. Do
 > not quote the rebate-inclusive numbers.
 
-**H (benign-fill earnings) is the maker's structural edge.** A passive order
-resting at the touch captures at most the spread it quotes: the measured
-**half-spread is 1.193¢** (the structural value), the **full spread 2.386¢** the
-optimistic ceiling (all edge, zero post-fill drift).
+**H (benign-fill earnings) is observable per fill — not an unmeasured population.**
+A benign fill is a seller crossing to our resting bid at `qp`; against our quote
+mid `m_q` we earn `m_q − qp = s_q/2`, our own quoted half-spread. That is an
+identity (`qp = m_q − s_q/2`, zero residual on every bid fill), so H is the mean
+quoted **half-spread = 1.569¢** (median 1.000¢), measured directly on the pinned
+fills, on the engine's quotable band (mid ∈ [0.20, 0.80], full spread ∈ [1¢, 15¢]
+— `core/quote/adverse_selection.py:133–140`).
 
-**Floor at the half-spread: r\* = 57.8%.** With the phantom rebate it was 48%;
-removing the rebate moved A from −1.349 to −1.634, which raised the floor **48% →
-57.8%**.
+> **CORRECTION, AT THE TABLE — the old H = 1.193¢ is WITHDRAWN.** 1.193¢ appeared
+> in one file (STATUS.md) and reproduces under none of sixteen definitions off the
+> pin. The observable H is **s_q/2 = 1.569¢**. A *lower* H inflates the floor, so
+> the published **57.8% overstated the bar by ~7 points** — the error flattered our
+> own conclusion. Do not quote 1.193¢ or 57.8%. (A separate reading used the
+> *book* spread `ba − bb` at the fill instant, found 3.06¢ on ask>B fills → a 34.8%
+> floor, and is also WITHDRAWN: on 92% of those fills the book had widened a median
+> 5¢ between our quote and the booked fill, so `ba − bb` measures the gap that
+> *manufactured* the phantom, not what we earn. H is s_q/2, full stop.)
+
+**Floor at the quoted half-spread: r\* = 51.0%** (H = 1.569¢, A = −1.634¢), holding
+on every fill population — phantom/ask>B 48.3%, real/ask≤B 57.2%, all 51.0% — all
+above the 35.8% widened ceiling.
 
 ---
 
@@ -92,61 +108,72 @@ touch-level book events**. Not equal, but 23.7% bounds r from above:
   Realized r sits **below** the event share, not above.
 
 The only unquantified force that runs **upward** is market **SELECTION** (quoting
-benign-rich markets); the current design quotes the whole board, so it is unbuilt.
-(The probe-size counterfactual is NOT an upward force on the event share: benign
-is ask-defined, our bid depth moves events between bid rows within an ask column,
-leaving 23.7% invariant.)
+benign-rich markets); the current design quotes the whole **quotable band** (mid ∈
+[0.20, 0.80], spread ≤ 15¢) but does **not** select for benign-richness within it,
+so that force is unbuilt. (The probe-size counterfactual is NOT an upward force on
+the event share: benign is ask-defined, our bid depth moves events between bid rows
+within an ask column, leaving 23.7% invariant.) Note `pop` is mechanically
+confounded with spread — `real` is *defined* by ask ≤ B, a narrow-spread
+condition, and benign fills live in the ask>B bucket — but that confound bears on
+the benign **rate** (the probe's domain, this section), **not** on H, which is the
+observable quoted half-spread of §1.
 
 **League-mix caveat (populations differ, examined only in direction).** The floor
 is the pinned export (**WNBA + CFB**); the ceiling is the book tape (**WNBA
 only**). The cross-league comparison is not reconciled in magnitude. Direction is
 reassuring, not alarming: WNBA's adverse anchor (−2.462¢, §1) is more negative
 than pooled (−1.634¢), so a like-for-like WNBA-only floor would be **higher** than
-57.8%, *widening* the gap the ceiling must clear — the exact same-league floor
-needs the WNBA-specific half-spread, not computed here. Flagged because "probably
-harmless" is not "examined."
+51.0%, *widening* the gap the ceiling must clear — the exact same-league floor
+needs the WNBA-specific quoted half-spread, not computed here. Flagged because
+"probably harmless" is not "examined."
 
 ---
 
-## 4. The H inversion — the close that needs no earnings assumption
+## 4. The H inversion — the earnings the close does and does not survive
 
 Invert r* = |A|/(H+|A|): the H that would let the ceiling break even is
-`H = |A|·(1−r)/r`.
+`H = |A|·(1−r)/r`. Compared against **our quoted half-spread, 1.569¢** (the
+per-fill earning of a maker that rests to settlement):
 
-| for r = | H required | vs half-spread (1.193¢) | vs full spread (2.386¢) |
-|---|---:|---:|---:|
-| 23.7% (ceiling point) | 5.26¢ | 4.4× | 2.2× |
-| 31.4% (naive CI upper) | 3.57¢ | 3.0× | 1.5× |
-| **35.8% (clustering-widened upper bound)** | **2.93¢** | **2.5×** | **1.23×** |
+| for r = | H required (¢) | × our quoted half-spread (1.569¢) |
+|---|---:|---:|
+| 23.7% (ceiling point) | 5.26 | 3.35× |
+| 31.4% (naive CI upper) | 3.57 | 2.28× |
+| **35.8% (clustering-widened upper bound)** | **2.93** | **1.87×** |
 
-Curve r*(H): 0.6→73% · **1.193 (half)→57.8%** · **2.386 (full)→40.6%** · 3→35% ·
-4→29% · 5→24.6% · the widened 35.8% bound at H = 2.93¢ · reaches the 23.7% point
-only near H = 5.26¢.
+Curve r*(H): 0.6→73% · **1.569 (our quoted half)→51.0%** · 2.93 (required at the
+35.8% bound) · 5.26 (required at the 23.7% point).
 
-**Even at the FULL spread** (H = 2.386¢ — capturing the entire quoted spread with
-zero adverse post-fill drift, already optimistic), **r\* = 40.6%**, above the 23.7%
-point AND above the **clustering-widened 35.8% ceiling upper bound** (not just the
-naive 31.4%). So no H a passive maker can reach clears the
-ceiling. **Lead with the honest bound:** even granting the maker the
-clustering-widened **35.8%** ceiling (the most generous defensible share),
-breaking even needs **H = 2.93¢ = 1.23× the full spread**; at the 23.7% point it
-is 5.26¢ = 2.2×. Either figure exceeds the full spread — the ceiling on what
-passive joining can earn — so it is directional alpha, not making. **The close
-does not rest on the half-spread assumption** — it is: *even at the most generous
-honest ceiling, the rate is too low unless a passive fill earns more than the
-entire quoted spread, which a passive maker structurally cannot do.*
+**Why the half-spread is the right H — and the one assumption that reopens the
+close.** A maker that **rests to settlement** earns only the *entry* price
+improvement, the quoted half-spread (1.569¢), because a settled binary has **no
+exit leg** (the same reason the taker threshold carries one fee, not two). At that
+H the floor is **51.0%**, comfortably above the 35.8% ceiling — breaking even would
+need 2.93¢, **1.87× what we actually quote.** The close is *not* robust to the
+optimistic alternative: a maker that **round-trips**, capturing the **full** quoted
+spread (2 × 1.569 = 3.138¢, both legs benign, zero drift between them), faces
+r\* = **34.2%**, just below the 35.8% ceiling — it would break even. That requires
+two benign fills per position with no adverse drift, which resting-to-settlement
+does not produce. **So the close holds for passive joining that rests to
+settlement, and the only earnings assumption that reopens it is a benign
+round-tripper — a different strategy, exactly parallel to a taker with edge.**
+(This retracts the earlier "even at the full spread it fails" claim, which used a
+withdrawn 2.386¢ full spread; at the corrected 3.138¢ the full-spread case tips
+the other way, so the close now rests explicitly on the half-spread being the
+right per-fill earning for this design.)
 
 ---
 
 ## 5. What only the probe can see
 
-The simulator measures the **adverse** side cleanly (ask≤B fills = A) but
-**cannot see the benign side at all**: benign fills (a real trade at our bid,
-ask stayed up) sit inside the ask>B "phantom" bucket, **indistinguishable** from
-true phantoms (mid crossed, no trade). So **both H and r are unmeasurable from
-the shadow fills.** No export pairs trade prints with contemporaneous book depth
-at a cadence fine enough to attribute a transition (an exact `snapshot_id` join
-exists, but the joined file samples at 265.85s median — too sparse; n=13).
+The simulator measures the **adverse** side cleanly (ask≤B fills = A), and **H is
+observable per fill** (s_q/2, §1). What it **cannot see is the benign RATE r**:
+benign fills (a real trade at our bid, ask stayed up) sit inside the ask>B
+"phantom" bucket, **indistinguishable** from true phantoms (mid crossed, no
+trade). So **r — not H — is unmeasurable from the shadow fills.** No export pairs
+trade prints with contemporaneous book depth at a cadence fine enough to attribute
+a transition (an exact `snapshot_id` join exists, but the joined file samples at
+265.85s median — too sparse; n=13).
 
 A **probe** — a real resting order that fills — resolves benign-vs-phantom by
 construction, so it is the **only** instrument that can ever separate a true
@@ -189,11 +216,14 @@ is not enough benign flow to select toward, independent of the rate argument.
 
 ## The one-line close
 
-**Against our own 57.8% break-even floor, benign fills are at most 23.7% of the
-flow (35.8% at the clustering-widened upper bound), and no passive-maker earnings
-can bridge the gap — even at the full spread the floor is 40.6%, above that
-widened ceiling; passive market-making cannot break even on this venue. Against the registered 10% kill line it survives
-— so the verdict is stated against the 57.8% floor, and the line is named.** The
-probe is the only instrument that can ever separate a real benign fill from a
-phantom — a permanent measurement gap — but at this margin it is not worth arming:
-it would confirm the negative, not test an open one (a1, `e6e6bef`).
+**Against our 51.0% break-even floor (H = our quoted half-spread, 1.569¢), benign
+fills are at most 23.7% of the flow (35.8% at the clustering-widened upper bound),
+so passive market-making cannot break even on this venue — for a maker that rests
+to settlement and earns the half-spread. The one earnings assumption that reopens
+it, a benign round-trip capturing the full quoted spread (r\* = 34.2%), is a
+different strategy, not passive joining. Against the registered 10% kill line it
+survives — so the verdict is stated against the 51.0% floor, and the line is
+named.** The probe is the only instrument that can ever separate a real benign fill
+from a phantom — a permanent measurement gap on the RATE r, not on H — but at this
+margin it is not worth arming: it would confirm the negative, not test an open one
+(a1, `e6e6bef`).
