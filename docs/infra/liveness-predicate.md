@@ -5,19 +5,62 @@
 32 games were being played. The recorder correctly recorded nothing, kept a
 green heartbeat, and Saturday's late price tape does not exist.**
 
-## The measurement that decides the design
+## WITHDRAWN: the venue's payload did NOT carry a rescuing contradiction
 
-The venue's **own payload** carried the contradiction. `EventState` has
-`live`, but also `score`, `period` and `ended` — and those kept arriving:
+**An earlier version of this document claimed 8,667–11,047 rows/hour were
+rescuable from `period` alone, and concluded "no second source is required".
+That is wrong and is withdrawn.** The figure was `has_period − is_live`, a
+NON-EMPTY TEST — the exact thing this document forbids two sections below,
+where the allowlist rule is stated. I corrected the predicate and never
+recomputed the table.
 
-| hour | rows | `is_live` true | has period | **rescued by period alone** |
+Recomputed with the allowlist actually specified
+(`^(Q[1-4]|OT\d*|H[12]|P\d+)$`), same rows, same window:
+
+| hour | rows | `is_live` | playing period | **truly rescued** |
 |---|---:|---:|---:|---:|
-| 09-05 22 | 188,394 | 183,723 | 187,259 | 3,536 |
-| 09-05 23 | 12,690 | **2,227** | 10,894 | **8,667** |
-| 09-06 01 | 11,620 | **1,530** | 10,614 | **9,084** |
-| 09-06 03 | 12,567 | **814** | 11,861 | **11,047** |
+| 09-05 23 | 12,690 | 2,227 | 2,227 | **0** |
+| 09-06 00 | 5,813 | 900 | 900 | **0** |
+| 09-06 01 | 11,620 | 1,530 | 1,527 | **155** |
+| 09-06 02 | 5,810 | 646 | 496 | **0** |
+| 09-06 03 | 12,567 | 814 | 814 | **0** |
 
-**No second source is required.** The fix is local to the same response.
+155 rows, in one hour, all overtime. Not thousands.
+
+The reason is in the field's vocabulary, which I never enumerated:
+
+| `event_period` | rows | `is_live` true |
+|---|---:|---:|
+| `VFT` | 33,511 | 0 |
+| `End Q4` | 3,224 | 0 |
+| `FT` | 1,129 | 0 |
+| `Q1`–`Q4` | 5,654 | **5,654** |
+| `OT` | 310 | 155 |
+
+`FT`, `VFT` and `End Q4` are **completion** markers. Under rule 1 they should
+*stop* recording, not start it. And every row whose period says *playing*
+already had `is_live` true — **`period` never contradicts `live` in the
+rescuing direction on this data.**
+
+## Consequence: the ESPN cross-check is the FIRST line, not the second
+
+The earlier version demoted the cross-source check because the venue appeared
+to carry its own contradiction. It does not. **An independent provider is the
+primary detector**, and this reverses the priority stated below.
+
+## The `cycles == 0` monitor cannot see a dead container
+
+`cycles` is emitted *by the recorder*. A container that no longer exists emits
+no line at all — **absence of a heartbeat is not `cycles == 0`, it is no
+observation.** As specified, the monitor catches "recorder alive, recording
+nothing" and misses "recorder gone", which is the 2026-09-05 22:08 case it was
+written for (a container-name collision destroyed the venue recorder; see
+`docker-compose.cfb-live.yml`).
+
+It needs an **external evaluator with an expected-heartbeat clause**: a
+watcher that knows the recorder *should* have reported by now. The predicate
+written to encode "absence is not evidence" is itself evaluated only when the
+thing it watches is alive enough to report.
 
 ## The predicate
 
