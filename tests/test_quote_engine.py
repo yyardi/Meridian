@@ -26,7 +26,16 @@ from core.quote.storage import ASK, BID, INGAME, PREGAME, ShadowQuoteFill
 from core.storage import get_engine, get_sessionmaker
 
 UTC = dt.timezone.utc
-SLUG = "test-quote-engine-market"
+# The slug must carry its league. `core/quote/engine.py` FAILS CLOSED on a
+# market whose league it cannot resolve (4529951, 2026-09-03) — a deliberate
+# safety property, and the right one: an unknown-league slug is dropped on
+# both the read and the write path rather than quoted by the wrong binary.
+#
+# This fixture predated that gate and still said "test-quote-engine-market",
+# which `league_of_slug` resolves to None, so `cycle()` stood every market
+# down and six tests here failed with KeyError on the standing book. They had
+# been dead since 2026-09-03. The engine was right; the fixture was stale.
+SLUG = "tsc-wnba-quote-engine-market"
 
 _Session = get_sessionmaker(get_engine())
 

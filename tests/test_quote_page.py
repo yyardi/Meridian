@@ -101,9 +101,26 @@ def test_the_page_does_not_recompute_the_measurement(html):
 
 
 def test_the_explainer_says_what_quote_is_and_that_nothing_is_sent(html):
-    for phrase in ("posts both sides", "adverse selection", "−2.74¢",
-                   "requoting", "Nothing is sent"):
+    """The claims that must survive a redesign — and NOT the value of the
+    measurement, which is supposed to change.
+
+    This pinned the literal "−2.74¢" and went red on 2026-09-03 when the
+    explainer was rewritten around a better measurement: 63.9% of simulated
+    fills were phantoms, and real fills settle at −3.38¢. The page had become
+    MORE honest and the test called it a regression, so it sat red instead.
+
+    A test that pins a measured number is a test that must be edited every
+    time the measurement improves — and one nobody will edit is one that gets
+    deleted. What the page owes a reader is that the cost is named and
+    quantified, not that it equals any particular figure."""
+    import re
+
+    for phrase in ("posts both sides", "adverse selection", "requoting",
+                   "Nothing is sent"):
         assert phrase in html, f"the explainer lost {phrase!r}"
+    assert re.search(r"(&minus;|−|-)\s*\d+\.\d+\s*(&cent;|¢)", html), (
+        "the explainer must still quantify the adverse-selection cost per "
+        "fill — the number may change, its absence is the regression")
 
 
 def test_the_reconstruction_is_labelled_as_one(html):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, select, text
@@ -28,6 +29,7 @@ from core.retention import (
 from core.storage import BookLevel, MarketSnapshot, get_engine, get_sessionmaker
 
 UTC = dt.timezone.utc
+REPO = Path(__file__).resolve().parent.parent
 
 
 # ------------------------------------------------------------------ #
@@ -75,7 +77,17 @@ def test_nothing_recent_is_ever_detachable():
 # Routing on the real (converted) database
 # ------------------------------------------------------------------ #
 
-_Session = get_sessionmaker(get_engine())
+#: Set by `partitioned_db` — the CONVERTED database's engine/sessionmaker.
+#: Not the suite's: see that fixture for why the conversion cannot share one.
+_conv: dict = {}
+
+
+def _engine():
+    return _conv["engine"]
+
+
+def _Session():
+    return _conv["Session"]()
 
 
 def _indexes(conn, table: str) -> dict[str, str]:
@@ -107,26 +119,83 @@ def _indexes(conn, table: str) -> dict[str, str]:
 
 @pytest.fixture(scope="module", autouse=True)
 def partitioned_db():
-    """Run the REAL conversion on the suite's per-run database.
+    """Run the REAL conversion — on a database of THIS MODULE'S OWN.
 
-    The conftest gives every run a fresh alembic-created database, which is
-    unpartitioned — so this fixture exercises `migrate()` itself (rename-away,
-    copy, swap, count-verify) on a disposable target, and the routing tests
-    below then run against genuinely partitioned tables. On the operator's
-    converted mirror it is a no-op.
+    `migrate()` is one-way and destructive: it rebuilds market_snapshots and
+    book_levels as partitioned tables, and Postgres marks a range-partition
+    key NOT NULL. Run against the suite's shared per-run database, that
+    leaked into every test that collected after it. `test_wallet_depth_join`
+    deliberately writes a NULL `captured_at` to model the legacy
+    fetched-together rows, and became 7 collection ERRORS the moment
+    retention converted the database first (r < w alphabetically). Those
+    seven tests pass in isolation and had stopped running in every full run.
 
-    Yields the pre-conversion index sets so the survival test below has
-    something to compare against, or `{}` when there was nothing to convert.
+    The same leak is why nothing caught `_SNAPSHOT_INDEXES` dropping the
+    tipoff partial indexes: the only test that asserts them
+    (test_picks_tipoff) ran BEFORE the conversion and never saw a converted
+    table.
+
+    So the conversion gets its own database, created next to the suite's on
+    the same server and dropped afterwards. Nothing outside this module can
+    observe it. On the operator's already-converted mirror the fixture is a
+    no-op and yields {}.
+
+    Yields the pre-conversion index sets, or {} when there was nothing to
+    convert.
     """
-    from core.retention import migrate
+    import os
 
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine
+
+    from core.retention import migrate
+    from core.storage import get_database_url
+
+    suite_url = get_database_url()
     with get_engine().connect() as c:
-        already = is_partitioned(c, "market_snapshots")
-        before = {} if already else {
-            t: _indexes(c, t) for t in ("market_snapshots", "book_levels")}
-    if not already:
-        migrate(get_engine())
-    yield before
+        if is_partitioned(c, "market_snapshots"):
+            _conv["engine"] = get_engine()
+            _conv["Session"] = get_sessionmaker(get_engine())
+            yield {}
+            return
+
+    base, _ = suite_url.rsplit("/", 1)
+    name = f"meridian_retention_{os.getpid()}"
+    url = f"{base}/{name}"
+    admin = create_engine(suite_url, isolation_level="AUTOCOMMIT",
+                          pool_size=1, max_overflow=0)
+    with admin.connect() as c:
+        c.execute(text(f'drop database if exists "{name}" with (force)'))
+        c.execute(text(f'create database "{name}"'))
+
+    # alembic/env.py reads DATABASE_URL, so point it at the new database for
+    # the upgrade and put it back immediately.
+    previous = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = url
+    try:
+        cfg = Config(str(REPO / "alembic.ini"))
+        command.upgrade(cfg, "head")
+    finally:
+        if previous is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous
+
+    engine = create_engine(url)
+    _conv["engine"] = engine
+    _conv["Session"] = get_sessionmaker(engine)
+    with engine.connect() as c:
+        before = {t: _indexes(c, t)
+                  for t in ("market_snapshots", "book_levels")}
+    migrate(engine)
+    try:
+        yield before
+    finally:
+        engine.dispose()
+        with admin.connect() as c:
+            c.execute(text(f'drop database if exists "{name}" with (force)'))
+        admin.dispose()
 
 
 needs_partitions = pytest.mark.usefixtures("partitioned_db")
@@ -189,7 +258,7 @@ def test_every_index_survives_the_conversion(partitioned_db):
     if not partitioned_db:
         pytest.skip("database was already partitioned — no before-state to "
                     "compare against")
-    with get_engine().connect() as c:
+    with _engine().connect() as c:
         for table, before in partitioned_db.items():
             after = _indexes(c, table)
             # A partitioned parent's indexes read as ON ONLY the parent.

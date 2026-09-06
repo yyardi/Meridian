@@ -138,7 +138,8 @@
     <summary><b>What QUOTE is</b> — a shadow market-maker. Nothing is sent.</summary>
     <p>It posts both sides at the touch and earns the spread when both fill. It pays
     <b>adverse selection</b>: the book moves against a resting quote before it can be
-    pulled. Fills are simulated against the recorded book — no order ever reaches the
+    pulled. The whole experiment is whether <b>requoting every 5s</b> flips that sign.
+    Fills are simulated against the recorded book — no order ever reaches the
     venue. The pre-registered verdict (<code>docs/math/quote-shadow.md</code>) stays
     NO DATA until each regime reaches its floor.</p>
     <p><b>2026-09-03:</b> 63.9% of simulated fills were <b>phantoms</b> — fills that
