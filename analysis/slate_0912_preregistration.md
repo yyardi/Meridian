@@ -284,3 +284,80 @@ inadmissible.
   Saturday night with the slate gone.
 
 Either way the *rate* question stays open until a full slate runs.
+
+---
+
+# ★ THE DENOMINATOR GATES ON THE WRONG RECORDER. FIXED.
+
+## First, the discrepancy: nobody misread. Both predicates are in this file.
+
+    line  43  uptime from `espn_cfb_game_state.first_seen_at`, gap <= 10 MINUTES
+    line 139  venue tape, median inter-stamp gap under 10 SECONDS
+
+**Debugger read §4, the original denominator. ce paraphrased the amendment.
+Both are mine and I never reconciled them** — I bolted a venue pre-flight onto a
+registration whose denominator still ran on ESPN state, and left two conditions
+on two tables with thresholds 60x apart in one document.
+
+**Consequence for the evidence:** Debugger's three-window test was against the
+amendment, so **the three-condition replacement at 2202b48 keeps its evidence
+and stands.** What was never tested is the denominator, and that is the
+dangerous one.
+
+## ★ AND THE DENOMINATOR IS THE MOST EXPENSIVE VERSION OF TODAY'S PATTERN
+
+`espn_cfb_game_state` is written by the recorder that **SURVIVED** the
+container-name collision. The dead one feeds `market_snapshots`, which is where
+**fills and prices** come from — and the quote engine only uses observations
+newer than `MAX_OBSERVATION_AGE_SECONDS = 600`, so a 35-minute sweep yields
+nothing usable.
+
+So on 09-12 as things stand:
+
+    ESPN uptime gate        -> HIGH (that recorder is alive)
+    venue tape              -> ABSENT
+    capture                 -> near zero
+    my diagnostic tree      -> "capture near zero WHILE uptime is high"
+                            -> "CANNOT SEE FOOTBALL AT ALL — a capability failure"
+
+**A dead container would have been reported as a verdict about the model.**
+That is the failure shape of the entire day, one level up, and at the most
+expensive possible point.
+
+It also invalidates the reachability projection: 60–75 games with fills was
+scaled from 09-05's 37 of ~57 — **a slate on which the venue recorder was
+alive.**
+
+## THE FIX: two recorders, two conditions, both required
+
+The gate was letting one recorder's health stand in for the other's.
+
+**CONDITION A — VENUE TAPE (`market_snapshots`, CFB, distinct `captured_at`).
+Required, and it is the one fills depend on.** Evaluated by
+`analysis/tape_preflight.py`: cadence median < 10s, continuity max <= 60s,
+coverage >= 95%.
+
+**CONDITION B — GAME STATE (`espn_cfb_game_state.first_seen_at`). Required only
+for the game-state join**, on the same three conditions, computed by the same
+script on that table's timestamps.
+
+**The denominator — games whose entire fill window lies inside uptime — is
+defined on CONDITION A, not B.** Fills come from the venue tape.
+
+**If A fails, the slate is NOT MEASURED and no verdict about the model is
+issued, whatever B shows.** That is pre-committed here, not decided on the
+night.
+
+## ★ AND THE REHEARSAL WINDOW IN UTC
+
+I wrote "Wednesday 09-09". **The venue's own stamp says otherwise**, and this
+programme has been caught by ET/UTC twice already:
+
+    KXNFLGAME-26SEP09NESEA-NE   occurrence_datetime  2026-09-10T03:20:00Z
+    minus the verified +3h convention  ->  KICKOFF 2026-09-10 00:20Z
+
+**The ticker date is US-local; the UTC kickoff is the 10th.** Same moment —
+Wednesday evening US time — but **the rehearsal window is 2026-09-10 00:00Z to
+04:00Z**, and stating it as "09-09" would have someone run the check a day
+early. Third instance of this trap in the programme; the fix is that every
+window in this file is UTC and says so.
