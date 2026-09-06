@@ -61,8 +61,27 @@ unmeasured**; pairing 0.25¢ with the p=0.5 fee (as "0.25+1.5=1.75pp") mixes two
 price regimes. Spreads and totals sat near p=0.5 (mid 0.46–0.47), so those pair
 with the p=0.5 fee cleanly. **G = 1**, one blowout game — a spread distribution,
 not a CFB fact; Saturday (with close games) measures the winner market at p=0.5.
-The spread/total numbers bracket WNBA (half 1.50¢/2.25¢), so CFB is **not**
-dramatically tighter — the earlier "CFB is much tighter" claim is gone.
+The spread/total numbers bracket WNBA, so CFB is **not** dramatically tighter —
+the earlier "CFB is much tighter" claim is gone.
+
+**WNBA per-type, same population (`delta_market_snapshots`, quotable band) — the
+blend behind the pooled 1.50¢/2.25¢ half-spread, now recorded so the pooled figure
+is reconstructible:**
+
+| WNBA type | blend % | median mid | **half** med | **half** mean | τ (median, at type's mid) |
+|---|---:|---:|---:|---:|---:|
+| winner | 8.2% | 0.605 | 0.50¢ | 0.60¢ | **~1.93pp** |
+| spread | 44.7% | 0.510 | 2.00¢ | 2.38¢ | ~3.50pp |
+| total | 47.1% | 0.485 | 2.00¢ | 2.42¢ | ~3.50pp |
+| — pooled | 100% | — | 1.50¢ | 2.25¢ | (mixture) |
+
+Unlike CFB tonight, the **WNBA winner market IS measured near p=0.5** (median mid
+0.605, 24.9% of its snapshots in [0.35, 0.65]) — so its τ is fee-dominated at
+~1.9–2.0pp, **not** the ~0.5pp a blowout price would suggest. This settles a
+downstream verdict: d5's WNBA λ*=0.15 buys 1.20pp, which **fails all three WNBA
+types** (winner 1.93pp is the closest). The "0.5pp winner bar → clears" reading
+used the CFB blowout figure — wrong league *and* wrong price — so on the matched
+population no market clears.
 
 > **⚠ The earlier 0.5¢ CFB half-spread median was frozen-contaminated, withdrawn.**
 > The only CFB tape before tonight (`cfb_prices_20260906T194301Z`) was 99.5% inside
