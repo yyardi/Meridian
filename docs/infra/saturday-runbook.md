@@ -103,11 +103,25 @@ each is blind to what the other catches: three-of-five games throwing leaves
 
 State this before anyone reads a green T-30 as a guarantee.
 
-- **`8972c8b` is NOT DEPLOYED.** It is on main as `3be4ff4` and **not in the
-  running image** (`grep -c scoreboard_failures` in the container returns 0).
-  Against running code, a total scoreboard failure still empties `live_games`,
-  which **silences the ESPN check above** — the recorder can hide a write
-  failure by failing one step earlier. A commit is not a deploy.
+- **`3be4ff4` is NOT DEPLOYED, and it must NOT be deployed as-is.** It is on
+  main and **not in the running image** (`grep -c scoreboard_failures` in the
+  container returns 0). Two separate facts:
+  - *What it fixes:* against running code, a total scoreboard failure still
+    empties `live_games`, which **silences the ESPN check above** — the recorder
+    can hide a write failure by failing one step earlier.
+  - *What it breaks:* it also made `parse_game_state` **raise** on a payload
+    with no `header.competitions`. That raise escapes `poll_game` **before**
+    `parse_plays` and `parse_win_probability` run, so such a game now records
+    **nothing** where it previously recorded every play with `state = None`.
+    Partial failure turned into total. Invisible to the cycle's own numbers:
+    `state_rows` is 0 in both worlds, and `plays_attempted` is a **sum across
+    live games**, so one game's rows going to zero is a dip, not a signal.
+
+  **Deploy the call-site fix with it** (`debugger/recorder-plays-regression`,
+  `fa24613`) — catch the raise, log `cfb_game_state_unparsed` at error level,
+  set `state = None`, let the plays through. Do **not** "fix" this by reverting
+  the parser to `return None`; that undoes the hardening and passes three of the
+  four tests.
 - **NOT_WRITING / COLLAPSED are specs, not running code.** The mid-slate check
   is a person, at 30-minute cadence, with a ~30-minute worst-case detection gap.
 - **No off-host deadman.** If the box dies, nothing reports. Blocked on the
