@@ -31,6 +31,11 @@ it: the half-spread is `s = 1.569¢`.**
 the reason to trust it rather than to re-open it — an error that made trading
 easier would deserve more scrutiny than one that makes it harder.
 
+**3.07 pp is still not a scalar.** τ varies by market type by roughly a factor
+of seven — winner ~0.5 pp, spread ~2.0 pp, total ~3.5 pp on A's CFB tape — and
+the blend behind `s = 1.569¢` was never recorded. See the surface caveat below
+before quoting any single number from this page.
+
 **A spread quoted without "full" or "half" attached is not a measurement, it is
 two measurements.** That is the same label-the-policy failure this project has
 hit on estimators and on P&L conventions, arriving on a venue microstructure
@@ -52,6 +57,53 @@ HIGHER bar is EASIER to detect, so the games required to resolve it falls from
 21,039 to **12,401**. The bar moved away from us and the instrument's relative
 coarseness fell from 25× to 19×. Both are true and neither rescues the
 programme — 12,401 games is still ~46 NFL seasons.
+
+## ⚠️ τ IS A SURFACE OVER (TYPE, PRICE). EVERY SCALAR ON THIS PAGE IS A MIXTURE.
+
+**Added 2026-09-06, from A's per-type measurement.** This page computes τ as a
+function of `p` and treats the half-spread as one constant. It is not one
+constant — **it varies by market type by an order of magnitude.** On A's CFB
+tape:
+
+| market type | τ |
+|---|---:|
+| winner (moneyline) | **~0.5 pp** |
+| spread | ~2.0 pp |
+| total | **~3.5 pp** |
+
+**The pooled 2.5–3.5 pp band this page argued from was totals-dominated.** A
+winner market at 0.5 pp is a *seventh* of the bar the pooled figure implies.
+
+**So the 3.07 pp WNBA figure is also a type-mixture, and its composition is not
+stated anywhere.** `s = 1.569¢` was measured over some blend of winner, spread
+and total markets; nobody recorded the blend. That makes 3.07 pp a number
+without a population — the same defect this page opened by documenting in
+`1.193¢`, one level up. It is the fourth population mixture this programme has
+found, after the estimator, the lineage policy, and the near-money/tail split
+already flagged below.
+
+**Operationally: a trade's edge must be compared against τ at its own type and
+its own price.** A single scalar cannot gate a mixed book — it over-rejects
+winner markets and under-rejects totals, and it does both silently because
+every comparison it makes is arithmetically valid.
+
+**What survives, and one thing that may not.** The negative conclusions below
+rest on a comparison against the *instrument*, which is 19× coarser in Brier
+terms than even the tightest bar here. That argument is unaffected.
+
+But the λ* comparison is not. λ* = 0.15 buys 1.20 pp, which clears a 0.5 pp
+winner-market bar and does not clear a 3.5 pp totals bar — **opposite verdicts
+inside one pooled number.** So the winner-market case cannot be called closed
+from this page any more.
+
+**That sentence splices two populations and is therefore not a conclusion.**
+The 1.20 pp is WNBA, from λ* on PULSE's live entered decisions; the 0.5 pp is
+**A's CFB tape**. A WNBA λ* against a CFB τ shares no population policy, which
+is the exact splice this project has been caught making before. What the
+arithmetic establishes is that **the pooled bar was hiding a factor of seven
+between market types**; what it does not establish is that any specific market
+clears. The per-type τ must be measured **on the same league and the same
+cohort as the λ*** before anyone acts on either sign.
 
 ## The threshold
 
@@ -244,4 +296,5 @@ money question, and squaring is why.**
 
 *Computed 2026-09-06. Fee `0.06·p(1−p)` from `core/quote/wallet.py:42`;
 half-spread 1.569¢ per c7's audit, superseding the withdrawn 1.193¢.
-WNBA only; CFB unmeasured. Descriptive only.*
+WNBA only; CFB per-type figures are A's. **Every scalar here is a mixture over
+market type — see the surface caveat above.** Descriptive only.*
