@@ -233,3 +233,34 @@ def test_the_failure_is_invisible_to_the_other_three_monitor_shapes():
     assert venue_healthy
     # and yet
     assert judge(cycle).state == FAULT
+
+
+# ------------------------------------------------------------------ #
+# The rule is a DISJUNCTION — neither half is sufficient
+# ------------------------------------------------------------------ #
+
+
+def test_three_of_five_games_throwing_is_caught_by_the_short_count():
+    """plays_attempted is POSITIVE here (the two working games built rows), so
+    the attempted half never fires. Only `state_rows < live_games` sees it."""
+    v = judge(Cycle(work_identified=5,
+                    writes=(_state(2), _attempted("plays", 40)),
+                    errors=3))
+    assert v.state == FAULT
+    assert "SHORT_APPEND" in v.codes, v.reasons
+
+
+def test_parse_returning_empty_is_caught_by_the_attempted_half():
+    """state_rows == live_games here, so the short-count half never fires.
+    Only `plays_attempted == 0` sees it."""
+    v = judge(Cycle(work_identified=2,
+                    writes=(_state(2), _attempted("plays", 0))))
+    assert v.state == FAULT
+    assert "SILENT_ATTEMPT" in v.codes, v.reasons
+    assert "SHORT_APPEND" not in v.codes
+
+
+def test_a_full_append_count_is_not_short():
+    v = judge(Cycle(work_identified=3,
+                    writes=(_state(3), _attempted("plays", 12))))
+    assert v.state == OK, v.reasons
