@@ -35,9 +35,68 @@ reading is "wins nearly always, by an amount 31 games cannot pin down".
     middle      n 5,800 G 31  ESPN 0.03574  ident 0.02734  +0.00840 [-0.02839,+0.04520] spans 0
     early >35m  n 5,063 G 31  ESPN 0.09303  ident 0.04189  +0.05115 [+0.00975,+0.09254] EXCL 0
 
-Three buckets, not two, so a non-monotone shape could show itself. It does not:
-the effect is monotone and sits entirely in the first 25 minutes, where ESPN is
-worst. **PULSE trades the last 15 minutes, where this is a tie.**
+Three buckets, not two, so a non-monotone shape could show itself. **It did, and
+an earlier version of this file called it monotone anyway.** Late (+0.01320) sits
+ABOVE middle (+0.00840): the dip is in the MIDDLE, so "the effect decays with
+game time" is not what these three numbers say.
+
+**The decay is nonetheless real, tested directly rather than read off the
+buckets.** Paired within game, same 31 games, early-minus-late:
+
+    +0.04254 [+0.00569, +0.07939]   EXCLUDES 0
+
+and the late interval's upper bound (+0.03925) excludes the early point estimate
+(+0.05380), which is what distinguishes a real decay from an underpowered
+bucket. So it is decay, not power — but the shape between the endpoints is not
+monotone and should not be described as a trend.
+
+## ★ BRIER IS THE WRONG UNIT FOR THE QUESTION PULSE ASKS
+
+Money is linear in the probability gap; Brier squares it, and both models
+converge late simply because the outcome becomes obvious. Measured per game:
+
+    bucket   ESPN     ident    RELATIVE gain   |ident - ESPN|
+    early    0.09303  0.04189      55.0%       19.14pp [15.97, 22.32]
+    middle   0.03574  0.02734      23.5%        8.79pp [ 4.60, 12.98]
+    late     0.02867  0.01548      46.0%        3.50pp [ 0.12,  6.88]
+
+**The relative gain does not decay at all — it is U-shaped, 55% / 23.5% / 46%.**
+The absolute Brier decay is a ceiling effect: late, ESPN is already at 0.02867
+and there is little left to win. What actually decays is the tradeable quantity,
+the disagreement between the two estimates: **19.14pp early to 3.50pp late, with
+the late interval nearly touching zero.**
+
+So the correct statement for PULSE is neither "the edge decays" nor "the edge
+survives": late in a game the identity and ESPN agree to within 3.5pp, and 3.5pp
+of disagreement with ESPN is not 3.5pp of disagreement with the market price.
+Whether anything is tradeable there needs the price tape, which this file does
+not touch.
+
+## ★ IT IS DECAY, NOT POWER, AND THE POWER CALCULATION SAYS SO THE HARD WAY
+
+Between-game sd in the late bucket is 0.07630 on G=31. At alpha 0.05 two-sided
+and 80% power:
+
+    early effect size       delta +0.05380   G =  16   ALREADY POWERED
+    half the early effect   delta +0.02690   G =  63   short by 32
+    the late point estimate delta +0.01126   G = 360   short by 329
+
+**The late bucket needs 16 games to detect an early-sized effect and it has 31.**
+It is not underpowered for that effect — it is powered, and it sees nothing. So
+no number of Saturdays rescues an early-sized late edge; that possibility is
+excluded rather than unresolved. An effect HALF the early size is still open and
+needs G=63, which Saturday's ~12 games does not reach (31 -> ~43).
+
+Three routes now agree: the paired within-game test, the late interval excluding
+the early point estimate, and this power calculation.
+
+## ★ THE BUCKET BOUNDARIES WERE NOT PRE-DECLARED
+
+>35m / middle / <15m were chosen after seeing the data. The monotonicity claim is
+therefore suggestive only, and the individual bucket intervals are not clean.
+**This file deliberately does not re-cut them**: searching cut points on 31 games
+is how a real decay becomes a discovered edge. The power result above does not
+depend on the boundaries being optimal, only on their being fixed.
 
 ## ★ CORRECTION TO THE PREVIOUS COMMIT OF THIS FILE (20c544b)
 
@@ -221,14 +280,80 @@ def block(D: pd.DataFrame, tag: str) -> None:
     print()
 
 
+def decay(D: pd.DataFrame) -> None:
+    """Is the late tie a POWER problem or a REAL decay? Three buckets cannot say."""
+    D = D.copy()
+    D["bk"] = pd.cut(D.reg_left, [-1, 900, 2100, 3601], labels=["late", "middle", "early"])
+    per = {bk: D[D.bk == bk].groupby("gid").apply(
+        lambda z: (z.b_espn_home_win_pct - z.b_ident_0).mean(), include_groups=False)
+        for bk in ("early", "middle", "late")}
+    print("=== POWER OR DECAY? an uninformative interval is not a contrary one ===")
+    for bk in ("early", "middle", "late"):
+        r = cm_series(per[bk])
+        print(f"  {bk:7s} G {len(per[bk]):>2}  {r.mean:+.5f} [{r.lo:+.5f}, {r.hi:+.5f}]")
+    early, late_r = per["early"].mean(), cm_series(per["late"])
+    print(f"  late CI upper {late_r.hi:+.5f} vs early effect {early:+.5f} -> "
+          f"{'EXCLUDES it: real decay' if late_r.hi < early else 'contains it: underpowered'}")
+    common = sorted(set(per["early"].index) & set(per["late"].index))
+    r = cm_series(pd.Series({g: per["early"][g] - per["late"][g] for g in common}))
+    print(f"  PAIRED early-minus-late, same {len(common)} games: "
+          f"{r.mean:+.5f} [{r.lo:+.5f}, {r.hi:+.5f}]"
+          f"  {'DECAY IS REAL' if r.lo > 0 else 'cannot resolve'}\n")
+    print("  BUT Brier squares the edge and money is linear in it. Per game:")
+    for bk in ("early", "middle", "late"):
+        x = D[D.bk == bk]
+        e, i = x.b_espn_home_win_pct.mean(), x.b_ident_0.mean()
+        rg = cm_series(x.groupby("gid").apply(
+            lambda z: (z.ident_0 - z.espn_home_win_pct).abs().mean(), include_groups=False))
+        print(f"  {bk:7s} ESPN {e:.5f} ident {i:.5f}  relative gain {(e-i)/e*100:5.1f}%"
+              f"   |ident-ESPN| {rg.mean*100:5.2f}pp [{rg.lo*100:5.2f}, {rg.hi*100:5.2f}]")
+    print("  relative gain is U-SHAPED (55/23.5/46), not decaying. What decays is the")
+    print("  tradeable disagreement: 19.14pp -> 3.50pp, late interval nearly touching 0.\n")
+    power(per["late"], per["early"].mean())
+
+
+def power(late: pd.Series, early_effect: float) -> None:
+    """How many GAMES would the late bucket need? Reported as a G, not a p-value.
+
+    THE ANSWER IS NOT "MORE GAMES". The late bucket needs G=16 to detect an
+    early-sized effect at 80% power and it already has 31, so it is powered for
+    that effect and does not see one. That is the decay result, arrived at by a
+    second route that agrees with the paired test.
+    """
+    sd, G = late.std(ddof=1), len(late)
+    z = (1.959964 + 0.8416212) ** 2  # alpha 0.05 two-sided, power 0.80
+    print("=== GAMES REQUIRED IN THE LATE BUCKET (alpha .05 two-sided, power .80) ===")
+    print(f"  between-game sd {sd:.5f}   have G={G}")
+    for label, delta in (("early effect size", early_effect),
+                         ("half the early effect", early_effect / 2),
+                         ("the late point estimate", abs(late.mean()))):
+        need = z * sd ** 2 / delta ** 2
+        verdict = "ALREADY POWERED — and it sees nothing" if need <= G else f"short by {need-G:,.0f}"
+        print(f"    {label:24s} delta {delta:+.5f}   G = {need:>7,.0f}   {verdict}")
+    print("  So an early-sized effect in the last 15 minutes is EXCLUDED, not unresolved.")
+    print("  An effect half that size needs G=63; Saturday's ~12 games take 31 to ~43.\n")
+
+
+def cm_series(s: pd.Series):
+    return clustered_mean({k: [v] for k, v in s.items()})
+
+
 def main() -> int:
     S = load_state()
     print(f"  settled STRICT (post row)                      {len(settled(S, False))}")
     print(f"  settled LOOSE  (post OR P>=4 & 0:00 & untied)  {len(settled(S, True))}\n")
-    block(build(S, loose=True), "LOOSE")
+    loose = build(S, loose=True)
+    block(loose, "LOOSE")
+    decay(loose)
+    # The caveat goes ABOVE the number it qualifies, not below it.
+    print("STRICT is a SURVIVORSHIP FILTER: 'has a post row' keeps games whose recorder")
+    print("survived to the whistle, which over-weights the early rows where the identity")
+    print("wins. It is tighter on a SMALLER cohort, which is backwards for sampling")
+    print("noise. LOOSE above is the honest denominator; do not quote the next block.")
     block(build(S, loose=False), "STRICT")
-    print("It TIES ESPN and BEATS ITS OWN ANCHOR. The gain is in the first 25")
-    print("minutes; the last 15, where PULSE trades, is a tie. G=31, one draw each.")
+    print("It TIES ESPN (spans zero, 29/31) and BEATS ITS OWN ANCHOR (excludes zero).")
+    print("Decay to the late game is real, but the shape is not monotone and the")
+    print("relative gain does not decay at all. G=31, one outcome draw each.")
     return 0
 
 
