@@ -1,7 +1,7 @@
 # College-football signal side. Separate overlay from espn-live because it is
 # a different sport with a different payload shape and its own tables.
 #
-#     docker compose -f docker-compose.yml -f docker-compose.cfb-live.yml up -d cfb-live-recorder
+#     docker compose -f docker-compose.yml -f docker-compose.cfb-live.yml up -d cfb-espn-recorder
 #
 # Why it exists: on 2026-09-05 we held 56,948 CFB shadow fills across 48 games
 # and zero rows of CFB game state. The market was recorded and the game was
@@ -12,12 +12,20 @@
 # `summary.plays` is EMPTY for football, whose plays live under `drives`. A
 # basketball parser here writes nothing while every heartbeat stays green.
 #
+# NAME COLLISION, 2026-09-05: this service and container were originally both
+# called `cfb-live-recorder` / `meridian-cfb-live-recorder` -- THE SAME NAMES
+# docker-compose.nfl.yml:108 uses for the CFB VENUE PRICE recorder
+# (core.live_recorder --interval 1.0). Bringing this one up DESTROYED that one,
+# and CFB venue price recording stopped for 22 hours before anyone noticed:
+# 188,394 rows in the 22:00Z hour before, 4,638-9,371/hour after (sweep only).
+# Two different recorders, two different jobs; the names now say so.
+#
 # No credentials exist to mount: ESPN is unauthenticated. Reads ESPN, writes
 # only its own three tables. Deploy stays operator-gated between slates.
 services:
-  cfb-live-recorder:
+  cfb-espn-recorder:
     build: .
-    container_name: meridian-cfb-live-recorder
+    container_name: meridian-cfb-espn-recorder
     restart: unless-stopped
     depends_on:
       postgres:
