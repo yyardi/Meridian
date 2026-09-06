@@ -211,3 +211,29 @@ def test_espn_un_posts_and_the_first_post_row_can_name_the_wrong_winner():
     ])
     c = outcome_cohort(s)
     assert c.margin.iloc[0] == 1, "must take the LAST post row, not the first"
+
+
+def test_settlement_hazard_reports_the_phenomenon_not_todays_labels():
+    """B's design: assert the DISAGREEMENT exists and name the game, so a mutant
+    hardcoding observed labels fails and a substrate that stops exercising the
+    hazard is visible as an empty result rather than a silent pass."""
+    from core.gridiron.fit import settlement_hazard
+    s = pd.DataFrame([
+        _srow(1, 4, "0:00", 7, 12, t=100),
+        _srow(1, None, None, 7, 12, st="post", t=101),
+        _srow(1, None, None, 13, 12, st="post", t=103),   # winner changes
+        _srow(2, None, None, 16, 3, st="post", t=100),
+        _srow(2, None, None, 19, 9, st="post", t=101),    # margin moves, winner does not
+        _srow(3, None, None, 21, 7, st="post", t=100),    # clean
+    ])
+    h = settlement_hazard(s).set_index("game_id")
+    assert list(h.index) == [1, 2], "game 3 is clean and must not be reported"
+    assert h.loc[1, "winner_changes"] is True or h.loc[1, "winner_changes"] == True
+    assert not h.loc[2, "winner_changes"]
+
+
+def test_settlement_hazard_is_empty_when_the_substrate_stops_exercising_it():
+    from core.gridiron.fit import settlement_hazard
+    s = pd.DataFrame([_srow(1, 4, "0:00", 21, 7, t=100),
+                      _srow(1, None, None, 21, 7, st="post", t=101)])
+    assert settlement_hazard(s).empty

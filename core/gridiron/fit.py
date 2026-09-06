@@ -177,6 +177,37 @@ def true_kickoff(state: pd.DataFrame) -> pd.Series:
     return s.groupby("game_id").first_seen_at.min().rename("kickoff")
 
 
+def settlement_hazard(state: pd.DataFrame) -> pd.DataFrame:
+    """Games where the FIRST `post` row disagrees with the last recorded row.
+
+    Run this on every new export before trusting `outcome_cohort`. It exists
+    because of B's argument, which is better than the test I first wrote: a
+    synthetic fixture pins the BEHAVIOUR and passes forever, including after the
+    substrate stops exercising the hazard. **A check that can no longer fail has
+    gone blind, and nothing in a green suite says so.** This one reports whether
+    the phenomenon is still present in the data, and names the games.
+
+    On `espn_cfb_game_state_20260906T174104Z`: **2 of 28** games with a `post`
+    row, and on 401858428 the WINNER changes (first post 7-12, last row 13-12).
+    An empty result on a later export means either ESPN stopped un-posting or
+    the export stopped capturing it — both worth knowing, neither safe to assume.
+    """
+    s = state.sort_values(["game_id", "first_seen_at"])
+    rows = []
+    for g, d in s.groupby("game_id"):
+        p = d[d.state == "post"]
+        if p.empty:
+            continue
+        first_m = p.home_score.iloc[0] - p.away_score.iloc[0]
+        last_m = d.home_score.iloc[-1] - d.away_score.iloc[-1]
+        if first_m != last_m:
+            rows.append({"game_id": g, "first_post_margin": first_m,
+                         "last_row_margin": last_m,
+                         "winner_changes": bool((first_m > 0) != (last_m > 0))})
+    return pd.DataFrame(rows, columns=["game_id", "first_post_margin",
+                                       "last_row_margin", "winner_changes"])
+
+
 def outcome_cohort(state: pd.DataFrame) -> pd.DataFrame:
     """Settled games: a `post` row, or a decided regulation end we watched to.
 
