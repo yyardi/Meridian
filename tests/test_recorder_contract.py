@@ -207,18 +207,27 @@ def test_attempted_counts_are_only_returned_after_commit():
 # ------------------------------------------------------------------ #
 
 
-def test_the_failure_is_invisible_to_the_other_three_monitor_shapes():
-    """a1's point, made assertable rather than argued.
+def test_the_failure_is_invisible_to_two_of_the_three_monitor_shapes():
+    """CORRECTED 2026-09-06 (D's finding, accepted by a1 and by me).
 
-    The 53-minute outage was invisible to every other monitor we own, and this
-    demonstrates each miss rather than claiming it:
-      * RATE-BASED — the denominator is zero, so a percentage is undefined
-        and the alarm goes INSUFFICIENT/quiet rather than firing.
-      * CROSS-SOURCE — the venue side recorded perfectly throughout, so two
-        providers agreed that games were live. The disagreement was between
-        two numbers on one line of OUR OWN log.
-      * HEARTBEAT — a cycle ran every 20s and returned cleanly the whole time.
-    Only the same-line comparison sees it."""
+    The first version of this test asserted THREE invisibilities and was
+    WRONG about one — which made a test file about unfalsifiable claims carry
+    an unfalsifiable claim of its own:
+
+      * RATE-BASED   blind. The denominator is zero, so a percentage is
+                     undefined and the alarm goes INSUFFICIENT, not ALARM.
+      * HEARTBEAT    blind. A cycle ran every 20s and returned cleanly.
+      * CROSS-SOURCE **NOT blind.** I claimed it was, on the reasoning that
+                     the venue side was healthy so both providers agreed games
+                     were live. But the mutual-monitoring link D specced with
+                     c7 is "venue at live cadence AND no ESPN state -> ESPN
+                     recorder down", which is exactly tonight's signature and
+                     WOULD fire. Two providers agreeing games are live is the
+                     PREMISE of that check, not a defeat of it.
+
+    So this check is not the only instrument that sees it, and the honest
+    claim is narrower: it is the cheapest, it needs no second provider, and
+    both its numbers are already on one line of our own log."""
     cycle = Cycle(work_identified=2, writes=(_attempted("plays", 0),), errors=1)
 
     written = [w.rows for w in cycle.writes]
@@ -228,9 +237,13 @@ def test_the_failure_is_invisible_to_the_other_three_monitor_shapes():
     # heartbeat: the cycle completed
     heartbeat_ok = True
     assert heartbeat_ok
-    # cross-source: the other provider was healthy
-    venue_healthy = True
-    assert venue_healthy
+    # cross-source: NOT blind. The venue recording at live cadence while ESPN
+    # state is absent is precisely the mutual-monitoring signature.
+    venue_at_live_cadence, espn_state_rows = True, 0
+    cross_source_fires = venue_at_live_cadence and espn_state_rows == 0
+    assert cross_source_fires, (
+        "cross-source would fire here; this check is the cheapest instrument, "
+        "not the only one")
     # and yet
     assert judge(cycle).state == FAULT
 
