@@ -144,6 +144,39 @@ def _truthy(s):
     return s.astype(str).str.lower().isin(("t", "true", "1"))
 
 
+def true_kickoff(state: pd.DataFrame) -> pd.Series:
+    """First state row that is genuinely a kickoff: period 1, score 0-0.
+
+    **Replaces `state[state.state=="in"].groupby(...).first_seen_at.min()`,
+    which is not a kickoff — it is the first moment the RECORDER SAW the game.**
+
+    On 2026-09-05 those are catastrophically different and the difference was
+    invisible: all 14 games in the anchor cohort returned a "kickoff" of
+    22:08-22:09Z, **the same minute**, because that is when the ESPN recorder
+    started. ESPN's own rows say every one of those games was already in
+    progress -- period 2 at 14-0, period 4 at 49-3, period 4 at 45-3. **Zero of
+    14 was a genuine kickoff.**
+
+    The anchor window (<= 900s before "kickoff") therefore selected ladders from
+    21:54-22:08Z, which is mid-game for all 14, and labelled them pregame.
+
+    **The measurements came out right anyway, and that is the dangerous part.**
+    Those ladders were completely frozen: across 575 full-game spread markets
+    and a median of 27 snapshots each, **0.0% showed more than one distinct
+    mid**. A frozen board still carries its last pregame quotes, so a pregame
+    sigma was recovered from a selector that had asked for the wrong rows. On a
+    board that is actually quoting -- Saturday -- the same selector returns
+    in-game ladders under a pregame label, with no error and no null.
+
+    Returns nothing for a game never observed at 0-0. That is honest: a game we
+    first saw at 49-3 has no recoverable kickoff, and a fallback would be the
+    original bug wearing a helper's name.
+    """
+    s = state[(state.state == "in") & (state.period == 1)
+              & (state.home_score == 0) & (state.away_score == 0)]
+    return s.groupby("game_id").first_seen_at.min().rename("kickoff")
+
+
 def design(plays, prices, game_map, state) -> pd.DataFrame:
     """One row per play, with the pregame market anchor joined per game."""
     last = state.sort_values(["game_id", "first_seen_at"]).groupby("game_id").tail(1)
@@ -154,7 +187,7 @@ def design(plays, prices, game_map, state) -> pd.DataFrame:
     coh = coh.assign(y=(coh.margin > 0).astype(int))
 
     m = game_map[["espn_game_id", "venue_game_id", "event_slug"]].drop_duplicates("espn_game_id")
-    kick = state[state.state == "in"].groupby("game_id").first_seen_at.min().rename("kickoff")
+    kick = true_kickoff(state)
 
     q = prices.dropna(subset=["best_bid", "best_ask", "game_id"]).copy()
     q = q[q.market_slug.str.startswith("aec")]          # moneyline = win probability
