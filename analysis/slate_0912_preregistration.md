@@ -93,3 +93,70 @@ roughly **60-75 games**. At that denominator:
 registration is not defective. The one branch that could be unreachable is
 "cannot see football at all", which requires near-zero capture at high uptime;
 that is reachable only if the map or state genuinely fails, which is the point.
+
+---
+
+# ★ AMENDMENT: the venue-tape pre-flight condition, added 2026-09-06
+
+**This registration was silent on the venue tape because we all assumed it was
+running. It is not.** Added before the slate, not after, and stated as a
+condition to check **in advance** rather than a caveat to apply afterwards.
+
+## What broke, verified in the repo
+
+Two compose files claim the same container name:
+
+    docker-compose.nfl.yml:108   container_name: meridian-cfb-live-recorder
+                                 command: python -m core.live_recorder --interval 1.0
+    docker-compose.cfb-live.yml:20  container_name: meridian-cfb-live-recorder
+                                    command: python -m core.feeds.espn_cfb_recorder
+
+Docker container names are unique. **Bringing up the ESPN one destroyed the
+venue one silently** — no error, no gap in any status signal, and the survivor
+is the ESPN feed. CFB venue live recording stopped **2026-09-05 22:08Z**.
+
+## Why the registration would have landed in the wrong bucket
+
+The uptime denominator measures `espn_cfb_game_state`, and **that recorder is
+the one that survived** — so the ESPN condition would pass. But fills and prices
+come from the **venue** tape, which would be at ~35-minute sweep cadence rather
+than ~1s.
+
+So the registration would answer *"can the live model see football"* on a tape
+that **cannot support a live model at all**, and return **FAIL for an
+infrastructure reason.** The registration already separates "needs a fix" from
+"cannot see football" — and without this amendment the result would land in the
+wrong one of those two, which is precisely the diagnosis the separation exists
+to prevent.
+
+## ★ THE PRE-FLIGHT CONDITION, checked BEFORE the slate
+
+**A CFB venue live recorder must be writing `market_snapshots` at sub-10s
+cadence during the slate.** Verified by the tape itself, not by a status signal
+or a container listing:
+
+> On the slate day, distinct `captured_at` stamps per hour for CFB markets must
+> imply a median inter-stamp gap **under 10 seconds**. Saturday 09-05 at peak
+> ran **967 distinct stamps in one hour — ~3.7s.** The 900s sweep produces
+> **one stamp per ~35-minute cycle** and is trivially distinguishable.
+
+**If that condition fails, 09-12 does not measure the question and the honest
+output is to say so in advance rather than run it and report FAIL.** This is
+recorded now so that saying so is a pre-commitment rather than an excuse
+constructed after an unwelcome number.
+
+## Why a status signal would not have caught it
+
+`rows_written` on the snapshot writer counts **only rows returned by
+`ON CONFLICT DO NOTHING ... RETURNING`** — newly inserted ones. A recorder whose
+rows all collide reports zero while running normally, and a dead recorder also
+reports zero. **The metric cannot separate the two**, which is why the condition
+above is defined on the tape's own timestamps.
+
+## One thing this makes better, not worse
+
+`core/live_recorder.py` carries **no band filter** — no `MIN_MID`, `MAX_MID` or
+`MAX_SPREAD`, unlike `core/quote/depth_signal.py` which gates at 0.15. So if the
+venue recorder is restored, **the whole slate is captured, not just the quotable
+band.** The 43.24% of the CFB board that the quote engine gates out by policy is
+present on the venue tape.
