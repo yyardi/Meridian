@@ -50,8 +50,21 @@ import sys
 EXIT_OK, EXIT_FAIL = 0, 1
 
 
-def readiness(schedule_state: str, scheduled: set[str], espn_seen: set[str],
+def readiness(schedule_state: str, board: set[str], espn_seen: set[str],
               venue_seen: set[str], mappable: set[str]) -> tuple[int, list[str]]:
+    """SCOPED TO THE VENUE'S BOARD, not to ESPN's schedule.
+
+    ce measured it: growing the ESPN window from 3 to 8 days took ESPN events
+    132 -> 180 while venue games stayed at **119 both times**. The board and
+    the schedule are different populations and the board is the smaller, fixed
+    one. An ESPN-scheduled game the venue never lists is not a coverage
+    failure, and scoping to the schedule makes this check permanently red --
+    which is how a check gets ignored by the second Saturday.
+
+    So `board` is the population: games we could actually trade. The MAP line
+    then reads "of the games ON THE BOARD, this many cannot be joined to
+    ESPN", which is actionable and can legitimately reach zero.
+    """
     """(exit_code, lines). ALWAYS a line per side, pass or fail.
 
     `mappable` is the third input, and running this on the real 09-05 slate is
@@ -72,34 +85,37 @@ def readiness(schedule_state: str, scheduled: set[str], espn_seen: set[str],
             "SCHEDULE  UNKNOWN -- could not reach ESPN; refusing to pass",
             "MAP       unchecked", "ESPN      unchecked", "VENUE     unchecked"]
 
-    if not scheduled:
-        # NOT a quiet pass: derive `scheduled` from the PROBE, never from an
+    if not board:
+        # NOT a quiet pass: `board` is what the VENUE lists, never an
         # intersection with our own tables. My first adversary took it from
         # `espn_ids & venue_ids`, got 0 across disjoint id spaces, and PASSED
         # -- a broken map would have passed this check silently.
-        return EXIT_OK, ["SCHEDULE  0 games -- nothing to record",
-                         "MAP       n/a", "ESPN      n/a", "VENUE     n/a"]
+        return EXIT_OK, ["BOARD     0 games listed -- nothing to trade",
+                         "MAP       n/a", "VENUE     n/a", "ESPN      n/a"]
 
-    n = len(scheduled)
-    lines = [f"SCHEDULE  {n} games (independent ESPN probe)"]
+    n = len(board)
+    lines = [f"BOARD     {n} games listed by the venue (the tradeable set)"]
     bad = False
 
-    unmappable = scheduled - mappable
+    unmappable = board - mappable
     if unmappable:
         bad = True
-        lines.append(f"MAP       FAIL  {n - len(unmappable)}/{n} mappable; "
-                     f"{len(unmappable)} games cannot be joined to the venue")
+        lines.append(f"MAP       FAIL  {n - len(unmappable)}/{n} joinable to "
+                     f"ESPN; {len(unmappable)} board games unjoinable")
     else:
-        lines.append(f"MAP       OK    {n}/{n} mappable")
+        lines.append(f"MAP       OK    {n}/{n} joinable to ESPN")
 
-    for name, seen, scope in (("ESPN", espn_seen, scheduled),
-                              ("VENUE", venue_seen, scheduled & mappable)):
+    # VENUE is checked over the WHOLE board -- no join needed, it is the
+    # venue's own id space. ESPN only over the joinable part, because an
+    # unjoinable board game cannot be looked up on the ESPN side at all.
+    for name, seen, scope in (("VENUE", venue_seen, board),
+                              ("ESPN", espn_seen, board & mappable)):
         missing = scope - seen
         if not scope:
             lines.append(f"{name:<9s} ?     cannot check -- nothing joinable")
         elif not missing:
             lines.append(f"{name:<9s} OK    {len(scope)}/{len(scope)} covered"
-                         + ("" if scope == scheduled else " (of mappable)"))
+                         + ("" if scope == board else " (of joinable)"))
         else:
             bad = True
             sample = ", ".join(sorted(missing)[:3])
