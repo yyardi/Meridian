@@ -410,3 +410,54 @@ after seeing which way it went.
    baseline on football at density**. This is what the 94% capture figure has
    never had: it is a WNBA number applied to football, and tonight replaces the
    assumption with a measurement for every stage downstream of the model.
+
+---
+
+# ★ PRE-FLIGHT VALIDATED IN BOTH DIRECTIONS — and continuity had a blind spot
+
+Run against tonight's live CFB tape (`cfb_prices_tonight_20260906T221035Z`,
+146,953 live rows). **Only ONE game was genuinely live** — 122,105 rows across
+119 markets over 96.7 minutes; the other 37 "games" are pregame boards for later
+dates, exactly as ce warned.
+
+    window 20:35-21:43Z (spans the 20:43Z container restore)
+      CADENCE     1.60s    PASS
+      CONTINUITY  526.26s  FAIL      <- after the fix below; was 12.26s PASS
+      COVERAGE    88.2%    FAIL
+
+    window 20:45-21:42Z (post-restore, healthy)
+      CADENCE     1.60s    PASS
+      CONTINUITY  12.26s   PASS
+      COVERAGE    100.0%   PASS
+
+**All three conditions have now been observed both passing and failing.** That
+closes the half-tested gap I flagged on my own instrument.
+
+## ★ THE BLIND SPOT COVERAGE FOUND IN CONTINUITY
+
+The first run reported **CONTINUITY 12.26s PASS while an 8.8-minute outage sat
+at the window start.** `s.diff()` measures gaps **between stamps** and is blind
+to the hole from window-start to the first stamp, or from the last stamp to
+window-end — **which is precisely the truncation the condition exists to
+catch.** An outage at the beginning of a slate is invisible to it.
+
+Fixed by anchoring the gap series on the window boundaries. The same data now
+reports **526.26s** and fails.
+
+**Coverage caught what continuity missed**, which is the case for keeping both:
+they fail on different shapes, and here one covered the other's blind spot on
+live data rather than in principle.
+
+## ★ AND MY PRE-DECLARED READING DID NOT APPLY
+
+I registered: *"COVERAGE failing on a healthy recorder means the 95% floor
+cannot survive normal operation and the FLOOR is wrong."*
+
+**It does not apply here.** All nine missing minutes were at the edges and
+**zero were interior holes** — the gap was the container restore at 20:43Z, a
+real outage rather than a floor set too tight. **The floor is fine and the
+pre-declared escape hatch is not needed.** Recording that the branch was
+available and was not the right one, because it would have been easy to take.
+
+One genuine off-by-one fixed alongside: the window end is exclusive and the
+terminal minute was being counted as a window minute.

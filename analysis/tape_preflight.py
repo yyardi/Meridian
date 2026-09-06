@@ -59,7 +59,15 @@ def evaluate(stamps: pd.Series, window_start=None, window_end=None) -> dict:
         s = s[s < window_end]
     if len(s) < 3:
         return {"ok": False, "reason": f"only {len(s)} distinct stamps in window"}
-    gaps = s.diff().dt.total_seconds().dropna()
+    # CONTINUITY MUST SEE EDGE OUTAGES. s.diff() measures gaps BETWEEN stamps and
+    # is blind to the hole from window-start to the first stamp, or from the last
+    # stamp to window-end — which is exactly the truncation the condition exists
+    # to catch. Measured 2026-09-06: an 8-minute outage at the window edge showed
+    # max gap 12.26s while coverage correctly read 87%. Anchor on the boundaries.
+    anchored = s
+    if window_start is not None and window_end is not None:
+        anchored = pd.Series([window_start] + list(s) + [window_end])
+    gaps = anchored.diff().dt.total_seconds().dropna()
     # COVERAGE IS ONLY MEANINGFUL AGAINST AN EXPLICIT WINDOW. With a
     # data-defined span a recorder that ran 6 minutes of an 8-hour slate scores
     # ~100% over its OWN span and the condition is vacuous — it cannot see a
@@ -68,7 +76,9 @@ def evaluate(stamps: pd.Series, window_start=None, window_end=None) -> dict:
     lo = window_start or s.min()
     hi = window_end or s.max()
     # minute BUCKETS spanned, not elapsed//60: the latter gave 7/5 = 140%.
-    window_min = int((hi.floor("min") - lo.floor("min")).total_seconds() // 60) + 1
+    # end is EXCLUSIVE, so do not count the terminal minute as a window minute
+    span = (hi.floor("min") - lo.floor("min")).total_seconds() // 60
+    window_min = max(int(span) + (0 if explicit else 1), 1)
     covered = s.dt.floor("min").nunique()
     coverage = min(covered / window_min, 1.0)
     r = {
