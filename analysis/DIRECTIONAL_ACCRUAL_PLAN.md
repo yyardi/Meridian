@@ -158,3 +158,51 @@ foregone conclusion.**
   football game is actually captured end to end.
 * **The NFL blocker still stands.** Until `nfl_game_map` exists, NFL contributes
   0/week and every "both" column collapses to the CFB column.
+
+---
+
+# Football capture: downstream stages hold, the model-input stage is unverified
+
+Tested on 48 CFB games with fills (2026-09-05/06), everything downstream of the
+model. **PULSE never ran on them, so the prediction stage is untestable.**
+
+    games with fills                48
+    games with a settlement         48  (-0)
+    ...with a two-sided quote       48  (-0)
+    ...positive spread              48  (-0)
+    ...with a usable mid            48  (-0)
+
+**100%, matching WNBA's 34/34.** Settlement is present on 2,102/2,102 markets
+and 56,625/56,625 rows. **No date in the table moves on these stages.**
+
+Structural difference worth noting: **CFB carries 43.8 markets per game against
+WNBA's 16.1** — 2.7x the rows per game. That buys within-game precision and
+adds no independent games, so it does not move any figure that clusters on
+games. It does mean ~3% of CFB rows are quarter/half markets
+(`first_half_spread`, `third_quarter_spread`) that a full-game-shaped model
+cannot price at all.
+
+## ★ THE STAGE I CANNOT TEST IS THE ONE THAT GATES THE LIVE MODEL
+
+`espn_cfb_game_state` has 50 games with `period` 99.7%, `display_clock` 99.7%
+and scores 100%. **But its `game_id` is the ESPN id (401856635) and our fills
+carry the venue id (17220). Direct overlap: 0 of 48.**
+
+**A first pass appeared to join 48/48 on `state.id`. That was spurious** —
+`state.id` is a sequential row counter running 1..18,775, so every small-integer
+venue game_id falls inside it. A join that succeeds on a row counter is the
+football analogue of the NFL mapping blocker, and it reports success.
+
+`cfb_game_map` exists in the schema (`core/storage/models_cfb_map.py`, migration
+`d4a71e6c93b8`, "the bridge from ESPN game state to venue prices") but I have no
+export of it, so **its coverage is unverified.** Until it is checked, football
+capture for the LIVE model is **unknown, not 94%** — every downstream stage
+passes and the input stage is untested.
+
+## And three of the five spec items are absent even after the join
+
+`espn_cfb_game_state` carries period, clock, scores, timeouts, live_spread,
+live_over_under. It does **not** carry **possession, down, distance or yard
+line** — three of the five things a football live model needs and the ones with
+no basketball analogue. They are on ESPN's summary endpoint, which the programme
+already reads; they are simply not stored here.
