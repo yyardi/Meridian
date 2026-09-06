@@ -19,8 +19,8 @@
 
 set -euo pipefail
 
-SG="${MERIDIAN_SG:-sg-068395944bf315a12}"
-HOST="${MERIDIAN_HOST:-34.200.34.54}"
+SG="${MERIDIAN_SG:?set MERIDIAN_SG (see ~/.meridian-aws) — no infra id is committed to this PUBLIC repo}"
+HOST="${MERIDIAN_HOST:?set MERIDIAN_HOST (see ~/.meridian-server) — no server address is committed to this PUBLIC repo}"
 KEY="${MERIDIAN_KEY:-$HOME/.ssh/meridian-aws.pem}"
 
 allowed() {
@@ -72,7 +72,7 @@ if ssh -i "$KEY" -o ConnectTimeout=15 -o StrictHostKeyChecking=no \
 else
   echo "STILL FAILING"
   echo "  rule is in place, so the cause is elsewhere. Check in this order:"
-  echo "   1. instance state:  aws ec2 describe-instances --instance-ids i-04e0f413486d68a37 --query 'Reservations[].Instances[].State.Name' --output text"
+  echo "   1. instance state:  aws ec2 describe-instances --instance-ids "$MERIDIAN_INSTANCE" --query 'Reservations[].Instances[].State.Name' --output text"
   echo "   2. key present:     ls -l $KEY   (must be chmod 600)"
   echo "   3. campus egress:   some networks block outbound 22 entirely; tether to a phone to test"
   exit 1

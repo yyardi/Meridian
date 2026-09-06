@@ -125,17 +125,17 @@ def test_no_public_ip_addresses():
 
 def test_the_scanner_would_actually_catch_one():
     """A guard nobody has watched fail is a guard nobody has tested."""
-    assert PATTERNS["aws account id"].search("meridian-backups-623955527388")
-    assert PATTERNS["security group id"].search("sg-0af95dedc2bd41b07")
-    assert PATTERNS["vpc id"].search("vpc-06554dfe029f2cf6a")
-    assert _IPV4.search("HOST=100.60.80.165") and not _HARMLESS_IP.match("100.60.80.165")
+    assert PATTERNS["aws account id"].search("meridian-backups-123456789012")
+    assert PATTERNS["security group id"].search("sg-0123456789abcdef0")
+    assert PATTERNS["vpc id"].search("vpc-0123456789abcdef0")
+    assert _IPV4.search("HOST=198.51.100.7") and not _HARMLESS_IP.match("198.51.100.7")
     assert _HARMLESS_IP.match("127.0.0.1") and _HARMLESS_IP.match("172.31.14.17")
     # The tightened account-id rule still catches a real one and no longer
     # trips on the tail of an all-zeros dummy UUID.
     # The case this rule exists for: an account id inside a bucket name, which
     # a leading-dash exclusion would have silently stopped catching.
-    for real in ("meridian-backups-623955527388",
-                 "arn:aws:iam::623955527388:role/x"):
+    for real in ("meridian-backups-123456789012",
+                 "arn:aws:iam::123456789012:role/x"):
         assert PATTERNS["aws account id"].search(_scrub_line(real)), real
     # ...and the dummy UUID whose tail is twelve digits still does not trip it.
     assert not PATTERNS["aws account id"].search(
