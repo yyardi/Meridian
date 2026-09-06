@@ -71,3 +71,69 @@ baseline above, **scored against settlement**. Two things it will not answer:
 * **whether any of it is tradeable** — a frozen quote is not necessarily a
   transactable one, and A's bar is per-traded-market edge over τ ≈ 2.0–2.5pp,
   not population Brier.
+
+---
+
+# ★ THE PREGAME ANCHOR: ce's channel is real, and one parameter beats seven features
+
+## ce's diagnosis verified on my own cohort
+
+    ESPN first in-game WP, 23 kickoff-observed games
+      mean 0.5935   sd 0.0176   range 0.572 .. 0.623
+      games with a strong prior (>0.80 or <0.20):  0 of 23
+
+**ESPN opens every CFB game between 0.57 and 0.62.** That is home-field
+advantage and nothing else. So my −0.01119 tie was against an opponent carrying
+no pregame information, and "we tie ESPN" reads very differently once that is
+known.
+
+## ★ THE ANCHOR WAS THE FEATURE I THREW AWAY
+
+`live_spread` is **constant within a game in 46 of 50** — which is exactly why I
+removed it from the feature list this afternoon, and exactly what makes it a
+**pregame anchor**. nflfastR's `spread_line` is a per-game constant by design.
+
+**And it needs no map** — it is already in the ESPN-keyed state table.
+
+    live_spread present on 50 of 50 games
+    sd 15.62 points, |spread| > 10 on 84% of games
+    implied P(home) sd 0.1879 against ESPN's 0.0176  ->  10.7x dispersion
+
+## RESULT — play-level Brier, out-of-fold, held out by game (n 3,642, G 28)
+
+    game state only  (7 features)        0.08061
+    anchor only      (1 parameter)       0.07413   <-
+    state + constrained anchor           0.10443
+    ESPN                                 0.06942
+
+    vs ESPN:  state only    -0.01119 [-0.04316, +0.02077]  tie
+              anchor only   -0.00472 [-0.06355, +0.05412]  tie
+              state+anchor  -0.03502 [-0.15963, +0.08959]  tie
+
+**A single logistic parameter on the pregame spread, using no in-game state at
+all, beats a seven-feature model of down, distance, field position, clock and
+score.** That is the strongest evidence for ce's missing-channel argument, and
+it comes from a feature already in hand.
+
+## ★ AND THE COMBINATION FAILS FOR A REASON THAT IS NOT INFORMATION
+
+    in-sample / out-of-fold Brier
+      game state only    0.03239 / 0.07443   gap +0.04204
+      with anchor        0.00307 / 0.10940   gap +0.10632   <- 2.5x
+
+**The anchor has 22 distinct values across 28 outcome draws — a near-unique game
+key.** A flexible model fits 22 game-level points almost perfectly (in-sample
+0.00307) and does not generalise to the 6 held out. GroupKFold reveals it; it
+does not prevent it.
+
+**So the joint fit is a G problem, not an information problem.** Constrained to
+one parameter the anchor helps; given to a GBM it memorises. **The fix is
+constraint or more games, not a better feature.**
+
+## What this changes about the earlier negative
+
+The five negative subsets and the pooled tie stand **as claims about game state
+alone**, which is the narrower and more useful reading. **They were never
+evidence that no edge exists** — they are evidence that none is reachable from
+the in-game features we have, on 28 games, against an opponent that also lacks
+the prior.
