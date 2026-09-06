@@ -338,3 +338,75 @@ estimator implicit.
 
 **So the third failure mode is real and general, and the immediate risk on our
 own numbers is not instability but mislabelling.**
+
+## 12. ★ The labelling rule binds in the RETURN TYPE — and one extraction fixes three things
+
+### Where it binds
+
+Not in a doc. Prose cannot be enforced and this label has already survived one
+resolution. **It binds in the estimator's return type**, because that is the
+only place a number and its basis cannot be separated.
+
+`ClusteredMean` already carries `n` (fills) and `n_clusters` (games) — it has
+the information and lacks only self-description. Three mechanical steps:
+
+1. **`ClusteredMean` gains a `basis` of `"per-fill"`**, and a `__str__` /
+   `format()` that always renders it. Printing the object then carries the
+   label; extracting `.mean` to hand-format becomes a *visible* choice rather
+   than the default one.
+2. **A sibling `per_game_mean()` returning the same type with
+   `basis="per-game"`.** Two self-describing functions instead of one function
+   plus a naming convention. The ambiguity exists precisely because there is
+   one function whose basis lives in prose.
+3. **A guard test** in the `scripts/guard_coverage.py` pattern: flag a cent
+   figure in analysis output that is not adjacent to a basis word. Crude, and
+   it is the existing house mechanism for exactly this.
+
+This is the same move as the `game_start_time` answer — remove the failure mode
+structurally rather than by discipline — and here the analogy holds, unlike the
+boundary/granularity case where I resisted it.
+
+### ★ But it cannot be done without an extraction, and the measurement is stark
+
+`core/quote/adverse_selection.py` is **663 lines**, and it is in
+`DECISION_FILES`. Its contents:
+
+    Quote                24 lines   <- DECISION (all engine.py imports)
+    band constants        ~8 lines  <- DECISION
+    QuoteWindow, build_windows, ClusteredMean, clustered_mean, naive_mean,
+    load_quotes, Cadence, cadence, format_report (147), run, main
+                        ~630 lines  <- scoring, reporting, CLI
+
+**About 5% of the file is decision content, and 95% is scoring.** So today:
+
+- adding a `basis` label to `ClusteredMean` **moves `decision_hash`** and
+  fragments the cohort, for a purely presentational change;
+- so does any report formatting tweak, or a change to `main()`;
+- and `scipy` sits in the decision-path dependency closure while being used
+  only at lines 320/339, inside the scoring half.
+
+**One ~35-line extraction resolves all three.** Move the band constants and
+`Quote` into a small module; point `DECISION_FILES` at it; leave the rest in
+`adverse_selection.py`. Then scoring changes stop moving cohort identity,
+`scipy` leaves the decision closure, and the labelling fix becomes free.
+
+### The recursion, which should be planned rather than discovered
+
+**The fix for cohort fragmentation is itself a decision-path change, so it
+fragments the cohort once.** That is unavoidable and it is the *last* break we
+should need to take for this reason. By the discipline in §5 it belongs in a
+quiet window (17.0h and 11.5h gaps exist), and the deploy log should record it
+with a note saying the move is intentional and non-behavioural — a hash change
+whose diff provably touches no logic.
+
+### The heartbeat recompute has the same shape, and dodges it
+
+Adding a hash recompute to `engine.py` would also move `decision_hash` — an
+observability change altering the identity of what it observes. **`core/heartbeat.py`
+is NOT in `DECISION_FILES`**, and the engine already imports it
+(`from core import heartbeat as hb`). Putting the recompute there gives the
+per-heartbeat check without touching the decision path at all.
+
+Accepted cost: the recompute can then be disabled without moving the hash. That
+is correct — it is a monitor, not a decision, and a monitor that changed cohort
+identity would be the disease again.
