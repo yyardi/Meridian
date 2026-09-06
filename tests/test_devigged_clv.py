@@ -165,6 +165,11 @@ def _result(bets):
                           config_hash="test", bets=list(bets))
 
 
+#: THE 0.55/0.50 ASYMMETRY IS LOAD-BEARING. At 0.50/0.50 the de-vigged halves
+#: are equal, so swapping `devigged[0]`/`devigged[1]` at line 133 changes
+#: nothing and the test that exists to catch that swap silently stops catching
+#: it. Do not "simplify" these to the same number.
+#:
 #: Hand-computed, and the derivation is the point of writing them out:
 #:   devig(0.55, 0.50)      = (0.55/1.05, 0.50/1.05) = (0.5238095, 0.4761905)
 #:   p_over = Phi((164-160)/10) = Phi(0.4)           =  0.6554217
