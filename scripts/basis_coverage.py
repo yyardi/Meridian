@@ -42,13 +42,23 @@ FIGURE = re.compile(r"[+-]?\d+\.\d+\s*(?:c\b|¢)")
 #: the fill/game dichotomy would mark a correctly-labelled figure UNLABELLED.
 _UNIT = (r"fill|game|pair|contract|cycle|dollar|\$|market|order|observation"
          r"|row|trip|ride|quote|window|event|leg")
-#: One optional adjective is allowed between "per" and the unit: the source
-#: says "per FILLED quote" and "per recorded fill", and requiring adjacency
-#: marked both UNLABELLED.
+#: ★ A CLOSED VOCABULARY IS THE WRONG DESIGN HERE, and four separate misses
+#: proved it: "per pair", "per filled quote", "+8.5c/$", then "per run" and
+#: "per trade". Row units are open-ended — every study introduces its own
+#: (fill, game, pair, window, run, trade, leg, observation, first-score
+#: event...) and a fixed list will always lag the next document.
+#:
+#: The guard's question is whether a basis is STATED, not whether it is one
+#: this file has heard of. So match the SHAPE of a basis phrase and accept any
+#: noun. A false positive ("per cent") is cheap and stoplisted; a false
+#: negative marks correct work as defective, which is what got four figures
+#: wrongly flagged and would eventually get the guard ignored.
+_STOP = r"(?!cent\b|cents\b)"
 BASIS = re.compile(
     # NOTE the missing \b after the /UNIT alternative: "+8.5c/$" failed to
     # match because \b never fires after "$", which is not a word character.
-    rf"per[-\s](?:\w+[-\s])?(?:{_UNIT})\b|/(?:{_UNIT})|(?:{_UNIT})-weighted"
+    rf"per[-\s]{_STOP}(?:\w+[-\s]){{0,2}}\w+"
+    rf"|/(?:{_UNIT}|\w+)|\w+-weighted"
     r"|mean of (?:\w+ )?means|median of (?:\w+ )?medians"
     rf"|over (?:all |the )?(?:\w+[-\s]){{0,3}}(?:{_UNIT})s?\b", re.I)
 

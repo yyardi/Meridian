@@ -137,7 +137,7 @@ P) for the trailing team **> 2¢**, 95% CI clustered by game excluding zero,
 | fitted curve instead of cells | +6.35¢ | [+0.34, +12.36] |
 | **pregame-anchored (confound check)** | **−2.20¢** | **[−3.90, −0.49]** |
 
-n = 40 across 19 games. Mean spread at the boundary 1.08¢.
+n = 40 across 19 games. Mean spread at the boundary 1.08¢ per observation.
 
 **PASS on the stated terms. Not tradable.**
 

@@ -19,10 +19,10 @@ the venue's own book, so a price struck at 21:14 and the same market's price at
 62 moneyline markets in the archive · 53 entries across **53 games** · 8
 skipped for no pregame prior · 0 for an unusable clock · 0 unsettled.
 
-| | value | 95% CI (game-clustered) | crosses zero |
+| | value | 95% CI (game-clustered **bootstrap**, not the sandwich used elsewhere) | crosses zero |
 |---|---|---|---|
 | money-at-price ROI | **+5.96%** | [−12.25%, +23.16%] | **yes** |
-| mean CLV | **+0.96¢** | [−0.73¢, +2.56¢] | **yes** |
+| mean CLV **per entry** | **+0.96¢** per entry | [−0.73¢, +2.56¢] | **yes** |
 | hit rate | 66.0% @ entry cost 0.623 | — | — |
 
 **Both cross zero at 53 games.** Point estimates lean positive and neither is a
@@ -46,7 +46,7 @@ to still be in play**. Measured effect of the correction:
 |---|---|---|
 | references effectively settled | 87% | **0%** |
 | corr(CLV, realised P&L) | **+0.980** | **+0.240** |
-| mean CLV | +2.45¢ | **+0.96¢** |
+| mean CLV **per entry** | +2.45¢ per entry | **+0.96¢** per entry |
 
 The inflation was the outcome leaking in. An entry struck closer to the whistle
 than the horizon now has **no** CLV and says so, rather than falling back to a
