@@ -189,6 +189,38 @@ class MidCopier:
         return [min(max(r.mid + rng.gauss(0, 0.001), 0.01), 0.99) for r in rows]
 
 
+class BaseRateModel:
+    """Outputs the training base rate for every row. On a lopsided cohort this
+    scores WELL — B's CFB slate is 89.3% home wins, where a constant 0.893
+    beats most things — while carrying no per-game information at all."""
+
+    def __init__(self): self._p = 0.5
+    def fit(self, rows):
+        self._p = sum(r.outcome for r in rows) / max(len(rows), 1)
+    def predict(self, rows): return [self._p] * len(rows)
+
+
+class NoisyBaseRate:
+    """The prior with a wobble. Its output VARIES, so the degenerate check
+    stays silent, and it still knows nothing per-game — which is what pins
+    BASE_RATE on its own. Without it, BaseRateModel trips DEGENERATE and
+    BASE_RATE together and neither is individually established."""
+
+    def __init__(self): self._p = 0.5
+    def fit(self, rows):
+        self._p = sum(r.outcome for r in rows) / max(len(rows), 1)
+    def predict(self, rows):
+        rng = random.Random(9)
+        return [min(max(self._p + rng.gauss(0, 0.02), 0.01), 0.99) for _ in rows]
+
+
+class ConstantModel:
+    """Silently dead: one number, forever, regardless of input."""
+
+    def fit(self, rows): pass
+    def predict(self, rows): return [0.5] * len(rows)
+
+
 class NoiseModel:
     """Uncorrelated with the mid and carrying no signal. Recovers nothing, so
     it pins the INJECTED check WITHOUT tripping the echo check — which the
@@ -297,14 +329,41 @@ def run_all(model_cls) -> Report:
             f"and add no skill beyond it (CI [{cm2.lo:+.5f}, {cm2.hi:+.5f}]) — "
             "the model may be reproducing its own input"))
 
-    # 5. LEAKAGE, held out by game.
+    # 5. DEGENERATE — a model whose output does not vary has learned nothing,
+    #    and on a lopsided cohort it can still SCORE well. B's CFB slate is
+    #    89.3% home wins, where a constant 0.893 beats a lot. No comparison
+    #    against a market or a benchmark reveals this; only the spread of the
+    #    predictions does.
+    spread = max(preds) - min(preds)
+    rep.notes.append(f"prediction spread {spread:.4f}")
+    if spread < 0.01:
+        rep.failures.append(Failure("DEGENERATE",
+            f"predictions span {spread:.4f} — the model emits one number "
+            "regardless of input. On a lopsided base rate this still scores "
+            "well, so the score cannot tell you"))
+
+    # 6. BASE RATE — beating the market is not the only bar. A model that
+    #    cannot beat "always predict the training mean" has learned the prior
+    #    and nothing else.
+    br = BaseRateModel(); br.fit(tr)
+    base = _brier_by_game(te, br.predict(te))
+    mine = _brier_by_game(te, preds)
+    vs_base = clustered_mean({g: [b - m for b, m in zip(base[g], mine[g])]
+                              for g in mine})
+    rep.notes.append(f"skill vs base rate {vs_base.mean:+.5f}")
+    if vs_base.mean <= 0:
+        rep.failures.append(Failure("BASE_RATE",
+            f"scores {vs_base.mean:+.5f} against a training-mean predictor on "
+            "data with a planted edge — it has learned the prior, not the game"))
+
+    # 7. LEAKAGE, held out by game.
     rows = make_slate(edge=0.0)
     tr, te = split_by_game(rows)
     overlap = {r.game_id for r in tr} & {r.game_id for r in te}
     if overlap:
         rep.failures.append(Failure("SPLIT", f"{len(overlap)} games in both halves"))
 
-    # 6. LEAKAGE, the late feature. A model reading it scores impossibly well.
+    # 8. LEAKAGE, the late feature. A model reading it scores impossibly well.
     m = model_cls(); m.fit(tr)
     cm4 = skill_beyond_market(te, m.predict(te))
     if cm4.mean > 0.20:

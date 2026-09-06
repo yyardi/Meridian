@@ -15,6 +15,9 @@ import pytest
 
 from model_harness import (
     INJECTED_EDGE,
+    BaseRateModel,
+    ConstantModel,
+    NoisyBaseRate,
     NoiseModel,
     LeakyModel,
     MarketOnly,
@@ -176,6 +179,52 @@ def test_a_row_split_would_be_caught():
     if overlap:
         rep.failures.append(mh_Failure("SPLIT", f"{len(overlap)} games"))
     assert not rep.ok
+
+
+# ------------------------------------------------------------------ #
+# THE FALSE-NEGATIVE SIDE — a model that is silently dead
+# ------------------------------------------------------------------ #
+#
+# Every adversary above is a model that is too GOOD and must be rejected.
+# That leaves the opposite failure untested, and it is the one that matters
+# for a NEGATIVE result: a broken model and an honest "no edge here" produce
+# the same headline number. B's CFB fit is exactly this case — Brier 0.08061
+# against ESPN 0.06942, difference -0.011 with a CI spanning zero.
+#
+# A NEGATIVE RESULT IS ONLY INFORMATIVE IF THE PIPELINE CAN FIND AN EFFECT.
+# That is the INJECTED check, and for a null result it is the load-bearing
+# one — more than MID_ECHO, which was written for the opposite risk.
+
+
+def test_a_dead_model_is_caught():
+    """One number forever. On a lopsided cohort — B's is 89.3% home wins — a
+    constant scores well, so no comparison against a benchmark reveals it."""
+    rep = run_all(ConstantModel)
+    assert not rep.ok
+    assert "DEGENERATE" in rep.codes, rep.failures
+    assert "INJECTED" in rep.codes, "a dead model cannot recover a planted edge"
+
+
+def test_a_base_rate_model_is_caught():
+    rep = run_all(BaseRateModel)
+    assert not rep.ok
+    assert "BASE_RATE" in rep.codes, rep.failures
+
+
+def test_the_base_rate_check_is_pinned_without_the_degenerate_one():
+    """NoisyBaseRate VARIES, so DEGENERATE stays silent and only BASE_RATE can
+    fire. Without this adversary the two checks were only ever observed
+    together and neither was individually established."""
+    rep = run_all(NoisyBaseRate)
+    assert "BASE_RATE" in rep.codes, rep.failures
+    assert "DEGENERATE" not in rep.codes, rep.failures
+
+
+def test_the_oracle_beats_the_base_rate():
+    """The other direction: a model that genuinely knows the per-game level
+    must NOT trip the base-rate check, or the check would reject real work."""
+    rep = run_all(Oracle)
+    assert "BASE_RATE" not in rep.codes and "DEGENERATE" not in rep.codes
 
 
 # ------------------------------------------------------------------ #
