@@ -44,13 +44,48 @@ silently returns the wrong sport's franchise. That is worse than the block it
 hides behind: a skipped row is a NULL somebody can count, a mis-resolved row is
 a wrong `espn_game_id` that looks valid.
 
-### CFB collisions are UNKNOWN, not zero
+### CFB: the all-`None` table is correct, and it is the model to copy
 
-`KALSHI_TO_ESPN_NCAAF` has 276 entries and **all 276 map to `None`.** An
-intersection against it is computed on an empty set, so "CFB collides with
-nothing" is vacuous rather than reassuring — a correct measurement of the wrong
-quantity. **CFB must be enumerated from a real CFB ESPN code source before CFB
-is added to the league map**, and until then CFB collision risk is unquantified.
+`KALSHI_TO_ESPN_NCAAF` has 276 entries and **all 276 map to `None`**, so my
+first intersection ran on an empty set and "CFB collides with nothing" was
+vacuous — a correct measurement of the wrong quantity. Chasing that produced the
+opposite of what it looked like.
+
+**It is not dead code and the `None`s are not a hole.** Both are load-bearing,
+for two different reasons:
+
+* **The 276 keys** are read at `mapping.py:522` to split variable-length game
+  keys — `26SEP03MASSRUTG` → `MASS`/`RUTG` — by testing candidate substrings for
+  membership. Delete the table and college key parsing stops.
+* **The `None` values** make `_to_espn` (`mapping.py:474`) **raise
+  `UnknownTeamError`** with a stated reason: *"the college code space diverges
+  from ESPN's and is not derivable (4 of 11 games measured divergent,
+  2026-09-03)"*. It is pinned by `test_ncaaf_codes_have_no_espn_identity`, whose
+  docstring says `first_espn` **must raise rather than hand back a confident
+  wrong abbreviation**.
+
+**So CFB does not share NFL's defect — it has the opposite, on purpose.** NFL
+fails by *absence*: the code is missing from a flat map, `UnknownTeamError` is
+caught upstream, and the row is dropped with nothing logged. CFB fails by
+*declaration*: the code is present, the identity is explicitly unknown, and the
+lookup refuses. **The behaviour this spec asks for on unmapped codes already
+exists in this file for CFB.** Cite it rather than reinventing it.
+
+The table therefore **cannot be deleted** (keys) and **must not be populated**
+(the `None` is the safety property).
+
+**CFB's ESPN identity comes from a different route entirely** — `cfb_game_map`'s
+fuzzy match on ESPN scoreboard names — so *code* collisions do not apply to it.
+Its analogous hazard is **split ambiguity**: `MEMORE` parses as `MEM`+`ORE` or
+`ME`+`MORE`, i.e. Memphis/Oregon or Maine/Morehead St. Already handled by
+requiring the venue's `sub_title`, and pinned by a test.
+
+### The codebase's own count is one short
+
+`mapping.py:370` states *"Seven codes exist in BOTH tables (ATL, CHI, DAL, IND,
+LV, MIN, SEA)"*. The measured intersection is **eight** — **`WSH` is in both**
+and is omitted from the comment. Correct the comment when the map is changed;
+an undercount in the place someone checks is how the ninth gets missed.
 
 ## What an unmapped code must do
 
@@ -67,6 +102,24 @@ Required instead:
    back to a flat search — the flat search is the current bug.
 3. **Never resolve across leagues.** A code valid in another league is an error,
    not a match.
+
+## The test that would have caught this
+
+ce asked for a test failing if any league's code table is empty or all-`None`.
+**As stated it would fail CFB, which is correct today.** The defensible form
+separates the two failure modes:
+
+1. **Every league table is non-empty.** No exceptions — an empty table makes
+   every membership test false and every intersection vacuous, which is the
+   defect that made this spec's first pass wrong.
+2. **Every league declares its ESPN-identity policy**, `mapped` or
+   `codes_only`, and the test asserts the table matches the declaration:
+   `mapped` ⇒ no `None` values; `codes_only` ⇒ all values `None`. CFB is
+   `codes_only` and passes; a WNBA or NFL table that silently drifted to
+   all-`None` fails.
+3. **No set operation over a league table without asserting it is non-empty
+   first.** The vacuous result was not a wrong number — it was a correct
+   computation over nothing, which no recomputation catches.
 
 ## Backfill
 
