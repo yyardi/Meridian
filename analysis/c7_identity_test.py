@@ -237,6 +237,12 @@ def build(S: pd.DataFrame, loose: bool) -> pd.DataFrame:
     # is the collinearity trap. Earliest in GAME time, never file order.
     spread = (S.dropna(subset=["live_spread", "reg_left"])
               .sort_values("reg_left", ascending=False).groupby("gid").live_spread.first())
+    # ★ LAST ROW, NEVER THE FIRST 'post' ROW. ESPN UN-POSTS: on 401858428 it
+    # called the game final at 7-12, reverted to state 'in' at 13-12, then
+    # finalled again -- THE OTHER TEAM WON. Taking the earliest final names the
+    # wrong winner on 1 game in 28. d5 found the phenomenon; this label was
+    # already right, but by reading "last" as "final score" rather than by
+    # knowing about the revert, so check_settlement() below pins it.
     final = S.sort_values("t").groupby("gid").agg(hs=("home_score", "last"),
                                                   as_=("away_score", "last"))
     cohort = sorted(settled(S, loose) & set(kick.index) & set(spread.dropna().index))
@@ -260,6 +266,28 @@ def build(S: pd.DataFrame, loose: bool) -> pd.DataFrame:
     for c in COLS:
         D["b_" + c] = (D[c] - D.y) ** 2
     return D
+
+
+def check_settlement(S: pd.DataFrame) -> None:
+    """Fail loudly if anyone switches settlement to the first 'post' row.
+
+    Pins the DIFFERENCE between the two rules rather than the observed labels:
+    a mutant that hardcodes today's y would still pass a label assertion.
+    """
+    S = S.sort_values("t")
+    flips = []
+    for gid, x in S.groupby("gid"):
+        post = x[x.is_post]
+        if post.empty:
+            continue
+        fp, lr = post.iloc[0], x.iloc[-1]
+        if int(fp.home_score > fp.away_score) != int(lr.home_score > lr.away_score):
+            flips.append(gid)
+    print(f"  settlement: last-row vs first-post disagree on the WINNER for "
+          f"{len(flips)} games {flips}")
+    assert flips, ("expected at least one un-post winner flip in this substrate; "
+                   "if this fires, either the export changed or the check is "
+                   "no longer exercising the hazard it was written for")
 
 
 def cm(f: pd.DataFrame, col: str):
@@ -419,6 +447,7 @@ def export(D: pd.DataFrame, path: str) -> None:
 
 def main() -> int:
     S = load_state()
+    check_settlement(S)
     print(f"  settled STRICT (post row)                      {len(settled(S, False))}")
     print(f"  settled LOOSE  (post OR P>=4 & 0:00 & untied)  {len(settled(S, True))}\n")
     loose = build(S, loose=True)
