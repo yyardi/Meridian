@@ -19,10 +19,24 @@ Model = each ladder's own probit fit; price = observed quotes; 5 games, 75 rungs
     |edge| = |model - mid|, pp     median 1.46   p75 2.88   p90 4.31   max 7.08
     half-spread at those rungs     median 1.00   p75 2.50   p90 3.50
 
-    would a rule ever fire?  (edge must beat half-spread + tau)
-      winner  tau 0.5pp    34/75 rungs (45.3%)   5/5 games
-      spread  tau 2.0pp    16/75 rungs (21.3%)   5/5 games
-      total   tau 3.5pp     5/75 rungs ( 6.7%)   2/5 games
+    would a rule ever fire?   CORRECTED 2026-09-06, see the box below
+      tau            SUPERSEDED (double-charged)   CORRECT
+      winner 0.5pp            45.3%                 86.7%
+      spread 2.0pp            21.3%                 38.7%
+      total  3.5pp             6.7%                 20.0%
+
+### ★ CORRECTION: THE SUPERSEDED COLUMN DOUBLE-CHARGED THE HALF-SPREAD
+
+A caught it. **tau IS half_spread + fee**, so requiring `edge - half_spread -
+tau > 0` charges the crossing twice. The identity:
+
+    mid-anchored:    sign*(y - mid)   - (half_spread + fee)
+    touch-anchored:  sign*(y - touch) - fee            <- half-spread already paid
+    threshold:  |model_p - mid| > tau   ==   |model_p - touch| > fee
+
+**Correction direction: the rule as registered would have UNDER-traded**, firing
+on roughly half as many rungs as it should. My error was over-conservative, which
+is the same direction as the other three defects of mine tonight.
 
 **The rule is not degenerate: it can both fire and abstain on plausible inputs**,
 and the fraction moves sensibly with tau. That is the achievable-image check
@@ -66,7 +80,12 @@ For each candidate rung, at decision time:
     tau       tau(market_type, p_touch)  -- NEVER a scalar, see §2
 
     edge_net = (p_model - p_touch) if buying, (p_touch - p_model) if selling
-    ENTER iff  edge_net > tau + MARGIN,  MARGIN = 1.50pp
+    ENTER iff  edge_net > FEE(type, p_touch) + MARGIN,   MARGIN = 1.50pp
+
+    ★ FEE, NOT tau. Buying at the ask has ALREADY paid the half-spread, and tau
+      is half_spread + fee. The equivalent mid-anchored form is
+      |p_model - p_mid| > tau + MARGIN. Use one or the other, never a touch-
+      anchored edge against a full tau -- that was this document's first version.
 
 `MARGIN` is set to the projection's **median in-sample residual, 1.46pp, rounded
 up to 1.50pp**. It is the noise floor, not a tuned parameter, and it is fixed
@@ -118,8 +137,13 @@ callable and must fail loudly, not default, on an unknown market type.
 Declared now so it is falsifiable:
 
 * **If it fires on more than ~40% of rungs**, MARGIN is too low and it is
-  trading fit noise. The projection puts spread-tau firing at 21.3% with a
-  ZERO-noise-floor rule; adding MARGIN must reduce that.
+  trading fit noise. **On the CORRECTED projection this tripwire is already
+  live:** a zero-MARGIN rule fires on 38.7% of pure-noise rungs at spread tau and
+  86.7% at winner tau. Adding MARGIN=1.50pp takes spread to the total-tau column,
+  ~20% — still one noise rung in five. **I am NOT retuning MARGIN after seeing
+  this**; it stays at the pre-registered 1.50pp and this paragraph is the flag.
+  Firing on mean-zero residuals loses exactly the fee, so a 20% noise-fire rate
+  is a fee bill, not a wash.
 * **If it fires on fewer than 2 games in 10**, it is inert and no money
   statement can be made from it — report as "admitted nothing", which is a
   finding and not a failure.
@@ -179,7 +203,18 @@ trade, which on these numbers is most of it. This is c7's registered separation 
 mid for the forecast comparison, touch for any P&L — and it is why both columns
 are emitted rather than one `venue_p`.
 
-So: `edge_for_decision = model_p - touch`, and `realized = sign * (y - touch) - tau(type, touch)`.
+So: `edge_for_decision = model_p - touch`, and
+
+    realized = sign * (y - touch) - FEE(type, touch)      # FEE ONLY, not tau
+
+**tau is half_spread + fee and the half-spread is already inside `(y - touch)`.**
+A caught this in my first version, which subtracted the full tau from a
+touch-anchored P&L and charged the crossing twice — about 1.00pp on these
+ladders, against a median edge of 1.46pp.
+
+**I therefore need the FEE COMPONENT separately from the tau surface.** A scalar
+tau cannot be decomposed downstream and guessing `fee = tau - median_half_spread`
+would import my population's spreads into their surface.
 
 ### WHAT I CANNOT EMIT YET, STATED SO IT IS NOT ASSUMED
 
