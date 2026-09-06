@@ -112,5 +112,29 @@ one population guaranteed to flatter us.
 - My level figures are still not comparable to it — mine is return-on-cost,
   theirs is P&L per contract on the YES scale. Only the **paired difference**
   and the **mid-move mechanism** are offered here.
+
+## Which predicate defines the withdrawn arm — settled, and it is not a convention
+
+Two were circulating: `withdrawn_at.notna()` (n=1,019, **+10.857pp**) and
+`filled_at.isna()` (n=1,030, **+10.878pp**). The 11-row gap decides it, and
+they are not ordinary unfilled orders:
+
+**All 11 carry `binding_constraint = max_open_per_event`**, from one event in
+a single nine-minute window on 2026-08-23. They were **blocked by a position
+limit before ever being placed.** No order rested in the market, so there was
+no fill to miss.
+
+That makes `filled_at.isna()` the wrong predicate here regardless of taste. It
+merges two different non-events — *posted and the price left* with *never
+posted* — and this document's whole mechanism is about the first. Use
+**`withdrawn_at.notna()`**, which is also what the published figure used.
+
+Numerically nothing rides on it (+10.857 against +10.878, intervals almost
+identical). The label is what rides on it.
+
+**A second confirmation of the interval estimator fell out of this.** Computed
+with CR1 + t(G−1), the withdrawn arm returns **[+7.554, +14.160]** — the
+published interval exactly, on a figure whose half-width I had not previously
+reconciled. See [my-clustered-intervals-were-narrow](my-clustered-intervals-were-narrow.md).
 - 78.9% of withdrawn rows match a book snapshot within 120s. The rest are
   excluded rather than joined stale.
