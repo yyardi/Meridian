@@ -164,6 +164,8 @@ zero-parameter tie at G=31 is worth having and is not worth broadcasting.
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import pandas as pd
 
@@ -338,6 +340,30 @@ def cm_series(s: pd.Series):
     return clustered_mean({k: [v] for k, v in s.items()})
 
 
+EXPORT_COLS = ["gid", "first_seen_at", "reg_left", "period", "display_clock",
+               "home", "away", "home_score", "away_score", "clock_is_stale",
+               "anchor", "espn_k", "espn_home_win_pct", "ident_0", "y"]
+
+
+def export(D: pd.DataFrame, path: str) -> None:
+    """Hand-off for the venue comparison. THE FRAME IS P(HOME), NOT P(YES).
+
+    Every probability column is P(home team wins). Mapping to a venue YES leg is
+    the consumer's job and it is not the identity function on every market.
+
+    `clock_is_stale` is the trap that cost me the whole evening: ESPN's
+    display_clock holds 15:00 in period 1 on rows already scoring 21-0. Any
+    tolerance-matching on game time MUST drop or special-case those rows.
+    """
+    E = D.copy()
+    E["clock_is_stale"] = (E.reg_left >= 3540) & ((E.home_score != 0) | (E.away_score != 0))
+    E[EXPORT_COLS].sort_values(["gid", "first_seen_at"]).to_csv(path, index=False)
+    n_stale = int(E.clock_is_stale.sum())
+    print(f"  wrote {path}: {len(E):,} rows, G {E.gid.nunique()}, "
+          f"{n_stale} rows flagged clock_is_stale ({n_stale/len(E)*100:.1f}%)")
+    print("  FRAME: every probability column is P(HOME WINS), not P(YES).")
+
+
 def main() -> int:
     S = load_state()
     print(f"  settled STRICT (post row)                      {len(settled(S, False))}")
@@ -354,6 +380,9 @@ def main() -> int:
     print("It TIES ESPN (spans zero, 29/31) and BEATS ITS OWN ANCHOR (excludes zero).")
     print("Decay to the late game is real, but the shape is not monotone and the")
     print("relative gain does not decay at all. G=31, one outcome draw each.")
+    if len(sys.argv) > 2 and sys.argv[1] == "--export":
+        print()
+        export(loose, sys.argv[2])
     return 0
 
 
