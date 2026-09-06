@@ -100,10 +100,12 @@ one population guaranteed to flatter us.
   entered/declined differences are ~0.002–0.003 per `3441cc1`, two orders of
   magnitude away. It is committed, in
   `analysis/pulse_money_and_the_taker_join.md` at `3dbe88a`.
-  - My clustered half-width comes out **5.900** against the published 6.216 —
-    a small estimator difference, not a point-estimate one. It changes no
-    verdict (filled spans zero either way, withdrawn excludes it either way)
-    but it is unreconciled and named rather than smoothed over.
+  - My clustered half-width first came out **5.900** against the published
+    6.216. **Since RECONCILED**, and the gap was mine: the published intervals
+    are CR1 + t(G−1) throughout, and my inline estimator used z = 1.96 with no
+    finite-sample correction. Not a defensible alternative — the narrow one is
+    simply wrong for few clusters. See
+    [my-clustered-intervals-were-narrow](my-clustered-intervals-were-narrow.md).
   - So the comparison here is P&L against P&L, and apt.
   - Consequence, via the anchor rule: because that base is **limit**-anchored,
     the gross 4.70¢ is the *correct* charge against it. No overcharge there.
