@@ -206,3 +206,49 @@ live_over_under. It does **not** carry **possession, down, distance or yard
 line** — three of the five things a football live model needs and the ones with
 no basketball analogue. They are on ESPN's summary endpoint, which the programme
 already reads; they are simply not stored here.
+
+---
+
+# The input stage: the map is not the constraint, and the rate is still unmeasured
+
+`cfb_game_map` (55 rows, all `slug_fuzzy_date_pm1`, confidence 0.75–1.00).
+
+**Floor used: 0.90.** Every row was matched by fuzzy slug with a ±1-day window,
+which is exactly the method that can pair the wrong game silently — the same
+shape as the `SDST`/`sdst` cross-venue collision. Taking all 55 is a choice and
+this states it.
+
+    floor 0.00   37/37 of our 09-05 games map   (100%)
+    floor 0.80   28/37                          ( 76%)
+    floor 0.90   20/37                          ( 54%)
+
+**The map is not the binding stage.** At any floor it maps more of our games
+than reach ESPN state.
+
+## ★ AND THE STATE RATE IS NOT MEASURABLE FROM THIS DATA
+
+    state recorder first row   2026-09-05 22:08:57Z
+    our 09-05 fills            00:00:01Z -> 20:51:07Z
+
+**The recorders have never run concurrently.** Our last fill that day is 77
+minutes before state's first row. Of our 37 games on 09-05, the 12 that appear
+in state are all from the 20h hour — games still live when the recorder came up.
+Every earlier hour is 0/8, 0/8, 0/8, 0/5, 0/2, 0/10, 0/16, 0/16, 0/3.
+
+So **32% is a startup artifact, not a capture rate** — the identical error to
+the 39% earlier in this document, caught before reporting this time rather than
+after. There is no day on which both recorders covered a slate together, so
+**football capture for the live model is UNMEASURED.**
+
+## What this changes, and what it does not
+
+**No date moves.** Everything downstream of the model is 48/48 and measured; the
+input stage has no estimate at all, in either direction. It is not 94%, not 32%,
+and not 19% — it is unknown.
+
+**It becomes measurable on the next full Saturday slate, 2026-09-12**, the first
+on which both recorders will have been up all day. One slate settles it.
+
+Until then the honest statement to the operator is: *the downstream pipeline is
+lossless on football; whether the live model can see football game state at all
+is untested, and one Saturday tests it.*
