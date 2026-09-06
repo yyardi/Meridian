@@ -18,6 +18,20 @@ L = -34.5 up to 0.755 at L = +34.5 on the first ladder inspected, monotone
 increasing, which fixes the handicap reading. It agrees with d5's independently
 written `link(mid) = (mu + L)/sigma`.
 
+## ★ THE SIGMA SURFACE HERE IS NOT A RIVAL TO d5's. THEIRS IS THE AUTHORITY.
+
+`core/gridiron/scale.py` ships `sigma = 13.19 + 0.1182*|game_spread|` on n=14
+with corr +0.948 and a sensitivity analysis across four filter choices. **That is
+the number to use.** This file refits the same relation on its own 5-game cohort
+purely as a check, and gets `14.44 + 0.0623*|mu|` — consistent in intercept,
+different in slope, on five points spanning crossings 7.8-51.8.
+
+**Five points cannot adjudicate a slope and this refit must never be quoted
+beside theirs with equal billing.** ce's point: two scale surfaces in circulation
+is the shape that produced the 1.193c incident. If they disagree, theirs is
+right by n and by sensitivity analysis; mine is only evidence that the
+construction reproduces.
+
 ## ★ CRITERION 3 IS RUN LEAVE-ONE-GAME-OUT, AND THAT IS A DEPARTURE
 
 The registration says "sigma_implied within +/-10% of d5's surface". **d5's
@@ -177,8 +191,10 @@ def main() -> int:
 
     # ---- THE THREE CRITERIA -------------------------------------------------
     _, a_in, b_in = surface(adm)
-    print(f"\n  surface refit on these ladders: sigma = {a_in:.2f} + {b_in:.4f}*|mu|"
-          f"   (d5 module: 13.19 + 0.1182*|line|)")
+    print(f"\n  ★ THE AUTHORITY IS d5's MODULE: sigma = 13.19 + 0.1182*|game_spread|,")
+    print(f"    n=14, corr +0.948, core/gridiron/scale.py. USE THAT ONE.")
+    print(f"    My refit on these {len(adm)} ladders is {a_in:.2f} + {b_in:.4f}*|mu| and is a")
+    print(f"    CHECK ON THEIRS, not a rival surface. Larger n wins; do not quote mine.")
     res = []
     for _, r in adm.iterrows():
         s_loo, _, _ = surface(adm, drop=r.gid)
