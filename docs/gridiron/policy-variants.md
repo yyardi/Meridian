@@ -223,7 +223,7 @@ settlement coverage:
 | population | n | settlement P&L / fill |
 |---|---:|---:|
 | phantom | 11,084 | **+0.951¢** |
-| real | 6,255 | **−3.376¢**, game-clustered **[−5.06, −1.78]**, 12 of 13 games losing |
+| real | 6,255 | **−3.376¢**, game-clustered (fills-weighted sandwich, G=13, G_eff=11.8) **[−4.746, −2.007]**, 12 of 13 games losing. (Equal-weight variant: mean of game means −3.419¢, t₁₂ **[−5.062, −1.777]**.) G_eff≈G here because WNBA games are near-balanced in fills; on CFB, where they are not, the two estimators diverge ~1.3¢ and G_eff falls to ~20/35. |
 
 Manager's fills-table read **−3.38¢**; D's policy replay **−3.62¢**. **These
 are different constructions, not one quantity measured twice — see the
