@@ -855,17 +855,43 @@ def test_only_the_api_endpoint_imports_the_order_client():
     correct — but it must be a decision someone made on purpose, and this test
     is where they have to say so.
     """
+    import ast
+
     from repo_tree import rel, repo_files
 
     # core/fill_watcher.py added 2026-08-05, on purpose: it submits the
     # pre-authorized exits — orders whose every term a human fixed on the
     # ticket, which the watcher may only transmit when the entry fills.
     allowed = {"core/api.py", "core/polymarket/client.py", "core/fill_watcher.py"}
+
+    # Asked as "does this module USE the name", via the parse tree, not "does
+    # the file contain the string". The string version reported
+    # core/quote/engine_v2.py and analysis/archive/quote_v2_ledger.py, whose
+    # only mention of the client is inside their OWN denylists asserting they
+    # never import it — modules proving the opposite of the accusation. A
+    # safety guard that cries wolf is a safety guard someone mutes, which is
+    # the whole reason this test is written the way it is.
+    #
+    # A Name or Attribute node is real use; a string constant is prose, a
+    # denylist entry, or a docstring. That distinction is exactly the one the
+    # grep could not make.
+    def _uses(src: str) -> bool:
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            return "PolymarketOrderClient" in src      # unparseable: be loud
+        return any(
+            (isinstance(n, ast.Name) and n.id == "PolymarketOrderClient")
+            or (isinstance(n, ast.Attribute) and n.attr == "PolymarketOrderClient")
+            or (isinstance(n, ast.alias) and n.name.split(".")[-1] == "PolymarketOrderClient")
+            for n in ast.walk(tree)
+        )
+
     offenders = [
         r for path in repo_files(".py")
         if (r := rel(path)) not in allowed
         and not r.startswith("tests/")
-        and "PolymarketOrderClient" in path.read_text()
+        and _uses(path.read_text())
     ]
     assert not offenders, f"these modules can now place orders: {offenders}"
 

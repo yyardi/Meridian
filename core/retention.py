@@ -427,8 +427,23 @@ def _create_partitioned(conn, parent: str, months: list[dt.datetime],
     conn.execute(text(
         f"create table {parent}_default partition of {parent}_new default"
     ))
-    # book_levels keeps accepting NULL captured_at (the column is nullable in
-    # the model); NULL routes to DEFAULT, which the health check watches.
+    # NOTE, corrected 2026-09-05: an earlier comment here said book_levels
+    # "keeps accepting NULL captured_at ... NULL routes to DEFAULT". It does
+    # not. Postgres marks a range-partition key NOT NULL, so after the swap a
+    # NULL captured_at raises IntegrityError instead of landing in DEFAULT —
+    # measured: nullable before `alembic upgrade head`, NOT NULL after
+    # migrate(). Nothing is lost by that, and the comment mattered because a
+    # health check written against it would be watching for a row that can no
+    # longer exist:
+    #   * every live writer stamps captured_at (core/recorder.py run_once
+    #     shares one timestamp per cycle; core/live_recorder.py _fetch takes
+    #     now(UTC)), so no NULL is produced today;
+    #   * the legacy NULLs — pre-08-07, when book and snapshot were fetched
+    #     together — are backfilled from the parent snapshot at the top of
+    #     this same transaction, before the swap.
+    # A writer that ever DOES emit NULL will fail loudly at insert. That is
+    # the right failure: silent routing to DEFAULT would leave undateable
+    # depth rows that no month can ever archive.
 
 
 # --------------------------------------------------------------------------- #
