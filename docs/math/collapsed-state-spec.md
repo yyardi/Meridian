@@ -106,6 +106,47 @@ A partial failure (a few markets live, thousands dropped) is deliberately
 **not** COLLAPSED; that is coverage, and it belongs to the coverage check.
 This state means the fast writer is gone entirely.
 
+### ★ The empty-slate hole is real — and a schedule source does exist
+
+c7 is right that `rows > 0 AND n_live == 0` fires on a night with no games:
+the sweep still writes pregame boards, nothing is polled live, and a healthy
+recorder reads COLLAPSED. **My own +11h case was an instance of it** — 12:00Z
+on 09-06 is 08:00 ET Sunday with no live football, so that case fired on an
+empty slate rather than demonstrating an ongoing incident. It did not test
+what I claimed.
+
+But the premise that *"both expectations are derived from our own write
+stream"* does not hold here. **`espn_cfb_game_state` is a schedule source, it
+is already in the database, and it is written by a different container** — the
+ESPN CFB recorder, which stayed healthy throughout this incident (8,634 plays,
+18,775 state rows) precisely because the failure was a name collision on the
+*price* recorder.
+
+```
+COLLAPSED  ⇔  live_games > 0  AND  rows > 0  AND  n_live == 0
+```
+
+Every hour of the incident, with `live_games` from `state == 'in'`:
+
+| hour | live games | rows | n_live | state |
+|---|---:|---:|---:|---|
+| 09-05 22:00Z | 18 | 188,394 | 2,332 | OK |
+| **09-05 23:00Z → 09-06 06:00Z** | **2–32** | 5,810–12,690 | **0** | **COLLAPSED ×8** |
+| 09-06 07:00Z–15:00Z | **0** | 157–9,349 | 0 | **OK** — empty slate |
+| 09-06 16:00Z | 1 | 4,638 | 0 | **COLLAPSED** |
+
+Eight consecutive hours of correct firing through the outage, silence across
+the nine-hour empty stretch, and firing again the moment a game goes live with
+the recorder still down.
+
+**The limit, stated in the same terms as ABSENT's:** if the ESPN recorder is
+*also* down, `live_games` reads 0 and COLLAPSED goes quiet — it **fails
+quiet, not loud**. Visible in the table above: the 21:00Z hour reads 0 games
+only because the ESPN export begins at 22:08Z. The two recorders are separate
+containers, so one failure does not couple them, and an ESPN outage raises its
+own ABSENT. But a simultaneous loss of both is silent here, and no source in
+this system fixes that.
+
 7-case adversary re-run on v2, all passing, including the slate-boundary case
 that killed v1 and the disabled-control.
 
