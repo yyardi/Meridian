@@ -86,9 +86,13 @@ def score_branch(frame: pd.DataFrame, *, dedupe: str = "earliest"):
     """
     f = frame.dropna(subset=["y", "fair_value", "mid"]).copy()
     if dedupe in ("earliest", "latest"):
+        # .head(1)/.tail(1), NOT .first()/.last(). pandas' GroupBy.first() takes
+        # the first NON-NULL value per COLUMN and returns a row that never
+        # existed — silently mixing fields across decisions. Demonstrated:
+        # on [{t:1, x:nan}, {t:2, x:5}] it returns {t:1, x:5}.
         f = f.sort_values("decided_at")
-        f = f.groupby("market_slug", as_index=False).first() if dedupe == "earliest" \
-            else f.groupby("market_slug", as_index=False).last()
+        g = f.groupby("market_slug", as_index=False)
+        f = g.head(1) if dedupe == "earliest" else g.tail(1)
     elif dedupe != "all":
         raise ValueError(f"unknown dedupe policy {dedupe!r}")
     f["b_model"] = (f.fair_value - f.y) ** 2
