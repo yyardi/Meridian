@@ -69,6 +69,23 @@ NFL — where the winner market is the liquid one. That is a design question.
 What unblocks the CFB version specifically is one slate with both recorders up
 from kickoff. Nothing about the cohort, the vintage, or the join gets there.
 
+## ★ THE DEFINITION TRAVELS WITH THE NUMBER, OR THE NEXT PERSON GETS 46%
+
+D built a classifier by keyword — regex for `-pos-`, `-neg-`, `-total-` — and got
+**46.30% of rows as winner markets, thirty times the right answer**. The
+vocabulary has quarter and half markets carrying no keyword at all
+(`tsc-...-1h-23pt5`, `-3q-45pt5`), so everything without a keyword fell through
+into the winner bucket. Reproduced here: 53.70% of rows match that regex and
+53.70 + 46.30 = 100.00, so their figure was exactly the fall-through.
+
+**A winner market is a slug with NOTHING AFTER THE DATE.** Equivalently on this
+export, prefix `aec`. The two rules are independent — one reads the head of the
+slug, the other the tail — and `check_definitions()` below asserts they agree,
+which they do on 1,564,036 of 1,564,036 rows and 132 of 132 slugs, exactly.
+
+That check is in code rather than in this paragraph deliberately: a definition
+described in prose gets paraphrased into a keyword regex by the next reader.
+
 ## ★ is_live IS A STRING, NOT A BOOLEAN
 
 `is_live` holds `'t'` / `'f'`. `d.is_live == True` matches **0 of 1,442,602**
@@ -77,6 +94,8 @@ comparison and briefly had "0 live rows" on screen. Compare against the strings.
 """
 
 from __future__ import annotations
+
+import re
 
 import pandas as pd
 
@@ -92,8 +111,31 @@ def load() -> pd.DataFrame:
     return d
 
 
+DATE_TAIL = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+
+
+def check_definitions(d: pd.DataFrame) -> None:
+    """Two independent winner-market rules must agree. Head of slug vs tail.
+
+    D's keyword classifier (-pos-/-neg-/-total-) returned 46.30% because half and
+    quarter markets carry no keyword and fell through. This asserts rather than
+    describes, because the failure mode IS someone re-deriving the definition.
+    """
+    prefix = d.market_slug.str.split("-").str[0].eq("aec")
+    tail = d.market_slug.map(lambda x: bool(DATE_TAIL.search(x)))
+    n_agree = int((prefix == tail).sum())
+    assert n_agree == len(d), f"definitions disagree on {len(d) - n_agree} rows"
+    keyword = d.market_slug.str.contains("-pos-|-neg-|-total-", regex=True)
+    print(f"  winner-market definition cross-check: prefix 'aec' and 'nothing after "
+          f"the date' agree on {n_agree:,}/{len(d):,} rows, "
+          f"{d.market_slug[prefix].nunique()} slugs")
+    print(f"  the keyword classifier that FAILED matches {keyword.mean()*100:.2f}% of "
+          f"rows; its fall-through bucket is {100-keyword.mean()*100:.2f}% (D measured 46.30%)")
+
+
 def main() -> int:
     d = load()
+    check_definitions(d)
     t = d.groupby("kind").agg(slugs=("market_slug", "nunique"), rows=("market_slug", "size"),
                               live_rows=("live", "sum"), games=("game_id", "nunique"))
     t["pct_slugs"] = t.slugs / t.slugs.sum() * 100
