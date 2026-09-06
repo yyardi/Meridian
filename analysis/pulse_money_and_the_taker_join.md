@@ -56,3 +56,54 @@ correlation was decisive in the opposite direction (+0.995 with the YES mid,
 
 **A test that is nearly tied is not a test.** I nearly inverted the sign on
 1,632 rows on a 0.002 margin.
+
+---
+
+# Re-costed: money on FILLED orders, against the MAKER bar
+
+**MY VERSION, pending reconciliation with d5. Not for broadcast.**
+
+Anchor: filled orders only, side-signed P&L on the YES scale at the quoted
+`limit_price`, game-clustered.
+
+    n 1,944 filled   G 34   fill rate 65.4%   57.2 filled bets/game
+    P&L/contract  +4.761pp  [-1.455, +10.978]   half-width 6.216pp
+
+## The maker bar is not the taker bar
+
+PULSE joins the touch, so it pays neither the half-spread nor the 0.06·p(1−p)
+taker fee, and d5 verified a maker **rebate** of −0.0125·p(1−p) — a credit.
+
+    p       taker threshold      maker break-even
+    0.50        2.69 pp             -0.31 pp  (rebate)
+    0.30        2.45 pp             -0.26 pp
+    0.20        2.15 pp             -0.20 pp
+
+**The bar PULSE must clear is approximately zero, not 2.69pp.**
+
+## Games required, G = 34 × (6.216 / target)²
+
+    effect to resolve          games   weeks CFB@54   date
+    current point +4.76pp         58        1.1 w     2026-09-13
+    taker bar      2.69pp        182        3.4 w     2026-09-29
+                   2.00pp        328        6.1 w     2026-10-18
+                   1.00pp      1,314       24.3 w     2027-02-23
+    maker break-even 0.31pp    13,672      253   w     2031
+
+## ★ THE DECISION NUMBER IS 58
+
+**Whether PULSE's passive fills make money is resolvable in about 58 games —
+one to two CFB Saturdays**, not a season. That is the question the operator can
+act on this week.
+
+Two things it does **not** say:
+
+* 58 games resolves *the current point estimate* from zero. If the true effect
+  is smaller than +4.76pp the ladder above applies, and at 1pp it is a season.
+* It does **not** establish the effect clears any particular bar — only that it
+  is distinguishable from zero. Since the maker break-even is ~zero, those
+  happen to coincide here, which is why the maker framing matters.
+
+The 54/week CFB rate is the 94% WNBA capture applied to football and is an
+**upper** estimate. The 09-12 slate tests it, and that test is upstream of this
+table.
