@@ -10,8 +10,12 @@ the line is named at every claim below.
 
 Substrates: the floor is from the shadow **fills** (settlement P&L); the ceiling
 is from c7's **book tape** (depth transitions). Different substrates — not one
-statistic read twice — but both inherit the simulator's blindness to benign fills
-(see "What only the probe can see"). All figures on the pinned export
+statistic read twice — and each is blind to a benign FILL in its own way: the
+shadow fills bury benign fills in the ask>B "phantom" bucket (the fill rule never
+sees the trade), while c7's book tape is raw venue depth the fill rule never
+touches and carries its own blindness — trade-vs-cancel and no queue position.
+Neither sees a benign fill directly (see "What only the probe can see"). All
+figures on the pinned export
 `quote_fills_classified_20260906T024500Z.csv` (WNBA + CFB) and c7's WNBA book
 tape 2026-07-31..08-20.
 
@@ -64,7 +68,10 @@ Pre-declaration + cross-tab in `docs/math/benign-fill-predeclaration.md`.
 > only **1.6%** of transitions carry any touch event; the estimate **RISES with
 > sampling gap** (15.6% @1s → 25.0% @10s → 24.3% @30s) because longer gaps admit
 > moved-and-reverted books — so **wide-n rows are dirtier, not cleaner; do not
-> quote the 30s row** for its narrow interval. WNBA, not CFB.
+> quote the 30s row** for its narrow interval. WNBA, not CFB. And — the reason
+> 23.7% is a BOUND not an estimate — **cancels sit in the numerator** (a maker
+> pulling looks identical to a seller hitting), so it overstates the true
+> benign-*trade* share (developed in §3).
 
 ---
 
@@ -76,7 +83,9 @@ touch-level book events**. Not equal, but 23.7% bounds r from above:
 - **Cancels** sit in the ceiling's numerator (a maker pulling looks identical to
   a seller hitting), inflating it above the true benign-trade share.
 - **Queue selects us into the adverse tail.** A benign cross fills the front of
-  the queue (median **15 contracts ahead**, p90 850); an adverse sweep clears the
+  the queue (median **15 contracts ahead of us**, p90 850 — c7's book tape; this
+  is queue depth *ahead of our order*, a different quantity from the median touch
+  depth of 272 in §6, and does not reconcile against it); an adverse sweep clears the
   whole level, us included. So benign flow lives in the small partial crosses
   that fill the front (bid-held-size-down row, 56% benign), while behind the
   queue we catch the large full consumptions (bid-fell row, ~12% benign).
@@ -88,6 +97,15 @@ benign-rich markets); the current design quotes the whole board, so it is unbuil
 is ask-defined, our bid depth moves events between bid rows within an ask column,
 leaving 23.7% invariant.)
 
+**League-mix caveat (populations differ, examined only in direction).** The floor
+is the pinned export (**WNBA + CFB**); the ceiling is the book tape (**WNBA
+only**). The cross-league comparison is not reconciled in magnitude. Direction is
+reassuring, not alarming: WNBA's adverse anchor (−2.462¢, §1) is more negative
+than pooled (−1.634¢), so a like-for-like WNBA-only floor would be **higher** than
+57.8%, *widening* the gap the ceiling must clear — the exact same-league floor
+needs the WNBA-specific half-spread, not computed here. Flagged because "probably
+harmless" is not "examined."
+
 ---
 
 ## 4. The H inversion — the close that needs no earnings assumption
@@ -97,20 +115,26 @@ Invert r* = |A|/(H+|A|): the H that would let the ceiling break even is
 
 | for r = | H required | vs half-spread (1.193¢) | vs full spread (2.386¢) |
 |---|---:|---:|---:|
-| 23.7% (ceiling) | **5.26¢** | 4.4× | **2.2×** |
-| 31.4% (CI upper) | 3.57¢ | 3.0× | 1.5× |
+| 23.7% (ceiling point) | 5.26¢ | 4.4× | 2.2× |
+| 31.4% (naive CI upper) | 3.57¢ | 3.0× | 1.5× |
+| **35.8% (clustering-widened upper bound)** | **2.93¢** | **2.5×** | **1.23×** |
 
 Curve r*(H): 0.6→73% · **1.193 (half)→57.8%** · **2.386 (full)→40.6%** · 3→35% ·
-4→29% · 5→24.6% · reaches 23.7% only near H = 5.1¢.
+4→29% · 5→24.6% · the widened 35.8% bound at H = 2.93¢ · reaches the 23.7% point
+only near H = 5.26¢.
 
 **Even at the FULL spread** (H = 2.386¢ — capturing the entire quoted spread with
 zero adverse post-fill drift, already optimistic), **r\* = 40.6%**, above the 23.7%
 point AND above the **clustering-widened 35.8% ceiling upper bound** (not just the
 naive 31.4%). So no H a passive maker can reach clears the
-ceiling. Breaking even needs H = 5.26¢ = **2.2× the full spread**, which is
-directional alpha, not making. **The close does not rest on the half-spread
-assumption** — it is: *the rate is too low unless a passive fill earns more than
-twice the spread, which a passive maker structurally cannot do.*
+ceiling. **Lead with the honest bound:** even granting the maker the
+clustering-widened **35.8%** ceiling (the most generous defensible share),
+breaking even needs **H = 2.93¢ = 1.23× the full spread**; at the 23.7% point it
+is 5.26¢ = 2.2×. Either figure exceeds the full spread — the ceiling on what
+passive joining can earn — so it is directional alpha, not making. **The close
+does not rest on the half-spread assumption** — it is: *even at the most generous
+honest ceiling, the rate is too low unless a passive fill earns more than the
+entire quoted spread, which a passive maker structurally cannot do.*
 
 ---
 
@@ -125,9 +149,13 @@ at a cadence fine enough to attribute a transition (an exact `snapshot_id` join
 exists, but the joined file samples at 265.85s median — too sparse; n=13).
 
 A **probe** — a real resting order that fills — resolves benign-vs-phantom by
-construction, so it is the only direct instrument for r and H. Given the
-floor/ceiling gap, it is a **confirmation of the negative, not an open
-experiment.**
+construction, so it is the **only** instrument that can ever separate a true
+phantom from a real benign fill: a *permanent* measurement gap, not one this tape
+can close. **But being the only instrument is not being worth arming.** Given the
+floor/ceiling gap already established, the standing recommendation is **not** to
+spend the $278 (a1, `e6e6bef`): the probe would confirm a negative already shown,
+not open a live question. Both hold — a permanent gap, and not worth the spend at
+this margin.
 
 ---
 
@@ -166,5 +194,6 @@ flow (35.8% at the clustering-widened upper bound), and no passive-maker earning
 can bridge the gap — even at the full spread the floor is 40.6%, above that
 widened ceiling; passive market-making cannot break even on this venue. Against the registered 10% kill line it survives
 — so the verdict is stated against the 57.8% floor, and the line is named.** The
-probe, sized to p25–p50 depth, would confirm this and is the only instrument that
-can see the benign side the simulator structurally cannot.
+probe is the only instrument that can ever separate a real benign fill from a
+phantom — a permanent measurement gap — but at this margin it is not worth arming:
+it would confirm the negative, not test an open one (a1, `e6e6bef`).
