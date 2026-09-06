@@ -65,6 +65,45 @@ about its skill *where it acts*, which is the only place it costs money.
 
 ---
 
+## THE COUNTERFACTUAL EXISTS, AND IT IS NOT SELECTED
+
+*(builder-d5)* The declined branch had never been scored because `settlement` is
+native to **enter rows only** — and only **65.4%** of those (1,944 of 2,974).
+Holds and exits carry none.
+
+Joining `resolved_outcomes_20260901T195202Z.csv` on `market_slug` closes it
+completely: **100% of rows on every action** — 2,974 enters, 2,679 exits, 13,680
+holds, all 480 markets, with no selectivity by action or market type.
+
+**The join is validated rather than assumed.** On the 1,944 rows that already
+carry a native settlement, the joined value agrees **1.0000, with zero
+disagreements.** That check ran *before* any score, because a counterfactual
+computed on "whatever happened to settle" would be an instance of the selection
+disease the exercise exists to diagnose — and if the agreement had not been
+exact, nothing downstream would have been usable.
+
+**It also superseded the entered figure**, which is why that number moved: the
+natively-settled 1,944 are **not a neutral subset** — spread markets are 40.7%
+of them against 31.4% of the rest, and mean `minutes_left` differs by 1.9.
+
+## `edge_net` IS ABSENT FROM THE DECLINED BRANCH
+
+*(builder-d5)* The pregame model's gate finding — mean |edge| **0.0715**
+declined against **0.0360** actionable, i.e. the gate declines the model's
+*largest* disagreements, which reads as evidence of a stale model rather than an
+edge — **cannot be reproduced on this table as stated.** `edge_net` is populated
+on **2,974 of 2,974 enters and 0 of 15,367 declined rows.**
+
+The computable analogue is |`fair_value` − mid|:
+
+| enter | hold | exit |
+|---:|---:|---:|
+| 0.0815 | 0.0879 | 0.1009 |
+
+**Same direction, and weaker.** A gap of ~0.02 here against ~0.036 there, with
+no interval attached. It is a description, not a finding, and should not be
+quoted as confirming the pregame result — only as failing to contradict it.
+
 ## THREE STRUCTURAL TRAPS IN ONE TABLE
 
 Listed together because **the pattern is more useful than any one of them**: all
@@ -151,6 +190,12 @@ Measured across orderings that are all equally "one row per market, earliest":
 **The span is 0.19916–0.19969 and no ordering is canonical.** An earlier draft
 of this section described the span as 0.19928–0.19948 "containing d5's 0.19969";
 it does not contain it, and the true range is wider. Corrected here.
+
+**The pin is a total order, verified rather than assumed** — a tie-break only
+breaks ties if its key is unique. `id` is unique across all 19,333 rows,
+`(decided_at, id)` has zero duplicates, and five random input shuffles produce
+**one distinct result**. So `head(1)` is deterministic regardless of input order
+or pandas sort stability. *(Checked independently by Quant B.)*
 
 **It changes nothing and must still be fixed.** ±0.0005 of instability sits an
 order of magnitude below the effect being measured (~0.005) and nearly two below
