@@ -40,3 +40,28 @@ services:
     # alembic upgrade first: these tables are newer than any running deploy.
     # Concurrent upgrades are safe (advisory lock).
     command: ["sh", "-c", "alembic upgrade head && python -m core.feeds.espn_cfb_recorder"]
+
+  # NFL game state. SAME image, SAME parser, SAME tables -- separated by the
+  # `league` column, because NFL plays carry the same down/distance/
+  # yards-to-goal/possession as college ones. Verified against the venue:
+  # `eventState` is game-state gated rather than league gated, so NFL grows one
+  # at kickoff and needs no NFL-specific branch.
+  #
+  # WEEK 1 OPENS 2026-09-10 WITH ONE GAME, then 12 games on 09-13. The opener
+  # is the dress rehearsal; a failure there is recoverable before Sunday, which
+  # is why this wants to be up BEFORE the 10th rather than on it.
+  #
+  # Distinct container_name, deliberately: reusing one destroyed the CFB venue
+  # price recorder on 2026-09-05 and cost 22 hours of tape.
+  nfl-espn-recorder:
+    build: .
+    container_name: meridian-nfl-espn-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      ESPN_RPS: "3"
+      ESPN_LEAGUE_PATH: "football/nfl"
+    command: ["sh", "-c", "alembic upgrade head && python -m core.feeds.espn_cfb_recorder --league nfl"]

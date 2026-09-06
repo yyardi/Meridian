@@ -90,6 +90,20 @@ class CfbLivePlay(Base):
     first_seen_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
+    #: THE TABLES ARE FOOTBALL-SHAPED, NOT CFB-SHAPED. down, distance,
+    #: yards_to_goal and possession mean the same thing in the NFL, so
+    #: NFL rows live here rather than in a duplicate schema. Only the
+    #: table NAME says cfb, which is a historical artefact of being
+    #: built for CFB first. `league` is what separates them.
+    league: Mapped[str] = mapped_column(String(8), nullable=False,
+                                        server_default='cfb', index=True)
+    #: THE TABLES ARE FOOTBALL-SHAPED, NOT CFB-SHAPED. down, distance,
+    #: yards_to_goal and possession mean the same thing in the NFL, so
+    #: NFL rows live here rather than in a duplicate schema. Only the
+    #: table NAME says cfb, which is a historical artefact of being
+    #: built for CFB first. `league` is what separates them.
+    league: Mapped[str] = mapped_column(String(8), nullable=False,
+                                        server_default='cfb', index=True)
     game_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     play_id: Mapped[str] = mapped_column(String(48), nullable=False)
     drive_id: Mapped[str | None] = mapped_column(String(48))
@@ -155,6 +169,13 @@ class CfbGameState(Base):
     first_seen_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
+    #: THE TABLES ARE FOOTBALL-SHAPED, NOT CFB-SHAPED. down, distance,
+    #: yards_to_goal and possession mean the same thing in the NFL, so
+    #: NFL rows live here rather than in a duplicate schema. Only the
+    #: table NAME says cfb, which is a historical artefact of being
+    #: built for CFB first. `league` is what separates them.
+    league: Mapped[str] = mapped_column(String(8), nullable=False,
+                                        server_default='cfb', index=True)
     game_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     state: Mapped[str | None] = mapped_column(String(16))       # pre / in / post
     period: Mapped[int | None] = mapped_column(SmallInteger)
