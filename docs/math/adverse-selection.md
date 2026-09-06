@@ -74,10 +74,10 @@ knows what to expect.
 
 | | |
 |---|---|
-| Mean half-spread available | +1.55¢ |
-| Mean \|mid move\| over 30s | 5.61¢ |
+| Mean half-spread available, **per quote-window** | +1.55¢ per contract |
+| Mean \|mid move\| over 30s, **per quote-window** | 5.61¢ |
 | Windows with a fill | 44 / 57 |
-| Mean net capture | **−5.57¢** |
+| Mean net capture, **per filled quote** | **−5.57¢** |
 
 The shape of the problem is visible even here: the mid travels ~3.6× the
 half-spread over the horizon. If that survives ten games, QUOTE is dead in its

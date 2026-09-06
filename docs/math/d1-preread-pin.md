@@ -8,7 +8,7 @@ D1 (brainstorm round 1): *real resting-order concession, measured on the
 quote engine's own fills, is ≤ 0 in dead pregame windows, and the measured
 +4.70¢ in-game adverse concession concentrates in the in-play/near-tip
 window.* Accruing on the quote engine's real fills; the QUOTE v2 post-mortem
-(quote_v2_markout.py, seed 2) showed pregame capture −1.33¢ [−1.68, −0.98]
+(quote_v2_markout.py, seed 2) showed pregame capture −1.33¢ per fill [−1.68, −0.98]
 AGGREGATED — the partition below is what decides whether a dead-window
 sub-regime exists inside that aggregate.
 

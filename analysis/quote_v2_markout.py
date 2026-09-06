@@ -25,7 +25,7 @@ crosses. Mark-to-market at h = capture + markout_h.
 
 RULE-16 KNOWN-ANSWER GATE: before ANY other module reads real fills, the
 instrument must reproduce v1's ledgered in-game verdict from the pinned
-substrate — net capture −1.60¢ [−1.69, −1.50] over ALL recorded in-game
+substrate — net capture −1.60¢ per fill [−1.69, −1.50] over ALL recorded in-game
 fills (17,032; unsettled included, per report.py's own population),
 clustered by game_id via the blessed clustered_mean. Mean and both CI ends
 must match the ledgered values to the ledger's own 2dp print (±0.005¢).
