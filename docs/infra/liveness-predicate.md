@@ -101,6 +101,40 @@ Third state required either way: if the schedule itself is unavailable, the
 condition is `UNKNOWN`, not `OK`. An absent schedule must not read as "no
 games scheduled", which is the same absence-as-answer bug one level up.
 
+## The pre-tipoff window is one-sided, and its own comment says otherwise
+
+`PRE_TIPOFF_MINUTES = 10.0` is documented as: *"the minutes either side of
+tip-off are when the pregame book hands over to the live one, and that
+transition is itself worth having."*
+
+The code is `now <= start <= now + window`, which covers `[start − 10min,
+start]` and **closes at the scheduled start.** Everything after scheduled
+kickoff is covered only if the venue has already set `live=True`.
+
+**Observed live, 2026-09-06, on a healthy venue:**
+
+| time | recorder | proposed | venue | ESPN |
+|---|---|---|---|---|
+| 19:59Z | records | records | `live=false` | `pre` |
+| **20:01Z** | **DROPS** | records | `live=false, period='NS'` | `pre` |
+| 20:04Z | dropped | records | `live=false` | still `pre` |
+
+Scheduled kickoff was 20:00Z; the game had not actually started. The venue was
+right and ESPN was right — **the recorder stopped watching at the scheduled
+start and would resume only when `live` flipped.** Any delay between scheduled
+and actual kickoff is an unrecorded gap, at precisely the transition the
+comment calls "worth having".
+
+This is independent of the freeze. It happens on a healthy venue, every time a
+game starts late.
+
+The proposed predicate covers it through the schedule branch
+(`now <= start + MAX_GAME_DURATION`), which is two-sided as the comment
+intends.
+
+*A description has no test: the comment asserts a property nothing enforces,
+and the behaviour is narrower than the claim.*
+
 ## A second default that silently changed the population
 
 `core/feeds/espn_cfb_recorder.py` calls `get_scoreboard(date)` with **no
