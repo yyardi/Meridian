@@ -186,18 +186,30 @@ def outcome_cohort(state: pd.DataFrame) -> pd.DataFrame:
     finals (66-21, 50-0, 34-18) and dropping them would cost a third of the
     cohort, so the branch stays and is guarded instead.
 
-    **What makes it unsafe: `period == 4, display_clock == "0:00"` does NOT mean
+    **What makes it unsafe: `period == 4, display_clock == "0:00"` does not mean
     the game is over.** On this tape 7 games carry such a row followed by more
-    live action, and on game 401858428 the score CHANGED across it -- margin
-    **-5 became +1, a sign flip**. Recording that row as the outcome would have
-    named the wrong winner.
+    live action, so the predicate alone can fire mid-game.
 
-    Today nothing goes wrong only because the rule reads `tail(1)`, and for those
-    7 games the last row is a `post` row. **The safety came from the row
-    selector, not from the predicate**, which is the same undocumented rescue
-    that let a broken kickoff selector ship. So the guard is now explicit: the
-    clock branch requires that no later LIVE row exists for the game, and that
-    the game never reached a period beyond 4.
+    **CORRECTION, and the real hazard is elsewhere and worse.** I first reported
+    this as a sign flip across a `P4 0:00` row on game 401858428, margin -5 to
+    +1. **That attribution was wrong** -- the clock rows on that game are a
+    clean 7-12 throughout. The flip is across the `post` row:
+
+        02:54:26Z  post   7-12     <- ESPN calls it final
+        02:54:52Z  in    13-12     <- reverts to live, home has scored
+        02:55:43Z  post  13-12     <- finals again, OTHER TEAM WON
+
+    **`state == "post"` is not final. ESPN un-posts.** Two of 28 games change
+    margin at or after their first `post` row, and on this one it changes the
+    WINNER. Anyone taking *the first* `post` row as the outcome names the wrong
+    team on 1 game in 28.
+
+    What saves us is again the row selector rather than the predicate: `tail(1)`
+    takes the LAST row, which is the corrected `post`. Both hazards therefore
+    have the same shape -- a predicate that is unsafe alone, rescued by an
+    undocumented `tail(1)`. The guard below makes the clock branch explicit; the
+    `post`-revert hazard is handled only by `tail(1)`, which is now stated here
+    so nobody reimplements this with `first()`.
     """
     s = state.sort_values(["game_id", "first_seen_at"])
     last = s.groupby("game_id").tail(1).assign(

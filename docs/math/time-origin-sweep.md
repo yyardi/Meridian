@@ -85,16 +85,29 @@ line moves, and the recorder runs from kickoff.
 
 **Added after c7's `head -6` finding, which applies to me.** Earlier tonight I
 reported "**four `first_is_home` sites**" outside this module. That count came
-from a `grep | head -20` over a population of **54 hits across 18 files**. I saw
-the first 20, in directory order, and stated a count.
+from a `grep | head -20` over a population of **54 hits across 19 files** (48
+hits / 18 files once `core/gridiron` itself is excluded). I saw the first 20, in
+directory order, and stated a count.
+
+*The pair matters: 54 goes with 19 files, 48 with 18. An earlier draft of this
+paragraph spliced 54 with 18 — two numbers from two populations in one sentence,
+which is the thing this project keeps getting caught on, appearing in the
+correction to a counting error.*
 
 Re-run with the count printed and no truncation:
 
 ```
-np.where, core/                              2   (both mine, both live)
-first_is_home family, core+scripts          54
-   ...outside core/gridiron                 48   across 18 files
+scope: core/ scripts/, --include='*.py', quoted
+
+np.where                                     2  /  1 file    (both mine, both live)
+first_is_home family                        54  / 19 files
+   ...outside core/gridiron                 48  / 18 files
 ```
+
+Scope is stated because it is the whole disagreement: ce re-ran a count over
+`core/ analysis/ scripts/ tests/` and got 49/14. **The same pattern over those
+four paths gives 107/35 here**, so the difference is the PATTERN, not the path —
+worth knowing before two counts are treated as one measurement.
 
 The 14 files I never saw included the entire **`core/kalshi/`** tree — a
 different venue, where there is no reason the naming convention must match.
