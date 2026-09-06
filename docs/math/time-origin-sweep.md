@@ -80,3 +80,43 @@ line moves, and the recorder runs from kickoff.
 
 *Swept 2026-09-06 against `espn_cfb_game_state_20260906T174104Z` and
 `cfb_prices_20260906T194301Z`. 83 tests pass.*
+
+## Amendment — my own orientation sweep was truncated, and I quoted its count
+
+**Added after c7's `head -6` finding, which applies to me.** Earlier tonight I
+reported "**four `first_is_home` sites**" outside this module. That count came
+from a `grep | head -20` over a population of **54 hits across 18 files**. I saw
+the first 20, in directory order, and stated a count.
+
+Re-run with the count printed and no truncation:
+
+```
+np.where, core/                              2   (both mine, both live)
+first_is_home family, core+scripts          54
+   ...outside core/gridiron                 48   across 18 files
+```
+
+The 14 files I never saw included the entire **`core/kalshi/`** tree — a
+different venue, where there is no reason the naming convention must match.
+
+**I have now read all of them, and none carries the B15 defect** — but that is a
+conclusion available only after looking, and I asserted a count before. The two
+genuine orientation decisions among the hidden files are both **sound, and
+sound for the reason B15 was not**:
+
+* `core/kalshi/analysis.py:337` — `team = g.first_espn  # PM YES = slug's first
+  team (V20)`, and `pm_spread_team_and_invert` pairs `-neg-` with the first team
+  and `-pos-` with the second. **Positional throughout.** It never infers
+  home/away from slug order, which is exactly the inference B15 made.
+* `core/audit/wnba_trade_sheet.py:148` — `team = first_espn if outcome_yes else
+  second_espn`. Same: the YES-frame maps to slug *position*, not to a side.
+
+The rest are ORM columns, ESPN-internal comparisons (`d_team == home`, both from
+ESPN), `TeamGameLog.is_home` row selection, and display formatting.
+
+**The lesson is the count, not the finding.** A truncated search and a genuine
+negative are indistinguishable and **neither prints a number**. Every sweep on
+this page now reports its total hits; `head` is for reading output, never for
+establishing a population. This is the second instance tonight of an instrument
+that could not have told me it was incomplete — the first was a `tail(1)` that
+made an unsafe predicate look safe.
