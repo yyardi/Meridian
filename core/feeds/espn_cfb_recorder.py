@@ -52,7 +52,21 @@ from core.feeds.espn_cfb_storage import CfbGameState, CfbLivePlay, CfbWinProbabi
 
 log = structlog.get_logger(__name__)
 
-CFB_LEAGUE_PATH = "football/college-football"
+#: The ONLY league-specific value in this module. The payload shape, the
+#: parser and the tables are all FOOTBALL, not college football -- NFL plays
+#: carry the same down/distance/yards-to-goal/possession. Verified against the
+#: venue: `eventState` is GAME-STATE gated, not league gated, so NFL grows one
+#: at kickoff and the parser needs no NFL-specific branch.
+LEAGUE_PATHS = {
+    "cfb": "football/college-football",
+    "nfl": "football/nfl",
+}
+#: ESPN's CFB scoreboard DEFAULTS to groups=80 (FBS) and silently drops FCS --
+#: measured, it dropped every live game on 2026-09-06. NFL has one division and
+#: no groups gate (verified: 1 event with and without the parameter), so the
+#: union is CFB-only and is applied by league rather than unconditionally.
+SCOREBOARD_GROUPS = {"cfb": (80, 81), "nfl": (None,)}
+CFB_LEAGUE_PATH = LEAGUE_PATHS["cfb"]
 SCOREBOARD_INTERVAL = 60.0
 SUMMARY_INTERVAL = 20.0
 IDLE_INTERVAL = 300.0
@@ -220,9 +234,10 @@ def _write(session, rows: list[dict], model, conflict: list[str]) -> int:
 
 
 class CfbLiveRecorder:
-    def __init__(self, client: ESPNClient, session_factory):
+    def __init__(self, client: ESPNClient, session_factory, league: str = "cfb"):
         self._client = client
         self._sf = session_factory
+        self.league = league
         self._live: set[str] = set()
         self._last_board = float("-inf")
 
@@ -237,14 +252,25 @@ class CfbLiveRecorder:
         self._last_board = time.monotonic()
         live: set[str] = set()
         for date_str in self._board_dates(now):
-            try:
-                board = self._client.get_scoreboard(date_str)
-            except Exception as exc:
-                log.warning("cfb_scoreboard_failed", date=date_str, error=str(exc))
-                continue
-            for ev in (board.get("events") or []):
-                if (((ev.get("status") or {}).get("type") or {}).get("state")) == "in":
-                    live.add(str(ev["id"]))
+            # UNION OVER GROUPS. ESPN's CFB scoreboard defaults to groups=80
+            # (FBS) and silently drops FCS -- measured, that was every live
+            # game on 2026-09-06 and this recorder saw zero for three hours.
+            # NFL has no groups gate, so its tuple is (None,).
+            for grp in SCOREBOARD_GROUPS.get(self.league, (None,)):
+                params = {"dates": date_str, "limit": 200}
+                if grp is not None:
+                    params["groups"] = grp
+                try:
+                    board = self._client.get(
+                        self._client._site("scoreboard"), params=params)
+                except Exception as exc:
+                    log.warning("espn_scoreboard_failed", league=self.league,
+                                date=date_str, groups=grp, error=str(exc))
+                    continue
+                for ev in (board.get("events") or []):
+                    st = ((ev.get("status") or {}).get("type") or {})
+                    if st.get("state") == "in":
+                        live.add(str(ev["id"]))
         self._live = live
         return live
 
@@ -264,11 +290,15 @@ class CfbLiveRecorder:
                       has_drives=bool(payload.get("drives")))
 
         with self._sf() as s:
+            for r in plays:
+                r["league"] = self.league
+            for r in wp:
+                r["league"] = self.league
             np = _write(s, plays, CfbLivePlay, ["game_id", "play_id"])
             nw = _write(s, wp, CfbWinProbability, ["game_id", "play_id"])
             ns = 0
             if state:
-                s.add(CfbGameState(**state))
+                s.add(CfbGameState(league=self.league, **state))
                 ns = 1
             s.commit()
         return np, nw, ns
@@ -288,7 +318,7 @@ class CfbLiveRecorder:
         return {"live": len(live), "plays": tot_p, "wp": tot_w, "state": tot_s}
 
 
-def _make_client() -> ESPNClient:
+def _make_client(league: str = "cfb") -> ESPNClient:
     """A CFB-scoped client.
 
     `ESPNConfig.league_path` defaults to `basketball/wnba` and drives
@@ -299,25 +329,38 @@ def _make_client() -> ESPNClient:
 
     from core.config import ESPN
 
-    return ESPNClient(dataclasses.replace(ESPN, league_path=CFB_LEAGUE_PATH))
+    return ESPNClient(dataclasses.replace(ESPN, league_path=LEAGUE_PATHS[league]))
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="ESPN college-football live recorder")
+    ap.add_argument("--league", choices=sorted(LEAGUE_PATHS), default="cfb",
+                    help="which football league to record")
     ap.add_argument("--once", action="store_true", help="one cycle, then exit")
     ap.add_argument("--probe", action="store_true",
                     help="read-only: parse a live game and print, write nothing")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-    client = _make_client()
+    client = _make_client(a.league)
 
     if a.probe:
         now = dt.datetime.now(dt.timezone.utc)
         et = now.astimezone(_ET)
-        board = client.get_scoreboard(et.strftime("%Y%m%d"))
-        evs = [e for e in (board.get("events") or [])
-               if (((e.get("status") or {}).get("type") or {}).get("state")) == "in"]
+        # same groups union as the recording path -- a probe that queries a
+        # narrower population than the recorder would under-report coverage
+        # and read as healthy while the recorder saw more.
+        evs, seen = [], set()
+        for grp in SCOREBOARD_GROUPS.get(a.league, (None,)):
+            params = {"dates": et.strftime("%Y%m%d"), "limit": 200}
+            if grp is not None:
+                params["groups"] = grp
+            board = client.get(client._site("scoreboard"), params=params)
+            for e in (board.get("events") or []):
+                st = ((e.get("status") or {}).get("type") or {})
+                if st.get("state") == "in" and e["id"] not in seen:
+                    seen.add(e["id"])
+                    evs.append(e)
         print(f"live games: {len(evs)}")
         if not evs:
             print("NO LIVE GAMES — this is an empty scoreboard, not a parse failure.")
@@ -341,7 +384,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     from core.storage import get_engine, get_sessionmaker
-    rec = CfbLiveRecorder(client, get_sessionmaker(get_engine()))
+    rec = CfbLiveRecorder(client, get_sessionmaker(get_engine()),
+                          league=a.league)
     if a.once:
         rec.cycle()
         return 0
