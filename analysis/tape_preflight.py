@@ -60,11 +60,17 @@ def evaluate(stamps: pd.Series, window_start=None, window_end=None) -> dict:
     if len(s) < 3:
         return {"ok": False, "reason": f"only {len(s)} distinct stamps in window"}
     gaps = s.diff().dt.total_seconds().dropna()
+    # COVERAGE IS ONLY MEANINGFUL AGAINST AN EXPLICIT WINDOW. With a
+    # data-defined span a recorder that ran 6 minutes of an 8-hour slate scores
+    # ~100% over its OWN span and the condition is vacuous — it cannot see a
+    # truncated start or end, which is the failure it exists to catch.
+    explicit = window_start is not None and window_end is not None
     lo = window_start or s.min()
     hi = window_end or s.max()
-    window_min = max(int((hi - lo).total_seconds() // 60), 1)
+    # minute BUCKETS spanned, not elapsed//60: the latter gave 7/5 = 140%.
+    window_min = int((hi.floor("min") - lo.floor("min")).total_seconds() // 60) + 1
     covered = s.dt.floor("min").nunique()
-    coverage = covered / window_min
+    coverage = min(covered / window_min, 1.0)
     r = {
         "stamps": len(s), "median_gap_s": float(gaps.median()),
         "max_gap_s": float(gaps.max()), "coverage": float(coverage),
@@ -72,7 +78,9 @@ def evaluate(stamps: pd.Series, window_start=None, window_end=None) -> dict:
     }
     r["cadence_ok"] = r["median_gap_s"] < CADENCE_MAX_S
     r["continuity_ok"] = r["max_gap_s"] <= CONTINUITY_MAX_S
-    r["coverage_ok"] = r["coverage"] >= COVERAGE_MIN
+    r["explicit_window"] = explicit
+    # Not a pass when the window was not stated: report it as untested.
+    r["coverage_ok"] = explicit and r["coverage"] >= COVERAGE_MIN
     r["ok"] = r["cadence_ok"] and r["continuity_ok"] and r["coverage_ok"]
     return r
 
@@ -91,7 +99,10 @@ def report(r: dict, label: str) -> bool:
         ("COVERAGE   minutes   ", f"{r['coverage']*100:7.1f}%", r["coverage_ok"],
          f">= {COVERAGE_MIN*100:.0f}%"),
     ):
-        print(f"  {name} {val}   need {bar:>7}   {'PASS' if ok else 'FAIL'}")
+        verdict = "PASS" if ok else "FAIL"
+        if name.startswith("COVERAGE") and not r["explicit_window"]:
+            verdict = "UNTESTED — pass --start/--end"
+        print(f"  {name} {val}   need {bar:>7}   {verdict}")
     print(f"\n  VERDICT: {'PASS — the slate measures the question' if r['ok'] else 'FAIL — the slate does NOT measure the question'}")
     if not r["ok"]:
         print("  Per the registration, a failing pre-flight means the day is")
