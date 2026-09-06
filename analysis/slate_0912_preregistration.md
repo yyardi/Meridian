@@ -361,3 +361,52 @@ Wednesday evening US time — but **the rehearsal window is 2026-09-10 00:00Z to
 04:00Z**, and stating it as "09-09" would have someone run the check a day
 early. Third instance of this trap in the programme; the fix is that every
 window in this file is UTC and says so.
+
+---
+
+# ★ VALIDATING THE PRE-FLIGHT IN THE PASSING DIRECTION — declared before the data
+
+**The three-condition pre-flight has never been observed to PASS.** Every
+exercise so far has been against known-BAD windows:
+
+    09-06, dead all day        FAIL  (correct)
+    09-05, mid-slate death     the ORIGINAL passed and should not have
+                               — which is why it was rewritten
+
+**A check seen failing but never seen passing is half-tested.** A rule that
+cannot pass is as useless as one that cannot fail, and I have spent two days
+finding that shape in other people's instruments. This closes it on mine.
+
+The container was restored 2026-09-06 20:43Z and the tape is dense again —
+5,530 rows / 73 distinct stamps / 166 markets in ten minutes, mean gap 2.46s,
+against 4,736 rows across ONE stamp in the preceding hour.
+
+## What each outcome means, fixed now
+
+* **All three PASS** → the pre-flight is validated in both directions and
+  Wednesday's NFL window becomes a confirmation rather than a first test.
+* **CADENCE fails** → the tape is not live-dense and the restore did not work.
+  At an observed 2.46s mean gap this would indicate something wrong with my
+  computation, not with the tape, and I would check mine first.
+* **CONTINUITY fails** → a restart or sweep boundary spiked one gap past 60s.
+  **This is the condition I expect to be fragile**, and a failure on a healthy
+  recorder means the 60s ceiling is too tight for real operation.
+* **COVERAGE fails** → **the most informative failure available.** On a healthy
+  recorder it would mean the 95% floor cannot survive normal operation —
+  restarts, sweep interleaving, partial hours — and the floor is wrong rather
+  than the tape. **Better learnt on a Sunday than on the slate the measurement
+  depends on.**
+
+**A failure tonight on a known-healthy recorder revises the CONDITION, not the
+verdict about football.** That is pre-committed here so it cannot be decided
+after seeing which way it went.
+
+## The two windows
+
+1. **Restored window** — 2026-09-06 20:43Z onward, whatever exists. A partial
+   hour, so COVERAGE is measured against the window actually spanned and its
+   failure is expected rather than diagnostic.
+2. **Tonight's FBS slate, 23:30Z onward** — the first **full-slate healthy
+   baseline on football at density**. This is what the 94% capture figure has
+   never had: it is a WNBA number applied to football, and tonight replaces the
+   assumption with a measurement for every stage downstream of the model.
