@@ -226,11 +226,24 @@ def parse_win_probability(payload: dict, game_id: str) -> list[dict]:
 
 # ------------------------------------------------------------------ writing #
 def _write(session, rows: list[dict], model, conflict: list[str]) -> int:
+    """Returns rows ATTEMPTED, not rows written -- and the distinction matters.
+
+    With ON CONFLICT DO NOTHING the driver cannot always report how many rows
+    were new: psycopg returns -1 for "undeterminable", which reads as a count
+    and logged as `plays=-1`. Worse, a genuine 0 and a fully-deduplicated batch
+    are indistinguishable, so "rows written" cannot mean what its name says.
+    This is the same defect B found in live_recorder.rows_written today; do not
+    reintroduce it by returning rowcount.
+
+    Attempted IS knowable and IS what the cycle log should carry. Whether rows
+    actually landed is answered by querying the table, never by this counter.
+    """
     if not rows:
         return 0
     stmt = pg_insert(model.__table__).values(rows).on_conflict_do_nothing(
         index_elements=conflict)
-    return session.execute(stmt).rowcount or 0
+    session.execute(stmt)
+    return len(rows)
 
 
 class CfbLiveRecorder:
@@ -313,8 +326,9 @@ class CfbLiveRecorder:
                 tot_p += p; tot_w += w; tot_s += st
             except Exception as exc:
                 log.warning("cfb_summary_failed", game_id=gid, error=str(exc))
-        log.info("cfb_cycle", live_games=len(live), plays=tot_p,
-                 wp_rows=tot_w, state_rows=tot_s)
+        log.info("espn_cycle", league=self.league, live_games=len(live),
+                 plays_attempted=tot_p, wp_attempted=tot_w,
+                 state_rows=tot_s)
         return {"live": len(live), "plays": tot_p, "wp": tot_w, "state": tot_s}
 
 
