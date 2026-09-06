@@ -333,3 +333,32 @@ if __name__ == "__main__":
     print("\nEqual hash means the CODE agreed. It does not mean the fills are")
     print("comparable — the venue froze prices on 2026-09-05 at a constant")
     print("hash. Cohort identity is necessary for pooling, never sufficient.")
+
+
+# ---------------------------------------------------------------------------
+# ★ DEPENDENCY ON THE PLANNED EXTRACTION — read before moving Quote
+# ---------------------------------------------------------------------------
+#
+# The acceptance test above reads DECISION_FILES *at historical refs* via
+# `sources_at(ref)`, and `sources_at` RAISES when a listed path is absent at
+# that ref. So the moment `Quote` and the band constants move out of
+# `core/quote/adverse_selection.py` into a new module, the acceptance test
+# breaks: commits 4529951a and 63e7f1b8 predate the new file.
+#
+# That is a real ordering dependency and it runs the opposite way to the
+# obvious one. The extraction needs NOTHING from this module — DECISION_FILES
+# is a tuple of path strings. This module needs updating after the extraction.
+#
+# The fix, when the extraction lands: DECISION_FILES becomes ref-aware — the
+# file set that was in force at a ref, not a single list. Simplest form is a
+# list of (valid_from_ref, files) pairs, so a historical hash is computed over
+# the files that existed then. Until that exists, the acceptance assertion has
+# to be restated as "these two commits agree under the file set of their own
+# era", which is what it actually means.
+#
+# NOTE ALSO: the historical hash and the post-extraction hash are NOT
+# comparable even for identical logic, because the hash covers file NAMES as
+# well as contents (see `decision_hash`). Renaming a file moves the hash by
+# design. So the extraction produces one intentional discontinuity in the
+# series, and the deploy log should carry a note saying so — a hash change
+# whose diff provably touches no logic.
