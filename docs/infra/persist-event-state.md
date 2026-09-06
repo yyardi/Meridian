@@ -34,8 +34,20 @@ feed, stated by the venue about itself, with no second provider required:
 now - eventState.updatedAt > N minutes AND not ended  ->  state is stale
 ```
 
-This is a different and better signal than `live`, which is a claim the venue
-can get wrong. `updatedAt` is a fact about when the claim was last revised.
+This is a different signal from `live`, which is a claim the venue can get
+wrong. `updatedAt` is a fact about when the claim was last revised.
+
+**But it is NOT single-source, and that was the thing that made it attractive.**
+Observed live on 2026-09-06: `cfb-scarst-flam` showed `live=True` with
+`updatedAt` 44 minutes stale — and ESPN's status detail read **"Delayed"**. A
+delayed game genuinely stops producing state revisions, so stale `updatedAt` is
+*correct* there.
+
+**A delayed game and a frozen feed are indistinguishable by `updatedAt` alone.**
+Both show `live=True` over a state block that stopped moving. Separating them
+needs game status from outside the venue, so the detector is
+**necessary-but-not-sufficient** and requires the ESPN cross-check it was
+supposed to replace.
 
 We have **no history of it**, so it cannot be tested against the 09-05 freeze.
 It is a candidate, not a validated detector, and should be labelled that way

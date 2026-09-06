@@ -47,9 +47,12 @@ def is_in_progress(event, *, now) -> bool | None:
     if start:
         if now < start - PRE_TIPOFF:
             return False                 # genuinely not started
-        if start <= now <= start + MAX_GAME_DURATION:
-            return True
-        return False                     # long past any plausible finish
+        # ONCE INSIDE THE PRE-TIPOFF WINDOW WE RECORD, through to the end of
+        # any plausible game. An earlier draft required `start <= now`, which
+        # excluded the whole pre-tipoff window and returned False for a game
+        # 15 minutes from kickoff -- failing CLOSED on a window the current
+        # recorder already handles correctly. Caught by observing it live.
+        return now <= start + MAX_GAME_DURATION
     # 4. No state, no start time. UNDETERMINED.
     return None
 ```
@@ -97,6 +100,29 @@ but it is the second line, not the first.
 Third state required either way: if the schedule itself is unavailable, the
 condition is `UNKNOWN`, not `OK`. An absent schedule must not read as "no
 games scheduled", which is the same absence-as-answer bug one level up.
+
+## A second default that silently changed the population
+
+`core/feeds/espn_cfb_recorder.py` calls `get_scoreboard(date)` with **no
+`groups` parameter**. ESPN defaults to `groups=80` (FBS), so the recorder
+cannot see FCS games at all.
+
+Measured 2026-09-06: **0 games recorded in three hours while two FCS games were
+live** (TXSO @ PV in the 3rd quarter, SCST vs FAMU delayed). Verified in the
+database, not inferred from logs.
+
+Bounded: FCS-vs-FCS is 1.5% of our CFB fill volume. Real, not urgent.
+
+**Fix:** query `groups=80` and `groups=81` and union the event ids — the id
+sets overlap for cross-division games, which is a feature, not a collision.
+`scripts/build_cfb_game_map.py` already does exactly this, so the precedent is
+in the repo.
+
+**And record the parameter wherever it is queried.** The default is the whole
+story here, and a future reader cannot tell a deliberate FBS-only query from an
+omitted argument. This is the second time in one day the same default cost
+something: it also made "all games" and "FBS games" return identical lists,
+which read as *no FCS games exist*.
 
 ## Status
 
