@@ -205,9 +205,11 @@ That result says nothing about a model with genuine directional edge:
 
 **Said plainly: nothing established today rules out a football taker with real
 forecast edge. We only ruled out earning the spread without a forecast.** The
-open question is entirely whether B and d5's model can produce ≥~2.5–3.5pp of
-per-trade edge **against the venue's own pregame prior**, concentrated on the
-markets it trades — and that is now judgeable on day one against the bars above.
+open question is entirely whether B and d5's model can produce per-trade edge
+**exceeding τ for the type and price it trades** (~2.0pp spreads, ~3.5pp totals;
+winner-market p=0.5 unmeasured) **against the venue's own pregame prior**,
+concentrated on the markets it trades — and that is now judgeable on day one
+against the bars above.
 
 ---
 
