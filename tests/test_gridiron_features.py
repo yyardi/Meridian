@@ -7,6 +7,7 @@ import pytest
 
 from core.gridiron.features import (build, clock_seconds, regulation_left,
                                     scrimmage_plays)
+from core.gridiron.fit import check_espn_spread_orientation, espn_spread_anchor
 
 
 @pytest.mark.parametrize("s, want", [("5:04", 304), ("14:56", 896), ("0:00", 0)])
@@ -212,3 +213,67 @@ def test_a_game_with_no_quote_in_the_pinned_market_drops_rather_than_substitutes
     state, prices, gmap = _tape()
     out = build(state, prices[prices.market_slug.str.startswith("asc")], gmap)
     assert out.empty
+
+
+# --------------------------------------------------------------------- #
+# `live_spread` is the one anchor that DEPENDS on a convention it cannot
+# derive: a bare number with no team attached, so nothing in it says which
+# side the sign favours. That is where a guard earns its place -- unlike the
+# slug-orientation sites, which compare two independent sources and stay
+# correct through a flip. See tests/test_slug_orientation_invariant.py.
+# --------------------------------------------------------------------- #
+
+
+def _state_rows(**per_game):
+    t0 = pd.Timestamp("2026-09-05 23:00:00+00:00")
+    rows = []
+    for gid, vals in per_game.items():
+        for i, v in enumerate(vals):
+            rows.append({"game_id": int(gid[1:]), "state": "in",
+                         "first_seen_at": t0 + pd.Timedelta(minutes=i),
+                         "live_spread": v})
+    return pd.DataFrame(rows)
+
+
+def test_the_anchor_is_the_first_value_not_the_last():
+    """A line that drifts in Q1 must not let a later value into the prior."""
+    s = _state_rows(g1=[-20.5, -21.5, -21.5])
+    out = espn_spread_anchor(s)
+    assert len(out) == 1
+    assert out.home_spread.iloc[0] == pytest.approx(-20.5)
+    assert out.n_values.iloc[0] == 2          # movement is reported, not hidden
+
+
+def test_games_with_no_line_are_absent_rather_than_zero():
+    s = _state_rows(g1=[-20.5], g2=[float("nan")])
+    out = espn_spread_anchor(s)
+    assert list(out.espn_game_id) == [1]
+
+
+def test_an_empty_tape_returns_the_columns_and_no_rows():
+    out = espn_spread_anchor(pd.DataFrame({"live_spread": [], "game_id": [],
+                                           "first_seen_at": []}))
+    assert out.empty and "home_spread" in out.columns
+
+
+def _pair(espn_vals, venue_vals):
+    ids = list(range(len(espn_vals)))
+    return (pd.DataFrame({"espn_game_id": ids, "home_spread": espn_vals}),
+            pd.DataFrame({"espn_game_id": ids, "home_spread": venue_vals}))
+
+
+def test_agreeing_anchors_pass_and_report_the_correlation():
+    e, v = _pair([-20.5, -7.0, +13.5, -31.5, -3.0], [-20.6, -7.4, +13.7, -31.2, -2.8])
+    assert check_espn_spread_orientation(e, v) > 0.99
+
+
+def test_an_inverted_anchor_raises_rather_than_fitting():
+    e, v = _pair([-20.5, -7.0, +13.5, -31.5, -3.0], [+20.6, +7.4, -13.7, +31.2, +2.8])
+    with pytest.raises(ValueError, match="SIGN"):
+        check_espn_spread_orientation(e, v)
+
+
+def test_too_few_games_returns_none_rather_than_reassuring():
+    """A correlation on 3 games is not a check; saying so beats returning it."""
+    e, v = _pair([-20.5, -7.0, +13.5], [-20.6, -7.4, +13.7])
+    assert check_espn_spread_orientation(e, v) is None
