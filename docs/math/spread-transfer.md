@@ -1,5 +1,23 @@
 # Does the winner-market identity transfer to spreads and totals?
 
+> ⚠️ **PROVENANCE, 2026-09-06.** Every σ figure below was fitted on ladders
+> selected by a "kickoff" that was **the ESPN recorder starting at 22:08Z, not a
+> kickoff**. All 14 games were already in progress — period 2 at 14-0, period 4
+> at 49-3. **Zero of 14 was observed at 0-0.**
+>
+> The numbers survive, and the reason is uncomfortable: those ladders were
+> **frozen — 0.0% of 575 full-game spread markets showed more than one distinct
+> mid** over a median of 27 snapshots. A frozen board still carries its last
+> pregame quotes, so a pregame σ was recovered from a selector that asked for
+> the wrong rows. ESPN's `live_spread` agreeing at 0.41 points is consistent:
+> it moves in only 4 of 50 games, so it is a static pregame line too.
+>
+> **On a board that is actually quoting, the same selector returns in-game
+> ladders under a pregame label, with no error and no null.** Fixed by
+> `fit.true_kickoff` (period 1 AND 0-0). Found by Quant B warning that
+> `is_live == 'f'` is not pregame — a different mechanism that would have
+> produced the same class of artifact.
+
 **Short answer: yes, with one assumption, and the assumption is a measurable
 surface rather than a fitted constant — but it is a surface, not a number, and
 nobody has built it.** Separately, the cheap option (test the anchor alone

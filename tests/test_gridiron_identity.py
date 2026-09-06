@@ -134,3 +134,22 @@ def test_a_wrong_sigma_shows_up_as_a_slope_error_not_a_shift():
     q = ladder_fit_quality(_ladder(18.0, 9.0), 18.0, 0.62, 0.62, SCALE)
     assert q["r2_identity"] < q["r2_venue"]
     assert q["r2_venue"] > 0.999          # the ladder itself is a clean line
+
+
+def test_true_kickoff_refuses_a_recorder_start():
+    """The 09-05 defect: 14 games returned the SAME 'kickoff' minute, because
+    that was when the recorder started. Every one was already in progress."""
+    from core.gridiron.fit import true_kickoff
+    t = pd.Timestamp("2026-09-05 22:08:30+00:00")
+    s = pd.DataFrame([
+        # three games the recorder first saw in the same minute, all mid-game
+        {"game_id": 1, "state": "in", "period": 2, "home_score": 14, "away_score": 0,
+         "first_seen_at": t},
+        {"game_id": 2, "state": "in", "period": 4, "home_score": 49, "away_score": 3,
+         "first_seen_at": t},
+        # and one seen from an actual kickoff
+        {"game_id": 3, "state": "in", "period": 1, "home_score": 0, "away_score": 0,
+         "first_seen_at": t},
+    ])
+    k = true_kickoff(s)
+    assert list(k.index) == [3], "a recorder start is not a kickoff"

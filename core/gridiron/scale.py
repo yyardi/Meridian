@@ -116,6 +116,11 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
+# PROVENANCE: the 09-05 ladders these constants were fitted on were selected by
+# a "kickoff" that was the ESPN recorder starting (22:08Z, identical for all 14
+# games, every one already in progress). They survive only because the board was
+# FROZEN -- 0.0% of 575 markets moved -- so the quotes were still pregame. Use
+# `fit.true_kickoff` for any new cohort; see docs/math/spread-transfer.md.
 INTERIOR = (0.05, 0.95)     # the venue clips at 0.015/0.985; clipped rungs are not quotes
 MIN_RUNGS = 6
 
