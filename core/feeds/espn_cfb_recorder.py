@@ -327,7 +327,22 @@ class CfbLiveRecorder:
     def poll_game(self, game_id: str) -> tuple[int, int, int]:
         payload = self._client.get(self._client._site("summary"),
                                    params={"event": game_id})
-        state = parse_game_state(payload, game_id)
+        # A STATE-PARSE FAILURE MUST NOT COST THE PLAYS. `drives`,
+        # `winprobability` and `header` are independent keys: parse_plays
+        # takes home/away as `str | None` and branches on None throughout, so
+        # a headerless payload still yields every play. When parse_game_state
+        # returned None that is what happened; letting its raise escape turned
+        # "skip the state row" into "drop the game", and the cycle's own
+        # instruments cannot see the difference -- state_rows is 0 either way,
+        # and plays_attempted is a SUM over live games, so one game's N
+        # becoming 0 is a dip, not a signal. Caught here, not narrowed at the
+        # parser: raising IS the better contract, it just is not fatal here.
+        try:
+            state = parse_game_state(payload, game_id)
+        except ValueError as exc:
+            log.error("cfb_game_state_unparsed", game_id=game_id,
+                      error=str(exc))
+            state = None
         home = state.get("home") if state else None
         away = state.get("away") if state else None
         plays = parse_plays(payload, game_id, home, away)
