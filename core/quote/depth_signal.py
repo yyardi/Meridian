@@ -333,7 +333,47 @@ def load_book_states(
                 sampled=bool(n_levels),
             )
         )
+    if live_only:
+        out = {slug: kept for slug, states in out.items()
+               if (kept := _mid_stream(states))}
     return dict(out)
+
+
+#: A row is in-play only if its market kept recording. Same 600s the quote
+#: engine (MAX_OBSERVATION_AGE_SECONDS) and core/board.py
+#: (LIVE_STREAM_STALE_SECONDS) already use.
+MID_STREAM_SECONDS = 600.0
+
+
+def _mid_stream(states: list[BookState]) -> list[BookState]:
+    """Drop rows that are the tail of a stream.
+
+    `is_live` alone is not a liveness test. It is a per-row stamp of what the
+    venue said at that instant, and when a game ends its markets drop off the
+    venue's board so nothing ever overwrites the last row — which says
+    `is_live=True` forever (`core/board.py:market_state` documents both
+    directions). Before this, `live_only=True` was the DEFAULT while the only
+    freshness relation lived in the OPTIONAL `since`/`as_of` arguments, so the
+    population was decided by a flag that cannot decide it.
+
+    The test is whether the SAME market produced another row within 600s, not
+    whether the row is recent relative to `now()`. For a historical study
+    "recent" is meaningless — every August row would fail it and the sample
+    would silently empty.
+
+    **This cannot bite any arm sampled faster than 600s, by construction**, and
+    that is why nobody needs to re-open it. Measured on prod 2026-09-06 over
+    the full 29.8M-row live population: 11,071 rows dropped (0.037%), of which
+    8,034 are the unavoidable per-market final row. It removes 13 of 146 games
+    — every one of them recorded at 817-3,000s per market, i.e. sweep cadence.
+    The published in-game arm is 1s cadence, so none of those games were ever
+    in it. The defect is real; on fast-cadence data it is inert.
+    """
+    states = sorted(states, key=lambda s: s.captured_at)
+    cut = dt.timedelta(seconds=MID_STREAM_SECONDS)
+    return [s for i, s in enumerate(states)
+            if i + 1 < len(states)
+            and states[i + 1].captured_at - s.captured_at <= cut]
 
 
 def notional_percentiles(series: dict[str, list[BookState]]) -> dict[str, float]:

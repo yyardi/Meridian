@@ -254,3 +254,127 @@ def test_enough_appearances_but_too_few_games_is_no_data():
     )
     assert "NO DATA" in report
     assert "PASS —" not in report
+
+
+# --------------------------------------------------------------------------- #
+# live_only means mid-stream, not "the venue said live once"
+# --------------------------------------------------------------------------- #
+#
+# 2026-09-06. `live_only: bool = True` was the DEFAULT while the only
+# freshness relation lived in the OPTIONAL since/as_of arguments — so the
+# population was decided by `is_live` alone, which cannot decide it: when a
+# game ends its markets drop off the venue's board and nothing overwrites the
+# last row, which says is_live=True forever.
+#
+# The property below is why this never needs re-opening: the guard cannot bite
+# any arm sampled faster than 600s. Measured on prod over the full 29.8M-row
+# live population it dropped 0.037% of rows and 13 of 146 games — every one of
+# those games recorded at 817-3,000s per market. It is inert on 1s data by
+# construction, and that is asserted here rather than asserted in prose.
+
+
+def _states(gaps_seconds, *, slug="tsc-wnba-guard-1"):
+    from core.quote.depth_signal import BookState
+
+    t = dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc)
+    out, at = [], t
+    for g in [0, *gaps_seconds]:
+        at = at + dt.timedelta(seconds=g)
+        out.append(BookState(game_id="g1", market_slug=slug, captured_at=at,
+                             mid=0.5, spread=0.02, top_bid_notional=10.0,
+                             top_ask_notional=10.0, sampled=True))
+    return out
+
+
+def test_the_guard_is_inert_on_fast_cadence_data():
+    """The load-bearing property. At 1s spacing every row but the final one
+    has a successor inside 600s, so a fast-cadence arm is untouched."""
+    from core.quote.depth_signal import _mid_stream
+
+    states = _states([1] * 200)
+    kept = _mid_stream(states)
+    assert len(kept) == len(states) - 1, (
+        "only the stream's final row may be dropped at 1s cadence")
+
+
+def test_a_sweep_cadence_market_is_dropped_entirely():
+    """817-3,000s per market is what the 13 removed games actually looked
+    like. Every gap exceeds the guard, so nothing survives."""
+    from core.quote.depth_signal import _mid_stream
+
+    assert _mid_stream(_states([900] * 20)) == []
+
+
+def test_the_tail_of_a_stream_goes_and_the_body_stays():
+    """A market that recorded fast and then stopped keeps its body and loses
+    the rows across the gap — the ones that only look adjacent."""
+    from core.quote.depth_signal import _mid_stream
+
+    # offsets 0, 1, 2, 3, 5003, 5004, 5005 — one 5,000s hole in the middle
+    states = _states([1, 1, 1, 5000, 1, 1])
+    kept = _mid_stream(states)
+    # index 3 goes: its successor is across the hole. index 6 goes: no
+    # successor at all. Everything else has a neighbour within 600s.
+    assert [s.captured_at for s in kept] == [
+        states[i].captured_at for i in (0, 1, 2, 4, 5)]
+
+
+def test_the_threshold_is_the_one_the_engine_already_uses():
+    """Not a new constant. A second number here would drift from the engine's
+    and nobody would notice which one a population was built with."""
+    from core.quote.depth_signal import MID_STREAM_SECONDS
+    from core.quote.engine import MAX_OBSERVATION_AGE_SECONDS
+
+    assert MID_STREAM_SECONDS == MAX_OBSERVATION_AGE_SECONDS
+
+
+def test_live_only_actually_applies_the_guard_to_the_loaded_population():
+    """The wiring, not the arithmetic.
+
+    The three tests above call `_mid_stream` directly, so they pass whether or
+    not `load_book_states` ever calls it — deleting the call from the loader
+    left them all green, which is the absent-variable failure this codebase
+    has been bitten by before. This one goes through the loader, so it fails
+    if the guard is computed and then not used.
+
+    It is also the first test either quote loader has ever had, which is the
+    honest reason a default of `live_only=True` with no freshness relation
+    survived this long.
+    """
+    from sqlalchemy import text
+
+    from core.quote.depth_signal import load_book_states
+    from core.storage import get_engine, get_sessionmaker
+
+    Session = get_sessionmaker(get_engine())
+    base = dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc)
+    fast, sweep = "tsc-wnba-guardwire-fast", "tsc-wnba-guardwire-sweep"
+
+    def _wipe(s):
+        s.execute(text("DELETE FROM market_snapshots WHERE market_slug IN "
+                       "(:a, :b)"), {"a": fast, "b": sweep})
+        s.commit()
+
+    with Session() as s:
+        _wipe(s)
+        rows = ([(fast, base + dt.timedelta(seconds=i)) for i in range(6)]
+                + [(sweep, base + dt.timedelta(seconds=900 * i)) for i in range(6)])
+        for slug, at in rows:
+            s.execute(text("""
+                INSERT INTO market_snapshots
+                    (market_slug, game_id, captured_at, best_bid, best_ask, is_live)
+                VALUES (:m, 'guardwire-game', :t, 0.49, 0.51, true)
+            """), {"m": slug, "t": at})
+        s.commit()
+        try:
+            series = load_book_states(s, as_of=None, since=base
+                                      - dt.timedelta(days=1), live_only=True)
+            assert fast in series, (
+                "a market recording at 1s must survive — the guard is meant to "
+                "be inert on fast cadence")
+            assert len(series[fast]) == 5, "all but the stream's final row"
+            assert sweep not in series, (
+                "a market recording every 900s has no two rows within 600s; "
+                "if it is still here the guard is not wired into the loader")
+        finally:
+            _wipe(s)

@@ -1,7 +1,29 @@
 # Adverse selection — does the spread survive being filled?
 
-**Status: NO DATA.** 57 quote-windows across 1 game, against a pre-registered
-minimum of 500 across 10. The experiment is built and accruing.
+**Status: the gate is met and the answer is negative.** In-game, a resting
+quote loses **−2.74¢ per fill** (95% CI [−3.03, −2.44], clustered by game),
+over **1.94M quote-windows across 13 games** — against a pre-registered
+minimum of 500 windows across 10. Pregame: **−0.86¢** ([−1.14, −0.58], 28.2k
+windows / 30 games).
+
+Source of record: [findings.md](../findings.md) (the measured table, "In-game
+(30s, 1s cadence, local)"). Those are C13's inputs and the numbers
+[quote-shadow.md](quote-shadow.md) and `core/quote/engine.py` both cite.
+
+> **Superseded, kept as the record:** this file previously read *"Status: NO
+> DATA. 57 quote-windows across 1 game."* That was the 2026-08-02 first run
+> and it was true then. The gate was passed later and this document was not
+> updated, so for some weeks the study's own write-up said the experiment had
+> never reached its gate while the number it reached circulated in three other
+> places. Corrected 2026-09-06; the failed first run stays visible because a
+> superseded result is part of the record, not an embarrassment to delete.
+
+**Both arms are optimistic bounds** — the fill rule undercounts the fills that
+hurt — and the two arms are *different measurements*, not one split by a flag:
+different horizons (30s vs 900s), different cadences, and different databases.
+The in-game arm ran against the local mirror, which was retired at the
+2026-08-20 cutover; it cannot be reproduced, only re-measured on a different
+substrate.
 
 Module: [`core/quote/adverse_selection.py`](../../core/quote/adverse_selection.py) · Gates **QUOTE**
 
