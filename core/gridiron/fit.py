@@ -177,13 +177,46 @@ def true_kickoff(state: pd.DataFrame) -> pd.Series:
     return s.groupby("game_id").first_seen_at.min().rename("kickoff")
 
 
+def outcome_cohort(state: pd.DataFrame) -> pd.DataFrame:
+    """Settled games: a `post` row, or a decided regulation end we watched to.
+
+    **The clock branch is the fourth instance of the same defect and it is load
+    bearing** -- it supplies **14 of 42** games on the 09-05 tape, where the
+    recorder stopped before ESPN flipped the game to `post`. Those are real
+    finals (66-21, 50-0, 34-18) and dropping them would cost a third of the
+    cohort, so the branch stays and is guarded instead.
+
+    **What makes it unsafe: `period == 4, display_clock == "0:00"` does NOT mean
+    the game is over.** On this tape 7 games carry such a row followed by more
+    live action, and on game 401858428 the score CHANGED across it -- margin
+    **-5 became +1, a sign flip**. Recording that row as the outcome would have
+    named the wrong winner.
+
+    Today nothing goes wrong only because the rule reads `tail(1)`, and for those
+    7 games the last row is a `post` row. **The safety came from the row
+    selector, not from the predicate**, which is the same undocumented rescue
+    that let a broken kickoff selector ship. So the guard is now explicit: the
+    clock branch requires that no later LIVE row exists for the game, and that
+    the game never reached a period beyond 4.
+    """
+    s = state.sort_values(["game_id", "first_seen_at"])
+    last = s.groupby("game_id").tail(1).assign(
+        margin=lambda d: d.home_score - d.away_score)
+    live = s[s.state == "in"]
+    max_period = live.groupby("game_id").period.max()
+    last_live = live.groupby("game_id").first_seen_at.max()
+    ok_clock = (
+        (last.period == 4) & (last.display_clock == "0:00") & (last.margin != 0)
+        & (last.game_id.map(max_period) <= 4)                 # no overtime
+        & (last.first_seen_at >= last.game_id.map(last_live))  # nothing live after
+    )
+    coh = last[(last.state == "post") | ok_clock][["game_id", "margin"]]
+    return coh
+
+
 def design(plays, prices, game_map, state) -> pd.DataFrame:
     """One row per play, with the pregame market anchor joined per game."""
-    last = state.sort_values(["game_id", "first_seen_at"]).groupby("game_id").tail(1)
-    last = last.assign(margin=last.home_score - last.away_score)
-    coh = last[(last.state == "post")
-               | ((last.period == 4) & (last.display_clock == "0:00")
-                  & (last.margin != 0))][["game_id", "margin"]]
+    coh = outcome_cohort(state)
     coh = coh.assign(y=(coh.margin > 0).astype(int))
 
     m = game_map[["espn_game_id", "venue_game_id", "event_slug"]].drop_duplicates("espn_game_id")

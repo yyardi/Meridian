@@ -153,3 +153,46 @@ def test_true_kickoff_refuses_a_recorder_start():
     ])
     k = true_kickoff(s)
     assert list(k.index) == [3], "a recorder start is not a kickoff"
+
+
+def _srow(gid, per, clock, h, a, st="in", t=0):
+    return {"game_id": gid, "state": st, "period": per, "display_clock": clock,
+            "home_score": h, "away_score": a,
+            "first_seen_at": pd.Timestamp("2026-09-05 22:00:00+00:00")
+            + pd.Timedelta(minutes=t)}
+
+
+def test_the_clock_branch_still_carries_a_real_regulation_finish():
+    """It supplies 14 of 42 games on the 09-05 tape. Guarding must not kill it."""
+    from core.gridiron.fit import outcome_cohort
+    s = pd.DataFrame([_srow(1, 1, "15:00", 0, 0, t=0),
+                      _srow(1, 4, "0:00", 34, 18, t=180)])
+    c = outcome_cohort(s)
+    assert list(c.game_id) == [1] and c.margin.iloc[0] == 16
+
+
+def test_a_p4_zero_clock_row_with_the_game_still_running_is_refused():
+    """ESPN reports P4 0:00 on rows that are not final -- on game 401858428 the
+    margin went -5 to +1 ACROSS such a row, a sign flip. Today `tail(1)` saves
+    us by accident; this makes the predicate itself refuse."""
+    from core.gridiron.fit import outcome_cohort
+    s = pd.DataFrame([_srow(1, 4, "0:00", 20, 25, t=100),
+                      _srow(1, 4, "3:12", 26, 25, t=110),      # still playing
+                      _srow(1, 4, "0:00", 26, 25, t=120, st="in")])
+    c = outcome_cohort(s)
+    # the LAST row is a genuine regulation end, so it qualifies -- with the
+    # right margin, not the -5 the earlier liar row carried
+    assert c.margin.iloc[0] == 1
+
+
+def test_a_game_that_went_to_overtime_is_not_settled_at_regulation_end():
+    from core.gridiron.fit import outcome_cohort
+    s = pd.DataFrame([_srow(1, 4, "0:00", 21, 20, t=100),
+                      _srow(1, 5, "0:00", 21, 20, t=110)])
+    assert outcome_cohort(s).empty
+
+
+def test_a_recorder_that_stopped_mid_game_yields_no_outcome():
+    from core.gridiron.fit import outcome_cohort
+    s = pd.DataFrame([_srow(1, 2, "5:04", 14, 0, t=0)])
+    assert outcome_cohort(s).empty
