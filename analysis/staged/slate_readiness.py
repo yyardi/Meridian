@@ -23,6 +23,25 @@ here means drifting into it.
 LOUD FAILURE. If the schedule cannot be fetched the check FAILS. It never
 passes quietly: "I could not determine" is not "nothing to do", which is the
 rule the whole chain is built on.
+
+★ SCHEDULED IS NOT TRADEABLE, AND THIS CHECK MUST NOT CONFLATE THEM.
+Measured against the computed map (73 rows, 2026-09-06): 34 of 50 scheduled
+games map, and the 34 are **CROSS 18 + FBS 16 — not one FCS match**. The
+likeliest reading is that the 16 unmappable games are FCS fixtures with no
+venue market at all, in which case "unmappable" is CORRECT and permanent, not
+a defect to fix.
+
+That matters more than the number: a check whose schedule includes games the
+venue will never list can never go green, and a permanently-red check is
+ignored by the second Saturday. So the schedule fed to this must be scoped to
+**games we intend to trade**, and the MAP line then means "of the games we
+meant to trade, this many cannot be joined".
+
+NOT VERIFIED: I have not confirmed the 16 are FCS. The evidence is the map's
+own division field carrying no FCS matches, which is suggestive and not proof.
+Whoever wires this should check before treating a red MAP line as a bug --
+the alternative reading is that the matcher fails on FCS, which is a real
+defect and the opposite conclusion.
 """
 from __future__ import annotations
 
