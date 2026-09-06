@@ -28,8 +28,23 @@ mid ∈ [0.20, 0.80], spread ∈ [0.01, 0.15]): a bid resting at the venue's bes
 bid and an offer at the best ask, one contract each, requoted to the touch
 every cycle. **No order exists anywhere in this** — fills are simulated from
 the recorded stream by the study's own rule (mid reaching the quote), which
-undercounts exactly the fills that hurt. That bias is signed: **a loss here
-is trustworthy; a profit here is an upper bound and authorises nothing.**
+undercounts exactly the fills that hurt.
+
+> **The net bias is UNKNOWN IN SIGN — corrected 2026-09-06.** The sentence
+> that stood here said the bias was *signed*: a loss trustworthy, a profit an
+> upper bound. That is defensible about the fills the simulator DOES book
+> (phantoms make those flattering) and wrong as a statement about the net,
+> because a second defect acts on the fills that are ABSENT. A counterparty
+> crossing to our resting bid while the ask holds leaves the mid above our
+> bid, and the rule needs the mid to fall *through* us — so the benign fill
+> books nothing at all. One defect is optimistic about the rows present, the
+> other pessimistic about which rows exist; they act on different populations
+> and push opposite ways, and neither has been measured against the other.
+> Derivation and numbers: [fill-rule-bias.md](fill-rule-bias.md).
+>
+> Until a probe supplies real fills, neither direction authorises anything —
+> including "a loss here is trustworthy", which was the half of this that felt
+> safe to keep.
 
 Primary metric, per regime (pregame / in-game, tagged at quote birth):
 
@@ -119,9 +134,14 @@ static in-game −2.74¢/fill, the 5s-requoting quoter captures −1.60¢
 insufficient.** The residual −1.6¢ is the adverse-selection floor at 5s
 reaction latency, and its CI excludes zero decisively.
 
-The optimism caveat cuts the right way: the fill rule undercounts exactly
-the fills that hurt, so the true in-game number is likely WORSE than
-−1.60¢. A FAIL under a flattering fill model is the trustworthy kind.
+The optimism caveat was read as cutting one way — the fill rule undercounts
+the fills that hurt, so the true number is likely WORSE than −1.60¢, and a
+FAIL under a flattering model is the trustworthy kind. **That reasoning is
+now only half the picture** (2026-09-06): the same rule also censors benign
+fills entirely, which pushes the measured number the other way. The FAIL may
+well hold — the CI excludes zero decisively and both defects would have to be
+large and lopsided to overturn it — but it no longer rests on a signed bias.
+See [fill-rule-bias.md](fill-rule-bias.md).
 QUOTE's in-game arm is dead twice — once static (C13), once requoting
 (this row) — and stays unbuilt as a strategy.
 
