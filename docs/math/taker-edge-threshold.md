@@ -127,6 +127,29 @@ through an unusable *instrument*. Resolving λ* or a paired Brier to any
 precision a season affords still leaves a gap of 3–5× in edge terms, and no
 amount of football closes it.
 
+## ⚠️ This threshold prices CROSSING, and PULSE does not cross
+
+**Quant B measured the engine 100% passive**: `side=yes` posts at `market_bid`
+on **100.0% of 1,342 entries**, `side=no` at `market_ask` on **100.0% of 1,632**.
+Both arms join the touch.
+
+So everything above is the bar for a **taker** strategy. **PULSE's economics are
+maker economics**, and comparing its λ* to this curve compares a maker engine
+against a taker bar. The curve stands as the threshold any *future* crossing
+strategy must clear; it is not the threshold for this engine.
+
+The right instrument for PULSE is money on real fills, which B has:
+
+| arm | P&L | |
+|---|---:|---|
+| all entries | +6.880 pp [+2.774, +10.985] | excludes zero |
+| **filled only** | **+4.761 pp [−1.455, +10.978]** | **spans zero** |
+| withdrawn | +10.857 pp [+7.554, +14.160] | excludes zero |
+
+**34.3% of entries never traded.** On real fills it does not clear zero, and the
+withdrawn arm carrying twice the filled arm's P&L is adverse selection visible
+in money rather than in fill rates.
+
 ## The λ* join (Quant B's conversion, which does work)
 
 λ* converts cleanly where Brier does not: the real part of the model's
@@ -141,6 +164,19 @@ entered decisions `|fv − mid| ≈ 0.08`.
 
 **λ* = 0.15 buys 1.20 pp against a 2.2–2.7 pp threshold — under half.** The
 required λ* is **0.27–0.34, roughly twice the accrual target.**
+
+**But the measured λ* is convention-dependent and the required 0.337 sits inside
+its range**, so this comparison decides nothing on its own:
+
+| dedupe | λ* | 95% CI | edge | vs 0.337 |
+|---|---:|---|---:|---|
+| earliest row per market | +0.364 | [−0.110, +0.929] | 2.96 pp | clears |
+| all rows | +0.219 | [−0.045, +0.796] | 1.70 pp | below |
+| entries, all rows | +0.217 | [−0.061, +0.753] | 1.74 pp | below |
+
+**Every interval contains zero.** And while the point estimate sits below the
+target, more games move the interval *toward* the point and away from clearing —
+the accrual can confirm failure, never success.
 
 Two caveats that belong with the number. `|fv − mid| ≈ 0.08` is measured **on
 entries only**, which is the right population — those are the bets that would
