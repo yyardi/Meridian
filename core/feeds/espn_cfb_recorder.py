@@ -129,6 +129,21 @@ def parse_plays(payload: dict, game_id: str, home: str | None,
             # Regulation is periods 1-4; 5+ is overtime, which has NO CLOCK.
             is_ot = bool(period and period >= 5)
 
+            # DOWN 0 DOES NOT EXIST IN FOOTBALL. ESPN emits down=0 with
+            # distance=0, yardsToEndzone=0 and no possession team on
+            # administrative/end-of-game markers -- 63 such rows were already
+            # in the live tape and 86 in the backfill. It is a SENTINEL, not a
+            # value, and it passes every `down IS NOT NULL` filter including
+            # the ones in the scoring scripts. When down is 0 the whole start
+            # block is absent, so all three become None: NULL says "no down
+            # state", 0 asserts a down that cannot occur.
+            _d = start.get("down")
+            if not _d:
+                _down = _dist = _ytg = None
+            else:
+                _down, _dist = _d, start.get("distance")
+                _ytg = start.get("yardsToEndzone")
+
             hs, as_ = p.get("homeScore"), p.get("awayScore")
             if pos is not None and home is not None and str(pos) == str(home):
                 pts, dts = hs, as_
@@ -151,9 +166,9 @@ def parse_plays(payload: dict, game_id: str, home: str | None,
                 "clock_seconds": secs,
                 "is_overtime": is_ot,
                 "ot_possession_number": (period - 4) if is_ot else None,
-                "down": start.get("down"),
-                "distance": start.get("distance"),
-                "yards_to_goal": start.get("yardsToEndzone"),
+                "down": _down,
+                "distance": _dist,
+                "yards_to_goal": _ytg,
                 "pos_team": pos,
                 "def_pos_team": defteam,
                 "home": home,
