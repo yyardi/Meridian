@@ -65,8 +65,7 @@ The spread/total numbers bracket WNBA, so CFB is **not** dramatically tighter �
 the earlier "CFB is much tighter" claim is gone.
 
 **WNBA per-type, same population (`delta_market_snapshots`, quotable band) — the
-blend behind the pooled 1.50¢/2.25¢ half-spread, now recorded so the pooled figure
-is reconstructible:**
+blend behind the pooled 1.50¢/2.25¢ half-spread, now recorded:**
 
 | WNBA type | blend % | median mid | **half** med | **half** mean | τ (median, at type's mid) |
 |---|---:|---:|---:|---:|---:|
@@ -74,6 +73,16 @@ is reconstructible:**
 | spread | 44.7% | 0.510 | 2.00¢ | 2.38¢ | ~3.50pp |
 | total | 47.1% | 0.485 | 2.00¢ | 2.42¢ | ~3.50pp |
 | — pooled | 100% | — | 1.50¢ | 2.25¢ | (mixture) |
+
+> **What reconstructs and what does not (a median is not a linear functional).**
+> The pooled **mean** 2.25¢ *is* the blend-weighted per-type means
+> (0.082·0.60 + 0.447·2.38 + 0.471·2.42 = 2.253¢) — means blend, so this is a real
+> reconstruction. The pooled **median** 1.50¢ is a *direct* computation on the union
+> and cannot be blended from the per-type medians; it sits a tick below the
+> spread/total median (2.00¢) because those types are bottom-heavy on the tick grid
+> (48% of spread and 47% of total are ≤1.5¢) and the 8.2% winner mass tips the
+> pooled cumulative past 50% at 1.5¢ (verified directly: 51.6% ≤1.5¢). Both pooled
+> figures are correct; only the mean is "reconstructible" in the blend sense.
 
 Unlike CFB tonight, the **WNBA winner market IS measured near p=0.5** (median mid
 0.605, 24.9% of its snapshots in [0.35, 0.65]) — so its τ is fee-dominated at
