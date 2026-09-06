@@ -53,46 +53,77 @@ ladder says it costs nothing to make.
 Implied margin sd: **median 15.65 points**, range 14.03–19.61. The logistic fit
 gives scale 9.15 → sd 16.59, agreeing.
 
-### σ grows with the line
+### σ grows with the line — measured, n = 14, and shipped
 
-| | |
-|---|---|
-| `corr(\|home_spread\|, σ)` | **+0.911** (n = 12) |
-| fitted | σ ≈ **13.69 + 0.0915·\|line\|** |
-| at a 7-point line | σ ≈ 14.3 |
-| at a 40-point line | σ ≈ 17.4 |
+Fitted by `core.gridiron.scale.MarginScale`:
 
-A single σ = 15.65 misprices the extremes by ~1.7 points of scale. Bigger
-favourites carry more margin variance — unsurprising, and it means **a constant
-σ is a mixture**, biased exactly where the anchor is most informative.
+    σ = 13.19 + 0.1182·|line|        n = 14 games, corr = +0.948
 
-### σ collapses within a game, by a third before halftime
+A single σ = 15.65 misprices a 40-point game by ~2.3 points of scale. Bigger
+favourites carry more margin variance, so **a constant σ is a mixture**, biased
+hardest where the anchor is most informative.
 
-Fitted every 5 minutes off the live ladder, 2026-09-06 game 16486 (29 rungs,
-13,439 live full-game spread rows):
+**The relation survives every filter choice**, which is the sensitivity check
+that matters on a 14-game cohort:
+
+| R² floor | games | σ(line) | corr |
+|---|---:|---|---:|
+| none | 14 | 13.19 + 0.1182·\|line\| | +0.948 |
+| 0.95 | 13 | 13.30 + 0.1116·\|line\| | +0.942 |
+| 0.97 | 12 | 13.62 + 0.0939·\|line\| | +0.915 |
+| 0.99 | 8 | 13.06 + 0.1232·\|line\| | +0.974 |
+
+Intercept 13.1–13.6, slope 0.094–0.123 throughout.
+
+### Fitting the ladder retires the bracket filter
+
+A side effect worth having. `spread_anchor` interpolates to the P(YES) = 0.5
+crossing, so it needs the ladder to *bracket* it — which dropped 2 games in 14,
+both extreme. A probit fit recovers the crossing analytically from all rungs and
+needs no bracketing:
+
+| | games | mean \|diff\| vs DraftKings | worst |
+|---|---:|---:|---:|
+| interpolated, bracket filter | 12 | **0.41** | 1.67 |
+| probit fit, no filter | 14 | 0.68 | 2.59 |
+| probit fit, R² ≥ 0.95 | **13** | 0.53 | 1.88 |
+
+Almost all the degradation is one game whose ladder fits worst (R² 0.9362, off
+by 2.6 points). So the fit buys a game of coverage for ~0.1 points of accuracy,
+and `r2` is returned per game so the caller can make that trade explicitly
+rather than inherit it.
+
+### σ also falls within a game — OBSERVED ONCE, NOT MEASURED
+
+**This is n = 1 and it is deliberately not in the shipped surface.** A
+two-argument surface with 14 games on one axis and one game on the other would
+read as equally supported in both directions, and a later reader could not tell
+which half was a single game.
+
+Live ladder, 2026-09-06 game 16486, 5-minute buckets:
 
 | regulation left | σ | R² |
 |---:|---:|---:|
 | 2933 s | 15.23 | 0.971 |
 | 2556 s | 14.41 | 0.968 |
-| 2278 s | 11.61 | 0.998 |
+| 2268 s | 11.61 | 0.998 |
 | 1987 s | 11.66 | 0.994 |
-| 1884 s | 10.64 | 0.997 |
+| 1884 s | 11.52 | 0.981 |
 
-**15.23 → 10.64 over half a game**, and the early value reconnects with the
-15.65 pregame median. A constant-σ transfer would misprice the second half by
-30–50% of scale.
+`corr(reg_left, σ) = +0.568` over 13 buckets, one game, and two buckets fit
+badly (R² 0.89 and 0.93). The direction is plausible and the magnitude is not
+established. **Saturday's slate supplies this axis.**
 
-**Caveat, and it is a real one: n = 1 game.** Also, `reg_left` freezes at 1884 s
-because the ESPN recorder stopped at 21:37Z while prices kept moving — the last
-rows are real time passing against a stale clock. σ keeps falling through them,
-which is consistent, but the x-axis is not trustworthy there. Freshness is not
-liveness.
+**An earlier version of this table ran to σ = 10.64 and was wrong.** The
+buckets past 21:37Z reused the last game-state row after the ESPN recorder
+stopped, so the decay was being read against a clock that had stopped
+advancing — the axis manufactured the tail of its own trend. Those buckets are
+now excluded rather than annotated.
 
-**So the transfer needs σ(line, time_remaining) — a two-argument surface.** It
-is not a free parameter: every value above was read off the same ladder that is
-being traded, never fitted to an outcome. But it is new work, and it does not
-exist.
+**And the clock is not monotone even before that.** `reg_left` jumps
+**backwards four times**, once by a full 900 s at a period boundary (ESPN
+reporting `period 1, 15:00` mid-game at 3-0). Any use of game clock as an axis
+has to enforce monotonicity first; this one does, with a `cummin`.
 
 ## Why spreads are a better instrument, not just a bigger one
 
