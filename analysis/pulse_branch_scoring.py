@@ -127,3 +127,52 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ---------------------------------------------------------------------------
+# RECONCILIATION WITH d5, AND WHAT IT TURNED UP
+#
+# d5 reported model 0.19969 / market 0.19448; I reported 0.20173 / 0.19692.
+# Both differences are now accounted for exactly:
+#
+#   all enters, every row               2,974   0.19502 / 0.19132
+#   native settlement only (my old)     1,944   0.20173 / 0.19692   <- superseded
+#   earliest row per market (theirs)      480   0.19928 / 0.19448
+#
+# The market Brier matches d5 EXACTLY at 0.19448. The residual 0.00041 on the
+# model side is tie-breaking on SEVEN markets whose earliest `decided_at` is
+# tied to the microsecond — and the tied rows are the same market at the same
+# instant with side=yes and side=no, sharing a `mid` and differing in
+# `fair_value`. That is precisely the signature: identical market Brier,
+# differing model Brier. Tie-break first vs last moves it 0.19928 -> 0.19948.
+#
+# ★ SO THE UNIT OF DECISION IS (market, side), NOT market. Deduping on
+#   market_slug alone collapses a yes/no pair and keeps an arbitrary one.
+#
+# ★ AND CHECKING THAT TURNED UP A STRUCTURAL FACT NEITHER OF US HAD.
+#   `fair_value` is the YES probability, not side-relative — verified, because
+#   the side-relative reading was worth ruling out: corr(fv, settlement) stays
+#   POSITIVE on side=no (+0.477 against the market's +0.506), and flipping the
+#   outcome on `no` rows sends Brier from 0.195 to 0.329. Neither scoring has a
+#   sign error.
+#
+#   But the decision rule fixes the sign of the model-market disagreement on
+#   each arm BY CONSTRUCTION:
+#
+#       side=yes   n 1,342   fv > mid on 100.0%   mean(fv - mid) +0.0727
+#       side=no    n 1,632   fv > mid on   0.0%   mean(fv - mid) -0.0870
+#
+#   The engine enters YES only when it judges yes underpriced and NO only when
+#   overpriced. **So the Brier comparison is not run on a neutral sample — it
+#   is run on the sample of maximal disagreement, with a fixed sign per arm.**
+#   That is a third layer of selection under the two already named (the model
+#   chose to enter; the book chose to fill), and it is the one that bears
+#   directly on the forecast comparison rather than on the trade.
+#
+#   Per arm: side=yes diff -0.01487 [-0.04124, +0.01149]; side=no +0.00548
+#   [-0.02340, +0.03437]. Both tie. Pooled -0.00370 [-0.01910, +0.01170].
+#
+#   Four calibration intervals were inspected (model/market x yes/no) and one
+#   excluded zero — the market over-predicting YES by 11.06pp on the rows where
+#   the model bet against it. One in four is within chance and it is NOT
+#   reported as a finding.
