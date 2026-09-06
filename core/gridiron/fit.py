@@ -71,6 +71,8 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
+from .features import scrimmage_plays
+
 EXPORTS = "backups/exports/"
 ANCHOR_MAX_STALE_S = 900.0          # 15 min before kickoff; p50 is ~1 min
 DECAY = 3.0                         # nflfastR decays the line by elapsed share
@@ -78,10 +80,64 @@ FEATURES = ["anchor_time", "anchor_logit", "reg_left", "score_diff",
             "down", "distance", "yards_to_goal", "drive_is_home_offense"]
 _E = 1e-6
 
+# The venue names an event AWAY-FIRST and its contract pays on that first team.
+#
+#   `cfb-washst-wash-2026-09-06`  is Washington State AT Washington.
+#
+# Measured two ways, because this frame has silently inverted results before:
+#   * over the 73-row computed map, the slug's first team resolved to the AWAY
+#     side 53 times, to the HOME side **0 times**, ambiguous on 20 (short codes
+#     that appear in both names). No counterexample.
+#   * on 2026-09-06 the one moneyline `aec-cfb-washst-wash-2026-09-06` quoted
+#     mid **0.053** with Washington the heavy home favourite. 0.053 is
+#     Washington STATE's number.
+#
+# So the home probability is `1 - mid`, unconditionally, and the home spread is
+# the negation of the ladder crossing.
+#
+# This replaces a comparison — `event_slug.split("-")[1] == market_slug
+# .split("-")[2]` — that read like an orientation test and was measured
+# **True on 1,451,379 of 1,451,379 rows across 5,754 slugs**. It had no else
+# branch in practice: the moneyline anchor was the AWAY team's win probability
+# labelled `home` in every game, and the spread anchor was right by accident
+# because its always-taken branch happened to be the correct one.
+AWAY_TEAM_IS_FIRST = True
+
 
 def _logit(x):
     x = np.clip(x, _E, 1 - _E)
     return np.log(x / (1 - x))
+
+
+def assert_away_first(game_map: pd.DataFrame) -> None:
+    """Raise if any event_slug names the HOME team first.
+
+    The orientation is a constant, so nothing in the arithmetic can notice it
+    changing. This is the thing that would notice. Rows whose short code is
+    ambiguous between the two names are skipped rather than guessed — 20 of 73
+    on the computed map — so this catches a flip, not a near-miss.
+    """
+    need = {"event_slug", "home_espn_name", "away_espn_name"}
+    if not need.issubset(game_map.columns):
+        return
+    def _pfx(code, name):
+        c = re.sub(r"[^a-z]", "", str(code).lower())
+        n = re.sub(r"[^a-z]", "", str(name).lower())
+        return next((k for k in range(len(c), 1, -1) if c[:k] in n), 0)
+    bad = []
+    for _, r in game_map.iterrows():
+        parts = str(r.event_slug).split("-")
+        if len(parts) < 3:
+            continue
+        h, a = _pfx(parts[1], r.home_espn_name), _pfx(parts[1], r.away_espn_name)
+        if h > a:
+            bad.append(r.event_slug)
+    if bad:
+        raise ValueError(
+            f"event_slug names the HOME team first in {len(bad)} row(s) "
+            f"({bad[:3]}). AWAY_TEAM_IS_FIRST is false here and every anchor "
+            "in this module is inverted for those games."
+        )
 
 
 def _truthy(s):
@@ -105,7 +161,7 @@ def design(plays, prices, game_map, state) -> pd.DataFrame:
     q["vid"] = q.game_id.astype(int)
     q["mid"] = (q.best_bid + q.best_ask) / 2.0
 
-    d = (plays.merge(coh, on="game_id")
+    d = (scrimmage_plays(plays).merge(coh, on="game_id")
               .merge(m, left_on="game_id", right_on="espn_game_id")
               .merge(kick, on="game_id"))
     a = q.merge(d[["venue_game_id", "kickoff"]].drop_duplicates(),
@@ -115,9 +171,9 @@ def design(plays, prices, game_map, state) -> pd.DataFrame:
     a = a.sort_values("captured_at").groupby("vid").tail(1)[["vid", "mid", "market_slug"]]
     d = d.merge(a, left_on="venue_game_id", right_on="vid")
 
-    first_team = d.market_slug.str.split("-").str[2]
-    home_is_first = [str(s).split("-")[1] == f for s, f in zip(d.event_slug, first_team)]
-    d["anchor"] = np.where(home_is_first, d["mid"], 1 - d["mid"])
+    # the quote is the FIRST-named team's, and that team is the away side
+    assert_away_first(game_map)
+    d["anchor"] = 1 - d["mid"]
 
     d["reg_left"] = np.where(_truthy(d.is_overtime), 0.0,
                              (4 - d.period) * 900 + d.clock_minutes * 60 + d.clock_seconds)
@@ -174,6 +230,7 @@ def spread_anchor(prices: pd.DataFrame, game_map: pd.DataFrame,
     cohort where 12 is the whole result. Games with fewer than 2 quoted lines
     would also drop; none did.
     """
+    assert_away_first(game_map)
     q = prices.dropna(subset=["best_bid", "best_ask", "game_id"]).copy()
     q["vid"] = q.game_id.astype(int)
     q["mid"] = (q.best_bid + q.best_ask) / 2.0
@@ -196,9 +253,10 @@ def spread_anchor(prices: pd.DataFrame, game_map: pd.DataFrame,
         g = g.sort_values("line")
         if len(g) < 2 or not (g["mid"].min() < 0.5 < g["mid"].max()):
             continue                      # ladder does not bracket the crossing
+        # the ladder is quoted on the FIRST-named team, who is the away side,
+        # so the crossing is the AWAY line and the home line is its negation
         crossing = float(np.interp(0.5, g["mid"].values, g.line.values))
-        home_first = str(g.event_slug.iloc[0]).split("-")[1] == g.first_team.iloc[0]
         rows.append({"espn_game_id": g.espn_game_id.iloc[0],
-                     "home_spread": -crossing if home_first else crossing,
+                     "home_spread": -crossing,
                      "n_lines": len(g)})
     return pd.DataFrame(rows)
