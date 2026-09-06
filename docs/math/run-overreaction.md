@@ -81,7 +81,7 @@ game count is not, and it is the one that was always going to bind.
 682,847 live ticks examined, 4,162 observed score changes, cadence 100% under
 2 minutes.
 
-| horizon | n | mean reversion | 95% CI (clustered) |
+| horizon | n (runs) | mean reversion **per run**, cents | 95% CI (interval clustered by game) |
 |---|---:|---:|---|
 | +2 min | 146 | −0.67¢ | [−2.95¢, +1.62¢] |
 | **+5 min** | 145 | **−0.01¢** | **[−4.06¢, +4.03¢]** ← gate |
@@ -113,7 +113,7 @@ The study now runs on both legs. All 149 detected runs are still *labelled*
 first inside the same 2-minute window and the non-overlap rule blocks the
 second — that is the detector working as specified, not the score leg failing.
 
-Mean |price move| inside a run: **11.34¢**.
+Mean |price move| inside a run: **11.34¢ per run**.
 
 ## What would change the verdict
 

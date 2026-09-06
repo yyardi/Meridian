@@ -18,7 +18,7 @@ In a tight game, a moneyline far from 50/50 comes back toward it.
 
 ## The verdict
 
-| | trades | games | mean net P&L | 95% CI (clustered by game) |
+| | trades | games | mean net P&L **per trade**, cents | 95% CI (interval clustered by game) |
 |---|---|---|---|---|
 | **primary** — revert to 0.50 | 40 | 26 | **−9.12¢** | **[−16.77¢, −1.48¢]** |
 | **co-primary (5)** — pregame-anchored | 146 | 26 | **−4.16¢** | **[−5.81¢, −2.51¢]** |

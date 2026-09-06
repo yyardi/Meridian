@@ -118,7 +118,7 @@ which is the whole reason this project counts games.
 
 | | |
 |---|---|
-| mean \|lurch\| on the first score | **3.44¢** |
+| mean \|lurch\| on the first score, **per first-score event** | **3.44¢** |
 | direction | 25 up, 8 down |
 | by market type | total 18, spread 14, winner 1 |
 | age of the 0-0 baseline | median 4.0 min, p90 7.8 min |
