@@ -40,7 +40,7 @@ On the 12 overlapping games:
 corr             +0.999
 mean |diff|       0.41 pts
 median |diff|     0.32 pts
-worst single      1.70 pts
+worst single      1.67 pts
 ```
 
 Same sign convention, no transform. **Take `live_spread` for coverage; keep the
@@ -95,8 +95,28 @@ region the venue cohort has one game in. So the coverage gap is not merely
 12-vs-50, it is **truncated at the lopsided end**, which is exactly where a
 prior carries the most information.
 
-**Therefore: fall back to the moneyline anchor on non-bracketing games rather
-than dropping them.** The two-anchor design already supports it.
+**But "fall back to the moneyline on non-bracketing games" — which is what this
+page first recommended — is the wrong shape, and the correction matters more
+than the recommendation did.** The ladder yields a spread in **points**; the
+moneyline yields a **probability**. A column that takes one where the other is
+missing carries two units under one name — the same population-mixture defect
+this project has now found in an estimator, a lineage policy, a spread, and τ.
+Composing them would have been that defect committed by its own author.
+
+**There is nothing to compose, because the moneyline anchor is a strict
+superset:**
+
+```
+venue moneyline anchor (probability)   14 games
+venue spread ladder    (points)        12 games
+in moneyline but not in ladder         401856635, 401856666   <- the 2 dropped
+in ladder but not in moneyline         none
+```
+
+So pick by the units the feature needs. **If the anchor is a probability, use
+the moneyline — it already covers every game the ladder does, plus both the
+ladder drops.** If it is points, use `live_spread` (50 games) and keep the
+ladder as its validator.
 
 ## The zero-parameter identity cannot be run on the venue anchor
 

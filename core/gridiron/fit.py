@@ -260,3 +260,74 @@ def spread_anchor(prices: pd.DataFrame, game_map: pd.DataFrame,
                      "home_spread": -crossing,
                      "n_lines": len(g)})
     return pd.DataFrame(rows)
+
+
+def espn_spread_anchor(state: pd.DataFrame) -> pd.DataFrame:
+    """Home-oriented full-game spread in POINTS, from ESPN's `live_spread`.
+
+    This is the anchor to prefer on a real slate, and the reason is coverage
+    rather than quality — the two anchors are the same number:
+
+        corr with the venue ladder   +0.999   (12 overlapping games)
+        mean |difference|             0.41 pts
+        worst single game             1.67 pts
+
+    It costs none of what the venue path costs. `live_spread` lives in the same
+    ESPN-keyed table as the game state, so it needs **no `cfb_game_map`, no
+    full-game slug filter and no bracket filter**: 50 of 50 games against the
+    venue ladder's 12. It is also a real book — `line_provider` is DraftKings
+    on 100% of 18,627 rows, not a number ESPN invented.
+
+    **Fidelity caveat.** nflfastR's `spread_line` is the CLOSING line. This is
+    not established to be one: only 2 rows in the 09-05/06 export carry
+    `state == 'pre'`. What is measured is that it BEHAVES like a close — it
+    moves in 4 of 50 games and every move is <= 1 point inside the first
+    quarter, so it is a pregame line with an early settle rather than a live
+    one.
+
+    **Provenance caveat.** A venue price is one someone could transact at; a
+    DraftKings line carried by ESPN is not a quote on our book. Harmless for a
+    forecast feature, not harmless for anything that becomes a P&L claim.
+
+    Returns one row per game: `espn_game_id`, `home_spread`, `n_values`.
+    """
+    ls = state.dropna(subset=["live_spread"])
+    if ls.empty:
+        return pd.DataFrame(columns=["espn_game_id", "home_spread", "n_values"])
+    g = ls.sort_values("first_seen_at").groupby("game_id")
+    out = g.live_spread.first().rename("home_spread").to_frame()
+    out["n_values"] = g.live_spread.nunique()
+    return out.reset_index().rename(columns={"game_id": "espn_game_id"})
+
+
+def check_espn_spread_orientation(espn: pd.DataFrame, venue: pd.DataFrame,
+                                  *, min_games: int = 5) -> float | None:
+    """Police `live_spread`'s sign with the venue ladder. Raises on a flip.
+
+    `espn_spread_anchor` is the one anchor here that genuinely DEPENDS on a
+    convention it cannot derive: `live_spread` is a bare number with no team
+    attached, so nothing in it says which side the sign favours. That is the
+    case where a guard earns its place — unlike the slug-orientation sites,
+    which compare two independent sources and would stay correct through a
+    flip.
+
+    Measured home-relative (negative = home favoured) at corr +0.999 against
+    the venue ladder. This re-runs that check on whatever cohort is to hand and
+    is the reason to keep the venue anchor alive at 12 games: **its job is to
+    police this one.**
+
+    Returns the correlation, or None if fewer than `min_games` overlap — in
+    which case nothing was checked, and the caller is told so rather than
+    reassured.
+    """
+    j = espn.merge(venue, on="espn_game_id", suffixes=("_espn", "_venue"))
+    if len(j) < min_games:
+        return None
+    r = float(np.corrcoef(j.home_spread_espn, j.home_spread_venue)[0, 1])
+    if r < 0:
+        raise ValueError(
+            f"live_spread disagrees in SIGN with the venue ladder (corr {r:+.3f} "
+            f"on {len(j)} games). One of the two is inverted; the measured value "
+            "is +0.999. Do not fit until this is resolved."
+        )
+    return r
