@@ -6,13 +6,15 @@ afterwards, and that order cost us today. This sets the money bar *before* the
 model exists, so a fitted model can be judged the day it produces a number.
 
 **The one-line answer.** A CFB model pays as a **taker** if its per-trade edge
-beats **≈2.5–3.5pp** (at p=0.50) — measured on tonight's clean CFB tape, **one
-game** (G=1); it pays as a **maker** at a lower nominal bar (**~0–1.4pp**) but on
+beats τ **for the market type and price it trades** — measured on tonight's clean
+tape (one game, G=1): **~2.0pp on spreads, ~3.5pp on totals near p=0.5**, and
+**~0.5pp on the winner market at the blowout prices it occupied** (its p=0.5 spread
+is unmeasured). It pays as a **maker** at a lower nominal bar (**~0–1.4pp**) on
 adverse-selection terms the passive study could not fully measure. Passive
 market-making *without a forecast* is closed (separate doc); a **taker with genuine
 edge is a different strategy on a different bar and nothing we established today
-closes it.** Every spread below is labelled **full** or **half** — an unlabelled
-spread is two different numbers.
+closes it.** Every spread below is labelled **full** or **half**, and every τ its
+market type and price — an unlabelled number is several.
 
 ---
 
@@ -20,7 +22,7 @@ spread is two different numbers.
 
 | strategy | pays | break-even edge (p=0.50) | selection |
 |---|---|---|---|
-| **Taker** (cross to the touch) | market **half**-spread + taker fee | **~2.5–3.5pp** (CFB, one game, clean tape) | none — it initiates; owns the position at fair |
+| **Taker** (cross to the touch) | market **half**-spread + taker fee | **per type**: ~2.0pp spread, ~3.5pp total @ p=0.5; ~0.5pp winner @ blowout (p=0.5 unmeasured) | none — it initiates; owns the position at fair |
 | **Maker** (rest to settlement) | our quoted **half**-spread, no fee/rebate | **0pp on costs; ~1.4pp once adverse selection is charged** | ~46% of intents never fill; fills are adversely selected |
 
 The bars differ by the whole spread: a taker **pays** the half-spread, a maker
@@ -41,16 +43,26 @@ The taker crosses the market book, so the input is the **market full-spread
 markets; **0% frozen** — every market with ≥20 snapshots moved), quotable band
 (mid ∈ [0.20, 0.80], full spread ∈ [1¢, 15¢]):
 
-| CFB in-game full-game (game 16486) | **full** spread | **half** spread |
-|---|---:|---:|
-| median | 2.00¢ | **1.00¢** |
-| mean | 3.91¢ | **1.96¢** |
+The spread depends on **market type**, with a 16× range across types (c7), so
+pooling hides which bar a strategy faces:
 
-The CFB taker crossing cost is a **half-spread of ~1.0–2.0¢** (median–mean).
-**G = 1** — one game, enough for a spread distribution, not for any interval;
-Saturday's slate is the volume. It brackets the WNBA market-book half-spread (1.50¢
-median / 2.25¢ mean, `delta_market_snapshots`, same band), so CFB is **not**
-dramatically different from WNBA — the earlier "CFB is much tighter" claim is gone.
+| CFB market type (game 16486) | median mid | **half**-spread median | **half**-spread mean |
+|---|---:|---:|---:|
+| winner (aec) | 0.04 | **0.25¢** | 0.29¢ |
+| spread (asc) | 0.47 | **0.50¢** | 1.40¢ |
+| total (tsc) | 0.46 | **2.00¢** | 2.96¢ |
+| — pooled | — | 1.00¢ | 1.99¢ |
+
+The pooled median (1.00¢) is dominated by the wide totals markets. **τ must be
+quoted per type AND per price.** The winner market sat **entirely at extreme
+prices** tonight (mid p5–p95 = 0.022–0.077 — a blowout, 0% in [0.35, 0.65]), so
+its 0.25¢ is a near-zero-price spread and its half-spread **at p=0.5 is
+unmeasured**; pairing 0.25¢ with the p=0.5 fee (as "0.25+1.5=1.75pp") mixes two
+price regimes. Spreads and totals sat near p=0.5 (mid 0.46–0.47), so those pair
+with the p=0.5 fee cleanly. **G = 1**, one blowout game — a spread distribution,
+not a CFB fact; Saturday (with close games) measures the winner market at p=0.5.
+The spread/total numbers bracket WNBA (half 1.50¢/2.25¢), so CFB is **not**
+dramatically tighter — the earlier "CFB is much tighter" claim is gone.
 
 > **⚠ The earlier 0.5¢ CFB half-spread median was frozen-contaminated, withdrawn.**
 > The only CFB tape before tonight (`cfb_prices_20260906T194301Z`) was 99.5% inside
@@ -65,22 +77,37 @@ dramatically different from WNBA — the earlier "CFB is much tighter" claim is 
 ## 3. Taker threshold τ(p) = half-spread + 0.06·p(1−p)
 
 One taker fee (coefficient 0.06, venue-verified; **no maker rebate**), no exit
-leg because binaries settle. `half-spread` here is the **CFB market half-spread**
-measured tonight (1.0¢ median / 1.96¢ mean, one game; §2). The fee is largest at
-p=0.50 and shrinks toward the extremes; the threshold tracks it.
+leg because binaries settle. τ is **per market type, at the price that type
+trades** — not pooled:
 
-| p | fee = 0.06·p(1−p) | τ at 1.0¢ **half**-spread (CFB median) | τ at 1.96¢ **half**-spread (CFB mean) |
-|---:|---:|---:|---:|
-| 0.50 | 1.50¢ | **2.50pp** | **3.46pp** |
-| 0.40 | 1.44¢ | 2.44pp | 3.40pp |
-| 0.30 | 1.26¢ | 2.26pp | 3.22pp |
-| 0.20 | 0.96¢ | 1.96pp | 2.92pp |
-| 0.10 | 0.54¢ | 1.54pp | 2.50pp |
+| market type | **half**-spread (median) | median mid | fee at that mid | **τ (median)** |
+|---|---:|---:|---:|---:|
+| winner (aec) | 0.25¢ | 0.04 | 0.22¢ | **~0.5pp** (near-certain; p=0.5 unmeasured) |
+| spread (asc) | 0.50¢ | 0.47 | 1.49¢ | **~2.0pp** |
+| total (tsc) | 2.00¢ | 0.46 | 1.49¢ | **~3.5pp** |
 
-So a CFB taker needs a per-trade edge of **~2.5–3.5pp near p=0.5** (median–mean,
-one game), less at the extremes. This is close to WNBA (§2), **not** dramatically
-tighter — the earlier "CFB is much tighter" claim was frozen-tape contamination
-and is withdrawn. G=1; Saturday's slate firms the number.
+A model faces the bar of **the type it trades**: a win-probability model (e.g.
+ESPN-vs-venue) trades the winner market — τ ~0.5pp at the blowout prices seen
+tonight, **unmeasured at p=0.5**; a spread model faces ~2.0pp; a totals model
+~3.5pp. The old pooled "2.5–3.5pp" mis-charges the winner-market strategy by ~1.5pp
+— use the per-type row.
+
+> **τ is a FUNCTION of price, so the decision rule cannot use a scalar (c7).** The
+> fee alone ranges ~7× across the price axis (0.22¢ at p=0.04 → 1.50¢ at p=0.5),
+> and the half-spread varies too. **Each trade's edge must be compared against τ at
+> that trade's own price** — a scalar τ would be a *fourth* population mixture,
+> this one on the price axis, after market type, column, and weighting. And when
+> quoting a τ, state the observation count in the price band: the winner market's
+> 0.25¢ is 2,425 observations all inside a 5-point window (mid 0.02–0.08) — one
+> price, not a distribution.
+
+> **Estimator, pre-registered before Saturday's slate (per ce).** The bar is the
+> **per-snapshot median half-spread, per market type, at the price that type
+> trades** (time-weighted; median for robustness to the stale/wide tail); the
+> per-snapshot **mean** is reported alongside as the no-discipline upper bar. NOT
+> per-fill (fill-selected spreads bias wide) and NOT pooled across types. Fixed now
+> so it is not a free parameter after the slate — the mean–median gap is a full
+> point, and the estimator-choice lesson has flipped a programme sign before.
 
 ---
 
@@ -139,8 +166,9 @@ reports) is `E[d²] = (mean money)² + Var(|d|)` — it is dominated by edge
    actually trades.
 2. **The bar is on the per-*traded*-market edge, not the population Brier.** Judge
    a CFB model by: on the markets it chooses to trade, is mean `|d| > τ`
-   (≈2.5–3.5pp taker, CFB one game)? Equivalently, is the per-traded-market Brier
-   improvement `> τ²` (≈6×10⁻⁴–1.2×10⁻³)? The population number (e.g. the live model's declined-branch
+   (τ at the type and price it trades — §3, per-type)? Equivalently, is the
+   per-traded-market Brier improvement `> τ²` (τ² scales with the bar: ~4×10⁻⁴ at
+   τ=2.0pp, ~1.2×10⁻³ at τ=3.5pp)? The population number (e.g. the live model's declined-branch
    `+0.002–0.003`, entered `≈0`) is not that bar — it mixes traded and untraded
    markets and hides whether the edge clears costs where it is spent.
 
@@ -156,11 +184,12 @@ Passive market-making is closed **for earning the spread without a forecast** �
 the benign fill share (≤23.7–35.8%) cannot clear the passive break-even floor.
 That result says nothing about a model with genuine directional edge:
 
-- A **taker with edge > ~2.5–3.5pp** (CFB, one game) crosses, owns the position at
-  fair, and eats no adverse selection. The making close does not apply to it — it
-  is a different strategy on a different bar.
-- CFB's measured spread is close to WNBA's (§2), so the bar is ~2.5–3.5pp on both;
-  the frozen-tape "CFB is much tighter" claim is withdrawn.
+- A **taker whose edge exceeds τ at the type and price it trades** (~2.0pp spreads,
+  ~3.5pp totals near p=0.5; ~0.5pp on the winner market at blowout prices) crosses,
+  owns the position at fair, and eats no adverse selection. The making close does
+  not apply to it — a different strategy on a different bar.
+- CFB's measured spread/total half-spreads are close to WNBA's (§2); the winner
+  market at p=0.5 is unmeasured. The frozen-tape "CFB is much tighter" is withdrawn.
 - **Where the edge must come from (ce).** ESPN's CFB win probability carries almost
   no *pregame* information — over 33 kickoffs its first-tick WP has sd 0.0222
   (range 0.52–0.66), against the venue's pregame boards at sd 0.2663, a ~12× gap.
@@ -168,6 +197,11 @@ That result says nothing about a model with genuine directional edge:
   **pregame prior the venue does not already have** — and the venue has a strong
   one. The bar to beat is the **venue**, not ESPN, and τ (above) decides whether
   any residual edge survives costs.
+- **The winner-market tension (c7) — a strategy feature, not a measurement gap.**
+  In blowouts τ is tiny but the outcome is near-certain, so there is little to bet;
+  in close games there is something to bet and the spread is **unmeasured and
+  likely wider**. Close games may simply carry the cost that blowouts do not —
+  Saturday supplies close-game data, but the tension survives it.
 
 **Said plainly: nothing established today rules out a football taker with real
 forecast edge. We only ruled out earning the spread without a forecast.** The
