@@ -19,11 +19,19 @@ a comment is exactly as public as one in code.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
-from repo_tree import rel, repo_files
+# `tests/` is on sys.path under pytest but NOT when this module is loaded by
+# path — which scripts/check_staged_secrets.py does on purpose, so the hook and
+# this file cannot drift apart. Without this the hook's import raised
+# ModuleNotFoundError and it silently fell back to its own copy of the
+# patterns, which is the drift the by-path load exists to prevent.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from repo_tree import rel, repo_files  # noqa: E402
 
 _SCANNED_SUFFIXES = (".py", ".sh", ".md", ".yml", ".yaml", ".toml", ".json",
                      ".html", ".js", ".cfg", ".ini", ".txt")
@@ -84,6 +92,21 @@ def _files():
         yield path, rel(path)
 
 
+#: Identifiers that are documentation or test material, never ours.
+#: EXPLICIT LITERALS WITH A REASON, and deliberately NOT a file-level skip:
+#: `scripts/check_staged_secrets.py` — which carries these same values as its
+#: own positive controls — says it directly, and it is right: a detector that
+#: skips whole files is how a detector comes to hide its own leaks. So each
+#: value earns its place by name, and anything not on this list is a finding
+#: wherever it appears, including in the scanner.
+_SYNTHETIC = {
+    "123456789012": "AWS docs' canonical example account id",
+    "sg-0123456789abcdef0": "synthetic positive control",
+    "vpc-0123456789abcdef0": "synthetic positive control",
+    "i-0123456789abcdef0": "synthetic positive control",
+}
+
+
 @pytest.mark.parametrize("label", sorted(PATTERNS))
 def test_no_aws_identifiers(label):
     rx = PATTERNS[label]
@@ -91,7 +114,7 @@ def test_no_aws_identifiers(label):
         f"{rel}:{i}: {line.strip()[:90]}"
         for path, rel in _files()
         for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1)
-        if rx.search(_scrub_line(line))
+        if any(m not in _SYNTHETIC for m in rx.findall(_scrub_line(line)))
     ]
     assert not hits, (
         f"{label} found in a public repository. Real values live in the AWS "
@@ -118,6 +141,35 @@ def test_no_public_ip_addresses():
         "open SSH port is the pair that matters. Use <server-ip> in docs and "
         "MERIDIAN_SERVER / ~/.meridian-server in scripts.\n  " + "\n  ".join(hits)
     )
+
+
+def test_a_synthetic_control_is_allowed_but_a_real_id_beside_it_is_not():
+    """The allowlist must exempt the VALUE, never the file. A real id sitting
+    on the same line as a synthetic one must still be caught, which a
+    file-level skip could not do."""
+    rx = PATTERNS["aws account id"]
+    synthetic = "123456789012"
+    assert not [m for m in rx.findall(synthetic) if m not in _SYNTHETIC]
+    # BUILT, not written. The negative control has to be a value NEITHER
+    # allowlist contains — otherwise the test proves nothing — and writing one
+    # as a literal would mean adding it to both this file's `_SYNTHETIC` and
+    # `scripts/check_staged_secrets.py`'s `ALLOWED`, growing two lists that
+    # must agree. Constructing it keeps both lists honest and short.
+    #
+    # The first draft used the operator's ACTUAL account id here and the
+    # pre-commit hook blocked the commit. That is the hook doing its job, and
+    # it is why this comment exists rather than a shrug.
+    not_allowlisted = "9" * 12
+    real = f"{synthetic} and {not_allowlisted}"
+    assert [m for m in rx.findall(real)
+            if m not in _SYNTHETIC] == [not_allowlisted]
+
+
+def test_every_allowlisted_value_states_why_it_is_there():
+    """An allowlist without reasons becomes a dumping ground — the rule this
+    file already applies to _THIRD_PARTY_IPS."""
+    for value, reason in _SYNTHETIC.items():
+        assert reason and len(reason) > 10, value
 
 
 def test_the_scanner_would_actually_catch_one():
