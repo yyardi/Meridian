@@ -9,36 +9,49 @@ it** — 25× smaller than the interval's own width. The problem is not that the
 model falls short of the threshold. It is that **the instrument we have been
 using cannot resolve a tradeable edge at all.**
 
-## ⚠️ THE HALF-SPREAD INPUT IS UNSOURCED, AND ITS REPLACEMENT IS UNLABELLED
+## ⚠️ THE HALF-SPREAD INPUT WAS WITHDRAWN. τ IS 3.07 pp, NOT 2.69.
 
-**Do not quote τ to three digits.** Every number on this page scales off one
-input, `s = 1.193¢`, and that input has no owner. c7 states it is not theirs and
-that they never measured it; neither c7 nor A can source it. **It nonetheless
-sets the published 57.8% breakeven floor.**
+**Superseded 2026-09-06 by c7's audit.** Every number on this page scales off
+one input, and the input this page was published with — `s = 1.193¢` — **had no
+owner and has been withdrawn.** c7 stated it was not theirs and that they never
+measured it; neither c7 nor A could source it. It nonetheless set every figure
+below, including the published 57.8% breakeven floor.
 
-A measured the WNBA book directly and gets **~2.0¢**. That should replace it —
-except the replacement has the same defect the original had, one level up:
-**it has been described to me as both a half-spread and a full spread in
-successive messages, and the two readings move τ in opposite directions.**
+The replacement arrived ambiguous — described as both a half-spread and a full
+spread in successive messages, which moved τ in opposite directions and is why
+this page carried a three-way table rather than a number. **c7's audit resolves
+it: the half-spread is `s = 1.569¢`.**
 
-| reading of the spread input | τ at p = 0.50 |
-|---|---:|
-| 1.193¢ half — this page, unsourced | **2.69 pp** |
-| 2.0¢ read as **half** | **3.50 pp** |
-| 2.0¢ read as **full** (→ 1.0¢ half) | **2.50 pp** |
+| | half-spread | τ at p = 0.50 |
+|---|---:|---:|
+| published (withdrawn) | 1.193¢ | 2.69 pp |
+| **corrected** | **1.569¢** | **3.07 pp** |
 
-So the correction could raise τ by 0.8 pp or lower it by 0.2 pp, and nothing
-available to me decides which. **A spread quoted without "full" or "half"
-attached is not a measurement, it is two measurements.** That is the same
-label-the-policy failure this project has hit on estimators and on P&L
-conventions, arriving on a venue microstructure constant.
+**The correction runs AGAINST us: +0.38 pp, a harder bar.** That direction is
+the reason to trust it rather than to re-open it — an error that made trading
+easier would deserve more scrutiny than one that makes it harder.
 
-**What survives regardless, and it is the argument this page is for:** every
-reading leaves τ in the 2.5–3.5 pp band, an order of magnitude above the
-0.0007-scale Brier improvements the accuracy work resolves, and above the
-1.20 pp that λ* = 0.15 buys. **The direction of every conclusion below is
-unchanged; only the third digit moves.** A larger τ makes clearing harder, so a
-correction upward strengthens the negative results rather than weakening them.
+**A spread quoted without "full" or "half" attached is not a measurement, it is
+two measurements.** That is the same label-the-policy failure this project has
+hit on estimators and on P&L conventions, arriving on a venue microstructure
+constant.
+
+**CFB: withdrawn, unmeasured, awaiting tonight's tape.** A withdrew the CFB
+taker bar. It had been measured on the frozen 09-05 tape, where 99% of markets
+with ≥20 snapshots showed ≤2 distinct book states — a spread computed from a
+board nobody was quoting. There is no CFB number on this page and there should
+not be one until a live tape supports it. **Every figure below is WNBA.**
+
+**What survives regardless, and it is the argument this page is for:** τ stays
+in the 2.5–3.5 pp band, an order of magnitude above the 0.0009-scale Brier
+improvements the accuracy work resolves, and above the 1.20 pp that λ* = 0.15
+buys. **The direction of every conclusion below is unchanged.**
+
+One second-order effect is worth stating because it is counterintuitive: a
+HIGHER bar is EASIER to detect, so the games required to resolve it falls from
+21,039 to **12,401**. The bar moved away from us and the instrument's relative
+coarseness fell from 25× to 19×. Both are true and neither rescues the
+programme — 12,401 games is still ~46 NFL seasons.
 
 ## The threshold
 
@@ -52,27 +65,27 @@ EV per contract = e − s − fee(ask)        e = model edge vs mid (q − p)
                                           fee(a) = 0.06·a·(1−a),  a = p + s
 ```
 
-At the measured half-spread **s = 1.193¢**:
+At the corrected half-spread **s = 1.569¢** (WNBA):
 
 | p | fee(ask) | half-spread | **minimum edge** |
 |---:|---:|---:|---:|
-| 0.50 | 1.499¢ | 1.193¢ | **2.69 pp** |
-| 0.30 | 1.288¢ | 1.193¢ | 2.48 pp |
-| 0.20 | 1.002¢ | 1.193¢ | 2.20 pp |
-| 0.10 | 0.596¢ | 1.193¢ | 1.79 pp |
-| 0.05 | 0.349¢ | 1.193¢ | 1.54 pp |
+| 0.50 | 1.499¢ | 1.569¢ | **3.07 pp** |
+| 0.30 | 1.296¢ | 1.569¢ | 2.87 pp |
+| 0.20 | 1.015¢ | 1.569¢ | 2.58 pp |
+| 0.10 | 0.614¢ | 1.569¢ | 2.18 pp |
+| 0.05 | 0.368¢ | 1.569¢ | 1.94 pp |
 
 **⚠️ THE TABLE ABOVE IS NEAR-MONEY ONLY, AND ITS TAIL ROWS ARE WRONG.** It holds
-`s = 1.193¢` constant in `p`. That is the *near-money* half-spread. The same
+`s = 1.569¢` constant in `p`. That is the *near-money* half-spread. The same
 repo records, in three places, that **the 0.95/0.05 rungs carry 22–26¢ spreads
 and do not trade** — a half-spread of 11–13¢, ten times the value used.
 
 Corrected at the tails:
 
-| p | threshold at s=1.193¢ | threshold at the measured tail spread |
+| p | threshold at s=1.569¢ | threshold at the measured tail spread |
 |---:|---:|---:|
-| 0.10 | 1.79 pp | **12.0 pp** |
-| 0.05 | 1.54 pp | **11.8 pp** |
+| 0.10 | 2.18 pp | **12.0 pp** |
+| 0.05 | 1.94 pp | **11.8 pp** |
 
 **So the threshold does not fall toward the extremes — it rises steeply**, because
 the spread term dominates and the spread is an order of magnitude wider there.
@@ -112,7 +125,7 @@ improvement **at best**.
 | edge | Brier improvement |
 |---:|---:|
 | 1.00 pp | 0.00010 |
-| **2.69 pp (tradeable at p=0.5)** | **0.00072** |
+| **3.07 pp (tradeable at p=0.5)** | **0.00094** |
 | 5.00 pp | 0.00250 |
 | 13.40 pp | 0.01796 |
 
@@ -122,10 +135,10 @@ The live model's paired Brier at G=34 is **−0.0048 [−0.0231, +0.0135]** — 
 The interval's half-width is ~0.018.
 
 * **Smallest edge that interval could detect: √0.018 = 13.4 pp.**
-* **Edge needed to trade: 2.69 pp.**
-* **The instrument is 25× coarser in Brier terms, 5× in edge terms.**
+* **Edge needed to trade: 3.07 pp.**
+* **The instrument is 19× coarser in Brier terms, 4.4× in edge terms.**
 
-The required improvement, 0.00072, sits **deep inside** the confidence interval.
+The required improvement, 0.00094, sits **deep inside** the confidence interval.
 It is not that the model failed to clear a bar; the measurement never had the
 resolution to say either way.
 
@@ -147,11 +160,11 @@ Interval half-width scales as `1/√G`.
 | 34 | today | 0.01800 | 13.4 pp |
 | 272 | full NFL regular season | 0.00636 | 8.0 pp |
 | 600 | NFL + CFB season | 0.00428 | 6.5 pp |
-| **21,039** | **required for 2.69 pp** | 0.00072 | 2.7 pp |
+| **12,401** | **required for 3.07 pp** | 0.00094 | 3.1 pp |
 
 **A full football season moves the detectable edge from 13.4 pp to 8.0 pp. The
-tradeable threshold is 2.7 pp.** With dilution at `f = 0.25` the requirement is
-**336,616 games**.
+tradeable threshold is 3.1 pp.** With dilution at `f = 0.25` the requirement is
+**198,422 games**.
 
 So the accrual plan is not aimed at an unreachable *target* — it is aimed
 through an unusable *instrument*. Resolving λ* or a paired Brier to any
@@ -189,11 +202,11 @@ entered decisions `|fv − mid| ≈ 0.08`.
 
 | p | threshold | λ* needed | edge at λ* = 0.15 | clears? |
 |---:|---:|---:|---:|---|
-| 0.50 | 2.69 pp | **0.337** | 1.20 pp | **no** |
-| 0.30 | 2.48 pp | 0.310 | 1.20 pp | **no** |
-| 0.20 | 2.20 pp | 0.274 | 1.20 pp | **no** |
+| 0.50 | 3.07 pp | **0.384** | 1.20 pp | **no** |
+| 0.30 | 2.87 pp | 0.359 | 1.20 pp | **no** |
+| 0.20 | 2.58 pp | 0.323 | 1.20 pp | **no** |
 
-**λ* = 0.15 buys 1.20 pp against a 2.2–2.7 pp threshold — under half.** The
+**λ* = 0.15 buys 1.20 pp against a 2.6–3.1 pp threshold — under half.** The
 required λ* is **0.27–0.34, roughly twice the accrual target.**
 
 **But the measured λ* is convention-dependent and the required 0.337 sits inside
@@ -230,4 +243,5 @@ money question, and squaring is why.**
 ---
 
 *Computed 2026-09-06. Fee `0.06·p(1−p)` from `core/quote/wallet.py:42`;
-half-spread 1.193¢ as measured. Descriptive only.*
+half-spread 1.569¢ per c7's audit, superseding the withdrawn 1.193¢.
+WNBA only; CFB unmeasured. Descriptive only.*
