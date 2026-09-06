@@ -36,8 +36,11 @@ tick.
   game-median of +5.55e-17 — float residue from ``(bid+ask)/2`` on a
   one-cent-tick market — initially counted as "signed"; ``SIGN_EPSILON``
   now implements the registered "nonzero" wording. Definitions unchanged.)
-* **Supporting, not gated**: game-clustered mean |gap| 0.29¢, 95% CI
-  [0.22¢, 0.36¢].
+* **Supporting, not gated**: mean |gap| **per pair** 0.29¢ per pair, 95% CI
+  [0.22¢, 0.36¢] with the interval clustered by game.
+  (`core/kalshi/analysis.py:433` calls `clustered_mean`, which returns the
+  **pair-weighted** mean; games enter only through the interval. "Game-clustered"
+  names the interval, not the estimator.)
 
 Tradability and fees remain a separately-registered question, per this
 module's own rules. The roadmap fork this verdict forces — in-game
@@ -84,7 +87,7 @@ separate, separately-registered question.
 |---|---|
 | **median \|gap\|** (median of game medians) | **0.00¢** |
 | **sign persistence** | **not measurable — 1 of 10 games has a nonzero median** |
-| mean \|gap\|, clustered by game | 0.37¢ — CI [0.22, 0.52], G=10 |
+| mean \|gap\| **per pair** (interval clustered by game) | 0.37¢ per pair — CI [0.22, 0.52], G=10 |
 | identical to the penny | 418 / 773 = 54.1% |
 | within one cent | 751 / 773 = **97.2%** |
 
@@ -174,8 +177,9 @@ The first implementation paired *every* Polymarket snapshot with its nearest
 Kalshi snapshot, reusing one Kalshi observation many times. Polymarket's
 pregame density varies wildly **between contracts of the same game**, so pair
 counts came out at 17, 17, 17, 17, 2398, 2398, 2398, 2398 — a 140× imbalance
-inside PHXATL alone — and the mean signed gap read **+0.30¢**, essentially all
-of it one dense contract quoting +1.00¢.
+inside PHXATL alone — and the mean signed gap read **+0.30¢ per pair
+(SUPERSEDED — the biased first implementation's output, not a current
+figure)**, essentially all of it one dense contract quoting +1.00¢.
 
 `build_pairs` now allows **one pair per (contract, Kalshi observation)**, Kalshi
 being the coarser 60s side. The same figure becomes **+0.21¢**, per-contract

@@ -89,8 +89,12 @@ DEFAULT_TICKS = REPO / f"backups/exports/live_ticks_pulse_games_{PIN}.csv.gz"
 DEFAULT_RESOLVED = REPO / f"backups/exports/resolved_outcomes_{PIN}.csv"
 
 THETA_TAKER = 0.06          # V9: venue-published, 874,267 rows / 241 markets
-MEASURED_CONCESSION_INGAME = 0.0470   # $/contract, quote study (feed-lag mechanism)
-MEASURED_CONCESSION_PREGAME = 0.0211  # $/contract [1.83, 2.39] — for reference
+# $/contract/LEG, not per round trip — it is compared against c_e and c_x
+# separately below (line ~270), so a trip pays it twice. exit_option_value.py:85
+# annotates it "$/ct/leg"; this line previously said only "$/contract", and the
+# two readings differ by 2x on a round trip.
+MEASURED_CONCESSION_INGAME = 0.0470   # $/contract/leg, quote study (feed-lag)
+MEASURED_CONCESSION_PREGAME = 0.0211  # $/contract/leg [1.83, 2.39] — reference
 
 AS_HORIZONS_S = [10, 30, 60, 120, 300]
 AS_MAX_GAP_S = 120          # a "mid at t+H" found more than this late is dropped

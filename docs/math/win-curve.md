@@ -7,9 +7,12 @@
    thumb — a ratio of **1.31×**. This is the first live model this project
    has had.
 2. **Hypothesis #16 PASSED its pre-registered gate and is NOT tradable.**
-   +6.84¢, CI [+0.84¢, +12.83¢], 19 games. Anchored on the pregame price the
-   same states give **−2.20¢, CI [−3.90¢, −0.49¢]** — the sign flips and the
-   interval clears zero on the other side.
+   **+6.84¢ per observation**, CI [+0.84¢, +12.83¢], n = 40 observations
+   across 19 games (interval clustered by game; `win_curve.py:994` calls
+   `clustered_mean`, which returns the observation-weighted mean). Anchored on
+   the pregame price the same states give **−2.20¢ per observation**, CI
+   [−3.90¢, −0.49¢] — the sign flips and the interval clears zero on the other
+   side.
 
 Module: [`core/pulse/win_curve.py`](../../core/pulse/win_curve.py) ·
 Ledger rows [#15 and #16](../pulse-hypotheses.md)
