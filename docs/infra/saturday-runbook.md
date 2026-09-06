@@ -59,6 +59,59 @@ would have caused when the truth was "31 cannot be checked".
 
 ---
 
+## The rule that matters most on Saturday
+
+**Both recorders up and verified BEFORE kickoff, or the slate produces data that
+cannot answer anything.**
+
+Every measurement blocked this week reduces to the same requirement: **a
+pre-kickoff snapshot and a live tape on the same game.** 09-05 never had both at
+once. Detection of a mid-slate failure is worth less than starting correctly,
+because a slate that starts wrong yields nothing recoverable.
+
+That is what the T-30 check is for, and it is why it outranks the mid-slate
+monitors that are not deployed.
+
+### "First seen" is not "kickoff"
+
+**A time-window pregame selector returns in-game rows on a quoting board, with
+no error, no null, and no symptom.**
+
+Measured: an anchor took ladders from a ≤900s window before "kickoff", where
+kickoff was inferred as `min(first_seen_at)` for rows in state `in`. **All 14
+"kickoffs" resolved to 22:08–22:09Z — the same minute.** That is the recorder
+starting, not the games starting. ESPN's own rows show all 14 already in
+progress at that instant: P2 14-0, P4 49-3, P4 45-3. **Zero of 14 observed at
+0-0.**
+
+It produced correct-looking numbers **only because the board was frozen** — 575
+full-game spread markets, median 27 snapshots each, 0.0% with more than one
+distinct mid. A frozen board still carries its last *pregame* quotes, so a
+pregame ladder came back from a selector asking for mid-game rows.
+
+**On Saturday the board will be quoting, and the same selector returns in-game
+ladders under a pregame label.**
+
+> **THE RULE.** Anything selecting a pregame or kickoff population must gate on
+> **game state** — `period == 1 AND home_score + away_score == 0` — never on a
+> clock, a timestamp, or a window relative to an inferred kickoff. It must
+> return **nothing** for a game never observed at 0-0, **with no fallback**. A
+> fallback is the same bug wearing a helper's name.
+
+### Three instances, one defect
+
+The next one will not look like the previous two:
+
+| symptom | reality |
+|---|---|
+| `display_clock` reads 15:00 in period 1 | on rows already scoring 21-0 |
+| `reg_left` jumps *backwards* four times | once by a full 900s |
+| "first seen in state `in`" | the recorder's start, not the game's |
+
+**All three make a mid-game row look like a kickoff row, and none raises an
+error.** The state gate is the only defence — every clock-derived and
+timestamp-derived quantity on this substrate has now failed at least once.
+
 ## Mid-slate · the uncovered window
 
 **Nothing automated watches this.** Run every ~30 minutes while games are live.
