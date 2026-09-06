@@ -21,11 +21,14 @@ from __future__ import annotations
 import pandas as pd
 
 WINDOW_S = 3600.0
-#: one poll per 73s per market -- geometric midpoint of measured healthy
-#: (0.057-0.154 Hz) and collapsed (<=0.0033 Hz). 4x margin on each side.
-COLLAPSED_HZ = 0.0138
-#: below this the rate is too noisy to judge; stay quiet rather than cry wolf.
-MIN_MARKETS = 20
+#: one poll per 254s per market. Log-symmetric between the two regimes that
+#: matter: healthy 0.0552 Hz and collapsed 0.00028 Hz -- 14x margin each way.
+#: The RESTORED recorder sits 49x above it, so it is not a constraint.
+COLLAPSED_HZ = 0.0039
+#: denominator floor for a RATE. Deliberately NOT c7's MIN_MARKETS (=12),
+#: which is a false-positive budget on a SHARE statistic -- different
+#: quantities, so they are named apart to stop a later 'unification'.
+MIN_MARKETS_RATE = 20
 
 
 def poll_rate(rows: int, markets: int, window_s: float = WINDOW_S) -> float:
@@ -34,7 +37,7 @@ def poll_rate(rows: int, markets: int, window_s: float = WINDOW_S) -> float:
     return rows / (window_s * markets)
 
 
-def refine_absent(rows_60m: int, markets_60m: int) -> str:
+def refine_absent(rows: int, markets: int, window_s: float = WINDOW_S) -> str:
     """Called ONLY when v5 has already returned ABSENT.
 
     STOPPED   nothing wrote in the last hour -- the whole path is down.
@@ -43,11 +46,11 @@ def refine_absent(rows_60m: int, markets_60m: int) -> str:
               which is why every arrival check stayed green for 17 hours.
     OK        the hour looks healthy; ABSENT was a short-window artifact.
     """
-    if rows_60m == 0:
+    if rows == 0:
         return "STOPPED"
-    if markets_60m < MIN_MARKETS:
+    if markets < MIN_MARKETS_RATE:
         return "OK"
-    return ("COLLAPSED" if poll_rate(rows_60m, markets_60m) < COLLAPSED_HZ
+    return ("COLLAPSED" if poll_rate(rows, markets, window_s) < COLLAPSED_HZ
             else "OK")
 
 
@@ -64,13 +67,13 @@ def hour(a, b):
 fails = 0
 
 
-def case(name, rows, mkts, expect, why):
+def case(name, rows, mkts, expect, why, window_s=WINDOW_S):
     global fails
-    got = refine_absent(rows, mkts)
+    got = refine_absent(rows, mkts, window_s)
     ok = got == expect
     fails += 0 if ok else 1
     print(f"  {'PASS' if ok else 'FAIL'}  {name:<36s} rows={rows:>7d} "
-          f"mkts={mkts:>5d} rate={poll_rate(rows, mkts):.5f}Hz -> "
+          f"mkts={mkts:>5d} rate={poll_rate(rows, mkts, window_s):.5f}Hz -> "
           f"{got:<9s} ({why})")
 
 
@@ -90,8 +93,11 @@ case("real collapse, 5h later", r, m, "COLLAPSED", "still fires while degraded")
 # wrong file here cost one FAIL and was my error, not the design's.
 _rest = pd.read_csv(E + "cfb_restored_20260906T204928Z.csv.gz",
                     parse_dates=["captured_at"])
-case("after the RESTORE", len(_rest), _rest.market_slug.nunique(), "OK",
-     "must go quiet once fixed")
+_span = (_rest.captured_at.max() - _rest.captured_at.min()).total_seconds()
+case("after the RESTORE (span-correct)", len(_rest),
+     _rest.market_slug.nunique(), "OK",
+     "export spans 339s NOT an hour -- dividing by 3600 understated it 10.6x",
+     window_s=_span)
 
 case("true STOP: nothing writing", 0, 0, "STOPPED", "distinguishes from collapse")
 
