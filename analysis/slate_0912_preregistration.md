@@ -231,3 +231,56 @@ pushed — `analysis/slate_0912_preregistration.md` on
 my literal wording ("median inter-stamp gap under 10 seconds"), so their result
 transfers. Worth knowing that a pushed non-main branch was not findable by
 search.
+
+---
+
+# ★ DRY RUN: NFL, 2026-09-09 — three days early, not two
+
+The pre-flight is now **executable**: `analysis/tape_preflight.py`. A prose
+condition gets paraphrased — Debugger had to test a paraphrase of the last one
+because they could not find the file. This one is code and takes a CSV.
+
+## The first NFL game is WEDNESDAY, not Thursday
+
+Checked against the venue rather than assumed — open `KXNFLGAME` events by game
+date:
+
+    2026-SEP-09   1 game    <- first live exercise of core.live_recorder since it died
+    2026-SEP-10   1 game
+    2026-SEP-13  13 games
+
+**So the dry run is Wednesday 09-09, giving three days of margin before the CFB
+slate rather than two.**
+
+## Why this matters beyond convenience
+
+**The live-recorder code path cannot be verified on a quiet day.** Both
+`meridian-nfl-live-recorder` and `meridian-live-recorder` correctly report
+`cycles: 0` right now — NFL has not started and the WNBA season ended 08-31 — so
+a check today proves nothing in either direction. **The last demonstrable proof
+that `core.live_recorder` produces a dense tape is the 09-05 CFB slate**, which
+is also the day it died.
+
+The NFL recorder is already running, already configured, and is **not blocked on
+the operator's CFB fix**. So Wednesday exercises the path for free.
+
+## What Wednesday tests, and what it does NOT
+
+**Tests:** the code path, and the pre-flight condition itself — against real
+live data rather than a reconstruction, while both a known-good (09-05 peak) and
+a known-bad (09-05 slate, 09-06) comparison are still available.
+
+**Does NOT test:** the capture *rate*. **One game cannot estimate a rate.** NFL
+runs ~15 games a week against CFB's ~57 and Wednesday is a single game. **A
+clean Wednesday must not become "capture is fine"** — that would be the
+one-observation-is-not-a-measurement error, and it is pre-committed here as
+inadmissible.
+
+## Registered outcomes
+
+* **Dense NFL tape** → the path is proven before Saturday needs it, and the
+  condition has been exercised on live data. Saturday proceeds as registered.
+* **No dense tape** → three days to find out why, rather than discovering it on
+  Saturday night with the slate gone.
+
+Either way the *rate* question stays open until a full slate runs.
