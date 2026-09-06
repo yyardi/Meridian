@@ -52,6 +52,19 @@ form I wrote earlier today -- a monitor computing a statistic over what ARRIVED
 is blind to what did not -- and a ratio of identified-to-completed is not such
 a statistic.
 
+GAME TRANSITIONS DO NOT BREAK THE EQUALITY -- tested, because ce was right to
+ask. `refresh_live` caches for 60s while games are polled every 20s, so `live`
+holds games ESPN has already moved to 'post'. Measured on the 09-05/06 slate:
+
+    states written: in 18,732 | post 41 | pre 2
+    games carrying BOTH 'in' and 'post' rows: 28 of 50
+    one game across its whistle: ['in','in','in','in','post'], 27s gaps
+
+`parse_game_state` returns None only when `header.competitions` is MISSING; a
+completed game still has one, so it returns a dict, `ns = 1`, and the poll
+writes a state row for 'post' and 'pre' alike. 28 independent instances of the
+transition, zero breaks. A slate's 12 whistles are not 12 false fires.
+
 THE SOFT INPUT IS `live_games`, AND IT FAILS QUIET. `refresh_live` builds the
 set from the recorder's OWN scoreboard call and `continue`s on failure, so if
 every scoreboard request fails, `live` ends up empty, `live_games = 0`, and
