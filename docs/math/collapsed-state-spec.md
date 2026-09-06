@@ -142,10 +142,50 @@ the recorder still down.
 **The limit, stated in the same terms as ABSENT's:** if the ESPN recorder is
 *also* down, `live_games` reads 0 and COLLAPSED goes quiet — it **fails
 quiet, not loud**. Visible in the table above: the 21:00Z hour reads 0 games
-only because the ESPN export begins at 22:08Z. The two recorders are separate
-containers, so one failure does not couple them, and an ESPN outage raises its
-own ABSENT. But a simultaneous loss of both is silent here, and no source in
-this system fixes that.
+only because the ESPN export begins at 22:08Z.
+
+### ★ Correction: I claimed an ESPN outage "raises its own ABSENT". It does not
+
+c7 caught this and it was an assumption I never checked. **Nothing monitors
+the ESPN CFB recorder.** `scripts/health.py`'s container list carries
+`meridian-cfb-recorder`, `meridian-cfb-live-recorder` and
+`meridian-gridiron-cfb-engine` — **not `meridian-cfb-espn-recorder`**, which
+is the container that writes `espn_cfb_game_state`. So a *single* ESPN failure
+silences COLLAPSED with nothing catching it, which is worse than the
+simultaneous-loss case I described: it needs one failure, not two.
+
+**And adding it to that list is necessary but not sufficient**, which is the
+sharper half. `health.py` checks container **names** — and a name collision is
+precisely what caused this incident. During the outage a container *called*
+`meridian-cfb-live-recorder` was running; it was the ESPN process wearing the
+price recorder's name. `docker ps` was green for seventeen hours. **Name-based
+monitoring cannot detect a name collision by construction**, so the fix is a
+write-rate check, the same instrument as COLLAPSED itself.
+
+**The ESPN recorder's own rate, measured** — its health signal, not its name:
+
+| hour | rows/game/hour |
+|---|---:|
+| 09-05 22:00Z → 09-06 06:00Z | **92 – 148**, median **108** |
+
+One state row per live game per **33s**, stable straight through the price
+outage. A cut anywhere well below 92 has the same corridor property as
+`LIVE_ROWS_PER_HOUR`.
+
+**Proposed dependency: the two recorders watch each other.** Each is the
+other's external expectation, and neither needs a schedule source:
+
+* prices live-cadence but **no** ESPN state → the ESPN recorder is down;
+* ESPN state present but **no** live-cadence prices → COLLAPSED, as specced.
+
+That closes the single-failure case c7 identified. **The residual is
+simultaneous loss of both**, which is genuinely undetectable from inside this
+system — one gap, one dependency further out than it was, and it should be
+written in ABSENT's words rather than a third time in mine.
+
+**Not demonstrated:** I can show this catching a price collapse while ESPN
+lives, because that is the incident. I have **no window where ESPN died and
+prices lived**, so the converse direction is designed and unverified.
 
 7-case adversary re-run on v2, all passing, including the slate-boundary case
 that killed v1 and the disabled-control.
