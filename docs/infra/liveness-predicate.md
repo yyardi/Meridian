@@ -32,10 +32,16 @@ def is_in_progress(event, *, now) -> bool | None:
     # 2. Any of these independently establishes in-progress.
     if st and st.live:
         return True
-    if st and st.period not in (None, ""):
-        return True                      # a period exists => play has begun
-    if st and st.score not in (None, ""):
+    # PERIOD IS AN ALLOWLIST, NOT A NON-EMPTY TEST. Measured domain across
+    # both leagues: 'NS' (not started), '' (pregame, state block present),
+    # 'Q1'..'Q4' (playing). An earlier draft of this spec used
+    # `period not in (None, "")`, which read 'NS' as evidence of play and
+    # fired on 87 future events including every NFL game six days out. Caught
+    # by observing the predicate live, not by review.
+    if st and _PLAYING_PERIOD.match(st.period or ""):
         return True
+    if st and st.score not in (None, "", "0-0"):
+        return True                      # '0-0' is posted pregame
     # 3. Schedule + elapsed, when the state block says nothing at all.
     start = _start_time(event.start_time)
     if start:
@@ -46,6 +52,10 @@ def is_in_progress(event, *, now) -> bool | None:
         return False                     # long past any plausible finish
     # 4. No state, no start time. UNDETERMINED.
     return None
+```
+
+```python
+_PLAYING_PERIOD = re.compile(r"^(Q[1-4]|OT\d*|H[12]|P\d+)$", re.I)
 ```
 
 `MAX_GAME_DURATION = 6h` — CFB runs 3.5–4h, plus overtime and weather delays.
