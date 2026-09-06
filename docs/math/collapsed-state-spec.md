@@ -178,10 +178,32 @@ other's external expectation, and neither needs a schedule source:
 * prices live-cadence but **no** ESPN state → the ESPN recorder is down;
 * ESPN state present but **no** live-cadence prices → COLLAPSED, as specced.
 
-That closes the single-failure case c7 identified. **The residual is
-simultaneous loss of both**, which is genuinely undetectable from inside this
-system — one gap, one dependency further out than it was, and it should be
-written in ABSENT's words rather than a third time in mine.
+That closes the single-*container* case.
+
+**The residual is not "simultaneous loss of both", and I framed it too
+gently.** That wording reads like a coincidence of two independent failures.
+It is not one. Verified in the compose files: both recorders are services in
+the same project, both `depends_on: postgres`, and both write
+`postgresql+psycopg://meridian:meridian@postgres:5432/meridian`. **They share
+a host, a docker daemon and a database, so a single failure at any of those
+layers takes both at once** — and host, daemon or DB death is the *most*
+likely outage mode here, not an exotic one. Mutual monitoring is blind to
+every one of them.
+
+**That layer already has an owner: the off-host deadman**, scoped by c7 and ce
+and sitting with the operator — a heartbeat written on each completed sweep
+and watched by something *not on this box*, on the constraint that a heartbeat
+emitted by the watched process and stored on the watched box dies with it. So
+the chain is three links, each covering the one below:
+
+| link | covers | status |
+|---|---|---|
+| COLLAPSED / ABSENT | one recorder dies, the other lives | specced here |
+| mutual rate monitoring | either recorder dies, **including under a stolen name** | specced here |
+| off-host deadman | the box, daemon or DB dies and takes both | **blocked on operator** |
+
+The gap is queued, not open. Point at the deadman spec rather than restating a
+hole that already has an owner.
 
 **Not demonstrated:** I can show this catching a price collapse while ESPN
 lives, because that is the incident. I have **no window where ESPN died and
