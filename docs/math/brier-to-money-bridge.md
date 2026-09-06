@@ -136,6 +136,48 @@ conditional ceiling (22.6pp RMS vs ~1.9pp τ) survives both — the route is wor
 
 ---
 
+## The fork collapses toward NFL — coverage confirmed, τ pending the book
+
+Option (b) rested on folklore — "the NFL winner market is liquid" — which this
+project has been burned by twice (the maker rebate, the 1.193¢ half-spread). So I
+measured it. On `trade_stats_20260906` (NFL markets that **traded**, 32 games,
+pregame boards for 2026-09-10…09-22):
+
+| NFL type | markets/game | games traded | notional |
+|---|---:|---:|---:|
+| **winner** | 1.0 | **32 / 32 (100%)** | **$139.4M** |
+| spread | 32.1 | 32 / 32 | $24.5M |
+| total | 32.0 | 32 / 32 | $50.7M |
+
+The NFL **winner market is the most-traded type** — 100% of games, $139M notional,
+more than spread and total combined. That is the **opposite** of CFB (c7: 7 winner
+price rows on the whole 31-game cohort). Folklore **confirmed, for pregame
+trading**. And it is **competitively priced** (winner last-trade px5–px95 =
+0.19–0.69, median 0.375, **56% in [0.35, 0.65]**), so it carries the outcome spread
+c7's degenerate 13-of-14 cohort lacked — a venue Brier there would not be
+degenerate. **So the winner identity transfers to NFL without a new model** (the
+cheap branch): on CFB the identity is blocked by thin coverage + blowout pricing;
+on NFL it fits the liquid, competitive market it was built for.
+
+**Two caveats keep this a coverage result, not yet a τ:**
+1. This is **trade** data (last-trade px + notional) — it establishes coverage,
+   liquidity and competitiveness but **not the bid-ask τ**. τ needs the NFL **book**
+   (`market_snapshots`, ~114k rows) — prod-only; SSH is classifier-blocked for me
+   and no local book export carries NFL. It needs a pull like `cfb_prices_tonight`
+   (columns: `market_slug, captured_at, best_bid, best_ask, is_live, game_id,
+   sports_market_type`).
+2. It is **pregame** (09-05 trading on 09-10+ games). The **in-game** NFL winner
+   spread — what PULSE would actually trade — is unmeasured; a1's live NFL recorder
+   is untested until the opener (2026-09-10 00:20Z). "NFL winner is liquid and
+   competitive" is a **pregame** statement; the in-game τ follows the opener.
+
+**Fork status: collapsed on coverage.** Option (b) is viable and cheaper (no new
+model); option (a) still needs d5's spread/total instrument question. "Winner
+identity → NFL" is supportable now on coverage + competitiveness; the τ half —
+pregame from the book, in-game from Wednesday — is the remaining measurement.
+
+---
+
 *Populations: B's Brier is CFB, 31 games, out-of-fold, loose predicate, 90.3% home.
 τ: CFB winner is G=1 (tonight, blowout) so unmeasured at p≈0.5; WNBA winner ~1.93pp
 is the only competitive-price proxy. Mapping and τ surface from
