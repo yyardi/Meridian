@@ -9,6 +9,37 @@ it** — 25× smaller than the interval's own width. The problem is not that the
 model falls short of the threshold. It is that **the instrument we have been
 using cannot resolve a tradeable edge at all.**
 
+## ⚠️ THE HALF-SPREAD INPUT IS UNSOURCED, AND ITS REPLACEMENT IS UNLABELLED
+
+**Do not quote τ to three digits.** Every number on this page scales off one
+input, `s = 1.193¢`, and that input has no owner. c7 states it is not theirs and
+that they never measured it; neither c7 nor A can source it. **It nonetheless
+sets the published 57.8% breakeven floor.**
+
+A measured the WNBA book directly and gets **~2.0¢**. That should replace it —
+except the replacement has the same defect the original had, one level up:
+**it has been described to me as both a half-spread and a full spread in
+successive messages, and the two readings move τ in opposite directions.**
+
+| reading of the spread input | τ at p = 0.50 |
+|---|---:|
+| 1.193¢ half — this page, unsourced | **2.69 pp** |
+| 2.0¢ read as **half** | **3.50 pp** |
+| 2.0¢ read as **full** (→ 1.0¢ half) | **2.50 pp** |
+
+So the correction could raise τ by 0.8 pp or lower it by 0.2 pp, and nothing
+available to me decides which. **A spread quoted without "full" or "half"
+attached is not a measurement, it is two measurements.** That is the same
+label-the-policy failure this project has hit on estimators and on P&L
+conventions, arriving on a venue microstructure constant.
+
+**What survives regardless, and it is the argument this page is for:** every
+reading leaves τ in the 2.5–3.5 pp band, an order of magnitude above the
+0.0007-scale Brier improvements the accuracy work resolves, and above the
+1.20 pp that λ* = 0.15 buys. **The direction of every conclusion below is
+unchanged; only the third digit moves.** A larger τ makes clearing harder, so a
+correction upward strengthens the negative results rather than weakening them.
+
 ## The threshold
 
 Hold-to-settlement, so **there is no exit leg**: a binary contract settles at 0
