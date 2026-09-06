@@ -258,3 +258,63 @@ The ladder is the object, not the 58:
 
 And **09-12 gates all of it** — every date assumes a 94% capture rate measured
 on WNBA and applied to football, which Saturday tests.
+
+---
+
+# ★ RETRACTION: "the bets we wanted are the ones nobody would take"
+
+That sentence is **wrong** and D's decomposition is right. Tested on my own
+data before accepting it.
+
+## The direct test my claim implies, which D's mechanism predicts and I did not run
+
+If a counterparty were selecting against us, **the filled arm's OUTCOMES would
+be worse.** They are not:
+
+    FILLED     n 1,944   settlement rate 40.2%   P&L +4.761pp
+    WITHDRAWN  n 1,030   settlement rate 39.6%   P&L +10.878pp
+
+**Near-identical outcome rates, a 6pp P&L gap.** Adverse selection shows up in
+outcomes; this shows up only in prices:
+
+    FILLED     limit sits +3.00pp better than the mid at decision
+    WITHDRAWN  limit sits +3.91pp better
+
+**The arms differ in where the limit sat, not in what happened.** That is
+mechanical sorting by price direction, exactly as D measured (fills −4.545¢
+against, withdrawals +3.713¢ in favour, 8.3¢ swing growing with the window).
+
+## Why the withdrawn arm was never admissible
+
+**Zero withdrawn rows have a `filled_at`** — by construction. Their P&L is *"what
+if this had filled at its limit"*, and it did not fill **because the price left
+that limit.** A resting bid fills when price comes down to it and is withdrawn
+when price moves up away — so **withdrawal selects for the limit being
+favourably placed before any skill enters.** The counterfactual is evaluated at
+a price that was never available.
+
+That is the same family as everything else here: **the arm's advantage is forced
+by the rule that defines the arm.** I spent the day finding that shape and then
+published an instance of it.
+
+## ★ WHICH READING I STAND BEHIND
+
+**The conservative one.** At G=34 the branch comparison cannot separate the
+halves, and the P&L split adds no evidence of adverse selection. ce should make
+that the STATUS version.
+
+**And the remedies are opposite, which is why it matters more than a wording
+fix.** "Counterparty picking us off" argues for quoting less or wider.
+"Price moved before the trade could happen" argues for queue position and
+latency. Acting on the wrong one would have been expensive.
+
+## What is unaffected, so it does not get swept up
+
+* **The FILLED arm's +4.761pp [−1.455, +10.978] is a real measurement on real
+  trades at real prices.** It is not a counterfactual and it stands.
+* **The 58-game accrual estimate depends only on the filled arm**, not on the
+  comparison between arms. Unaffected.
+* **Rule 2's defect stands**: 46% of intents never filling is real, and a
+  per-fill haircut does not correct it. What D closes is the proposed *fix* —
+  reweighting toward the unfilled arm — because that arm is the one population
+  guaranteed to flatter us. **The problem survives; the remedy does not.**
