@@ -59,3 +59,51 @@ comes back.
 with a WNBA proxy near 3.0–3.75pp, and A is measuring the real one tonight.
 Brier differences are not money either way; that conversion needs the traded
 subset, which this cohort does not have.
+
+---
+
+# RESULT — run once, decision rule applied
+
+    POOLED              -0.01119 [-0.04316, +0.02077]  G=28  hw 0.0320
+
+    subset                 n    G      diff            95% CI       hw    proj
+    4th down             387   28  -0.02015 [-0.0556,+0.0153]   0.0355  0.0320
+    red zone             473   27  -0.02184 [-0.0663,+0.0226]   0.0445  0.0320
+    two-score, 2nd half  917   14  -0.03898 [-0.1003,+0.0224]   0.0613  0.0437
+    3rd and long         315   28  -0.01196 [-0.0477,+0.0238]   0.0358  0.0320
+    late (<=5 min)       395   25  -0.09277 [-0.2107,+0.0252]   0.1179  0.0339
+
+    cells inspected 5 | clearing zero uncorrected 0 | Bonferroni 0
+
+## ★ NO SUBSET FOUND — and the pre-registered words apply
+
+**Zero of five clear zero, uncorrected or corrected.** The registered
+expectation was *"insufficient power to tell"* and that is the result.
+
+**And it is stronger than that: every point estimate is negative.** The model is
+at or behind ESPN in all five subsets, so this is not a case of an edge hiding
+somewhere the pooled test could not see. The worst cell is the one most likely
+to be traded — **late game, −0.09277** — where a live model would be expected to
+earn if anywhere.
+
+## ★ MY NAMED ASSUMPTION FAILED, IN THE PESSIMISTIC DIRECTION
+
+I projected on constant between-game variance and flagged that a subset could
+come in **tighter**. **Every subset came in WIDER**, and the late cut by 3.5x
+(0.1179 against 0.0339 projected).
+
+**Between-game variance RISES under within-game subsetting**, which is the
+opposite of the escape route I left open. Late-game plays are where games
+diverge, so the per-game means spread out exactly where the row count falls —
+both effects push the same way. **The structural argument was right and my
+quantification of it was too kind.**
+
+## What this closes and what it does not
+
+**Closes:** there is no identifiable, ex-ante, football-structural subset of
+this cohort on which the plays-only model beats ESPN. That is not "we could not
+find one by searching" — the five were declared in a commit before the run.
+
+**Does not close:** whether a market feature changes any of it. This model has
+no price input. d5's frozen-anchor architecture is the next fit, and its
+baseline is the pooled −0.01119 above rather than anything in this table.
