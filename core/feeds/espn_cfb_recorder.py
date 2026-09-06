@@ -193,7 +193,12 @@ def parse_game_state(payload: dict, game_id: str) -> dict | None:
     header = payload.get("header") or {}
     comps = header.get("competitions") or []
     if not comps:
-        return None
+        # RAISE rather than return None. Returning None left ns=0 with no
+        # exception, so the cycle looked partially healthy and the log named
+        # no cause. D's rule fires either way -- state_rows < live_games --
+        # so this is DIAGNOSIS, not detection: it makes the log say which
+        # game and why instead of silently skipping one.
+        raise ValueError(f"summary for {game_id} has no header.competitions")
     c = comps[0]
     status = c.get("status") or {}
     def _i(v):
@@ -268,6 +273,7 @@ class CfbLiveRecorder:
         self.league = league
         self._live: set[str] = set()
         self._last_board = float("-inf")
+        self._scoreboard_failures = 0
 
     def _board_dates(self, now: dt.datetime) -> list[str]:
         et = now.astimezone(_ET)
@@ -279,12 +285,20 @@ class CfbLiveRecorder:
             return self._live
         self._last_board = time.monotonic()
         live: set[str] = set()
+        # A TOTAL SCOREBOARD FAILURE MUST NOT READ AS "no games live".
+        # Every request failing leaves `live` empty, and NOT_WRITING
+        # (live_games > 0 AND plays_attempted == 0) then cannot fire -- the
+        # recorder would hide a write failure by failing one step earlier.
+        # Counted, reported, and the cached set is NOT overwritten when
+        # nothing succeeded, so we do not also forget what we knew.
+        attempts = failures = 0
         for date_str in self._board_dates(now):
             # UNION OVER GROUPS. ESPN's CFB scoreboard defaults to groups=80
             # (FBS) and silently drops FCS -- measured, that was every live
             # game on 2026-09-06 and this recorder saw zero for three hours.
             # NFL has no groups gate, so its tuple is (None,).
             for grp in SCOREBOARD_GROUPS.get(self.league, (None,)):
+                attempts += 1
                 params = {"dates": date_str, "limit": 200}
                 if grp is not None:
                     params["groups"] = grp
@@ -292,6 +306,7 @@ class CfbLiveRecorder:
                     board = self._client.get(
                         self._client._site("scoreboard"), params=params)
                 except Exception as exc:
+                    failures += 1
                     log.warning("espn_scoreboard_failed", league=self.league,
                                 date=date_str, groups=grp, error=str(exc))
                     continue
@@ -299,6 +314,13 @@ class CfbLiveRecorder:
                     st = ((ev.get("status") or {}).get("type") or {})
                     if st.get("state") == "in":
                         live.add(str(ev["id"]))
+        self._scoreboard_failures = failures
+        if failures and failures == attempts:
+            # Nothing succeeded: keep the previous set rather than replacing a
+            # known state with an unmeasured empty one.
+            log.error("espn_scoreboard_all_failed", league=self.league,
+                      attempts=attempts, keeping_previous=len(self._live))
+            return self._live
         self._live = live
         return live
 
@@ -342,6 +364,7 @@ class CfbLiveRecorder:
             except Exception as exc:
                 log.warning("cfb_summary_failed", game_id=gid, error=str(exc))
         log.info("espn_cycle", league=self.league, live_games=len(live),
+                 scoreboard_failures=self._scoreboard_failures,
                  plays_attempted=tot_p, wp_attempted=tot_w,
                  state_rows=tot_s)
         return {"live": len(live), "plays": tot_p, "wp": tot_w, "state": tot_s}
