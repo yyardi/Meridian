@@ -15,7 +15,7 @@ builder matches ESPN events against venue games *on the tape*, and the tape
 does not have them yet.
 
 ```bash
-python3 scripts/build_cfb_game_map.py --days 2 --dry-run
+python3 scripts/build_cfb_game_map.py --days 2 --dry-run   # on main
 ```
 
 Read-only. Prints matched / unmatched with confidences. **The DB write is the
@@ -31,7 +31,21 @@ were FCS-only and 5 were FBS-vs-FBS. Do not scope by division.
 
 ## T-30 · readiness check
 
-`analysis/staged/slate_readiness.py`. **Four lines, never one green/red:**
+**This file is NOT on main.** It lives only on
+`worktree-quant-d-loss-decomposition` (3 commits, local branch, no remote), so
+running it from a main checkout is a file-not-found — and `analysis/staged/`
+does not exist on main at all. Either check that branch out, or:
+
+```bash
+git show worktree-quant-d-loss-decomposition:analysis/staged/slate_readiness.py > /tmp/slate_readiness.py
+python3 /tmp/slate_readiness.py
+```
+
+Merging it is the operator's call and is on the blocked queue. **The runbook
+works either way** — discovering this at T-30 on the one morning it matters is
+the failure this note prevents.
+
+**Four lines, never one green/red:**
 
 ```
 BOARD   n games listed by the venue      (the tradeable set)
@@ -185,6 +199,27 @@ State this before anyone reads a green T-30 as a guarantee.
   tables.
 
 ---
+
+## Every invocation, with the ref that provides it
+
+**A path without a ref is an instruction that works in exactly one person's
+working tree.** Verified 2026-09-06:
+
+| what | path | ref |
+|---|---|---|
+| map rebuild | `scripts/build_cfb_game_map.py` | **main** |
+| readiness check | `analysis/staged/slate_readiness.py` | **`worktree-quant-d-loss-decomposition` only — NOT main** |
+| venue movement check | inline SQL, this document | — |
+| ESPN check | `docker logs meridian-cfb-espn-recorder` | — |
+
+*Re-verify before Saturday.* Branches merge and move.
+
+**And a warning about how to verify it.** A `for-each-ref` sweep looking for the
+file returned **0 refs across 221** — a false zero, for a file that is
+demonstrably on one of them. Two people hit this within ten minutes tonight.
+Cross-check any "not found anywhere" with `git log --all -- <path>`, which found
+the 3 commits the sweep missed. **A search returning nothing is a claim about
+your search.**
 
 ## If something is wrong
 
