@@ -98,3 +98,23 @@ def test_a_wider_scale_flattens_the_ladder():
     narrow = MarginScale(10.0, 0.0, line_range=(0, 50), n_games=9, corr=0.0)
     wide = MarginScale(20.0, 0.0, line_range=(0, 50), n_games=9, corr=0.0)
     assert cover_probability(0.0, 14.0, narrow) > cover_probability(0.0, 14.0, wide) > 0.5
+
+
+def test_sigma_is_one_number_per_game_not_one_per_rung():
+    """The argument is the GAME's spread. Feeding a rung's line back in would
+    give a different width per rung, denying the single-distribution assumption
+    the ladder is being used to test."""
+    m = MarginScale.fit(_scales([14, 15, 16, 17, 18, 19], [5, 10, 20, 30, 40, 45]))
+    game_spread = -20.0
+    s = m.sigma(game_spread)
+    # every rung on this game's ladder prices from the SAME width
+    for rung in (-27.5, -24.0, -20.0, -16.5, -13.0):
+        assert cover_probability(rung, -game_spread, m) == pytest.approx(
+            norm.cdf((-game_spread + rung) / s))
+
+
+def test_the_ladder_is_monotone_in_the_line():
+    """Whatever sigma is, a bigger cushion must never price lower."""
+    m = MarginScale.fit(_scales([14, 15, 16, 17, 18, 19], [5, 10, 20, 30, 40, 45]))
+    p = [cover_probability(L, 20.0, m) for L in range(-35, 6, 5)]
+    assert all(b > a for a, b in zip(p, p[1:]))
