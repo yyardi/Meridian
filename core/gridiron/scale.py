@@ -49,6 +49,38 @@ that matters, since the cohort is 14 games:
 
 Intercept 13.1-13.6, slope 0.094-0.123 across all of them.
 
+**And it is not an artifact of one-sided ladders**, which is the confound worth
+naming: a lopsided game's ladder carries rungs only BELOW its crossing, and a
+tail-only fit would inflate sigma if the true tail were fatter than normal --
+manufacturing exactly this positive slope. Refitting with every game trimmed to
+a SYMMETRIC window around its own crossing:
+
+    window     games   slope    intercept   corr
+    none         14    0.1182     13.19     0.948
+    +/-30 pts     9    0.1171     13.27     0.862
+    +/-20 pts     9    0.1256     13.09     0.897
+    +/-12 pts     9    0.1180     13.22     0.868
+
+The slope is unchanged. **But symmetry costs the lopsided games**: the line
+range collapses from 7.9-49.7 to 7.8-27.7. So the relation is independently
+confirmed between roughly 8 and 28 points of spread, and beyond 28 it rests on
+ladders that are one-sided by construction -- the venue lists a fixed span of
+lines, so a game whose crossing sits at 49.7 has no rungs above it.
+
+**Power lives in the wings, and the wings are where the board is thinnest.**
+Under probit, sigma has EXACTLY ZERO effect at the money and peaks about one
+sigma out (~15.7 points). Interior rungs by distance from their own crossing:
+
+    |L - L0| >=  5    243 of 313   (77.6%)
+    |L - L0| >= 10    184          (58.8%)
+    |L - L0| >= 15    126          (40.3%)
+    |L - L0| >= 25     24           (7.7%)
+
+Requiring >=3 rungs at |L - L0| >= 10 on BOTH sides admits **4 of 14 games**,
+and all four are near-even (crossing 7.9-13.7). Requiring it on at least one
+side admits all 14. A two-sided rule and a wide line range are in direct
+tension on this board.
+
 **A side effect worth knowing: fitting the ladder retires the bracket filter.**
 `fit.spread_anchor` interpolates to the P(YES)=0.5 crossing and therefore needs
 the ladder to bracket it, which dropped 2 games in 14. A probit fit recovers
@@ -146,10 +178,23 @@ class MarginScale:
         return cls(float(intercept), float(slope), line_range=(float(x.min()), float(x.max())),
                    n_games=len(d), corr=float(np.corrcoef(x, d.sigma.values)[0, 1]))
 
-    def sigma(self, line: float | np.ndarray) -> float | np.ndarray:
-        a = np.clip(np.abs(np.asarray(line, dtype=float)), *self.line_range)
+    def sigma(self, game_spread: float | np.ndarray) -> float | np.ndarray:
+        """Width of THIS GAME's margin distribution, in points.
+
+        **The argument is the GAME's spread, never a rung's line.** For one
+        game there is exactly one sigma — it is the width of one margin
+        distribution, and every rung on that ladder is priced from it. Feeding
+        a rung's line back in would give a different sigma per rung, which
+        denies the single-distribution assumption the ladder is being used to
+        test. The line-dependence measured here is ACROSS games, not across
+        rungs within one.
+
+        A scalar per game is therefore sufficient, once it is computed from
+        that game's own spread.
+        """
+        a = np.clip(np.abs(np.asarray(game_spread, dtype=float)), *self.line_range)
         out = self.intercept + self.slope * a
-        return float(out) if np.ndim(line) == 0 else out
+        return float(out) if np.ndim(game_spread) == 0 else out
 
     def __repr__(self) -> str:
         return (f"MarginScale(sigma = {self.intercept:.2f} + {self.slope:.4f}*|line|, "
