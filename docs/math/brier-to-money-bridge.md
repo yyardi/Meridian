@@ -171,10 +171,35 @@ on NFL it fits the liquid, competitive market it was built for.
    is untested until the opener (2026-09-10 00:20Z). "NFL winner is liquid and
    competitive" is a **pregame** statement; the in-game τ follows the opener.
 
-**Fork status: collapsed on coverage.** Option (b) is viable and cheaper (no new
-model); option (a) still needs d5's spread/total instrument question. "Winner
-identity → NFL" is supportable now on coverage + competitiveness; the τ half —
-pregame from the book, in-game from Wednesday — is the remaining measurement.
+**Pregame NFL τ, measured** (registered estimator, per-snapshot, round-to-tick, on
+`nfl_book_20260906T231647Z` — all 234,972 rows **PREGAME**, earliest kickoff Wed;
+`is_live` is text `'t'/'f'`, all `'f'` here):
+
+| NFL type (pregame) | half med | half mean | median mid | τ(median) | τ(mean) |
+|---|---:|---:|---:|---:|---:|
+| **winner** | 0.25¢ | 0.50¢ | 0.372 | **1.65pp** | 1.91pp |
+| spread | 1.00¢ | 4.59¢ | 0.400 | 2.44pp | 6.03pp |
+| total | 0.50¢ | 2.02¢ | 0.500 | 2.00pp | 3.52pp |
+
+Winner in the competitive band [0.35, 0.65] (n=1,278): half 0.25¢ med / 0.42¢ mean
+→ **τ ≈ 1.75–1.92pp** at p=0.5. So the NFL **pregame** winner bar is **~1.7–1.9pp**,
+matching the WNBA winner proxy (~1.93pp) — the winner τ is fee-dominated near
+competitive prices in both leagues. **Pregame only**; the in-game winner spread
+PULSE trades is Wednesday's opener, and only if a1's live recorder holds.
+
+**Fork status — NOT a collapse to one branch (d5's correction).** My earlier
+"transfer to NFL, cheaper than a spread model" was too strong. d5 answered the
+instrument question by measurement, and the case for (a) is **not** coverage — it is
+**falsifiability**: on a **single line** (the winner, or one spread line) the
+identity's distributional assumption is **unobservable**, nothing can show it wrong;
+a **ladder** of ~40 spread lines that must move *consistently* turns a wrong
+distribution into a visible **shape error**. NFL winner markets are **single-line
+too**, so (b) buys a liquid, competitively-priced, outcome-balanced venue — real,
+and established here with a pregame τ of ~1.7–1.9pp — but **not** falsifiability. The
+branches answer different questions: **NFL gives a market to test the identity
+AGAINST; the spread ladder gives an assumption that can be shown WRONG.** Both are
+worth having. My measurement shows (b)'s venue is sound (pregame); it does **not**
+settle the branch, and I was wrong to imply it did.
 
 ---
 
