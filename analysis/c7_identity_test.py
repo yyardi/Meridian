@@ -9,14 +9,29 @@ memorise the 22 distinct anchor values that destroyed the state+anchor GBM.
 ## THE RESULT — LOOSE settled predicate, export 20260906T174104Z, G = 31
 
     n 14,458 in-progress rows        BRIER, lower is better    G   predicate
-    base rate (90.3% home)   0.09856                           31  LOOSE
+    base rate, OUT-OF-FOLD   0.10338                           31  LOOSE
     anchor only, 0 params    0.04991                           31  LOOSE
     ESPN public number       0.05404                           31  LOOSE
-    c7 identity, 0 params    0.02948                           31  LOOSE
+    c7 identity, 0 params    0.02949                           31  LOOSE
 
-    identity vs ESPN           +0.02456 [-0.00890, +0.05801]  SPANS 0   wins 29/31
-    identity vs anchor alone   +0.02043 [+0.00100, +0.03986]  EXCLUDES 0 wins 30/31
-    identity vs base rate      +0.06908 [-0.01354, +0.15169]  SPANS 0   wins 28/31
+    identity vs ESPN           +0.02455 [-0.00891, +0.05800]  SPANS 0   wins 29/31
+    identity vs anchor alone   +0.02042 [+0.00099, +0.03984]  EXCLUDES 0 wins 30/31
+    identity vs base rate      +0.07389 [-0.01220, +0.15997]  SPANS 0   wins 28/31
+
+The base rate is OUT-OF-FOLD. An earlier version fitted it on the outcomes it
+scored, which read 0.09856 — a control that already knows the answer. ce caught
+it after c7 hit the same thing. **Note the direction: the in-sample control
+flattered ITSELF, so correcting it widened my own margin (+0.06908 -> +0.07389)
+and touched neither model-to-model comparison.** Third defect of mine tonight
+that ran in the direction of understating my own result.
+
+**Leave-one-out, on ce and c7's outcome-spread criterion:** identity-vs-ESPN
+moves within +0.01908 .. +0.03887 around +0.02455, worst single-game swing
+0.01432, largest single game 25.5% of the statistic (c7's degenerate baseline
+saw 47% and moved 0.1245 -> 0.0708). **The SIGN is robust to dropping any one
+game; the MAGNITUDE is not** — one game is worth 58% of the point estimate. With
+28 of 31 games home wins, a lopsided Saturday slate will not fix this: a venue
+baseline needs a spread of OUTCOMES, not just more rows.
 
 **It ties ESPN.** ce's second branch, not the first. But the narrowing is the
 OPPOSITE of "ESPN's delta adds nothing the anchor already implies": the delta is
@@ -169,6 +184,8 @@ import sys
 import numpy as np
 import pandas as pd
 
+from sklearn.model_selection import GroupKFold
+
 from core.quote.adverse_selection import clustered_mean
 
 STATE = "backups/exports/espn_cfb_game_state_20260906T174104Z.csv.gz"
@@ -232,7 +249,14 @@ def build(S: pd.DataFrame, loose: bool) -> pd.DataFrame:
     D["ident_0"] = sigmoid(logit(D.anchor) + logit(D.espn_home_win_pct) - logit(D.espn_k))
     # Control that can fail: 90.3% home wins, so a constant at the base rate is the
     # thing the anchor must beat before "the market prior is informative" means anything.
-    D["base_rate"] = D.groupby("gid").y.first().mean()
+    # OUT-OF-FOLD, on training games only. An in-sample base rate is fitted on the
+    # outcomes it scores and flatters itself: it read 0.09856 against 0.10338 here,
+    # which UNDERSTATES every model's margin over it. c7 hit the same thing and ce
+    # flagged it for me. Note the direction -- this correction widens my own margin.
+    D["base_rate"] = np.nan
+    gg = D.gid.to_numpy()
+    for tr, te in GroupKFold(5).split(D, D.y, gg):
+        D.iloc[te, D.columns.get_loc("base_rate")] = D.iloc[tr].groupby("gid").y.first().mean()
     for c in COLS:
         D["b_" + c] = (D[c] - D.y) ** 2
     return D
