@@ -44,11 +44,45 @@ scheduled window because some game is nearly always genuinely in progress.
 
 A game with few markets may legitimately produce zero rows in a short interval.
 
-**Fix:** an expected-rows floor, `numMarkets × cadence × interval`, alarming
-only below some fraction of it. `marketCounts.numMarkets` (241 on a typical CFB
-game) comes from **the venue's own events payload**, so it is available at
-schedule-fetch time and does **not** come from our write stream — which is the
-whole constraint the evaluator exists to satisfy.
+**Fix:** an expected-rows floor. **Measured on the healthy 09-05 18:00–22:00Z
+window, 425 intervals across 32 games**, rather than assumed:
+
+| | p01 | p05 | p50 |
+|---|---:|---:|---:|
+| all intervals | 8.4 | 50.9 | 81.7 |
+| **edge** (game's first/last) | 2.4 | 6.6 | 75.1 |
+| **interior** | **60.7** | **67.3** | **82.0** |
+
+*(rows per recorded market per 10-minute interval)*
+
+**The entire left tail is the partial-interval effect.** A game starting or
+ending mid-interval legitimately under-counts. Excluding edges moves the usable
+floor from ~8 to ~60 — and with edges included, a floor low enough to avoid
+false alarms would sleep through a 90% outage.
+
+**So an interval is evaluated only if the game was in progress for all of it.**
+Edge intervals yield `UNKNOWN`, never `ALARM`. Same three-state discipline as
+everything else here.
+
+### The denominator must not come from our own tape
+
+The obvious denominator is *markets we recorded*. **It is disqualified, and the
+reason is the one this whole design exists for:** if the recorder drops half
+its markets, the numerator and denominator both halve and the ratio is
+unchanged. The metric would be structurally blind to exactly the failure it is
+built to catch.
+
+So the denominator is `marketCounts.numMarkets` from **the venue's events
+payload** — available at schedule-fetch time, independent of our write stream.
+
+It over-predicts: 241 listed against 145.5 actually recorded, a factor of 1.66.
+That is not a defect to fix but a constant to calibrate through. Interior p01 of
+60.7 rows per *recorded* market becomes **36.6 per listed market**, so:
+
+**Floor ≈ 30 rows per listed market per 10-minute interval** — below the
+measured healthy p01 with ~20% margin.
+
+Recalibrate if the recorder's cadence changes; the number is a function of it.
 
 ## Source 3: the venue may not list the game at all
 
