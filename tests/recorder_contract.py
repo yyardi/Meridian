@@ -152,6 +152,27 @@ def judge(cycle: Cycle) -> Verdict:
                     "reason there is no work may be the error")
         return v
 
+    # ★ SOURCE DEATH: the INSTRUMENT stops reporting, not the world.
+    #
+    # Every rule below iterates `cycle.writes`. With an empty tuple none of
+    # them can fire, so a recorder that stops reporting counters entirely used
+    # to return OK while two games were live — found by running c7's
+    # source-death treatment against this contract rather than against the
+    # world it watches. It is the same defect as `alarm_v5` doing
+    # `for row in rows` with no expected-league set, which I found in someone
+    # else's code hours before shipping it in my own.
+    #
+    # UNKNOWN rather than FAULT, deliberately: work existed and no evidence
+    # either way was reported, so we cannot tell whether the work was done.
+    # FAULT would claim knowledge we do not have. What matters is that it is
+    # not OK.
+    if not [w for w in cycle.writes if w.countable]:
+        unknown("NO_INSTRUMENTATION",
+                f"{cycle.work_identified} work-item(s) identified and NOT ONE "
+                "countable writer reported — the instrument stopped reporting, "
+                "which is indistinguishable from doing nothing and must not "
+                "read as healthy")
+
     # Work exists. Two writers make zero unambiguous, for different reasons:
     # ATTEMPTED counts rows BUILT (no dedupe confound at all), and APPEND_ONLY
     # writers do not dedupe. Either reporting zero is a fault.
