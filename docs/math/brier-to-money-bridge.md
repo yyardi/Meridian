@@ -96,6 +96,46 @@ compare to `τ(type, price)` at each trade, money `= E[(|edge| − τ)⁺]`. Unt
 
 ---
 
+## Update: coverage re-sites the conclusion — the winner route is blocked
+
+Requirement 1 is not merely missing, it is **infeasible on CFB**: c7's feasibility
+on B's cohort is 31 games → 19 in the game map → 3 with live winner prices →
+**7 winner price rows total.** The cause is structural — the identity is a
+**winner-market** model, and the venue barely runs a CFB winner market:
+
+| CFB market type | markets/game (100-game tape) | live coverage (2 games tonight) | τ at competitive price |
+|---|---:|---:|---|
+| winner (aec) | **1.3** | 3 markets / 4.9k rows | ~0.5pp @ blowout; **p=0.5 unmeasured** |
+| spread (asc) | **45.5** | 73 markets / 28k rows | CFB ~2.0pp (G=1) / WNBA ~3.5pp |
+| total (tsc) | **36.5** | 35 markets / 23k rows | CFB ~3.5pp (G=1) / WNBA ~3.5pp |
+
+(Matches d5's board: 70 moneyline vs 8,088 spread / 6,425 total.) The instrument (a
+winner-market model) and the market (spread/total, where the venue is liquid) **do
+not overlap on CFB**. So the winner route is blocked by coverage, and the very
+measurements that would settle it cannot be taken there. **This reframes the
+bridge's conclusion: it is not "three measurements away", it is "the winner route
+cannot be measured or traded on CFB."**
+
+**Spread and total have the coverage the winner lacks** (34× and 28×), and both sit
+near p=0.5 (median mid 0.46–0.51), so their τ pairs with the p=0.5 fee cleanly — no
+blowout-price gap. So on spread/total, `Brier(venue)` **is** computable and the τ is
+already measured; the re-siting is feasible **on coverage and bar**.
+
+**What remains is the instrument question, and it is d5's, not mine:** is a
+spread/total analogue of the win-probability identity **definable**? A win-prob
+model yields P(home wins); pricing a spread market needs a **margin distribution**
+and a total needs a **total distribution** — a different model, not a re-label. I
+have measured that the coverage and the bar exist there; whether the identity
+transfers onto them is d5's call.
+
+**Two design options, three days before the NFL opener:** (a) re-site the identity
+onto CFB **spread/total** (coverage ✓, τ ✓, instrument = d5's question); (b) take
+the **winner** identity to **NFL**, where the winner market is the liquid one. The
+conditional ceiling (22.6pp RMS vs ~1.9pp τ) survives both — the route is worth
+**re-siting, not abandoning**.
+
+---
+
 *Populations: B's Brier is CFB, 31 games, out-of-fold, loose predicate, 90.3% home.
 τ: CFB winner is G=1 (tonight, blowout) so unmeasured at p≈0.5; WNBA winner ~1.93pp
 is the only competitive-price proxy. Mapping and τ surface from
