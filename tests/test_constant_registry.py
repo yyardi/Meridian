@@ -187,3 +187,71 @@ def test_the_registry_floor_matches_what_is_registered():
     from constant_registry import REGISTRY_FLOOR
 
     assert len(REGISTRY) >= REGISTRY_FLOOR
+
+
+#: The pooled adverse anchor: the published making floor's numerator, and the
+#: labelled case this gate is calibrated against. Every field below is the real
+#: one. c7 produced the case; the two figures were re-derived here from the
+#: pinned export rather than taken on report -- which is the point, since a
+#: calibration control needs a labelled set the instrument under test did not
+#: make.
+_ANCHOR = dict(
+    dataset="quote_fills_classified_20260906T024500Z.csv",
+    column="pnl",
+    method="mean adverse move on guarded fills",
+    population="pop=='real' AND (onesided<0.65 OR n<4) per (game_id, market_slug)",
+    n=22062,
+)
+
+
+def test_the_real_adverse_anchor_is_rejected_without_its_aggregation():
+    """★ CALIBRATION, against a case this instrument did not produce.
+
+    Same 22,062 guarded fills over 48 games, same `pnl`, same predicate:
+
+        fills-weighted mean         -1.634c   <- published, and correct
+        equal-weight per-game mean  -2.626c   <- what scripts/sandbox.py:99-103
+                                                 actually computes
+        gap 0.993c, and the floor moves by roughly 11pp
+
+    Both are right about their own question. r* = |A|/(H+|A|) is per-fill on
+    both sides, because H = s_q/2 is per-fill, so the anchor has to be
+    fills-weighted; sandbox.py was written for a game-clustered question and is
+    not wrong. The CITATION was wrong: it named a source without naming a
+    statistic.
+
+    The entry below carries dataset, column, method, n AND the population
+    predicate. It satisfied every rule this gate had, and it still does not
+    reproduce -- anyone re-running the named source gets -2.626c and concludes
+    the published figure is wrong. Finding the predicate was not enough; c7
+    HAD the predicate and still failed to reproduce.
+    """
+    c = Constant("FLOOR_GAMES", 10, "core/pulse/live_report.py", Kind.MEASURED,
+                 **_ANCHOR)
+    bad = gate((c,), tracked=TRACKED)
+    assert any("without naming the AGGREGATION" in b for b in bad), bad
+
+
+def test_the_real_adverse_anchor_is_rejected_without_its_column():
+    """`ba-bb` (the gap that makes the artifact) and `s_q` (what we actually
+    earn) are both "the spread". Substituting one for the other reversed a
+    making close while every population claim in the entry stayed correct."""
+    fields = {k: v for k, v in _ANCHOR.items() if k != "column"}
+    c = Constant("FLOOR_GAMES", 10, "core/pulse/live_report.py", Kind.MEASURED,
+                 aggregation="fills-weighted mean", **fields)
+    bad = gate((c,), tracked=TRACKED)
+    assert any("without naming the COLUMN" in b for b in bad), bad
+
+
+def test_the_complete_anchor_entry_passes():
+    """The gate must ACCEPT the fully-specified entry.
+
+    Without this the two rejections above are satisfied by a gate that refuses
+    everything, which reports exactly as much as one that refuses nothing --
+    the same always-red blindness as a guard that never goes green.
+    """
+    c = Constant("FLOOR_GAMES", 10, "core/pulse/live_report.py", Kind.MEASURED,
+                 aggregation="fills-weighted mean", **_ANCHOR)
+    bad = gate((c,), tracked=TRACKED)
+    assert not any("AGGREGATION" in b or "COLUMN" in b or "POPULATION" in b
+                   for b in bad), bad

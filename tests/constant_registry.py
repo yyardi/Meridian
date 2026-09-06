@@ -15,7 +15,8 @@ WHAT THIS GATES (hard failures — these are properties, not opinions)
 -------------------------------------------------------------------
   * a registered value must MATCH the assignment at the site that uses it, so
     the registry cannot drift from the code
-  * a MEASURED claim must carry dataset + method + n, and n > 0
+  * a MEASURED claim must carry dataset + column + population +
+    aggregation + method + n, and n > 0
   * a PROVISIONAL claim must carry its caveat AND a registration that will
     settle it
   * a POLICY claim must say what would change it
@@ -81,6 +82,23 @@ class Constant:
                                  # "settled = strict post row" vs "post OR
                                  # untied P4 0:00" swung a cohort 18 -> 31,
                                  # a 72% move on an unstated definition.
+    column: str = ""             # MEASURED: WHICH NUMBER. `ba-bb` (the gap
+                                 # that makes the artifact) and `s_q` (what we
+                                 # actually earn) are both "the spread", and
+                                 # the substitution reversed a making close
+                                 # with all three population claims correct.
+    aggregation: str = ""        # MEASURED: HOW THE ROWS COMBINE. Same 22,062
+                                 # fills over 48 games, same column, same
+                                 # predicate: fills-weighted -1.634c vs
+                                 # equal-weight per-game -2.626c, a 0.993c gap
+                                 # that moves the published floor by ~11pp.
+                                 # Re-derived here from the pinned export, not
+                                 # taken on report. sandbox.py computes the
+                                 # per-game form; the published anchor is the
+                                 # fills-weighted one, and it is right, because
+                                 # r* = |A|/(H+|A|) is per-fill on both sides.
+                                 # An entry naming dataset, column, predicate
+                                 # and n STILL does not reproduce without this.
     changes_if: str = ""         # POLICY: what would move it
     caveat: str = ""             # PROVISIONAL: why it is known-wrong
     registration: str = ""       # PROVISIONAL: what will settle it
@@ -200,6 +218,14 @@ def gate(registry=REGISTRY, tracked=None) -> list[str]:
             bad.append(f"{c.name}: claims MEASURED without a POPULATION "
                        "predicate — which rows counted is the definition, and "
                        "an unstated one swung a cohort 18 -> 31 on 2026-09-06")
+        if c.kind is Kind.MEASURED and not c.column:
+            bad.append(f"{c.name}: claims MEASURED without naming the COLUMN — "
+                       "`ba-bb` and `s_q` are both 'the spread' and the "
+                       "substitution reversed a making close")
+        if c.kind is Kind.MEASURED and not c.aggregation:
+            bad.append(f"{c.name}: claims MEASURED without naming the "
+                       "AGGREGATION — fills-weighted vs equal-weight per-game "
+                       "on ONE population differ by 0.993c, ~11pp of floor")
         if c.kind is Kind.PROVISIONAL and not (c.caveat and c.registration):
             bad.append(f"{c.name}: claims PROVISIONAL without a caveat and a "
                        "registration to settle it")
