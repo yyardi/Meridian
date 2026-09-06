@@ -183,7 +183,12 @@ kickoff is covered only if the venue has already set `live=True`.
 
 Scheduled kickoff was 20:00Z; the game had not actually started. The venue was
 right and ESPN was right — **the recorder stopped watching at the scheduled
-start and would resume only when `live` flipped.** Any delay between scheduled
+start and would resume only when `live` flipped.**
+
+**Duration: at least 4.5 minutes, observed directly across 4 intervals
+(20:01:19–20:05:46).** A lower bound only — the observer was restarted mid-gap,
+so the full length is unmeasured. ESPN still read `pre` at 20:04 and the game
+was in the 1st quarter by 20:47, so the true gap was longer than the bound. Any delay between scheduled
 and actual kickoff is an unrecorded gap, at precisely the transition the
 comment calls "worth having".
 
