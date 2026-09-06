@@ -29,8 +29,8 @@ tape 2026-07-31..08-20.
 r* is the benign-fill share needed to break even: adverse fills earn A (negative),
 benign fills earn H (positive), and the population mean is zero when benign is r*.
 
-**Adverse anchor A, rebate-free (real fills, circuit-breaker guarded,
-fills-weighted cluster-robust sandwich):**
+**Adverse anchor A, rebate-free (real fills, one-sided-guarded
+[`onesided<0.65 OR n<4`, `scripts/sandbox.py`], fills-weighted; cluster-robust CI):**
 
 | population | A (¢/fill) | game-clustered CI | G_eff / G |
 |---|---:|---|---:|
@@ -45,6 +45,25 @@ fills-weighted cluster-robust sandwich):**
 > resolved 2026-08-25). The rebate-inclusive anchor **−1.349¢ is SUPERSEDED** by
 > the −1.634¢ above; every rebate-inclusive figure was ~0.28¢ too generous. Do
 > not quote the rebate-inclusive numbers.
+
+> **PROVENANCE, AT THE TABLE — name the guard and the aggregation (c7/ce audit).**
+> A is **guarded settlement P&L, fills-weighted** (`pnl = s·(settlement − qp)`, an
+> identity to zero residual on all 73,964 rows — full horizon, not a markout). The
+> guard is the **one-sided guard** (`scripts/sandbox.py`, strategy `quote-guarded`),
+> **not** a "circuit-breaker" (no such predicate exists — c7 and I both searched and
+> missed it, which is what makes it a citation defect): per `(game_id,
+> market_slug)` over real fills, `onesided = max(#bid,#ask)/n`, **keep if
+> `onesided < 0.65 OR n < 4`**, withdrawing one-sided well-populated markets (3,270
+> of 25,332 fills). It **reproduces exactly** from the pinned export — kept 22,062,
+> fills-weighted `pnl×100` = **−1.634¢** pooled (CFB −1.357, WNBA −2.462). The
+> **unguarded** anchor is −2.400¢: same column, same settlement horizon, different
+> subset — the *unguarded maker* (floor 60.5%), a strategy choice, **not** a more
+> "consistent" anchor. Two citation defects this fixes: the guard was mis-named
+> "circuit-breaker" (→ `onesided`), and `sandbox.py`'s own emitted statistic is
+> **game-clustered −2.626¢** (avg of per-game means), not the published
+> **fills-weighted −1.634¢** — fills-weighted is the correct one here because
+> `r* = |A|/(H+|A|)` is per-fill on both sides (`H = s_q/2` is per-fill). **Published
+> floor 51.0% stands.**
 
 **H (benign-fill earnings) is observable per fill — not an unmeasured population.**
 A benign fill is a seller crossing to our resting bid at `qp`; against our quote
