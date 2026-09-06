@@ -118,7 +118,7 @@ the moneyline — it already covers every game the ladder does, plus both the
 ladder drops.** If it is points, use `live_spread` (50 games) and keep the
 ladder as its validator.
 
-## The zero-parameter identity cannot be run on the venue anchor
+## The zero-parameter identity: empty on the venue anchor, 16–26 on ESPN's
 
     logit(p̂) = logit(anchor) + [ logit(ESPN_live) − logit(ESPN_at_kickoff) ]
 
@@ -145,6 +145,38 @@ two were never alive simultaneously.
 in the same ESPN-keyed table as the state, so it cannot fail to intersect with
 kickoff observation. The venue path requires two independent recorders to have
 survived the same window, and on 09-05 that never happened.
+
+### With the ESPN anchor the cohort is not empty, and anchoring costs zero
+
+Recomputed on `espn_cfb_game_state_20260906T174104Z` (50 games):
+
+```
+kickoff-observed (P1, 0-0)                29
+settled, strict 'post' row                28
+has live_spread                           50
+has ESPN win probability                  49
+kickoff & settled                         16
+kickoff & settled & anchored & has WP     16   <- identity cohort
+```
+
+**16 and 16.** Requiring an anchor and a win probability removes **no games at
+all** — the binding constraint is kickoff-and-settled, which is a
+recorder-uptime fact rather than anything about the anchor. That is the
+empirical form of the argument above.
+
+**The settled predicate moves this a lot, and whoever runs the identity must
+state which one they used.** This module's cohort rule is `post` **or** an
+untied `P4 0:00` (see [cfb-state-substrate.md](cfb-state-substrate.md)), not
+`post` alone:
+
+| settled predicate | identity cohort |
+|---|---:|
+| strict `post` row | **16** |
+| `post` or untied P4 0:00 — this module's rule | **26** |
+
+A 60% difference in cohort size from a definition, on the same tape. ce
+measured 18 on a later export carrying ~52 games; the counts differ by export
+vintage, the structure does not.
 
 **A number was computed on the 10 settled-and-anchored games and is withdrawn.**
 Not one of those 10 has its first row at kickoff — the earliest is P2 5:04 at
