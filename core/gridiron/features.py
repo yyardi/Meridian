@@ -89,7 +89,8 @@ def regulation_left(period, clock_s) -> float:
 
 
 def build(state: pd.DataFrame, prices: pd.DataFrame, game_map: pd.DataFrame,
-          *, min_confidence: float = 0.0, tolerance_s: float = 30.0) -> pd.DataFrame:
+          *, min_confidence: float = 0.0, tolerance_s: float = 30.0,
+          market_prefix: str = "aec") -> pd.DataFrame:
     """One row per (game, observation) with the market mid joined as a feature.
 
     `min_confidence` filters `cfb_game_map`; state it whenever a result is
@@ -99,6 +100,22 @@ def build(state: pd.DataFrame, prices: pd.DataFrame, game_map: pd.DataFrame,
     the most recent mid at or before it, never a later one. A forward join would
     let a price that moved *after* the state was observed inform the row, which
     is the leak that manufactures skill.
+
+    `market_prefix` pins WHICH contract the mid comes from, and it is not
+    optional in practice. A CFB game carries ~106 simultaneously-quoted markets
+    — moneyline (`aec`), spreads (`asc`) and totals (`tsc`), full-game and every
+    period. Without the filter, `merge_asof` hands each state row whichever of
+    the 106 ticked most recently, so `mid` is a mixture rather than a quantity.
+    Measured on the 2026-09-06 live tape, an unfiltered join returned 162 rows
+    drawn from **56 different slugs — 90 spread, 69 total, 3 moneyline** —
+    including third-quarter lines and first-half totals. Every row had a
+    plausible mid in [0, 1] and nothing was null.
+
+    The 2026-09-05 pregame tape was too thin for this to show; it is the
+    dominant behaviour on a live one. `fit.design()` and `fit.spread_anchor()`
+    both pinned their market from the start and this function did not, so the
+    tolerance table below was measured on a mixed-market join: its ROW COUNTS
+    stand, its mids were not win probabilities.
     """
     m = game_map[game_map.match_confidence >= min_confidence]
     m = m[["espn_game_id", "venue_game_id"]].drop_duplicates("espn_game_id")
@@ -112,6 +129,8 @@ def build(state: pd.DataFrame, prices: pd.DataFrame, game_map: pd.DataFrame,
 
     p = prices.dropna(subset=["best_bid", "best_ask", "game_id"]).copy()
     p = p[p.is_live.astype(str).str.lower().isin(("t", "true", "1"))]
+    if market_prefix:
+        p = p[p.market_slug.str.startswith(market_prefix)]
     # mid for the model; raw bid/ask kept because money scoring needs the price
     # actually payable on each side — a mid cannot say which you would have hit.
     p["mid"] = (p.best_bid + p.best_ask) / 2.0
@@ -135,3 +154,35 @@ def build(state: pd.DataFrame, prices: pd.DataFrame, game_map: pd.DataFrame,
     if not out:
         return pd.DataFrame()
     return pd.concat(out, ignore_index=True).dropna(subset=["mid", "reg_left"])
+
+
+def scrimmage_plays(plays: pd.DataFrame) -> pd.DataFrame:
+    """Drop rows that are not a scrimmage down. `down == 0` does not exist.
+
+    ESPN emits `down = 0` on rows that are events rather than downs, and the
+    trap is that **0 is not NULL** — these rows survive every `dropna` and every
+    `IS NOT NULL` filter, then enter the design matrix as a feature vector
+    asserting a down state that never existed.
+
+    Measured on `espn_cfb_live_plays_20260906T215629Z` (8,634 rows, 50 games),
+    the 63 `down == 0` rows are:
+
+        Timeout                    52
+        Penalty                     7
+        Two Point Pass              2
+        Defensive 2pt Conversion    1
+        End Period                  1
+
+    spread over periods 1-4 and 7 in **22 different games**, and 62 of the 63
+    are **not** the last play of their game.
+
+    This composition is worth stating because a plausible neighbouring rule does
+    not work: filtering on "down, distance and yards-to-goal all zero, and no
+    possession team" matches **0 of the 63** here — every row carries a
+    possession team, `yards_to_goal` is never 0, and `distance` is 0 only 6
+    times. Written that way the filter is a check that cannot fail. The
+    predicate that catches them is `down != 0` and nothing narrower.
+    """
+    if "down" not in plays.columns:
+        return plays
+    return plays[plays.down.astype("float64") != 0.0]

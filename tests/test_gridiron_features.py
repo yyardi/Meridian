@@ -5,7 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from core.gridiron.features import build, clock_seconds, regulation_left
+from core.gridiron.features import (build, clock_seconds, regulation_left,
+                                    scrimmage_plays)
 
 
 @pytest.mark.parametrize("s, want", [("5:04", 304), ("14:56", 896), ("0:00", 0)])
@@ -39,7 +40,11 @@ def _frames(price_time, state_time):
         "first_seen_at": [pd.Timestamp(state_time, tz="UTC")],
     })
     prices = pd.DataFrame({
-        "game_id": [16450.0], "market_slug": ["m"], "is_live": ["t"],
+        # a REAL moneyline slug: `build` pins the market, and a placeholder
+        # slug would make the emptiness assertions below pass for the wrong
+        # reason — filtered out rather than correctly rejected.
+        "game_id": [16450.0], "is_live": ["t"],
+        "market_slug": ["aec-cfb-wsu-uw-2026-09-05-uw"],
         "best_bid": [0.40], "best_ask": [0.44],
         "captured_at": [pd.Timestamp(price_time, tz="UTC")],
     })
@@ -105,3 +110,105 @@ def test_the_line_sign_and_fraction_are_recovered():
     assert m.group(3) == "neg" and m.group(4) == "13" and m.group(5) == "5"
     m = FULL_GAME_SPREAD.match("asc-cfb-a-b-2026-09-05-pos-7")
     assert m.group(3) == "pos" and m.group(4) == "7" and m.group(5) is None
+
+
+# --------------------------------------------------------------------- #
+# `down == 0` is not a down. It is also not NULL, which is the whole problem:
+# the rows survive every dropna and enter the matrix as a valid-looking state.
+#
+# The real rows (63 of them, in 22 games) are Timeouts, Penalties, 2pt
+# conversions and an End Period — NOT an end-of-game all-zero sentinel. They
+# carry a possession team, a non-zero yards_to_goal and usually a non-zero
+# distance, so the neighbouring rule "all three zero and no pos_team" matches
+# none of them and would pass while filtering nothing.
+# --------------------------------------------------------------------- #
+
+
+def _play(**kw):
+    row = dict(down=1, distance=10, yards_to_goal=75, pos_team="8",
+               play_type="Rush", game_id=1)
+    row.update(kw)
+    return row
+
+
+def test_down_zero_rows_are_dropped():
+    df = pd.DataFrame([_play(down=d) for d in (1, 2, 3, 4, 0)])
+    out = scrimmage_plays(df)
+    assert len(out) == 4
+    assert set(out.down) == {1, 2, 3, 4}
+
+
+def test_the_all_zero_description_would_not_have_caught_these():
+    """Each row is a REAL shape from the export: down 0, everything else valid."""
+    real = pd.DataFrame([
+        _play(down=0, distance=3, yards_to_goal=3, play_type="Timeout"),
+        _play(down=0, distance=65, yards_to_goal=65, play_type="Penalty"),
+        _play(down=0, distance=0, yards_to_goal=8, play_type="Two Point Pass"),
+        _play(down=0, distance=35, yards_to_goal=35, play_type="End Period"),
+    ])
+    # the rule that does NOT work, stated so its failure is visible
+    narrow = real[~((real.down == 0) & (real.distance == 0)
+                    & (real.yards_to_goal == 0) & (real.pos_team.isna()))]
+    assert len(narrow) == 4, "the all-zero rule filters nothing on real rows"
+    assert scrimmage_plays(real).empty
+
+
+def test_a_null_down_is_not_silently_kept_as_a_zero():
+    df = pd.DataFrame([_play(down=1), _play(down=None), _play(down=0)])
+    out = scrimmage_plays(df)
+    assert len(out) == 2                       # NaN passes here...
+    assert out.down.isna().sum() == 1          # ...and dies at the dropna
+    assert (out.down == 0).sum() == 0
+
+
+def test_plays_without_a_down_column_pass_through():
+    df = pd.DataFrame({"game_id": [1, 2], "period": [1, 2]})
+    assert len(scrimmage_plays(df)) == 2
+
+
+# --------------------------------------------------------------------- #
+# A CFB game quotes ~106 markets at once. merge_asof does not care which one
+# it hands you — it hands you the most RECENT. Unfiltered, `mid` is a mixture
+# of moneyline, spread and total, full-game and per-quarter, every value a
+# plausible probability and none of them null.
+# --------------------------------------------------------------------- #
+
+
+def _tape():
+    t0 = pd.Timestamp("2026-09-06 20:40:00+00:00")
+    state = pd.DataFrame([{
+        "game_id": 1, "state": "in", "period": 2, "display_clock": "5:00",
+        "home_score": 10, "away_score": 0, "home_timeouts_used": 1,
+        "away_timeouts_used": 0, "first_seen_at": t0 + pd.Timedelta(seconds=10),
+    }])
+    # the moneyline quoted FIRST, a 3rd-quarter spread quoted LAST
+    prices = pd.DataFrame([
+        {"market_slug": "aec-cfb-a-b-2026-09-06-a", "captured_at": t0,
+         "best_bid": 0.90, "best_ask": 0.92, "is_live": "t", "game_id": 7},
+        {"market_slug": "asc-cfb-a-b-2026-09-06-3q-pos-7pt5",
+         "captured_at": t0 + pd.Timedelta(seconds=5),
+         "best_bid": 0.40, "best_ask": 0.42, "is_live": "t", "game_id": 7},
+    ])
+    gmap = pd.DataFrame([{"espn_game_id": 1, "venue_game_id": 7,
+                          "match_confidence": 1.0}])
+    return state, prices, gmap
+
+
+def test_the_mid_comes_from_the_pinned_market_not_the_latest_tick():
+    state, prices, gmap = _tape()
+    out = build(state, prices, gmap)
+    assert len(out) == 1
+    assert out.market_slug.iloc[0].startswith("aec")
+    assert out.mid.iloc[0] == pytest.approx(0.91)   # NOT 0.41, the newer tick
+
+
+def test_unpinned_build_takes_the_wrong_market_which_is_why_it_is_pinned():
+    state, prices, gmap = _tape()
+    out = build(state, prices, gmap, market_prefix="")
+    assert out.mid.iloc[0] == pytest.approx(0.41)   # the 3q spread wins on time
+
+
+def test_a_game_with_no_quote_in_the_pinned_market_drops_rather_than_substitutes():
+    state, prices, gmap = _tape()
+    out = build(state, prices[prices.market_slug.str.startswith("asc")], gmap)
+    assert out.empty
