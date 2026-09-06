@@ -289,3 +289,52 @@ price move already complete" is the damning half of d5's number, not the 36.4s
 itself. So both measurements can be correct and measuring different intervals
 for different strategies. Naming the endpoints settles it; adjudicating the
 numbers without them cannot.
+
+## 11. ★ A third failure mode — and a naming hazard bigger than it
+
+Debugger's finding: 13 CFB games exist only inside the frozen window, and in a
+**by-game** statistic each would carry the weight of a game with 880 fills.
+Cluster-size heterogeneity moves a by-game mean 5x with a CI 4.7x wider,
+depending purely on inclusion. So a cohort can be **code-identical, correctly
+regime-flagged, and still not poolable.** That is a real third axis alongside
+code identity (§3) and regime comparability (§7), caught by neither.
+
+### It does not reach the CFB headline, for two independent reasons
+
+**(a) The 13 games are excluded twice over.** Checked against the pin: they
+hold **49 fills, all 49 PHANTOM, all 49 at or after the 17:39Z freeze**
+(20:07Z–20:51Z). The real-population filter alone removes them; the freeze
+exclusion alone removes them. Neither depended on the other.
+
+**(b) The headline's point estimate is not a by-game statistic at all.**
+
+    clustered_mean point estimate   -2.0765c
+    pooled per-fill mean            -2.0765c   <- identical to 1e-12
+    unweighted mean of game means   -3.3526c
+
+`clustered_mean` returns the **per-fill** mean; games enter only through the
+confidence interval. Cluster-size heterogeneity cannot move a fill-weighted
+estimate. And this population is not heterogeneous in the way described: sizes
+run 4 / 180 / 487 / 818 / 1858 (min, p25, median, p75, max), with exactly one
+game under 10 fills holding **0.02%** of the sample.
+
+### ★ THE NAMING HAZARD, which is the part that will actually bite
+
+**"Game-clustered" describes the interval, not the estimate.** A reader who
+takes it to mean "averaged over games" computes **−3.35c** where we published
+**−2.08c** — a gap of **1.28c, larger than the CI half-width of 1.55c** — and
+will believe they have reproduced the number.
+
+The two answer different questions and both are legitimate:
+
+    per-fill   what a dollar deployed earns          <- what we report
+    per-game   what a typical game looks like
+
+This is the same estimator ambiguity that produced a −3.419c/−3.376c
+disagreement earlier in the programme. It recurred because the label survived
+the resolution. **Anything quoting one of these must name which**, and
+"game-clustered mean" is not a name — it describes the CI and leaves the
+estimator implicit.
+
+**So the third failure mode is real and general, and the immediate risk on our
+own numbers is not instability but mislabelling.**
