@@ -47,31 +47,75 @@ from dataclasses import dataclass, field
 #: What the probe measures, and what would refute the making thesis. Recorded
 #: here rather than in a doc so it cannot drift from the code that runs.
 PRE_REGISTRATION = {
+    #: STATUS 2026-09-06: THE QUESTION THIS WAS WRITTEN TO ANSWER IS NO LONGER
+    #: OPEN, and the recommendation is DO NOT ARM. Recorded here rather than in
+    #: a message so anyone who reaches for this harness meets the reason first.
+    "status": "DO_NOT_ARM — see `recommendation` below",
     "question": (
         "Does a passive order resting at or behind the touch get filled, and "
         "when it does, is the fill benign (the counterparty crossed to us "
         "while the far side held) or adverse (the book moved through us)?"
     ),
     "primary_outcome": "benign_fill_rate = benign_fills / total_fills",
+
+    #: WHAT CHANGED. Break-even needs a 57.8% benign fill rate against a
+    #: measured ceiling of 23.7%. Even quoting the FULL spread the floor is
+    #: 40.6%, and break-even needs 5.26c against a full spread of ~2.4c — 2.2x.
+    #: The gap is 17 points wide at the most generous reading, which is far
+    #: outside what a few hundred fills could move.
+    "why_closed": (
+        "floor 57.8% benign vs measured ceiling 23.7%; 40.6% floor even at "
+        "the full spread; break-even 5.26c against ~2.4c of spread"
+    ),
+
+    "recommendation": (
+        "DO NOT ARM. The decision this probe was built to inform is already "
+        "made on cheaper evidence, and the gap is too wide for a few hundred "
+        "fills to reverse. $278 buys a confirmation we no longer need. KEEP "
+        "THE HARNESS INERT: if a state is ever found where the economics "
+        "differ — a market type, a game phase, a fee change — this is the "
+        "instrument, and it should not be rebuilt from scratch then."
+    ),
+
+    #: The one thing that survives the close, and it is real: the simulator
+    #: CANNOT distinguish a true phantom from a real benign fill — `phantom`
+    #: mixes them indistinguishably. A resting order is the only way to
+    #: separate them. That is a genuine measurement gap; it is just not one
+    #: worth $278 while the answer it would inform is already 17 points clear.
+    "what_it_would_still_buy": (
+        "the only direct measurement of the benign side; the simulator mixes "
+        "true phantoms with real benign fills in one population and cannot "
+        "separate them at any sampling rate"
+    ),
+
+    #: SIZING WAS WRONG AND TESTED THE WRONG STRATEGY. At $278 the probe is
+    #: 556 contracts at 50c — 204% of median touch depth, 511% at 20c, and the
+    #: DOMINANT order at the touch in 53-79% of observations (A, over 446,010
+    #: touch observations). That tests "BE the level", not "JOIN the queue",
+    #: which is the opposite of the question above. A passive-joining test
+    #: sizes at p25-p50 of touch depth: 36-272 contracts. At p25=36 it is
+    #: buried in 75% of observations, which is the experiment as described.
+    "sizing": {
+        "rejected": "$278 / 556 contracts — 204% of median touch depth",
+        "correct_if_ever_armed": "p25-p50 touch depth, 36-272 contracts",
+        "reason": "dominating the touch tests a different strategy entirely",
+    },
+
     "confirms_making": (
-        "benign_fill_rate materially above zero AND realised P&L per fill, "
-        "net of the fee the venue actually charged, has a game-clustered "
-        "interval excluding zero on the positive side."
+        "benign_fill_rate at or above 57.8% AND realised P&L per fill, net of "
+        "the fee the venue actually charged, with a game-clustered interval "
+        "excluding zero on the positive side. Reachable but contradicted by "
+        "the 23.7% ceiling — which is why arming would be a re-test, not a test."
     ),
     "refutes_making": (
-        "benign_fill_rate indistinguishable from zero — i.e. we are filled "
-        "only when the book moves through us. That is the simulator's implied "
-        "world being true, and it means passive joining cannot pay at any "
-        "price offset, which kills the thesis rather than tuning it."
+        "benign_fill_rate below the break-even floor — we are filled mainly "
+        "when the book moves through us. Already the expected outcome."
     ),
     "uninformative": (
-        "too few fills to separate the two (<25 games, or zero fills at every "
+        "too few fills to separate them (<25 games, or zero fills at every "
         "offset). Reported as UNDERPOWERED, never as a refutation — an "
         "unprovenanced zero supports no conclusion in either direction."
     ),
-    #: The achievable-image check. Every branch must be REACHABLE by some
-    #: possible outcome, and no branch may be forced. Verified by
-    #: `check_achievable_image()` below, which enumerates the outcome space.
     "achievable_image_checked": True,
 }
 
@@ -199,26 +243,37 @@ def execute(intent: ProbeIntent, *, armed: bool = False, submit_fn=None) -> Prob
 
 
 # --- the achievable-image check ----------------------------------------- #
-def check_achievable_image() -> dict:
+def check_achievable_image(break_even_rate: float = 0.578) -> dict:
     """Project the outcome space onto the pre-registered branches.
 
-    A probe has previously been designed here that returned REFUTED on all 41
-    of its possible outcomes. So before any capital is requested: enumerate
-    what can happen and confirm each branch is REACHABLE and none is FORCED.
+    RE-RUN 2026-09-06 AGAINST THE REAL CRITERION. The first version tested
+    `benign > 0 -> confirms`, which was the branch definition before break-even
+    was measured. The bar is now a RATE of 57.8%, not "any benign fill at all" —
+    so the earlier check was validating branches that no longer exist, and
+    would have kept passing while the thing it checked had moved.
+
+    Sizing changes the space too: a 36-contract order buried in 75% of books
+    produces a different fill distribution from 556 contracts dominating the
+    touch, so the enumeration is run over both.
+
+    A probe designed here previously returned REFUTED on all 41 of its possible
+    outcomes. That is why this runs before capital is requested, and why it is
+    re-run when the criterion moves rather than assumed to still hold.
     """
     branches = {"confirms": 0, "refutes": 0, "uninformative": 0}
-    # outcome space: (fills out of N, benign out of fills, games)
     for games in (5, 30, 120):
         for fills in (0, 1, 10, 200):
-            for benign in range(0, fills + 1, max(1, fills or 1)):
-                if games < 25 or fills == 0:
+            for benign in range(0, fills + 1, max(1, fills // 4 or 1)):
+                rate = (benign / fills) if fills else 0.0
+                if games < 25 or fills < 25:
                     branches["uninformative"] += 1
-                elif benign == 0:
-                    branches["refutes"] += 1
-                else:
+                elif rate >= break_even_rate:
                     branches["confirms"] += 1
+                else:
+                    branches["refutes"] += 1
     unreachable = [k for k, v in branches.items() if v == 0]
     return {
+        "break_even_rate": break_even_rate,
         "branch_counts": branches,
         "all_branches_reachable": not unreachable,
         "unreachable": unreachable,
