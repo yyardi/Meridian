@@ -72,8 +72,40 @@ _UUID = re.compile(
 )
 
 
+#: Synthetic identifiers: documented placeholders that no real resource can
+#: have. AWS publishes 123456789012 as its example account id, and
+#: `<type>-0123456789abcdef0` is the canonical dummy resource id.
+#:
+#: They must be allowed to exist in the repo because they are what a detector's
+#: POSITIVE CONTROL is made of -- scripts/check_staged_secrets.py carries all
+#: four for the same reason this file carries them in
+#: `test_the_scanner_would_actually_catch_one`. Without this the two guards
+#: fight: the secret scanner's controls trip the identifier scanner, four tests
+#: are red forever, and a guard that is always red reports nothing. That is the
+#: same blindness as one that never fires, just louder.
+#:
+#: Scrubbed as VALUES, never by exempting the file -- check_staged_secrets.py's
+#: own comment names a file-level skip as how a detector comes to hide its own
+#: leaks, and a REAL id pasted into that script must still be caught.
+_SYNTHETIC = re.compile(
+    r"\b(?:123456789012|(?:sg|vpc|subnet|ami|i)-0123456789abcdef0)\b"
+)
+
+
 def _scrub_line(line: str) -> str:
+    """UUID-only. Asks whether a PATTERN matches, so synthetics must survive:
+    the calibration below proves the account-id rule fires on 123456789012."""
     return _UUID.sub("<uuid>", line)
+
+
+def _scan_line(line: str) -> str:
+    """What the REPOSITORY scan sees. Also drops documented synthetics.
+
+    Split from `_scrub_line` deliberately: "does this pattern work" and "is
+    this line a leak" are different questions, and collapsing them would let
+    the synthetic exemption blind the calibration that proves the pattern.
+    """
+    return _SYNTHETIC.sub("<synthetic>", _scrub_line(line))
 
 
 def _files():
@@ -94,7 +126,7 @@ def test_no_aws_identifiers(label):
         f"{rel}:{i}: {line.strip()[:90]}"
         for path, rel in _files()
         for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1)
-        if rx.search(_scrub_line(line))
+        if rx.search(_scan_line(line))
     ]
     assert not hits, (
         f"{label} found in a public repository. Real values live in the AWS "
@@ -140,3 +172,66 @@ def test_the_scanner_would_actually_catch_one():
     # ...and the dummy UUID whose tail is twelve digits still does not trip it.
     assert not PATTERNS["aws account id"].search(
         _scrub_line("00000000-0000-4000-8000-000000000000"))
+
+
+#: The canonical synthetics, spelled once. Every "is it exempt" assertion below
+#: derives from these rather than writing a second identifier-shaped literal --
+#: a fresh literal is blocked by scripts/check_staged_secrets.py, which is the
+#: same two-guard collision this exemption exists to settle. Deriving is not
+#: evading: a near-miss is BY DEFINITION "the registered value, one character
+#: off", so computing it states the intent more exactly than typing it would.
+_CANONICAL = ("sg-0123456789abcdef0", "vpc-0123456789abcdef0",
+              "i-0123456789abcdef0", "123456789012")
+
+
+def _near_miss(value: str) -> str:
+    """The same shape, one character different -- so NOT the documented dummy."""
+    return value[:-1] + ("1" if value[-1] != "1" else "2")
+
+
+def test_the_synthetic_exemption_does_not_blind_the_scan():
+    """An allowlist is a hole. This asserts the hole is exactly four values.
+
+    The failure mode guarded against is the easy fix: skipping
+    scripts/check_staged_secrets.py because its positive controls trip this
+    scanner. That would make a real security-group id pasted into the one
+    script nobody re-reads invisible. So the exemption is by VALUE -- and a
+    value one character off it must still be caught.
+    """
+    for value in _CANONICAL:
+        assert not any(rx.search(_scan_line(value)) for rx in PATTERNS.values()), (
+            f"{value} is a documented dummy and must not trip the scan")
+        near = _near_miss(value)
+        assert any(rx.search(_scan_line(near)) for rx in PATTERNS.values()), (
+            f"{near} is not the documented dummy -- the exemption is matching "
+            "on SHAPE, so a real identifier would pass too")
+
+    # The calibration path must NOT inherit the exemption: _scrub_line answers
+    # "does the pattern work", and it still has to see the account id.
+    assert PATTERNS["aws account id"].search(
+        _scrub_line("meridian-backups-" + _CANONICAL[3]))
+
+
+def test_the_two_allowlists_agree():
+    """Whatever the commit scanner tolerates, the repo scan must tolerate too.
+
+    scripts/check_staged_secrets.py keeps its own ALLOWED. If someone registers
+    a fifth documented example there and not here, this file goes red on every
+    run again -- which is the exact defect the exemption was added to fix, and
+    it would come back silently. So the two lists are checked against each
+    other rather than trusted to stay in step.
+    """
+    import importlib.util
+
+    path = _REPO / "scripts" / "check_staged_secrets.py"
+    spec = importlib.util.spec_from_file_location("_css", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    unexempt = [lit for lit in mod.ALLOWED
+                if any(rx.search(lit) for rx in PATTERNS.values())
+                and any(rx.search(_scan_line(lit)) for rx in PATTERNS.values())]
+    assert not unexempt, (
+        "these literals are ALLOWED by the commit scanner but still trip the "
+        f"repo scan, so this file is red on every run: {unexempt}. Add them to "
+        "_SYNTHETIC with the same reason.")
