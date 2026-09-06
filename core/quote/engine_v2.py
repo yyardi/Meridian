@@ -794,6 +794,65 @@ def _selftest_queue_ahead(Session) -> None:
             os.environ["MERIDIAN_ENGINE_COMMIT"] = saved
 
 
+def _selftest_cfb_live_write(Session) -> None:
+    """CFB positive control (2026-09-03): the record_cycle write path has NEVER
+    executed against a live market in production — the table postdates the last
+    WNBA game and predates NFL's first, so tonight's CFB kickoff is its first
+    real live-market run, and rule 22 forbids reading its silence as health. The
+    existing controls use WNBA/NFL; CFB is now the live league, so it needs its
+    own. Seeds ONE live CFB market and asserts record_cycle admits it (league
+    filter) AND writes exactly one engine-stamped observation for it — the
+    end-to-end proof of the 22:00Z scenario, on seeded data (the real board is
+    covered by the armed kickoff watch, not this)."""
+    import os
+
+    from core.leagues import league_of_slug
+
+    SLUG, GAME = "aec-cfb-akron-wake-2026-09-03", "cfb-selftest-game"
+    assert (lg := league_of_slug(SLUG)) is not None and lg.slug == "cfb", \
+        f"CFB slug did not route to cfb: {lg}"
+
+    def _clean():
+        with Session() as s:
+            s.execute(text("delete from market_snapshots where market_slug=:m"), {"m": SLUG})
+            s.execute(text("delete from quote_v2_observations where market_slug=:m"), {"m": SLUG})
+            s.commit()
+
+    saved = os.environ.get("MERIDIAN_ENGINE_COMMIT")
+    os.environ["MERIDIAN_ENGINE_COMMIT"] = "cfb-ctl-stamp"
+    _clean()
+    try:
+        with Session() as s:
+            s.execute(text("""
+                insert into market_snapshots
+                    (market_slug, game_id, event_slug, sports_market_type,
+                     captured_at, best_bid, best_ask, is_live, event_period, event_score)
+                values (:m,:g,'evt','football_team_full_game_spread', now(),
+                        0.48,0.52,true,'Q2','14-10')
+            """), {"m": SLUG, "g": GAME})
+            s.commit()
+        q = ShadowQuoterV2(Session, settle_every_seconds=10 ** 9,
+                           settlement_lookup=lambda s: None, league="cfb")
+        assert q._league == "cfb"
+        n = q.record_cycle()
+        with Session() as s:
+            rows = s.execute(text(
+                "select is_live, engine_commit from quote_v2_observations "
+                "where market_slug=:m"), {"m": SLUG}).all()
+        assert n >= 1, f"record_cycle wrote nothing for a live CFB market ({n})"
+        assert len(rows) == 1, f"expected 1 CFB observation, got {len(rows)}"
+        assert rows[0].is_live is True
+        assert rows[0].engine_commit == "cfb-ctl-stamp", "CFB observation not engine-stamped"
+        print("proof (CFB live write): record_cycle admits a live CFB market and "
+              "writes one engine-stamped observation — the 22:00Z path, proven")
+    finally:
+        _clean()
+        if saved is None:
+            os.environ.pop("MERIDIAN_ENGINE_COMMIT", None)
+        else:
+            os.environ["MERIDIAN_ENGINE_COMMIT"] = saved
+
+
 def selftest(Session=None) -> int:
     _selftest_ast()
     if Session is None:
@@ -803,6 +862,7 @@ def selftest(Session=None) -> int:
     _selftest_heartbeat_beat(Session)
     _selftest_league_filter_and_identity(Session)
     _selftest_queue_ahead(Session)
+    _selftest_cfb_live_write(Session)
     print("engine_v2 selftest: ALL PROOFS PASS")
     return 0
 
