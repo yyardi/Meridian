@@ -64,6 +64,25 @@ _PLAYING_PERIOD = re.compile(r"^(Q[1-4]|OT\d*|H[12]|P\d+)$", re.I)
 `MAX_GAME_DURATION = 6h` — CFB runs 3.5–4h, plus overtime and weather delays.
 Too generous costs cheap extra rows; too tight costs unrecoverable tape.
 
+## The postponed game: a stated choice, not a consequence
+
+A postponement leaves a scheduled start with no kickoff — `live` never goes
+true, `ended` is never set, and the schedule branch records for the full
+`MAX_GAME_DURATION` after the scheduled time.
+
+**That is intended, and the cost is bounded at 6 hours of polling one event
+that is not playing.** The alternative — requiring positive evidence of play
+before recording after the scheduled start — is exactly the defect observed on
+2026-09-06: it fails closed on every late start, which is common, to avoid a
+cheap cost on postponements, which are rare.
+
+Two things bound it further: a rescheduled game appears as a **new event with a
+new start time**, so the stale one simply ages out; and if the venue ever sets
+`ended` on an abandoned event, rule 1 stops it immediately.
+
+**Worth stating because it is the one case where fail-open costs something
+visible.** It is a choice, not an accident of the inequality.
+
 ## Why fail open
 
 **Missing data is unrecoverable; extra rows are cheap.** The venue serves no
