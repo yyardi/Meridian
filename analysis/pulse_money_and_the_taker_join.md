@@ -72,14 +72,23 @@ Anchor: filled orders only, side-signed P&L on the YES scale at the quoted
 ## The maker bar is not the taker bar
 
 PULSE joins the touch, so it pays neither the half-spread nor the 0.06·p(1−p)
-taker fee, and d5 verified a maker **rebate** of −0.0125·p(1−p) — a credit.
+taker fee.
 
     p       taker threshold      maker break-even
-    0.50        2.69 pp             -0.31 pp  (rebate)
-    0.30        2.45 pp             -0.26 pp
-    0.20        2.15 pp             -0.20 pp
+    0.50        2.69 pp              0.00 pp
+    0.30        2.45 pp              0.00 pp
+    0.20        2.15 pp              0.00 pp
 
-**The bar PULSE must clear is approximately zero, not 2.69pp.**
+**The bar PULSE must clear is exactly zero, not 2.69pp.**
+
+> **An earlier draft put a −0.0125·p(1−p) maker *rebate* here — a credit making
+> break-even −0.31pp — and attributed it to d5.** That is C7, **resolved
+> 2026-08-25 as unobserved**, and d5 helped land the retraction. `θ_maker = 0`
+> everywhere; V9 records that the venue publishes no maker field at all.
+> **There is no credit. Break-even is 0.00pp.** Full account in
+> *"A citation I should have checked"* below — corrected **here**, at the table,
+> because a reader who takes a number from this section will not reach a
+> retraction a hundred lines later.
 
 ## Games required, G = 34 × (6.216 / target)²
 
@@ -88,7 +97,11 @@ taker fee, and d5 verified a maker **rebate** of −0.0125·p(1−p) — a credi
     taker bar      2.69pp        182        3.4 w     2026-09-29
                    2.00pp        328        6.1 w     2026-10-18
                    1.00pp      1,314       24.3 w     2027-02-23
-    maker break-even 0.31pp    13,672      253   w     2031
+
+*(An earlier draft carried a bottom row at "maker break-even 0.31pp → 13,672
+games". Removed: that target came from the retracted rebate. Break-even is
+0.00pp, which no finite sample resolves — a null is never proven, only
+bounded.)*
 
 ## ★ THE DECISION NUMBER IS 58
 
