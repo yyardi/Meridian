@@ -1043,6 +1043,32 @@ page does), so a document dated after the result cannot be mistaken for one
 dated before it.
 
 
+#### A correct measurement of the wrong quantity
+
+The failure that recomputation cannot catch, **because the computation is
+right.** Every instance below survived being checked, and several survived being
+checked twice, since re-running a correct calculation returns the same correct
+number.
+
+| the quantity measured | the quantity that governed |
+|---|---|
+| markets whose **earliest** timestamp is tied — 7 | (market, instant) pairs tied **anywhere** — 24; a sort can have its pick decided by any tie once the order shifts around it |
+| `max(created_at)` of `orders` — when the table last had **news** | how current the **source** is; a complete five-row table read as nineteen days stale |
+| a raw correlation of a signal against the outcome | its **coefficient given the price**; r = 0.973 between the two regressors, so the correlation screamed signal where the joint fit said duplicate |
+| an export's `fetched_at` against the latest fill **in that export** | whether anything happened **after** the snapshot — the operands were not independent, so the check could not fail |
+| rows in a slice | **games**; 3,078 rows of ESPN WP across 32 games is 32 opinions, not 3,078 |
+
+**The tell is never in the arithmetic.** It is in the gap between the sentence
+you would write and the thing you computed — *"is this source current"* against
+*"when did this table last change"*, *"did the market move after we looked"*
+against *"is our timestamp later than our own rows"*. Say the claim aloud, then
+ask which column would have to move for it to be false. If none would, the
+quantity is wrong.
+
+**And it is the failure most likely to survive review**, because every check a
+reviewer applies — recompute it, check the units, re-run on fresh data — is a
+check on the calculation. Only re-deriving *what was being asked* catches it.
+
 #### `GroupBy.first()` fabricates a row that never existed
 
 `pandas.GroupBy.first()` returns the first **non-null value of each column
