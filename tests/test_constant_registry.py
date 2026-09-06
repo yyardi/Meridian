@@ -169,3 +169,21 @@ def test_a_measured_claim_without_a_population_predicate_fails():
                  dataset="pulse_decisions", method="counted", n=28)
     bad = gate((c,), tracked=TRACKED)
     assert any("without a POPULATION predicate" in b for b in bad), bad
+
+
+def test_an_emptied_registry_is_not_perfect_health():
+    """★ SOURCE DEATH, and the third instance of this shape in my own work
+    today. `gate(registry=())` returned zero failures — a registry with
+    nothing in it gates nothing and reports a clean bill of health. Same
+    defect as alarm_v5's `for row in rows` and the recorder contract's
+    `for w in cycle.writes`."""
+    bad = gate(registry=(), tracked=TRACKED)
+    assert any("below the floor" in b for b in bad), bad
+
+
+def test_the_registry_floor_matches_what_is_registered():
+    """The floor is a ratchet: it may rise with the registry and must never
+    silently exceed it, or the gate fails for the wrong reason."""
+    from constant_registry import REGISTRY_FLOOR
+
+    assert len(REGISTRY) >= REGISTRY_FLOOR

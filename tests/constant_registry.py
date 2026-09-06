@@ -51,6 +51,13 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 #: is a deliberate, visible act in a diff.
 UNSOURCED_CEILING = 0
 
+#: The registry may not SHRINK. An empty registry gates nothing and reports
+#: perfect health — the third instrument of mine today that was silent on an
+#: empty collection, after alarm_v5's `for row in rows` and the recorder
+#: contract's `for w in cycle.writes`. Any check that iterates a collection is
+#: silent on the empty one, and the empty one is usually the failure.
+REGISTRY_FLOOR = 4
+
 
 class Kind(Enum):
     MEASURED = "measured"        # from data: needs dataset + method + n
@@ -210,6 +217,10 @@ def gate(registry=REGISTRY, tracked=None) -> list[str]:
             bad.append(f"{c.name}: registered but the crawler does not find "
                        f"it in {c.site} — the search is broken, so any "
                        "coverage figure it reports is worthless")
+    if len(registry) < REGISTRY_FLOOR:
+        bad.append(f"registry holds {len(registry)} constants, below the floor "
+                   f"of {REGISTRY_FLOOR} — an emptied registry gates nothing "
+                   "and reports perfect health")
     n = sum(1 for c in registry if c.kind is Kind.UNSOURCED)
     if n > UNSOURCED_CEILING:
         bad.append(f"{n} unsourced constant(s) against a ceiling of "
