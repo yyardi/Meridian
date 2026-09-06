@@ -52,6 +52,28 @@ form I wrote earlier today -- a monitor computing a statistic over what ARRIVED
 is blind to what did not -- and a ratio of identified-to-completed is not such
 a statistic.
 
+THE SOFT INPUT IS `live_games`, AND IT FAILS QUIET. `refresh_live` builds the
+set from the recorder's OWN scoreboard call and `continue`s on failure, so if
+every scoreboard request fails, `live` ends up empty, `live_games = 0`, and
+this check goes silent. The recorder can hide a write failure by failing one
+step earlier.
+
+`core/storage/models.py` already says so, about the sibling column: "What the
+writer itself believed about game state this cycle. Readers with an
+independent game signal (ESPN) should prefer their own." For the ESPN recorder
+the independent signal is the VENUE side -- CFB markets priced at live cadence
+means games are live -- which is the mutual-monitoring link, needed here for a
+second and independent reason.
+
+A NOTE ON THE `parse_game_state` -> None BRANCH (a1). A summary with no
+`header.competitions` yields `state=None`, `ns=0`, and A fires. That is NOT a
+false positive: a game the scoreboard calls live, whose summary yields no
+state row, means nothing was recorded for a live game. The consequence is
+identical to the failure being detected; only the cause differs. Making the
+parse RAISE does not change whether A fires -- `cycle()` catches it and the
+counter is short either way -- it changes whether the log names the cause. Do
+that for diagnosis; do not tune N around it.
+
 LIMIT, and it is the module's own warning turned on this check: `state_rows` is
 an IN-PROCESS COUNTER, not confirmation that rows landed. `_write`'s docstring
 says it outright -- "whether rows actually landed is answered by querying the
