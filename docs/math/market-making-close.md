@@ -74,6 +74,13 @@ above the ≈31.4% ceiling.
 > can cross to us with the ask held and drift against us afterward. So the realized
 > benign earning is ≤ s_q/2 ⟹ true r\* ≥ 51.0%. The caveat widens the close.
 
+> **BLEND behind H = 1.569¢, recorded so the pooled figure is reconstructible.**
+> 1.569¢ is a mixture across market types (winner **3.1%** @ 0.68¢ mean, spread
+> **38.7%** @ 1.75¢, total **58.1%** @ 1.50¢ — half-spreads). It is ~97% spread and
+> total, so the pooled H is essentially a spread/total number; the winner type
+> barely contributes. A per-type floor would need a per-type A (not computed here),
+> but the blend is now on record — the same discipline the withdrawn 1.193¢ lacked.
+
 ---
 
 ## 2. The ceiling — the benign share that actually exists
