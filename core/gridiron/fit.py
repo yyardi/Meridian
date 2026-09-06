@@ -28,6 +28,32 @@ price nobody moved from a stale artifact of the venue freeze. So this fit
 answers *"is there forecast skill against the closing line"* and leaves
 *"could we have transacted at it"* open. The second is where the money is.
 
+Two anchors, and market COUNT was the wrong denominator
+-------------------------------------------------------
+The CFB board carries **70 moneyline markets against 8,088 spread markets**,
+which reads as "the spread is the robust anchor". Measured in GAMES it is the
+other way round:
+
+    full-game SPREAD anchor      12 games
+    MONEYLINE anchor             19 games
+
+A moneyline is **one market per game**; a spread is **~41 lines per game**. So
+8,088 spread markets are a deeper book over FEWER games, and the count ratio
+says nothing about coverage. Games is the denominator that matters.
+
+The spread anchor also needs the quoted mids to BRACKET 0.5 to interpolate an
+implied line, which drops games whose lines sit all one side.
+
+**And only 4,553 of the 8,088 spread markets are full-game** — the rest are
+1h/2h/1q/2q/3q/4q. An unfiltered spread anchor silently mixes first-quarter
+lines into a game-level feature. Moneyline is all full-game (132/132), so that
+anchor was safe by construction.
+
+**So: prefer the SPREAD anchor for fidelity — it is nflfastR's actual feature,
+a point spread — and fall back to the MONEYLINE for coverage.** Neither
+dominates; the fidelity argument and the coverage argument point opposite ways
+and the code carries both rather than choosing once.
+
 Joins
 -----
 * plays join on **`wall_clock`, never `first_seen_at`** — the recorder started
@@ -38,6 +64,8 @@ Joins
 * outcome cohort is `post` rows plus untied `P4 0:00`, per docs/math/cfb-state-substrate.md.
 """
 from __future__ import annotations
+
+import re
 
 import numpy as np
 import pandas as pd
@@ -117,3 +145,50 @@ def fit_by_game(d: pd.DataFrame):
         oos[te] = LogisticRegression(max_iter=2000, C=0.5).fit(X[tr], y[tr]).predict_proba(X[te])[:, 1]
         trained += 1
     return oos, trained, len(np.unique(g))
+
+
+FULL_GAME_SPREAD = re.compile(
+    r"^asc-[a-z]+-([a-z0-9]+)-([a-z0-9]+)-\d{4}-\d{2}-\d{2}-(neg|pos)-(\d+)(?:pt(\d))?$"
+)
+
+
+def spread_anchor(prices: pd.DataFrame, game_map: pd.DataFrame,
+                  kickoff: pd.Series) -> pd.DataFrame:
+    """Market-implied full-game spread per game, home-oriented, in points.
+
+    nflfastR's `spread_line` is a POINT SPREAD, so this is the faithful anchor.
+    Derived by interpolating the quoted ladder to the line where P(YES) = 0.5
+    rather than taking any single listed line — the crossing is the market's
+    own estimate and a listed line is only the nearest rung to it.
+
+    The regex pins **full-game** markets: 1h/2h/1q/2q/3q/4q spreads share the
+    prefix and would otherwise be mixed into a game-level feature.
+    """
+    q = prices.dropna(subset=["best_bid", "best_ask", "game_id"]).copy()
+    q["vid"] = q.game_id.astype(int)
+    q["mid"] = (q.best_bid + q.best_ask) / 2.0
+    parts = q.market_slug.str.extract(FULL_GAME_SPREAD)
+    q = q[parts[0].notna()].copy()
+    q["first_team"] = parts[0]
+    q["line"] = (np.where(parts[2] == "neg", -1.0, 1.0)
+                 * (parts[3].astype(float) + parts[4].fillna(0).astype(float) / 10))
+
+    m = (game_map[["espn_game_id", "venue_game_id", "event_slug"]]
+         .drop_duplicates("espn_game_id")
+         .merge(kickoff, left_on="espn_game_id", right_index=True))
+    q = q.merge(m, left_on="vid", right_on="venue_game_id")
+    q = q[(q.captured_at < q.kickoff)
+          & ((q.kickoff - q.captured_at).dt.total_seconds() <= ANCHOR_MAX_STALE_S)]
+    last = q.sort_values("captured_at").groupby(["vid", "market_slug"]).tail(1)
+
+    rows = []
+    for vid, g in last.groupby("vid"):
+        g = g.sort_values("line")
+        if len(g) < 2 or not (g["mid"].min() < 0.5 < g["mid"].max()):
+            continue                      # ladder does not bracket the crossing
+        crossing = float(np.interp(0.5, g["mid"].values, g.line.values))
+        home_first = str(g.event_slug.iloc[0]).split("-")[1] == g.first_team.iloc[0]
+        rows.append({"espn_game_id": g.espn_game_id.iloc[0],
+                     "home_spread": -crossing if home_first else crossing,
+                     "n_lines": len(g)})
+    return pd.DataFrame(rows)
