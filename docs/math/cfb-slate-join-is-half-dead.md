@@ -29,9 +29,19 @@ Measured here independently: **188,394** rows in the 22:00Z hour, and
 **4,638** in the 16:00Z hour on 09-06. Both figures reproduce to the row. What
 remained running was the sweep, which is what a 41-minute median gap is.
 
-**It has since recovered** — 10,891 rows across 166 markets in the 20:00Z hour
-on 09-06, **65.6 per market per hour**. The recorder is back up. This is a
-closed incident, not a live outage.
+**It has since recovered, and fully** — 10,891 rows across 166 markets on
+09-06, at a **median per-market gap of 1.7s** against 3.4s before the
+incident. The restored recorder is **3.5× faster than pre-incident**. Closed
+incident, not a live outage.
+
+> **Corrected.** This first read "65.6 per market per hour", which was wrong:
+> the `cfb_restored` export spans **339 seconds, not an hour**, and I divided
+> by 3600. The error ran 10.6× pessimistic and propagated into a
+> "restored at a third of its former rate" claim that briefly blocked the
+> COLLAPSED alarm's calibration. A rate over an assumed window is a claim
+> about the window — I checked the numerator against the data and took the
+> denominator from the file's name. Detail in
+> [collapsed-state-spec](collapsed-state-spec.md).
 
 ## What it means for the model, which is the part that matters
 
