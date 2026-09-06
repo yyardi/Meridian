@@ -1,14 +1,15 @@
 # Passive market-making: the close
 
 **VERDICT (name the line, always).** Against the break-even floor — benign fills
-must be **≥ 57.8%** of fills received (H and |A| on the same guarded real fills:
-H = 1.193¢, |A| = 1.634¢; see §1) — the measured benign ceiling of **23.7%** (upper
-bound **≈31.4%**) cannot clear it, **26.4 points clear**. So against the 57.8%
-floor, passive joining **cannot break even**. Against c7's independently-registered
-**10% kill line**, the same 23.7% does **not** kill. The verdict flips on which
-line, so the line is named at every claim below. **Even at the full quoted spread**
-(r\* = 40.6%) the floor clears the 31.4% ceiling, so no passive-maker earnings
-assumption reopens it (§4).
+must be **≥ 49.7–57.8%** of fills received (a *range*: |A|=1.634¢ is fixed, but H's
+population — where benign fills occur — is genuinely uncertain, §1) — the measured
+benign ceiling of **23.7%** (upper bound **≈31.4%**) cannot clear it, **+18 to +26
+points clear on every choice of H's population**. So passive joining **cannot break
+even**. Against c7's independently-registered **10% kill line**, the same 23.7% does
+**not** kill. The verdict flips on which line, so the line is named at every claim
+below. **Even at the full quoted spread** (r\* = 33.1–40.6%, +1.7 to +9.2 pts) the
+floor clears the 31.4% ceiling, so no passive-maker earnings assumption reopens it
+(§4).
 
 Substrates: the floor is from the shadow **fills** (settlement P&L); the ceiling
 is from c7's **book tape** (depth transitions). Different substrates — not one
@@ -61,36 +62,43 @@ benign fills earn H (positive), and the population mean is zero when benign is r
 > "circuit-breaker" (→ `onesided`), and `sandbox.py`'s own emitted statistic is
 > **game-clustered −2.626¢** (avg of per-game means), not the published
 > **fills-weighted −1.634¢** — fills-weighted is the correct one here because
-> `r* = |A|/(H+|A|)` is per-fill on both sides (`H = s_q/2` is per-fill). **Published
-> floor 57.8% stands** (H and |A| both on these guarded real fills — §1 below; the
-> H that matches |A|'s population is 1.193¢, not the all-fills 1.569¢).
+> `r* = |A|/(H+|A|)` is per-fill on both sides (`H = s_q/2` is per-fill). **The floor
+> is the range 49.7–57.8%** (|A| fixed here; H's population is the open axis — §1).
 
-**H (benign-fill earnings) — population-matched to |A|.** A benign fill is a seller
-crossing to our resting bid at `qp`; against our quote mid `m_q` we earn
-`m_q − qp = s_q/2`, our quoted half-spread (`qp = m_q − s_q/2`, zero residual on
-every bid fill). Measured on the **same 22,062 guarded real fills that produce |A|**,
-H = **mean(s_q/2) = 1.193¢** — the half-spread we quoted on the very fills that
-entered the anchor (verified: reproduces to the digit).
+**H (benign-fill earnings) — its population is genuinely uncertain, so the floor is a
+RANGE, not a point.** A benign fill is a seller crossing to our resting bid while the
+ask holds (`ask > B`), earning our quoted half-spread `m_q − qp = s_q/2`
+(`qp = m_q − s_q/2`, zero residual). But `ask > B` is the **phantom** bucket, where
+real benign fills are **indistinguishable from true phantoms** (`probe.py:81`) — so H
+cannot be measured on a clean benign population. It is bracketed by two guarded
+populations (both verified, reproduce to the digit; |A| = 1.634¢ throughout):
 
-> **CORRECTION, AT THE TABLE — the floor is 57.8%; 51.0% is WITHDRAWN as a
-> population mismatch.** This number moved **57.8 → 51.0 → 57.8** today. 51.0% paired
-> the guarded-real |A| (1.634¢) with an **all-fills** H (`s_q/2` over all 73,964
-> fills = 1.569¢) — a population mismatch: real/adverse fills happen in tighter, more
-> active markets, so their quoted half-spread (1.193¢) sits below the all-fills mean
-> (1.569¢). The population-matched pair — **both H and |A| on the 22,062 guarded real
-> fills** — is **H = 1.193¢, |A| = 1.634¢, r\* = 57.8%**. And 1.193¢ is **not**
-> unsourceable (an earlier reading called it so, and I wrongly "superseded" it with
-> 1.569¢): it is `mean(s_q)/2` over the guarded real fills, reproduced exactly — what
-> was missing was its population and aggregation, now stated.
+| H = mean(s_q/2) on (guarded fills) | H | floor r\* = \|A\|/(H+\|A\|) |
+|---|---:|---:|
+| **phantom** (ask>B — where benign fills live, mixed with true phantoms) | 1.653¢ | **49.7%** |
+| both | 1.482¢ | 52.4% |
+| **real** (ask≤B — adverse; population-matched to \|A\|, but a benign fill cannot occur here) | 1.193¢ | **57.8%** |
 
-**Floor, population-matched: r\* = |A|/(H+|A|) = 1.634/(1.193+1.634) = 57.8%** —
-26.4 points above the ≈31.4% ceiling.
+> **The floor is 49.7–57.8%, not a point — and c7's diagnosis is the one to hold:
+> this figure moved 57.8 → 51.0 → 57.8 → range in one evening, each move locally
+> sound, so the defect was upstream of all of them.** H is a *benign* earning and |A|
+> an *adverse* loss — **disjoint populations by construction** — and benign fills are
+> unobservable (mixed with true phantoms), so no single population is the clean
+> answer. My "population-match H to |A|" (57.8%) put H on the real/adverse rows where
+> a benign fill cannot occur; the phantom bucket (49.7%) is where benign fills live
+> but is contaminated by true phantoms. Neither is *the* number — quote the range.
+> (Earlier still, 51.0% used an all-fills H, 1.569¢ — a third population, also wrong.)
 
-> **H = s_q/2 is a CEILING on benign earnings, so 57.8% is if anything an
-> understatement (c7).** "Benign" is classified by book geometry (ask held vs moved),
-> not by whether the counterparty was informed; an informed seller can cross with the
-> ask held and drift against us afterward. So the realized benign earning is ≤ s_q/2
-> ⟹ true r\* ≥ 57.8%. The caveat widens the close.
+**The close is invariant across the range: the floor (49.7–57.8%) clears the ≈31.4%
+ceiling by +18 to +26 points on every choice of H's population.** It breaks only if
+H > 3.569¢ — **2.16× the phantom bucket's own mean** — and the incentive runs the
+other way (a wider quoted spread means the counterparty gives up more to cross).
+
+> **H = s_q/2 is a CEILING on benign earnings, so the whole range is if anything an
+> understatement (c7).** "Benign" is book-geometry-classified, not
+> informedness-classified; an informed seller can cross with the ask held and drift
+> against us. So realized benign earning ≤ s_q/2 ⟹ true r\* ≥ these figures — the
+> caveat pushes the range up, widening the close.
 
 ---
 
@@ -155,36 +163,29 @@ is the pinned export (**WNBA + CFB**); the ceiling is the book tape (**WNBA
 only**). The cross-league comparison is not reconciled in magnitude. Direction is
 reassuring, not alarming: WNBA's adverse anchor (−2.462¢, §1) is more negative
 than pooled (−1.634¢), so a like-for-like WNBA-only floor would be **higher** than
-57.8%, *widening* the gap the ceiling must clear — the exact same-league floor
-needs the WNBA-specific quoted half-spread, not computed here. Flagged because
-"probably harmless" is not "examined."
+the 49.7–57.8% range, *widening* the gap the ceiling must clear — the exact
+same-league floor needs the WNBA-specific quoted half-spread, not computed here.
+Flagged because "probably harmless" is not "examined."
 
 ---
 
 ## 4. The H inversion — no passive-maker earnings assumption reopens it
 
-Invert r* = |A|/(H+|A|): the H that would let the ceiling break even is
-`H = |A|·(1−r)/r`. Compared against **our quoted half-spread, 1.193¢** (H
-population-matched to |A|, §1):
+Invert r* = |A|/(H+|A|): the H that would break even at the ceiling is
+`H = |A|·(1−r)/r` = **3.57¢** at r=31.4% and **5.26¢** at r=23.7% — versus the
+half-spread we actually quote, which is **1.193–1.653¢ across H's population range**
+(§1). So the required H is **2.2–4.4×** what we quote at the upper end of the ceiling.
 
-| for r = | H required (¢) | × our quoted half-spread (1.193¢) |
-|---|---:|---:|
-| 23.7% (ceiling point) | 5.26 | 4.41× |
-| **31.4% (measured upper bound)** | **3.57** | **2.99×** |
-
-Curve r*(H): 0.6→73% · **1.193 (our quoted half)→57.8%** ·
-**2.386 (full spread)→40.6%** · 3→35% · 5.26 (required at the 23.7% point).
-
-**Even at the FULL spread the close holds.** A maker that rests to settlement earns
-only the *entry* price improvement, the quoted half-spread (1.193¢), because a
-settled binary has **no exit leg** (the same reason the taker threshold carries one
-fee) — floor **57.8%**. The optimistic bound is the **full** quoted spread
-(2 × 1.193 = 2.386¢, a benign round-trip capturing both legs with zero drift), and
-even there **r\* = 40.6%**, above the 31.4% ceiling by ~9 points. So **no
-passive-maker earnings assumption reopens the close** — half-spread (57.8%) or full
-spread (40.6%), both clear the ceiling. (A round-tripper is a different strategy from
-resting-to-settlement, parallel to a taker with edge, and it does not even need to be
-invoked — it clears too.)
+**Even at the FULL spread the close holds, across the range.** A maker that rests to
+settlement earns only the *entry* half-spread (no exit leg, the same reason the
+taker fee is one-sided). The optimistic bound doubles it (a benign round-trip
+capturing the full spread, zero drift): full = 2H = **2.386¢ (H on real) to 3.305¢
+(H on phantom)**, giving **r\* = 40.6% down to 33.1%** — still above the 31.4%
+ceiling by **+9.2 to +1.7 points**. So **no passive-maker earnings assumption
+reopens the close** on any H population, though the margin is thin (+1.7pts) at the
+full-spread/phantom corner. (A round-tripper is a different strategy from
+resting-to-settlement, parallel to a taker with edge; it clears too, so it need not
+be invoked.)
 
 ---
 
@@ -240,13 +241,14 @@ is not enough benign flow to select toward, independent of the rate argument.
 
 ## The one-line close
 
-**Against our 57.8% break-even floor (H and |A| on the same guarded real fills:
-H = 1.193¢, |A| = 1.634¢), benign fills are at most 23.7% of the flow (upper bound
-≈31.4%), so passive market-making cannot break even on this venue — 26.4 points
-clear, for a maker that rests to settlement. Even at the full quoted spread
-(r\* = 40.6%) the floor still clears the ceiling by ~9 points, so no passive-maker
-earnings assumption reopens it. Against the registered 10% kill line it survives —
-so the verdict is stated against the 57.8% floor, and the line is named.** The probe is the only instrument that can ever separate a real
+**Against our break-even floor of 49.7–57.8% (|A| = 1.634¢ fixed; H's population —
+where benign fills occur — is the open axis), benign fills are at most 23.7% of the
+flow (upper bound ≈31.4%), so passive market-making cannot break even on this venue
+— clear by +18 to +26 points on every choice of H's population, for a maker that
+rests to settlement. Even at the full quoted spread (r\* = 33.1–40.6%) the floor
+still clears the ceiling (+1.7 to +9.2 pts), so no passive-maker earnings assumption
+reopens it. Against the registered 10% kill line it survives — so the verdict is
+stated against the floor range, and the line is named.** The probe is the only instrument that can ever separate a real
 benign fill from a phantom — a permanent measurement gap on the RATE r, not on H —
 but at this margin it is not worth arming: it would confirm the negative, not test
 an open one (a1, `e6e6bef`).
