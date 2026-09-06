@@ -42,9 +42,15 @@ FIGURE = re.compile(r"[+-]?\d+\.\d+\s*(?:c\b|¢)")
 #: the fill/game dichotomy would mark a correctly-labelled figure UNLABELLED.
 _UNIT = (r"fill|game|pair|contract|cycle|dollar|\$|market|order|observation"
          r"|row|trip|ride|quote|window|event|leg")
+#: One optional adjective is allowed between "per" and the unit: the source
+#: says "per FILLED quote" and "per recorded fill", and requiring adjacency
+#: marked both UNLABELLED.
 BASIS = re.compile(
-    rf"per[-\s]?(?:{_UNIT})\b|/(?:{_UNIT})\b|(?:{_UNIT})-weighted"
-    r"|mean of (?:\w+ )?means|median of (?:\w+ )?medians", re.I)
+    # NOTE the missing \b after the /UNIT alternative: "+8.5c/$" failed to
+    # match because \b never fires after "$", which is not a word character.
+    rf"per[-\s](?:\w+[-\s])?(?:{_UNIT})\b|/(?:{_UNIT})|(?:{_UNIT})-weighted"
+    r"|mean of (?:\w+ )?means|median of (?:\w+ )?medians"
+    rf"|over (?:all |the )?(?:\w+[-\s]){{0,3}}(?:{_UNIT})s?\b", re.I)
 
 #: A cent figure only NEEDS a basis if it is an AVERAGE OVER A POPULATION.
 #: A spread, a price move, a concession or a tick size is a cent figure with
