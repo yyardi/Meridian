@@ -107,3 +107,50 @@ find one by searching" — the five were declared in a commit before the run.
 **Does not close:** whether a market feature changes any of it. This model has
 no price input. d5's frozen-anchor architecture is the next fit, and its
 baseline is the pooled −0.01119 above rather than anything in this table.
+
+---
+
+# a1's down=0 sentinel, checked against this cohort
+
+    export        63 rows with down==0 of 8,634   (0 NULL)
+    my cohort     44 of 4,828   (0.91%)
+    LATE cut       3 of 408     (0.74%), from ONE game
+
+## Impact: none of the published numbers move
+
+    pooled, as published          -0.01119 [-0.04316, +0.02077]
+    pooled, sentinels excluded    -0.01039 [-0.04189, +0.02112]
+    LATE, as published            -0.09277 [-0.21070, +0.02516]
+    LATE, sentinels excluded      -0.08847 [-0.20222, +0.02528]
+
+Both shifts are ~4% of their own half-width. **No verdict changes and
+−0.09277 stands**, now with the contamination bounded rather than assumed.
+Sentinels are also **not concentrated late** — 0.74% of the late cut against
+1.47% mid-game and 0.85% early — so the cut was never differentially exposed.
+
+## ★ TWO CORRECTIONS TO THE CHARACTERISATION
+
+**1. They are not end-of-game markers.** By `play_type`: **Timeout 52,
+Penalty 7**, Two Point Pass 2, Defensive 2pt Conversion 1, End Period 1. The
+sentinel flags **non-snap events**, which occur throughout a game — that is why
+they are spread evenly across the clock rather than piling up at the end.
+
+**2. The feature values ARE fabricated, and I nearly reported the opposite.**
+Seeing `distance` and `yards_to_goal` populated, I was about to flag a1's fix
+(null the whole start block when down is falsy) as over-broad — discarding real
+field position at a stoppage. **Checking whether the values were carried or
+invented reversed that:**
+
+    (distance, yards_to_goal) = (3,3) on  79.4% of down==0 rows
+                               against    0.3% of normal plays   — 265x
+    matches the PRECEDING play's distance   6.3%
+    matches the preceding play's ytg        9.5%
+    distinct values: distance {0,3,8,35,65}, ytg {3,8,35,65}
+
+**`distance == yards_to_goal` on nearly all of them.** That is not a football
+state — it is one number written into two fields. On a real play those are
+independent and coincide only at the goal line. **The values are invented, they
+are not carried, and a1's fix is correct as written.**
+
+"Populated" is not "real", and the check that separates them is whether the
+value tracks the preceding play or a constant.
