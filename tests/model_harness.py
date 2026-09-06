@@ -282,15 +282,46 @@ class Report:
         return {f.code for f in self.failures}
 
 
+def _unusable(rows, preds) -> str | None:
+    """Why these predictions cannot be scored, or None.
+
+    ★ SOURCE DEATH. Every check below is a COMPARISON, and every comparison
+    against NaN is False — so a model emitting NaN, which is the purest way of
+    saying "I could not measure", passed all seven silently. Found by running
+    c7's treatment against this harness rather than by it. The same shape as
+    `if x < threshold` failing safe by accident on NULL.
+    """
+    import math
+
+    if len(preds) != len(rows):
+        return (f"returned {len(preds)} predictions for {len(rows)} rows — "
+                "the model did not answer for every row and the score would "
+                "be computed over a silently different population")
+    bad = [p for p in preds if not isinstance(p, (int, float))
+           or not math.isfinite(p)]
+    if bad:
+        return (f"{len(bad)} of {len(preds)} predictions are not finite "
+                f"(first: {bad[0]!r}) — NaN is not a probability, and every "
+                "comparison against it is False, so it passes every check")
+    return None
+
+
 def run_all(model_cls) -> Report:
     """Every check, against one model class. Returns rather than asserts so a
     caller can report all failures at once."""
     rep = Report()
 
-    # 1. NULL — the market is already right; there is nothing to find.
+    # 0. Are these predictions scoreable at all? Must come first: every check
+    #    after it is a comparison, and comparisons are silent on NaN.
     rows = make_slate(edge=0.0)
     tr, te = split_by_game(rows)
     m = model_cls(); m.fit(tr)
+    why = _unusable(te, list(m.predict(te)))
+    if why:
+        rep.failures.append(Failure("UNSCOREABLE", why))
+        return rep
+
+    # 1. NULL — the market is already right; there is nothing to find.
     cm = skill_beyond_market(te, m.predict(te))
     rep.notes.append(f"null skill {cm.mean:+.5f} [{cm.lo:+.5f}, {cm.hi:+.5f}]")
     if cm.lo > 0:

@@ -243,3 +243,45 @@ def test_positive_skill_means_the_model_beat_the_market():
     better = skill_beyond_market(rows, [0.9] * 40)
     worse = skill_beyond_market(rows, [0.1] * 40)
     assert better.mean > 0 > worse.mean
+
+
+# ------------------------------------------------------------------ #
+# SOURCE DEATH — the model stops being able to answer
+# ------------------------------------------------------------------ #
+#
+# Every check above varies what the MODEL IS DOING. None varied whether it
+# can still answer at all. Running c7's treatment against this harness found
+# one that passed all seven silently.
+
+
+def test_nan_predictions_do_not_pass_silently():
+    """★ THE ONE THIS SUITE SHIPPED WITH. Every check is a COMPARISON, and
+    every comparison against NaN is False — so NaN, which is the purest way of
+    saying "I could not measure", scored a clean pass on all seven."""
+    class NaNModel(Oracle):
+        def predict(self, rows): return [float("nan")] * len(rows)
+
+    rep = run_all(NaNModel)
+    assert not rep.ok
+    assert "UNSCOREABLE" in rep.codes, rep.failures
+
+
+def test_predictions_that_do_not_cover_every_row_are_caught():
+    """A short answer scores over a silently different population."""
+    class ShortModel(Oracle):
+        def predict(self, rows): return [0.5] * (len(rows) // 2)
+
+    rep = run_all(ShortModel)
+    assert "UNSCOREABLE" in rep.codes, rep.failures
+
+
+def test_the_unscoreable_check_runs_before_the_comparisons():
+    """Order matters: if it ran after, the comparisons would already have
+    returned their silent passes and the report would carry both."""
+    class NaNModel(Oracle):
+        def predict(self, rows): return [float("nan")] * len(rows)
+
+    rep = run_all(NaNModel)
+    assert rep.codes == {"UNSCOREABLE"}, (
+        "an unscoreable model must report ONLY that, not a list of checks "
+        "that quietly compared against NaN")
