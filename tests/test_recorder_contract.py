@@ -277,3 +277,56 @@ def test_a_full_append_count_is_not_short():
     v = judge(Cycle(work_identified=3,
                     writes=(_state(3), _attempted("plays", 12))))
     assert v.state == OK, v.reasons
+
+
+# ------------------------------------------------------------------ #
+# SOURCE DEATH — vary whether the INSTRUMENT can see, not what the world does
+# ------------------------------------------------------------------ #
+#
+# c7's treatment, applied to this contract rather than by it. Every case above
+# varies what the recorder is doing; none varied whether the contract can
+# still observe it. Two of five source-deaths returned OK.
+
+
+def test_losing_all_instrumentation_is_not_health():
+    """The hole this file shipped with. Every rule iterates `cycle.writes`, so
+    an empty tuple meant no rule could fire and two live games with nothing
+    written read as OK."""
+    v = judge(Cycle(work_identified=2, writes=(), errors=1))
+    assert v.state != OK
+    assert "NO_INSTRUMENTATION" in v.codes, v.reasons
+
+
+def test_losing_instrumentation_AND_the_error_counter_is_not_health():
+    """The worse version: no counters and no errors either, so there is
+    nothing at all to reason from. Silence is the one thing that must never
+    be OK."""
+    v = judge(Cycle(work_identified=2, writes=(), errors=0))
+    assert v.state == UNKNOWN
+    assert "NO_INSTRUMENTATION" in v.codes
+
+
+def test_a_quiet_slate_with_no_writers_is_still_fine():
+    """The false-positive control: no work AND no counters is a recorder with
+    nothing to do, not a blind one."""
+    assert judge(Cycle(work_identified=0, writes=())).state == OK
+
+
+def test_every_input_has_a_source_death_case():
+    """The audit c7's treatment is: for each input this contract reads, the
+    source dying must not return OK.
+
+      work_identified -> None            WORK_UNKNOWN
+      writes[].rows   -> None/-1         COUNT_UNREPORTABLE
+      writes          -> ()              NO_INSTRUMENTATION
+      errors          -> stuck at 0      covered by the attempted/append rules,
+                                         which do not consult it
+    """
+    deaths = [
+        Cycle(work_identified=None, writes=(_state(0),), errors=1),
+        Cycle(work_identified=2, writes=(_state(-1),), errors=1),
+        Cycle(work_identified=2, writes=(), errors=1),
+        Cycle(work_identified=2, writes=(_attempted("plays", 0),), errors=0),
+    ]
+    for c in deaths:
+        assert judge(c).state != OK, c
