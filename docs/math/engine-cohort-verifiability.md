@@ -213,3 +213,79 @@ closure is wrong in the same direction**, because it tracks what the code
 mentions rather than what the decision uses. Each level needs the same
 treatment: a named list, a written reason per entry, and a drift guard that
 fails the build when something new appears unclassified.
+
+## 9. ★ Where the deploy-log write goes — and why the obvious answer makes the check vacuous
+
+The log is worthless if a human has to remember it: it will be complete when
+nothing interesting happens and empty on the day of the unintended mid-slate
+deploy. The failure and the record would share a cause, which is the same
+defect as per-fill stamping being self-consistent.
+
+**The obvious fix is to have the engine write the log at startup. That is
+wrong**, and the reason is the trap this document exists to avoid: if the
+engine writes both the log entry and the per-fill stamps, it computes the hash
+once and both sides agree **by construction**. The reconciliation would be
+vacuous — an integrity check wearing a validity check's clothes.
+
+**The provenances must differ. That is the whole value.**
+
+    scripts/deploy_engine.sh   computes decision_hash FROM GIT at the deployed
+                               ref, writes the deploy_log row
+    the engine at startup      computes decision_hash FROM ITS OWN FILESYSTEM
+                               plus resolved env, stamps every fill with it
+
+The chokepoint already exists and already has the discipline:
+`docker-compose.quote.yml` requires `GIT_COMMIT` and the engine **refuses to
+start** when it is empty (amendment 12, fail-closed). The log write belongs
+next to that stamp, in the same script, for the same reason.
+
+**What the differing provenance catches**, none of which a single computation
+could: a hand-edit made before start, a stale image that does not match the
+commit deployed, a deploy that silently did not take, and a compose file whose
+env differs from what was intended.
+
+**The restart gap closes itself.** `restart: unless-stopped` means a crash or
+host reboot restarts the engine without passing through the deploy script, so
+no log row is written. That is fine: a restart of an unchanged image produces
+a hash equal to the last log entry, and if the image *did* change, the engine's
+self-computed hash disagrees with the log and the check fires. The check does
+not need an entry per start, only per change.
+
+**What remains uncloseable, narrower than "a hand-edit":** a hot-patch applied
+*after* the engine has computed its hash. Editing the source on a running
+container before start is caught; editing it after is not.
+
+Cheap mitigation, and it is nearly free because the machinery already runs:
+**recompute the hash on each heartbeat rather than once at startup.** The
+exposure window then becomes one heartbeat interval instead of the process
+lifetime. Whether that is worth the cycles is a judgement; the guarantee
+without it should be stated as "matches at start" rather than "matches".
+
+## 10. The latency question does not bear on QUOTE at all
+
+Two of our own measurements are ~8x apart (36.4s with the price move already
+complete, against a 4.46s pipeline and 7.7s at a rested decision) and it is
+load-bearing for whether joined game state is tradeable. **For QUOTE the
+question does not arise**, and this is checkable rather than arguable:
+
+`engine.py:207` reads, per cycle:
+
+    market_slug, game_id, captured_at, best_bid, best_ask, is_live
+    FROM market_snapshots
+
+**No score, no period, no clock, no ESPN.** QUOTE consumes the book and nothing
+else, so game-state latency cannot reach a quote by any path. The debate is a
+PULSE question wearing a program-wide coat.
+
+**And for QUOTE the binding clock is one we chose, not one the world gave us.**
+`MERIDIAN_QUOTE_INTERVAL_SECONDS = 5`, so our quote is exposed at a stale price
+for up to a full cycle regardless of how fast anything upstream is. **Any
+pipeline improvement below ~5s is invisible in our own behaviour** — a 4.46s
+pipeline and a 1s pipeline produce identical quoting. If maker latency ever
+matters, the first lever is the cycle, not the feed.
+
+For a taker the clock is genuinely different: event → actionable, and "the
+price move already complete" is the damning half of d5's number, not the 36.4s
+itself. So both measurements can be correct and measuring different intervals
+for different strategies. Naming the endpoints settles it; adjudicating the
+numbers without them cannot.
