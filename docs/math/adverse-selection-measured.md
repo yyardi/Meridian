@@ -18,6 +18,23 @@ order** — so the recorded bid is free to fall below our own price, dragging th
 mid onto it, while nobody ever offered anywhere near us. See WAVE_STANDARD
 rule 24 (the counterfactual must contain itself).
 
+> **The phantom rate is one of TWO defects, and they point opposite ways —
+> added 2026-09-06.** 63.9% describes the fills this simulator DOES book:
+> a majority of them could not have happened as booked, which makes the booked
+> set flattering. It says nothing about the fills that are ABSENT, and the
+> same `mid ≤ B` rule censors those: a counterparty crossing to our resting
+> bid while the ask holds leaves the mid above our bid, so the benign fill
+> books no row at all.
+>
+> One defect is optimistic about the rows present, the other pessimistic about
+> which rows exist. They are compatible because they act on different
+> populations — which is why 63.9% was never a single quantity, but a booking
+> defect and a censoring defect sharing a denominator.
+>
+> **Net bias: unknown in SIGN, not merely uncertain in size.** Neither −3.38¢
+> nor 63.9% authorises anything in either direction until a probe supplies
+> real fills. Derivation: [fill-rule-bias.md](fill-rule-bias.md).
+
 Classification: book at the fill instant, ≤5s lookback, **17,339/17,339 matched
 (100% coverage)**. Settlement present on **17,339/17,339**.
 
