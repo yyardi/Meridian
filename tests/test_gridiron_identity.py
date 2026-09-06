@@ -196,3 +196,18 @@ def test_a_recorder_that_stopped_mid_game_yields_no_outcome():
     from core.gridiron.fit import outcome_cohort
     s = pd.DataFrame([_srow(1, 2, "5:04", 14, 0, t=0)])
     assert outcome_cohort(s).empty
+
+
+def test_espn_un_posts_and_the_first_post_row_can_name_the_wrong_winner():
+    """Real shape from game 401858428: ESPN called it final at 7-12, reverted to
+    live, the home team scored, and it finalled again at 13-12. Taking the FIRST
+    post row names the losing team. 2 of 28 games change margin after a post."""
+    from core.gridiron.fit import outcome_cohort
+    s = pd.DataFrame([
+        _srow(1, 4, "0:00", 7, 12, t=100),
+        _srow(1, None, None, 7, 12, st="post", t=101),     # premature final
+        _srow(1, 4, "0:00", 13, 12, t=102),                # un-posted, home scores
+        _srow(1, None, None, 13, 12, st="post", t=103),    # the real final
+    ])
+    c = outcome_cohort(s)
+    assert c.margin.iloc[0] == 1, "must take the LAST post row, not the first"
