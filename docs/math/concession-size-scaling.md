@@ -1,108 +1,121 @@
-# The concession is applied per contract, and was measured where size ≡ 1
+# The concession is applied per contract — and the size term is not there
 
 `analysis/pulse_execution_decomposition.py:285` charges the pessimistic
-execution rule as
+execution rule as a flat rate times total size:
 
 ```python
 contract_legs = legs.contracts.sum() + trips.contracts.sum()
 pess_exec = MEASURED_CONCESSION_INGAME * contract_legs      # 4.70¢ × Σ size
 ```
 
-A flat rate times total size. That is a **linearity assumption**: cost per
-contract does not depend on order size.
+That is a linearity assumption, and the study behind the constant cannot test
+it: `ShadowQuoteFill` has **no size field**, so QUOTE has zero size variation
+and zero power to detect size dependence — not low power, zero.
 
-## The measurement that produced the constant cannot test it
+**Resolved on PULSE's own fills. Linearity holds. The assumption is safe, and
+for none of the reasons anyone proposed, including me.**
 
-4.70¢ per contract per leg comes from the QUOTE study. `ShadowQuoteFill` has
-no size field — every fill is a unit YES position. So the study has **no size
-variation at all**, and its power to detect size dependence is not low, it is
-**zero**. This is not an unverified assumption; it is one the originating
-design cannot speak to even in principle.
+## The proposed test was measuring a mechanism that does not exist
 
-The two units are also different in kind and only coincide by construction:
-QUOTE's "per filled quote" equals "per contract" because size ≡ 1. PULSE's
-sizes vary, so the two come apart there — the collision recorded in
-[estimator-not-named-in-the-label](../../MEMORY.md), one level down.
+The plan was `p95(contracts / touch_depth)`: below 1, linearity safe; above 1,
+the convex book-walking term bites. Both branches are void.
 
-## Why it could fail: the two components scale differently
+**Every filled leg rests. None crosses.** Of 4,725.5 contract-legs, **0.0%**
+are marketable against the decision-time book:
 
-| component | scales with size? |
+| leg | placement |
 |---|---|
-| feed-lag / adverse selection — the mid moves between decision and fill | **no**, constant per contract |
-| book-walking — the order consumes past the touch into worse levels | **yes**, convex once size exceeds touch depth |
+| enter yes | **100%** at the bid |
+| enter no | **100%** at the ask (YES frame) |
+| exit yes | 41.6% above the ask, 40.9% at it, 17.5% inside |
+| exit no | 44.8% below the bid, 37.4% at it, 17.8% inside |
 
-A pure feed-lag concession is genuinely linear, so the code is right for that
-part. The book-walking part is zero while an order fits inside the touch and
-convex after. Everything therefore turns on **D, the depth at the touch**.
+A resting order does not consume the touch — it joins the queue behind it.
+Book-walking cannot occur, so `contracts / touch_depth` is not a small number
+or a large one, it is **the wrong ratio**. It would have returned a value
+either way and been believed.
 
-## Sensitivity to D
+For entries this is the engine's construction (the limit is *set* to the
+touch, so the test is circular there and I say so). For exits it is an
+observation across a genuinely spread distribution, and they are passive too.
 
-Filled PULSE legs, pin `20260901T195202Z`: 3,751 fills, 4,725.5 contracts,
-flat charge $222.10. Suppose cost per contract rises linearly once size
-exceeds D. The flat rate then **understates** by:
+## The real size channel, and it dissolves
 
-| D (contracts at the touch) | understatement | as a share of the charge |
-|---:|---:|---:|
-| 1 | +$281.50 | **127%** |
-| 2 | +$103.54 | 47% |
-| 5 | +$17.19 | 7.7% |
-| 10 | +$2.46 | 1.1% |
-| 25 | $0.00 | 0% |
+With book-walking gone, the remaining channel is adverse selection: is a
+larger resting order picked off harder *per contract*? Raw, it looks like yes.
+Controlled, no.
 
-The answer is dominated by D and by nothing else.
+Per-leg mean markout at fill by order size, game-clustered:
 
-## Size distribution: the assumption barely binds for typical orders
+| size | n | mean markout | 95% CI |
+|---|---:|---:|---|
+| <0.5 | 1,411 | −1.398¢ | [−1.567, −1.229] |
+| 0.5–1 | 980 | −1.524¢ | [−1.761, −1.287] |
+| 1–2 | 668 | −1.540¢ | [−1.778, −1.301] |
+| 2–5 | 551 | −1.689¢ | [−2.097, −1.281] |
+| >5 | 141 | **−2.475¢** | [−2.907, −2.043] |
 
-Per filled decision: median **0.70** contracts, mean 1.26, **max 21.27**.
+Monotone, and the extreme intervals do not overlap. **It is a confound.** The
+sizer scales with edge, and the >5 bucket sits at mean |edge_net| 0.301
+against 0.079 for the smallest. Adding controls to the slope of markout on
+size:
 
-| threshold | orders | % of orders | % of contract volume |
-|---|---:|---:|---:|
-| > 1 | 1,360 | 36.3% | 77.5% |
-| > 5 | 141 | 3.8% | 22.1% |
-| > 10 | 14 | 0.4% | **4.2%** |
-| > 25 | 0 | 0% | 0% |
+| model | size coefficient |
+|---|---:|
+| uncontrolled | −0.1231¢ per contract |
+| + half-spread | −0.1080¢ |
+| + half-spread + \|edge\| | **−0.0403¢** |
 
-**The max FILLED size is 21.27, not 200.75.** The 200.75 figure is the max
-over *all* decisions including the 15,582 that never filled; quoting it as a
-traded size overstates the largest real order by 9.4×. Corrected here because
-I circulated it myself.
+67% of the raw gradient is edge wearing size's name, and within edge strata
+the direction is not even consistent (large orders are *better* at low and mid
+edge, worse only at high edge). The |edge| coefficient is −2.87¢, two orders
+above size's.
 
-96% of volume sits at ≤ 10 contracts, so for the typical order linearity is
-almost certainly harmless. The exposure is concentrated in the top ~4%.
+**Per-contract concession is size-independent once the situation is
+controlled. The flat rate is the right functional form.**
 
-## D is not measurable for PULSE's markets from anything pinned
+## What the flat rate is worth, which is a separate question
 
-The only book export with touch quantities,
-`book_trade_joined_20260906T193102Z`, covers **4,291 CFB markets**. The PULSE
-decisions pin covers **480**. The overlap is **zero markets and zero
-decisions**. There is no join to make, and I did not force one.
+Realised markout on all 3,751 filled legs, 4,725.5 contracts, 34 games:
 
-For scale only, and **explicitly from a different league, date and price
-regime** — CFB 09-06, mid-range prices (0.05–0.95), n = 48,159 snapshots:
+| estimator | value | 95% CI (game-clustered) |
+|---|---:|---|
+| per **leg** | −1.539¢ per leg | [−1.699, −1.380] |
+| per **contract** | **−1.808¢ per contract** | [−2.045, −1.572] |
+| — entries | −1.825¢ per contract | [−2.109, −1.541] |
+| — exits | −1.791¢ per contract | [−2.073, −1.508] |
 
-| p5 | p25 | median |
-|---:|---:|---:|
-| 2 | 15 | 61 contracts at the touch |
+The per-leg / per-contract gap of 0.27¢ is real: contracts do sit in the
+slightly worse-executed legs, so the two estimators must be named apart.
+Entries and exits agree, which they need not have.
 
-32% of those snapshots have touch depth below 21.27. If anything like that
-depth held in PULSE's markets, the largest orders would walk the book a
-non-trivial fraction of the time and D would sit in the range where the
-understatement is material rather than the range where it vanishes. **That is
-a reason to measure, not a measurement** — a clean number from the wrong
-regime is the failure mode this project has already recorded once.
+Against these, the flat charge is **4.70¢ × 4,725.5 = $222.10**, while the
+realised per-contract markout implies **$85.46** — the flat rate is **2.60×**
+the realised figure.
 
-## What would close it
+**This retracts a direction I asserted.** I told the manager the flat rate
+"understates, never overstates", so the pessimistic branch was a lower bound.
+That rested entirely on convexity from book-walking. With no book-walking the
+premise is void and the conclusion does not follow — and measured, the charge
+runs the other way.
 
-A book export carrying `ask_qty_touch`/`bid_qty_touch` for PULSE's own 480
-markets, ASOF-joined to `decided_at`, giving the realised distribution of
-`contracts / touch_depth`. If the p95 of that ratio is below 1, linearity is
-safe and this document can be closed. If not, the pessimistic re-score needs a
-convex charge and is currently **not pessimistic enough** — which matters
-precisely because it is the conservative branch of the decision rule.
+Stated carefully: markout-at-fill and QUOTE's feed-lag concession are **not
+demonstrably the same estimand**, so this does not refute 4.70¢. What it does
+refute is my claim to know the sign of the error.
+
+## The cadence blocker was real, and is moot here
+
+Flagged before use, and correctly. In `ptd_20260906T195333Z` the per-market
+gap between consecutive snapshots is **bimodal**: median 11s, but **p90 921s**
+and p99 3,622s. About a tenth of decisions would have ASOF-joined to a book
+over fifteen minutes stale.
+
+Market coverage was fine — **399 of 399** PULSE markets present, so the export
+did clear the data blocker. It is the statistic that was wrong, not the data.
 
 ## Status
 
-**Open.** Unresolvable from pinned data; not a defect in the code, an
-unmeasured assumption in it. The direction of any error is known — flat-rate
-understates, never overstates — so every number the pessimistic rule produces
-is a **lower bound on the execution charge**.
+**Closed.** Linearity is safe; the code's functional form is right. Two live
+questions are left behind and neither is this one: whether 4.70¢ is the right
+*level* for PULSE, and why |edge| is the dominant driver of realised markout
+at −2.87¢ per unit — a model that captures less when it thinks it sees more.
