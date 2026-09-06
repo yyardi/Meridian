@@ -160,3 +160,88 @@ corresponds to money earned gives 58.*
 
 Anyone quoting 58 without that range will budget wrong, and anyone quoting the
 +3.040pp significant cell is quoting the one convention with look-ahead in it.
+
+---
+
+# JOINT VERSION — B and d5 reconciled
+
+## The number
+
+**58 games** (d5 independently: 56; the gap is sandwich implementation only).
+Point estimates match to three decimals.
+
+    filled n=1,944   G=34   fill rate 65.4%   57.2 bets/game
+    row-weighted     +4.761pp  [-1.455, +10.978]   hw 6.216pp   ->  58 games
+    game-weighted    +2.451pp  [ -4.33,  +9.24]    hw 6.784pp   -> 260 games
+
+**The estimand must be named with the number: 4.5x sits between them.**
+Row-weighted is right for a money question — you earn per bet, and a 146-bet
+game genuinely contributes more money than a 1-bet game — but game-weighted is
+defensible and gives 260, the difference between "one to two Saturdays" and
+"most of a season".
+
+## ★ CORRECTION: THE MAKER REBATE DOES NOT EXIST, AND I CITED IT AS d5's
+
+I wrote "d5's verified maker rebate of −0.0125·p(1−p)" and built a ladder row
+on it. **Two errors.** It is C7, it was **RESOLVED 2026-08-25 as unobserved**,
+and **d5 helped land the retraction** — so I attached a peer's name to a claim
+they had personally refuted.
+
+The repo is unambiguous and I checked it rather than argue:
+
+* C7: *"the advertised maker rebate remains unobserved in this account across
+  its entire history; the zero default was right. **θ_maker = 0 stays correct
+  everywhere**"*
+* V24: the observed credits were a **50%-of-own-taker-fees promo**, window
+  2026-03-29 → 05-10, **ended**
+* V9: *"**No corresponding maker field exists**"*
+* Code: `theta_maker = 0` default in `fills.py` and `wallet.py`
+
+**Break-even is exactly 0.00pp, not a −0.31pp credit.** The ladder's bottom row
+(13,672 games at 0.31pp) was chasing a target derived from a credit that does
+not exist. **The headline 58 is unaffected** — it resolves the point estimate
+from zero either way, and zero is now the bar for a cleaner reason.
+
+I propagated this from a manager's message without checking it against
+`findings.md`, which had the resolved entry the whole time.
+
+## ★ THE FRAGILITY, AND A MEASURE THAT DISAGREED
+
+d5's finding reproduces:
+
+    games <=20 bets   10 games   mean P&L  -9.84pp   (d5: -10.97)
+    games >=80 bets   13 games   mean P&L  +2.52pp   (d5: +2.67)
+    corr(game size, game mean P&L) = +0.166          (d5: +0.166, exact)
+
+**Where the engine bet little, it lost heavily per bet**, and row-weighting
+down-weights exactly those games. Money-correct, and it makes the 58 conditional
+on that bet-allocation pattern holding.
+
+**One measure disagreed: "top 3 games as a share of net total" — d5 −9%, me
++65.7%.** Neither is wrong; **the measure is unstable.** Net P&L is a small
+difference of large offsetting sums (+173.3 positive against −80.8 negative,
+net +92.6), so any subset's "share of net" can exceed 100% or flip sign on an
+ordering choice.
+
+**The stable version is leave-one-game-out**, and it supports d5's conclusion:
+
+    full sample                     +4.761pp
+    LOGO range              +3.259 to +6.152pp
+    largest single-game influence      1.503pp  (32% of the estimate)
+    sign flips on dropping any one game:     0
+
+**No single game carries the result and the sign survives dropping any one of
+the 34** — d5's conclusion, on a measure that does not move when you look at it
+differently.
+
+## What the operator can act on
+
+**The directional question is answerable in one to two CFB Saturdays if the
+effect is near the measured point, and in most of a season if it is near 1pp.**
+The ladder is the object, not the 58:
+
+    +4.76pp (measured point)      58 games        2.69pp    182
+     2.00pp                      328              1.00pp  1,314
+
+And **09-12 gates all of it** — every date assumes a 94% capture rate measured
+on WNBA and applied to football, which Saturday tests.
