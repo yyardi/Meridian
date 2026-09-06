@@ -1,0 +1,119 @@
+"""The nflfastR-shaped fit: market as a FEATURE, plays as state, held out by game.
+
+Run it:  python -m core.gridiron.fit
+
+What this is and is not
+-----------------------
+It is a model that exists and runs forward on a slate. **It is not a result and
+no score is printed**, because the cohort cannot support one: 10 games with a
+0.900 home-win rate, against a minimum detectable effect an order of magnitude
+above anything this programme produces. The measurement comes from slates not
+yet played.
+
+Why the market anchor is a frozen pregame number
+------------------------------------------------
+nflfastR's market feature is `spread_line` — *"the closing spread line for the
+game"*, a per-game CONSTANT — decayed by time into `spread_time`; `vegas_wp` is
+*"win probability taking into account PRE-GAME spread"*. It is not a live price.
+
+This matters because the 2026-09-05 venue tape was frozen before kickoff and
+dead after it, and a live-mid design yields 29 usable rows. The reference
+architecture never wanted a live mid. Using the last pregame moneyline mid
+(<= 15 min before kickoff) as a per-game anchor yields 1,792 plays over 10 games
+from the same data.
+
+**A frozen quote is not necessarily a TAKEABLE quote.** The pregame tape shows
+`pct_moved = 0.0` at full write cadence, and nothing in it distinguishes a live
+price nobody moved from a stale artifact of the venue freeze. So this fit
+answers *"is there forecast skill against the closing line"* and leaves
+*"could we have transacted at it"* open. The second is where the money is.
+
+Joins
+-----
+* plays join on **`wall_clock`, never `first_seen_at`** — the recorder started
+  22:08Z and backfilled to 20:18Z, so `first_seen_at` is when we SAW a play, not
+  when it happened. Using it truncates two hours and misdates the rest.
+* the anchor is oriented to HOME via the slug's first team against the map's
+  home name (V14's YES-frame), not assumed.
+* outcome cohort is `post` rows plus untied `P4 0:00`, per docs/math/cfb-state-substrate.md.
+"""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+
+EXPORTS = "backups/exports/"
+ANCHOR_MAX_STALE_S = 900.0          # 15 min before kickoff; p50 is ~1 min
+DECAY = 3.0                         # nflfastR decays the line by elapsed share
+FEATURES = ["anchor_time", "anchor_logit", "reg_left", "score_diff",
+            "down", "distance", "yards_to_goal", "drive_is_home_offense"]
+_E = 1e-6
+
+
+def _logit(x):
+    x = np.clip(x, _E, 1 - _E)
+    return np.log(x / (1 - x))
+
+
+def _truthy(s):
+    return s.astype(str).str.lower().isin(("t", "true", "1"))
+
+
+def design(plays, prices, game_map, state) -> pd.DataFrame:
+    """One row per play, with the pregame market anchor joined per game."""
+    last = state.sort_values(["game_id", "first_seen_at"]).groupby("game_id").tail(1)
+    last = last.assign(margin=last.home_score - last.away_score)
+    coh = last[(last.state == "post")
+               | ((last.period == 4) & (last.display_clock == "0:00")
+                  & (last.margin != 0))][["game_id", "margin"]]
+    coh = coh.assign(y=(coh.margin > 0).astype(int))
+
+    m = game_map[["espn_game_id", "venue_game_id", "event_slug"]].drop_duplicates("espn_game_id")
+    kick = state[state.state == "in"].groupby("game_id").first_seen_at.min().rename("kickoff")
+
+    q = prices.dropna(subset=["best_bid", "best_ask", "game_id"]).copy()
+    q = q[q.market_slug.str.startswith("aec")]          # moneyline = win probability
+    q["vid"] = q.game_id.astype(int)
+    q["mid"] = (q.best_bid + q.best_ask) / 2.0
+
+    d = (plays.merge(coh, on="game_id")
+              .merge(m, left_on="game_id", right_on="espn_game_id")
+              .merge(kick, on="game_id"))
+    a = q.merge(d[["venue_game_id", "kickoff"]].drop_duplicates(),
+                left_on="vid", right_on="venue_game_id")
+    a = a[(a.captured_at < a.kickoff)
+          & ((a.kickoff - a.captured_at).dt.total_seconds() <= ANCHOR_MAX_STALE_S)]
+    a = a.sort_values("captured_at").groupby("vid").tail(1)[["vid", "mid", "market_slug"]]
+    d = d.merge(a, left_on="venue_game_id", right_on="vid")
+
+    first_team = d.market_slug.str.split("-").str[2]
+    home_is_first = [str(s).split("-")[1] == f for s, f in zip(d.event_slug, first_team)]
+    d["anchor"] = np.where(home_is_first, d["mid"], 1 - d["mid"])
+
+    d["reg_left"] = np.where(_truthy(d.is_overtime), 0.0,
+                             (4 - d.period) * 900 + d.clock_minutes * 60 + d.clock_seconds)
+    d["score_diff"] = d.home_score - d.away_score
+    d["drive_is_home_offense"] = _truthy(d.drive_is_home_offense).astype(int)
+    d["anchor_logit"] = _logit(d.anchor)
+    d["anchor_time"] = d.anchor_logit * np.exp(-DECAY * (1 - d.reg_left / 3600.0))
+    return d.dropna(subset=["anchor", "reg_left", "down", "distance", "yards_to_goal"])
+
+
+def fit_by_game(d: pd.DataFrame):
+    """Leave-one-game-out. Returns (oos predictions, folds trained, n games).
+
+    A fold is skipped when the remaining games carry only one outcome — at a
+    0.900 home rate that happens, and skipping is honest where imputing is not.
+    """
+    X = d[FEATURES].astype(float).values
+    y, g = d.y.values, d.game_id.values
+    oos = np.full(len(d), np.nan)
+    trained = 0
+    for gg in np.unique(g):
+        tr, te = g != gg, g == gg
+        if len(np.unique(y[tr])) < 2:
+            continue
+        oos[te] = LogisticRegression(max_iter=2000, C=0.5).fit(X[tr], y[tr]).predict_proba(X[te])[:, 1]
+        trained += 1
+    return oos, trained, len(np.unique(g))
