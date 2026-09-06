@@ -26,7 +26,13 @@ services:
       retries: 10
 
   recorder:
-    build: .
+    build:
+      context: .
+      # Deployed-code audit: bake the commit into every service so a stale
+      # container is detectable. Empty is allowed (the audit reads it as UNKNOWN
+      # PROVENANCE); deploy with GIT_COMMIT set from git so it reads a real stamp.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-recorder
     # The whole point: survives crashes, Docker restarts, and machine reboots.
     # A recorder that dies unattended is the dominant failure mode, and market
@@ -46,7 +52,13 @@ services:
       MERIDIAN_RPS: "5"
 
   live-recorder:
-    build: .
+    build:
+      context: .
+      # Deployed-code audit: bake the commit into every service so a stale
+      # container is detectable. Empty is allowed (the audit reads it as UNKNOWN
+      # PROVENANCE); deploy with GIT_COMMIT set from git so it reads a real stamp.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-live-recorder
     # Separate from `recorder` on purpose: that one samples the pregame board
     # every 15-60 min, which is right for slow line drift and useless for
@@ -89,7 +101,13 @@ services:
     command: ["sh", "-c", "alembic upgrade head && python -m core.live_recorder --interval 0.2"]
 
   live-odds-recorder:
-    build: .
+    build:
+      context: .
+      # Deployed-code audit: bake the commit into every service so a stale
+      # container is detectable. Empty is allowed (the audit reads it as UNKNOWN
+      # PROVENANCE); deploy with GIT_COMMIT set from git so it reads a real stamp.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-live-odds-recorder
     # Separate from `scheduler` because the scheduler runs every 6 hours, which
     # is why the database holds 3 in-play-adjacent odds rows in total. Book
@@ -116,7 +134,13 @@ services:
     command: ["python", "-m", "core.feeds.live_odds_recorder", "--interval", "15"]
 
   kalshi-recorder:
-    build: .
+    build:
+      context: .
+      # Deployed-code audit: bake the commit into every service so a stale
+      # container is detectable. Empty is allowed (the audit reads it as UNKNOWN
+      # PROVENANCE); deploy with GIT_COMMIT set from git so it reads a real stamp.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-kalshi-recorder
     # The second transactable venue (docs/kalshi-recorder.md). Ran twice as a
     # manual foreground process and died twice with its terminal — exactly the
@@ -142,7 +166,13 @@ services:
     command: ["sh", "-c", "alembic upgrade head && python -m core.kalshi"]
 
   scheduler:
-    build: .
+    build:
+      context: .
+      # Deployed-code audit: bake the commit into every service so a stale
+      # container is detectable. Empty is allowed (the audit reads it as UNKNOWN
+      # PROVENANCE); deploy with GIT_COMMIT set from git so it reads a real stamp.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-scheduler
     restart: unless-stopped
     depends_on:
@@ -159,7 +189,13 @@ services:
     command: ["sh", "-c", "alembic upgrade head && python -m core.scheduler --interval-hours 6"]
 
   api:
-    build: .
+    build:
+      context: .
+      # Deployed-code audit: bake the commit into every service so a stale
+      # container is detectable. Empty is allowed (the audit reads it as UNKNOWN
+      # PROVENANCE); deploy with GIT_COMMIT set from git so it reads a real stamp.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-api
     # Until 2026-08-07 this was a host `nohup uvicorn` — the ONLY component
     # that did not survive a reboot, on the machine that must now run two
@@ -219,7 +255,13 @@ services:
     command: ["sh", "-c", "alembic upgrade head && uvicorn core.api:app --host 0.0.0.0 --port 8008"]
 
   alerter:
-    build: .
+    build:
+      context: .
+      # Deployed-code audit: bake the commit into every service so a stale
+      # container is detectable. Empty is allowed (the audit reads it as UNKNOWN
+      # PROVENANCE); deploy with GIT_COMMIT set from git so it reads a real stamp.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: meridian-alerter
     # Evaluates core/healthchecks.py — the same set scripts/health.py prints —
     # every 5 minutes and pushes transitions to the phone via ntfy. The 9:00 CT
