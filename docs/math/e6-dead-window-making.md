@@ -53,3 +53,18 @@ is a deeper book — E8, NFL, from 09-10.
 
 Script: `cfb/run_making_touch.py` with `DEAD_WINDOW=1`. Output preserved as
 `e6_dead_window.out` in the session scratchpad.
+
+## Pooled re-run, 2026-09-07 — after the map rebuild added Saturday's slate
+
+Backfill (Wed–Fri, 55 games) + live-only Saturday games (18), dedup by game.
+
+| arm | fills | net/fill | game-clustered 95% | G / G_eff | adverse |
+|---|---|---|---|---|---|
+| A naive touch maker | 2,760 | **+0.50¢** | [−1.95, +2.94] | 32 / 11.2 | 30.3% |
+| B model as shield | 2,182 | −0.53¢ | [−5.34, +4.27] | 32 / 11.8 | 28.5% |
+
+First positive point estimate in any arm, all night. **It is not a result** — G_eff 11.2,
+interval spans zero by ±2.4¢. What is stable across every run: the dead window shifts the
+naive maker ~2.4¢ favourable versus at-plays (E1 pooled: −1.94¢) and cuts adverse fills
+47%→30%. Composition moves the way the theory says; P&L is not measurable on a winner
+market that barely prints. Fills landed in 32 of 70 games.

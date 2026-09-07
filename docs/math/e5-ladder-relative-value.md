@@ -62,3 +62,12 @@ the near-the-money ladder as often as it samples the winner market.
 
 Script: `cfb/run_ladder_rv.py`. Model: `artifacts/cfb_cover_regulation_nearline.json`
 (v2; the v1-path file was v2 at run time, see meta).
+
+## Pooled re-run, 2026-09-07 — 73 games after the map rebuild
+
+| arm (τ=0.05) | n | G / G_eff | net of spreads + fees | mid-to-mid |
+|---|---|---|---|---|
+| all pairs | 347 | 45 / 29.5 | **−2.41¢ [−8.46, +3.63]** | +1.92¢ [−4.05, +7.90] |
+
+Eighteen more games, 36 more positions, no resolution. Stale instants rose to 296,094
+against 11,936 tradeable — the added Saturday games are sampled even more sparsely.
