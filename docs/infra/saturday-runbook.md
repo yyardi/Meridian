@@ -268,6 +268,15 @@ what that costs.
 
 ## What is NOT covered
 
+**Measured 2026-09-07: of 73 recorded CFB games, 17 have NO venue tape during
+play, 17 are partial, 39 are fully covered.** The gaps sit evenly across all four
+quarters — whole games the venue recorder missed, not listing lag. Where the
+recorder was up the live winner tick is dense (median gap 2.9s). So a fifth of
+the tape is plays without prices, and every making or drift measurement on this
+season is drawn from the 39. **Both recorders up before kickoff and a person
+watching mid-slate is what moves that 39.**
+
+
 State this before anyone reads a green T-30 as a guarantee.
 
 - **`3be4ff4` is NOT DEPLOYED, and it must NOT be deployed as-is.** It is on
