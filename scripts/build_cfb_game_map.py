@@ -47,10 +47,26 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# __file__ is absent when this is piped over stdin (how analysis runs reach
+# prod); fall back to the mounted repo root rather than NameError.
+sys.path.insert(0, os.environ.get("MERIDIAN_ROOT") or (
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if "__file__" in globals() else os.getcwd()))
 
-SCOREBOARD = ("https://site.api.espn.com/apis/site/v2/sports/football/"
-              "college-football/scoreboard")
+#: ONE builder, two leagues. The football-shaped tables hold NFL rows under
+#: league='nfl' (see espn_cfb_storage), and the venue's NFL slugs have the
+#: same shape as CFB's with 'nfl' in the league slot: 'aec-nfl-sf-lar-2026-09-10'.
+#: The ESPN scoreboard differs in path and in having no division groups.
+LEAGUE_PATHS = {"cfb": "college-football", "nfl": "nfl"}
+LEAGUE = "cfb"                       # set by --league in main()
+
+
+def scoreboard_url() -> str:
+    return ("https://site.api.espn.com/apis/site/v2/sports/football/"
+            f"{LEAGUE_PATHS[LEAGUE]}/scoreboard")
+
+
+SCOREBOARD = scoreboard_url()        # kept for any caller that reads the name
 #: 80 = FBS (ESPN's DEFAULT, hence trap 1), 81 = FCS.
 #: THESE SETS OVERLAP. A `groups` filter is not a partition: an FBS-vs-FCS
 #: game is listed under BOTH divisions, correctly. Measured 2026-09-05: 48 of
@@ -75,8 +91,11 @@ def _norm(s: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
-def fetch_espn(days_back: int) -> list[dict]:
-    """Every CFB event in the window, from BOTH divisions."""
+def fetch_espn(days_back: int, days_ahead: int = 0) -> list[dict]:
+    """Every event in the window. CFB: from BOTH divisions. NFL: one
+    scoreboard, no groups. `days_ahead` exists because the NFL map has to be
+    built BEFORE kickoff from ESPN's scheduled (state=pre) events, and a
+    builder that only looks back dry-runs to a clean, confident, useless zero."""
     import httpx
 
     today = dt.datetime.now(dt.timezone.utc).date()
@@ -84,14 +103,17 @@ def fetch_espn(days_back: int) -> list[dict]:
     by_id: dict[str, dict] = {}
     #: membership per scoreboard — the OVERLAP is what identifies a cross-
     #: division game, so we must not let the first fetch claim the id.
-    seen_in: dict[str, set[str]] = {"FBS": set(), "FCS": set()}
+    groups = GROUPS if LEAGUE == "cfb" else {"NFL": None}
+    seen_in: dict[str, set[str]] = {k: set() for k in groups}
     with httpx.Client(timeout=30.0) as c:
-        for back in range(days_back + 1):
+        for back in range(-days_ahead, days_back + 1):
             d = (today - dt.timedelta(days=back)).strftime("%Y%m%d")
-            for div, grp in GROUPS.items():
+            for div, grp in groups.items():
+                params = {"dates": d, "limit": 400}
+                if grp is not None:
+                    params["groups"] = grp
                 try:
-                    r = c.get(SCOREBOARD, params={"dates": d, "groups": grp,
-                                                  "limit": 400})
+                    r = c.get(scoreboard_url(), params=params)
                     r.raise_for_status()
                 except Exception as exc:                       # noqa: BLE001
                     print(f"  ! scoreboard {d} {div} failed: {exc}",
@@ -124,9 +146,12 @@ def fetch_espn(days_back: int) -> list[dict]:
 
     # Division is decided by MEMBERSHIP IN BOTH SETS, not by fetch order.
     for gid, g in by_id.items():
-        in_fbs, in_fcs = gid in seen_in["FBS"], gid in seen_in["FCS"]
-        g["division"] = ("CROSS" if (in_fbs and in_fcs)
-                         else "FBS" if in_fbs else "FCS")
+        if LEAGUE == "nfl":
+            g["division"] = "NFL"
+        else:
+            in_fbs, in_fcs = gid in seen_in["FBS"], gid in seen_in["FCS"]
+            g["division"] = ("CROSS" if (in_fbs and in_fcs)
+                             else "FBS" if in_fbs else "FCS")
         out.append(g)
     return out
 
@@ -143,19 +168,20 @@ def fetch_venue_games(days_back: int) -> list[dict]:
         SELECT DISTINCT game_id, event_slug,
                (min(game_start_time) OVER (PARTITION BY game_id))::date AS venue_date
         FROM market_snapshots
-        WHERE market_slug ~ '-cfb-'
+        WHERE market_slug ~ :pat
           AND captured_at > now() - make_interval(days => :d)
           AND game_id IS NOT NULL AND event_slug IS NOT NULL
     """)
     with eng.connect() as c:
-        return [dict(r._mapping) for r in c.execute(sql, {"d": days_back + 1})]
+        return [dict(r._mapping) for r in c.execute(
+            sql, {"d": days_back + 1, "pat": f"-{LEAGUE}-"})]
 
 
 def _slug_tokens(event_slug: str) -> tuple[str, str] | None:
     """'cfb-ntx-ind-2026-09-05' -> ('ntx','ind'). Also tolerates a league
     prefix ('asc-cfb-col-gtech-...')."""
-    s = re.sub(r"^[a-z]+-(?=cfb-)", "", event_slug)
-    m = re.match(r"^cfb-([a-z0-9]+)-([a-z0-9]+)-(\d{4}-\d{2}-\d{2})", s)
+    s = re.sub(rf"^[a-z]+-(?={LEAGUE}-)", "", event_slug)
+    m = re.match(rf"^{LEAGUE}-([a-z0-9]+)-([a-z0-9]+)-(\d{{4}}-\d{{2}}-\d{{2}})", s)
     return (m.group(1), m.group(2)) if m else None
 
 
@@ -237,19 +263,30 @@ def write(rows: list[dict]) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build the ESPN<->venue CFB game map.")
+    ap.add_argument("--league", choices=sorted(LEAGUE_PATHS), default="cfb")
     ap.add_argument("--days", type=int, default=7)
+    ap.add_argument("--days-ahead", type=int, default=0,
+                    help="also fetch ESPN's scheduled events this many days "
+                         "forward; needed to build a map BEFORE kickoff")
     ap.add_argument("--min-confidence", type=float, default=0.72,
                     help="below this a game is reported UNMATCHED, never guessed")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--emit-csv", metavar="PATH",
+                    help="write the MATCHED rows to a CSV instead of (or as well "
+                         "as) the DB. Read-only when combined with --dry-run — "
+                         "the bridge is derived data, so a consumer that only "
+                         "needs the mapping does not need a prod write.")
     a = ap.parse_args()
 
-    espn = fetch_espn(a.days)
+    global LEAGUE
+    LEAGUE = a.league
+    espn = fetch_espn(a.days, a.days_ahead)
     venue = fetch_venue_games(a.days)
     by_div = {}
     for e in espn:
         by_div[e["division"]] = by_div.get(e["division"], 0) + 1
     print(f"ESPN events: {len(espn)}  ({by_div})")
-    print(f"venue CFB games on the tape: {len(venue)}")
+    print(f"venue {LEAGUE.upper()} games on the tape: {len(venue)}")
 
     rows, unmatched = match(venue, espn, a.min_confidence)
     div = {}
@@ -266,8 +303,20 @@ def main() -> int:
     for u in unmatched[:8]:
         print(f"    {u['event_slug']}  <- {u['reason']}")
 
+    if a.emit_csv:
+        import csv as _csv
+        cols = ["espn_game_id", "venue_game_id", "event_slug", "division",
+                "home_espn_team_id", "away_espn_team_id", "home_espn_name",
+                "away_espn_name", "espn_date", "venue_date", "match_method",
+                "match_confidence", "date_offset_days"]
+        with open(a.emit_csv, "w", newline="") as fh:
+            w = _csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        print(f"\nemitted {len(rows)} matched rows -> {a.emit_csv}")
+
     if a.dry_run:
-        print("\n--dry-run: nothing written.")
+        print("--dry-run: nothing written to the DB.")
         return 0
     print(f"\nwrote {write(rows)} rows to cfb_game_map")
     return 0
