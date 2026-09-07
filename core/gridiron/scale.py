@@ -39,13 +39,20 @@ with closing ladders inside the <=900s window, on a board that was quoting:
     16486      25   15.98  0.9959      23.9                    16.01
 
     fitted slope on these three   -0.0105     (shipped: +0.1182)
-    residual scatter               0.193 pts
     predicted rise 8.1 -> 23.9     1.87 pts   observed  0.00 pts
-    signal-to-scatter              9.7x       <- the test HAD power
+    TOTAL spread of all 3 sigma    0.37 pts
+    predicted effect               5.0x the ENTIRE observed range
+
+    (An earlier version of this block quoted "signal-to-scatter 9.7x, the test
+    HAD power". **That overstated it and B caught it**: n = 3 with two fitted
+    parameters leaves ONE degree of freedom, so a residual sd is barely a
+    quantity and a ratio built on it is not a power statement. The lines above
+    use no fitted dispersion -- the predicted effect is five times the entire
+    observed spread, which needs no distributional assumption to read.)
 
 Mean absolute error: **flat sigma = 15.86 gives 0.16 pts; the shipped relation
 gives 0.70.** The level reproduces on a fresh cohort; the slope does not, and
-this cohort could have seen it at nearly ten times its own noise.
+this cohort predicts an effect five times larger than the entire observed spread.
 
 **Not refitted on n = 3.** The coefficients below are unchanged so the
 supersession trail stays legible, and `sigma()` clamps, so a wrong slope costs
