@@ -200,6 +200,58 @@ sweep at 04:55 and the next at 06:15 empties 05:00 while nothing is wrong.
 
 ---
 
+## A staleness alarm can fire on a perfectly healthy recorder
+
+**Before concluding the recorder is down, rule this out. It takes one query.**
+
+The writer holds transactions open while inserts are pending, and **uncommitted
+rows are invisible to every reader**. So `max(captured_at)` can look minutes
+staler than the tape actually is, and the error is in the **direction that
+false-alarms**: a working recorder looks dead. At T-30 that sends someone to
+debug a healthy system, which is precisely the harm the four-line split exists
+to prevent.
+
+Measured on prod 2026-09-07: **one open transaction, age 259s**, an
+`INSERT INTO market_snapshots` pending. meridian-ce hit the false alarm itself —
+read `08:56:47Z (89 min)` against an ~80 min expectation and reported an overdue
+sweep; the sweep had actually fired at 10:17:20Z, on cadence, and was simply not
+yet committed.
+
+**Neither timestamp column tells you when a row became visible:**
+
+| column | stamped | so it is |
+|---|---|---|
+| `captured_at` | by the application | early by the write path's own latency |
+| `created_at` | `now()` — which in Postgres is **transaction start**, not statement time | early by the whole transaction duration |
+
+`created_at` is *not* the fix. **Visibility is a commit property, not a column.**
+
+**The confirming query — run it before believing any staleness alarm:**
+
+```sql
+SELECT pid, state, round(EXTRACT(epoch FROM now() - xact_start)) AS xact_age_s,
+       left(query, 60) AS query
+FROM pg_stat_activity
+WHERE datname = 'meridian' AND state = 'idle in transaction'
+ORDER BY xact_start;
+```
+
+An open `INSERT INTO market_snapshots` distinguishes **"not written"** from
+**"not yet committed"**. Those need opposite responses and look identical from
+a freshness check.
+
+**This is also why the staleness threshold is set from the tail (116 min) rather
+than the ~80 min cadence.** 116 is the observed maximum of the *apparent*
+per-market interval, so it already absorbs commit lag; a threshold at the
+cadence does not, and 89 minutes of apparent staleness on an on-time sweep is
+what that costs.
+
+> `idle in transaction` at 259s also holds locks and blocks vacuum. That is a
+> property of the **writer**, not of the monitoring, and is the operator's —
+> flagged, not changed.
+
+---
+
 ## What is NOT covered
 
 State this before anyone reads a green T-30 as a guarantee.
