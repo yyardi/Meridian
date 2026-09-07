@@ -174,23 +174,25 @@ def ladder_scale(ladders: pd.DataFrame, *, interior: tuple[float, float] = INTER
     not filtered on**, so a badly-fitting ladder is visible to the caller rather
     than silently dropped or silently kept.
 
-    **Do NOT use `r2` as a liveness or data-quality gate.** It measures internal
-    COHERENCE, and a stale board can be more coherent than a live one. Measured
-    on the three gated 2026-09-07 ladders:
+    **Do NOT use `r2` as a liveness or data-quality gate.** Fit quality and
+    liveness are unrelated on everything measured so far, in both directions:
 
-        game     r2       interior rungs that moved
-        16453  0.9778      1/34   ( 3%)
-        16486  0.9959      0/25   ( 0%)   <- BEST fit, ZERO movement
-        16488  0.9871     20/23   (87%)
+        n = 3  (gated 09-07 closing)   corr(r2, fraction moved) = -0.014
+        n = 8  (pooled with 09-05)     corr(r2, fraction moved) = +0.2957
 
-    `corr(r2, fraction moved) = -0.014` on n = 3, and the mechanism is not a
-    small-sample accident: 16486's ladder is **25 rungs at one identical
-    timestamp** -- a single sweep from one pricing model, maximally
-    self-consistent. An actively-quoted ladder has rungs updating asynchronously
-    by different participants, which adds cross-sectional noise. So fit quality
-    would if anything PREFER the stale board, which is the opposite of what a
-    quality gate wants. Use the movement fraction for liveness; use `r2` only
-    for whether the location-scale form holds.
+    **Neither is a real number**, and the sign flip is the point. The single
+    best-fitting ladder IS a frozen one-sweep board (16486, r2 0.9959, 0% moved)
+    -- but pooled, the three WORST-fitting are also static (0.9368, 0.9508,
+    0.9566). One end of that distribution supports a mechanism and the other end
+    denies it.
+
+    **No causal claim is made here on purpose.** An earlier version of this note
+    argued that a frozen single-sweep ladder is maximally self-consistent and so
+    scores BETTER -- plausible, it explained the n=3 observation, and B refuted
+    it by pooling. A gate justified by a mechanism that later fails is still a
+    bad gate, so the warning stands on its own: **`r2` measures whether the
+    location-scale form holds, and nothing about whether anyone is quoting.**
+    Use the fraction of rungs that moved for liveness.
     """
     lo, hi = interior
     out = []
