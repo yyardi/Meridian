@@ -145,7 +145,8 @@ os.makedirs(os.path.dirname(ARTIFACT), exist_ok=True)
 booster.save_model(ARTIFACT + ".json")
 json.dump({"league": "nfl", "seasons": SEASONS, "source": "nflverse play_by_play csv.gz",
            "spread_frame": "closing_spread = -spread_line (nflfastR positive=home favoured; ours negative=home favoured), sign asserted per season",
-           "train_games": len(games)-len(hold), "holdout_games": len(hold), "brier_heldout": round(brier(p, yte), 5),
+           "train_games": len(games)-len(hold), "holdout_games": len(hold), "brier_heldout": float(round(float(brier(p, yte)), 5)),
            "monotone": json.loads(json.dumps(mono, default=lambda o: float(o) if hasattr(o, "__float__") else str(o))), "note": "Model result on held-out games. NOT edge."},
-          open(ARTIFACT + ".meta.json", "w"), indent=1)
+          open(ARTIFACT + ".meta.json", "w"), indent=1,
+          default=lambda o: float(o) if hasattr(o, "__float__") else str(o))
 log(f"saved {ARTIFACT}.json")
