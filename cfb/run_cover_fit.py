@@ -70,8 +70,6 @@ PLAY_KEEP = 0.30
 # the ladder tails still see data. This is the ONE retrain; stop after it.
 K_NEAR_LINE = bool(os.environ.get("K_NEAR_LINE"))
 NEAR_BAND = 10.5
-if K_NEAR_LINE and not os.environ.get("SMOKE"):
-    ARTIFACT = "/app/artifacts/cfb_cover_regulation_nearline"   # keep v1 intact
 EVAL_K = [-20.5, -13.5, -10.5, -6.5, -3.5, -0.5, 0.5, 3.5, 6.5, 10.5, 13.5, 20.5]
 CACHE = "/app/artifacts/cfbd_cover_cache.json"
 ARTIFACT = "/app/artifacts/cfb_cover_regulation"
@@ -83,6 +81,11 @@ if os.environ.get("SMOKE"):
     SEASONS, WEEKS, XGB_ROUNDS = [2024], [1], 30
     CACHE, ARTIFACT = "/tmp/smoke_cache.json", "/tmp/smoke_cover"
     print("SMOKE MODE: 2024 wk1 only, 30 rounds, artifacts untouched", flush=True)
+# Must come AFTER every other ARTIFACT assignment. The first version of this
+# override sat above the base assignment and was silently overwritten, so
+# v2 saved over v1. Verified by reading the meta on disk, not by reading this.
+elif K_NEAR_LINE:
+    ARTIFACT = "/app/artifacts/cfb_cover_regulation_nearline"
 
 COLS = ["home_margin", "K", "sld", "gsr", "hsr", "exp_margin", "margin_time",
         "exp_margin_time", "home_has_ball", "down", "distance", "ytg", "period"]
