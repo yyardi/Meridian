@@ -123,7 +123,12 @@ def ladders() -> dict[float, pd.DataFrame]:
         pre = x[(~x.live) & (x.captured_at < kickoff[gid])]
         if pre.empty:
             continue
-        snap = pre[pre.captured_at == pre.captured_at.max()]
+        # LAST QUOTE PER MARKET, never `captured_at == max`. The recorder writes
+        # a full ~40-rung sweep and then small updates, so equality-on-timestamp
+        # can return FOUR rungs, all near the money -- exactly where sigma is
+        # unidentified. That reads as "the closing board thins", a plausible
+        # structural finding and entirely a selector bug. Found 2026-09-07.
+        snap = pre.sort_values("captured_at").groupby("market_slug").tail(1)
         snap = snap[(snap.mid > MID_LO) & (snap.mid < MID_HI)]
         if len(snap) >= 5:
             out[gid] = snap.sort_values("line")[["line", "mid"]].reset_index(drop=True)
