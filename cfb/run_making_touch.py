@@ -254,24 +254,34 @@ def mid_at(slug, t):
 
 
 def clustered(vals, keys):
-    """Mean with a cluster-robust 95% interval. `keys` is the cluster label per
-    value. Falls back to the iid interval only when there is a single cluster,
-    and says so by returning n_clusters."""
+    """Mean, with BOTH intervals, because naming the estimator is the point.
+
+    Returns (mean, half_clustered, half_perfill, n, G, G_eff).
+
+    G_eff is Kish's effective cluster count, (sum n_g)^2 / sum n_g^2. With
+    balanced clusters G_eff == G; the more the fills pile into a few markets
+    the further G_eff falls below G, and G_eff is the honest denominator. This
+    project has been caught by per-fill vs per-game divergence more than by any
+    other single thing, so both are computed and both are printed.
+    """
     n = len(vals)
     if n == 0:
         return None
     m = sum(vals) / n
     from collections import defaultdict as _dd
-    g = _dd(float)
+    resid, size = _dd(float), _dd(int)
     for v, k in zip(vals, keys):
-        g[k] += (v - m)
-    G = len(g)
+        resid[k] += (v - m)
+        size[k] += 1
+    G = len(resid)
+    sd = (sum((x - m) ** 2 for x in vals) / (n - 1)) ** 0.5 if n > 1 else 0.0
+    half_iid = 1.96 * sd / (n ** 0.5) if n > 1 else 0.0
+    g_eff = (n * n) / sum(c * c for c in size.values()) if size else 0.0
     if G < 2:
-        return m, 0.0, n, G
-    meat = sum(x * x for x in g.values())
-    se = (meat ** 0.5) / n
-    se *= (G / (G - 1.0)) ** 0.5          # small-cluster correction
-    return m, 1.96 * se, n, G
+        return m, 0.0, half_iid, n, G, g_eff
+    se = (sum(x * x for x in resid.values()) ** 0.5) / n
+    se *= (G / (G - 1.0)) ** 0.5
+    return m, 1.96 * se, half_iid, n, G, g_eff
 
 
 def fee(theta, p):
@@ -409,14 +419,17 @@ for arm in ARMS:
             if moved < 0:
                 adverse += 1
     n = len(pnl)
-    mean, half, _n, _G = clustered(pnl, [f[2] for f in fl])
-    summary[arm] = (mean, half, n, _G)
+    mean, half, _hiid, _n, _G, _Geff = clustered(pnl, [f[2] for f in fl])
+    summary[arm] = (mean, half, n, _G, _Geff)
     fr = 100.0 * n / posted[arm] if posted[arm] else 0.0
     ad = 100.0 * adverse / scored if scored else float("nan")
     print(f"  {arm:<16}{posted[arm]:>8}{withdrawn[arm]:>8}{n:>7}{fr:>6.1f}%"
           f"{mean:>+11.2f}c{ad:>9.1f}%")
-    print(f"  {'':<16}95% CI [{mean-half:+.2f}, {mean+half:+.2f}]c "
-          f"GAME-CLUSTERED on {_G} markets   markout {scored}/{n}")
+    print(f"  {'':<16}GAME-CLUSTERED [{mean-half:+.2f}, {mean+half:+.2f}]c"
+          f"   G={_G}  G_eff={_Geff:.1f}")
+    print(f"  {'':<16}per-fill (WRONG here, shown to expose the gap) "
+          f"[{mean-_hiid:+.2f}, {mean+_hiid:+.2f}]c   ratio "
+          f"{half/_hiid if _hiid else float('nan'):.1f}x wider")
 
 # --------------------------------------------------- the finding, and its guards
 print("\n=== THE WITHDRAWN FILLS, measured directly ===")
@@ -433,9 +446,9 @@ for _lab, _set in (("kept by the shield", _kept), ("WITHDRAWN by the shield", _p
     v = _pnl(_set)
     if not v:
         print(f"  {_lab:<26} no fills"); continue
-    m, h, _nn, _GG = clustered(v, [f[2] for f in _set])
-    print(f"  {_lab:<26} n={_nn:>5}  {m:+.2f}c  [{m-h:+.2f}, {m+h:+.2f}]"
-          f"  ({_GG} markets)")
+    m, h, hi, _nn, _GG, _GE = clustered(v, [f[2] for f in _set])
+    print(f"  {_lab:<26} n={_nn:>5}  {m:+.2f}c  GAME-CLUSTERED "
+          f"[{m-h:+.2f}, {m+h:+.2f}]  G={_GG} G_eff={_GE:.1f}")
 print("  If the withdrawn set is POSITIVE, the model is selecting against us:")
 print("  it is pulling the quotes that make money and keeping the ones that lose.")
 
