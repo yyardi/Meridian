@@ -69,7 +69,14 @@ from sqlalchemy import create_engine, text  # noqa: E402
 FEED_LAG = 30          # seconds; we cannot post before we have seen the play
 REST_WINDOW = 90       # seconds a quote rests before we pull it
 MARKOUT = 60           # seconds after a fill, for the benign/adverse split
-MAKER_THETA = -0.0125  # negative: the maker RECEIVES this
+MAKER_THETA = 0.0      # THERE IS NO MAKER REBATE. findings.md C7
+# (RESOLVED 2026-08-25) and V24: the credits that looked like one were
+# TAKER_FEE_REBATE, a 50% refund of our OWN taker fees, promo window
+# 2026-03-29 -> 05-10, ended, nothing since. The advertised 25%-of-
+# matched-taker-fee rebate has NEVER been observed in this account.
+# The core code has defaulted theta_maker=0 everywhere since 08-05
+# (wallet.py:143, fills.py:21, engine.py:179); these two CFB scripts
+# were the last place still booking it as certain income.
 WITHDRAW_EDGE = 0.03   # model must disagree by this much to pull a side
 SKEW_EDGE = 0.06       # and by this much before arm C skews a tick
 TICK = 0.01
@@ -79,41 +86,39 @@ booster.load_model("/app/artifacts/cfb_wp_regulation.json")
 eng = create_engine(os.environ["DATABASE_URL"])
 
 # ---------------------------------------------------------------- quote rows
-# One row per play: the state we would have modelled, and the book we would
-# have joined. Settlement is YES = the FIRST team on the slug = the AWAY team
-# (verified 196/196), which is why this is away_score > home_score.
-QUOTES_SQL = f"""
-WITH play AS (
-  SELECT b.game_id espn_game, b.play_id, b.wall_clock, b.period,
-         b.clock_minutes, b.clock_seconds, b.down, b.distance, b.yards_to_goal,
-         b.pos_team_score, b.def_pos_team_score, b.drive_is_home_offense,
-         m.venue_game_id, g.spread,
-         (CASE WHEN g.away_score > g.home_score THEN 1 ELSE 0 END)::int AS settlement
-  FROM espn_cfb_backfill_plays b
-  JOIN cfb_game_map m ON m.espn_game_id = b.game_id
-  JOIN espn_cfb_backfill_games g ON g.game_id = b.game_id
-  WHERE b.wall_clock IS NOT NULL AND b.down IS NOT NULL AND b.down > 0
-    AND b.period IS NOT NULL AND NOT b.is_overtime AND g.spread IS NOT NULL
-    AND g.home_score IS NOT NULL AND g.away_score IS NOT NULL
-    AND g.home_score <> g.away_score
-)
-SELECT play.*, q.snapshot_id, q.market_slug, q.t0,
-       q.bid0::float AS bid0, q.ask0::float AS ask0
-FROM play
-CROSS JOIN LATERAL (
-  SELECT ms.id AS snapshot_id, ms.market_slug, ms.captured_at AS t0,
-         ms.best_bid AS bid0, ms.best_ask AS ask0
-  FROM market_snapshots ms
-  WHERE ms.game_id = play.venue_game_id
-    AND ms.sports_market_type LIKE '%winner'   -- the PRODUCTION
-    -- predicate. `= 'winner'` is not the same set: the venue prefixes
-    -- the type, so equality returns zero rows and reads as "no data".
-    AND ms.best_bid IS NOT NULL AND ms.best_ask IS NOT NULL
-    AND ms.captured_at >= play.wall_clock + ({FEED_LAG} * INTERVAL '1 second')
-  ORDER BY ms.captured_at
-  LIMIT 1
-) q
-WHERE q.t0 <= play.wall_clock + INTERVAL '5 minutes'
+# NOT a per-play LATERAL. There is no composite (game_id, captured_at) index on
+# market_snapshots, so `game_id = X AND captured_at >= T ORDER BY captured_at
+# LIMIT 1` fetches EVERY snapshot for that game across all history, sorts it,
+# and keeps one row -- once per play. That ran 4.1 hours against prod before I
+# cancelled it. Two bounded bulk queries plus a bisect do the same work in one
+# pass, and the cost is something I can predict before running it.
+PLAYS_SQL = """
+SELECT b.game_id espn_game, b.play_id, b.wall_clock, b.period,
+       b.clock_minutes, b.clock_seconds, b.down, b.distance, b.yards_to_goal,
+       b.pos_team_score, b.def_pos_team_score, b.drive_is_home_offense,
+       m.venue_game_id, g.spread::float AS spread,
+       (CASE WHEN g.away_score > g.home_score THEN 1 ELSE 0 END)::int AS settlement
+FROM espn_cfb_backfill_plays b
+JOIN cfb_game_map m ON m.espn_game_id = b.game_id
+JOIN espn_cfb_backfill_games g ON g.game_id = b.game_id
+WHERE b.wall_clock IS NOT NULL AND b.down IS NOT NULL AND b.down > 0
+  AND b.period IS NOT NULL AND NOT b.is_overtime AND g.spread IS NOT NULL
+  AND g.home_score IS NOT NULL AND g.away_score IS NOT NULL
+  AND g.home_score <> g.away_score
+  AND m.venue_game_id IS NOT NULL
+"""
+
+# Bounded on BOTH sides so the partitions prune. LIKE '%winner' is the
+# production predicate; `= 'winner'` is a different, empty set.
+SNAPS_SQL = """
+SELECT id AS snapshot_id, game_id, market_slug, captured_at,
+       best_bid::float AS bid0, best_ask::float AS ask0
+FROM market_snapshots
+WHERE game_id = ANY(:gids)
+  AND sports_market_type LIKE '%winner'
+  AND best_bid IS NOT NULL AND best_ask IS NOT NULL
+  AND captured_at BETWEEN :t_lo AND :t_hi
+ORDER BY game_id, captured_at
 """
 
 # ------------------------------------------------------------- queue at touch
@@ -126,13 +131,21 @@ FROM book_levels WHERE level_index = 0 AND snapshot_id = ANY(:ids)
 # ---------------------------------------------------------------- trade tape
 # market_slug is NULL on depth-loop rows -- they carry identity through
 # snapshot_id -- so filtering on market_slug alone silently drops most of the
-# tape. Resolve through the snapshot and COALESCE.
+# tape. Resolve through the snapshot and COALESCE. Time-bounded: the venue
+# writes ~1.17M rows/hour and only the rest+markout window is ever read.
 TAPE_SQL = """
 SELECT COALESCE(t.market_slug, ms.market_slug) AS market_slug,
        t.captured_at, t.last_trade_px::float AS px,
        t.last_trade_at, t.shares_traded::float AS cum_shares
 FROM market_trade_stats t
-LEFT JOIN market_snapshots ms ON ms.id = t.snapshot_id
+LEFT JOIN market_snapshots ms
+       ON ms.id = t.snapshot_id
+      AND ms.captured_at BETWEEN :t_lo AND :t_hi   -- prune partitions.
+      -- In the ON clause, not the WHERE: market_snapshots is
+      -- partitioned on captured_at, and an unbounded join scans every
+      -- partition. Putting it in WHERE would also silently convert this
+      -- LEFT JOIN to an inner one and drop the depth-loop rows, which
+      -- are 56% of the tape (198,287 NULL-slug vs 154,799 set).
 WHERE COALESCE(t.market_slug, ms.market_slug) = ANY(:slugs)
   AND t.last_trade_px IS NOT NULL
   AND t.captured_at BETWEEN :t_lo AND :t_hi
@@ -149,23 +162,52 @@ ORDER BY market_slug, captured_at
 """
 
 with eng.connect() as c:
-    quotes = [dict(r._mapping) for r in c.execute(text(QUOTES_SQL))]
-    if len(quotes) < 200:
-        print(f"only {len(quotes)} quotable plays — refusing to report.")
+    plays = [dict(r._mapping) for r in c.execute(text(PLAYS_SQL))]
+    if not plays:
+        print("no plays joinable to a venue game -- refusing to report.")
         sys.exit(0)
-    slugs = sorted({q["market_slug"] for q in quotes})
-    ids = sorted({q["snapshot_id"] for q in quotes})
-    t_lo = min(q["t0"] for q in quotes)
-    t_hi = max(q["t0"] for q in quotes) + dt.timedelta(
-        seconds=REST_WINDOW + MARKOUT + 60)
-    win = {"slugs": slugs, "t_lo": t_lo, "t_hi": t_hi}
-    queue_rows = [dict(r._mapping) for r in
-                  c.execute(text(QUEUE_SQL), {"ids": ids})]
-    tape_rows = [dict(r._mapping) for r in
-                 c.execute(text(TAPE_SQL), win)]
-    mid_rows = [dict(r._mapping) for r in
-                c.execute(text(MID_SQL), win)]
+    gids = sorted({p["venue_game_id"] for p in plays})
+    p_lo = min(p["wall_clock"] for p in plays)
+    p_hi = max(p["wall_clock"] for p in plays)
+    snaps = [dict(r._mapping) for r in c.execute(text(SNAPS_SQL), {
+        "gids": gids,
+        "t_lo": p_lo + dt.timedelta(seconds=FEED_LAG),
+        "t_hi": p_hi + dt.timedelta(seconds=FEED_LAG + 300)})]
 
+# nearest snapshot at or AFTER wall_clock + FEED_LAG, within 5 minutes
+by_game = defaultdict(lambda: ([], []))
+for r in snaps:
+    ts, rows_ = by_game[r["game_id"]]
+    ts.append(r["captured_at"]); rows_.append(r)
+
+quotes = []
+for p in plays:
+    ts, rows_ = by_game.get(p["venue_game_id"], ((), ()))
+    if not ts:
+        continue
+    want = p["wall_clock"] + dt.timedelta(seconds=FEED_LAG)
+    i = bisect.bisect_left(ts, want)
+    if i >= len(ts) or (ts[i] - p["wall_clock"]).total_seconds() > 300:
+        continue
+    q = dict(p); q.update(rows_[i]); q["t0"] = rows_[i]["captured_at"]
+    quotes.append(q)
+
+if len(quotes) < 200:
+    print(f"only {len(quotes)} quotable plays -- refusing to report.")
+    sys.exit(0)
+slugs = sorted({q["market_slug"] for q in quotes})
+ids = sorted({q["snapshot_id"] for q in quotes})
+t_lo = min(q["t0"] for q in quotes)
+t_hi = max(q["t0"] for q in quotes) + dt.timedelta(
+    seconds=REST_WINDOW + MARKOUT + 60)
+win = {"slugs": slugs, "t_lo": t_lo, "t_hi": t_hi}
+
+with eng.connect() as c:
+    queue_rows = [dict(r._mapping) for r in c.execute(text(QUEUE_SQL), {"ids": ids})]
+    tape_rows = [dict(r._mapping) for r in c.execute(text(TAPE_SQL), win)]
+    mid_rows = [dict(r._mapping) for r in c.execute(text(MID_SQL), win)]
+
+print(f"plays joinable {len(plays):,}   winner snapshots {len(snaps):,}")
 print(f"quotable plays {len(quotes):,}   markets {len(slugs):,}   "
       f"games {len({q['espn_game'] for q in quotes}):,}")
 print(f"book-depth rows {len(queue_rows):,}   tape rows {len(tape_rows):,}")
@@ -219,7 +261,7 @@ ARMS = ("A_naive", "B_shield", "C_shield_skew")
 fills = {a: [] for a in ARMS}
 withdrawn = {a: 0 for a in ARMS}
 posted = {a: 0 for a in ARMS}
-no_queue = skipped_feat = 0
+no_queue = skipped_feat = with_queue = 0
 
 for q in quotes:
     st = GameState(period=q["period"], clock_minutes=q["clock_minutes"] or 0,
@@ -244,18 +286,21 @@ for q in quotes:
     slug, t0, y = q["market_slug"], q["t0"], q["settlement"]
     qb = queue.get((q["snapshot_id"], "bid"))
     qa = queue.get((q["snapshot_id"], "offer"))
-    if qb is None or qa is None:
-        no_queue += 1
-        continue
 
     # Queue ahead of us: the size resting at the touch when we arrive. If the
     # recorded top-of-book price has drifted from best_bid/best_ask, the level
     # is not the touch we think it is, so treat it as unusable rather than
     # assuming zero (assuming zero would invent free priority).
-    if abs(qb[0] - bid) > 1e-9 or abs(qa[0] - ask) > 1e-9:
+    # Depth is usable only if the recorded level IS the touch; if it has
+    # drifted, the level is not the price we think it is, and assuming zero
+    # would invent free priority.
+    if qb is not None and qa is not None \
+       and abs(qb[0] - bid) <= 1e-9 and abs(qa[0] - ask) <= 1e-9:
+        q_ahead_bid, q_ahead_ask = qb[1], qa[1]
+        with_queue += 1
+    else:
+        q_ahead_bid = q_ahead_ask = 0.0    # OPTIMISTIC: full priority
         no_queue += 1
-        continue
-    q_ahead_bid, q_ahead_ask = qb[1], qa[1]
 
     # ---- per-arm quote decisions. Prices NEVER leave the touch except the
     # one-tick skew in C, which still rests inside the spread, never through.
@@ -306,8 +351,13 @@ for q in quotes:
             if done_b and done_a:
                 break
 
-print(f"skipped {skipped_feat:,} incomplete state, {no_queue:,} no usable "
-      f"top-of-book depth")
+print(f"skipped {skipped_feat:,} incomplete state")
+print(f"queue modelled from recorded depth on {with_queue:,} quotes; "
+f"{no_queue:,} used the OPTIMISTIC no-queue assumption (full priority).")
+if with_queue == 0:
+    print("  ALL fills are the optimistic arm. A LOSS here is real; a"
+          " profit is not evidence, because real queue position can only"
+          " make it worse.")
 
 # ------------------------------------------------------------------- scoring
 print("\n=== ARMS ===")
