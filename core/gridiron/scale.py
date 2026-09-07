@@ -173,6 +173,24 @@ def ladder_scale(ladders: pd.DataFrame, *, interior: tuple[float, float] = INTER
     Returns `game`, `sigma`, `r2`, `n_rungs`, `implied_line`. **`r2` is returned,
     not filtered on**, so a badly-fitting ladder is visible to the caller rather
     than silently dropped or silently kept.
+
+    **Do NOT use `r2` as a liveness or data-quality gate.** It measures internal
+    COHERENCE, and a stale board can be more coherent than a live one. Measured
+    on the three gated 2026-09-07 ladders:
+
+        game     r2       interior rungs that moved
+        16453  0.9778      1/34   ( 3%)
+        16486  0.9959      0/25   ( 0%)   <- BEST fit, ZERO movement
+        16488  0.9871     20/23   (87%)
+
+    `corr(r2, fraction moved) = -0.014` on n = 3, and the mechanism is not a
+    small-sample accident: 16486's ladder is **25 rungs at one identical
+    timestamp** -- a single sweep from one pricing model, maximally
+    self-consistent. An actively-quoted ladder has rungs updating asynchronously
+    by different participants, which adds cross-sectional noise. So fit quality
+    would if anything PREFER the stale board, which is the opposite of what a
+    quality gate wants. Use the movement fraction for liveness; use `r2` only
+    for whether the location-scale form holds.
     """
     lo, hi = interior
     out = []
