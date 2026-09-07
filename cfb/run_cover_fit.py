@@ -62,6 +62,16 @@ SIGMA = 15.0
 K_GRID = [k + 0.5 for k in range(-35, 35)]          # -34.5 .. +34.5, half-points
 K_PER_PLAY = 5
 PLAY_KEEP = 0.30
+# K_NEAR_LINE=1: 3 of the 5 rungs per play are drawn within +-10.5 of the
+# expected margin (-spread) and 2 from the full grid, instead of all 5 from the
+# full grid. Hypothesis, stated before running: random-K puts most training
+# rows at easy rungs far from the line, so capacity goes where the
+# game's-own-line evaluation (and ESPN) is not. The far rungs keep 2 draws so
+# the ladder tails still see data. This is the ONE retrain; stop after it.
+K_NEAR_LINE = bool(os.environ.get("K_NEAR_LINE"))
+NEAR_BAND = 10.5
+if K_NEAR_LINE and not os.environ.get("SMOKE"):
+    ARTIFACT = "/app/artifacts/cfb_cover_regulation_nearline"   # keep v1 intact
 EVAL_K = [-20.5, -13.5, -10.5, -6.5, -3.5, -0.5, 0.5, 3.5, 6.5, 10.5, 13.5, 20.5]
 CACHE = "/app/artifacts/cfbd_cover_cache.json"
 ARTIFACT = "/app/artifacts/cfb_cover_regulation"
@@ -116,10 +126,13 @@ def normal_baseline(hs, spread_home, K):
 # ------------------------------------------------------- our 2026 tape (test)
 eng = create_engine(os.environ["DATABASE_URL"])
 with eng.connect() as c:
+    # home/away on backfill_games are ESPN team IDs (e.g. 2116), not names.
+    # The bridge check below needs NAMES, and those live on cfb_game_map.
     games26 = {r.game_id: dict(r._mapping) for r in c.execute(text(
-        "SELECT game_id, home, away, home_score, away_score, spread::float AS spread "
-        "FROM espn_cfb_backfill_games WHERE spread IS NOT NULL AND home_score IS NOT NULL "
-        "AND away_score IS NOT NULL"))}
+        "SELECT b.game_id, m.home_espn_name AS home, m.away_espn_name AS away, "
+        "b.home_score, b.away_score, b.spread::float AS spread "
+        "FROM espn_cfb_backfill_games b LEFT JOIN cfb_game_map m ON m.espn_game_id = b.game_id "
+        "WHERE b.spread IS NOT NULL AND b.home_score IS NOT NULL AND b.away_score IS NOT NULL"))}
     plays26 = [dict(r._mapping) for r in c.execute(text(
         "SELECT game_id, play_id, period, clock_minutes, clock_seconds, down, distance, "
         "yards_to_goal, pos_team_score, def_pos_team_score, drive_is_home_offense, is_overtime "
@@ -263,13 +276,24 @@ def build_rows(rows, keep=1.0, k_per=K_PER_PLAY):
     for hs, sp, fm, gid in rows:
         if keep < 1.0 and random.random() > keep:
             continue
-        for K_ in random.sample(K_GRID, k_per):
+        if K_NEAR_LINE:
+            E = -sp
+            near = [k for k in K_GRID if abs(k - E) <= NEAR_BAND] or K_GRID
+            ks = random.sample(near, min(3, len(near))) + random.sample(K_GRID, 2)
+        else:
+            ks = random.sample(K_GRID, k_per)
+        for K_ in ks:
             X.append(featurize(hs, sp, K_))
             y.append(1 if fm > K_ else 0)
             grp.append(gid)
     return X, y, grp
 
-Xtr, ytr, gtr = build_rows(train, keep=PLAY_KEEP)
+cal_games = {g for i, g in enumerate(sorted({r[3] for r in train})) if i % 10 == 0}
+train_fit = [r for r in train if r[3] not in cal_games]
+train_cal = [r for r in train if r[3] in cal_games]
+log(f"K_NEAR_LINE={K_NEAR_LINE}   fit games {len({r[3] for r in train_fit}):,}   "
+    f"calibration games {len(cal_games):,} (disjoint from fit AND from every test set)")
+Xtr, ytr, gtr = build_rows(train_fit, keep=PLAY_KEEP)
 log(f"training rows {len(Xtr):,}  (plays x {K_PER_PLAY} rungs, {PLAY_KEEP:.0%} of plays)")
 params = dict(XGB_PARAMS)
 params["tree_method"] = "hist"
@@ -286,8 +310,20 @@ for f, v in sorted(imp.items(), key=lambda kv: -kv[1]):
     print(f"  {f:18s} {100.0*v/tot:6.2f}%")
 
 
-def predict(X):
+def predict_raw(X):
     return booster.predict(xgb.DMatrix(X, feature_names=COLS, missing=float("nan")))
+
+# isotonic layer, fit on the calibration games only
+from sklearn.isotonic import IsotonicRegression  # noqa: E402
+Xc, yc, _ = build_rows(train_cal, keep=1.0)
+iso = IsotonicRegression(out_of_bounds="clip").fit(predict_raw(Xc), yc)
+log(f"isotonic fit on {len(yc):,} calibration rows")
+del Xc, yc
+
+USE_ISO = False
+def predict(X):
+    p = predict_raw(X)
+    return iso.predict(p) if USE_ISO else p
 
 
 # ------------------------------------------------------------ evaluation
@@ -368,12 +404,14 @@ def calibration(rows, label):
 
 
 cf = [(tuple(r[0]), r[1], r[2], r[3]) for r in test_cfbd]
-evaluate(cf, f"CFBD HELD-OUT GAMES ({len(holdout):,} games, {len(cf):,} plays)")
-monotone_check(cf)
-calibration(cf, "CFBD holdout")
-
 t26 = [(hs, sp, fm, gid) for hs, sp, fm, gid, pid in tape26]
-evaluate(t26, f"OUR 2026 TAPE ({len({t[3] for t in t26})} games, {len(t26):,} plays)")
+for USE_ISO in (False, True):
+    tag = "ISOTONIC" if USE_ISO else "RAW"
+    evaluate(cf, f"[{tag}] CFBD HELD-OUT GAMES ({len(holdout):,} games, {len(cf):,} plays)")
+    evaluate(t26, f"[{tag}] OUR 2026 TAPE ({len({t[3] for t in t26})} games, {len(t26):,} plays)")
+    calibration(cf, f"[{tag}] CFBD holdout")
+USE_ISO = False
+monotone_check(cf)
 
 # -------------------------------------------- ESPN spreadCoverProbHome benchmark
 log("fetching ESPN core probabilities for the 2026 games")
@@ -396,25 +434,26 @@ for gid in games26:
 log(f"ESPN cover probabilities: {len(espn_cover):,} plays across "
     f"{len({g for g, _ in espn_cover})} games")
 
-rows_e, keys_e, bm_e, be_e = [], [], [], []
-for hs, sp, fm, gid, pid in tape26:
-    cp = espn_cover.get((gid, pid))
-    if cp is None:
-        continue
-    K_ = -sp                        # home covers <=> final margin > -spread
-    pm = float(predict([featurize(hs, sp, K_)])[0])
-    y = 1 if fm > K_ else 0
-    bm_e.append((pm - y) ** 2); be_e.append((cp - y) ** 2); keys_e.append(gid)
+matched = [(hs, sp, fm, gid, espn_cover[(gid, pid)]) for hs, sp, fm, gid, pid in tape26
+           if (gid, pid) in espn_cover]
 print(f"\n=== vs ESPN spreadCoverProbHome, at each game's OWN line, matched on play_id ===")
-if len(bm_e) < 500:
-    print(f"  only {len(bm_e)} matched plays -- refusing to report.")
+if len(matched) < 500:
+    print(f"  only {len(matched)} matched plays -- refusing to report.")
 else:
-    d = [a - b for a, b in zip(bm_e, be_e)]
-    m, h, n, G, ge = clustered(d, keys_e)
-    print(f"  matched plays {n:,} / games {G}   G_eff {ge:.1f}")
-    print(f"  Brier  model {sum(bm_e)/n:.4f}   espn {sum(be_e)/n:.4f}")
-    print(f"  game-clustered diff {m:+.4f}  [{m-h:+.4f}, {m+h:+.4f}]  "
-          f"{'MODEL BETTER' if m+h < 0 else ('ESPN BETTER' if m-h > 0 else 'SPANS ZERO')}")
+    Xe = [featurize(hs, sp, -sp) for hs, sp, fm, gid, cp in matched]
+    ys = [1 if fm > -sp else 0 for hs, sp, fm, gid, cp in matched]
+    keys_e = [gid for hs, sp, fm, gid, cp in matched]
+    be_e = [(cp - y) ** 2 for (hs, sp, fm, gid, cp), y in zip(matched, ys)]
+    for USE_ISO in (False, True):
+        pm = predict(Xe)
+        bm_e = [(p - y) ** 2 for p, y in zip(pm, ys)]
+        d = [a - b for a, b in zip(bm_e, be_e)]
+        m, h, n, G, ge = clustered(d, keys_e)
+        print(f"  [{'ISOTONIC' if USE_ISO else 'RAW':<8}] plays {n:,} / games {G} / G_eff {ge:.1f}   "
+              f"Brier model {sum(bm_e)/n:.4f}  espn {sum(be_e)/n:.4f}   "
+              f"diff {m:+.4f} [{m-h:+.4f}, {m+h:+.4f}]  "
+              f"{'MODEL BETTER' if m+h < 0 else ('ESPN BETTER' if m-h > 0 else 'SPANS ZERO')}")
+    USE_ISO = False
     print("  (E2 lesson applies: ESPN's WP was line-blind. Check whether its cover")
     print("   prob is too before reading a win here as skill rather than line knowledge.)")
 
@@ -422,7 +461,7 @@ else:
 os.makedirs("/app/artifacts", exist_ok=True)
 booster.save_model(ARTIFACT + ".json")
 with open(ARTIFACT + ".meta.json", "w") as fh:
-    json.dump({"seasons": SEASONS, "cols": COLS, "monotone": MONO, "sigma_baseline": SIGMA,
+    json.dump({"seasons": SEASONS, "k_near_line": K_NEAR_LINE, "cols": COLS, "monotone": MONO, "sigma_baseline": SIGMA,
                "k_grid": [K_GRID[0], K_GRID[-1]], "train_games": len(games_all) - len(holdout),
                "holdout_games": len(holdout), "tape26_games": len({t[3] for t in tape26}),
                "frame": "HOME; spread negative = home favoured; y_K = 1[final_home_margin > K]",
