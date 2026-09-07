@@ -80,6 +80,17 @@ MAKER_THETA = 0.0      # THERE IS NO MAKER REBATE. findings.md C7
 WITHDRAW_EDGE = 0.03   # model must disagree by this much to pull a side
 SKEW_EDGE = 0.06       # and by this much before arm C skews a tick
 TICK = 0.01
+# E6 -- DEAD_WINDOW=1. ONE pre-registered stratum, verbatim from the plan:
+#   "no play in the last 45s AND no score change in the last 120s"
+# evaluated on OBSERVED plays (we see a play FEED_LAG after it happens, so a
+# play inside the last 30s is invisible -- that is the lag risk a maker bears
+# and it is correctly left in). Quote instants are generated every 15s
+# between plays instead of AT plays; everything downstream -- arms, fill rule,
+# queue, clustering, guards -- is E1's, untouched. One stratum. No search.
+DEAD_WINDOW = bool(os.environ.get("DEAD_WINDOW"))
+DEAD_NO_PLAY_S = 45
+DEAD_NO_SCORE_S = 120
+DEAD_STEP_S = 15
 
 booster = xgb.Booster()
 booster.load_model("/app/artifacts/cfb_wp_regulation.json")
@@ -192,8 +203,50 @@ for p in plays:
     q = dict(p); q.update(rows_[i]); q["t0"] = rows_[i]["captured_at"]
     quotes.append(q)
 
+if DEAD_WINDOW:
+    by_g = defaultdict(list)
+    for p in plays:
+        by_g[p["espn_game"]].append(p)
+    dead_quotes, n_inst, n_qual = [], 0, 0
+    for gid, ps in by_g.items():
+        ps.sort(key=lambda r: r["wall_clock"])
+        # home/away score per play, to find score changes
+        sc = []
+        for r in ps:
+            h = r["pos_team_score"] if r["drive_is_home_offense"] else r["def_pos_team_score"]
+            a = r["def_pos_team_score"] if r["drive_is_home_offense"] else r["pos_team_score"]
+            sc.append((h or 0, a or 0))
+        change_t = [ps[0]["wall_clock"]] + [ps[i]["wall_clock"] for i in range(1, len(ps))
+                                             if sc[i] != sc[i - 1]]
+        wcs = [r["wall_clock"] for r in ps]
+        t = wcs[0] + dt.timedelta(seconds=FEED_LAG)
+        end = wcs[-1]
+        while t <= end:
+            n_inst += 1
+            seen = t - dt.timedelta(seconds=FEED_LAG)          # what we can see at t
+            i = bisect.bisect_right(wcs, seen) - 1
+            if i >= 0:
+                last = ps[i]
+                j = bisect.bisect_right(change_t, seen) - 1
+                last_change = change_t[j] if j >= 0 else wcs[0]
+                if (t - last["wall_clock"]).total_seconds() >= DEAD_NO_PLAY_S and \
+                   (t - last_change).total_seconds() >= DEAD_NO_SCORE_S:
+                    n_qual += 1
+                    ts, rows_ = by_game.get(last["venue_game_id"], ((), ()))
+                    k = bisect.bisect_left(ts, t)
+                    if ts and k < len(ts) and (ts[k] - t).total_seconds() <= 300:
+                        q = dict(last); q.update(rows_[k]); q["t0"] = rows_[k]["captured_at"]
+                        nxt = wcs[i + 1] + dt.timedelta(seconds=FEED_LAG) if i + 1 < len(wcs) else None
+                        q["rest_s"] = min(REST_WINDOW, (nxt - q["t0"]).total_seconds()) if nxt else REST_WINDOW
+                        if q["rest_s"] > 0:
+                            dead_quotes.append(q)
+            t += dt.timedelta(seconds=DEAD_STEP_S)
+    print(f"E6 DEAD WINDOW: instants {n_inst:,}  qualified (no play {DEAD_NO_PLAY_S}s, "
+          f"no score {DEAD_NO_SCORE_S}s) {n_qual:,}  with a book {len(dead_quotes):,}")
+    quotes = dead_quotes
+
 if len(quotes) < 200:
-    print(f"only {len(quotes)} quotable plays -- refusing to report.")
+    print(f"only {len(quotes)} quotable instants -- refusing to report.")
     sys.exit(0)
 slugs = sorted({q["market_slug"] for q in quotes})
 ids = sorted({q["snapshot_id"] for q in quotes})
@@ -364,7 +417,7 @@ for q in quotes:
         for pr in prints.get(slug, ()):
             if pr["t"] <= t0:
                 continue
-            if (pr["t"] - t0).total_seconds() > REST_WINDOW:
+            if (pr["t"] - t0).total_seconds() > q.get("rest_s", REST_WINDOW):
                 break
             # a print AT OR BELOW our bid is a seller reaching us; at or above
             # our ask is a buyer. Prints strictly inside do not touch us.
@@ -394,7 +447,7 @@ if with_queue == 0:
           " make it worse.")
 
 # ------------------------------------------------------------------- scoring
-print("\n=== ARMS ===")
+print("\n=== ARMS" + (" -- E6 DEAD-WINDOW STRATUM, one pre-registered, no search" if DEAD_WINDOW else "") + " ===")
 print(f"  {'arm':<16}{'posted':>8}{'pulled':>8}{'fills':>7}{'fill%':>7}"
       f"{'net c/fill':>12}{'adverse%':>10}")
 summary = {}
