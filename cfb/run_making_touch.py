@@ -99,8 +99,14 @@ DEAD_NO_PLAY_S = 45
 DEAD_NO_SCORE_S = 120
 DEAD_STEP_S = 15
 
+# the shield's model follows the league: an NFL-trained head for NFL tape, never
+# the CFB one pointed at NFL games. WP_MODEL overrides either.
+_default_wp = ("/app/artifacts/nfl_wp_regulation.json" if os.environ.get("LEAGUE") == "nfl"
+               else "/app/artifacts/cfb_wp_regulation.json")
+WP_MODEL = os.environ.get("WP_MODEL", _default_wp)
 booster = xgb.Booster()
-booster.load_model("/app/artifacts/cfb_wp_regulation.json")
+booster.load_model(WP_MODEL)
+print(f"shield model: {WP_MODEL}")
 eng = create_engine(os.environ["DATABASE_URL"])
 
 # ---------------------------------------------------------------- quote rows
