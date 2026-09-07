@@ -252,6 +252,28 @@ def mid_at(slug, t):
     return vs[i - 1] if i else None
 
 
+
+def clustered(vals, keys):
+    """Mean with a cluster-robust 95% interval. `keys` is the cluster label per
+    value. Falls back to the iid interval only when there is a single cluster,
+    and says so by returning n_clusters."""
+    n = len(vals)
+    if n == 0:
+        return None
+    m = sum(vals) / n
+    from collections import defaultdict as _dd
+    g = _dd(float)
+    for v, k in zip(vals, keys):
+        g[k] += (v - m)
+    G = len(g)
+    if G < 2:
+        return m, 0.0, n, G
+    meat = sum(x * x for x in g.values())
+    se = (meat ** 0.5) / n
+    se *= (G / (G - 1.0)) ** 0.5          # small-cluster correction
+    return m, 1.96 * se, n, G
+
+
 def fee(theta, p):
     return theta * p * (1.0 - p)
 
@@ -341,13 +363,15 @@ for q in quotes:
                     rb -= pr["qty"]
                 if rb <= 0:
                     done_b = True
-                    fills[arm].append(("buy", bpx, slug, pr["t"], y))
+                    fills[arm].append(("buy", bpx, slug, pr["t"], y,
+                                       edge < -WITHDRAW_EDGE))
             if want_ask and not done_a and pr["px"] >= apx - 1e-9:
                 if ra > 0:
                     ra -= pr["qty"]
                 if ra <= 0:
                     done_a = True
-                    fills[arm].append(("sell", apx, slug, pr["t"], y))
+                    fills[arm].append(("sell", apx, slug, pr["t"], y,
+                                       edge > WITHDRAW_EDGE))
             if done_b and done_a:
                 break
 
@@ -372,7 +396,7 @@ for arm in ARMS:
         summary[arm] = None
         continue
     pnl, adverse, scored = [], 0, 0
-    for side, px, slug, t, y in fl:
+    for side, px, slug, t, y, _pulled in fl:
         # settlement P&L in the traded direction. YES settles at y in {0,1}:
         # bought at px -> y - px; sold at px -> px - y. The maker rebate is
         # negative, so subtracting fee() ADDS it.
@@ -385,18 +409,44 @@ for arm in ARMS:
             if moved < 0:
                 adverse += 1
     n = len(pnl)
-    mean = sum(pnl) / n
-    sd = (sum((x - mean) ** 2 for x in pnl) / (n - 1)) ** 0.5 if n > 1 else 0.0
-    half = 1.96 * sd / (n ** 0.5) if n > 1 else 0.0
-    summary[arm] = (mean, half, n)
+    mean, half, _n, _G = clustered(pnl, [f[2] for f in fl])
+    summary[arm] = (mean, half, n, _G)
     fr = 100.0 * n / posted[arm] if posted[arm] else 0.0
     ad = 100.0 * adverse / scored if scored else float("nan")
     print(f"  {arm:<16}{posted[arm]:>8}{withdrawn[arm]:>8}{n:>7}{fr:>6.1f}%"
           f"{mean:>+11.2f}c{ad:>9.1f}%")
-    print(f"  {'':<16}95% CI [{mean-half:+.2f}, {mean+half:+.2f}]c   "
-          f"markout scored on {scored}/{n} fills")
+    print(f"  {'':<16}95% CI [{mean-half:+.2f}, {mean+half:+.2f}]c "
+          f"GAME-CLUSTERED on {_G} markets   markout {scored}/{n}")
 
 # --------------------------------------------------- the finding, and its guards
+print("\n=== THE WITHDRAWN FILLS, measured directly ===")
+_a = fills["A_naive"]
+_kept = [f for f in _a if not f[5]]
+_pull = [f for f in _a if f[5]]
+def _pnl(fl):
+    out = []
+    for side, px, slug, t, y, _p in fl:
+        gross = (y - px) if side == "buy" else (px - y)
+        out.append(100.0 * (gross - fee(MAKER_THETA, px)))
+    return out
+for _lab, _set in (("kept by the shield", _kept), ("WITHDRAWN by the shield", _pull)):
+    v = _pnl(_set)
+    if not v:
+        print(f"  {_lab:<26} no fills"); continue
+    m, h, _nn, _GG = clustered(v, [f[2] for f in _set])
+    print(f"  {_lab:<26} n={_nn:>5}  {m:+.2f}c  [{m-h:+.2f}, {m+h:+.2f}]"
+          f"  ({_GG} markets)")
+print("  If the withdrawn set is POSITIVE, the model is selecting against us:")
+print("  it is pulling the quotes that make money and keeping the ones that lose.")
+
+print("\n=== COULD THIS HAVE COME OUT THE OTHER WAY? ===")
+print(f"  B posts a strict SUBSET of A's sides ({withdrawn['B_shield']:,} of "
+      f"{posted['A_naive']:,} withdrawn).")
+print("  A subset mean can exceed or fall below the full mean -- nothing in the")
+print("  construction fixes the sign. B > A was reachable and did not happen.")
+print(f"  The shield demonstrably ACTED: adverse-by-markout moved, and it")
+print(f"  withdrew {withdrawn['B_shield']:,} sides rather than 0 or all.")
+
 print("\n=== B - A : what the model adds as a SHIELD ===")
 if summary["A_naive"] and summary["B_shield"]:
     a, b = summary["A_naive"][0], summary["B_shield"][0]
@@ -414,9 +464,21 @@ if withdrawn["B_shield"] == 0:
 if posted["B_shield"] == 0:
     print("  DEAD BRANCH: the model withdrew every side. B never quoted.")
     deg = True
-if summary["A_naive"] and summary["A_naive"][2] < 100:
-    print(f"  UNDERPOWERED: only {summary['A_naive'][2]} control fills.")
+# This guard used to count FILLS (<100). It never fired on 1,115 fills while
+# the real independent unit was 33 markets -- a guard that could not fire for
+# the failure mode that actually occurred. Count clusters, and check the
+# interval directly rather than a proxy for it.
+_A = summary["A_naive"]
+if _A and _A[3] < 30:
+    print(f"  UNDERPOWERED: only {_A[3]} independent markets carry the fills.")
     deg = True
+for _arm in ARMS:
+    _s = summary[_arm]
+    if _s and (_s[0] - _s[1]) < 0 < (_s[0] + _s[1]):
+        print(f"  SPANS ZERO: {_arm} is {_s[0]:+.2f}c "
+              f"[{_s[0]-_s[1]:+.2f}, {_s[0]+_s[1]:+.2f}] on {_s[3]} markets. "
+              f"This arm is NOT a measured negative -- it is not measured.")
+        deg = True
 if priced_vol <= 0:
     print("  NO TAPE: no priced volume was reconstructed at all.")
     deg = True
