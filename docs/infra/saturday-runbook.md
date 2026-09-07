@@ -166,6 +166,40 @@ each is blind to what the other catches: three-of-five games throwing leaves
 
 ---
 
+## Idle-state cadence — set staleness from the TAIL, not the median
+
+Between slates it is tempting to alarm on "no sweep this hour". **Do not bucket
+by clock hour, and do not threshold at ~80 minutes.** Both produce false alarms
+on a healthy board.
+
+**Two different quantities, and they are not interchangeable:**
+
+| quantity | idle-window value | what it answers |
+|---|---|---|
+| global distinct-stamp gap | 77.0 / 80.5 / 80.5 min across three sweeps | *did a sweep fire* |
+| **per-market re-sweep interval** | min 3.2 · p25 35.1 · **median 68.5** · p75 80.5 · **max 116.0** (n=57,852 gaps) | ***was this market refreshed*** |
+
+They would coincide only if every sweep touched every market. The 3.2→116 minute
+spread says it does not: **the sweep is partial**, so "the sweep ran" and "this
+market is fresh" are different facts and a monitor needs to say which one it is
+checking.
+
+**Threshold at the tail: 116 minutes.** A monitor set at ~80 fires on the
+**quarter of markets that legitimately exceed p75** — 80.5 is a percentile of a
+wide distribution, not a cadence.
+
+**And an empty clock-hour bucket is the EXPECTED case, not the alarm.** The
+median per-market interval (68.5 min) already exceeds an hour, so consecutive
+refreshes routinely straddle an hour boundary and leave one bucket empty. A
+sweep at 04:55 and the next at 06:15 empties 05:00 while nothing is wrong.
+
+> Origin: meridian-ce hit exactly this while health-checking an idle board and
+> nearly filed a missed sweep. Their global-gap measurement and the per-market
+> distribution above are different populations; both are real. The p75 collision
+> at 80.5 is what made one look like the other.
+
+---
+
 ## What is NOT covered
 
 State this before anyone reads a green T-30 as a guarantee.
