@@ -202,7 +202,19 @@ WHERE p.league = :lg AND p.wall_clock IS NOT NULL AND p.down IS NOT NULL AND p.d
 """
 
 with eng.connect() as c:
-    if LEAGUE:
+    if LEAGUE == "cfb":
+        # POOL: backfill (Wed-Fri, has every game's line) + live tables (adds
+        # Saturday's slate, which backfill never reached). Dedup BY GAME, backfill
+        # wins, so no game is counted twice and the cluster count is honest.
+        bf = [dict(r._mapping) for r in c.execute(text(PLAYS_SQL))]
+        lv = [dict(r._mapping) for r in c.execute(text(LIVE_PLAYS_SQL), {"lg": "cfb"})]
+        bf_games = {p["espn_game"] for p in bf}
+        lv_new = [p for p in lv if p["espn_game"] not in bf_games]
+        plays = bf + lv_new
+        print(f"LEAGUE=cfb POOLED: backfill {len(bf):,} plays / {len(bf_games)} games  +  live-only "
+              f"{len(lv_new):,} plays / {len({p['espn_game'] for p in lv_new})} games  "
+              f"(live overlapping backfill dropped: {len({p['espn_game'] for p in lv}) - len({p['espn_game'] for p in lv_new})} games)")
+    elif LEAGUE:
         plays = [dict(r._mapping) for r in c.execute(text(LIVE_PLAYS_SQL), {"lg": LEAGUE})]
         print(f"LEAGUE={LEAGUE}: live tables; plays {len(plays):,}  games "
               f"{len({p['espn_game'] for p in plays})}  with a line "

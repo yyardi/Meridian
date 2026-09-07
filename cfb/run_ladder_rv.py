@@ -106,6 +106,34 @@ with eng.connect() as c:
         "yards_to_goal, pos_team_score, def_pos_team_score, drive_is_home_offense "
         "FROM espn_cfb_backfill_plays WHERE wall_clock IS NOT NULL AND down IS NOT NULL AND down > 0 "
         "AND period IS NOT NULL AND NOT is_overtime ORDER BY game_id, wall_clock"))]
+    # POOL the live tables (Saturday's slate, which backfill never reached).
+    # A live game needs a recorded line to price a rung; without one it is
+    # counted and skipped. Dedup by game, backfill wins.
+    live_games = {r.game_id: dict(r._mapping) for r in c.execute(text(
+        "WITH final AS (SELECT DISTINCT ON (game_id) game_id, home_score, away_score "
+        "  FROM espn_cfb_game_state WHERE league='cfb' AND home_score IS NOT NULL "
+        "  ORDER BY game_id, first_seen_at DESC), "
+        "line AS (SELECT game_id, avg(live_spread)::float AS spread FROM espn_cfb_game_state "
+        "  WHERE league='cfb' AND live_spread IS NOT NULL GROUP BY 1) "
+        "SELECT f.game_id, m.venue_game_id, f.home_score, f.away_score, l.spread "
+        "FROM final f JOIN cfb_game_map m ON m.espn_game_id = f.game_id AND m.venue_game_id IS NOT NULL "
+        "JOIN line l ON l.game_id = f.game_id WHERE f.home_score <> f.away_score"))}
+    new_g = {g: v for g, v in live_games.items() if g not in games}
+    no_line = c.execute(text(
+        "SELECT count(DISTINCT p.game_id) FROM espn_cfb_live_plays p JOIN cfb_game_map m ON m.espn_game_id=p.game_id "
+        "AND m.venue_game_id IS NOT NULL WHERE p.league='cfb' AND p.game_id NOT IN (SELECT game_id FROM "
+        "espn_cfb_game_state WHERE league='cfb' AND live_spread IS NOT NULL)")).scalar()
+    if new_g:
+        lp = [dict(r._mapping) for r in c.execute(text(
+            "SELECT game_id, play_id, wall_clock, period, clock_minutes, clock_seconds, down, distance, "
+            "yards_to_goal, pos_team_score, def_pos_team_score, drive_is_home_offense "
+            "FROM espn_cfb_live_plays WHERE league='cfb' AND game_id = ANY(:g) AND wall_clock IS NOT NULL "
+            "AND down IS NOT NULL AND down > 0 AND period IS NOT NULL AND NOT is_overtime "
+            "ORDER BY game_id, wall_clock"), {"g": list(new_g)})]
+        plays += lp
+        games.update(new_g)
+    print(f"POOLED: backfill games {len(games) - len(new_g)}  + live-only games with a line {len(new_g)}"
+          f"  (live games with NO recorded line, skipped: {no_line})")
     vids = sorted({g["venue_game_id"] for g in games.values()})
     lo = min(p["wall_clock"] for p in plays)
     hi = max(p["wall_clock"] for p in plays) + dt.timedelta(seconds=FEED_LAG + STALE_S + 3600)
