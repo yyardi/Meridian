@@ -282,7 +282,7 @@ games_all = sorted({r[3] for r in raw})
 holdout = {g for i, g in enumerate(games_all) if i % 5 == 0}
 train = [r for r in raw if r[3] not in holdout]
 test_cfbd = [r for r in raw if r[3] in holdout]
-log(f"CFBD: train {len(train):,} plays / {len(games_all)-len(holdout):,} games   "
+log(f"{LEAGUE.upper()}: train {len(train):,} plays / {len(games_all)-len(holdout):,} games   "
     f"holdout {len(test_cfbd):,} plays / {len(holdout):,} games (DISJOINT)")
 
 # ------------------------------------------------- spread bridge, CFBD vs ESPN
@@ -406,7 +406,7 @@ def clustered(vals, keys):
 
 def evaluate(rows, label):
     """Per-rung Brier: model vs in-game normal, game-clustered difference."""
-    print(f"\n=== {label}: per-rung Brier, model vs in-game normal (sigma={SIGMA:.0f}) ===")
+    print(f"\n=== {label}: per-rung Brier, model vs in-game normal (sigma={SIGMA:g}) ===")
     print(f"  {'K':>6}{'n':>9}{'model':>9}{'normal':>9}{'diff':>9}  {'95% CI (game-clustered)':<26}{'G':>5}{'G_eff':>7}")
     allmod, allnrm, allkey = [], [], []
     for K_ in EVAL_K:
@@ -478,8 +478,10 @@ monotone_check(cf)
 if not games26:
     print("\n=== vs ESPN spreadCoverProbHome: skipped -- no 2026 tape for this league yet ===")
 log("fetching ESPN core probabilities for the 2026 games" if games26 else "no tape; ESPN skipped")
-ESPN = ("https://sports.core.api.espn.com/v2/sports/football/leagues/college-football"
-        "/events/{g}/competitions/{g}/probabilities?limit=1000")
+# league-parametrised, or the NFL comparison would silently fetch CFB events.
+_ESPN_LEAGUE = {"cfb": "college-football", "nfl": "nfl"}[LEAGUE]
+ESPN = ("https://sports.core.api.espn.com/v2/sports/football/leagues/" + _ESPN_LEAGUE
+        + "/events/{g}/competitions/{g}/probabilities?limit=1000")
 espn_cover = {}                      # (game_id, play_id) -> spreadCoverProbHome
 for gid in games26:
     try:
