@@ -88,6 +88,13 @@ TICK = 0.01
 # between plays instead of AT plays; everything downstream -- arms, fill rule,
 # queue, clustering, guards -- is E1's, untouched. One stratum. No search.
 DEAD_WINDOW = bool(os.environ.get("DEAD_WINDOW"))
+# E8 -- LEAGUE=nfl (or cfb). Reads the LIVE recorder tables, which are
+# football-shaped and hold both leagues under `league`, instead of the CFB-only
+# backfill tables. Settlement from the last recorded game_state score; spread
+# from the recorded live line, which may be ABSENT (CFB had it on 19/55 games).
+# A play with no line still gets arm A -- the naive maker needs no model --
+# and is counted out of B/C, where the shield has nothing to decide with.
+LEAGUE = os.environ.get("LEAGUE")
 DEAD_NO_PLAY_S = 45
 DEAD_NO_SCORE_S = 120
 DEAD_STEP_S = 15
@@ -172,8 +179,36 @@ WHERE market_slug = ANY(:slugs) AND best_bid IS NOT NULL AND best_ask IS NOT NUL
 ORDER BY market_slug, captured_at
 """
 
+LIVE_PLAYS_SQL = """
+WITH final AS (
+  SELECT DISTINCT ON (game_id) game_id, home_score, away_score
+  FROM espn_cfb_game_state WHERE league = :lg AND home_score IS NOT NULL
+  ORDER BY game_id, first_seen_at DESC),
+line AS (
+  SELECT game_id, avg(live_spread)::float AS sp FROM espn_cfb_game_state
+  WHERE league = :lg AND live_spread IS NOT NULL GROUP BY 1)
+SELECT p.game_id espn_game, p.play_id, p.wall_clock, p.period, p.clock_minutes,
+       p.clock_seconds, p.down, p.distance, p.yards_to_goal, p.pos_team_score,
+       p.def_pos_team_score, p.drive_is_home_offense, m.venue_game_id,
+       l.sp AS spread,
+       (CASE WHEN f.away_score > f.home_score THEN 1 ELSE 0 END)::int AS settlement
+FROM espn_cfb_live_plays p
+JOIN cfb_game_map m ON m.espn_game_id = p.game_id
+JOIN final f ON f.game_id = p.game_id
+LEFT JOIN line l ON l.game_id = p.game_id
+WHERE p.league = :lg AND p.wall_clock IS NOT NULL AND p.down IS NOT NULL AND p.down > 0
+  AND p.period IS NOT NULL AND NOT p.is_overtime AND m.venue_game_id IS NOT NULL
+  AND f.home_score <> f.away_score
+"""
+
 with eng.connect() as c:
-    plays = [dict(r._mapping) for r in c.execute(text(PLAYS_SQL))]
+    if LEAGUE:
+        plays = [dict(r._mapping) for r in c.execute(text(LIVE_PLAYS_SQL), {"lg": LEAGUE})]
+        print(f"LEAGUE={LEAGUE}: live tables; plays {len(plays):,}  games "
+              f"{len({p['espn_game'] for p in plays})}  with a line "
+              f"{len({p['espn_game'] for p in plays if p['spread'] is not None})}")
+    else:
+        plays = [dict(r._mapping) for r in c.execute(text(PLAYS_SQL))]
     if not plays:
         print("no plays joinable to a venue game -- refusing to report.")
         sys.exit(0)
@@ -346,7 +381,7 @@ ARMS = ("A_naive", "B_shield", "C_shield_skew")
 fills = {a: [] for a in ARMS}
 withdrawn = {a: 0 for a in ARMS}
 posted = {a: 0 for a in ARMS}
-no_queue = skipped_feat = with_queue = 0
+no_queue = skipped_feat = with_queue = no_line = 0
 
 for q in quotes:
     st = GameState(period=q["period"], clock_minutes=q["clock_minutes"] or 0,
@@ -358,14 +393,18 @@ for q in quotes:
                    pos_team_timeouts=3, def_pos_team_timeouts=3,
                    is_overtime=False, ot_possession_number=None)
     f = build_features(st, q["spread"])
-    if f.get("spread_time") is None or f.get("score_differential") is None:
+    if f.get("score_differential") is None:
         skipped_feat += 1
         continue
-    vec = [float("nan") if f.get(c) is None else f.get(c) for c in REG_FEATURES]
-    p_pos = float(booster.predict(xgb.DMatrix(
-        [vec], feature_names=REG_FEATURES, missing=float("nan")))[0])
-    p_home = p_pos if q["drive_is_home_offense"] else 1.0 - p_pos
-    fv = 1.0 - p_home          # YES = away team = the slug's first team
+    if q["spread"] is None or f.get("spread_time") is None:
+        fv = None                  # no line: arm A only, shield cannot decide
+        no_line += 1
+    else:
+        vec = [float("nan") if f.get(c) is None else f.get(c) for c in REG_FEATURES]
+        p_pos = float(booster.predict(xgb.DMatrix(
+            [vec], feature_names=REG_FEATURES, missing=float("nan")))[0])
+        p_home = p_pos if q["drive_is_home_offense"] else 1.0 - p_pos
+        fv = 1.0 - p_home          # YES = away team = the slug's first team
 
     bid, ask = q["bid0"], q["ask0"]
     slug, t0, y = q["market_slug"], q["t0"], q["settlement"]
@@ -389,8 +428,10 @@ for q in quotes:
 
     # ---- per-arm quote decisions. Prices NEVER leave the touch except the
     # one-tick skew in C, which still rests inside the spread, never through.
-    edge = fv - (bid + ask) / 2.0
+    edge = (fv - (bid + ask) / 2.0) if fv is not None else 0.0
     for arm in ARMS:
+        if fv is None and arm != "A_naive":
+            continue               # counted in no_line; the shield has no view
         want_bid = want_ask = True
         bpx, apx = bid, ask
         if arm != "A_naive":
@@ -438,7 +479,8 @@ for q in quotes:
             if done_b and done_a:
                 break
 
-print(f"skipped {skipped_feat:,} incomplete state")
+print(f"skipped {skipped_feat:,} incomplete state; {no_line:,} quotes had NO LINE "
+      f"(arm A only -- B/C cannot decide without a model view)")
 print(f"queue modelled from recorded depth on {with_queue:,} quotes; "
 f"{no_queue:,} used the OPTIMISTIC no-queue assumption (full priority).")
 if with_queue == 0:
