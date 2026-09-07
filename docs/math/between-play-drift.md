@@ -37,11 +37,17 @@ nearly over.
 
 ## What it cannot say
 
-n=145 at h=30 is thin, and 6,525 plays had no pre-play mid within five
-minutes — the winner-market tick is bursty, not continuous. The point estimates
-lean the wrong way for the hypothesis and the realised fraction is reasonably
-tight, but "efficient" here means "no detectable inefficiency on 145 moves,"
-not a proof. The place to re-run this is NFL winner markets, where ticks are
-dense enough that the pre/obs/later triplet exists for most plays.
+n=145 at h=30 is thin. I first wrote that the missing pre-play mids meant the
+winner tick was "bursty" — **that was wrong.** Where the venue recorder was up,
+the live winner tick is dense: median gap 2.9s, p90 5.4s, 0.03% of gaps over
+five minutes. The missing mids are **recorder coverage**: of 73 games, 17 have
+no venue tape at all during play (>90% of plays lack a pre-mid), 17 are
+partial, 39 are fully covered, and the gaps sit evenly across all four quarters
+— whole games the recorder missed, which is the outage history the Saturday
+runbook records, now quantified. On the 39 covered games the instrument is
+good, and the result there is: no detectable drift, 87% realised at +30s.
+"Efficient" still means "no detectable inefficiency on 145 moves," not a proof.
+NFL, with denser action and — if the recorder holds — full coverage, is where
+this gets its power.
 
 Script: `cfb/run_drift.py`. Output preserved as `drift.out` in the session scratchpad.
