@@ -18,6 +18,20 @@ does not have them yet.
 python3 scripts/build_cfb_game_map.py --days 2 --dry-run   # on main
 ```
 
+**NFL is the same builder with two flags, and it must look FORWARD** — the
+NFL map is built before kickoff from ESPN's *scheduled* events, and a
+back-only run returns a clean, confident zero. Dry-run 2026-09-07 matched
+**16/16** week-1 games at ≥0.960 with no date offsets; the week-2 venue games
+beyond the window were reported unmatched, not guessed.
+
+```bash
+python3 scripts/build_cfb_game_map.py --league nfl --days 1 --days-ahead 7 --dry-run   # quant-b/cfb-touch-making
+```
+
+Opener is **Wed 09-09 20:20 ET (Thu 00:20Z)**, before Saturday — run this at
+its own T−60. Without it, NFL plays land in the football-shaped tables under
+`league='nfl'` with nothing to join them to the venue.
+
 Read-only. Prints matched / unmatched with confidences. **The DB write is the
 operator's** — do not run the writing form.
 
