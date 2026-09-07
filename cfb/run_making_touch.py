@@ -53,6 +53,7 @@ WHAT IS STILL NOT MODELLED, stated rather than buried:
     that joins after us is behind us, which is correct, but cancellations
     ahead of us would help us and are not observable.
 """
+import bisect
 import datetime as dt
 import os
 import sys
@@ -134,6 +135,7 @@ FROM market_trade_stats t
 LEFT JOIN market_snapshots ms ON ms.id = t.snapshot_id
 WHERE COALESCE(t.market_slug, ms.market_slug) = ANY(:slugs)
   AND t.last_trade_px IS NOT NULL
+  AND t.captured_at BETWEEN :t_lo AND :t_hi
 ORDER BY 1, t.captured_at
 """
 
@@ -142,6 +144,7 @@ MID_SQL = """
 SELECT market_slug, captured_at, best_bid::float AS bid, best_ask::float AS ask
 FROM market_snapshots
 WHERE market_slug = ANY(:slugs) AND best_bid IS NOT NULL AND best_ask IS NOT NULL
+  AND captured_at BETWEEN :t_lo AND :t_hi
 ORDER BY market_slug, captured_at
 """
 
@@ -152,12 +155,16 @@ with eng.connect() as c:
         sys.exit(0)
     slugs = sorted({q["market_slug"] for q in quotes})
     ids = sorted({q["snapshot_id"] for q in quotes})
+    t_lo = min(q["t0"] for q in quotes)
+    t_hi = max(q["t0"] for q in quotes) + dt.timedelta(
+        seconds=REST_WINDOW + MARKOUT + 60)
+    win = {"slugs": slugs, "t_lo": t_lo, "t_hi": t_hi}
     queue_rows = [dict(r._mapping) for r in
                   c.execute(text(QUEUE_SQL), {"ids": ids})]
     tape_rows = [dict(r._mapping) for r in
-                 c.execute(text(TAPE_SQL), {"slugs": slugs})]
+                 c.execute(text(TAPE_SQL), win)]
     mid_rows = [dict(r._mapping) for r in
-                c.execute(text(MID_SQL), {"slugs": slugs})]
+                c.execute(text(MID_SQL), win)]
 
 print(f"quotable plays {len(quotes):,}   markets {len(slugs):,}   "
       f"games {len({q['espn_game'] for q in quotes}):,}")
@@ -189,20 +196,18 @@ for r in tape_rows:
 for s in prints:
     prints[s].sort(key=lambda d: d["t"])
 
-mids = defaultdict(list)
+mids = defaultdict(lambda: ([], []))
 for r in mid_rows:
-    mids[r["market_slug"]].append((r["captured_at"], (r["bid"] + r["ask"]) / 2))
+    ts, vs = mids[r["market_slug"]]
+    ts.append(r["captured_at"])
+    vs.append((r["bid"] + r["ask"]) / 2)
 
 
 def mid_at(slug, t):
-    """Last mid at or before t. Linear scan is fine at this size."""
-    best = None
-    for ts, m in mids.get(slug, ()):
-        if ts <= t:
-            best = m
-        else:
-            break
-    return best
+    """Last mid at or before t, or None if the tape starts after t."""
+    ts, vs = mids.get(slug, ((), ()))
+    i = bisect.bisect_right(ts, t)
+    return vs[i - 1] if i else None
 
 
 def fee(theta, p):
