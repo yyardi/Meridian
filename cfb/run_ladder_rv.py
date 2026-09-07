@@ -63,7 +63,9 @@ TAU_PRIMARY = 0.05
 TAUS = (0.03, 0.05, 0.08)
 MAX_LEG_SPREAD = 0.06
 TAKER_THETA = 0.06
-MODEL = os.environ.get("COVER_MODEL", "/app/artifacts/cfb_cover_regulation.json")
+LEAGUE = os.environ.get("LEAGUE", "cfb")
+MODEL = os.environ.get("COVER_MODEL",
+                       f"/app/artifacts/{LEAGUE}_cover_regulation.json")   # follows the league
 COLS = ["home_margin", "K", "sld", "gsr", "hsr", "exp_margin", "margin_time",
         "exp_margin_time", "home_has_ball", "down", "distance", "ytg", "period"]
 
@@ -96,12 +98,14 @@ def fee(p):
 
 # ------------------------------------------------------------------ data
 with eng.connect() as c:
-    games = {r.game_id: dict(r._mapping) for r in c.execute(text(
+    games, plays = {}, []
+    if LEAGUE == "cfb":                      # backfill exists for CFB only
+      games = {r.game_id: dict(r._mapping) for r in c.execute(text(
         "SELECT b.game_id, m.venue_game_id, b.home_score, b.away_score, b.spread::float AS spread "
         "FROM espn_cfb_backfill_games b JOIN cfb_game_map m ON m.espn_game_id = b.game_id "
         "WHERE b.spread IS NOT NULL AND b.home_score IS NOT NULL AND b.away_score IS NOT NULL "
         "AND m.venue_game_id IS NOT NULL"))}
-    plays = [dict(r._mapping) for r in c.execute(text(
+      plays = [dict(r._mapping) for r in c.execute(text(
         "SELECT game_id, play_id, wall_clock, period, clock_minutes, clock_seconds, down, distance, "
         "yards_to_goal, pos_team_score, def_pos_team_score, drive_is_home_offense "
         "FROM espn_cfb_backfill_plays WHERE wall_clock IS NOT NULL AND down IS NOT NULL AND down > 0 "
@@ -111,25 +115,25 @@ with eng.connect() as c:
     # counted and skipped. Dedup by game, backfill wins.
     live_games = {r.game_id: dict(r._mapping) for r in c.execute(text(
         "WITH final AS (SELECT DISTINCT ON (game_id) game_id, home_score, away_score "
-        "  FROM espn_cfb_game_state WHERE league='cfb' AND home_score IS NOT NULL "
+        "  FROM espn_cfb_game_state WHERE league=:lg AND home_score IS NOT NULL "
         "  ORDER BY game_id, first_seen_at DESC), "
         "line AS (SELECT game_id, avg(live_spread)::float AS spread FROM espn_cfb_game_state "
-        "  WHERE league='cfb' AND live_spread IS NOT NULL GROUP BY 1) "
+        "  WHERE league=:lg AND live_spread IS NOT NULL GROUP BY 1) "
         "SELECT f.game_id, m.venue_game_id, f.home_score, f.away_score, l.spread "
         "FROM final f JOIN cfb_game_map m ON m.espn_game_id = f.game_id AND m.venue_game_id IS NOT NULL "
-        "JOIN line l ON l.game_id = f.game_id WHERE f.home_score <> f.away_score"))}
+        "JOIN line l ON l.game_id = f.game_id WHERE f.home_score <> f.away_score"), {"lg": LEAGUE})}
     new_g = {g: v for g, v in live_games.items() if g not in games}
     no_line = c.execute(text(
         "SELECT count(DISTINCT p.game_id) FROM espn_cfb_live_plays p JOIN cfb_game_map m ON m.espn_game_id=p.game_id "
-        "AND m.venue_game_id IS NOT NULL WHERE p.league='cfb' AND p.game_id NOT IN (SELECT game_id FROM "
-        "espn_cfb_game_state WHERE league='cfb' AND live_spread IS NOT NULL)")).scalar()
+        "AND m.venue_game_id IS NOT NULL WHERE p.league=:lg AND p.game_id NOT IN (SELECT game_id FROM "
+        "espn_cfb_game_state WHERE league=:lg AND live_spread IS NOT NULL)"), {"lg": LEAGUE}).scalar()
     if new_g:
         lp = [dict(r._mapping) for r in c.execute(text(
             "SELECT game_id, play_id, wall_clock, period, clock_minutes, clock_seconds, down, distance, "
             "yards_to_goal, pos_team_score, def_pos_team_score, drive_is_home_offense "
-            "FROM espn_cfb_live_plays WHERE league='cfb' AND game_id = ANY(:g) AND wall_clock IS NOT NULL "
+            "FROM espn_cfb_live_plays WHERE league=:lg AND game_id = ANY(:g) AND wall_clock IS NOT NULL "
             "AND down IS NOT NULL AND down > 0 AND period IS NOT NULL AND NOT is_overtime "
-            "ORDER BY game_id, wall_clock"), {"g": list(new_g)})]
+            "ORDER BY game_id, wall_clock"), {"g": list(new_g), "lg": LEAGUE})]
         plays += lp
         games.update(new_g)
     print(f"POOLED: backfill games {len(games) - len(new_g)}  + live-only games with a line {len(new_g)}"

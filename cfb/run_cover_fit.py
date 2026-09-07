@@ -74,6 +74,15 @@ EVAL_K = [-20.5, -13.5, -10.5, -6.5, -3.5, -0.5, 0.5, 3.5, 6.5, 10.5, 13.5, 20.5
 CACHE = "/app/artifacts/cfbd_cover_cache.json"
 ARTIFACT = "/app/artifacts/cfb_cover_regulation"
 
+# LEAGUE=nfl: same recipe, nflverse play-by-play instead of CFBD, sigma 13.5
+# (NFL margin sd; CFB ~15). The 2026-tape / ESPN / bridge sections are skipped
+# until NFL tape exists (opener 09-10); held-out games are the test.
+LEAGUE = os.environ.get("LEAGUE", "cfb")
+if LEAGUE == "nfl":
+    SIGMA = 13.5
+    CACHE = "/app/artifacts/nflverse_cover_cache.json"
+    ARTIFACT = "/app/artifacts/nfl_cover_regulation"
+
 # SMOKE=1: one week, 30 rounds, nothing written to artifacts/. Exists because
 # the E1 harness died on a Decimal*float AFTER a 25s query, and this one has a
 # ~15-minute fetch in front of its first feature build.
@@ -85,7 +94,7 @@ if os.environ.get("SMOKE"):
 # override sat above the base assignment and was silently overwritten, so
 # v2 saved over v1. Verified by reading the meta on disk, not by reading this.
 elif K_NEAR_LINE:
-    ARTIFACT = "/app/artifacts/cfb_cover_regulation_nearline"
+    ARTIFACT = ARTIFACT + "_nearline"
 
 COLS = ["home_margin", "K", "sld", "gsr", "hsr", "exp_margin", "margin_time",
         "exp_margin_time", "home_has_ball", "down", "distance", "ytg", "period"]
@@ -127,21 +136,23 @@ def normal_baseline(hs, spread_home, K):
 
 
 # ------------------------------------------------------- our 2026 tape (test)
-eng = create_engine(os.environ["DATABASE_URL"])
-with eng.connect() as c:
-    # home/away on backfill_games are ESPN team IDs (e.g. 2116), not names.
-    # The bridge check below needs NAMES, and those live on cfb_game_map.
-    games26 = {r.game_id: dict(r._mapping) for r in c.execute(text(
-        "SELECT b.game_id, m.home_espn_name AS home, m.away_espn_name AS away, "
-        "b.home_score, b.away_score, b.spread::float AS spread "
-        "FROM espn_cfb_backfill_games b LEFT JOIN cfb_game_map m ON m.espn_game_id = b.game_id "
-        "WHERE b.spread IS NOT NULL AND b.home_score IS NOT NULL AND b.away_score IS NOT NULL"))}
-    plays26 = [dict(r._mapping) for r in c.execute(text(
-        "SELECT game_id, play_id, period, clock_minutes, clock_seconds, down, distance, "
-        "yards_to_goal, pos_team_score, def_pos_team_score, drive_is_home_offense, is_overtime "
-        "FROM espn_cfb_backfill_plays WHERE down IS NOT NULL AND down > 0 AND period IS NOT NULL "
-        "AND NOT is_overtime"))]
-eng.dispose()                       # nothing below touches the DB; hold no connection
+games26, plays26 = {}, []
+if LEAGUE == "cfb":
+  eng = create_engine(os.environ["DATABASE_URL"])
+  with eng.connect() as c:
+      # home/away on backfill_games are ESPN team IDs (e.g. 2116), not names.
+      # The bridge check below needs NAMES, and those live on cfb_game_map.
+      games26 = {r.game_id: dict(r._mapping) for r in c.execute(text(
+          "SELECT b.game_id, m.home_espn_name AS home, m.away_espn_name AS away, "
+          "b.home_score, b.away_score, b.spread::float AS spread "
+          "FROM espn_cfb_backfill_games b LEFT JOIN cfb_game_map m ON m.espn_game_id = b.game_id "
+          "WHERE b.spread IS NOT NULL AND b.home_score IS NOT NULL AND b.away_score IS NOT NULL"))}
+      plays26 = [dict(r._mapping) for r in c.execute(text(
+          "SELECT game_id, play_id, period, clock_minutes, clock_seconds, down, distance, "
+          "yards_to_goal, pos_team_score, def_pos_team_score, drive_is_home_offense, is_overtime "
+          "FROM espn_cfb_backfill_plays WHERE down IS NOT NULL AND down > 0 AND period IS NOT NULL "
+          "AND NOT is_overtime"))]
+  eng.dispose()                     # nothing below touches the DB; hold no connection
 log(f"2026 tape: {len(games26)} games, {len(plays26):,} regulation plays")
 
 tape26 = []                         # (hs, spread_home, final_margin, game_id, play_id)
@@ -164,8 +175,10 @@ for p in plays26:
 log(f"2026 tape usable: {len(tape26):,} plays / {len({t[3] for t in tape26})} games")
 
 # ---------------------------------------------------------------- CFBD train
-K = os.environ["CFBD_API_KEY"]
-H = {"Authorization": f"Bearer {K}"}
+K = os.environ.get("CFBD_API_KEY")          # required for the CFBD path only
+H = {"Authorization": f"Bearer {K}"} if K else {}
+if LEAGUE == "cfb" and not K and not os.path.exists(CACHE):
+    sys.exit("CFBD_API_KEY is required to fetch CFB training data (no cache present)")
 
 def get(year, path, **p):
     for attempt in range(3):
@@ -186,10 +199,53 @@ def spread_of(lines_row):
             d[(ln.get("provider") or "").replace(" ", "").lower()] = float(ln["spread"])
     return d.get("draftkings", next(iter(d.values()))) if d else None
 
+def fetch_nflverse():
+    """nflverse play-by-play -> [hs, spread_home, final_home_margin, game_id].
+    nflfastR spread_line is POSITIVE when home is favoured; ours is negative.
+    Asserted per season via corr(spread_line, result) > 0.2 -- this sign
+    inverted a monotone constraint once already."""
+    import gzip, io
+    import pandas as pd
+    out = []
+    for y in SEASONS:
+        r = httpx.get(f"https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_{y}.csv.gz",
+                      follow_redirects=True, timeout=300); r.raise_for_status()
+        want = ["game_id", "season_type", "qtr", "quarter_seconds_remaining", "down", "ydstogo", "yardline_100",
+                "posteam", "home_team", "posteam_score", "defteam_score", "spread_line", "result"]
+        df = pd.read_csv(io.BytesIO(gzip.decompress(r.content)), usecols=lambda c: c in want, low_memory=False)
+        miss = [c for c in want if c not in df.columns]
+        if miss:
+            sys.exit(f"nflfastR {y}: missing {miss}")
+        df = df[df["season_type"] == "REG"].dropna(subset=want)
+        g = df.drop_duplicates("game_id")
+        corr = g["spread_line"].corr(g["result"])
+        log(f"nflverse {y}: {len(df):,} plays, {len(g)} games, corr(spread_line,result)={corr:+.3f}")
+        if corr <= 0.2:
+            sys.exit("spread_line sign not as documented; stopping")
+        d = df[(df["qtr"] <= 4) & (df["down"] >= 1) & (df["result"] != 0)]
+        for t in d.itertuples(index=False):
+            qsr = int(t.quarter_seconds_remaining)
+            st = GameState(period=int(t.qtr), clock_minutes=qsr // 60, clock_seconds=qsr % 60,
+                           down=int(t.down), distance=int(t.ydstogo), yards_to_goal=int(t.yardline_100),
+                           pos_team_score=int(t.posteam_score), def_pos_team_score=int(t.defteam_score),
+                           drive_is_home_offense=(t.posteam == t.home_team),
+                           pos_team_timeouts=3, def_pos_team_timeouts=3)
+            hs = home_state(st)
+            if hs is None:
+                continue
+            out.append([list(hs), -float(t.spread_line), int(t.result), str(t.game_id)])
+    return out
+
+
 if os.path.exists(CACHE):
     with open(CACHE) as fh:
         raw = json.load(fh)
-    log(f"loaded CFBD cache: {len(raw):,} plays")
+    log(f"loaded {LEAGUE} cache: {len(raw):,} plays")
+elif LEAGUE == "nfl":
+    raw = fetch_nflverse()
+    with open(CACHE, "w") as fh:
+        json.dump(raw, fh)
+    log(f"cached nflverse to {CACHE}")
 else:
     raw = []                        # [hs, spread, final_margin, game_id]
     for year in SEASONS:
@@ -234,7 +290,7 @@ def norm(s):
     return "".join(ch for ch in (s or "").lower() if ch.isalnum())
 
 cfbd26 = {}
-for wk in (1, 2):
+for wk in ((1, 2) if LEAGUE == "cfb" else ()):
     for g in get(2026, "lines", week=wk):
         sp = spread_of(g)
         if sp is not None:
@@ -254,7 +310,8 @@ for gid, g in games26.items():
     diffs.append(d)
     if d <= 0.51:
         agree += 1
-print("\n=== SPREAD BRIDGE: CFBD (train) vs ESPN pickcenter (serve), 2026 wk1-2 ===")
+print("\n=== SPREAD BRIDGE: CFBD (train) vs ESPN pickcenter (serve), 2026 wk1-2 ===" if LEAGUE == "cfb"
+      else "\n=== SPREAD BRIDGE: skipped for NFL until venue/ESPN NFL lines exist on tape (09-10) ===")
 print(f"  matched by name {matched}/{len(games26)}   agree within 0.5pt {agree}/{matched}"
       f"   max |diff| {max(diffs) if diffs else float('nan'):.1f}")
 if matched < 30:
@@ -410,14 +467,17 @@ cf = [(tuple(r[0]), r[1], r[2], r[3]) for r in test_cfbd]
 t26 = [(hs, sp, fm, gid) for hs, sp, fm, gid, pid in tape26]
 for USE_ISO in (False, True):
     tag = "ISOTONIC" if USE_ISO else "RAW"
-    evaluate(cf, f"[{tag}] CFBD HELD-OUT GAMES ({len(holdout):,} games, {len(cf):,} plays)")
-    evaluate(t26, f"[{tag}] OUR 2026 TAPE ({len({t[3] for t in t26})} games, {len(t26):,} plays)")
-    calibration(cf, f"[{tag}] CFBD holdout")
+    evaluate(cf, f"[{tag}] {LEAGUE.upper()} HELD-OUT GAMES ({len(holdout):,} games, {len(cf):,} plays)")
+    if t26:
+        evaluate(t26, f"[{tag}] OUR 2026 TAPE ({len({t[3] for t in t26})} games, {len(t26):,} plays)")
+    calibration(cf, f"[{tag}] {LEAGUE.upper()} holdout")
 USE_ISO = False
 monotone_check(cf)
 
 # -------------------------------------------- ESPN spreadCoverProbHome benchmark
-log("fetching ESPN core probabilities for the 2026 games")
+if not games26:
+    print("\n=== vs ESPN spreadCoverProbHome: skipped -- no 2026 tape for this league yet ===")
+log("fetching ESPN core probabilities for the 2026 games" if games26 else "no tape; ESPN skipped")
 ESPN = ("https://sports.core.api.espn.com/v2/sports/football/leagues/college-football"
         "/events/{g}/competitions/{g}/probabilities?limit=1000")
 espn_cover = {}                      # (game_id, play_id) -> spreadCoverProbHome
@@ -464,7 +524,7 @@ else:
 os.makedirs("/app/artifacts", exist_ok=True)
 booster.save_model(ARTIFACT + ".json")
 with open(ARTIFACT + ".meta.json", "w") as fh:
-    json.dump({"seasons": SEASONS, "k_near_line": K_NEAR_LINE, "cols": COLS, "monotone": MONO, "sigma_baseline": SIGMA,
+    json.dump({"league": LEAGUE, "seasons": SEASONS, "k_near_line": K_NEAR_LINE, "cols": COLS, "monotone": MONO, "sigma_baseline": SIGMA,
                "k_grid": [K_GRID[0], K_GRID[-1]], "train_games": len(games_all) - len(holdout),
                "holdout_games": len(holdout), "tape26_games": len({t[3] for t in tape26}),
                "frame": "HOME; spread negative = home favoured; y_K = 1[final_home_margin > K]",
