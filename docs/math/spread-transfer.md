@@ -71,6 +71,35 @@ ladder says it costs nothing to make.
 Implied margin sd: **median 15.65 points**, range 14.03–19.61. The logistic fit
 gives scale 9.15 → sd 16.59, agreeing.
 
+### ⛔ THE LINE DEPENDENCE IS REFUTED — 2026-09-07, gated, and with power
+
+Three games gated on `true_kickoff` (period 1, 0-0), closing ladders inside the
+≤900 s window, on a board that was quoting:
+
+| game | rungs | σ | R² | \|line\| | slope 0.1182 predicts |
+|---|---:|---:|---:|---:|---:|
+| 16453 | 34 | 15.98 | 0.9778 | 8.1 | 14.15 |
+| 16488 | 23 | 15.61 | 0.9871 | 22.5 | 15.85 |
+| 16486 | 25 | 15.98 | 0.9959 | 23.9 | 16.01 |
+
+```
+fitted slope on these three   -0.0105      (shipped +0.1182)
+residual scatter               0.193 pts
+predicted rise 8.1 -> 23.9     1.87 pts    observed 0.00
+signal-to-scatter              9.7x        <- the test HAD power
+mean |error|:  flat 15.86  0.16 pts   |   shipped relation  0.70 pts
+```
+
+**The level reproduces on a fresh cohort. The slope does not, and this cohort
+could have seen it at nearly ten times its own noise.** Use `MarginScale.flat()`.
+
+**How it survived:** it was fitted on frozen mid-game ladders where lopsided
+games carried more one-sided rungs, and a tail-only probit fit inflates σ. The
+symmetric-window control below argued against exactly that mechanism — **and ran
+on the same 14 contaminated ladders, so it never had the power to clear
+itself.** Everything after this heading is the superseded fit, kept so the trail
+is legible.
+
 ### σ grows with the line — measured, n = 14, and shipped
 
 Fitted by `core.gridiron.scale.MarginScale`:
