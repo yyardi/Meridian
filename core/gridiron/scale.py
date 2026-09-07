@@ -29,8 +29,38 @@ that choice within `0.05 < mid < 0.95`.
 
 What is measured, and what is NOT
 ---------------------------------
-**sigma varies with the line, and that IS measured.** Fitted by this module on
-the 09-05 pregame ladders:
+⛔ **THE LINE DEPENDENCE FAILED A POWERED OUT-OF-SAMPLE TEST, 2026-09-07. USE
+THE LEVEL, NOT THE SLOPE.** Three games gated on `true_kickoff` (period 1, 0-0)
+with closing ladders inside the <=900s window, on a board that was quoting:
+
+    game    rungs   sigma      R2    |line|    slope 0.1182 predicts
+    16453      34   15.98  0.9778       8.1                    14.15
+    16488      23   15.61  0.9871      22.5                    15.85
+    16486      25   15.98  0.9959      23.9                    16.01
+
+    fitted slope on these three   -0.0105     (shipped: +0.1182)
+    residual scatter               0.193 pts
+    predicted rise 8.1 -> 23.9     1.87 pts   observed  0.00 pts
+    signal-to-scatter              9.7x       <- the test HAD power
+
+Mean absolute error: **flat sigma = 15.86 gives 0.16 pts; the shipped relation
+gives 0.70.** The level reproduces on a fresh cohort; the slope does not, and
+this cohort could have seen it at nearly ten times its own noise.
+
+**Not refitted on n = 3.** The coefficients below are unchanged so the
+supersession trail stays legible, and `sigma()` clamps, so a wrong slope costs
+~2 points of scale at the extremes rather than diverging. **Prefer
+`MarginScale.flat()`.** The line dependence below is the historical fit and
+should be read as unsupported.
+
+**How it survived four months of looking right:** it was fitted on frozen
+mid-game ladders where lopsided games had more one-sided rungs, and a tail-only
+probit fit inflates sigma. My symmetric-window control argued against exactly
+that mechanism — and ran on the same 14 contaminated ladders, so it never had
+the power to clear itself.
+
+**sigma varies with the line, and that WAS the measurement.** Fitted by this
+module on the 09-05 pregame ladders:
 
     sigma = 13.19 + 0.1182*|line|      n = 14 games, corr = +0.948
 
@@ -168,6 +198,18 @@ class MarginScale:
                  n_games: int, corr: float):
         self.intercept, self.slope = intercept, slope
         self.line_range, self.n_games, self.corr = line_range, n_games, corr
+
+    @classmethod
+    def flat(cls, sigma: float, *, n_games: int = 3) -> "MarginScale":
+        """A constant scale, which is what the gated 2026-09-07 cohort supports.
+
+        Three properly-gated closing ladders spanning |line| 8.1 to 23.9 gave a
+        fitted slope of -0.0105 against the shipped +0.1182, with a
+        signal-to-scatter ratio of 9.7 -- so the flat reading is not merely
+        consistent, it is preferred by mean absolute error 0.16 against 0.70.
+        """
+        return cls(float(sigma), 0.0, line_range=(0.0, 60.0),
+                   n_games=n_games, corr=0.0)
 
     @classmethod
     def fit(cls, scales: pd.DataFrame, *, line_col: str = "implied_line",

@@ -118,3 +118,22 @@ def test_the_ladder_is_monotone_in_the_line():
     m = MarginScale.fit(_scales([14, 15, 16, 17, 18, 19], [5, 10, 20, 30, 40, 45]))
     p = [cover_probability(L, 20.0, m) for L in range(-35, 6, 5)]
     assert all(b > a for a, b in zip(p, p[1:]))
+
+
+def test_the_flat_surface_is_constant_and_does_not_clamp_away_real_lines():
+    """The gated 2026-09-07 cohort supports a level, not a trend."""
+    m = MarginScale.flat(15.86)
+    assert m.sigma(8.1) == pytest.approx(15.86)
+    assert m.sigma(23.9) == pytest.approx(15.86)
+    assert m.sigma(49.7) == pytest.approx(15.86)
+    assert m.slope == 0.0
+
+
+def test_flat_beats_the_shipped_relation_on_the_gated_cohort():
+    """Pins the comparison that demoted the slope, so a later edit that
+    reinstates it has to explain these three games."""
+    gated = [(8.1, 15.98), (22.5, 15.61), (23.9, 15.98)]
+    shipped = MarginScale(13.19, 0.1182, line_range=(7.9, 49.7), n_games=14, corr=0.948)
+    flat = MarginScale.flat(15.86)
+    err = lambda m: sum(abs(s - m.sigma(l)) for l, s in gated) / len(gated)
+    assert err(flat) < 0.25 < 0.6 < err(shipped)
