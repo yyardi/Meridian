@@ -117,6 +117,12 @@ def fetch_cfbd():
                     if ts: out.append([list(ts), ou[gid], final[gid], gid])
             log(f"  {year} wk{wk:2d}: {len(out):,} plays so far")
         log(f"  {year}: +{len(out)-n0:,} plays, games with final+O/U {len(set(final)&set(ou)):,}")
+        # A season that returns no plays is a QUOTA or endpoint failure, not a
+        # season with no football. The first full run silently fitted 2022
+        # alone and labelled it 2022-2024. Refuse, and say which season.
+        if len(out) - n0 == 0:
+            sys.exit(f"CFBD returned 0 plays for {year} (quota exhausted or endpoint failing). "
+                     f"Refusing to fit and label a partial season set as {SEASONS}.")
     return out
 
 if os.path.exists(CACHE):
