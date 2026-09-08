@@ -100,3 +100,37 @@ about the quoter's cadence and not a trade.
 
 Three looks at 42 CFB games have now been taken (H1, slow-side, H1c-exploratory).
 Whatever H1c shows on CFB is a prior for NFL, nothing more.
+
+---
+
+## The morning after each NFL game — run exactly this, in this order
+
+All scripts are piped over stdin into the trainer image; nothing is written to
+the prod checkout. Set `H` from `~/.meridian-server`. The DB URL is the compose
+default for the `trainer` service.
+
+```bash
+RUN='sudo -n docker run --rm -i --network meridian_default -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian -v /opt/meridian/cfb:/app/cfb -v /opt/meridian/artifacts:/app/artifacts -w /app meridian-trainer python3 -'
+# 0. did the recorders write the game? (plays, WP, game_state under league='nfl'; venue winner snapshots during the game)
+# 1. H1  overshoot direction on Polymarket NFL          -> gate: reversal > half-spread (expected to FAIL as on CFB; record it)
+ssh ubuntu@$H "LEAGUE=nfl $RUN" < cfb/run_overshoot.py
+# 2. H1c maker on the move's side                       -> gate: net/fill > 0, excludes zero, G >= 25
+ssh ubuntu@$H "LEAGUE=nfl MOVE_STRATUM=1 $RUN" < cfb/run_making_touch.py
+# 3. H2  E1 arms, NFL-trained shield (auto-selected by LEAGUE)
+ssh ubuntu@$H "LEAGUE=nfl $RUN" < cfb/run_making_touch.py
+ssh ubuntu@$H "LEAGUE=nfl DEAD_WINDOW=1 $RUN" < cfb/run_making_touch.py
+# 4. H3  ladder RV, NFL cover model                     -> precondition: stale fraction < 50%, else "cannot run" is the result
+ssh ubuntu@$H "LEAGUE=nfl $RUN" < cfb/run_ladder_rv.py
+# 5. H4  score the pregame snapshots against settlement (public APIs, no prod): append a fresh row first
+python3 analysis/pregame_softness/pregame_softness_polymarket.py analysis/pregame_softness/pregame_softness_polymarket_snapshots.csv
+python3 analysis/pregame_softness/pregame_softness_kalshi.py     analysis/pregame_softness/pregame_softness_snapshots.csv
+```
+
+Before kickoff on Wednesday (and Sunday): re-run step 5's two scripts to append
+a near-kickoff snapshot — lines move, and a Monday snapshot for a Sunday game is
+the weakest version of the test.
+
+**Read nothing as a verdict until G ≥ 25.** Week 1 is 16 games. Report every
+number with its interval, G and G_eff, estimator named, and the pre-registered
+gate beside it. Anything outside H1–H4 is written down as a hypothesis for
+week 2 and not reported as a week-1 result.
