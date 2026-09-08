@@ -1,0 +1,17 @@
+LEAGUE=cfb: games 74   winner snapshots 130,579
+games with >=60 in-game minutes on tape: 42   too thin: 14   (Kalshi comparison: 49 NFL pre / 209 CFB)
+
+=== POLYMARKET US in-game, after a >=1c one-minute move ===
+   h(min)       n     beta              95% CI    G    continuation c            95% CI
+        1     782   +0.059   [+0.002, +0.116]   22            +0.28c   [+0.04, +0.52]   CONTINUES
+        2     782   +0.107   [-0.002, +0.216]   22            +0.53c   [+0.18, +0.88]   spans zero
+        5     782   -0.131   [-0.286, +0.024]   22            -0.20c   [-0.62, +0.22]   spans zero
+
+=== OVERSHOOT by shock size at h=2, and the GATE: does it clear half the spread? ===
+   |jump| >=      n    G    reversal@2min            95% CI    % jump    half-spread   gate
+          1c    782   22           +0.53c   [+0.18, +0.88]    +16.0%          0.42c   spans zero
+          2c    464   18           +0.73c   [+0.22, +1.23]    +15.6%          0.45c   spans zero
+          3c    306   14           +0.77c   [+0.24, +1.31]    +13.2%          0.47c   spans zero
+
+  GATE (pre-registered): the >=2c stratum reverts, excludes zero, and |reversal| > mean half-spread.
+  A maker fading the move earns the reversal and pays the half-spread to be there; maker fee is 0 on this venue.
