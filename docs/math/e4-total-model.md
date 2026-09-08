@@ -12,8 +12,8 @@ scored at offsets from each game's own line, half-point snapped.
 | | model vs normal | G / G_eff |
 |---|---|---|
 | NFL held-out, 163 games | −0.0011 [−0.0046, +0.0025] | 163 / 162.2 |
-| CFB held-out, 261 games (**2022 only**, see below) | +0.0002 [−0.0026, +0.0031] | 261 / 239.1 |
-| CFB 2026 tape, 55 games | +0.0000 [−0.0022, +0.0023] | 55 / 54.5 |
+| CFB held-out, **812 games, 2022–2024** | **−0.0002 [−0.0013, +0.0009]** | 812 / 758.4 |
+| CFB 2026 tape, 55 games | −0.0008 [−0.0022, +0.0006] | 55 / 54.5 |
 
 Every individual offset in every table spans zero. Monotone 0/118,000 (NFL),
 0/178,000 (CFB). In both leagues **78% of the model's gain sits on
@@ -42,15 +42,15 @@ models and ESPN's feed all reduce to it. What a total rung needs is the line,
 the score, the clock, and a σ measured per league — and the σ is the only
 thing worth re-estimating as tape accumulates.
 
-## Defect on the way, and it is mine
+## A defect on the way, since fixed
 
-The CFB fit is **2022 only.** CFBD returned zero plays for 2023 and zero games
-for 2024 — quota exhausted after the three-season cover fetch earlier the same
-night — and the fetch loop swallowed it and labelled the artifact 2022–2024.
-A check that could not fail. The script now exits naming the empty season; the
-artifact's meta on prod is corrected to `[2022]` with a note. Refit when quota
-resets; the conclusion is not expected to move, since 261 CFB and 163 NFL
-held-out games already agree.
+The first CFB fit trained on **2022 only**: CFBD's quota, exhausted by the
+three-season cover fetch earlier that night, returned zero plays for 2023 and
+2024, and the fetch loop swallowed it and labelled the artifact 2022–2024. A
+check that could not fail. The script now exits naming any empty season; the
+quota reset the next day and the refit above is the full three seasons (3,247
+train / 812 held-out). The conclusion did not move — σ 16.13 vs 16.15, pooled
+difference −0.0002 vs +0.0002 — which is what 261 and 163 games had already said.
 
 Artifacts: `artifacts/nfl_total_regulation.json`, `artifacts/cfb_total_regulation.json`
-(+ meta, + caches). Script: `cfb/run_total_fit.py`, `LEAGUE=nfl|cfb`, `SMOKE=1`.
+(+ meta, + caches), both three seasons. Script: `cfb/run_total_fit.py`, `LEAGUE=nfl|cfb`, `SMOKE=1`.
