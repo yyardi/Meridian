@@ -155,3 +155,18 @@ markout at +2 min positive and excluding zero, pooled G ≥ 25; settlement must 
 contradict it in sign. This is the variance-reduction question from the
 researcher update, answered with the standard estimator rather than a novel one.
 Registered before it is computed on any NFL tape; CFB values below are the prior.
+
+
+---
+
+## Addendum 2026-09-08 — secondary criterion for H1c, registered before NFL tape
+
+Primary (unchanged): pooled CFB+NFL markout at +2 min for the move-side maker,
+positive and excluding zero, game-clustered, G ≥ 25.
+
+**Secondary, added now:** game-level sign test — the fraction of games with
+positive mean 2-minute markout must be ≥ 70% at G ≥ 25 (one-sided binomial
+p < 0.05 against 0.5). It weights every game equally and depends on no clustering
+model, so it cannot be rescued by a few high-fill games. The CFB prior is 15/17
+(p = 0.0012). Both criteria must hold; if they disagree, the disagreement is
+the result and is reported as such.

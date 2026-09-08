@@ -19,6 +19,12 @@ and E6 were pre-registered; H1c is exploratory on CFB and registered for NFL
 for 2–3 minutes afterwards; a maker who stays out of the first and sits with the
 second faces the least toxic flow this tape contains.**
 
+**Concentration (`markout_move.out`):** 15 of 17 games have positive 2-minute
+markout; leave-one-game-out mean ranges **[+2.66, +4.37]¢**; the two non-positive
+games are −0.00 and −0.13¢. A game-level sign test — every game weighted equally,
+no fill weighting, no clustering model — gives P(≥15 of 17 | fair coin) =
+**0.0012**. It is broad, not two games.
+
 What it is not: a result. G_eff 7 on the last row. Power arrives with NFL's
 denser fills, and the gate is written: H1c net per fill positive and excluding
 zero at G ≥ 25.
