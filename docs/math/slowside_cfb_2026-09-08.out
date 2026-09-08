@@ -1,0 +1,10 @@
+LEAGUE=cfb  games 74  (EXPLORATORY on CFB; registered H1b for NFL)
+
+=== who moved first, and did the other side follow within 2 min? ===
+  kind          n   G    other side follows            95% CI    taker vs slow side, GROSS      NET of 0.06p(1-p) fee
+  ask-led       9  too few
+  bid-led       3  too few
+  both        791  25                +0.59c   [+0.18, +0.99]           +0.15c [-0.22, +0.51]         -0.80c [-1.19, -0.41]  loses
+
+  'other side follows' > 0 = the stale side catches up (the continuation is a stale quote).
+  'taker vs slow side' = hit/lift the stale quote at t, mark at mid t+2. NET must exclude zero to count -- and it is one venue, one sport, exploratory.
