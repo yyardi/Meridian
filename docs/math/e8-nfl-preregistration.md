@@ -134,3 +134,24 @@ the weakest version of the test.
 number with its interval, G and G_eff, estimator named, and the pre-registered
 gate beside it. Anything outside H1–H4 is written down as a hypothesis for
 week 2 and not reported as a week-1 result.
+
+---
+
+## Addendum 2026-09-08 — two changes to the READ, registered before Saturday's CFB slate and Wednesday's NFL tape
+
+**1. Pool by venue.** The mechanism under H1c is Polymarket's quoting engine,
+which is the same engine on CFB and NFL. H1c is therefore read **pooled across
+both leagues on Polymarket**, cluster = game, 25-game floor on the pooled G.
+Saturday 09-12 (~40 covered CFB games) plus Sunday 09-13 (13 NFL) clears the
+floor by Monday 09-14. Per-league splits are reported beside the pool, not
+instead of it. Kalshi is a different engine (it reverts) and is never pooled in.
+
+**2. Markout is the primary maker metric; settlement is secondary.** Settlement
+P&L puts a whole game's binary outcome on every fill, which is why 122 fills at
+G_eff 7 said nothing. A maker who can flatten earns fill-price-vs-mid-later, so
+the primary statistic for every making arm is **markout at +2 and +5 minutes,
+in cents, game-clustered**, reported beside settlement. Gate for H1c becomes:
+markout at +2 min positive and excluding zero, pooled G ≥ 25; settlement must not
+contradict it in sign. This is the variance-reduction question from the
+researcher update, answered with the standard estimator rather than a novel one.
+Registered before it is computed on any NFL tape; CFB values below are the prior.
