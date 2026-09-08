@@ -47,3 +47,31 @@ game-clustered. Expectation from Kalshi preseason and the live snapshot: even.
 Any stratum, threshold, horizon, model, or feature not named above. If
 something interesting appears outside these four, it is written down as a
 hypothesis for week 2 and not reported as a week-1 result.
+
+---
+
+## Addendum 2026-09-08 — H1 ran on CFB; the gate failed; H1b is registered before NFL tape
+
+`cfb/run_overshoot.py`, LEAGUE=cfb, 42 covered games, 782 moves ≥1¢, output in
+`overshoot_cfb_2026-09-08.out`:
+
+| h | β | continuation |
+|---|---|---|
+| 1 | +0.059 [+0.002, +0.116] | **+0.28¢ [+0.04, +0.52]** |
+| 2 | +0.107 [−0.002, +0.216] | **+0.53¢ [+0.18, +0.88]** |
+| strata ≥1/2/3¢ @2 | +16.0 / +15.6 / +13.2% of jump | +0.53 / **+0.73 [+0.22, +1.23]** / +0.77¢ vs half-spread 0.42 / 0.45 / 0.47¢ |
+
+**H1 (reversal > half-spread): FAILS.** Polymarket does the opposite of Kalshi:
+the move *continues* by ~15% within two minutes, every stratum excluding zero,
+each above the half-spread. **This is not reported as a result.** It was not
+the registered direction. It is registered now, before any NFL tape, as:
+
+**H1b — continuation, decomposed by the slow side.** Hypothesis: the mid
+continues because one side of the book reprices first and the other catches up
+a minute later; the exploitable quantity is the stale quote on the slow side,
+not the mid. Statistic, fixed now: classify each ≥1¢ minute by which side moved
+(ask-led / bid-led / both); measure over the next 2 minutes (i) the other side's
+move, (ii) the change in the price a taker would get *against the slow side*.
+Gate: on NFL, the slow-side capture excludes zero and exceeds the taker fee at
+the mid where it occurs (0.06·p(1−p)) plus the half-spread crossed. Same
+strata, same clustering, 25-game floor. Nothing else added after the tape.
