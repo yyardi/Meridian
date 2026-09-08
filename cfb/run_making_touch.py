@@ -98,6 +98,13 @@ LEAGUE = os.environ.get("LEAGUE")
 DEAD_NO_PLAY_S = 45
 DEAD_NO_SCORE_S = 120
 DEAD_STEP_S = 15
+# H1c -- MOVE_STRATUM=1. Quote ONLY in the minute after a >=1c one-minute mid
+# move on the winner market, ONLY on the side of the move (bid after up, ask
+# after down), rest 2 minutes. Everything else is E1's. Exploratory on CFB,
+# registered for NFL (docs/math/e8-nfl-preregistration.md, H1c).
+MOVE_STRATUM = bool(os.environ.get("MOVE_STRATUM"))
+MOVE_MIN_C = 0.01
+MOVE_REST_S = 120
 
 # the shield's model follows the league: an NFL-trained head for NFL tape, never
 # the CFB one pointed at NFL games. WP_MODEL overrides either.
@@ -298,6 +305,36 @@ if DEAD_WINDOW:
           f"no score {DEAD_NO_SCORE_S}s) {n_qual:,}  with a book {len(dead_quotes):,}")
     quotes = dead_quotes
 
+if MOVE_STRATUM:
+    # 1-minute mids per venue game from the winner snapshots already loaded in by_game
+    mv_quotes, n_moves = [], 0
+    play_by_vg = defaultdict(list)
+    for p in plays: play_by_vg[p["venue_game_id"]].append(p)
+    for vg, (ts, rows_) in by_game.items():
+        ps = sorted(play_by_vg.get(vg, []), key=lambda r: r["wall_clock"])
+        if not ps: continue
+        ko = ps[0]["wall_clock"]; end = ko + dt.timedelta(hours=3, minutes=40)
+        minute, first = {}, {}
+        for t_, r in zip(ts, rows_):
+            if not (ko < t_ <= end): continue
+            k = int((t_ - ko).total_seconds() // 60)
+            minute[k] = (r["bid0"] + r["ask0"]) / 2; first.setdefault(k + 1, r)   # the first snapshot of the NEXT minute is where we post
+        for k in sorted(minute):
+            if k - 1 not in minute or k + 1 not in first: continue
+            dm = minute[k] - minute[k - 1]
+            if abs(dm) < MOVE_MIN_C: continue
+            n_moves += 1
+            # state = last observed play before the post instant (feed lag applied)
+            r0 = first[k + 1]; t0 = r0["captured_at"]
+            seen = t0 - dt.timedelta(seconds=FEED_LAG)
+            i = bisect.bisect_right([p_["wall_clock"] for p_ in ps], seen) - 1
+            if i < 0: continue
+            q = dict(ps[i]); q.update(r0); q["t0"] = t0; q["rest_s"] = MOVE_REST_S
+            q["move_side"] = "bid" if dm > 0 else "ask"
+            mv_quotes.append(q)
+    print(f"H1c MOVE STRATUM: >=1c one-minute moves {n_moves:,}   quotable {len(mv_quotes):,}   (bid after up, ask after down)")
+    quotes = mv_quotes
+
 if len(quotes) < 200:
     print(f"only {len(quotes)} quotable instants -- refusing to report.")
     sys.exit(0)
@@ -451,6 +488,8 @@ for q in quotes:
         if fv is None and arm != "A_naive":
             continue               # counted in no_line; the shield has no view
         want_bid = want_ask = True
+        if MOVE_STRATUM:
+            want_bid, want_ask = (q["move_side"] == "bid"), (q["move_side"] == "ask")
         bpx, apx = bid, ask
         if arm != "A_naive":
             # withdraw the side the model says is mispriced: if FV is far
@@ -507,7 +546,7 @@ if with_queue == 0:
           " make it worse.")
 
 # ------------------------------------------------------------------- scoring
-print("\n=== ARMS" + (" -- E6 DEAD-WINDOW STRATUM, one pre-registered, no search" if DEAD_WINDOW else "") + " ===")
+print("\n=== ARMS" + (" -- E6 DEAD-WINDOW STRATUM, one pre-registered, no search" if DEAD_WINDOW else "") + (" -- H1c MOVE STRATUM: post on the side of a >=1c move, rest 2 min (EXPLORATORY on CFB)" if MOVE_STRATUM else "") + " ===")
 print(f"  {'arm':<16}{'posted':>8}{'pulled':>8}{'fills':>7}{'fill%':>7}"
       f"{'net c/fill':>12}{'adverse%':>10}")
 summary = {}
