@@ -1,0 +1,52 @@
+shield model: /app/artifacts/cfb_wp_regulation.json
+LEAGUE=cfb POOLED: backfill 9,408 plays / 55 games  +  live-only 3,356 plays / 19 games  (live overlapping backfill dropped: 19 games)
+plays joinable 12,764   winner snapshots 138,828
+quotable plays 6,051   markets 56   games 56
+book-depth rows 225   tape rows 4,296
+skipped 0 incomplete state; 0 quotes had NO LINE (arm A only -- B/C cannot decide without a model view)
+queue modelled from recorded depth on 71 quotes; 5,980 used the OPTIMISTIC no-queue assumption (full priority).
+
+=== ARMS ===
+  arm               posted  pulled  fills  fill%  net c/fill  adverse%
+  A_naive            12102       0   1813  15.0%      -2.51c     49.0%
+                  GAME-CLUSTERED [-5.34, +0.33]c   G=37  G_eff=15.7
+                  MARKOUT +2min   -0.82c  [-1.26, -0.37]  n=1813 G=37 G_eff=15.7  EXCLUDES 0
+                  MARKOUT +5min   -0.58c  [-1.13, -0.02]  n=1813 G=37 G_eff=15.7  EXCLUDES 0
+                  per-fill (WRONG here, shown to expose the gap) [-3.99, -1.02]c   ratio 1.9x wider
+  B_shield            9697    2405   1431  14.8%      -2.82c     45.3%
+                  GAME-CLUSTERED [-8.45, +2.81]c   G=37  G_eff=17.6
+                  MARKOUT +2min   -0.62c  [-1.09, -0.16]  n=1431 G=37 G_eff=17.6  EXCLUDES 0
+                  MARKOUT +5min   -0.26c  [-1.16, +0.65]  n=1431 G=37 G_eff=17.6  spans 0
+                  per-fill (WRONG here, shown to expose the gap) [-4.40, -1.24]c   ratio 3.6x wider
+  C_shield_skew       9697    2405   1435  14.8%      -2.85c     45.6%
+                  GAME-CLUSTERED [-8.47, +2.78]c   G=37  G_eff=17.6
+                  MARKOUT +2min   -0.63c  [-1.09, -0.16]  n=1435 G=37 G_eff=17.6  EXCLUDES 0
+                  MARKOUT +5min   -0.26c  [-1.17, +0.65]  n=1435 G=37 G_eff=17.6  spans 0
+                  per-fill (WRONG here, shown to expose the gap) [-4.42, -1.27]c   ratio 3.6x wider
+
+=== THE WITHDRAWN FILLS, measured directly ===
+  kept by the shield         n= 1431  -2.82c  GAME-CLUSTERED [-8.45, +2.81]  G=37 G_eff=17.6
+  WITHDRAWN by the shield    n=  382  -1.33c  GAME-CLUSTERED [-15.26, +12.61]  G=19 G_eff=8.5
+  If the withdrawn set is POSITIVE, the model is selecting against us:
+  it is pulling the quotes that make money and keeping the ones that lose.
+
+=== COULD THIS HAVE COME OUT THE OTHER WAY? ===
+  B posts a strict SUBSET of A's sides (2,405 of 12,102 withdrawn).
+  A subset mean can exceed or fall below the full mean -- nothing in the
+  construction fixes the sign. B > A was reachable and did not happen.
+  The shield demonstrably ACTED: adverse-by-markout moved, and it
+  withdrew 2,405 sides rather than 0 or all.
+
+=== B - A : what the model adds as a SHIELD ===
+  naive touch maker -2.51c   model-shielded -2.82c   difference -0.31c
+
+=== GUARDS (a degenerate design reports a number and means nothing) ===
+  SPANS ZERO: A_naive is -2.51c [-5.34, +0.33] on 37 markets. This arm is NOT a measured negative -- it is not measured.
+  SPANS ZERO: B_shield is -2.82c [-8.45, +2.81] on 37 markets. This arm is NOT a measured negative -- it is not measured.
+  SPANS ZERO: C_shield_skew is -2.85c [-8.47, +2.78] on 37 markets. This arm is NOT a measured negative -- it is not measured.
+
+=== WHAT THIS STILL CANNOT SAY ===
+  Our own quote is absent from the book it is measured against, so the
+  flow that filled us is flow that existed WITHOUT us. That biases
+  toward optimism and no tape can remove it. This is a screen for
+  whether the shield has any effect at all, not a P&L forecast.
