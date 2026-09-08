@@ -69,6 +69,7 @@ from sqlalchemy import create_engine, text  # noqa: E402
 FEED_LAG = 30          # seconds; we cannot post before we have seen the play
 REST_WINDOW = 90       # seconds a quote rests before we pull it
 MARKOUT = 60           # seconds after a fill, for the benign/adverse split
+MARKOUTS = (120, 300)  # MAKER P&L horizons: fill price vs mid at +2/+5 min; ~1/10 the variance of settlement
 MAKER_THETA = 0.0      # THERE IS NO MAKER REBATE. findings.md C7
 # (RESOLVED 2026-08-25) and V24: the credits that looked like one were
 # TAKER_FEE_REBATE, a 50% refund of our OWN taker fees, promo window
@@ -342,7 +343,7 @@ slugs = sorted({q["market_slug"] for q in quotes})
 ids = sorted({q["snapshot_id"] for q in quotes})
 t_lo = min(q["t0"] for q in quotes)
 t_hi = max(q["t0"] for q in quotes) + dt.timedelta(
-    seconds=REST_WINDOW + MARKOUT + 60)
+    seconds=REST_WINDOW + max(MARKOUTS) + 60)
 win = {"slugs": slugs, "t_lo": t_lo, "t_hi": t_hi}
 
 with eng.connect() as c:
@@ -572,6 +573,19 @@ for arm in ARMS:
                 adverse += 1
     n = len(pnl)
     mean, half, _hiid, _n, _G, _Geff = clustered(pnl, [f[2] for f in fl])
+    mo_lines = []
+    for H_ in MARKOUTS:
+        vals, keys = [], []
+        for side, px, slug, t, y, _p in fl:
+            m_ = mid_at(slug, t + dt.timedelta(seconds=H_))
+            if m_ is None:
+                continue
+            vals.append(100.0 * ((m_ - px) if side == "buy" else (px - m_)))
+            keys.append(slug)
+        if len(vals) >= 20:
+            mm, mh, _mi, mn, mG, mGe = clustered(vals, keys)
+            mo_lines.append(f"  {'':<16}MARKOUT +{H_//60}min  {mm:+6.2f}c  [{mm-mh:+.2f}, {mm+mh:+.2f}]  "
+                            f"n={mn} G={mG} G_eff={mGe:.1f}  {'EXCLUDES 0' if (mm-mh) > 0 or (mm+mh) < 0 else 'spans 0'}")
     summary[arm] = (mean, half, n, _G, _Geff)
     fr = 100.0 * n / posted[arm] if posted[arm] else 0.0
     ad = 100.0 * adverse / scored if scored else float("nan")
@@ -579,6 +593,26 @@ for arm in ARMS:
           f"{mean:>+11.2f}c{ad:>9.1f}%")
     print(f"  {'':<16}GAME-CLUSTERED [{mean-half:+.2f}, {mean+half:+.2f}]c"
           f"   G={_G}  G_eff={_Geff:.1f}")
+    for _l in mo_lines:
+        print(_l)
+    # CONCENTRATION: a positive markout carried by two games is not a prior for
+    # anything. Per-game 2-min markout for arm A, and leave-one-game-out range.
+    if arm == "A_naive" and MOVE_STRATUM:
+        pg = defaultdict(list)
+        for side, px, slug, t, y, _p in fl:
+            m_ = mid_at(slug, t + dt.timedelta(seconds=MARKOUTS[0]))
+            if m_ is not None:
+                pg[slug].append(100.0 * ((m_ - px) if side == "buy" else (px - m_)))
+        rows_ = sorted(((sum(v)/len(v), len(v), k) for k, v in pg.items()), reverse=True)
+        allv = [x for v in pg.values() for x in v]
+        loo = []
+        for k in pg:
+            rest = [x for kk, v in pg.items() if kk != k for x in v]
+            if rest: loo.append(sum(rest)/len(rest))
+        print(f"  {'':<16}per-game +2min markout: {sum(1 for m_, n_, k in rows_ if m_ > 0)}/{len(rows_)} games positive; "
+              f"leave-one-game-out mean range [{min(loo):+.2f}, {max(loo):+.2f}]c")
+        for m_, n_, k in rows_[:3] + rows_[-2:]:
+            print(f"  {'':<18}{k[:34]:<34} {m_:+7.2f}c on {n_:>3} fills")
     print(f"  {'':<16}per-fill (WRONG here, shown to expose the gap) "
           f"[{mean-_hiid:+.2f}, {mean+_hiid:+.2f}]c   ratio "
           f"{half/_hiid if _hiid else float('nan'):.1f}x wider")
