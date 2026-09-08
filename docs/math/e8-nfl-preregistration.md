@@ -75,3 +75,28 @@ move, (ii) the change in the price a taker would get *against the slow side*.
 Gate: on NFL, the slow-side capture excludes zero and exceeds the taker fee at
 the mid where it occurs (0.06·p(1−p)) plus the half-spread crossed. Same
 strata, same clustering, 25-game floor. Nothing else added after the tape.
+
+---
+
+## Addendum 2026-09-08 (later) — H1b's population is empty; replaced before NFL tape, with the reason
+
+`cfb/run_slowside.py` on the same 42 games (`slowside_cfb_2026-09-08.out`): of 803
+≥1¢ minutes, **791 moved both sides together**, 9 ask-led, 3 bid-led. There is no
+slow side — the venue's book reprices as a unit. H1b as written cannot be
+evaluated on any tape; it is withdrawn as a mechanism, not deferred.
+
+What the same run measured on the "both" population, exploratory on CFB:
+other-side follow-through +0.59¢ [+0.18, +0.99]; **a taker chasing the move:
++0.15¢ gross [−0.22, +0.51], −0.80¢ net of fee [−1.19, −0.41] — loses.**
+
+**H1c — registered now, before NFL tape.** *Maker on the side of the move.*
+After a ≥1¢ one-minute mid move, post at the new touch on the move's side (bid
+after an up-move, ask after a down-move), rest 2 minutes, fills from trade prints
+as in E1, θ_maker = 0, optimistic queue as in E1. Compare net-per-fill and
+adverse-by-markout against E1 arm A on the same tape. Gate on NFL: net per fill
+excludes zero and is positive, G ≥ 25. That is the last reading of the
+continuation that could clear costs; if it fails, the continuation is a fact
+about the quoter's cadence and not a trade.
+
+Three looks at 42 CFB games have now been taken (H1, slow-side, H1c-exploratory).
+Whatever H1c shows on CFB is a prior for NFL, nothing more.
