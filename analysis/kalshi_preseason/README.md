@@ -35,8 +35,21 @@ in-season week-1 snapshot on both venues (`../pregame_softness/`).
 **No continuation at any horizon** — the underreaction hypothesis is dead on
 this venue as it was on ours. One statistic excludes zero: a 0.18¢ reversal at
 two minutes. One of three horizons, marginal after multiplicity, a tenth of the
-fee. The size-stratified check below is in the script output; it decides
-whether that reversal is an overshoot that scales with the shock or noise.
+fee. So it was stratified by shock size, three strata pre-specified:
+
+| \|jump\| ≥ | n | continuation @2 min | as % of jump |
+|---|---|---|---|
+| 1¢ | 4,361 | −0.18¢ [−0.34, −0.02] | −5.5% |
+| 2¢ | 2,655 | −0.29¢ [−0.53, −0.05] | −6.4% |
+| 3¢ | 1,765 | −0.30¢ [−0.59, −0.00] | −5.2% |
+
+**It scales.** A constant ~6% of the shock reverts within two minutes, in every
+stratum, each excluding zero. Noise does not do that; an overshoot does. This is
+the first microstructure regularity of the season that excludes zero,
+replicates, and has a mechanism. It is also small — 0.2–0.3¢ on typical shocks —
+which is under Kalshi's fee for either side. **Where it could matter is
+Polymarket US, whose maker fee is zero and whose NFL winner spread is 0.5¢.**
+That test is pre-registered in `../../docs/math/e8-nfl-preregistration.md`.
 
 Script: `kalshi_preseason_backtest.py <espn_preseason_2026.json> <results.json>`.
 Kalshi ticker `KXNFLGAME-26AUG29CHITEN-CHI` = date + AWAY+HOME + team; aliases

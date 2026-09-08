@@ -1,0 +1,49 @@
+# E8 pre-registration — written 2026-09-07, before any NFL tape exists
+
+Everything below is fixed now so Thursday's numbers are a test, not a search.
+Population: Polymarket US NFL, live recorder tape, week 1 (16 games) then
+cumulative. **25-game floor** before any arm is read as a verdict; week 1 alone
+is reported as directional only. All intervals game-clustered, G and G_eff
+printed, estimator named on every row.
+
+## H1 — in-game overshoot (the one lead with a mechanism)
+
+Kalshi preseason: after a ≥1¢ one-minute move, ~6% of the shock reverts within
+two minutes, in three size strata, each excluding zero. **Hypothesis: the same
+overshoot exists on Polymarket US's in-game NFL winner market.**
+
+- Data: winner-market mids at 1-minute resolution from `market_snapshots`,
+  kickoff → kickoff+3h40m, one market per game.
+- Statistic: mean continuation sign(jump)·(mid[t+2] − mid[t]) after |jump| ≥ 1¢,
+  strata ≥1¢ / ≥2¢ / ≥3¢, game-clustered. Exactly these three strata.
+- **Gate to matter:** the ≥2¢ stratum's reversal excludes zero **and** exceeds
+  half the contemporaneous spread (the maker's cost of being there). Polymarket
+  maker fee is 0 (findings.md C7), so half-spread is the whole hurdle.
+- If it exists but is under half-spread: a fact about the venue, not a trade.
+- If absent: the Kalshi regularity is Kalshi's. Nothing is fitted to rescue it.
+
+## H2 — E1 making, NFL-trained shield
+
+`LEAGUE=nfl`, arms A/B/C as on CFB, θ_maker=0, prints-based fills, dead-window
+stratum as E6. Pre-stated expectation from CFB: A and B span zero; adverse-by-
+markout lower in dead windows. **Read only after 25 games.** No new arms.
+
+## H3 — E5 ladder relative value, NFL cover model
+
+τ=0.05 primary, 0.03/0.08 secondary, leg spread ≤6¢, one position per game×pair,
+exactly as on CFB. Model: `nfl_cover_regulation.json`, chosen on nflverse
+held-out, not on this tape. **Precondition to report at all:** stale fraction
+of pair-instants < 50% (CFB was 96%; if NFL's ladder is sampled as sparsely,
+the test cannot run and that is the finding).
+
+## H4 — pregame softness, scored
+
+The week-1 snapshots in `analysis/pregame_softness/` are scored against
+settlement: Brier of venue mid vs DK power-devigged prob, favourite side,
+game-clustered. Expectation from Kalshi preseason and the live snapshot: even.
+
+## What is not on this list and will not be added after the tape arrives
+
+Any stratum, threshold, horizon, model, or feature not named above. If
+something interesting appears outside these four, it is written down as a
+hypothesis for week 2 and not reported as a week-1 result.
