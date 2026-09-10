@@ -174,6 +174,14 @@ on the same line. **On 09-06 that line was correct, printed, and sat there for
 53 minutes**, which is the whole reason this runbook exists — visibility
 without an evaluator is not detection.
 
+**A play-count check alone false-alarms at halftime.** Measured on NFL opener
+2026-09-10 01:50Z: ten minutes of zero plays, venue live, recorder cycling every
+20s with `plays_attempted=96 state_rows=1` — ESPN status "Halftime". State rows
+kept landing (30 in the window); plays did not, because there were none. An
+automated ESPN-side alarm must require **both** `plays == 0 AND state_rows == 0`
+in the window; either alone is a timeout, a review, or halftime. Expect this at
+every halftime on a 13-game Sunday.
+
 Also check `state_rows == live_games`. The two rules are a **disjunction** and
 each is blind to what the other catches: three-of-five games throwing leaves
 `plays_attempted > 0`; a parse returning empty leaves `state_rows` intact.
