@@ -170,3 +170,24 @@ p < 0.05 against 0.5). It weights every game equally and depends on no clusterin
 model, so it cannot be rescued by a few high-fill games. The CFB prior is 15/17
 (p = 0.0012). Both criteria must hold; if they disagree, the disagreement is
 the result and is reported as such.
+
+---
+
+## 2026-09-10 00:55Z — NE@SEA live, both recorders verified, H3 precondition MET
+
+Mid-slate check, first quarter: ESPN NFL recorder writing plays / WP / game state
+with the live line on every state row (SEA −3.0); venue game 19457 live, **1,483
+trade prints in ten minutes** (a CFB Friday produced 6 across 17 markets), 32
+spread rungs quoted; map join 401872656 → 19457 verified; 33 of 33 plays have a
+venue quote inside the posting window.
+
+**H3 precondition** (stale fraction of pair-instants must be < 50%): measured on
+the first 32 plays, rungs within ±14 of the line — **10.7% stale** (CFB: 96%), 576
+of 672 K/K+7 pairs both quoted, **median live spread on quoted rungs 1.0¢** (CFB:
+4¢ median, 17¢ p75). E5 could not run on CFB; it can run on NFL.
+
+A session-local monitor watches both recorders through the game (heartbeat 30 min,
+speaks on silence, exits at the final). Its first version false-alarmed on its
+own parsing — psql's `SET` echo read as the plays count — and was replaced; a
+check that fires gets the same scrutiny as one that doesn't. The pre-registered
+block runs on this game after the final.
