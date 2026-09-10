@@ -110,17 +110,21 @@ the prod checkout. Set `H` from `~/.meridian-server`. The DB URL is the compose
 default for the `trainer` service.
 
 ```bash
-RUN='sudo -n docker run --rm -i --network meridian_default -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian -v /opt/meridian/cfb:/app/cfb -v /opt/meridian/artifacts:/app/artifacts -w /app meridian-trainer python3 -'
+# Env vars go INSIDE docker run as -e flags. `LEAGUE=nfl ssh … sudo docker run …` sets the
+# variable for the remote shell, sudo drops it, and docker never sees it: every script then
+# runs its CFB default and prints "LEAGUE=cfb". This happened on the first NE@SEA run.
+# Check the FIRST LINE of every output names LEAGUE=nfl before reading anything else.
+D='sudo -n docker run --rm -i --network meridian_default -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian -v /opt/meridian/cfb:/app/cfb -v /opt/meridian/artifacts:/app/artifacts -w /app'
 # 0. did the recorders write the game? (plays, WP, game_state under league='nfl'; venue winner snapshots during the game)
 # 1. H1  overshoot direction on Polymarket NFL          -> gate: reversal > half-spread (expected to FAIL as on CFB; record it)
-ssh ubuntu@$H "LEAGUE=nfl $RUN" < cfb/run_overshoot.py
-# 2. H1c maker on the move's side                       -> gate: net/fill > 0, excludes zero, G >= 25
-ssh ubuntu@$H "LEAGUE=nfl MOVE_STRATUM=1 $RUN" < cfb/run_making_touch.py
+ssh ubuntu@$H "$D -e LEAGUE=nfl meridian-trainer python3 -" < cfb/run_overshoot.py
+# 2. H1c maker on the move's side                       -> gate: markout +2min > 0, excludes zero, G >= 25; >=70% of games positive
+ssh ubuntu@$H "$D -e LEAGUE=nfl -e MOVE_STRATUM=1 meridian-trainer python3 -" < cfb/run_making_touch.py
 # 3. H2  E1 arms, NFL-trained shield (auto-selected by LEAGUE)
-ssh ubuntu@$H "LEAGUE=nfl $RUN" < cfb/run_making_touch.py
-ssh ubuntu@$H "LEAGUE=nfl DEAD_WINDOW=1 $RUN" < cfb/run_making_touch.py
+ssh ubuntu@$H "$D -e LEAGUE=nfl meridian-trainer python3 -" < cfb/run_making_touch.py
+ssh ubuntu@$H "$D -e LEAGUE=nfl -e DEAD_WINDOW=1 meridian-trainer python3 -" < cfb/run_making_touch.py
 # 4. H3  ladder RV, NFL cover model                     -> precondition: stale fraction < 50%, else "cannot run" is the result
-ssh ubuntu@$H "LEAGUE=nfl $RUN" < cfb/run_ladder_rv.py
+ssh ubuntu@$H "$D -e LEAGUE=nfl meridian-trainer python3 -" < cfb/run_ladder_rv.py
 # 5. H4  score the pregame snapshots against settlement (public APIs, no prod): append a fresh row first
 python3 analysis/pregame_softness/pregame_softness_polymarket.py analysis/pregame_softness/pregame_softness_polymarket_snapshots.csv
 python3 analysis/pregame_softness/pregame_softness_kalshi.py     analysis/pregame_softness/pregame_softness_snapshots.csv
