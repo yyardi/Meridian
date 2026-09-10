@@ -238,7 +238,7 @@ Polymarket engine (never with Kalshi), against the H1c gate: markout +2min > 0,
 interval excluding zero, G ≥ 25, and ≥ 70% of games positive. That read decides
 scrap or a bounded live probe. This game contributes one cluster to it.
 
-## 2026-09-10 05:00Z — H4 has a scorer; the weekend map is written
+## 2026-09-10 03:59Z — H4 has a scorer; the weekend map is written
 
 **H4.** The run block's step 5 named a scoring step that did not exist. It now
 does: `analysis/pregame_softness/score_softness.py` reads both snapshot files,
@@ -266,7 +266,7 @@ forever). No threshold could have done this: the seventh miss
 (`cfb-wkent-ga`, 0.667) scores *higher* than three of the correct six and its
 nearest candidate is a different game. It stays unmapped.
 
-## 2026-09-10 06:10Z — the Monday read is one command, and it grades itself
+## 2026-09-10 04:04Z — the Monday read is one command, and it grades itself
 
 The harness had no pooled mode: H1c was registered as a CFB+NFL Polymarket pool
 and could only be run one league at a time. `LEAGUE=both` now loads CFB
