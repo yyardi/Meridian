@@ -195,3 +195,45 @@ speaks on silence, exits at the final). Its first version false-alarmed on its
 own parsing — psql's `SET` echo read as the plays count — and was replaced; a
 check that fires gets the same scrutiny as one that doesn't. The pre-registered
 block runs on this game after the final.
+
+## 2026-09-10 03:50Z — NE@SEA final (SEA 13, NE 10): the block ran; one game, G=1, nothing is a verdict
+
+Every script ran under `-e LEAGUE=nfl` and said so on its first line. The numbers
+below are recorded because the pre-registration says to record them, not because
+any of them means anything: with one cluster the game-clustered interval is
+zero-width **by construction**, so the harness now prints `NO INTERVAL (G=1)`
+where an earlier run printed `EXCLUDES 0`. That earlier label was a lie and has
+been removed from all three scripts (`run_making_touch.py`, `run_overshoot.py`,
+`run_ladder_rv.py`); the overshoot script also crashed on G=1 (`ZeroDivisionError`
+in the clustered slope) and is fixed.
+
+| step | population | point estimate | interval | gate |
+|---|---|---|---|---|
+| H1 overshoot, ≥1¢ move, h=2 | 50 moves, 2,494 winner snapshots | continuation −0.89¢ (reversal 19% of jump; half-spread 0.27¢) | none, G=1 | NO INTERVAL |
+| H1c maker on the move's side | 56 quotable instants | — | — | refused, below floor |
+| H2 E1 at plays | 165 quotable instants | — | — | refused, below floor |
+| H2 E6 dead window, A_naive | 936 posted, 175 fills | markout +2min −1.37¢, +5min −4.28¢ | none, G=1 | NO INTERVAL |
+| H2 E6 dead window, B_shield | 531 posted, 405 pulled, 87 fills | markout +2min +0.93¢, +5min +1.70¢ | none, G=1 | NO INTERVAL |
+| H3 ladder RV, τ=0.05 | 21 positions | net +0.84¢, mid-to-mid +4.38¢, inside-rate 0.33 | none, G=1 | NO INTERVAL, underpowered |
+
+Three things ARE established by this game, none of them a P&L claim:
+
+1. **The NFL pipeline works end to end.** Both recorders wrote the whole game; the
+   map join held; the NFL WP shield and NFL cover model loaded and scored live
+   rows; the block completes in under ten minutes per game.
+2. **H3's precondition is met on NFL** (10.7% stale, 1.0¢ median rung spread), so
+   Sunday's 13 games will produce E5 positions — the first time E5 has had a
+   population at all.
+3. **The E6 shield acted** (405 of 531 postings pulled, adverse-by-markout moved
+   in the direction the shield is meant to move it). Whether it acts *usefully* is
+   what G ≥ 25 is for.
+
+One direction worth writing down as a hypothesis for week 2 and nothing more:
+the E5 long-interval and short-interval halves split +13.95¢ (n=11) against
+−13.58¢ (n=10). On one game that is two coin flips; if it survives 13 games it
+is the first thing to look at.
+
+**Next read:** Sunday 2026-09-13's slate, pooled with Saturday's CFB on the
+Polymarket engine (never with Kalshi), against the H1c gate: markout +2min > 0,
+interval excluding zero, G ≥ 25, and ≥ 70% of games positive. That read decides
+scrap or a bounded live probe. This game contributes one cluster to it.

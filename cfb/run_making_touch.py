@@ -584,8 +584,12 @@ for arm in ARMS:
             keys.append(slug)
         if len(vals) >= 20:
             mm, mh, _mi, mn, mG, mGe = clustered(vals, keys)
+            # With one cluster the sandwich SE is zero BY CONSTRUCTION: there is no
+            # interval, and "EXCLUDES 0" would be a lie. Say so.
+            verdict = ("NO INTERVAL (G=1)" if mG < 2 else
+                       ("EXCLUDES 0" if (mm-mh) > 0 or (mm+mh) < 0 else "spans 0"))
             mo_lines.append(f"  {'':<16}MARKOUT +{H_//60}min  {mm:+6.2f}c  [{mm-mh:+.2f}, {mm+mh:+.2f}]  "
-                            f"n={mn} G={mG} G_eff={mGe:.1f}  {'EXCLUDES 0' if (mm-mh) > 0 or (mm+mh) < 0 else 'spans 0'}")
+                            f"n={mn} G={mG} G_eff={mGe:.1f}  {verdict}")
     summary[arm] = (mean, half, n, _G, _Geff)
     fr = 100.0 * n / posted[arm] if posted[arm] else 0.0
     ad = 100.0 * adverse / scored if scored else float("nan")
@@ -673,6 +677,10 @@ if _A and _A[3] < 30:
     deg = True
 for _arm in ARMS:
     _s = summary[_arm]
+    if _s and _s[3] < 2:
+        print(f"  NO INTERVAL: {_arm} has G={_s[3]} cluster(s). One game is not a measurement of anything.")
+        deg = True
+        continue
     if _s and (_s[0] - _s[1]) < 0 < (_s[0] + _s[1]):
         print(f"  SPANS ZERO: {_arm} is {_s[0]:+.2f}c "
               f"[{_s[0]-_s[1]:+.2f}, {_s[0]+_s[1]:+.2f}] on {_s[3]} markets. "
