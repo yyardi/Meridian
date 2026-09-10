@@ -288,7 +288,7 @@ def clustered(vals, keys):
         res[k] += v - m; size[k] += 1
     G = len(res); ge = n * n / sum(c * c for c in size.values())
     if G < 2:
-        return m, 0.0, n, G, ge
+        return m, float("inf"), n, G, ge      # one cluster: no interval, never a verdict
     se = (sum(x * x for x in res.values()) ** 0.5) / n * (G / (G - 1)) ** 0.5
     return m, 1.96 * se, n, G, ge
 
@@ -300,7 +300,8 @@ def report(label, sel):
     m, h, n, G, ge = clustered([x["pnl"] for x in sel], keys)
     mm, mh, *_ = clustered([x["mid_pnl"] for x in sel], keys)
     ins = sum(x["inside"] for x in sel) / n
-    verdict = "POSITIVE" if m - h > 0 else ("NEGATIVE" if m + h < 0 else "spans zero")
+    verdict = ("NO INTERVAL" if G < 2 else
+               "POSITIVE" if m - h > 0 else ("NEGATIVE" if m + h < 0 else "spans zero"))
     flag = "" if G >= 25 else "  UNDERPOWERED (<25 games)"
     print(f"  {label:<34} n={n:>5}  G={G:>3} G_eff={ge:>5.1f}   "
           f"net {100*m:+6.2f}c [{100*(m-h):+6.2f}, {100*(m+h):+6.2f}]  {verdict:<10}"

@@ -87,7 +87,9 @@ def clustered(vals, keys):
     res, size = defaultdict(float), defaultdict(int)
     for v, k in zip(vals, keys): res[k] += v-m; size[k] += 1
     G = len(res); ge = n*n/sum(c*c for c in size.values())
-    se = (sum(x*x for x in res.values())**0.5)/n*(G/(G-1))**0.5 if G > 1 else 0.0
+    # G=1: the sandwich SE is zero by construction. Return an infinite half-width
+    # so no downstream label can read a single game as a measurement.
+    se = (sum(x*x for x in res.values())**0.5)/n*(G/(G-1))**0.5 if G > 1 else float("inf")
     return m, 1.96*se, n, G, ge
 def slope_clustered(x, y, keys):
     n = len(x); mx, my = sum(x)/n, sum(y)/n
@@ -95,7 +97,8 @@ def slope_clustered(x, y, keys):
     e = [c - my - b*(a-mx) for a, c in zip(x, y)]
     g = defaultdict(float)
     for a, ei, k in zip(x, e, keys): g[k] += (a-mx)*ei
-    G = len(g); se = (sum(v*v for v in g.values())**0.5)/sxx*(G/(G-1))**0.5
+    G = len(g)
+    se = (sum(v*v for v in g.values())**0.5)/sxx*(G/(G-1))**0.5 if G > 1 else float("inf")
     return b, 1.96*se, G
 
 print(f"\n=== POLYMARKET US in-game, after a >=1c one-minute move ===")
@@ -105,7 +108,7 @@ for h in (1, 2, 5):
     if len(ob) < 50: print(f"  {h:>7}{len(ob):>8}  too few"); continue
     b, hb, G = slope_clustered([j for j,_,_ in ob], [d for _,d,_ in ob], [g for _,_,g in ob])
     cont, hc, n, G2, ge = clustered([100*(d if j > 0 else -d) for j,d,g in ob], [g for _,_,g in ob])
-    print(f"  {h:>7}{n:>8,}{b:>+9.3f}   [{b-hb:+.3f}, {b+hb:+.3f}]{G:>5}   {cont:>+14.2f}c   [{cont-hc:+.2f}, {cont+hc:+.2f}]   {'CONTINUES' if b-hb > 0 else ('REVERTS' if b+hb < 0 else 'spans zero')}")
+    print(f"  {h:>7}{n:>8,}{b:>+9.3f}   [{b-hb:+.3f}, {b+hb:+.3f}]{G:>5}   {cont:>+14.2f}c   [{cont-hc:+.2f}, {cont+hc:+.2f}]   {'NO INTERVAL (G=1)' if G < 2 else ('CONTINUES' if b-hb > 0 else ('REVERTS' if b+hb < 0 else 'spans zero'))}")
 print(f"\n=== OVERSHOOT by shock size at h=2, and the GATE: does it clear half the spread? ===")
 print(f"  {'|jump| >=':>10}{'n':>7}{'G':>5}   {'reversal@2min':>14}{'95% CI':>18}   {'% jump':>7}   {'half-spread':>12}   gate")
 for thr in (0.01, 0.02, 0.03):
@@ -115,7 +118,8 @@ for thr in (0.01, 0.02, 0.03):
     cont, hc, n, G, ge = clustered([100*(d if j > 0 else -d) for j,d,g in ob], [g for _,_,g in ob])
     mj = sum(abs(j) for j,_,_ in ob)/n
     hsm = 100*sum(h_ for h_,_ in hs)/len(hs) if hs else float("nan")
-    gate = "PASS" if (cont - hc < 0 and -cont > hsm) else ("excludes 0, under half-spread" if cont + hc < 0 else "spans zero")
+    gate = ("NO INTERVAL (G=1)" if G < 2 else
+            "PASS" if (cont - hc < 0 and -cont > hsm) else ("excludes 0, under half-spread" if cont + hc < 0 else "spans zero"))
     print(f"  {100*thr:>9.0f}c{n:>7,}{G:>5}   {cont:>+13.2f}c   [{cont-hc:+.2f}, {cont+hc:+.2f}]   {cont/mj:>+6.1f}%   {hsm:>11.2f}c   {gate}")
 print("\n  GATE (pre-registered): the >=2c stratum reverts, excludes zero, and |reversal| > mean half-spread.")
 print("  A maker fading the move earns the reversal and pays the half-spread to be there; maker fee is 0 on this venue.")
