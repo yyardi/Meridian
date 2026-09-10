@@ -98,6 +98,11 @@ excludes zero and is positive, G ≥ 25. That is the last reading of the
 continuation that could clear costs; if it fails, the continuation is a fact
 about the quoter's cadence and not a trade.
 
+> **2026-09-10 14:14Z: the CFB prior for this hypothesis (+3.58¢, 15/17 games) is RETRACTED
+> as a look-ahead artifact; corrected it is −1.28¢ [−2.33, −0.23], 8/21. The
+> hypothesis and its gate stand as registered and will be graded on the corrected
+> harness. See the addendum of the same time below.**
+
 Three looks at 42 CFB games have now been taken (H1, slow-side, H1c-exploratory).
 Whatever H1c shows on CFB is a prior for NFL, nothing more.
 
@@ -172,7 +177,8 @@ positive and excluding zero, game-clustered, G ≥ 25.
 positive mean 2-minute markout must be ≥ 70% at G ≥ 25 (one-sided binomial
 p < 0.05 against 0.5). It weights every game equally and depends on no clustering
 model, so it cannot be rescued by a few high-fill games. The CFB prior is 15/17
-(p = 0.0012). Both criteria must hold; if they disagree, the disagreement is
+(p = 0.0012) — **RETRACTED 2026-09-10 14:14Z: that prior came from the look-ahead post
+instant; corrected, 8/21.** Both criteria must hold; if they disagree, the disagreement is
 the result and is reported as such.
 
 ---
@@ -282,14 +288,76 @@ ssh ubuntu@$H "$D -e LEAGUE=both -e MOVE_STRATUM=1 meridian-trainer python3 -" <
 Run tonight on everything that exists (CFB through 09-06 plus NE@SEA), so the
 pooling is verified before it matters:
 
+> **RETRACTED 2026-09-10 14:14Z.** This table was produced with the post instant one minute
+> early (look-ahead). The corrected table is in the addendum of that time. It is
+> left here struck so the retraction sits at the numbers it retracts.
+
 | | +2min markout | interval | fills | G / G_eff | games positive |
 |---|---|---|---|---|---|
-| pooled | +3.20¢ | [+1.08, +5.31] | 141 | 18 / 8.1 | 16/18 (89%, p = 0.0007) |
-| cfb split | +3.58¢ | [+1.24, +5.92] | 122 | 17 / 7.1 | 15/17 |
-| nfl split | 19 scored fills on 1 game | — | 19 | 1 | too few to print |
+| ~~pooled~~ | ~~+3.20¢~~ | ~~[+1.08, +5.31]~~ | ~~141~~ | ~~18 / 8.1~~ | ~~16/18 (89%, p = 0.0007)~~ |
+| ~~cfb split~~ | ~~+3.58¢~~ | ~~[+1.24, +5.92]~~ | ~~122~~ | ~~17 / 7.1~~ | ~~15/17~~ |
+| ~~nfl split~~ | ~~19 scored fills on 1 game~~ | — | ~~19~~ | ~~1~~ | ~~too few to print~~ |
 
-Gate line: **UNDERPOWERED (G=18 < 25): not a read.** Both criteria would hold
-at this G; the floor is the floor. Seven more fill-carrying games clear it, and
+Gate line: ~~UNDERPOWERED (G=18 < 25): not a read.~~ ~~Both criteria would hold
+at this G; the floor is the floor.~~ Seven more fill-carrying games clear it, and
 the weekend brings 44 mapped CFB games and 12 NFL games. Note what G counts:
 games that *carried a move-side fill*, not games on tape (75 games are loaded;
 57 produced no ≥1¢ move with a book behind it, mostly thin CFB winner markets).
+
+## 2026-09-10 14:14Z — RETRACTION: the move-side maker was a look-ahead; corrected, it loses
+
+**What was wrong.** In `cfb/run_making_touch.py`'s MOVE_STRATUM block the minute
+close series was built with `minute[k] = mid; first.setdefault(k + 1, r)`. That
+stores the FIRST snapshot OF minute k under the key k+1, so `r0 = first[k + 1]` —
+meant to be the first snapshot of the minute AFTER the move — was the first
+snapshot of the move minute itself. The quote was posted at the start of the
+minute whose close, sixty seconds later, defined the move it was supposedly
+reacting to. A bid posted at the start of a minute that is about to close ≥1¢
+higher, marked out two minutes later, is positive by construction: the +3.58¢ was
+roughly one cent of guaranteed move plus half a spread.
+
+**How it was found.** Not by review. The live trigger (`core/quote/move_trigger.py`)
+was written as an independent implementation of the rule for the bounded probe,
+and `cfb/run_trigger_replay.py` fed it the same tape to reconcile move counts
+before anything else was built on it. It counted 862 (kickoff phase) and 850
+(wall-clock phase) against the harness's 865 and 852. The three extra moves
+were minutes with no snapshot in the following minute — which the harness could
+still "post" in, because it was posting in the wrong minute. Explaining the
+difference exposed the off-by-one. With the fix the two implementations agree
+exactly: 862 and 850.
+
+**Corrected numbers, same tape (CFB through 09-06 + NE@SEA), same fill rule:**
+
+| phase | +2min markout | interval | fills | G / G_eff | games positive | gate line |
+|---|---|---|---|---|---|---|
+| kickoff (registered) | **−1.21¢** | [−2.15, −0.27] excludes 0 | 313 | 22 / 9.2 | 8/22 (36%, p = 0.93) | UNDERPOWERED (G=22 < 25) |
+| wall-clock | **−1.62¢** | [−2.98, −0.27] excludes 0 | 283 | 23 / 8.9 | 8/23 (35%, p = 0.95) | UNDERPOWERED (G=23 < 25) |
+| cfb split, kickoff | −1.28¢ | [−2.33, −0.23] | 276 | 21 / 8.2 | 8/21 | — |
+| +5 min, kickoff | −2.03¢ | [−3.45, −0.60] | 313 | 22 / 9.2 | — | — |
+
+The shield arms (B/C) on the corrected stratum: −0.61¢ [−1.45, +0.24] at +2 min,
+spans zero; −1.36¢ [−1.90, −0.83] at +5 min. Adverse-by-markout on the naive arm
+rose from 15.6% to 56.5%: the "least toxic flow on the tape" was the harness
+looking at the answer. Fill rate rose from 16% to 36% because a quote posted
+after an up-move sits at a higher touch and gets hit more.
+
+**What stands.** E1 (at plays, −0.82¢) and E6 (dead windows, −0.07¢) do not use
+this code path. H1 (overshoot) buckets close-to-close and measures from the
+move minute's close forward — no look-ahead. The overshoot's "Polymarket
+continues" finding stands. The three-strata table in
+`adverse-selection-by-stratum.md` carries the retraction at its H1c row.
+
+**What this means for the gate.** The pre-registered H1c gate is unchanged and
+will be graded Monday on the corrected harness; nothing may be added to rescue
+it. On the evidence tonight the move-side maker loses at both markout horizons
+with intervals excluding zero and 8 of 22 games positive. The honest
+expectation for Monday is FAIL, and the operator's agreed rule for FAIL is
+scrap. The three scheduled reads (Friday, Sunday, Monday) run the corrected
+code and print the gate line mechanically.
+
+**The lesson, written where the number was:** the reconciliation was scheduled
+as a formality before building the live probe. It was the only instrument
+that could disagree with the harness, and it did by three moves out of 865.
+Every number this programme has reported from a second-hand bucketing should
+be assumed to have a post instant until its post instant has been checked to
+lie strictly after the information it conditions on.

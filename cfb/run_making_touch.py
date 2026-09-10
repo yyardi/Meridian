@@ -106,6 +106,11 @@ DEAD_STEP_S = 15
 MOVE_STRATUM = bool(os.environ.get("MOVE_STRATUM"))
 MOVE_MIN_C = 0.01
 MOVE_REST_S = 120
+# MOVE_PHASE: where the one-minute buckets start. "kickoff" (the registered
+# run) anchors minute 0 on the first play; "utc" uses wall-clock minutes. The
+# phase is arbitrary, so a result that only holds for one phase is fragile;
+# a live trigger can only use wall-clock minutes, so it must hold under "utc".
+MOVE_PHASE = os.environ.get("MOVE_PHASE", "kickoff")
 
 # the shield's model follows the league OF EACH PLAY: an NFL-trained head for NFL
 # tape, never the CFB one pointed at NFL games. LEAGUE=both (the pre-registered
@@ -351,8 +356,16 @@ if MOVE_STRATUM:
         minute, first = {}, {}
         for t_, r in zip(ts, rows_):
             if not (ko < t_ <= end): continue
-            k = int((t_ - ko).total_seconds() // 60)
-            minute[k] = (r["bid0"] + r["ask0"]) / 2; first.setdefault(k + 1, r)   # the first snapshot of the NEXT minute is where we post
+            k = int(t_.timestamp() // 60) if MOVE_PHASE == "utc" else int((t_ - ko).total_seconds() // 60)
+            minute[k] = (r["bid0"] + r["ask0"]) / 2
+            # first[k] = the first snapshot OF minute k. The post for a move that
+            # completed at the close of minute k is first[k+1]: the first snapshot
+            # of the NEXT minute, after the move is known. The previous line here
+            # wrote setdefault(k + 1, r), which made first[k+1] the first snapshot
+            # of minute k ITSELF -- a post at the START of the minute whose close
+            # defined the move. LOOK-AHEAD. Found by the independent replay
+            # (cfb/run_trigger_replay.py) disagreeing by 3 moves.
+            first.setdefault(k, r)
         for k in sorted(minute):
             if k - 1 not in minute or k + 1 not in first: continue
             dm = minute[k] - minute[k - 1]
@@ -366,7 +379,7 @@ if MOVE_STRATUM:
             q = dict(ps[i]); q.update(r0); q["t0"] = t0; q["rest_s"] = MOVE_REST_S
             q["move_side"] = "bid" if dm > 0 else "ask"
             mv_quotes.append(q)
-    print(f"H1c MOVE STRATUM: >=1c one-minute moves {n_moves:,}   quotable {len(mv_quotes):,}   (bid after up, ask after down)")
+    print(f"H1c MOVE STRATUM [phase={MOVE_PHASE}]: >=1c one-minute moves {n_moves:,}   quotable {len(mv_quotes):,}   (bid after up, ask after down)")
     quotes = mv_quotes
 
 if len(quotes) < 200:

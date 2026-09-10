@@ -1,3 +1,4 @@
+RETRACTED 2026-09-10 14:14Z: produced with the post instant one minute early (look-ahead); see e8-nfl-preregistration.md addendum of that time. Corrected: -1.28c [-2.33, -0.23], 8/21.
 shield model: /app/artifacts/cfb_wp_regulation.json
 LEAGUE=cfb POOLED: backfill 9,408 plays / 55 games  +  live-only 3,356 plays / 19 games  (live overlapping backfill dropped: 19 games)
 H1c MOVE STRATUM: >=1c one-minute moves 809   quotable 809   (bid after up, ask after down)
