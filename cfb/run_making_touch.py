@@ -107,14 +107,24 @@ MOVE_STRATUM = bool(os.environ.get("MOVE_STRATUM"))
 MOVE_MIN_C = 0.01
 MOVE_REST_S = 120
 
-# the shield's model follows the league: an NFL-trained head for NFL tape, never
-# the CFB one pointed at NFL games. WP_MODEL overrides either.
-_default_wp = ("/app/artifacts/nfl_wp_regulation.json" if os.environ.get("LEAGUE") == "nfl"
-               else "/app/artifacts/cfb_wp_regulation.json")
-WP_MODEL = os.environ.get("WP_MODEL", _default_wp)
-booster = xgb.Booster()
-booster.load_model(WP_MODEL)
-print(f"shield model: {WP_MODEL}")
+# the shield's model follows the league OF EACH PLAY: an NFL-trained head for NFL
+# tape, never the CFB one pointed at NFL games. LEAGUE=both (the pre-registered
+# H1c read: Polymarket is one quoting engine across both leagues) loads both
+# heads and picks per play. WP_MODEL overrides the single-league case only.
+_WP_DEFAULTS = {"cfb": "/app/artifacts/cfb_wp_regulation.json",
+                "nfl": "/app/artifacts/nfl_wp_regulation.json"}
+if LEAGUE == "both":
+    _wp_paths = dict(_WP_DEFAULTS)
+    if os.environ.get("WP_MODEL"):
+        print("WP_MODEL ignored under LEAGUE=both: each league scores with its own head")
+else:
+    _lg = LEAGUE or "cfb"
+    _wp_paths = {_lg: os.environ.get("WP_MODEL", _WP_DEFAULTS[_lg])}
+boosters = {}
+for _lg, _path in _wp_paths.items():
+    boosters[_lg] = xgb.Booster()
+    boosters[_lg].load_model(_path)
+    print(f"shield model [{_lg}]: {_path}")
 eng = create_engine(os.environ["DATABASE_URL"])
 
 # ---------------------------------------------------------------- quote rows
@@ -215,26 +225,49 @@ WHERE p.league = :lg AND p.wall_clock IS NOT NULL AND p.down IS NOT NULL AND p.d
   AND f.home_score <> f.away_score
 """
 
+def _tag(rows, lg):
+    for r in rows:
+        r["league"] = lg
+    return rows
+
+
+def _load_cfb_pooled(c):
+    # POOL: backfill (Wed-Fri, has every game's line) + live tables (adds
+    # Saturday's slate, which backfill never reached). Dedup BY GAME, backfill
+    # wins, so no game is counted twice and the cluster count is honest.
+    bf = _tag([dict(r._mapping) for r in c.execute(text(PLAYS_SQL))], "cfb")
+    lv = _tag([dict(r._mapping) for r in c.execute(text(LIVE_PLAYS_SQL), {"lg": "cfb"})], "cfb")
+    bf_games = {p["espn_game"] for p in bf}
+    lv_new = [p for p in lv if p["espn_game"] not in bf_games]
+    print(f"LEAGUE=cfb POOLED: backfill {len(bf):,} plays / {len(bf_games)} games  +  live-only "
+          f"{len(lv_new):,} plays / {len({p['espn_game'] for p in lv_new})} games  "
+          f"(live overlapping backfill dropped: {len({p['espn_game'] for p in lv}) - len({p['espn_game'] for p in lv_new})} games)")
+    return bf + lv_new
+
+
+def _load_live(c, lg):
+    plays = _tag([dict(r._mapping) for r in c.execute(text(LIVE_PLAYS_SQL), {"lg": lg})], lg)
+    print(f"LEAGUE={lg}: live tables; plays {len(plays):,}  games "
+          f"{len({p['espn_game'] for p in plays})}  with a line "
+          f"{len({p['espn_game'] for p in plays if p['spread'] is not None})}")
+    return plays
+
+
 with eng.connect() as c:
     if LEAGUE == "cfb":
-        # POOL: backfill (Wed-Fri, has every game's line) + live tables (adds
-        # Saturday's slate, which backfill never reached). Dedup BY GAME, backfill
-        # wins, so no game is counted twice and the cluster count is honest.
-        bf = [dict(r._mapping) for r in c.execute(text(PLAYS_SQL))]
-        lv = [dict(r._mapping) for r in c.execute(text(LIVE_PLAYS_SQL), {"lg": "cfb"})]
-        bf_games = {p["espn_game"] for p in bf}
-        lv_new = [p for p in lv if p["espn_game"] not in bf_games]
-        plays = bf + lv_new
-        print(f"LEAGUE=cfb POOLED: backfill {len(bf):,} plays / {len(bf_games)} games  +  live-only "
-              f"{len(lv_new):,} plays / {len({p['espn_game'] for p in lv_new})} games  "
-              f"(live overlapping backfill dropped: {len({p['espn_game'] for p in lv}) - len({p['espn_game'] for p in lv_new})} games)")
+        plays = _load_cfb_pooled(c)
+    elif LEAGUE == "both":
+        # The pre-registered H1c read: one Polymarket engine, cluster = game,
+        # G counted over the union. Per-league splits are printed BESIDE it.
+        plays = _load_cfb_pooled(c) + _load_live(c, "nfl")
+        _lgs = defaultdict(set)
+        for p in plays: _lgs[p["league"]].add(p["espn_game"])
+        print(f"LEAGUE=both POOLED across leagues: " + "  ".join(f"{k} {len(v)} games" for k, v in sorted(_lgs.items()))
+              + f"  -> G={sum(len(v) for v in _lgs.values())}")
     elif LEAGUE:
-        plays = [dict(r._mapping) for r in c.execute(text(LIVE_PLAYS_SQL), {"lg": LEAGUE})]
-        print(f"LEAGUE={LEAGUE}: live tables; plays {len(plays):,}  games "
-              f"{len({p['espn_game'] for p in plays})}  with a line "
-              f"{len({p['espn_game'] for p in plays if p['spread'] is not None})}")
+        plays = _load_live(c, LEAGUE)
     else:
-        plays = [dict(r._mapping) for r in c.execute(text(PLAYS_SQL))]
+        plays = _tag([dict(r._mapping) for r in c.execute(text(PLAYS_SQL))], "cfb")
     if not plays:
         print("no plays joinable to a venue game -- refusing to report.")
         sys.exit(0)
@@ -457,7 +490,7 @@ for q in quotes:
         no_line += 1
     else:
         vec = [float("nan") if f.get(c) is None else f.get(c) for c in REG_FEATURES]
-        p_pos = float(booster.predict(xgb.DMatrix(
+        p_pos = float(boosters[q["league"]].predict(xgb.DMatrix(
             [vec], feature_names=REG_FEATURES, missing=float("nan")))[0])
         p_home = p_pos if q["drive_is_home_offense"] else 1.0 - p_pos
         fv = 1.0 - p_home          # YES = away team = the slug's first team
@@ -617,6 +650,44 @@ for arm in ARMS:
               f"leave-one-game-out mean range [{min(loo):+.2f}, {max(loo):+.2f}]c")
         for m_, n_, k in rows_[:3] + rows_[-2:]:
             print(f"  {'':<18}{k[:34]:<34} {m_:+7.2f}c on {n_:>3} fills")
+        # Per-league split BESIDE the pool (registered: reported beside, never instead).
+        lg_of = {q["market_slug"]: q["league"] for q in quotes}
+        if LEAGUE == "both":
+            for lg in ("cfb", "nfl"):
+                lv_ = [x for k, v in pg.items() if lg_of.get(k) == lg for x in v]
+                lk_ = [k for k, v in pg.items() if lg_of.get(k) == lg for x in v]
+                gp_ = [m_ for m_, n_, k in rows_ if lg_of.get(k) == lg]
+                if len(lv_) < 20:
+                    print(f"  {'':<18}{lg} split: {len(lv_)} scored fills on {len(gp_)} games -- too few to print")
+                    continue
+                lm, lh, _, ln_, lG, lGe = clustered(lv_, lk_)
+                lab = ("NO INTERVAL (G=1)" if lG < 2 else
+                       ("EXCLUDES 0" if lm - lh > 0 or lm + lh < 0 else "spans 0"))
+                print(f"  {'':<18}{lg} split: +2min {lm:+.2f}c [{lm-lh:+.2f}, {lm+lh:+.2f}] "
+                      f"n={ln_} G={lG} G_eff={lGe:.1f} {lab}; "
+                      f"{sum(1 for g in gp_ if g > 0)}/{len(gp_)} games positive")
+        # THE PRE-REGISTERED H1c GATE, computed here so Monday's read is mechanical:
+        #   primary   +2min markout > 0, game-clustered interval excludes zero, G >= 25
+        #   secondary >= 70% of games positive, one-sided binomial p < 0.05 vs 0.5
+        # Both must hold. If they disagree, the disagreement IS the result.
+        from math import comb
+        allk = [k for k, v in pg.items() for x in v]
+        pm, ph, _, pn, pG, pGe = clustered(allv, allk)
+        pos = sum(1 for m_, n_, k in rows_ if m_ > 0); ng = len(rows_)
+        pval = sum(comb(ng, j) for j in range(pos, ng + 1)) / 2 ** ng
+        primary = pG >= 2 and pm - ph > 0
+        secondary = ng > 0 and pos / ng >= 0.70 and pval < 0.05
+        if pG < 25:
+            gate = f"UNDERPOWERED (G={pG} < 25): not a read"
+        elif primary and secondary:
+            gate = "PASS"
+        elif primary or secondary:
+            gate = "SPLIT: criteria disagree -- that disagreement is the result"
+        else:
+            gate = "FAIL"
+        print(f"  {'':<16}H1c GATE: +2min markout {pm:+.2f}c [{pm-ph:+.2f}, {pm+ph:+.2f}] "
+              f"G={pG} G_eff={pGe:.1f}; games positive {pos}/{ng} "
+              f"({100*pos/max(ng,1):.0f}%, one-sided binomial p={pval:.4f})  ->  {gate}")
     print(f"  {'':<16}per-fill (WRONG here, shown to expose the gap) "
           f"[{mean-_hiid:+.2f}, {mean+_hiid:+.2f}]c   ratio "
           f"{half/_hiid if _hiid else float('nan'):.1f}x wider")

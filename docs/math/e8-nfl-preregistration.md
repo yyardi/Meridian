@@ -265,3 +265,31 @@ admitted by eye against that candidate (`--admit`, written with
 forever). No threshold could have done this: the seventh miss
 (`cfb-wkent-ga`, 0.667) scores *higher* than three of the correct six and its
 nearest candidate is a different game. It stays unmapped.
+
+## 2026-09-10 06:10Z — the Monday read is one command, and it grades itself
+
+The harness had no pooled mode: H1c was registered as a CFB+NFL Polymarket pool
+and could only be run one league at a time. `LEAGUE=both` now loads CFB
+(backfill + live, deduplicated by game) and NFL (live), scores every play with
+its own league's shield head, clusters on the union, prints each league's split
+beside the pool, and prints the pre-registered gate verdict on its own line:
+
+```bash
+ssh ubuntu@$H "$D -e LEAGUE=both -e MOVE_STRATUM=1 meridian-trainer python3 -" < cfb/run_making_touch.py
+# read the line beginning "H1c GATE:" -- PASS / FAIL / SPLIT / UNDERPOWERED. Nothing else is the verdict.
+```
+
+Run tonight on everything that exists (CFB through 09-06 plus NE@SEA), so the
+pooling is verified before it matters:
+
+| | +2min markout | interval | fills | G / G_eff | games positive |
+|---|---|---|---|---|---|
+| pooled | +3.20¢ | [+1.08, +5.31] | 141 | 18 / 8.1 | 16/18 (89%, p = 0.0007) |
+| cfb split | +3.58¢ | [+1.24, +5.92] | 122 | 17 / 7.1 | 15/17 |
+| nfl split | 19 scored fills on 1 game | — | 19 | 1 | too few to print |
+
+Gate line: **UNDERPOWERED (G=18 < 25): not a read.** Both criteria would hold
+at this G; the floor is the floor. Seven more fill-carrying games clear it, and
+the weekend brings 44 mapped CFB games and 12 NFL games. Note what G counts:
+games that *carried a move-side fill*, not games on tape (75 games are loaded;
+57 produced no ≥1¢ move with a book behind it, mostly thin CFB winner markets).
