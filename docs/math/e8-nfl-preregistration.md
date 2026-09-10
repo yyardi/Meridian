@@ -237,3 +237,31 @@ is the first thing to look at.
 Polymarket engine (never with Kalshi), against the H1c gate: markout +2min > 0,
 interval excluding zero, G ≥ 25, and ≥ 70% of games positive. That read decides
 scrap or a bounded live probe. This game contributes one cluster to it.
+
+## 2026-09-10 05:00Z — H4 has a scorer; the weekend map is written
+
+**H4.** The run block's step 5 named a scoring step that did not exist. It now
+does: `analysis/pregame_softness/score_softness.py` reads both snapshot files,
+takes the last snapshot before kickoff per game (primary) and the registration
+snapshot (secondary), recomputes DK's power devig from the two moneylines (it
+matches the Polymarket file's `dk_pow` to four places, max gap 0.0000 — a second
+route that could have disagreed and did not), fetches settlement from ESPN's
+public summary, and prints the registered metric: venue-mid Brier minus DK-power
+Brier on the favourite, one observation per game, venues separate.
+
+NE@SEA, the only settled game: SEA favourite, DK power 0.6105, Polymarket mid
+0.6275, Kalshi mid 0.6250, SEA won. Brier difference −0.0130 (Polymarket) and
+−0.0111 (Kalshi): the venues sat *above* DK on the favourite and the favourite
+won, so one game says "venue closer". One game; no interval; the read is after
+Sunday (16 settled). The 2026-09-10 00:50Z post-kickoff snapshot was correctly
+excluded from NE@SEA's primary pick and serves the remaining 16 games.
+
+**Weekend map.** The CFB map held nothing past 09-07; Saturday's slate would have
+had no venue join. The builder now matches 49 of the venue's 51 listed CFB games
+(Fri 5, Sat 44). Seven Saturday games fell under the 0.72 name-confidence floor;
+the builder now prints the nearest ESPN candidate for every miss, and six were
+admitted by eye against that candidate (`--admit`, written with
+`match_method='reviewed_near_miss'` so the override is visible in the row
+forever). No threshold could have done this: the seventh miss
+(`cfb-wkent-ga`, 0.667) scores *higher* than three of the correct six and its
+nearest candidate is a different game. It stays unmapped.

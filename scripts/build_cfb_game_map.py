@@ -199,7 +199,11 @@ def _score(tok: str, variants: set[str]) -> float:
     return best
 
 
-def match(venue: list[dict], espn: list[dict], min_conf: float) -> tuple[list[dict], list[dict]]:
+def match(venue: list[dict], espn: list[dict], min_conf: float,
+          admit: frozenset = frozenset()) -> tuple[list[dict], list[dict]]:
+    """`admit` is a set of venue slugs a HUMAN has reviewed against the printed
+    nearest candidate; for those the threshold is waived and the row is written
+    with match_method='reviewed_near_miss' so the override is visible forever."""
     rows, unmatched = [], []
     for vg in venue:
         toks = _slug_tokens(vg["event_slug"] or "")
@@ -215,8 +219,14 @@ def match(venue: list[dict], espn: list[dict], min_conf: float) -> tuple[list[di
                     _score(a, eg["home"]["variants"]) + _score(b, eg["away"]["variants"])) / 2.0
             if s > best_s:
                 best_s, best = s, eg
-        if best is None or best_s < min_conf:
-            unmatched.append({**vg, "reason": f"best confidence {best_s:.3f} < {min_conf}"})
+        admitted = (vg["event_slug"] or "") in admit and best is not None
+        if not admitted and (best is None or best_s < min_conf):
+            # Name the nearest candidate so a human can judge the miss. It is
+            # printed, never written: a near-miss that LOOKS right is exactly the
+            # containment trap ('Washington' in 'Washington State').
+            cand = (f"  nearest: {best['away']['name']} @ {best['home']['name']}"
+                    if best is not None else "  nearest: none within +-1 day")
+            unmatched.append({**vg, "reason": f"best confidence {best_s:.3f} < {min_conf}{cand}"})
             continue
         rows.append({
             "espn_game_id": best["espn_game_id"],
@@ -229,7 +239,7 @@ def match(venue: list[dict], espn: list[dict], min_conf: float) -> tuple[list[di
             "away_espn_name": best["away"]["name"][:96],
             "espn_date": best["date"],
             "venue_date": vg["venue_date"],
-            "match_method": "slug_fuzzy_date_pm1",
+            "match_method": "reviewed_near_miss" if admitted else "slug_fuzzy_date_pm1",
             "match_confidence": round(best_s, 3),
             "date_offset_days": ((best["date"] - vg["venue_date"]).days
                                  if vg["venue_date"] else None),
@@ -270,6 +280,10 @@ def main() -> int:
                          "forward; needed to build a map BEFORE kickoff")
     ap.add_argument("--min-confidence", type=float, default=0.72,
                     help="below this a game is reported UNMATCHED, never guessed")
+    ap.add_argument("--admit", default="",
+                    help="comma-separated venue slugs reviewed by a human against "
+                         "the printed nearest candidate; written below threshold "
+                         "with match_method=reviewed_near_miss")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--emit-csv", metavar="PATH",
                     help="write the MATCHED rows to a CSV instead of (or as well "
@@ -288,7 +302,8 @@ def main() -> int:
     print(f"ESPN events: {len(espn)}  ({by_div})")
     print(f"venue {LEAGUE.upper()} games on the tape: {len(venue)}")
 
-    rows, unmatched = match(venue, espn, a.min_confidence)
+    rows, unmatched = match(venue, espn, a.min_confidence,
+                             admit=frozenset(x for x in a.admit.split(',') if x))
     div = {}
     for r in rows:
         div[r["division"]] = div.get(r["division"], 0) + 1
