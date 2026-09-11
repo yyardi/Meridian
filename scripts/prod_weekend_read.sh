@@ -58,7 +58,7 @@ GATE=$(grep -h "H1c GATE" "$F" | tail -1 | sed 's/^ *//' | cut -c1-400)
 { echo; echo "### GATE LINE"; echo "${GATE:-no gate line printed}"; } >> "$F"
 # push only the gate line; the topic is a secret and is never echoed
 TOPIC=$(grep -E '^MERIDIAN_NTFY_TOPIC=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
-if [ -n "$TOPIC" ]; then
+if [ -n "$TOPIC" ] && [ "$MODE" != h4 ]; then
   curl -s -m 20 -H "Title: Meridian weekend read ($MODE)" -d "${GATE:-no gate line} | file: $(basename "$F")" "https://ntfy.sh/$TOPIC" >/dev/null 2>&1 || true
 fi
 echo "wrote $F"

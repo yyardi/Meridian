@@ -2,9 +2,15 @@
 against the sharp book? DraftKings moneyline (via ESPN, public) devigged
 two-way vs Kalshi YES mid, per team, week 1. Snapshot with UTC timestamp;
 scored after settlement. No lag anywhere in this: both are pregame quotes."""
-import json, subprocess, datetime as dt, re, sys, csv
+import json, urllib.request, datetime as dt, re, sys, csv
 def get(url):
-    out = subprocess.run(["curl","-s","--max-time","30",url], capture_output=True, text=True).stdout
+    # urllib, not curl: the trainer image on prod has no curl and the weekend
+    # cron runs these there. A failed fetch is an empty dict, as before.
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json"}), timeout=30) as r:
+            out = r.read().decode("utf-8", "replace")
+    except Exception:
+        return {}
     return json.loads(out) if out else {}
 now = dt.datetime.now(dt.timezone.utc)
 def norm(s): return re.sub(r"[^a-z0-9]", "", (s or "").lower())
