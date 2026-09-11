@@ -132,6 +132,18 @@ for _lg, _path in _wp_paths.items():
     print(f"shield model [{_lg}]: {_path}")
 eng = create_engine(os.environ["DATABASE_URL"])
 
+# The postgres container's /dev/shm is 64MB (Docker default). Parallel workers
+# put dynamic shared memory there, and the second-phase queries died with
+# "could not resize shared memory segment ... No space left on device" on
+# 2026-09-11 once the tape grew. Session-scoped, no config change.
+from sqlalchemy import event  # noqa: E402
+@event.listens_for(eng, "connect")
+def _no_parallel_workers(dbapi_conn, _rec):
+    # psycopg3 opens a transaction on the first execute; an uncommitted SET is
+    # undone by the pool's first ROLLBACK. Commit it so it is session-wide.
+    cur = dbapi_conn.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close()
+    dbapi_conn.commit()
+
 # ---------------------------------------------------------------- quote rows
 # NOT a per-play LATERAL. There is no composite (game_id, captured_at) index on
 # market_snapshots, so `game_id = X AND captured_at >= T ORDER BY captured_at

@@ -22,6 +22,18 @@ from sqlalchemy import create_engine, text
 
 LEAGUE = os.environ.get("LEAGUE", "cfb")
 eng = create_engine(os.environ["DATABASE_URL"])
+
+# The postgres container's /dev/shm is 64MB (Docker default). Parallel workers
+# put dynamic shared memory there, and the second-phase queries died with
+# "could not resize shared memory segment ... No space left on device" on
+# 2026-09-11 once the tape grew. Session-scoped, no config change.
+from sqlalchemy import event  # noqa: E402
+@event.listens_for(eng, "connect")
+def _no_parallel_workers(dbapi_conn, _rec):
+    # psycopg3 opens a transaction on the first execute; an uncommitted SET is
+    # undone by the pool's first ROLLBACK. Commit it so it is session-wide.
+    cur = dbapi_conn.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close()
+    dbapi_conn.commit()
 with eng.connect() as c:
     c.execute(text("SET max_parallel_workers_per_gather = 0"))
     # kickoff per venue game = first play wall_clock (ESPN), via the map

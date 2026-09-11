@@ -361,3 +361,43 @@ that could disagree with the harness, and it did by three moves out of 865.
 Every number this programme has reported from a second-hand bucketing should
 be assumed to have a post instant until its post instant has been checked to
 lie strictly after the information it conditions on.
+
+## 2026-09-11 13:50Z — Friday: NFL game 2 (SF@LAR) on the corrected harness
+
+Run by hand: the scheduled Friday task started at 11:00Z and stalled on its
+first shell call (a permission prompt no one was there to answer). The read is
+the same either way.
+
+**Coverage.** SF@LAR (venue `nfl-sf-lar-2026-09-10`): 168 ESPN plays, final
+LAR 7 SF 27, 2,528 venue winner snapshots. Both recorders wrote the whole game.
+
+**H1c GATE (pooled CFB + 2 NFL, corrected post instant):**
+`+2min markout −1.23¢ [−2.13, −0.34] G=23 G_eff=9.9; games positive 8/23 (35%, one-sided binomial p=0.9534) → UNDERPOWERED (G=23 < 25): not a read`
+
+| | +2min markout | interval | fills | G / G_eff | games positive |
+|---|---|---|---|---|---|
+| pooled | −1.23¢ | [−2.13, −0.34] excludes 0 | 328 | 23 / 9.9 | 8/23 |
+| cfb split | −1.28¢ | [−2.33, −0.23] excludes 0 | 276 | 21 / 8.2 | 8/21 |
+| nfl split | −0.99¢ | [−1.76, −0.22] excludes 0 | 52 | 2 / 1.7 | 0/2 |
+| +5 min, pooled | −2.06¢ | [−3.42, −0.70] excludes 0 | 328 | 23 / 9.9 | — |
+
+Shield arms on the stratum: −0.59¢ [−1.40, +0.21] at +2 min (spans zero),
+−1.31¢ [−1.84, −0.78] at +5 min. NFL's first two games lose on the move side
+just as CFB does; the pooled sign has not moved since the retraction.
+
+**H1 overshoot, NFL (G=2):** β +0.203 [+0.034, +0.372] at 2 min — continues, as
+on CFB; in cents +0.02¢ [−0.26, +0.29], spans zero. Two games.
+
+**H4 softness, 2 settled games per venue (PRIMARY, last snapshot before
+kickoff):** Polymarket −0.0054 [−0.0202, +0.0094] venue closer 1/2; Kalshi
+−0.0061 [−0.0159, +0.0037] venue closer 2/2. Both span zero.
+
+**Infrastructure:** the harness's second-phase queries died with
+`could not resize shared memory segment ... No space left on device` once the
+window reached eight days (the 64 MB `/dev/shm` cap; disk was 34% used). All
+three prod scripts now set `max_parallel_workers_per_gather = 0` on every
+connection and COMMIT it — an uncommitted SET was undone by the pool's first
+rollback and the second attempt died identically. The run takes ~12 minutes
+without parallel workers; Monday's task should expect that.
+
+Two games from the floor. Sunday brings twelve.
