@@ -18,6 +18,20 @@ does not have them yet.
 python3 scripts/build_cfb_game_map.py --days 2 --dry-run   # on main
 ```
 
+**NFL is the same builder with two flags, and it must look FORWARD** — the
+NFL map is built before kickoff from ESPN's *scheduled* events, and a
+back-only run returns a clean, confident zero. Dry-run 2026-09-07 matched
+**16/16** week-1 games at ≥0.960 with no date offsets; the week-2 venue games
+beyond the window were reported unmatched, not guessed.
+
+```bash
+python3 scripts/build_cfb_game_map.py --league nfl --days 1 --days-ahead 7 --dry-run   # quant-b/cfb-touch-making
+```
+
+Opener is **Wed 09-09 20:20 ET (Thu 00:20Z)**, before Saturday — run this at
+its own T−60. Without it, NFL plays land in the football-shaped tables under
+`league='nfl'` with nothing to join them to the venue.
+
 Read-only. Prints matched / unmatched with confidences. **The DB write is the
 operator's** — do not run the writing form.
 
@@ -160,13 +174,116 @@ on the same line. **On 09-06 that line was correct, printed, and sat there for
 53 minutes**, which is the whole reason this runbook exists — visibility
 without an evaluator is not detection.
 
+**A play-count check alone false-alarms at halftime.** Measured on NFL opener
+2026-09-10 01:50Z: ten minutes of zero plays, venue live, recorder cycling every
+20s with `plays_attempted=96 state_rows=1` — ESPN status "Halftime". State rows
+kept landing (30 in the window); plays did not, because there were none. An
+automated ESPN-side alarm must require **both** `plays == 0 AND state_rows == 0`
+in the window; either alone is a timeout, a review, or halftime. Expect this at
+every halftime on a 13-game Sunday.
+
 Also check `state_rows == live_games`. The two rules are a **disjunction** and
 each is blind to what the other catches: three-of-five games throwing leaves
 `plays_attempted > 0`; a parse returning empty leaves `state_rows` intact.
 
 ---
 
+## Idle-state cadence — set staleness from the TAIL, not the median
+
+Between slates it is tempting to alarm on "no sweep this hour". **Do not bucket
+by clock hour, and do not threshold at ~80 minutes.** Both produce false alarms
+on a healthy board.
+
+**Two different quantities, and they are not interchangeable:**
+
+| quantity | idle-window value | what it answers |
+|---|---|---|
+| global distinct-stamp gap | 77.0 / 80.5 / 80.5 min across three sweeps | *did a sweep fire* |
+| **per-market re-sweep interval** | min 3.2 · p25 35.1 · **median 68.5** · p75 80.5 · **max 116.0** (n=57,852 gaps) | ***was this market refreshed*** |
+
+They would coincide only if every sweep touched every market. The 3.2→116 minute
+spread says it does not: **the sweep is partial**, so "the sweep ran" and "this
+market is fresh" are different facts and a monitor needs to say which one it is
+checking.
+
+**Threshold at the tail: 116 minutes.** A monitor set at ~80 fires on the
+**quarter of markets that legitimately exceed p75** — 80.5 is a percentile of a
+wide distribution, not a cadence.
+
+**And an empty clock-hour bucket is the EXPECTED case, not the alarm.** The
+median per-market interval (68.5 min) already exceeds an hour, so consecutive
+refreshes routinely straddle an hour boundary and leave one bucket empty. A
+sweep at 04:55 and the next at 06:15 empties 05:00 while nothing is wrong.
+
+> Origin: meridian-ce hit exactly this while health-checking an idle board and
+> nearly filed a missed sweep. Their global-gap measurement and the per-market
+> distribution above are different populations; both are real. The p75 collision
+> at 80.5 is what made one look like the other.
+
+---
+
+## A staleness alarm can fire on a perfectly healthy recorder
+
+**Before concluding the recorder is down, rule this out. It takes one query.**
+
+The writer holds transactions open while inserts are pending, and **uncommitted
+rows are invisible to every reader**. So `max(captured_at)` can look minutes
+staler than the tape actually is, and the error is in the **direction that
+false-alarms**: a working recorder looks dead. At T-30 that sends someone to
+debug a healthy system, which is precisely the harm the four-line split exists
+to prevent.
+
+Measured on prod 2026-09-07: **one open transaction, age 259s**, an
+`INSERT INTO market_snapshots` pending. meridian-ce hit the false alarm itself —
+read `08:56:47Z (89 min)` against an ~80 min expectation and reported an overdue
+sweep; the sweep had actually fired at 10:17:20Z, on cadence, and was simply not
+yet committed.
+
+**Neither timestamp column tells you when a row became visible:**
+
+| column | stamped | so it is |
+|---|---|---|
+| `captured_at` | by the application | early by the write path's own latency |
+| `created_at` | `now()` — which in Postgres is **transaction start**, not statement time | early by the whole transaction duration |
+
+`created_at` is *not* the fix. **Visibility is a commit property, not a column.**
+
+**The confirming query — run it before believing any staleness alarm:**
+
+```sql
+SELECT pid, state, round(EXTRACT(epoch FROM now() - xact_start)) AS xact_age_s,
+       left(query, 60) AS query
+FROM pg_stat_activity
+WHERE datname = 'meridian' AND state = 'idle in transaction'
+ORDER BY xact_start;
+```
+
+An open `INSERT INTO market_snapshots` distinguishes **"not written"** from
+**"not yet committed"**. Those need opposite responses and look identical from
+a freshness check.
+
+**This is also why the staleness threshold is set from the tail (116 min) rather
+than the ~80 min cadence.** 116 is the observed maximum of the *apparent*
+per-market interval, so it already absorbs commit lag; a threshold at the
+cadence does not, and 89 minutes of apparent staleness on an on-time sweep is
+what that costs.
+
+> `idle in transaction` at 259s also holds locks and blocks vacuum. That is a
+> property of the **writer**, not of the monitoring, and is the operator's —
+> flagged, not changed.
+
+---
+
 ## What is NOT covered
+
+**Measured 2026-09-07: of 73 recorded CFB games, 17 have NO venue tape during
+play, 17 are partial, 39 are fully covered.** The gaps sit evenly across all four
+quarters — whole games the venue recorder missed, not listing lag. Where the
+recorder was up the live winner tick is dense (median gap 2.9s). So a fifth of
+the tape is plays without prices, and every making or drift measurement on this
+season is drawn from the 39. **Both recorders up before kickoff and a person
+watching mid-slate is what moves that 39.**
+
 
 State this before anyone reads a green T-30 as a guarantee.
 

@@ -160,8 +160,19 @@ class LiveOddsRecorder:
         interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
         *,
         heartbeat_seconds: float = HEARTBEAT_SECONDS,
+        days_ahead: int = 0,
+        groups: tuple[int | None, ...] = (None,),
     ) -> None:
         self._client = client or ESPNClient()
+        #: PREGAME LINE PATH, a week ahead. `days_ahead=0` is the original
+        #: behaviour (today's board only). With N > 0 every cycle polls today
+        #: through today+N, so a football line that moves on Tuesday is on tape
+        #: on Tuesday -- the Kalshi-lag question (docs/math/kalshi-early-week.md)
+        #: needs exactly that. Change detection is per (game, provider) and is
+        #: unchanged, so a wider window costs requests, not rows.
+        #: `groups` is CFB's conference gate; (None,) for NFL and WNBA.
+        self.days_ahead = max(0, int(days_ahead))
+        self.groups = tuple(groups) or (None,)
         # A single connection is ample: this process writes only when a line
         # actually moves, which is a handful of rows an hour. It matters because
         # Supabase's session-mode pooler allows 15 clients *in total across every
@@ -194,14 +205,10 @@ class LiveOddsRecorder:
         stats = LiveOddsStats()
         date_str = date_yyyymmdd or captured_at.strftime("%Y%m%d")
 
-        try:
-            payload = self._client.get_scoreboard(date_str)
-        except Exception as exc:
-            # Never crash the loop. Odds are backfillable from the core API for
-            # completed games, so a missed cycle is not the catastrophe a missed
-            # market snapshot is — but a dead process still is.
+        payload = self._fetch_board(captured_at, only_date=date_yyyymmdd)
+        if payload is None:
             stats.errors += 1
-            log.error("scoreboard_failed", date=date_str, error=str(exc))
+            log.error("scoreboard_failed", date=date_str)
             return stats
 
         rows = self._rows_from_payload(payload, captured_at, stats)
@@ -215,6 +222,34 @@ class LiveOddsRecorder:
             unchanged=stats.unchanged,
         )
         return stats
+
+    def _fetch_board(self, now: dt.datetime, *, only_date: str | None = None) -> dict | None:
+        """Today through today+days_ahead, every group, merged into one payload.
+
+        A single failed date/group is logged and skipped; the cycle returns
+        None only if NOTHING was fetched, so one bad day cannot blind the
+        recorder to the rest of the week. Never crashes the loop: odds are
+        backfillable from the core API for completed games, so a missed cycle
+        is not the catastrophe a missed market snapshot is, but a dead process
+        still is."""
+        dates = ([only_date] if only_date else
+                 [(now + dt.timedelta(days=d)).strftime("%Y%m%d") for d in range(self.days_ahead + 1)])
+        events: list[dict] = []
+        seen: set[str] = set()
+        fetched = 0
+        for date_str in dates:
+            for grp in self.groups:
+                try:
+                    payload = self._client.get_scoreboard(date_str, groups=grp, limit=400)
+                except Exception as exc:
+                    log.error("scoreboard_failed", date=date_str, groups=grp, error=str(exc))
+                    continue
+                fetched += 1
+                for ev in payload.get("events") or []:
+                    if isinstance(ev, dict) and str(ev.get("id")) not in seen:
+                        seen.add(str(ev.get("id")))
+                        events.append(ev)
+        return {"events": events} if fetched else None
 
     def _rows_from_payload(
         self, payload: dict, captured_at: dt.datetime, stats: LiveOddsStats
@@ -321,6 +356,8 @@ class LiveOddsRecorder:
             "live_odds_recorder_started",
             interval_seconds=self.interval_seconds,
             heartbeat_seconds=self.heartbeat_seconds,
+            days_ahead=self.days_ahead,
+            groups=list(self.groups),
         )
 
         while not stopping["flag"]:
@@ -328,10 +365,10 @@ class LiveOddsRecorder:
             payload = None
             stats = None
             try:
-                date_str = dt.datetime.now(UTC).strftime("%Y%m%d")
-                payload = self._client.get_scoreboard(date_str)
-                stats = self._cycle_from_payload(payload)
-                log.debug("live_odds_written", written=stats.rows_written)
+                payload = self._fetch_board(dt.datetime.now(UTC))
+                if payload is not None:
+                    stats = self._cycle_from_payload(payload)
+                    log.debug("live_odds_written", written=stats.rows_written)
             except Exception as exc:
                 log.error("live_odds_cycle_failed", error=str(exc), exc_info=True)
 
@@ -384,7 +421,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="meridian-live-odds-recorder")
     parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--days-ahead", type=int, default=0,
+                        help="also poll the scoreboard for each of the next N days (pregame line path)")
+    parser.add_argument("--groups", default="",
+                        help="comma-separated ESPN group ids to union, e.g. 80,81 for CFB FBS+FCS")
     args = parser.parse_args()
+    groups = tuple(int(g) for g in args.groups.split(",") if g.strip()) or (None,)
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -398,7 +440,7 @@ def main() -> int:
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
     )
 
-    rec = LiveOddsRecorder(interval_seconds=args.interval)
+    rec = LiveOddsRecorder(interval_seconds=args.interval, days_ahead=args.days_ahead, groups=groups)
     if args.once:
         stats = rec.poll_once()
         log.info("live_odds_once", written=stats.rows_written,
