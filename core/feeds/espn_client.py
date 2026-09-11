@@ -103,8 +103,17 @@ class ESPNClient:
         """
         return self.get(self._site(f"teams/{team_id}/schedule"), params={"season": season})
 
-    def get_scoreboard(self, date_yyyymmdd: str) -> dict[str, Any]:
-        return self.get(self._site("scoreboard"), params={"dates": date_yyyymmdd})
+    def get_scoreboard(self, date_yyyymmdd: str, *, groups: int | None = None,
+                       limit: int | None = None) -> dict[str, Any]:
+        # `groups` is CFB's conference gate (80 = FBS, 81 = FCS; the default
+        # silently drops FCS -- see espn_cfb_recorder). `limit` lifts the
+        # scoreboard's page cap for a full Saturday.
+        params: dict[str, Any] = {"dates": date_yyyymmdd}
+        if groups is not None:
+            params["groups"] = groups
+        if limit is not None:
+            params["limit"] = limit
+        return self.get(self._site("scoreboard"), params=params)
 
     # ---------------------------------------------------------------- #
     # sports.core.api.espn.com
