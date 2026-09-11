@@ -401,3 +401,128 @@ rollback and the second attempt died identically. The run takes ~12 minutes
 without parallel workers; Monday's task should expect that.
 
 Two games from the floor. Sunday brings twelve.
+
+## 2026-09-11 14:10Z — Friday: NFL game 2, re-run independently; plus the Friday CFB coverage
+
+The 13:50Z section above is the same read, run by hand. This section exists
+because the scheduled task ran it again from the committed harness. Two things
+here are NOT in that section: the five Friday CFB games' coverage (the runbook
+asks for it and it was not recorded), and two defective guard lines found by
+reading the output that the hand-run did not print or did not question.
+
+**What a re-run can and cannot check.** Same script, same tape, unchanged data:
+every number below reproduced the 13:50Z section to the digit. That establishes
+determinism, not correctness — this route could not have disagreed. The checks
+that *could* fail are the code audit and the arithmetic, and two of those failed.
+
+**Coverage, SF@LAR** (`nfl-sf-lar-2026-09-10`, espn 401872657, venue 19454):
+168 ESPN plays and 486 `espn_cfb_game_state` rows, both spanning
+00:41:24Z → 03:24:36Z, `live_spread` non-null on all 486; 2,528 venue winner
+snapshots (09-02 22:52Z → 03:24:46Z).
+
+All 486 state rows are `state='in'`. **There is no post row.** The recorder
+stopped at P4 0:14 with LAR 7 SF 27 and never wrote a settled row. ESPN's
+summary endpoint says `post`, Final LAR 7 SF 27 — so the score above is correct
+but it is ESPN's, not our tape's. The same night the CFB recorder wrote 2 post
+rows for FAMU@MIA, so this is specific to the NFL game, not a global stop.
+
+**Coverage, the five Friday CFB games** (`division <> 'NFL'`, `espn_date::date
+= '2026-09-11'`). Four of the five have zero plays and zero state rows. That is
+correct, not a gap: ESPN has them `state=pre`, kicking off tonight.
+
+| game | plays | state rows | winner snaps | status |
+|---|---|---|---|---|
+| cfb-flam-mia-2026-09-10 | 175 | 546 (spread 546, 2 post) | 4,043 | Final MIA 77 FAMU 7 |
+| cfb-norfst-vir-2026-09-11 | 0 | 0 | 117 | `pre`, kickoff 23:00Z |
+| cfb-rich-ncst-2026-09-11 | 0 | 0 | 118 | `pre`, kickoff 23:00Z |
+| cfb-rutger-boscol-2026-09-11 | 0 | 0 | 117 | `pre`, kickoff 23:30Z |
+| cfb-vill-lou-2026-09-11 | 0 | 0 | 117 | `pre`, kickoff 23:30Z |
+
+Only FAMU@MIA (kickoff 2026-09-11T00:00Z, Thursday night ET) has tape. The four
+pregame games are on an ~88-minute snapshot sweep; nothing in `market_snapshots`
+anywhere is newer than 12:45:40Z against a 13:54Z database clock, which is
+within that cadence. Tonight's slate needs the sweep to go live at 23:00Z.
+
+**H1c GATE, verbatim** (`LEAGUE=both MOVE_STRATUM=1`, 892 one-minute >=1c moves,
+328 fills):
+
+`H1c GATE: +2min markout -1.23c [-2.13, -0.34] G=23 G_eff=9.9; games positive 8/23 (35%, one-sided binomial p=0.9534)  ->  UNDERPOWERED (G=23 < 25): not a read`
+
+Beside it, verbatim:
+
+```
+A_naive              892     892    328  36.8%      -1.34c     57.3%
+MARKOUT +2min   -1.23c  [-2.13, -0.34]  n=328 G=23 G_eff=9.9  EXCLUDES 0
+MARKOUT +5min   -2.06c  [-3.42, -0.70]  n=328 G=23 G_eff=9.9  EXCLUDES 0
+per-game +2min markout: 8/23 games positive; leave-one-game-out mean range [-1.50, -0.85]c
+  cfb split: +2min -1.28c [-2.33, -0.23] n=276 G=21 G_eff=8.2 EXCLUDES 0; 8/21 games positive
+  nfl split: +2min -0.99c [-1.76, -0.22] n=52 G=2 G_eff=1.7 EXCLUDES 0; 0/2 games positive
+```
+
+**Name the estimator.** `-1.23c` is the mean over the 328 *fills*, with a
+*game-clustered* interval: "game-clustered" names the interval, not the
+estimate. The equal-weight per-game mean is a different number and is not what
+the gate tests. G=23 is the games carrying fills (the tape is G=77); G_eff=9.9
+is the clustering-effective count, so 23 markets behave like ~10.
+
+Two qualifiers the 13:50Z section does not carry. First, **876 of the 892
+quotes used the optimistic no-queue assumption** (full FIFO priority); only 16
+had queue modelled from recorded depth. The -1.23c is already the optimistic
+case and it still loses. Second, the leave-one-game-out range [-1.50, -0.85]c
+never crosses zero, so no single game carries the sign.
+
+**DEFECT — the "could this have come out the other way" guard is wrong.** It
+prints:
+
+`B posts a strict SUBSET of A's sides (1,251 of 892 withdrawn).`
+
+1,251 of 892 is impossible on its face. In the move stratum line 551 wants
+exactly one side (`want_bid, want_ask = (move_side=="bid"), (move_side=="ask")`),
+so the *unposted opposite side* is counted as "withdrawn" for every arm,
+including A_naive — which withdraws nothing by model. Hence posted+pulled =
+2 x 892 = 1,784 for all three arms. The shield's real action is
+892 - 533 = **359 of A's 892 posted sides (40.2%)**; the printed figure
+overstates it by 3.5x. The same inflated count feeds "it withdrew 1,251 sides
+rather than 0 or all", and the `pulled` column showing 892 for A_naive.
+No markout is affected — fills drive those — so every headline above stands.
+The damage is to the guard that is supposed to establish the design was not
+rigged, which is the one line you cannot check by re-running.
+
+**H1 overshoot, NFL (G=2), verbatim:**
+
+```
+     2      81   +0.203   [+0.034, +0.372]    2            +0.02c   [-0.26, +0.29]   CONTINUES
+     1c     81    2           +0.02c   [-0.26, +0.29]     +0.4%          0.27c   spans zero
+     2c     64    2           +0.18c   [+0.04, +0.32]     +3.3%          0.27c   spans zero
+     3c     47  too few
+```
+
+**DEFECT — that second "spans zero" is false.** [+0.04, +0.32] excludes zero.
+The label at line 134 is a fall-through: it prints "spans zero" for anything
+not lying entirely *below* zero, so an interval excluding zero on the
+*continuation* side is reported as if it carried no information. The gate's
+DECISION is right (fading the move needs a reversal; +0.18c is a continuation,
+and 0.18c < the 0.27c half-spread anyway), but the ">=2c" stratum is mild
+evidence *against* overshoot, not an absence of evidence. This is shared code:
+CFB prints the same wrong label on any positive-continuation stratum.
+
+**H4 softness, PRIMARY, 2 settled games per venue:**
+
+```
+polymarket_us  games 2  mean diff -0.0054  [-0.0202, +0.0094]  venue closer 1/2  spans zero  (unsettled 15)
+kalshi         games 2  mean diff -0.0061  [-0.0159, +0.0037]  venue closer 2/2  spans zero  (unsettled 15)
+```
+
+This scorer reads the committed CSVs, so running it again reproduces the
+13:50Z block by construction — it is not a second measurement of softness. What
+it does confirm independently is the outcome coding: its LAR row is `won 0`,
+matching the venue tape and ESPN's 7-27.
+
+**Post instant, audited by reading (the one check a re-run cannot do).** The
+move is defined at the close of minute k (`dm = minute[k] - minute[k-1]`, last
+mid of each minute); the post is `first[k+1]`, the first snapshot of the NEXT
+minute; the game state is the last play at or before `t0 - 30s` (FEED_LAG).
+Strictly after the information it conditions on. The retracted look-ahead
+(`setdefault(k+1, r)`) is gone. 892 moves now vs 865 at the retraction.
+
+Two games, G_eff=1.7 on the NFL split. Nothing here is a read. Twelve Sunday.
