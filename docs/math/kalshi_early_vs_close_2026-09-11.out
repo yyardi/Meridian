@@ -1,0 +1,13 @@
+kalshi cfb games 373  matched to a settled ESPN game with a first play 23  (refused as side-ambiguous 0)
+pregame Kalshi tape per winner ticker, hours before ESPN's first play: median 6.0  p10 6.0  max 7.4
+(ticker, horizon) rows 116
+
+=== cfb winner ===
+   T-h      n    G  G_eff  early half-sprd   |close-early| med/p90   moved>=1c   CEILING net c            95% CI   buyYES always buyNO always
+     6     36   18                   0.50c        0.0/3.0                 15                     too few moved          -1.16c       -1.11c
+     3     40   20                   0.51c        0.0/3.0                 15                     too few moved          -1.12c       -1.09c
+     1     40   20                   0.51c        0.0/1.0                  9                     too few moved          -1.11c       -1.09c
+
+CEILING = trade the early touch toward the eventual close, when they differ by >=1c, net of 0.07*p*(1-p).
+It is look-ahead; a real model captures some fraction of it, and only if a real-time reference moves first.
+The controls (buy YES always / buy NO always at the same early touch) show what a one-sided bias alone earns.
