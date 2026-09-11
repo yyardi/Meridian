@@ -32,9 +32,18 @@ dependencies = [
 # (docker-compose.trainer.yml), which exists because the box's only Python
 # outside the containers is .venv-health and it has neither of these.
 # numpy/scipy/pandas/statsmodels are already runtime deps and are reused.
+# PINNED TO A MINOR, NOT A FLOOR (2026-09-06). `xgboost>=2.0` let the trainer
+# image resolve to whatever was newest at BUILD time while a developer's venv
+# stayed wherever it was installed — so the two agreed only by coincidence of
+# timing. That breaks the one property this extra exists to provide: a model fit
+# on one machine loading on another. Model files are not reliably readable by a
+# runtime OLDER than the one that wrote them, and the failure is silent-ish and
+# late (at load, in the serve path, not at build). `~=` pins the minor and still
+# takes patch releases: ~=3.4.1 is >=3.4.1,<3.5.0.
+# Bump deliberately, both sides together, and re-fit — do not widen back to a floor.
 model = [
-    "xgboost>=2.0",
-    "scikit-learn>=1.4",
+    "xgboost~=3.4.1",
+    "scikit-learn~=1.9.0",
 ]
 dev = [
     "pytest>=8.0",

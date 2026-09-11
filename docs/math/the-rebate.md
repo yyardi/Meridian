@@ -39,11 +39,65 @@ Rebate computed per fill as `0.0125·p·(1−p)`, on real settled fills:
 | cfb | excluded by guard | 3,091 | −1.820¢ | +0.279¢ | −1.541¢ |
 | wnba | excluded by guard | 667 | −9.318¢ | +0.266¢ | −9.052¢ |
 
-**Guarded book, both sports, game-clustered over 24 games: +0.061¢,
-CI [−0.762, +0.883].**
+> **RETRACTED 2026-09-06.** The claim below is superseded and the corrected
+> figure is NEGATIVE and significant. See the correction directly under it.
 
-**The point estimate is POSITIVE for the first time in this programme.** It is
-NOT significant — the interval spans zero — and it must not be quoted as edge.
+~~**Guarded book, both sports, game-clustered over 24 games: +0.061¢,
+CI [−0.762, +0.883].** The point estimate is POSITIVE for the first time in
+this programme.~~
+
+## CORRECTION (2026-09-06)
+
+**The table above is captioned "real settled fills" and its counts are
+all-settled.** Verified by a bound that needs no reconstruction: it reports
+16,672 guarded WNBA fills, and the pinned export contains only **6,255 real
+WNBA fills in total**. A real-only count cannot exceed the real population.
+
+**64% of the kept fills are phantom** — events that could not have happened,
+because the mid crossed while the book never came to us. The circuit breaker
+withdraws one-sided **markets**; it never removed phantom **fills** inside
+two-sided markets. Phantoms score **+0.951¢** each, and they are what pulled
+the pooled figure positive.
+
+Two further levers, both toward spurious positivity:
+
+- **Equal-weight on a stale tape.** +0.061¢ is `avg(avg(pnl))` — mean of game
+  means — from `scripts/sandbox.py:99,103`, computed on a 24-game partial tape.
+  The pin has 61 games. The fills-weighted sandwich's *point* IS the
+  fills-weighted mean, so no version of it yields +0.061¢; the two published
+  "true" values pool to **−0.021¢**.
+- **An undeclared small-market exemption.** `sandbox.py` keeps markets with
+  `s.n < 4` however one-sided they are — exactly the low-fill markets that
+  equal-weighting then up-weights. Equal-weight swings **−2.569¢ with the
+  exemption to +0.278¢ without it**: a 2.85¢ move from 13 tiny markets.
+- The published CI used **1.96, not t** (t₂₃ = 2.069, ~6% too narrow at G=24)
+  and a naive game-level SE rather than a cluster-robust one.
+
+**CORRECTED — real fills only, + circuit-breaker guard, rebate included,
+fills-weighted cluster-robust sandwich, current pin:**
+
+| sport | real+guard fills | P&L | rebate | true | game-clustered CI |
+|---|---:|---:|---:|---:|---|
+| wnba | 5,527 | −2.462¢ | +0.287¢ | **−2.175¢** | [−3.264, −1.085] (G=13, G_eff 11.2) |
+| cfb | 16,535 | −1.357¢ | +0.283¢ | **−1.074¢** | [−2.472, +0.325] (G=35, G_eff 19.9) |
+| **pooled** | 22,062 | | | **−1.349¢** | **[−2.411, −0.288]** (G=48, G_eff 29.5) |
+
+The guarded book is **negative and the pooled interval excludes zero**. The
+rebate (~+0.28¢) and the circuit breaker each do genuine work — pooled
+real+rebate −2.12¢ improves to −1.349¢ with the guard — but it does not cross
+zero. WNBA alone excludes zero; CFB alone spans it. No single sport is
+individually positive.
+
+Variants, named with estimator and phantom share:
+
+- all-settled+guard (the population the table actually used, 64% phantom),
+  fills-weighted sandwich, rebate: **+0.117¢ [−0.400, +0.633]** — positive only
+  because it keeps phantoms.
+
+Corrected figures measured by Quant Agent A on
+`backups/exports/quote_fills_classified_20260906T024500Z.csv`; the caption
+mislabel, the estimator and the `n < 4` exemption verified independently
+against `scripts/sandbox.py`.
 
 ## Two effects, both needed, neither speculative
 
