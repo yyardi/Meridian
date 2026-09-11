@@ -115,6 +115,40 @@ services:
       ESPN_RPS: "3"
     command: ["python", "-m", "core.feeds.live_odds_recorder", "--interval", "15"]
 
+  # PREGAME LINE PATH for football, a week ahead, one container per league. The
+  # same recorder as above with --days-ahead: every 5 minutes it reads today
+  # through today+7 (CFB unions FBS and FCS via --groups) and writes a row only
+  # when a line CHANGES, so the tape is DraftKings' pregame path at the
+  # resolution the book moves. This is the reference the Kalshi-lag test needs
+  # (docs/math/kalshi-early-week.md): without it, "Kalshi lags the book" cannot
+  # be asked. Budget: NFL 8 requests per cycle, CFB 16, at 300s = 0.08 req/s
+  # against ESPN_RPS 3.
+  nfl-odds-recorder:
+    build: .
+    container_name: meridian-nfl-odds-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      ESPN_LEAGUE_PATH: football/nfl
+      ESPN_RPS: "3"
+    command: ["python", "-m", "core.feeds.live_odds_recorder", "--interval", "300", "--days-ahead", "7"]
+
+  cfb-odds-recorder:
+    build: .
+    container_name: meridian-cfb-odds-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      ESPN_LEAGUE_PATH: football/college-football
+      ESPN_RPS: "3"
+    command: ["python", "-m", "core.feeds.live_odds_recorder", "--interval", "300", "--days-ahead", "7", "--groups", "80,81"]
+
   kalshi-recorder:
     build: .
     container_name: meridian-kalshi-recorder
@@ -135,6 +169,13 @@ services:
       # Kalshi is its own host with its own budget — this does not draw on the
       # Polymarket 20 req/s per-IP split (5 + 12) above. Demand is ~0.2 req/s.
       KALSHI_RPS: "5"
+      # PREGAME WINDOW widened from the 6h default to the 3 days the recorder's
+      # occurrence-stamp horizon already covers (VENUE_OCCURRENCE_HORIZON_DAYS).
+      # The early-week Kalshi price path is the tape the Kalshi-lag test needs
+      # (docs/math/kalshi-early-week.md); with 6h there is nothing to measure.
+      # Worst case inside 72h: ~50 CFB + 16 NFL games x 3 series per 120s cycle
+      # = 1.65 req/s against the 5/s bucket.
+      KALSHI_PREGAME_HOURS: "72"
     # alembic upgrade first: the kalshi tables are one revision newer than what
     # a long-running deployment may have, and a recorder that starts before its
     # tables exist crash-loops. Concurrent upgrades from the sibling services
