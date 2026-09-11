@@ -74,10 +74,11 @@ if len(rows) < 500:
     sys.exit(0)
 
 ours, theirs, ys = [], [], []
-skipped = 0
+by_game = {}          # accumulated IN THIS LOOP; see the note below
+skipped_ot = skipped_feat = 0
 for r in rows:
     if r["is_overtime"]:
-        skipped += 1          # the OT head is separate; not scored here
+        skipped_ot += 1       # the OT head is separate; not scored here
         continue
     st = GameState(
         period=r["period"], clock_minutes=r["clock_minutes"] or 0,
@@ -95,19 +96,28 @@ for r in rows:
     # filtering rows on it rejects EVERY row. Mirror the trainer exactly.
     vec = [float("nan") if f.get(c) is None else f.get(c) for c in REG_FEATURES]
     if f.get("spread_time") is None or f.get("score_differential") is None:
-        skipped += 1          # these two are load-bearing; missing is fatal
+        skipped_feat += 1     # these two are load-bearing; missing is fatal
         continue
     p_pos = float(booster.predict(
         xgb.DMatrix([vec], feature_names=REG_FEATURES,
                     missing=float("nan")))[0])
     # BOTH into the HOME frame, or half the plays score a frame error.
     p_home = p_pos if r["drive_is_home_offense"] else 1.0 - p_pos
+    y = 1 if r["home_score"] > r["away_score"] else 0
     ours.append(p_home)
     theirs.append(r["espn_home_wp"])
-    ys.append(1 if r["home_score"] > r["away_score"] else 0)
+    ys.append(y)
+    by_game.setdefault(r["game_id"], []).append(
+        ((p_home - y) ** 2, (r["espn_home_wp"] - y) ** 2))
 
 n = len(ys)
-print(f"scored {n:,} plays   (skipped {skipped:,}: overtime or incomplete state)")
+print(f"scored {n:,} plays   "
+      f"(skipped {skipped_ot:,} overtime, {skipped_feat:,} incomplete state)")
+if skipped_feat:
+    print(f"  NOTE: {skipped_feat} non-overtime plays lacked a load-bearing\n"
+          f"  feature. Reported separately because the old combined counter\n"
+          f"  could not distinguish the harmless case from the one that used\n"
+          f"  to misalign the per-game split.")
 if n < 500:
     print("TOO FEW after filtering -- refusing to report.")
     sys.exit(0)
@@ -127,10 +137,12 @@ print(f"  Brier    ours {bo:.4f}   espn {bt:.4f}   "
       f"{'OURS BETTER' if bo < bt else 'ESPN BETTER'} by {abs(bo - bt):.4f}")
 print(f"  accuracy ours {acc(ours) * 100:.1f}%   espn {acc(theirs) * 100:.1f}%")
 
-# game-clustered: the independent unit is the game, never the play
-by_game = {}
-for r, po, pt, y in zip([x for x in rows if not x["is_overtime"]][:n], ours, theirs, ys):
-    by_game.setdefault(r["game_id"], []).append(((po - y) ** 2, (pt - y) ** 2))
+# game-clustered: the independent unit is the game, never the play.
+# by_game was filled in the scoring loop above, where each row and its own
+# prediction are in scope together. Do NOT rebuild it by zipping a
+# re-derived row list against `ours` -- the scoring loop skips on OT AND on
+# missing features, so any filter applied here that is not identical
+# silently shifts every subsequent play into the wrong game.
 diffs = [sum(a for a, _ in v) / len(v) - sum(b for _, b in v) / len(v)
          for v in by_game.values()]
 g = len(diffs)

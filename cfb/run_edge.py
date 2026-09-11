@@ -39,24 +39,35 @@ booster.load_model("/app/artifacts/cfb_wp_regulation.json")
 eng = create_engine(os.environ["DATABASE_URL"])
 
 SQL = """
-WITH settled AS (        -- how each market actually resolved
-  SELECT DISTINCT market_slug, settlement
-  FROM shadow_quote_fills WHERE settlement IS NOT NULL
-),
-play AS (
+-- SETTLEMENT DERIVED FROM THE GAME OUTCOME, not from shadow_quote_fills.
+-- The fill-table join limited the sample to 7 games because settlement is only
+-- populated where our simulator happened to fill. The outcome is a fact about
+-- the game and is known for every backfilled game, so the sample is bounded by
+-- game state and price coverage rather than by our own simulated activity --
+-- which was a selection on our own behaviour sitting inside an edge estimate.
+--
+-- YES = P(FIRST TEAM WINS) and the slug's first team is the AWAY team,
+-- verified 50/55 with 0 contradicting and 5 ambiguous. So settlement = 1 iff
+-- the away team won.
+WITH play AS (
   SELECT b.game_id espn_game, b.play_id, b.wall_clock, b.period,
          b.clock_minutes, b.clock_seconds, b.down, b.distance, b.yards_to_goal,
          b.pos_team_score, b.def_pos_team_score, b.drive_is_home_offense,
          b.is_overtime, m.venue_game_id, m.division, g.spread,
-         m.event_slug, m.home_espn_name, m.away_espn_name
+         m.event_slug, m.home_espn_name, m.away_espn_name,
+         (CASE WHEN g.away_score > g.home_score THEN 1 ELSE 0 END)::int AS settlement
   FROM espn_cfb_backfill_plays b
   JOIN cfb_game_map m ON m.espn_game_id = b.game_id
   JOIN espn_cfb_backfill_games g ON g.game_id = b.game_id
-  WHERE b.wall_clock IS NOT NULL AND b.down IS NOT NULL
-    AND b.period IS NOT NULL AND NOT b.is_overtime AND g.spread IS NOT NULL
+  WHERE b.wall_clock IS NOT NULL
+    AND b.down IS NOT NULL AND b.down > 0      -- down=0 is ESPN's end-of-game sentinel
+    AND b.period IS NOT NULL AND NOT b.is_overtime
+    AND g.spread IS NOT NULL
+    AND g.home_score IS NOT NULL AND g.away_score IS NOT NULL
+    AND g.home_score <> g.away_score           -- a tie has no winner to price
 )
 SELECT play.*, q.market_slug, q.best_bid::float bid, q.best_ask::float ask,
-       q.captured_at, s.settlement,
+       q.captured_at,
        EXTRACT(EPOCH FROM (q.captured_at - play.wall_clock)) AS quote_lag_s,
        (SELECT count(DISTINCT (m2.best_bid, m2.best_ask)) > 1
         FROM market_snapshots m2
@@ -70,12 +81,10 @@ CROSS JOIN LATERAL (
   WHERE ms.game_id = play.venue_game_id
     AND ms.sports_market_type LIKE '%winner'
     AND ms.best_bid IS NOT NULL AND ms.best_ask IS NOT NULL
-    -- ACT AFTER THE LAG, never at the play instant
     AND ms.captured_at >= play.wall_clock + INTERVAL '30 seconds'
     AND ms.captured_at <= play.wall_clock + INTERVAL '5 minutes'
   ORDER BY ms.captured_at
   LIMIT 1) q
-JOIN settled s ON s.market_slug = q.market_slug
 """
 
 with eng.connect() as c:
@@ -167,7 +176,7 @@ def cost(p):
 
 
 print("\n=== EDGE: act on disagreement, score the outcome, charge the cost ===")
-print("    (settlement is the market's own resolution; mid is the price we cross)")
+print("    (settlement derived from the game outcome; mid is the price we cross)")
 for th in EDGE_THRESHOLDS:
     trades = []
     for r, p_home in preds:
