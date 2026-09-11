@@ -3,9 +3,15 @@ Venue winner-market mid (YES = first team on the slug = AWAY wins, 196/196
 verified) vs DraftKings moneyline devigged two ways. Favourite side reported.
 The venue's MAKER fee is zero and its taker fee 0.06*p*(1-p) (~1.5c at 0.5), so
 unlike Kalshi a gap here has a cheap way to be expressed -- IF it exists."""
-import json, subprocess, datetime as dt, re, csv, sys, time
+import json, urllib.request, datetime as dt, re, csv, sys, time
 def get(url):
-    out = subprocess.run(["curl","-s","--max-time","30",url], capture_output=True, text=True).stdout
+    # urllib, not curl: the trainer image on prod has no curl and the weekend
+    # cron runs these there. A failed fetch is an empty dict, as before.
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json"}), timeout=30) as r:
+            out = r.read().decode("utf-8", "replace")
+    except Exception:
+        return {}
     return json.loads(out) if out else {}
 now = dt.datetime.now(dt.timezone.utc)
 def norm(s): return re.sub(r"[^a-z0-9]", "", (s or "").lower())
