@@ -526,3 +526,48 @@ Strictly after the information it conditions on. The retracted look-ahead
 (`setdefault(k+1, r)`) is gone. 892 moves now vs 865 at the retraction.
 
 Two games, G_eff=1.7 on the NFL split. Nothing here is a read. Twelve Sunday.
+
+## 2026-09-12 21:39Z (prod clock 2026-09-12T21:39Z) — Saturday interim read on 120 games: the H1c gate FAILS with power
+
+Run on the box after 34 of Saturday's CFB games had finished
+(`/opt/meridian/artifacts/reads/2026-09-12T2112Z-saturday-interim.txt`).
+Pool: 118 CFB + 2 NFL games loaded, 43 carrying a move-side fill. Both
+pre-registered criteria are now powered and both fail:
+
+`H1c GATE: +2min markout −1.17¢ [−1.89, −0.46] G=43 G_eff=14.9; games positive 14/43 (33%, one-sided binomial p=0.9931) → FAIL`
+
+| | +2min markout | interval | fills | G / G_eff | games positive |
+|---|---|---|---|---|---|
+| pooled | −1.17¢ | [−1.89, −0.46] excludes 0 | 426 | 43 / 14.9 | 14/43 |
+| cfb split | −1.20¢ | [−2.01, −0.39] excludes 0 | 374 | 41 / 13.2 | 14/41 |
+| nfl split | −0.99¢ | [−1.76, −0.22] excludes 0 | 52 | 2 / 1.7 | 0/2 |
+| +5 min, pooled | −1.58¢ | [−2.80, −0.36] excludes 0 | 426 | 43 / 14.9 | — |
+
+The shield arms: −0.50¢ [−1.11, +0.11] and −0.52¢ [−1.13, +0.10] at +2 min,
+spans zero, G=40. Monday's scheduled run adds Sunday's NFL and will print the
+same line; nothing in 13 more games can move an interval that sits this far
+from zero on 43. **The making programme is closed on the pre-registered
+evidence: at plays −0.82¢, dead windows −0.07¢, move side −1.17¢.**
+
+**The Saturday hypothesis** (pregame-ladder-calibration.md: CFB full-game
+spread rungs with pregame mid in [0.20, 0.30), buy NO at 1−bid, net of fee,
+last quote within 6h of the first play), read on the HELD-OUT 2026-09-12
+games only, as registered:
+
+| population | buy NO net | interval | markets | G / G_eff | gap E[y−mid] | read |
+|---|---|---|---|---|---|---|
+| **held-out Saturday** | **+4.56¢** | [−13.80, +22.92] | 47 | 16 / 13.6 | −7.22¢ [−25.15, +10.71] | UNDERPOWERED (G=16 < 25) |
+| prior games (source of the hypothesis) | +6.88¢ | [−1.27, +15.03] | 164 | 60 / 49.6 | −9.94¢ [−18.07, −1.82] | spans zero |
+| pooled | +6.36¢ | [−1.12, +13.85] | 211 | 76 / 63.2 | −9.34¢ [−16.76, −1.92] | spans zero |
+| held-out neighbour 0.1–0.2 | +2.17¢ | [−11.45, +15.78] | 70 | 15 | −4.31¢ | underpowered |
+| held-out neighbour 0.3–0.4 | −3.27¢ | [−31.68, +25.15] | 40 | 16 | +0.03¢ | underpowered |
+
+Same sign out of sample, no power: sixteen games carry rungs in that bucket
+on a given Saturday, and a NO bet at 25¢ pays +24¢ or −75¢, so the per-market
+variance is large. The calibration gap on the pooled 76 games (−9.3¢, interval
+excluding zero) is the more stable statistic and is the reason to keep
+reading. **Registered next read:** the same rule on the held-out 2026-09-19
+games, AND pooled across 09-05 → 09-19 with G ≥ 25 games in the bucket: buy-NO
+net positive and excluding zero passes; the neighbour buckets are printed
+beside it because a real favourite–longshot effect should not be confined to
+one 10¢ bucket. No other look is added.
