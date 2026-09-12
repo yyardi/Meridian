@@ -51,3 +51,8 @@ under 10¢ — the venue lists CFB winner markets mostly on mismatches
 **Kickoff anchor.** ESPN's first play vs the venue's `game_start_time`: median
 3 minutes, p90 30, max 1,169 (one game listed a day off). The first play is
 the anchor; the venue field is not.
+
+**Held-out read, 2026-09-12 (registered above):** buy NO net **+4.56¢
+[−13.80, +22.92]**, 47 markets, G=16 — same sign, underpowered. Prior +6.88¢
+[−1.27, +15.03] (G=60); pooled +6.36¢ [−1.12, +13.85] (G=76). Next read
+2026-09-19; details and neighbours in `e8-nfl-preregistration.md`.
