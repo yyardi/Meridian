@@ -280,7 +280,7 @@ def build_live_fv(
     """
     from sqlalchemy import text
 
-    from core.api import _human_market  # label formatting lives with the UI
+    from core.team_mapping import human_market as _human_market
 
     rows = session.execute(text("""
         SELECT DISTINCT ON (market_slug)
