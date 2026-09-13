@@ -69,7 +69,12 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
   its price at every rung and the away side loses at every rung (home ≥ away in all five twin
   pairs by 5–14¢); the only cell excluding zero is **buy AWAY at YES-mid 50–60¢: −11.62¢/contract
   [−21.74, −1.50], n 227, G 104** (one of ~20 cells looked at). Not a longshot effect; a
-  home-shift effect. Registered from this for 09-19: NO (home) on 50–60¢ rungs and its twin.
+  home-shift effect. **Corrected by audit the same night:** the registered fade is the exact
+  complement of that cell (same 227 rows, other side), so its in-sample expectation is
+  +11.62 − 4.17 round-trip = +7.45¢ [−2.67, +17.57], spanning zero, and it inherits the source's
+  standard error. The source was one of ≥10 statistics; at 20 looks the expected number of false
+  "excludes zero" results is exactly 1.00, so one such result is the modal outcome of noise.
+  Readable at G ≥ 195 (5 Saturdays uncorrected, 12 corrected), not on 09-19.
   NO-mid re-definition selects the same rungs to the boundary (venue publishes one YES book).
 - **Kalshi vs Polymarket same instant (done for A/B, CFB 09-12, 45 matched games, 66k pairs):**
   median |gap| 0.25¢ (winner) to 0.5¢ (spread, total); < 1% of instants beyond 3¢; 49 after-fee

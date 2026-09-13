@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 22:00Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 22:30Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -40,12 +40,20 @@ Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated
 | CFB: home side every rung ("home shift") | paper line, read 09-19 | +$47.44 on $1,571, 2,503 bets, 117 games: +1.90¢ [−3.83, +7.62], spans 0 |
 | NFL: same two rules | paper line, 2 games | −$17.91, UNDERPOWERED |
 | MLB: under/over, favourite/dog, 20–30¢ NO | registered, no tape yet | — |
-| **CFB / NFL spreads: buy NO (home) on rungs whose YES mid is 50–60¢**, twin = buy YES (away) at 40–50¢ | registered 09-13 20:05Z from the decomposition grid: away side at 50–60¢ lost −11.62¢/contract [−21.74, −1.50] on 104 games, one of ~20 cells; read 09-19 | — |
+| **CFB / NFL spreads: buy NO (home) on rungs whose YES mid is 50–60¢**, twin = buy YES (away) at 40–50¢ | registered 09-13 20:05Z, **CORRECTED 22:30Z by the audit** (`docs/math/preregistration_2026-09-19.md`): this line is the exact complement of the −11.62¢ away cell that motivated it — same 227 rows, opposite side — so its in-sample expectation is +11.62 − 4.17 (round-trip cost) = **+7.45¢, 95% CI [−2.67, +17.57], SPANS ZERO**, and it inherits the source's standard error. It cannot be stronger than the cell that generated it. The source cell was one of ≥10 statistics; at 20 looks the expected number of false "excludes zero" is exactly 1.00. **Interim observation on 09-19, no verdict**; first decision at G ≥ 195, which is 5 Saturdays uncorrected and 12 corrected | +7.45¢ [−2.67, +17.57] in-sample |
+| **NFL spreads: the same pair, read Sunday 09-21** | the strongest test on the board and the one I mis-dated: NFL week 3 is a SUNDAY, and these lines carry **no prior** (the cell was never found in NFL tape), so their family is 2–4 names, not 24, and they need almost no correction | no in-sample number by construction |
 | CFB / NFL totals: buy UNDER every rung; buy OVER every rung (mirror) | registered 09-13 18:30Z; the two-Saturday back-read is running, labelled a back-read | — |
 | MLB first-five totals under/over; first-five spread NO 20–30¢ | registered 09-13 18:30Z, no tape | — |
 | **NFL/CFB in-game momentum scalp** (buy the offence at the opponent's 40 / red zone / after a 2¢ move; take profit 2–10%, stop 5–20%; taker and maker exits) | **measured negative with power on CFB** (60 games, 27 cells, G 37–42): every cell −7.2 to −11.0¢ per $1 ticket, every interval below zero, home and away both negative. Mid drift after the trigger ≈ 0 (−0.6 to +0.7¢): the loss is half-spreads (3.8–5.7¢) plus two fees (4.1–5.4¢). Maker exit within 0.3¢ of taker. NFL: no finals yet, rerun tonight. Script `cfb/run_momentum_scalp.py`; the live paper loop still deploys so the same number accrues on the dashboard | best cell T2 red zone, TP 10 / stop 5: −7.22¢ [−9.52, −4.93] |
 | DraftKings line move → Polymarket lag, take the DK-implied rung at the ask | measured on CFB 09-12 (23 games, 25 bets): venue lags DK by a median 30 min (n 19), but taking the rung is −9.2¢/$1 [−30.7, +12.3] at the first sweep, −13.0 at +1h, −24.5 [−46.7, −2.4] at +3h, all UNDERPOWERED (G 14–15); 5 of 24 moves already at price. Frame audit requested; NFL settles tonight; read 09-19 | — |
 | Kalshi vs Polymarket same instant (CFB 09-12, 45 matched games, 66k pairs) | measured: median gap 0.25–0.5¢, <1% of instants beyond 3¢, 49 after-fee dutch instants in 66k (0.07%); who-is-stale underpowered (G 6–7). No pregame cross-venue trade. The 20–30¢ NO rung on Kalshi: −2.33¢/$1 [−13.31, +8.66], 36 games, loses about its fee | — |
+
+**Five of the 29 registered names are arithmetic complements of another five**
+(`cfb_total_under_all`/`over_all` and the nfl, mlb, mlb_f5 and cricket pairs):
+they select identical rows with opposite sides, so their P&Ls sum to minus the
+round-trip cost, a constant. "Under beat over" on such a pair is **guaranteed**
+whenever under clears −½ round-trip, and is not evidence of anything. Read one
+of each pair. There are 24 distinct statistics on the table, not 29.
 
 "Measured negative with power" means: bet it and you lose, on the evidence. The
 code stays; the bet does not get money. All lines above are scored every Monday
@@ -54,7 +62,9 @@ dashboard's SCOREBOARD page once that page lands (being built). First run 2026-0
 
 ## 4. Registered reads (dates fixed, criteria written before the tape)
 
-- **Sat 09-19:** CFB 20–30¢ NO, held-out and pooled (G ≥ 25, positive, excludes 0); centre-rung home-shift rate by favourite side; Kalshi-vs-DraftKings lag (your friend's mechanism) on the first full week of tape.
+- **Sat 09-19 (CFB):** interim observation only — print cell, G and interval, take no verdict. At ~40 games a Saturday a CFB cell must show **16.3¢** to exclude zero on one week, and nothing registered clears that. Full rule and corrections: `docs/math/preregistration_2026-09-19.md`.
+- **Sun 09-21 (NFL):** the real test. Same two spread rules, no prior, family of 2–4, so the interval means what it says.
+- Kalshi-vs-DraftKings lag on the first full week of tape.
 - **WNBA playoffs:** favourite and under lines on the first 25 games; PULSE resumes.
 - **MLB:** ladder calibration at 100 settled games (≈ one week after the recorder starts).
 - **Mon 09-14 10:20Z:** the automatic NFL/CFB read (maker gate already FAIL at G=43).
