@@ -114,6 +114,18 @@ def check_containers() -> list[Check]:
         "meridian-gridiron-cfb-engine": "GRIDIRON quoter — CFB (shadow)",
         "meridian-wnba-stats-sweeper": "WNBA volume trajectory (empty board "
                                        "until ~Sept 17)",
+        # Football ESPN feeds (core.feeds.espn_cfb_recorder, league-suffixed).
+        # These are the signal side: the venue tape keeps recording without
+        # them, so their absence does not show up as missing price rows.
+        "meridian-cfb-espn-recorder": "CFB ESPN live feed (plays/WP/state)",
+        "meridian-nfl-espn-recorder": "NFL ESPN live feed (plays/WP/state)",
+        # Football sportsbook odds (live_odds_recorder, 300s). CFB unions
+        # groups 80,81 -- FBS alone silently drops every FCS game.
+        "meridian-cfb-odds-recorder": "CFB sportsbook odds (300s, groups 80+81)",
+        "meridian-nfl-odds-recorder": "NFL sportsbook odds (300s)",
+        # MLB recording overlay (2026-09-13): pregame board only, no live
+        # recorder and no quoter.
+        "meridian-mlb-recorder": "MLB pregame board (recording only)",
     }
     try:
         out = subprocess.run(
