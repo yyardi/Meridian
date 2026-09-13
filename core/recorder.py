@@ -208,18 +208,33 @@ class Recorder:
         return stats
 
     def _log_expected_vs_observed(self, venue_leagues, boards) -> None:
-        """What the venue's own listing SAYS is live, against what we swept.
+        """What the venue's own listing SAYS, against what the sweep returned.
 
         An unknown or empty competition returns **200 with `events: []`**, never
         a 404, so a quiet board and a wrong slug are the same response. This is
-        the only thing that tells them apart: `/v2/sports` carries
-        `activeEventCount` per league, so a slug expecting 69 and sweeping 0 is
-        visible in the log instead of looking like a slow night.
+        the only thing that tells them apart.
 
-        Never raises: a listing that fails must cost the log line, not the
-        cycle. Absence of this line is itself the signal that it did.
+        `missing=(obs < exp)` USED TO BE THE VERDICT AND IT WAS NOT ONE.
+        Measured on the saved listing 2026-09-14: `/v2/sports`'s
+        `activeEventCount` and the events endpoint count DIFFERENT POPULATIONS
+        for at least one league. MLB lists 87 and the events endpoint returns
+        55, spanning only five days and not truncated — no pagination field, no
+        round-number cap. Table tennis agrees exactly on every competition
+        (8=8, 19=19, 69=69, 1=1). So `obs < exp` is a property of the league,
+        not evidence of a gap, and a check that is red on every long-game
+        league for most of every day is a check nobody reads.
+
+        IT IS ALSO NOT ABOUT LIVE GAMES, which was the natural guess.
+        `setkawoua` lists activeEventCount=1, the events endpoint returns that
+        1 event, and that event is LIVE. Live events appear on BOTH sides and
+        cancel; subtracting an in-progress count would subtract from one side a
+        quantity present in both.
+
+        So the pair is reported as numbers, and the only booleans left are the
+        three that cannot be anything but a defect.
         """
         observed = {vl: len(parsed.events) for vl, parsed in boards}
+        limit = self.config.event_limit
         try:
             listing = self._client.get_sports_listing()
         except Exception as exc:
@@ -229,9 +244,21 @@ class Recorder:
         for vl in venue_leagues:
             exp = listing.get(vl)
             obs = observed.get(vl)
-            log.info("board_coverage", venue_league=vl, expected=exp, observed=obs,
-                     missing=(exp is not None and obs is not None and obs < exp),
-                     not_swept=(obs is None))
+            log.info(
+                "board_coverage", venue_league=vl, expected=exp, observed=obs,
+                shortfall=(exp - obs if exp is not None and obs is not None
+                           else None),
+                # The competition was not in the sweep at all.
+                not_swept=(obs is None),
+                # The listing says there are events and we got none: the
+                # wrong-slug case this check was built for, and unambiguous.
+                swept_nothing=(exp is not None and exp > 0 and obs == 0),
+                # Exactly at the limit is the truncation signature — this is
+                # what caught the default 50 recording a fifth of setkameua.
+                # A real board landing exactly on the limit is possible and
+                # rare; a truncated one always does.
+                truncated=(obs is not None and obs == limit),
+            )
 
     def _record_market(
         self,
