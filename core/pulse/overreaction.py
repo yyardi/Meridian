@@ -357,6 +357,9 @@ def load_ticks(
         MarketSnapshot.event_score,
         MarketSnapshot.event_period,
     ).where(
+        # CONTAMINATED (findings C16): is_live is never cleared, so this
+        # population includes frozen tails from dead streams. Left as-is —
+        # these numbers are published; re-cut under a new registration.
         MarketSnapshot.is_live.is_(True),
         MarketSnapshot.best_bid.is_not(None),
         MarketSnapshot.best_ask.is_not(None),

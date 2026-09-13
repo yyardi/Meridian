@@ -241,6 +241,15 @@ def _tick_stmt(*, event_slug: str, live_only: bool = True):
         .order_by(MarketSnapshot.captured_at, MarketSnapshot.market_slug)
     )
     if live_only:
+        # CONTAMINATED POPULATION, NOT CHANGED ON PURPOSE (findings C16).
+        # `is_live` is never cleared: 11,227 of 12,290 markets whose last
+        # row says live were last written over 600s ago, oldest 43 days
+        # (prod, 2026-09-14). So this selects genuine live-flagged rows
+        # PLUS frozen tails from dead streams, which drag a movement
+        # statistic toward zero. Left as-is deliberately: these
+        # populations are already published, and silently re-cutting
+        # them would make the printed numbers irreproducible. Re-cut it
+        # with a captured_at freshness guard, under a new registration.
         stmt = stmt.where(MarketSnapshot.is_live.is_(True))
     return stmt
 
@@ -372,6 +381,9 @@ def available_games(session: Session, *, min_ticks: int = 1) -> list[tuple[str, 
     """
     rows = session.execute(
         select(MarketSnapshot.event_slug, func.count())
+        # CONTAMINATED (findings C16): is_live is never cleared, so this
+        # population includes frozen tails from dead streams. Left as-is —
+        # these numbers are published; re-cut under a new registration.
         .where(MarketSnapshot.is_live.is_(True),
                MarketSnapshot.event_slug.isnot(None))
         .group_by(MarketSnapshot.event_slug)
