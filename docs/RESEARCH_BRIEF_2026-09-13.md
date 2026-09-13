@@ -68,7 +68,9 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
   median |gap| 0.25¢ (winner) to 0.5¢ (spread, total); < 1% of instants beyond 3¢; 49 after-fee
   dutch instants in 66k (0.07%). Who-is-stale: episodes too rare on one Saturday (G 6–7), the
   median > 3¢ gap persists unchanged at the next sweep. No pregame cross-venue trade exists on
-  this tape. Kalshi's own 20–30¢ rung (C): pending.
+  this tape. Kalshi's own 20–30¢ rung (C, 36 games, fee 0.07·p(1−p)): −2.33¢/$1 [−13.31, +8.66]
+  pooled, away −3.15 [−22.30, +16.00] (G 18), home −1.75 [−16.33, +12.84] (G 35): loses about
+  the fee; nothing supports moving the CFB line to Kalshi. Script `cfb/run_cross_venue.py`.
 - **DraftKings move → venue lag (pregame, CFB 09-12, 23 settled games):** census 15 spread / 10
   total moves ≥ 0.5 pt; venue lags DK by a median 30 min (q25 20, q75 65, n 19; sweep cadence
   ≈ 68 min so an upper bound); 5 of 24 moves were already at the implied price. Taking the
