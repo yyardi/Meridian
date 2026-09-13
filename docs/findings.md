@@ -535,6 +535,56 @@ the list is a curiosity rather than a P&L.
 | B12 | **ESPN moved the season type; 18 days of results vanished** | ~51 games missing; the pregame model predicted on team form frozen at 2026-07-31 | `Event.season_type_id` read `event["seasonType"]`; the scoreboard endpoint nests it as `season.type` and carries no such key, so `_rows_for_event` correctly refused every event for having an unknown season type | An assertion on **rows written**, not on the job not raising. `_safe` had nothing to catch and the scheduler heartbeat reports `rows_written: NULL` by design. See below |
 | B13 | **Stored bankroll snapshots came back claiming the positions read had failed** | the page showed "positions unread" in red against a real $3.60 open position, and `equity` silently degraded to sizing-cash ($23.22 → $19.62) | `AccountSnapshot` grew `positions`/`positions_read_ok`; `record()` never persisted them and `latest()` never reconstructed them, so a stored row returned the dataclass defaults — and `positions_read_ok=False` asserts a FAILED read, not an empty book. `current()` prefers a fresh stored row, so the serving path got the degraded copy while the poller logged the truth in the same minute | A round-trip assertion over `dataclasses.fields()` — not a hand-written field list, which is the same bug one level up. The first version of that guard monkeypatched `record`/`latest` and passed with the bug re-introduced; it tested the stub |
 | B14 | **The v2 recording binary stamped `observed_at` from the recorder's clock** | $0 — caught pre-deploy, pre-data | `engine_v2.py:109` copied `market_snapshots.captured_at` — the cross-process clock the signed schema and the detector contract forbid three times over | Not the integrity scorer — see below; caught by the scorer's own author auditing what their checker structurally cannot see |
+| B15 | **The CFB market anchor was the AWAY team's win probability, labelled home** | $0 — caught before any fit was published; every anchor value in the module was inverted | `home_is_first = event_slug.split("-")[1] == market_slug.split("-")[2]` compared **two encodings of the same ordering** — the venue writes team order into both slugs — so it was **True on 1,451,379 of 1,451,379 rows across 5,754 slugs**. `np.where` then picked the wrong arm every time | Not a test written from the same misreading. Counting BOTH ARMS against real data, which takes one query. Or two instruments that should agree: the spread anchor was right by accident, so the pair disagreed in SIGN and the disagreement was the evidence |
+| B16 | **`features.build()` had no market filter, so `mid` was a mixture of contracts** | $0 — the 09-05 tolerance table was published with it; row counts stand, the mids were not win probabilities | A CFB game quotes ~106 markets at once and `merge_asof` returns the most **recent**, not the right one. On the 09-06 live tape it returned 162 rows drawn from **56 slugs — 90 spread, 69 total, 3 moneyline**, including third-quarter lines. `fit.design()` and `spread_anchor()` pinned their market; this one never did | Running it on a tape dense enough to expose it. The 09-05 pregame tape was too thin — the defect was there and could not be seen. Every mid was a plausible probability and nothing was null |
+
+### B15 in detail — a conditional with no reachable else is a constant
+
+Found on 2026-09-06 while answering a routine question about the anchor's
+dispersion, not while looking for a bug. That is the part worth keeping.
+
+The code read as defensive:
+
+```python
+home_is_first = event_slug.split("-")[1] == market_slug.split("-")[2]
+anchor = np.where(home_is_first, mid, 1 - mid)
+```
+
+**Both operands derive from the same ordering.** The venue names an event
+away-first — `cfb-washst-wash-2026-09-06` is Washington State *at* Washington —
+and writes that same order into the market slug. So the comparison asks whether
+a thing equals itself. Measured: **True on 1,451,379 of 1,451,379 rows.** The
+else arm had never executed.
+
+The general form, from ce: *a conditional with no reachable else is not a
+conditional — it is a constant wearing an orientation test's clothes.* It reads
+as care, it passes review because the logic is correct-looking, and it cannot
+be exercised in the direction that would reveal the error. Same family as a
+check with no adversary (B11) and a control that cannot fail.
+
+**What caught it was a sign disagreement between two instruments.** The
+moneyline anchor said the home team was a 0.147 underdog on average; the spread
+anchor said the home team was favoured by 19 points. Both could not be right.
+The spread anchor turned out to be correct **by accident** — its always-taken
+branch happened to be the right one — and that accident is the only reason the
+pair was informative. Had both been inverted, the correlation between them
+would have looked perfect and nothing would have shown.
+
+Confirmed four ways before the fix landed, because this frame has inverted
+results before (V14, V20):
+
+* slug-first resolves to the AWAY team **53 times, HOME 0**, ambiguous 20, over
+  the 73-row computed map;
+* the single moneyline `aec-cfb-washst-wash-2026-09-06` quoted **0.053** with
+  Washington a heavy home favourite;
+* `corr(spread anchor, moneyline anchor)` went from **+0.93 to −0.929**;
+* the corrected spread anchor matches DraftKings' published line at
+  **+0.999, 0.41 points mean absolute error**, on 12 games.
+
+A naming argument could not have established any of that. The replacement is a
+documented constant plus `assert_away_first()`, which **raises** if the venue's
+convention ever flips — because nothing in the arithmetic can notice a constant
+changing.
 
 ### B14 in detail — reconciliation proves consistency, never correctness (wrong-but-consistent, 2026-09-02)
 
