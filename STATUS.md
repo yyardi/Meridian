@@ -133,6 +133,45 @@ setkawoua 15). Every other family is volume-starved by comparison:
 | WNBA (in season) | ~6 / day | ~2 weeks |
 | NFL | ~16 / week | ~1.5 months |
 
+**CORRECTED 23:10Z, before it travelled far** (`docs/math/tabletennis-preregistration.md`).
+My "powered by Tuesday" was wrong: the per-bet standard deviation is the OUTCOME's,
+√(p(1−p)) ≈ 50¢, not the spread's, and that governs. So ~300 matches detects an effect of
+**6.47¢**, while the hurdle for a position held to settlement is **2.00–2.50¢**. Detecting an
+edge that merely clears the hurdle needs n ≈ 2,000–2,600, i.e. **13–17 days**, and is
+UNREACHABLE if the same player pool recurs across days at ρ ≥ 0.15.
+
+| honest claim | |
+|---|---|
+| rules out LARGE edges in days | yes, and nothing else on the board does |
+| establishes a hurdle-sized edge quickly | no |
+
+One correction in the other direction: the fee is charged **once** on a position held to
+settlement, not on entry and exit, so that hurdle is half what I had been assuming. Two fees
+apply only to a round trip (the scalp and the momentum studies were charged correctly).
+
+★ **The deepest point, and it constrains every result this family can produce:** a
+favourite-longshot edge exists only if the market misprices particular PLAYERS. If it does,
+the player correlation ρ is large and the effective sample saturates at P/(2ρ) — a constant,
+so more matches buy nothing. If ρ ≈ 0 there is no player-linked edge to find. **You cannot
+have a large player-linked edge and a small design effect; a result showing both is a defect,
+not alpha.** Hypotheses clustered on TIME rather than player (the staleness cut) escape this
+and are therefore ranked above the favourite cut.
+
+★ **The trap that outranks the clustering: there is no independent settlement source.** The
+CFB decomposition survived because ESPN agreed with the venue 65/65 on the frame. Here there
+is no second source, so a frame error is unfalsifiable from inside and **would present as a
+large, stable, beautiful edge** — exactly how a 20¢ phantom was manufactured on Kalshi once.
+Registered gate: realized YES rate ≈ mean YES price, and favourites must win MORE than half;
+a flipped frame shows them winning less. Fails → halt and re-derive, never report.
+
+Measured from the venue's own slugs: 115 players, 156 matches, mean 2.7 appearances per
+player per day, max 5, and **zero players cross competitions** — so within a day the design
+effect is only ~1.3. Whether the pool recurs ACROSS days is the one measurement that decides
+whether this family can ever answer anything, and it cannot be made from one day of tape.
+
+Open discrepancy: I counted 301 events listed, the sweep recorded 151 matches. Until that is
+explained, every day-count above may be off by a factor of two in either direction.
+
 This does NOT say there is an edge there — the discovery found 1–2¢ spreads and
 a median 27k shares resting, i.e. a tight, liquid, well-attended book, and the
 0.06·p(1−p) fee is 6% of a 50¢ ticket against a 1–2¢ spread, so taking is
