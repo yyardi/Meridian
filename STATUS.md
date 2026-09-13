@@ -58,9 +58,9 @@ dashboard's SCOREBOARD page once that page lands (being built). First run 2026-0
 | agent | deliverable |
 |---|---|
 | honest dashboard | PULSE page says WNBA-only / resumes on playoffs; the stuck "1335" diagnosed and fixed; new SCOREBOARD page rendering the paper book |
-| codebase map | `docs/ARCHITECTURE.md`: what runs, what is research, what is dead; target layout infra / engine / strategies / ui; dead research archived |
-| Kalshi–DraftKings lag | `cfb/run_kalshi_dk_lag.py`: hour-by-hour Kalshi vs DK, buy the lagging side, settle, net of fee — first partial read on this week's NFL |
-| live-safe shadow lister | spread cap, venue-clock fix, Saturday cron for the CFB bet, paper book wired into the Monday cron |
+| codebase map | BUILT and merged: `docs/ARCHITECTURE.md`; 15 dead research scripts archived; engines' dashboard import, missing heartbeats, and the health script's 5 blind containers listed for the migration |
+| Kalshi–DraftKings lag | BUILT: `cfb/run_kalshi_dk_lag.py`, in the Monday cron; smoke run: NFL 14 games unsettled, CFB 09-12 72 settled G=24 pooled +1.50¢ [−5.76, +8.76] underpowered; gaps are tiny at h ≤ 6 (median 0.6–1.1¢), the h = 24–72 question needs 09-19 |
+| live-safe shadow lister | BUILT and merged: spread cap, venue clock, paper book in the Monday cron, 30 tests |
 
 ## 6. Open questions for the researcher (docs/math/longshot-no-candidate.md §7)
 
