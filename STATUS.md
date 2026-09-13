@@ -47,6 +47,7 @@ Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated
 | CFB: home side every rung ("home shift") | paper line, read 09-19 | +$47.44 on $1,571, 2,503 bets, 117 games: +1.90¢ [−3.83, +7.62], spans 0 |
 | NFL: same two rules | paper line, 2 games | −$17.91, UNDERPOWERED |
 | MLB: under/over, favourite/dog, 20–30¢ NO | registered, no tape yet | — |
+| **CFB / NFL spreads: buy NO (home) on rungs whose YES mid is 50–60¢**, twin = buy YES (away) at 40–50¢ | registered 09-13 20:05Z from the decomposition grid: away side at 50–60¢ lost −11.62¢/contract [−21.74, −1.50] on 104 games, one of ~20 cells; read 09-19 | — |
 | CFB / NFL totals: buy UNDER every rung; buy OVER every rung (mirror) | registered 09-13 18:30Z; the two-Saturday back-read is running, labelled a back-read | — |
 | MLB first-five totals under/over; first-five spread NO 20–30¢ | registered 09-13 18:30Z, no tape | — |
 | **NFL/CFB in-game momentum scalp** (the operator's rule: buy the offence driving into opponent territory / red zone, take profit 2–10%, stop 5–20%, maker-exit variant) | being scored on the in-game tape now, grid by trigger × take-profit × stop, both leagues, home/away split | — |
@@ -84,8 +85,8 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 
 ## 6. Open questions for the researcher (docs/math/longshot-no-candidate.md §7)
 
-1. Away-team effect vs longshot effect: on this venue YES is always the away team; split every price bucket by side before believing it.
+1. ANSWERED 09-13 (`cfb/run_longshot_decomp.py`): home-shift, not longshot. Home side beats its price at every rung, away loses at every rung (5/5 twin pairs, 5–14¢); the 20–30¢ cell is where a noisy home series peaks. Only cell excluding 0: away at 50–60¢, −11.62 [−21.74, −1.50], G 104.
 2. Home shift in CFB weeks 1–2: real early-season mispricing or a 1.9σ draw? ~200 games decide.
 3. Does the WNBA under-bias exist outside late August? Playoffs answer.
 4. Kalshi vs DraftKings during the week: which moves first? Tape now exists.
-5. Why 20–30¢ and not 10–20¢? If the mechanism is real it should be monotone.
+5. ANSWERED 09-13: not monotone (−0.05, +2.48, +5.44, −2.64, +1.97 across 0→50¢), so the bucket boundary did the work.

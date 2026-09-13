@@ -124,6 +124,17 @@ STRATEGIES = {
     "mlb_f5_total_over_all":  dict(league="mlb",  types=("first_five_total",), side="yes", rule=lambda r: True),
     "mlb_f5_spread_no_20_30": dict(league="mlb",  types=("first_five_spread",), side="no",
                                    rule=lambda r: 0.20 <= mid(r) < 0.30),
+    # --- registered 2026-09-13 20:05Z from the decomposition grid (cfb/run_longshot_decomp.py, one of ~20 cells looked
+    #     at): buying the AWAY side at YES-mid 50-60c lost -11.62c/contract [-21.74, -1.50] on 104 games; the mirror is
+    #     NO (home) on those rungs. Pre-registered here with its twin for the 09-19 read; NFL gets the same pair, no prior.
+    "cfb_spread_no_50_60":    dict(league="cfb",  types=("full_game_spread",), side="no",
+                                   rule=lambda r: 0.50 <= mid(r) < 0.60),
+    "cfb_spread_yes_40_50":   dict(league="cfb",  types=("full_game_spread",), side="yes",
+                                   rule=lambda r: 0.40 <= mid(r) < 0.50),   # the twin: away side at the same price
+    "nfl_spread_no_50_60":    dict(league="nfl",  types=("full_game_spread",), side="no",
+                                   rule=lambda r: 0.50 <= mid(r) < 0.60),
+    "nfl_spread_yes_40_50":   dict(league="nfl",  types=("full_game_spread",), side="yes",
+                                   rule=lambda r: 0.40 <= mid(r) < 0.50),
 }
 
 CLOSE_SQL = """
