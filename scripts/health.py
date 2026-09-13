@@ -126,6 +126,8 @@ def check_containers() -> list[Check]:
         # MLB recording overlay (2026-09-13): pregame board only, no live
         # recorder and no quoter.
         "meridian-mlb-recorder": "MLB pregame board (recording only)",
+        "meridian-scalp-nfl": "NFL paper taker loop (reads tape, places nothing)",
+        "meridian-scalp-cfb": "CFB paper taker loop (reads tape, places nothing)",
     }
     try:
         out = subprocess.run(
