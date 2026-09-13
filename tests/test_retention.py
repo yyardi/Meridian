@@ -127,14 +127,17 @@ def _snap(captured_at):
 
 @needs_partitions
 def test_rows_route_to_their_month_partition(clean_rows):
-    aug = dt.datetime(2026, 8, 3, 1, 0, tzinfo=UTC)
+    # THIS month, not a hardcoded one: migrate() creates partitions from
+    # now forward, so a fixed 2026-08 date routed to _default the moment
+    # the calendar left August and the test read as a routing failure.
+    at = month_start(dt.datetime.now(UTC)) + dt.timedelta(hours=1)
     with _Session() as s:
-        s.add(_snap(aug))
+        s.add(_snap(at))
         s.commit()
         part = s.execute(text(
             "select tableoid::regclass::text from market_snapshots "
             "where market_slug = :m"), {"m": SLUG}).scalar()
-    assert part == "market_snapshots_y2026m08"
+    assert part == f"market_snapshots_y{at:%Y}m{at:%m}"
 
 
 @needs_partitions
@@ -173,7 +176,7 @@ def test_on_conflict_idempotency_survives_partitioning(clean_rows):
 def test_book_levels_partitioned_and_unique_constraint_survives(clean_rows):
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    at = dt.datetime(2026, 8, 3, 3, 0, tzinfo=UTC)
+    at = month_start(dt.datetime.now(UTC)) + dt.timedelta(hours=3)
     with _Session() as s:
         s.add(_snap(at))
         s.commit()
@@ -188,7 +191,7 @@ def test_book_levels_partitioned_and_unique_constraint_survives(clean_rows):
         part, n = s.execute(text(
             "select tableoid::regclass::text, count(*) from book_levels "
             "where snapshot_id = :s group by 1"), {"s": sid}).one()
-    assert part == "book_levels_y2026m08"
+    assert part == f"book_levels_y{at:%Y}m{at:%m}"
     assert n == 1
 
 
