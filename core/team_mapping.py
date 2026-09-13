@@ -284,3 +284,35 @@ def orient_for_slug(
                 first_is_home=(found.home_abbrev == parsed.first_espn),
             )
     return None
+
+
+def human_market(market_slug: str, market_type: str | None, line: float | None) -> str:
+    """Turn a Polymarket slug into something a human can act on.
+
+    Lives here, with `parse_market_slug`, because that is its only real input.
+    It used to live in `core/api.py`, and the two live-FV engines imported it
+    from there INSIDE A FUNCTION -- so calling that function pulled the whole
+    FastAPI app into an engine at runtime: **9 project modules became 34, 1,060
+    total became 1,426, and `fastapi` was loaded inside a price engine.**
+    Import-time graphs looked clean the whole time, which is why it survived.
+
+    `ny-phx-pos-10pt5` is unreadable and, worse, invites the wrong reading:
+    it looks like "NY by 10.5" when it means "NY **+**10.5" — NY *getting* the
+    points. Those are opposite bets. The slug's first team is the side the
+    market is quoted from (positional only; it is NOT necessarily the away
+    team), so the label names it explicitly.
+    """
+    parsed = parse_market_slug(market_slug)
+    first = parsed.first_espn.upper() if parsed else "?"
+
+    if (market_type or "").endswith("total"):
+        return f"Total {line:g}" if line is not None else "Total"
+    if (market_type or "").endswith("winner"):
+        return f"{first} to win"
+    if (market_type or "").endswith("spread"):
+        if line is None:
+            return f"{first} spread"
+        # `-pos-` in the slug means the quoted team is GETTING points.
+        sign = "+" if "-pos-" in market_slug else "-"
+        return f"{first} {sign}{abs(line):g}"
+    return market_slug
