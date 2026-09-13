@@ -114,6 +114,30 @@ Kalshi-NFL shape, a third time.
 distinct non-NULL values per league before trusting a report that reads off the
 join. Three leagues have now been caught this way and none by being told.
 
+**★ Table tennis is the only market on this venue where a strategy can be
+READ quickly, and that is a bigger lever than any edge found so far.** Measured
+against the venue at 22:40Z: the four Setka Cup competitions list **301 events
+inside the next ~18 hours** (setkameua 200, setkamecz 48, setkamemd 38,
+setkawoua 15). Every other family is volume-starved by comparison:
+
+| league | games available | G = 100 reached in |
+|---|---|---|
+| table tennis | ~300 / day | ~8 hours |
+| MLB | ~15 / day | ~1 week |
+| CFB | ~45 / Saturday | ~3 weeks |
+| WNBA (in season) | ~6 / day | ~2 weeks |
+| NFL | ~16 / week | ~1.5 months |
+
+This does NOT say there is an edge there — the discovery found 1–2¢ spreads and
+a median 27k shares resting, i.e. a tight, liquid, well-attended book, and the
+0.06·p(1−p) fee is 6% of a 50¢ ticket against a 1–2¢ spread, so taking is
+expensive. What it says is that **a table-tennis question gets ANSWERED in two
+days where a football question takes the rest of the season**, and every read
+this project is waiting on is waiting on games. The registered CFB lines need
+5–12 Saturdays; the same statistical power exists in TT by Tuesday. It is the
+first structural route to the operator's number that is not "wait for more
+football". Requires the recorder to actually run.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
