@@ -216,3 +216,83 @@ def test_cadence_falls_back_to_fast_poll_when_board_unavailable(clean_db):
 
     rec = _recorder(DeadClient(), clean_db)
     assert rec.next_interval_seconds() == rec.config.interval_near_tipoff_seconds
+
+
+# --------------------------------------------------------------------- #
+# game_id is a JOIN KEY and a CLUSTER KEY, so NULL is not "missing", it is
+# a league that silently records nothing usable.
+# --------------------------------------------------------------------- #
+def _event(**kw):
+    from core.polymarket.schemas import Event
+    return Event(**kw)
+
+
+def _stats():
+    from core.recorder import RecorderStats
+    return RecorderStats()
+
+
+def test_a_us_team_sport_event_still_uses_the_venues_game_id():
+    """Control first: the fallback must not take over the normal path."""
+    from core.recorder import _event_key
+
+    st = _stats()
+    ev = _event(id="ev-1", slug="mlb-bal-tor-2026-09-13", gameId=10079518)
+    assert _event_key(ev, st) == "10079518"
+    assert st.game_id_from_fallback == 0
+
+
+def test_a_cricket_shaped_event_gets_an_id_instead_of_null():
+    """★ THE DEFECT. The venue sends `gameId` on US team sports and not on
+    cricket or table tennis. Left NULL:
+
+      * run_paper_book joins `g.game_id = s.game_id`, NULL never equals NULL,
+        so every strategy in that league prints "no markets on tape" forever
+        and it reads as a quiet league. Third league this has hit.
+      * clustered() keys on game_id, so a join that ever succeeded with NULLs
+        coerced would put every bet in ONE cluster — an interval that is
+        arithmetic, not evidence. A number is worse than a blank.
+
+    `event_id` and `event_slug` are already on the same row, so the fallback
+    needs no new data and no slug parsing.
+    """
+    from core.recorder import _event_key
+
+    st = _stats()
+    ev = _event(id="ev-cplcr-1", slug="cplcr-bra-gaw-2026-09-13")
+    assert _event_key(ev, st) == "ev-cplcr-1"
+    assert st.game_id_from_fallback == 1, "the fallback must be COUNTED"
+    assert st.game_id_missing == 0
+
+
+def test_an_event_with_only_a_slug_falls_back_to_it():
+    from core.recorder import _event_key
+
+    st = _stats()
+    assert _event_key(_event(slug="cplcr-bra-gaw-2026-09-13"), st) == \
+        "cplcr-bra-gaw-2026-09-13"
+
+
+def test_an_event_with_no_identifier_at_all_is_counted_not_guessed():
+    """The fix must not silently do nothing either. No identifier means no
+    key — counted and logged, never a manufactured one."""
+    from core.recorder import _event_key
+
+    st = _stats()
+    assert _event_key(_event(title="something with no ids"), st) is None
+    assert st.game_id_missing == 1
+    assert st.game_id_from_fallback == 0
+
+
+def test_the_snapshot_row_itself_carries_the_key_not_just_the_helper():
+    """Asserted at the CALL SITE. A helper that returns the right value and a
+    row that stores `event.game_id` anyway would pass every test above — that
+    is the shape that has bitten me twice this week."""
+    import inspect
+
+    from core import recorder
+
+    src = inspect.getsource(recorder.Recorder._record_market)
+    assert '"game_id": _event_key(event, stats)' in src, (
+        "the snapshot row does not use the fallback key")
+    assert '"game_id": event.game_id,' not in src

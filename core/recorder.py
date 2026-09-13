@@ -58,6 +58,45 @@ class RecorderStats:
         self.books_written = 0
         self.market_errors = 0
         self.book_errors = 0
+        #: Events whose `gameId` was absent and whose id came from the
+        #: fallback, and events with NO usable identifier at all. Counted so
+        #: the fallback cannot silently become the normal path, and so a
+        #: league arriving with neither is LOUD rather than NULL.
+        self.game_id_from_fallback = 0
+        self.game_id_missing = 0
+
+
+def _event_key(event: Event, stats: RecorderStats) -> str | None:
+    """A stable per-event id for `game_id`, which is a JOIN KEY and a CLUSTER KEY.
+
+    The venue sends `gameId` on US team sports and NOT on cricket or table
+    tennis, whose events are shaped differently. Left NULL, the consequences
+    are both silent:
+
+    * `run_paper_book`'s CLOSE_SQL does `JOIN g ON g.game_id = s.game_id`, and
+      NULL never equals NULL — so every strategy in that league finds zero
+      markets forever and prints "no markets on tape", which reads as a quiet
+      league rather than a broken join. Third league this has happened to.
+    * `clustered(vals, keys)` keys on game_id, so had the join ever succeeded
+      with NULLs coerced, every bet would land in ONE cluster and the interval
+      would be arithmetic rather than evidence — a number, not a blank, which
+      is the worse failure.
+
+    `event_id` and `event_slug` are already recorded on the same row and are
+    per-event, so the fallback needs no new data and no slug parsing. Both are
+    counted: a fallback that quietly became the normal path would hide the
+    venue changing shape under us, and an event with NO identifier writes
+    nothing rather than a NULL that reads as a row.
+    """
+    key = event.game_id or event.id or event.slug
+    if key is None:
+        stats.game_id_missing += 1
+        log.error("event_without_any_id", event_slug=event.slug,
+                  event_title=event.title)
+        return None
+    if event.game_id is None:
+        stats.game_id_from_fallback += 1
+    return key
 
 
 class Recorder:
@@ -159,6 +198,11 @@ class Recorder:
             books=stats.books_written,
             market_errors=stats.market_errors,
             book_errors=stats.book_errors,
+            # On the cycle line, not just on the counter: a fallback nobody
+            # can see becoming the normal path is how the venue changes shape
+            # without anyone noticing.
+            game_id_from_fallback=stats.game_id_from_fallback,
+            game_id_missing=stats.game_id_missing,
             duration_s=round(time.monotonic() - started, 2),
         )
         return stats
@@ -206,7 +250,7 @@ class Recorder:
             "market_id": market.id,
             "event_slug": event.slug,
             "event_id": event.id,
-            "game_id": event.game_id,
+            "game_id": _event_key(event, stats),
             "sports_market_type": market.sports_market_type,
             "line": market.line,
             "best_bid": market.best_bid,
