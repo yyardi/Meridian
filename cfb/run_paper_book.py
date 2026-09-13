@@ -15,6 +15,8 @@ paper lines are positive, on how many games, with what interval -- and the
 same table next Monday. Fees: taker 0.06*p*(1-p) on Polymarket US.
 
 Registered 2026-09-13. LEAGUES env (comma list) limits the run; default all. ONLY=name,name limits strategies.
+Settled labels are cached by core/settlements.py (one JSON file under the reads dir) so a daily run
+costs a few HTTP calls instead of ~18k; only 0/1 is ever cached, an unsettled market is re-asked.
 Cron: scripts/prod_weekend_read.sh (gate mode, Monday) runs it after H4 and
 writes stdout to artifacts/reads/paper_book_<UTC>.txt.
 
@@ -129,15 +131,9 @@ def main():
         cur = c.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); c.commit()
 
     client = PolymarketGatewayClient()
-    _settle = {}
-    def settlement(slug):
-        if slug not in _settle:
-            try:
-                r = client.get_settlement(slug); s = r.get("settlement")
-                _settle[slug] = int(s) if s in (0, 1, "0", "1") else None
-            except Exception:
-                _settle[slug] = None
-        return _settle[slug]
+    from core import settlements
+    _settle = settlements.load(); _hits = len(_settle)
+    settlement = settlements.settler(client, _settle)
 
     leagues = [x for x in os.environ.get("LEAGUES", "cfb,nfl,wnba,mlb").split(",") if x]
     since = dt.datetime.now(UTC) - dt.timedelta(days=int(os.environ.get("DAYS", "60")))
@@ -175,6 +171,8 @@ def main():
         staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
         v = "UNDERPOWERED (G<25)" if G < 25 else ("POSITIVE, excludes 0" if m - h > 0 else ("NEGATIVE, excludes 0" if m + h < 0 else "spans 0"))
         print(f"{name:<26}{n:>6}{G:>6}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}   {v}")
+    settlements.save(_settle)
+    print(f"\nsettlement cache {settlements.PATH}: {_hits:,} reused, {len(_settle) - _hits:,} fetched, {len(_settle):,} stored")
     print("\nP&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a candidate")
     print("at G >= 25 AND excludes 0 AND its home/away twin does not contradict it; nothing here is sized or armed.")
 
