@@ -15,9 +15,9 @@ class _Venue:
 
 def test_round_trip_keeps_only_real_labels(tmp_path):
     f = tmp_path / "s.json"
-    settlements.save({"a": 1, "b": 0, "c": None, "d": "1"}, f)
-    assert settlements.load(f) == {"a": 1, "b": 0}
-    assert json.loads(f.read_text()) == {"a": 1, "b": 0}
+    settlements.save({"a": 1, "b": 0, "c": None, "d": "1", "e": 0.5, "f": True}, f)
+    assert settlements.load(f) == {"a": 1, "b": 0, "d": 1, "e": 0.5}   # strings are the venue's; bools are not labels
+    assert json.loads(f.read_text()) == {"a": 1, "b": 0, "d": 1, "e": 0.5}
 
 
 def test_missing_or_corrupt_file_is_an_empty_cache(tmp_path):
