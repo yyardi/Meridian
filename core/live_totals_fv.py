@@ -281,7 +281,7 @@ def build_live_totals_fv(session, *, within_hours: float = 6.0) -> list[TotalsFV
     """One row per live totals rung. Reads only; builds no order."""
     from sqlalchemy import text
 
-    from core.api import _human_market
+    from core.team_mapping import human_market as _human_market
 
     rows = session.execute(text("""
         SELECT DISTINCT ON (market_slug)
