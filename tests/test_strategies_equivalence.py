@@ -161,3 +161,64 @@ def test_the_sandbox_refuses_a_ladder_strategy_rather_than_running_the_quote_one
 def test_the_sandbox_knows_the_multi_competition_sports():
     sb = _sandbox()
     assert {"cricket", "tabletennis"} <= set(sb.SPORTS)
+
+
+# --------------------------------------------------------------------- #
+# The MLB winner pair. One market per game, YES = the away side.
+# --------------------------------------------------------------------- #
+def _mlb_winner(slug, mid_price):
+    half = 0.005
+    return {"market_slug": slug, "game_id": slug, "league": "mlb",
+            "mtype": "baseball_team_full_game_winner",
+            "bid": mid_price - half, "ask": mid_price + half}
+
+
+def test_the_mlb_winner_pair_is_disjoint_and_may_select_neither():
+    """`mlb_winner_fav_yes` (mid >= 0.60) and `mlb_winner_dog_yes` (mid <= 0.40)
+    both take side="yes" on the SAME market type, so whether they are a real
+    comparison or an arithmetic identity depends on the board's shape.
+
+    The venue lists ONE winner market per game — `aec-mlb-{away}-{home}-{date}`,
+    verified on the tape 2026-09-14, maximum 1 distinct winner slug per
+    game_id — and YES is the away side (strategies/ladder.py names nfl/cfb/mlb
+    as the exception to YES-is-home). So the two rules partition GAMES by the
+    away price, and cannot both hold: a mid cannot be >= 0.60 and <= 0.40.
+    They are evidence, not a complement pair.
+
+    They can both MISS, and usually do: on the same tape, of 49 winner markets
+    with a two-sided quote, 17 are fav and 4 are dog — 28, fifty-seven per
+    cent, are selected by neither. That is by design and is now printed by
+    run_paper_book's per-league coverage line rather than being invisible.
+    """
+    rows = [_mlb_winner("aec-mlb-fav-hhh-2026-09-13", 0.75),
+            _mlb_winner("aec-mlb-mid-hhh-2026-09-13", 0.50),
+            _mlb_winner("aec-mlb-dog-hhh-2026-09-13", 0.25)]
+    chosen = select(rows)
+    fav = {b.market_slug for b in chosen.get("mlb_winner_fav_yes", [])}
+    dog = {b.market_slug for b in chosen.get("mlb_winner_dog_yes", [])}
+
+    assert not (fav & dog), (
+        "the same market was taken by both rules — they would be a complement "
+        "pair and 'favourites beat dogs' would be arithmetic, not evidence")
+    # Controls: disjointness is also satisfied by two rules that select
+    # nothing, so each side must demonstrably hit.
+    assert fav == {"aec-mlb-fav-hhh-2026-09-13"}
+    assert dog == {"aec-mlb-dog-hhh-2026-09-13"}
+    assert "aec-mlb-mid-hhh-2026-09-13" not in (fav | dog), (
+        "a market priced between the thresholds was selected by something")
+
+
+def test_the_mlb_winner_thresholds_leave_a_gap_on_purpose():
+    """The boundary, pinned: 0.60 and 0.40 are inclusive on their own side and
+    the interval between them belongs to neither. A later widening to
+    mid > 0.40 / mid < 0.60 would make them a partition and quietly turn the
+    comparison into an identity."""
+    rows = [_mlb_winner("aec-mlb-a-h-2026-09-13", 0.60),
+            _mlb_winner("aec-mlb-b-h-2026-09-13", 0.40),
+            _mlb_winner("aec-mlb-c-h-2026-09-13", 0.55)]
+    chosen = select(rows)
+    fav = {b.market_slug for b in chosen.get("mlb_winner_fav_yes", [])}
+    dog = {b.market_slug for b in chosen.get("mlb_winner_dog_yes", [])}
+    assert fav == {"aec-mlb-a-h-2026-09-13"}
+    assert dog == {"aec-mlb-b-h-2026-09-13"}
+    assert not (fav & dog)
