@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 21:40Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 22:00Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -10,6 +10,8 @@ Plan for the live candidate: `docs/math/longshot-no-candidate.md`.
 # one paste from the laptop: builds MLB, api, both paper scalp engines, Kalshi, cricket + table-tennis recorders on the box, then lists them
 ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder && sudo docker compose up -d --build api && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb && sudo docker compose up -d --build kalshi-recorder && sudo docker compose -f docker-compose.yml -f docker-compose.cricket.yml up -d --build cricket-recorder tt-recorder && sudo docker compose -f docker-compose.yml -f docker-compose.cricket-espn.yml up -d --build cricket-espn-recorder && sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp|kalshi|cricket|tt-"'  # seven services
 ```
+**Verified 19:26Z: the daily MLB read now runs end to end on the box** (`scripts/prod_weekend_read.sh mlb`, exit 0 both jobs, "NOTHING TO REPORT" until the recorder has tape — the honest empty output). The venue-client reads no longer `docker exec` into the api container: they run a one-off container off the api image with `/opt/meridian/core` and `/opt/meridian/strategies` mounted, so they track git, not the last rebuild. That was not cosmetic — `docker exec` died on `No module named 'strategies.ladder'`, so **Monday 10:20Z would have produced no paper book**; it is now safe with or without the rebuild. The rebuild still matters for the dashboard: /scoreboard and the honest PULSE page are in the image, not the mount.
+
 Prod git is at origin/main (main-deploy); compose is classifier-blocked for the manager (an allow rule cannot match the `$(cat …)` prefix; an ssh alias `meridian-prod` would), so the paste is yours. **Hard dependency: Monday 10:20Z's paper book imports strategies/ladder.py and core/settlements.py, neither in the 09-05 api image — the api rebuild must happen before then or the read fails.**
 
 Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated on 09-06.
@@ -71,10 +73,13 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 | researcher 3 (done) | momentum scalp grid: measured negative with power, see §3 |
 | honest dashboard + JSON scoreboard | MERGED 09-13 (080aa97, 5891b4b, −255 lines); live after command 2 above |
 | Builder D (done) | football in-game PAPER taker loop `core/gridiron/scalp.py` — MERGED 09-13 19:40Z, 47 rule tests, read-only by construction; live after command 3 above; parameters get refitted from tonight's backtest |
+| Quant B | in-game extreme-price hold to settlement: the fee is 0.06·p(1−p), so a 95¢ ticket pays 0.3% round trip against 6.0% at 50¢, and holding to settlement pays entry only — the one price region every measured strategy never reached. Bands 0.90–0.99 both sides, by period, one entry per game per band |
+| research/audit | pre-registration for 09-19 with the multiplicity correction (~20 registered lines, several found in the data they will be read on), and a second-route audit of tonight's decomposition headline |
 | researcher 4 (done) | cricket / TT discovery: 15 cricket events (CPL liquid), 4 Setka Cup TT leagues (69 events/day, 1–2¢), YES = home there; ENG v SL was England Lions; ESPN header/summary endpoints give toss, innings, result; Cricinfo 403 |
 | Builder D (done) | league sweep: cricket/TT slugs resolved to NO league (fixed, 8 consumers route through one function); strategies/ interface (base.py, ladder.py) with a 198-row oracle proving identical selection; sandbox guard against a ladder name running the quote query — all MERGED |
 | Builder D (done) | cricket + table-tennis recorder overlay (docker-compose.cricket.yml, venue_leagues sweep, expected-vs-observed per competition, settlements accept 0.5, six paper lines registered) — MERGED, in the paste above |
 | builder (ESPN cricket feed, done) | core/feeds/espn_cricket_recorder.py (197 lines): toss timestamp, innings, result per match, change-detected — MERGED, in the paste |
+| Debugger (done) | **production defect**: `core/retention.py` kept its index lists by hand and `migrate()` dropped the two tipoff partial indexes (the ones that took /api/picks from 4.75s to 0.42s); now read from the catalog. Also: the suite's order-dependence was `test_retention`'s destructive fixture on the shared DB, not a flaky test, and the "wallet NULL state cannot exist" claim was RETRACTED by its author — the column is still nullable and the historical tape needs that branch. Full suite 21 failed/1631 passed → 19 failed/1641 passed/0 errors — MERGED |
 | Debugger (done) | suite triage: 23 → 3 failures, 0 dead tests, fixtures and guards fixed, stale infra docs reduced to pointers — MERGED |
 | Builder D (done) | human_market moved out of core/api.py: the engines no longer load FastAPI on first label call (34 → 10 modules) — MERGED |
 | codebase map / Kalshi–DK lag / shadow lister | merged earlier 09-13 |
