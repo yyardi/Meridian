@@ -1166,3 +1166,44 @@ class AccountBalance(Base):
     __table_args__ = (
         Index("ix_account_balances_observed_at", "observed_at"),
     )
+
+
+class PaperScalp(Base):
+    """One CLOSED paper scalp. Written by `core/gridiron/scalp.py`, never by a
+    trader — this table is a record of what a rule WOULD have done on the tape
+    the recorders already hold, and nothing in the engine can place an order.
+
+    Rows appear only on exit, so an open position is not in here; the engine
+    holds it in memory and a restart drops it. That is deliberate: a position
+    reconstructed after a gap would be priced off a tape nobody was watching,
+    and a paper book that quietly resumes is the one that flatters itself.
+    """
+
+    __tablename__ = "paper_scalps"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    league: Mapped[str] = mapped_column(String(16), nullable=False)
+    game_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    market_slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    #: 'yes' = the AWAY team's side, 'no' = the home team's. YES is always away
+    #: on this venue, so the side alone says which team the ticket backed.
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    entered_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    entry_px: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    exit_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    exit_px: Mapped[Decimal] = mapped_column(Price, nullable=False)
+    #: tp | stop | drive_end | final | stale
+    exit_reason: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: money is Numeric, not float: these rows are summed per league on the
+    #: dashboard and a float sum of many small tickets drifts visibly
+    pnl: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    fee: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    #: the full parameter set this row was produced under, so a table holding
+    #: rows from two settings is still readable rather than a mixture
+    params: Mapped[dict | None] = mapped_column(JSONB)
+
+    __table_args__ = (
+        Index("ix_paper_scalps_exit_at", "exit_at"),
+        Index("ix_paper_scalps_league_exit_at", "league", "exit_at"),
+    )
