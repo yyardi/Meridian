@@ -2171,12 +2171,24 @@ def quote_status() -> dict:
             "settlement": r.settlement,
         } for r in recent],
         "floors": {"fills": FLOOR_FILLS, "games": FLOOR_GAMES},
+        # Per regime, per POPULATION. `capture` is gone rather than nulled: it
+        # is an identity, and a null would render as blank and read as "no data
+        # yet" — the exact rule-22 failure the removal is meant to prevent.
+        # Floors and the verdict bind on `real` only; the blend is never scored.
         "regimes": {name: {
             "n_fills": rep.n_fills, "n_settled": rep.n_settled,
-            "n_games": rep.n_games, "staked": round(rep.staked, 2),
-            "returned": round(rep.returned, 2),
-            "roi": _cm(rep.roi_clustered),
-            "capture": _cm(rep.capture_clustered),
+            "n_games": rep.n_games,
+            "phantom_share": rep.phantom_share,
+            "capture_retired": "identity, not a measurement — "
+                               "docs/math/adverse-selection-measured.md",
+            "populations": {pop: {
+                "n_fills": p.n_fills, "n_settled": p.n_settled,
+                "n_games": p.n_games, "staked": round(p.staked, 2),
+                "returned": round(p.returned, 2),
+                "per_fill_cents": p.per_fill_cents,
+                "roi": _cm(p.roi_clustered),
+                "at_floor": p.at_floor, "verdict": p.verdict,
+            } for pop, p in sorted(rep.populations.items())},
             "at_floor": rep.at_floor, "verdict": rep.verdict,
         } for name, rep in sorted(reports.items())},
     }
