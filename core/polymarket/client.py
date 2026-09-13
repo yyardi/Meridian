@@ -140,6 +140,22 @@ class PolymarketGatewayClient:
         raw = self._get(f"/v2/leagues/{league}/events", params={"limit": limit})
         return EventsResponse.model_validate(raw), raw
 
+    def get_sports_listing(self) -> dict[str, int]:
+        """`{venue league slug: activeEventCount}` from /v2/sports.
+
+        The venue's own count of what is live, which is the only way to tell a
+        genuinely quiet competition from a slug that does not exist -- an
+        unknown league returns 200 with `events: []`, not a 404.
+        """
+        raw = self._get("/v2/sports")
+        out: dict[str, int] = {}
+        for sport in raw.get("sports", []) or []:
+            for lg in (sport or {}).get("leagues", []) or []:
+                slug, n = lg.get("slug"), lg.get("activeEventCount")
+                if slug is not None and isinstance(n, int):
+                    out[str(slug)] = n
+        return out
+
     def get_book(self, market_slug: str) -> tuple[BookResponse, dict[str, Any]]:
         raw = self._get(f"/v1/markets/{market_slug}/book")
         return BookResponse.model_validate(raw), raw

@@ -92,18 +92,35 @@ class Recorder:
         stats = RecorderStats()
         started = time.monotonic()
 
+        # A league can be ONE venue slug (wnba, nfl) or several (cricket ->
+        # cplcr/t20icr/.../county). Sweeping them in one cycle keeps one
+        # heartbeat row per process, which is what the health check counts.
         try:
-            parsed, raw = self._client.get_league_events()
-        except Exception as exc:
-            # The board call is the one failure we cannot work around — without
-            # it there is nothing to record. Log and let the loop retry.
-            log.error("board_fetch_failed", error=str(exc), exc_info=True)
+            from core.leagues import LEAGUES
+            venue_leagues = LEAGUES[self.config.league_slug].venue_leagues
+        except Exception:
+            venue_leagues = (self.config.league_slug,)
+
+        boards, raw_events = [], {}
+        for vl in venue_leagues:
+            try:
+                parsed_vl, raw_vl = self._client.get_league_events(league=vl)
+            except Exception as exc:
+                # One competition failing must not cost the others; the whole
+                # cycle is lost only when every one of them fails.
+                log.error("board_fetch_failed", venue_league=vl, error=str(exc), exc_info=True)
+                continue
+            boards.append((vl, parsed_vl))
+            for e in raw_vl.get("events", []):
+                if isinstance(e, dict):
+                    raw_events[str(e.get("slug"))] = e
+        if not boards:
             return stats
+        self._log_expected_vs_observed(venue_leagues, boards)
 
-        raw_events = {str(e.get("slug")): e for e in raw.get("events", []) if isinstance(e, dict)}
-
+        events = [e for _vl, parsed in boards for e in parsed.events]
         with self._Session() as session:
-            for event in parsed.events:
+            for event in events:
                 raw_event = raw_events.get(event.slug or "", {})
                 raw_markets = {
                     str(m.get("slug")): m
@@ -145,6 +162,32 @@ class Recorder:
             duration_s=round(time.monotonic() - started, 2),
         )
         return stats
+
+    def _log_expected_vs_observed(self, venue_leagues, boards) -> None:
+        """What the venue's own listing SAYS is live, against what we swept.
+
+        An unknown or empty competition returns **200 with `events: []`**, never
+        a 404, so a quiet board and a wrong slug are the same response. This is
+        the only thing that tells them apart: `/v2/sports` carries
+        `activeEventCount` per league, so a slug expecting 69 and sweeping 0 is
+        visible in the log instead of looking like a slow night.
+
+        Never raises: a listing that fails must cost the log line, not the
+        cycle. Absence of this line is itself the signal that it did.
+        """
+        observed = {vl: len(parsed.events) for vl, parsed in boards}
+        try:
+            listing = self._client.get_sports_listing()
+        except Exception as exc:
+            log.info("listing_unavailable", error=str(exc),
+                     observed=observed, swept=len(venue_leagues))
+            return
+        for vl in venue_leagues:
+            exp = listing.get(vl)
+            obs = observed.get(vl)
+            log.info("board_coverage", venue_league=vl, expected=exp, observed=obs,
+                     missing=(exp is not None and obs is not None and obs < exp),
+                     not_swept=(obs is None))
 
     def _record_market(
         self,

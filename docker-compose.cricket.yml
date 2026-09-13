@@ -1,0 +1,48 @@
+# CRICKET + TABLE TENNIS RECORDING overlay (2026-09-13).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cricket.yml up -d --build cricket-recorder tt-recorder
+#
+# RECORDING ONLY: pregame board sweeps, no live recorder, no engine, nothing
+# here can place an order.
+#
+# One container per MERIDIAN_LEAGUE, each sweeping SEVERAL venue competitions
+# per cycle (core/leagues.py venue_leagues) -- the venue splits cricket into
+# cplcr/t20icr/t20iwcr/odicr/county and table tennis into four Setka slugs.
+# One heartbeat row per container (pregame_recorder_cricket / _tabletennis),
+# which is what scripts/health.py counts.
+#
+# Verified against the venue 2026-09-13: one market per event,
+# cricket_match_winner / table_tennis_match_winner, slug aec-<event slug>, no
+# line. Rate: cricket ~15 events and table tennis ~97 a day, one market each,
+# so a sweep is ~15 and ~97 requests -- trivially inside RPS 2.
+#
+# TWO THINGS THAT DIFFER FROM EVERY EXISTING LEAGUE:
+#   * YES IS THE HOME TEAM HERE. On football and MLB, YES is the away team.
+#     Measured across the whole 2026-09-13 sweep: nfl/cfb/mlb carry
+#     (long=True, ordering="away"); cricket, table tennis, tennis, soccer,
+#     esports, ufc and darts all carry (long=True, ordering="home"). The three
+#     US leagues are the exception, not cricket.
+#   * SETTLEMENT CAN BE 0.5. county is first-class, so a draw is a tie and
+#     settles at a half. Everything downstream that assumed 0/1 has to say so.
+services:
+  cricket-recorder:
+    build: .
+    container_name: meridian-cricket-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &cr_env
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: cricket
+      MERIDIAN_RPS: "2"
+  tt-recorder:
+    build: .
+    container_name: meridian-tt-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *cr_env
+      MERIDIAN_LEAGUE: tabletennis

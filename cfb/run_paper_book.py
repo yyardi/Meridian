@@ -36,6 +36,20 @@ UTC = dt.timezone.utc
 def mid(r): return (r["bid"] + r["ask"]) / 2
 
 
+def venue_patterns(lg):
+    """The venue slugs a league's markets are named with. Usually just itself.
+
+    Cricket and table tennis are split into competitions by the venue, so
+    `%-cricket-%` would match nothing at all -- an empty table that reads as a
+    quiet night rather than a wrong pattern.
+    """
+    try:
+        from core.leagues import LEAGUES
+        return LEAGUES[lg].venue_leagues
+    except Exception:
+        return (lg,)
+
+
 # --------------------------------------------------------------------------- #
 # The JSON the SCOREBOARD page reads. Written beside the txt, by the producer
 # that already has every number -- so the page's shape is fixed HERE, not
@@ -90,6 +104,22 @@ STRATEGIES = {
                                    rule=lambda r: 0.20 <= mid(r) < 0.30),
     "wnba_spread_yes_80_100": dict(league="wnba", types=("full_game_spread",), side="yes",
                                    rule=lambda r: mid(r) >= 0.80),
+    # --- cricket and table tennis, registered 2026-09-13 BEFORE any tape.
+    # YES IS THE HOME TEAM on these (nfl/cfb/mlb are the exception, not these).
+    # county can settle 0.5 on a draw, which bet_pnl handles arithmetically:
+    # a half settlement pays half the ticket and still charges the full fee.
+    "cricket_home_yes_all":   dict(league="cricket", types=("match_winner",), side="yes",
+                                   rule=lambda r: True),
+    "cricket_away_no_all":    dict(league="cricket", types=("match_winner",), side="no",
+                                   rule=lambda r: True),
+    "cricket_home_fav_yes_60": dict(league="cricket", types=("match_winner",), side="yes",
+                                    rule=lambda r: mid(r) >= 0.60),
+    "cricket_home_dog_yes_40": dict(league="cricket", types=("match_winner",), side="yes",
+                                    rule=lambda r: mid(r) <= 0.40),
+    "tt_home_fav_yes_60":     dict(league="tabletennis", types=("match_winner",), side="yes",
+                                   rule=lambda r: mid(r) >= 0.60),
+    "tt_home_dog_yes_40":     dict(league="tabletennis", types=("match_winner",), side="yes",
+                                   rule=lambda r: mid(r) <= 0.40),
     "wnba_total_under_all":   dict(league="wnba", types=("full_game_total",), side="no",
                                    rule=lambda r: True),
     # --- the decomposition's cleaner versions (home-referenced twins), beside them
@@ -140,11 +170,11 @@ STRATEGIES = {
 CLOSE_SQL = """
 WITH g AS (
   SELECT game_id, min(game_start_time) ko FROM market_snapshots
-  WHERE market_slug LIKE :pat AND game_start_time IS NOT NULL AND captured_at > :since GROUP BY 1)
+  WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL AND captured_at > :since GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug, s.sports_market_type mtype, s.game_id, g.ko,
        s.best_bid::float bid, s.best_ask::float ask, s.captured_at
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
-WHERE s.market_slug LIKE :pat AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
+WHERE s.market_slug LIKE ANY(:pats) AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
   AND s.captured_at > :since AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL
   AND g.ko < now() - interval '4 hours'
 ORDER BY s.market_slug, s.captured_at DESC
@@ -209,12 +239,16 @@ def main():
     settlement = settlements.settler(client, _settle)
 
     preamble, weekly_rows, all_rows = [], [], []
-    leagues = [x for x in os.environ.get("LEAGUES", "cfb,nfl,wnba,mlb").split(",") if x]
+    leagues = [x for x in os.environ.get(
+        "LEAGUES", "cfb,nfl,wnba,mlb,cricket,tabletennis").split(",") if x]
     since = dt.datetime.now(UTC) - dt.timedelta(days=int(os.environ.get("DAYS", "60")))
     rows_by_league = {}
     with eng.connect() as c:
         for lg in leagues:
-            rows_by_league[lg] = [dict(r._mapping) for r in c.execute(text(CLOSE_SQL), {"pat": f"%-{lg}-%", "since": since})]
+            # A league is one venue slug (wnba) or several (cricket ->
+            # cplcr/county/...; see core/leagues.py). LIKE ANY takes both.
+            rows_by_league[lg] = [dict(r._mapping) for r in c.execute(
+                text(CLOSE_SQL), {"pats": [f"%-{v}-%" for v in venue_patterns(lg)], "since": since})]
             preamble.append(f"{lg}: {len(rows_by_league[lg]):,} markets with a pregame close, "
                             f"{len({r['game_id'] for r in rows_by_league[lg]})} games")
             print(preamble[-1])
