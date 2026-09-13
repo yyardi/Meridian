@@ -96,9 +96,10 @@ def test_an_ordinary_league_is_its_own_single_venue_slug(lg):
 def test_the_book_matches_every_competition_not_the_league_word():
     """`%-cricket-%` matches nothing at all on this venue — an empty table that
     reads as a quiet night rather than a wrong pattern."""
-    assert venue_patterns("cricket") == LEAGUES["cricket"].venue_leagues
-    assert venue_patterns("wnba") == ("wnba",)
-    assert venue_patterns("not-a-league") == ("not-a-league",)
+    assert venue_patterns("cricket") == tuple(
+        f"%-{v}-%" for v in LEAGUES["cricket"].venue_leagues)
+    assert venue_patterns("wnba") == ("%-wnba-%",)
+    assert venue_patterns("not-a-league") == ("%-not-a-league-%",)
 
 
 # --------------------------------------------------------------- settlements

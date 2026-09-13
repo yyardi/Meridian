@@ -37,17 +37,12 @@ def mid(r): return (r["bid"] + r["ask"]) / 2
 
 
 def venue_patterns(lg):
-    """The venue slugs a league's markets are named with. Usually just itself.
-
-    Cricket and table tennis are split into competitions by the venue, so
-    `%-cricket-%` would match nothing at all -- an empty table that reads as a
-    quiet night rather than a wrong pattern.
-    """
+    """LIKE patterns for a league's markets. core.leagues owns the rule."""
     try:
-        from core.leagues import LEAGUES
-        return LEAGUES[lg].venue_leagues
+        from core.leagues import venue_patterns as _vp
+        return _vp(lg)
     except Exception:
-        return (lg,)
+        return ("%-" + str(lg) + "-%",)
 
 
 # --------------------------------------------------------------------------- #
@@ -248,7 +243,7 @@ def main():
             # A league is one venue slug (wnba) or several (cricket ->
             # cplcr/county/...; see core/leagues.py). LIKE ANY takes both.
             rows_by_league[lg] = [dict(r._mapping) for r in c.execute(
-                text(CLOSE_SQL), {"pats": [f"%-{v}-%" for v in venue_patterns(lg)], "since": since})]
+                text(CLOSE_SQL), {"pats": list(venue_patterns(lg)), "since": since})]
             preamble.append(f"{lg}: {len(rows_by_league[lg]):,} markets with a pregame close, "
                             f"{len({r['game_id'] for r in rows_by_league[lg]})} games")
             print(preamble[-1])

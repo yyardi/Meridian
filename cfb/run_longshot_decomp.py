@@ -1,5 +1,8 @@
 """Longshot-NO decomposition on the full CFB tape (docs/math/longshot-no-candidate.md section 7: Q1, Q2, Q5).
 
+LADDER STUDY, football only. It decomposes spread rungs BY LINE; cricket and table
+tennis carry one lineless winner market per event, so there are no rungs.
+
 Runs inside meridian-api (venue client for settlement): docker exec -i -e LEAGUE=cfb meridian-api python - < this.
 Prices every rung at the paper book's close (CLOSE_SQL is cfb/run_paper_book.py's plus the line: last quote before
 the venue's game_start_time, within 6h), settles from the venue's own endpoint (unsettled skipped and counted), taker
