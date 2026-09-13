@@ -71,6 +71,26 @@ SCOREBOARD_INTERVAL = 60.0
 SUMMARY_INTERVAL = 20.0
 IDLE_INTERVAL = 300.0
 
+#: A GAME LEAVES THE LIVE BOARD BEFORE IT IS FINAL, and the recorder used to
+#: stop there. `refresh_live` only collects `state == "in"`, so the moment ESPN
+#: flips a game to `post` it drops out of the poll set and the terminal
+#: transition is never observed: live state, no result. Measured 2026-09-14 —
+#: 18 of 44 mapped games reached `post` on the best slate, 105 against 81 stuck
+#: at `in` over a 14-day census, and ZERO partially-settled games, which is a
+#: per-game stage failure rather than a per-rung one.
+#:
+#: So a departed game keeps being polled until `post` is OBSERVED. The exit is
+#: the STATE FIELD, never the clock: a game sits at `in` with 0:00 showing
+#: through reviews, between quarters and all of overtime, and display_clock is
+#: not a terminal signal (it reads "15:00" on a game already 21-0).
+SETTLE_INTERVAL_SECONDS = 60.0
+
+#: Bounded give-up. A game that never posts — abandoned, ESPN dropping it,
+#: a bad id — cannot be polled forever. Three hours after it LEAVES the board
+#: (not after kickoff), it is abandoned LOUDLY: a silent give-up is what
+#: produced this defect, so the log names the game and how long it waited.
+SETTLE_MAX_SECONDS = 3 * 3600.0
+
 #: US Eastern offset for scoreboard date math — ESPN scoreboards are keyed by
 #: the US-local date, so a late kickoff lands on the previous UTC day.
 _ET = dt.timezone(dt.timedelta(hours=-4))
@@ -274,6 +294,15 @@ class CfbLiveRecorder:
         self._live: set[str] = set()
         self._last_board = float("-inf")
         self._scoreboard_failures = 0
+        #: Games seen at `in` at least once, minus those observed at `post`.
+        #: The settle clock starts when a game LEAVES the board, not at kickoff.
+        self._seen_live: set[str] = set()
+        self._final: set[str] = set()
+        self._left_at: dict[str, float] = {}
+        self._settle_polled: dict[str, float] = {}
+        #: Last `state` each poll observed, recorded rather than returned so
+        #: poll_game keeps its (plays, wp, state_rows) signature.
+        self._observed: dict[str, str | None] = {}
 
     def _board_dates(self, now: dt.datetime) -> list[str]:
         et = now.astimezone(_ET)
@@ -343,6 +372,7 @@ class CfbLiveRecorder:
             log.error("cfb_game_state_unparsed", game_id=game_id,
                       error=str(exc))
             state = None
+        self._observed[game_id] = (state or {}).get("state")
         home = state.get("home") if state else None
         away = state.get("away") if state else None
         plays = parse_plays(payload, game_id, home, away)
@@ -368,21 +398,64 @@ class CfbLiveRecorder:
             s.commit()
         return np, nw, ns
 
+    def _settling(self, live: set[str], mono: float) -> list[str]:
+        """Games seen live, not yet observed at `post`, and due another poll.
+
+        Due, not every cycle: a finished game changes once — when it posts —
+        so polling 80 of them at the live cadence would cost what 80 live
+        games cost, for one transition each.
+        """
+        out = []
+        for gid in sorted(self._seen_live - live - self._final):
+            self._left_at.setdefault(gid, mono)
+            waited = mono - self._left_at[gid]
+            if waited > SETTLE_MAX_SECONDS:
+                # LOUD. A silent give-up is the defect this whole change fixes.
+                log.error("cfb_settle_abandoned", league=self.league,
+                          game_id=gid, waited_s=round(waited),
+                          last_state=self._observed.get(gid))
+                self._seen_live.discard(gid)
+                self._left_at.pop(gid, None)
+                self._settle_polled.pop(gid, None)
+                continue
+            if mono - self._settle_polled.get(gid, float("-inf")) >= \
+                    SETTLE_INTERVAL_SECONDS:
+                out.append(gid)
+        return out
+
     def cycle(self) -> dict:
         now = dt.datetime.now(dt.timezone.utc)
+        mono = time.monotonic()
         live = self.refresh_live(now)
+        self._seen_live |= live
+        settling = self._settling(live, mono)
+
         tot_p = tot_w = tot_s = 0
-        for gid in sorted(live):
+        for gid in sorted(live) + settling:
             try:
                 p, w, st = self.poll_game(gid)
                 tot_p += p; tot_w += w; tot_s += st
             except Exception as exc:
                 log.warning("cfb_summary_failed", game_id=gid, error=str(exc))
+            finally:
+                if gid in settling:
+                    self._settle_polled[gid] = mono
+            # THE STATE FIELD DECIDES, NOT THE CLOCK. A game sits at `in` with
+            # 0:00 through reviews, between quarters and all of overtime.
+            if self._observed.get(gid) == "post":
+                self._final.add(gid)
+                self._seen_live.discard(gid)
+                self._left_at.pop(gid, None)
+                self._settle_polled.pop(gid, None)
+                log.info("cfb_game_final", league=self.league, game_id=gid)
+
         log.info("espn_cycle", league=self.league, live_games=len(live),
+                 settling_games=len(settling),
                  scoreboard_failures=self._scoreboard_failures,
                  plays_attempted=tot_p, wp_attempted=tot_w,
                  state_rows=tot_s)
-        return {"live": len(live), "plays": tot_p, "wp": tot_w, "state": tot_s}
+        return {"live": len(live), "settling": len(settling), "plays": tot_p,
+                "wp": tot_w, "state": tot_s}
 
 
 def _make_client(league: str = "cfb") -> ESPNClient:
