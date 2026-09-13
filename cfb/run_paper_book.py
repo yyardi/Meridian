@@ -36,7 +36,7 @@ UTC = dt.timezone.utc
 # The registry moved to strategies/ladder.py (ARCHITECTURE.md §4 step 2) so the
 # sandbox and anything later read one table. `mid` comes with it: a rule and the
 # helper its predicates are written in cannot live in different files.
-from strategies.ladder import STRATEGIES, mid, select
+from strategies.ladder import COMPLEMENTS, STRATEGIES, mid, select
 
 
 def venue_patterns(lg):
@@ -222,6 +222,8 @@ def main():
         m, h, n, G, ge = clustered([100 * p for p, _, _ in w], [g for _, _, g in w])
         staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
         v = "UNDERPOWERED (G<25)" if G < 25 else ("POSITIVE, excludes 0" if m - h > 0 else ("NEGATIVE, excludes 0" if m + h < 0 else "spans 0"))
+        if name in COMPLEMENTS:   # same rows, other side: the pair carries ONE statistic
+            v += f" [complement of {COMPLEMENTS[name]}; beating it is arithmetic]"
         all_rows.append({"strategy": name, "league": STRATEGIES[name]["league"], "bets": n,
                          "games": G, "staked": round(staked), "pnl": pnl,
                          "net_per_dollar": pnl / staked if staked else 0, "ci": _ci(m, h),

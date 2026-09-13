@@ -19,6 +19,20 @@ def mid(r):
     return (r["bid"] + r["ask"]) / 2
 
 
+#: Names that select IDENTICAL rows with opposite sides. Their P&Ls sum to minus
+#: the round-trip cost (spread + both fees), a constant that does not depend on
+#: any outcome -- so one of a pair beating the other is arithmetic, not evidence,
+#: and the two carry one statistic between them. Printed beside the verdict so a
+#: reader cannot take "under beat over" for a finding (audit, 2026-09-13).
+COMPLEMENTS = {
+    "cfb_total_under_all": "cfb_total_over_all",
+    "nfl_total_under_all": "nfl_total_over_all",
+    "mlb_total_under_all": "mlb_total_over_all",
+    "mlb_f5_total_under_all": "mlb_f5_total_over_all",
+    "cricket_home_yes_all": "cricket_away_no_all",
+}
+COMPLEMENTS.update({v: k for k, v in list(COMPLEMENTS.items())})
+
 STRATEGIES = {
     # --- the two the operator asked to keep alive, exactly as they were found
     "cfb_spread_no_20_30":    dict(league="cfb",  types=("full_game_spread",), side="no",
