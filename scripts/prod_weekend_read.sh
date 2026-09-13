@@ -6,7 +6,9 @@
 #
 #   crontab (UTC):  50 15 * * 0  /opt/meridian/scripts/prod_weekend_read.sh preflight
 #                   20 10 * * 1  /opt/meridian/scripts/prod_weekend_read.sh gate
-#   modes: preflight (coverage + gate + H4), gate (the full block), h4 (H4 only, a fast check)
+#                   40 10 * * *  /opt/meridian/scripts/prod_weekend_read.sh mlb
+#   modes: preflight (coverage + gate + H4), gate (the full block), h4 (H4 only, a fast check),
+#          mlb (DAILY 10:40Z: the paper book on MLB only, then the MLB ladder calibration)
 #   gate mode also runs THE PAPER BOOK (cfb/run_paper_book.py, via the api container: it
 #   needs the venue client for settlement) into artifacts/reads/paper_book_<UTC>.txt.
 #
@@ -38,6 +40,25 @@ run_file() {  # run_file LABEL path/inside/app [args...]   (script run AS A FILE
   "${D[@]}" meridian-trainer python3 "$@" >> "$F" 2>&1
 }
 { echo "# weekend read  mode=$MODE  $(date -u)"; echo "# code: $(git rev-parse --short HEAD) $(git branch --show-current)"; } > "$F"
+
+# --------------------------------------------------------------------------- #
+# mlb: the daily read. Baseball needs no game map and no ESPN feed -- both the
+# paper book and the calibration settle from the VENUE's own endpoint -- so it
+# runs entirely in the api container (the trainer image has no venue client)
+# and returns before the football block. Settled labels are cached in
+# artifacts/reads/settlements.json, so the second run costs a few HTTP calls
+# instead of ~18k.
+# --------------------------------------------------------------------------- #
+if [ "$MODE" = mlb ]; then
+  { echo; echo "### PAPER BOOK, mlb  ($(date -u +%H:%MZ))"; } >> "$F"
+  docker exec -i -e LEAGUES=mlb meridian-api python - < cfb/run_paper_book.py >> "$F" 2>&1
+  echo "paper book exit $?" >> "$F"
+  { echo; echo "### MLB LADDER CALIBRATION  ($(date -u +%H:%MZ))"; } >> "$F"
+  docker exec -i -e LEAGUE=mlb meridian-api python - < cfb/run_ladder_calibration.py >> "$F" 2>&1
+  echo "calibration exit $?" >> "$F"
+  echo "wrote $F"
+  exit 0
+fi
 
 # 0. coverage: mapped games vs games with ESPN state and venue winner tape, last 3 days
 docker exec meridian-postgres psql -U meridian -d meridian -A -F'|' -c "
