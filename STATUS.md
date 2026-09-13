@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-14 00:00Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-14 00:30Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -74,9 +74,9 @@ book's own footer, and in the pre-registration.
 
 | defect | measurement | state |
 |---|---|---|
-| `/api/games` has no limit bound | `limit=-1` → 500 immediately; `limit=100000` → 200 in **29.1s**; a twelve-digit limit → 200 in 24.2s; `limit=abc` → 422 in 0.25s. An unauthenticated GET holds a worker for half a minute on a service bound to all interfaces | fix in progress (validation bound, both ends) |
+| ~~`/api/games` has no limit bound~~ | `limit=-1` → 500 immediately; `limit=100000` → 200 in **29.1s**; a twelve-digit limit → 200 in 24.2s; `limit=abc` → 422 in 0.25s. An unauthenticated GET holds a worker for half a minute on a service bound to all interfaces | **FIXED, merged** (432cbe9): all five limits declared `Query(ge, le)`, caps sourced from the callers that actually pass one, the silent clamp deleted. Live on the box only after the api rebuild |
 | ESPN recorder never observes the final | only ~41% of games reach `state='post'`; 14-day census 105 `post` vs 81 `in` | fix assigned; deploys Tuesday between slates |
-| `is_live` is never cleared | **5,364 of 12,160** markets whose last row says `is_live` are over a day stale (44%), so a dead stream and a frozen venue are indistinguishable by that flag alone | every consumer being listed; `scripts/alarm_v5.py` (merged) is the detector |
+| `is_live` is never cleared | **5,364 of 12,160** markets whose last row says `is_live` are over a day stale (44%), so a dead stream and a frozen venue are indistinguishable by that flag alone | **audited**: the scalp engine and the paper book never read it, and `core/board.py:market_state()` already guards it with the same 600s the alarm uses. What is affected is the fair-value path (`live_fv`, `live_totals_fv`, which bound on start time rather than capture time) and the analysis selectors, whose published populations include frozen tails — a statistics problem, not a monitoring one |
 | `core/retention.py` dropped two indexes | hand-kept index lists missed the tipoff partials that took `/api/picks` from 4.75s to 0.42s | FIXED, merged |
 
 ## 4. Registered reads (dates fixed, criteria written before the tape)
