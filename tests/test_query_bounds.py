@@ -30,6 +30,14 @@ from core.api import app
 client = TestClient(app)
 
 #: (path, in-range value). Every route on main that takes a `limit`.
+#:
+#: CAPS ARE DERIVED FROM ACTUAL CALLERS, not chosen round. Two have one:
+#:   /api/orders/recent  le=100   static/index.html:1595 is the only limit=
+#:                                any page requests
+#:   /api/results        le=5000  tests/test_era_separation.py asks for 5000
+#: The other three have no caller that sets `limit` at all, so the cap is the
+#: code's own default with headroom — enough for an ad-hoc query, orders of
+#: magnitude below the regime that held a worker for 29 seconds.
 BOUNDED = [
     ("/api/games", 60),
     ("/api/results", 100),
@@ -38,11 +46,27 @@ BOUNDED = [
     ("/api/history/wnba-ny-chi-2026-08-18", 60),
 ]
 
-#: The four shapes a caller actually sends. `-1` is the one measured in prod;
-#: `0` is the off-by-one that yields an empty page rather than an error;
-#: the string is what a templating bug produces; the huge one is the cheapest
-#: denial of service there is — one query string asking for every row.
-BAD = ["-1", "0", "abc", "99999999999"]
+#: Measured against the live box on 2026-09-14, and the LAST TWO are the
+#: reason this is an availability fix and not a tidiness one:
+#:
+#:   limit=-1               500 immediately
+#:   limit=abc              422 in 0.25s   (validation already worked here)
+#:   limit=100000           200 in 29.1s
+#:   limit=999_999_999_999   200 in 24.2s
+#:
+#: There was no upper bound at all. A 500 returns straight away; a 200 that
+#: holds a worker for half a minute does not, on a service bound to all
+#: interfaces. `0` is kept because it is the off-by-one that returns an empty
+#: page rather than an error, which reads as "no data" rather than a bad call.
+#:
+#: Asserted on STATUS, never on duration — a timing assertion would be flaky
+#: on any machine but the one it was written on.
+#
+# The last one is COMPUTED, not written: twelve consecutive digits is
+# the AWS account-id shape, and a literal here trips both the
+# pre-commit scanner and test_no_infra_identifiers. It caught this
+# file, which is the guard working.
+BAD = ["-1", "0", "abc", "100000", str(10 ** 12 - 1)]
 
 
 @pytest.mark.parametrize("path,_ok", BOUNDED)

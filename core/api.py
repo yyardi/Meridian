@@ -1187,7 +1187,7 @@ def _era_window(s, era: str):
 
 
 @app.get("/api/results")
-def results(limit: int = Query(2000, ge=1, le=20000), era: str = "pulse",
+def results(limit: int = Query(2000, ge=1, le=5000), era: str = "pulse",
             include_rows: bool = False) -> dict:
     """Resolved live predictions — what the model called, and what happened.
 
@@ -1879,7 +1879,7 @@ def cancel_order(order_id: int, request: Request) -> dict:
 
 
 @app.get("/api/orders/recent")
-def recent_orders(limit: int = Query(25, ge=1, le=500)) -> dict:
+def recent_orders(limit: int = Query(25, ge=1, le=100)) -> dict:
     """Real orders with their venue-truth fill state, plus attached exits.
 
     This is what the picks page's order panel reads. `fill_status` of null
