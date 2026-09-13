@@ -25,13 +25,64 @@ level, tested without a database in tests/test_longshot_shadow_paper_book.py;
 the run is under main() and executes only when the file is the script.
 """
 import datetime as dt
+import json
 import os
+import tempfile
 from collections import defaultdict
 
 FEE = 0.06
 UTC = dt.timezone.utc
 
 def mid(r): return (r["bid"] + r["ask"]) / 2
+
+
+# --------------------------------------------------------------------------- #
+# The JSON the SCOREBOARD page reads. Written beside the txt, by the producer
+# that already has every number -- so the page's shape is fixed HERE, not
+# recovered downstream by matching a fixed-width table with regexes.
+#
+# The nine keys below are the whole contract with static/scoreboard.html:
+# available, note, file, generated_at, preamble, weekly.rows, all_weeks.rows,
+# footer, unparsed. `unparsed` stays and is always empty -- the page renders it
+# as "lines the parser did not recognise", and a producer that emits its own
+# rows has none by construction.
+# --------------------------------------------------------------------------- #
+
+def _ci(m, h): return "%+.2f [%+.2f, %+.2f]" % (m, m - h, m + h)
+
+
+def verdict_kind(v):
+    """The producer's four verdict strings, as a class the page can colour."""
+    for word, kind in (("POSITIVE", "positive"), ("NEGATIVE", "negative"),
+                       ("UNDERPOWERED", "underpowered"), ("spans", "spans")):
+        if v.startswith(word):
+            return kind
+    return "unknown"
+
+
+def _wk(name, st, *, week=None, bets=0, games=None, unsettled=None, staked=None,
+        pnl=None, net_per_dollar=None, ci=None, underpowered=False, note=None):
+    return {"strategy": name, "league": st["league"], "week": week, "bets": bets,
+            "games": games, "unsettled": unsettled, "staked": staked, "pnl": pnl,
+            "net_per_dollar": net_per_dollar, "ci": ci,
+            "underpowered": underpowered, "note": note}
+
+
+def dump_json(preamble, weekly_rows, all_rows, footer, path=None):
+    """Write the page's document. No path (no PB_JSON set) means the txt only."""
+    path = path or os.environ.get("PB_JSON")
+    if not path:
+        return None
+    doc = {"available": True, "generated_at": dt.datetime.now(UTC).isoformat(),
+           "file": os.path.basename(path), "preamble": preamble, "footer": footer,
+           "unparsed": [], "weekly": {"rows": weekly_rows},
+           "all_weeks": {"rows": all_rows}}
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, separators=(",", ":"))
+    os.replace(tmp, path)          # the page never sees a half-written book
+    return path
 # side: 'yes' = buy YES at ask; 'no' = buy NO at 1-bid. rule(r) -> bool on the priced row.
 STRATEGIES = {
     # --- the two the operator asked to keep alive, exactly as they were found
@@ -135,13 +186,16 @@ def main():
     _settle = settlements.load(); _hits = len(_settle)
     settlement = settlements.settler(client, _settle)
 
+    preamble, weekly_rows, all_rows = [], [], []
     leagues = [x for x in os.environ.get("LEAGUES", "cfb,nfl,wnba,mlb").split(",") if x]
     since = dt.datetime.now(UTC) - dt.timedelta(days=int(os.environ.get("DAYS", "60")))
     rows_by_league = {}
     with eng.connect() as c:
         for lg in leagues:
             rows_by_league[lg] = [dict(r._mapping) for r in c.execute(text(CLOSE_SQL), {"pat": f"%-{lg}-%", "since": since})]
-            print(f"{lg}: {len(rows_by_league[lg]):,} markets with a pregame close, {len({r['game_id'] for r in rows_by_league[lg]})} games")
+            preamble.append(f"{lg}: {len(rows_by_league[lg]):,} markets with a pregame close, "
+                            f"{len({r['game_id'] for r in rows_by_league[lg]})} games")
+            print(preamble[-1])
 
     print(f"\n{'strategy':<26}{'week':<12}{'bets':>6}{'games':>6}{'unsettled':>10}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}")
     grand = defaultdict(list)
@@ -150,6 +204,7 @@ def main():
         if only and name not in only: continue
         rows = [r for r in rows_by_league.get(st["league"], []) if any(r["mtype"].endswith(t) for t in st["types"]) and st["rule"](r)]
         if not rows:
+            weekly_rows.append(_wk(name, st, note="no markets on tape"))
             print(f"{name:<26}{'-':<12}{0:>6}   no markets on tape"); continue
         weeks = defaultdict(list); unsettled = defaultdict(int)
         for r in rows:
@@ -159,9 +214,15 @@ def main():
         for wk in sorted(set(weeks) | set(unsettled)):
             w = weeks.get(wk, [])
             if not w:
+                weekly_rows.append(_wk(name, st, week=str(wk), bets=0, games=0,
+                                       unsettled=unsettled[wk], note="unsettled only"))
                 print(f"{name:<26}{str(wk):<12}{0:>6}{0:>6}{unsettled[wk]:>10}"); continue
             m, h, n, G, ge = clustered([100 * p for p, _, _ in w], [g for _, _, g in w])
             staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
+            weekly_rows.append(_wk(name, st, week=str(wk), bets=n, games=G, unsettled=unsettled[wk],
+                                   staked=round(staked), pnl=pnl,
+                                   net_per_dollar=pnl / staked if staked else 0,
+                                   ci=_ci(m, h), underpowered=G < 25))
             print(f"{name:<26}{str(wk):<12}{n:>6}{G:>6}{unsettled[wk]:>10}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}"
                   f"{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}{'  G<25' if G < 25 else ''}")
             grand[name].extend(w)
@@ -170,11 +231,18 @@ def main():
         m, h, n, G, ge = clustered([100 * p for p, _, _ in w], [g for _, _, g in w])
         staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
         v = "UNDERPOWERED (G<25)" if G < 25 else ("POSITIVE, excludes 0" if m - h > 0 else ("NEGATIVE, excludes 0" if m + h < 0 else "spans 0"))
+        all_rows.append({"strategy": name, "league": STRATEGIES[name]["league"], "bets": n,
+                         "games": G, "staked": round(staked), "pnl": pnl,
+                         "net_per_dollar": pnl / staked if staked else 0, "ci": _ci(m, h),
+                         "verdict": v, "verdict_kind": verdict_kind(v)})
         print(f"{name:<26}{n:>6}{G:>6}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}   {v}")
     settlements.save(_settle)
     print(f"\nsettlement cache {settlements.PATH}: {_hits:,} reused, {len(_settle) - _hits:,} fetched, {len(_settle):,} stored")
-    print("\nP&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a candidate")
-    print("at G >= 25 AND excludes 0 AND its home/away twin does not contradict it; nothing here is sized or armed.")
+    footer = ["P&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a candidate",
+              "at G >= 25 AND excludes 0 AND its home/away twin does not contradict it; nothing here is sized or armed."]
+    for line in footer:
+        print(line)
+    dump_json(preamble, weekly_rows, all_rows, footer)
 
 
 if __name__ == "__main__":
