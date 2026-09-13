@@ -37,10 +37,57 @@ TYPES = ("football_team_full_game_winner", "football_team_full_game_spread",
 SHORT = {"football_team_full_game_winner": "winner", "football_team_full_game_spread": "spread",
          "football_team_full_game_total": "total", "football_team_points_full_game_total": "team_tot"}
 
-eng = create_engine(os.environ["DATABASE_URL"])
-@event.listens_for(eng, "connect")
-def _np(dbapi_conn, _rec):
-    cur = dbapi_conn.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); dbapi_conn.commit()
+# --------------------------------------------------------------------------- #
+# MLB. Settlement comes from the VENUE's own endpoint, not from a scoreboard,
+# so this league needs no game map, no ESPN feed and no derived frame -- which
+# is why it can run from day one on nothing but the price tape.
+#
+# Spreads are only +-1.5 / +-2.5 (the run line), so the useful rung dimension
+# is the SIGN, not the distance: YES is always the away team on this venue, so
+#
+#     neg  ->  away is giving points   -> away FAVOURITE  (home is the dog)
+#     pos  ->  away is getting points  -> away UNDERDOG   (home is the fav)
+#
+# That sign is the home/away split. Pooling a rung with its opposite-sign twin
+# is how a bucket produces a spurious "excludes zero": the two halves of one
+# game sit on opposite sides of the same mispricing and cancel, or one drags
+# the pooled mean. Totals have no twin (YES = over, one market per line), and
+# a winner market is one row per game, so the split is reported only where it
+# exists and is named "-" where it does not.
+# --------------------------------------------------------------------------- #
+MLB_TYPES = ("baseball_team_full_game_winner", "baseball_team_full_game_spread",
+             "baseball_team_full_game_total", "baseball_team_first_five_spread",
+             "baseball_team_first_five_total")
+MLB_SHORT = {"baseball_team_full_game_winner": "winner",
+             "baseball_team_full_game_spread": "spread",
+             "baseball_team_full_game_total": "total",
+             "baseball_team_first_five_spread": "f5_spread",
+             "baseball_team_first_five_total": "f5_total"}
+
+
+def away_side(market_slug, mtype):
+    """Which half of the home/away pair this rung is. '-' where there is no twin.
+
+    Read off the slug, never off the price: `asc-mlb-col-det-2026-09-13-pos-1pt5`
+    is the away team +1.5. A price-based guess would be circular in a
+    calibration study, which is the whole point of this file.
+    """
+    if "spread" not in mtype:
+        return "-"
+    toks = market_slug.split("-")
+    if "neg" in toks:
+        return "away_fav"
+    if "pos" in toks:
+        return "away_dog"
+    return "-"
+
+
+def _engine():
+    eng = create_engine(os.environ["DATABASE_URL"])
+    @event.listens_for(eng, "connect")
+    def _np(dbapi_conn, _rec):
+        cur = dbapi_conn.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); dbapi_conn.commit()
+    return eng
 
 # Settled games with a venue id: finals from backfill (CFB) or the last live
 # game_state row (CFB live-only + NFL); kickoff from the first play if any.
@@ -116,40 +163,6 @@ def clustered(vals, keys):
     return m, 1.96 * se, n, G, ge
 
 
-with eng.connect() as c:
-    games = [dict(r._mapping) for r in c.execute(text(GAMES_SQL))]
-    rows, ko_gap, no_ko, no_start = [], [], 0, 0
-    for g in games:
-        start = c.execute(text(START_SQL), {"vg": g["vg"]}).scalar()
-        ko = g["ko"]
-        if ko is not None and start is not None:
-            ko_gap.append(abs((ko - start).total_seconds()) / 60)
-        if ko is None:
-            if start is None:
-                no_start += 1; continue
-            no_ko += 1; ko = start
-        q = c.execute(text(CLOSE_SQL), {"vg": g["vg"], "lo": ko - dt.timedelta(days=3), "ko": ko,
-                                        "types": list(TYPES)})
-        for r in q:
-            r = dict(r._mapping)
-            y = settle(r["market_slug"], r["sports_market_type"], r["line"], g["h"], g["a"])
-            if y is None:
-                continue
-            r.update(vg=g["vg"], lg=g["lg"], y=y, ttk_min=(ko - r["captured_at"]).total_seconds() / 60,
-                     event_slug=g["event_slug"])
-            rows.append(r)
-
-print(f"settled mapped games {len(games)}  (kickoff from plays for {len(games) - no_ko - no_start}, "
-      f"from venue start time for {no_ko}, neither {no_start})")
-if ko_gap:
-    ko_gap.sort()
-    print(f"ESPN first play vs venue game_start_time, minutes: median {ko_gap[len(ko_gap)//2]:.0f}  "
-          f"p90 {ko_gap[int(len(ko_gap)*0.9)]:.0f}  max {ko_gap[-1]:.0f}")
-print(f"markets with a pregame close and a derived settlement: {len(rows):,}")
-by_lg = defaultdict(set)
-for r in rows: by_lg[r["lg"]].add(r["vg"])
-print("  games by league: " + "  ".join(f"{k} {len(v)}" for k, v in sorted(by_lg.items())))
-
 def bucket(mid):
     return min(int(mid * 10), 9)
 
@@ -177,35 +190,199 @@ def report(title, sel, key=lambda r: bucket((r["bid"] + r["ask"]) / 2), labels=N
               f"{bn:>+18.2f}{'[%+.2f, %+.2f]' % (bn-bnh, bn+bnh):>18}   {hs:>9.2f}{flag}")
 
 BL = {i: f"{i/10:.1f}-{(i+1)/10:.1f}" for i in range(10)}
-close = [r for r in rows if r["ttk_min"] <= 360]
-print(f"\nPRIMARY population: last quote within 6h of kickoff: {len(close):,} markets "
-      f"(all pregame quotes within 3 days: {len(rows):,})")
-for t in TYPES:
-    sel = [r for r in close if r["sports_market_type"] == t]
-    report(f"{SHORT[t]} -- by pregame mid, close within 6h of kickoff", sel, labels=BL)
-# distance from the line for spreads (rung far from the market's own centre = the venue's 'longshots')
-sp = [r for r in close if r["sports_market_type"] == "football_team_full_game_spread"]
-centre = defaultdict(list)
-for r in sp: centre[r["vg"]].append(r)
-def dist_key(r):
-    rs = centre[r["vg"]]
-    # the rung whose mid is nearest 0.5 is the market's centre; distance in points
-    c0 = min(rs, key=lambda x: abs((x["bid"] + x["ask"]) / 2 - 0.5))
-    d = abs(r["line"] - c0["line"])
-    return 0 if d < 3.5 else 1 if d < 7.5 else 2 if d < 14.5 else 3
-report("spread -- by distance from the centre rung (points)", sp, key=dist_key,
-       labels={0: "<3.5", 1: "3.5-7", 2: "7.5-14", 3: ">14"})
-for lg in ("cfb", "nfl"):
-    sel = [r for r in close if r["lg"] == lg and r["sports_market_type"] == "football_team_full_game_spread"]
-    report(f"spread, {lg} only -- by pregame mid", sel, labels=BL)
 
-print("\n=== WHAT THIS CANNOT SAY ===")
-print("  Exploratory, no pre-registration; every bucket is one of ~40 looks. A flagged bucket is a")
-print("  hypothesis to write down BEFORE Saturday's 44 CFB / Sunday's 12 NFL closes, then read there.")
-print("  Settlement is DERIVED from ESPN finals under the venue's frames; the caller spot-checks it")
-print("  against the venue's settlement endpoint before any number travels.")
-print("\n### CSV")
-print("lg,vg,event_slug,type,slug,line,bid,ask,ttk_min,y")
-for r in rows:
-    print(f"{r['lg']},{r['vg']},{r['event_slug']},{SHORT[r['sports_market_type']]},{r['market_slug']},"
-          f"{'' if r['line'] is None else r['line']},{r['bid']},{r['ask']},{r['ttk_min']:.0f},{r['y']}")
+
+# `market_snapshots` has NO league column -- the league lives in the slug, and
+# `run_paper_book` filters the same way (`market_slug LIKE '%-mlb-%'`). Writing
+# `WHERE league = 'mlb'` here would have been a SQL error on the first prod run.
+MLB_GAMES_SQL = """
+SELECT game_id vg, min(game_start_time) ko, min(event_slug) event_slug
+FROM market_snapshots
+WHERE market_slug LIKE :pat AND game_start_time IS NOT NULL
+  AND game_start_time < now() - interval '4 hours'
+  AND game_start_time > now() - (:days || ' days')::interval
+GROUP BY 1
+"""
+MLB_CLOSE_SQL = """
+SELECT DISTINCT ON (market_slug) market_slug, sports_market_type, line::float line,
+       best_bid::float bid, best_ask::float ask, captured_at, game_start_time
+FROM market_snapshots
+WHERE game_id = :vg AND captured_at BETWEEN :lo AND :ko
+  AND best_bid IS NOT NULL AND best_ask IS NOT NULL
+  AND sports_market_type = ANY(:types)
+ORDER BY market_slug, captured_at DESC
+"""
+
+
+def collect_mlb(c, settlement, days=30):
+    """Rows for MLB: last pregame quote per market, settled BY THE VENUE.
+
+    `settlement(slug) -> 0|1|None` is injected so this is testable without a
+    network, and so the caller owns the caching. A market the venue has not
+    settled is skipped and counted -- never guessed, and never derived from a
+    box score, because no scoreboard join exists for this league yet.
+    """
+    from sqlalchemy import text
+    games = [dict(r._mapping) for r in
+             c.execute(text(MLB_GAMES_SQL), {"days": str(days), "pat": "%-mlb-%"})]
+    rows, unsettled, no_quote = [], 0, 0
+    for g in games:
+        q = c.execute(text(MLB_CLOSE_SQL),
+                      {"vg": g["vg"], "lo": g["ko"] - dt.timedelta(days=3), "ko": g["ko"],
+                       "types": list(MLB_TYPES)})
+        got = 0
+        for r in q:
+            r = dict(r._mapping)
+            got += 1
+            y = settlement(r["market_slug"])
+            if y is None:
+                unsettled += 1
+                continue
+            r.update(vg=g["vg"], lg="mlb", y=y, event_slug=g["event_slug"],
+                     ttk_min=(g["ko"] - r["captured_at"]).total_seconds() / 60,
+                     side=away_side(r["market_slug"], r["sports_market_type"]))
+            rows.append(r)
+        if not got:
+            no_quote += 1
+    return rows, games, unsettled, no_quote
+
+
+def main_mlb():
+    from core.polymarket.client import PolymarketGatewayClient
+    from cfb.run_paper_book import cache_put, load_settle_cache, save_settle_cache
+
+    client = PolymarketGatewayClient()
+    cache = load_settle_cache()
+    hits, miss = len(cache), {}
+    def settlement(slug):
+        if slug in cache:
+            return cache[slug]
+        if slug in miss:
+            return None
+        try:
+            v = client.get_settlement(slug).get("settlement")
+            v = int(v) if v in (0, 1, "0", "1") else None
+        except Exception:
+            v = None
+        if not cache_put(cache, slug, v):
+            miss[slug] = None
+        return v
+
+    days = int(os.environ.get("DAYS", "30"))
+    with _engine().connect() as c:
+        rows, games, unsettled, no_quote = collect_mlb(c, settlement, days)
+    fetched = len(cache) - hits
+    save_settle_cache(cache)
+    print(f"MLB games with a venue start time in the last {days}d: {len(games)}  "
+          f"(no pregame quote for {no_quote})")
+    print(f"settlement: {hits:,} reused from cache, {fetched:,} fetched, "
+          f"{unsettled:,} market-rows unsettled and skipped")
+    print(f"markets with a pregame close and a VENUE settlement: {len(rows):,}")
+    if not rows:
+        print("\nNOTHING TO REPORT. The recorder overlay may not be on tape yet; this is an")
+        print("empty run, not a null result -- no bucket was measured.")
+        return
+    close = [r for r in rows if r["ttk_min"] <= 360]
+    print(f"\nPRIMARY population: last quote within 6h of first pitch: {len(close):,} markets")
+    for t in MLB_TYPES:
+        sel = [r for r in close if r["sports_market_type"] == t]
+        report(f"{MLB_SHORT[t]} -- by pregame mid, close within 6h", sel, labels=BL)
+    # the home/away split, which is the sign of the run line: see away_side()
+    for t in ("baseball_team_full_game_spread", "baseball_team_first_five_spread"):
+        for sd in ("away_fav", "away_dog"):
+            sel = [r for r in close if r["sports_market_type"] == t and r["side"] == sd]
+            report(f"{MLB_SHORT[t]} {sd} -- by pregame mid", sel, labels=BL)
+    print("\n=== WHAT THIS CANNOT SAY ===")
+    print("  Exploratory, no pre-registration. Settlement is the VENUE's own label, so there is no")
+    print("  derived frame to be wrong about -- but a bucket is still one of many looks, and a rung")
+    print("  pooled with its opposite-sign twin can show an edge that the pair does not have.")
+    print("  Read away_fav and away_dog beside each other before believing either.")
+    print("\n### CSV")
+    print("lg,vg,event_slug,type,slug,line,side,bid,ask,ttk_min,y")
+    for r in rows:
+        print(f"{r['lg']},{r['vg']},{r['event_slug']},{MLB_SHORT[r['sports_market_type']]},"
+              f"{r['market_slug']},{'' if r['line'] is None else r['line']},{r['side']},"
+              f"{r['bid']},{r['ask']},{r['ttk_min']:.0f},{r['y']}")
+
+
+def main_football():
+    eng = _engine()
+    with eng.connect() as c:
+        games = [dict(r._mapping) for r in c.execute(text(GAMES_SQL))]
+        rows, ko_gap, no_ko, no_start = [], [], 0, 0
+        for g in games:
+            start = c.execute(text(START_SQL), {"vg": g["vg"]}).scalar()
+            ko = g["ko"]
+            if ko is not None and start is not None:
+                ko_gap.append(abs((ko - start).total_seconds()) / 60)
+            if ko is None:
+                if start is None:
+                    no_start += 1; continue
+                no_ko += 1; ko = start
+            q = c.execute(text(CLOSE_SQL), {"vg": g["vg"], "lo": ko - dt.timedelta(days=3), "ko": ko,
+                                            "types": list(TYPES)})
+            for r in q:
+                r = dict(r._mapping)
+                y = settle(r["market_slug"], r["sports_market_type"], r["line"], g["h"], g["a"])
+                if y is None:
+                    continue
+                r.update(vg=g["vg"], lg=g["lg"], y=y, ttk_min=(ko - r["captured_at"]).total_seconds() / 60,
+                         event_slug=g["event_slug"])
+                rows.append(r)
+
+    print(f"settled mapped games {len(games)}  (kickoff from plays for {len(games) - no_ko - no_start}, "
+          f"from venue start time for {no_ko}, neither {no_start})")
+    if ko_gap:
+        ko_gap.sort()
+        print(f"ESPN first play vs venue game_start_time, minutes: median {ko_gap[len(ko_gap)//2]:.0f}  "
+              f"p90 {ko_gap[int(len(ko_gap)*0.9)]:.0f}  max {ko_gap[-1]:.0f}")
+    print(f"markets with a pregame close and a derived settlement: {len(rows):,}")
+    by_lg = defaultdict(set)
+    for r in rows: by_lg[r["lg"]].add(r["vg"])
+    print("  games by league: " + "  ".join(f"{k} {len(v)}" for k, v in sorted(by_lg.items())))
+
+    close = [r for r in rows if r["ttk_min"] <= 360]
+    print(f"\nPRIMARY population: last quote within 6h of kickoff: {len(close):,} markets "
+          f"(all pregame quotes within 3 days: {len(rows):,})")
+    for t in TYPES:
+        sel = [r for r in close if r["sports_market_type"] == t]
+        report(f"{SHORT[t]} -- by pregame mid, close within 6h of kickoff", sel, labels=BL)
+    # distance from the line for spreads (rung far from the market's own centre = the venue's 'longshots')
+    sp = [r for r in close if r["sports_market_type"] == "football_team_full_game_spread"]
+    centre = defaultdict(list)
+    for r in sp: centre[r["vg"]].append(r)
+    def dist_key(r):
+        rs = centre[r["vg"]]
+        # the rung whose mid is nearest 0.5 is the market's centre; distance in points
+        c0 = min(rs, key=lambda x: abs((x["bid"] + x["ask"]) / 2 - 0.5))
+        d = abs(r["line"] - c0["line"])
+        return 0 if d < 3.5 else 1 if d < 7.5 else 2 if d < 14.5 else 3
+    report("spread -- by distance from the centre rung (points)", sp, key=dist_key,
+           labels={0: "<3.5", 1: "3.5-7", 2: "7.5-14", 3: ">14"})
+    for lg in ("cfb", "nfl"):
+        sel = [r for r in close if r["lg"] == lg and r["sports_market_type"] == "football_team_full_game_spread"]
+        report(f"spread, {lg} only -- by pregame mid", sel, labels=BL)
+
+    print("\n=== WHAT THIS CANNOT SAY ===")
+    print("  Exploratory, no pre-registration; every bucket is one of ~40 looks. A flagged bucket is a")
+    print("  hypothesis to write down BEFORE Saturday's 44 CFB / Sunday's 12 NFL closes, then read there.")
+    print("  Settlement is DERIVED from ESPN finals under the venue's frames; the caller spot-checks it")
+    print("  against the venue's settlement endpoint before any number travels.")
+    print("\n### CSV")
+    print("lg,vg,event_slug,type,slug,line,bid,ask,ttk_min,y")
+    for r in rows:
+        print(f"{r['lg']},{r['vg']},{r['event_slug']},{SHORT[r['sports_market_type']]},{r['market_slug']},"
+              f"{'' if r['line'] is None else r['line']},{r['bid']},{r['ask']},{r['ttk_min']:.0f},{r['y']}")
+
+
+def main():
+    lg = os.environ.get("LEAGUE", "cfb").lower()
+    if lg == "mlb":
+        return main_mlb()
+    if lg in ("cfb", "nfl", "both", "football"):
+        return main_football()
+    raise SystemExit(f"LEAGUE={lg!r} is not one of: cfb (default, CFB+NFL) | mlb")
+
+
+if __name__ == "__main__":
+    main()
