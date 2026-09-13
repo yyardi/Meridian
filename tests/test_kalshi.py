@@ -477,3 +477,99 @@ def test_ncaaf_split_ambiguity_is_real_and_is_why_sub_title_leads():
     ]
     assert len(splits) > 1, "expected the documented ambiguity"
     assert codes_from_sub_title("MEM vs ORE (Sep 5)") == ("MEM", "ORE")
+
+
+# --------------------------------------------------------------------- #
+# Start-time sources. NFL had neither, so every NFL game was discovered
+# and then never polled — the log reporting a cheerful zero.
+# --------------------------------------------------------------------- #
+def test_every_polled_league_has_a_start_time_source():
+    """A league with no clock is recorded and then never polled.
+
+    `_pollable_games` needs either `game_start_time` (set only by
+    `_link_polymarket`) or `venue_occurrence_time` (set only for
+    VENUE_CLOCK_LEAGUES). NFL had neither: it is not WNBA, so the Polymarket
+    slug regex skips it, and it was not in the venue-clock set. The failure is
+    silent by construction — a game with no clock matches no poll query, so
+    it contributes nothing to poll counts and nothing to error counts.
+
+    This asserts the union covers every league we discover, so adding a
+    fourth league without a clock fails here instead of at a slate.
+    """
+    from core.kalshi.recorder import VENUE_CLOCK_LEAGUES
+    from core.team_mapping import parse_event_slug
+
+    for league in LEAGUE_SERIES:
+        via_polymarket = parse_event_slug(
+            f"{league}-aaa-bbb-2026-09-13") is not None
+        assert via_polymarket or league in VENUE_CLOCK_LEAGUES, (
+            f"{league} has no start-time source: its slugs do not parse and "
+            "it is not in VENUE_CLOCK_LEAGUES, so it can never be polled")
+
+
+def test_each_league_fetches_its_own_moneyline_series():
+    """Exercises `_fill_venue_occurrence` and asserts the ticker it REQUESTS.
+
+    Written this way on purpose: the first draft asserted on LEAGUE_SERIES
+    instead, which is the mapping table and not the call site — re-hardcoding
+    the college series inside the method would have left that green. A game
+    key is only meaningful inside its own league, so asking Kalshi for a
+    college event under an NFL key returns nothing and reads as "the venue
+    published no stamp", not as a bug.
+    """
+    import types
+
+    from core.kalshi.recorder import KalshiRecorder
+
+    class _Client:
+        def __init__(self):
+            self.asked = []
+
+        def get_markets(self, ticker):
+            self.asked.append(ticker)
+            return [{"occurrence_datetime": "2026-09-14T03:20:00Z"}]
+
+    games = [
+        types.SimpleNamespace(league=LEAGUE_NFL, game_key="26SEP14NESEA",
+                              venue_occurrence_time=None),
+        types.SimpleNamespace(league=LEAGUE_CFB, game_key="26SEP14MASSRUTG",
+                              venue_occurrence_time=None),
+    ]
+    session = types.SimpleNamespace(
+        scalars=lambda stmt: types.SimpleNamespace(all=lambda: games))
+    stats = types.SimpleNamespace(errors=0, start_times_set=0)
+    client = _Client()
+
+    KalshiRecorder._fill_venue_occurrence(
+        types.SimpleNamespace(_client=client), session, stats,
+        dt.datetime(2026, 9, 13, tzinfo=dt.timezone.utc))
+
+    assert client.asked == ["KXNFLGAME-26SEP14NESEA",
+                            "KXNCAAFGAME-26SEP14MASSRUTG"]
+    assert stats.start_times_set == 2
+    assert all(g.venue_occurrence_time is not None for g in games)
+
+
+def test_nfl_slugs_must_not_resolve_through_the_wnba_team_map():
+    """★ The obvious fix is the dangerous one, so it is pinned here.
+
+    Making NFL work through `_link_polymarket` looks like one character:
+    anchor `_EVENT_SLUG` to `(wnba|nfl)-` instead of `wnba-`. But
+    POLYMARKET_TO_ESPN holds 15 WNBA teams, and `sea`, `dal`, `la`, `ny`,
+    `min`, `atl`, `chi`, `ind`, `lv`, `phx` are Storm/Wings/Sparks/Liberty —
+    not Seahawks, Cowboys, Rams, Giants. A widened regex would resolve an NFL
+    slug to a WNBA pair and link the wrong game, silently, with a real
+    `game_start_time` attached to it.
+
+    Returning None is therefore load-bearing, not an oversight. A real
+    Polymarket link for NFL needs a league-scoped team map first.
+    """
+    from core.team_mapping import POLYMARKET_TO_ESPN, parse_event_slug
+
+    assert parse_event_slug("nfl-sea-dal-2026-09-13") is None
+    assert parse_event_slug("cfb-mass-rutg-2026-09-13") is None
+    assert parse_event_slug("wnba-sea-dal-2026-09-13") is not None
+    colliding = {"sea", "dal", "la", "ny", "min"} & set(POLYMARKET_TO_ESPN)
+    assert colliding, (
+        "the collision this guards against is gone — if POLYMARKET_TO_ESPN is "
+        "now league-scoped, a real NFL Polymarket link may be worth building")
