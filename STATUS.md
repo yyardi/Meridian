@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 23:00Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 23:20Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -65,6 +65,7 @@ dashboard's SCOREBOARD page once that page lands (being built). First run 2026-0
 - **Sat 09-19 (CFB):** interim observation only — print cell, G and interval, take no verdict. At ~40 games a Saturday a CFB cell must show **16.3¢** to exclude zero on one week, and nothing registered clears that. Full rule and corrections: `docs/math/preregistration_2026-09-19.md`.
 - **Sun 09-21 (NFL):** the real test. Same two spread rules, no prior, family of 2–4, so the interval means what it says.
 - Kalshi-vs-DraftKings lag on the first full week of tape.
+- **ESPN cannot settle a football read; the venue endpoint is the only complete route.** The ESPN recorder stops polling a game before it observes the final transition, so a game has live state but never a result: on the best slate only 18 of 44 mapped games reach `state='post'` (~41%), and a 14-day census over all CFB games is 105 `post` against 81 stuck at `in` (three independent routes agree; there are exactly two terminal values and zero partially-settled games, which is what a per-GAME stage failure looks like). The venue endpoint returned 227 of 227 on the flagship bucket. ESPN keeps the independent frame check (65/65 agreement where it does finalise) and loses the settlement job. **Fix is in the recorder, not the map: keep polling until `post` is observed rather than until the clock runs out.**
 - **The gate on every ESPN-settled read is recorder uptime across the slate, not the game map.** The earliest ESPN CFB state row in existence is 2026-09-05 22:08Z: the map wrote 13 of 13 rows for 09-03/09-04 and there was nothing to join to, and 09-05 lost its early games the same way. With the recorder up all day, 09-12 is 44 of 44. If a recorder dies mid-slate the games before it returns are lost silently — which is what `scripts/alarm_v5.py` (merged tonight) exists to catch.
 - **WNBA playoffs:** favourite and under lines on the first 25 games; PULSE resumes.
 - **MLB:** ladder calibration at 100 settled games (≈ one week after the recorder starts).

@@ -197,3 +197,55 @@ point in §4 that the line actually registered is the fade, not the finding.
 Those are the grounds to hold it as an interim observation, and the ESPN
 subsample (−9.03¢ on 29% of the rungs, §5) is consistent with the effect being
 real and simply too small to read on one slate.
+
+## 8. The gate on any ESPN-settled read is recorder uptime, not the map
+
+Checked because the audit above could settle only 29% of rungs from ESPN, and
+the obvious suspect was `cfb_game_map`. **It is not the map.**
+
+| espn_date | mapped | have ESPN state |
+|---|---:|---:|
+| 2026-09-03 | 5 | **0** |
+| 2026-09-04 | 8 | **0** |
+| 2026-09-05 | 50 | 27 |
+| 2026-09-12 | 44 | **44** |
+
+**The earliest ESPN CFB state row of any kind is `2026-09-05 22:08:57.906911+00`.**
+Nothing exists before that instant. The map is complete for 09-03/09-04 — 13 of
+13 rows carry a venue id — and **none of them have state to join to**. 09-05 is
+the same cause landing mid-slate. 09-12, with the recorder up all day, is 44/44.
+
+So **no version of `scripts/build_cfb_game_map.py` can close this gap**; it is
+not a matching failure. What gates an ESPN-settled read on 09-19 / 09-21 is
+whether the recorder stays up across the slate window. If it dies mid-slate the
+games before its return are lost **silently**, which is precisely the 09-05
+failure and precisely what a freeze/collapse alarm is for.
+
+### The residual, resolved: the recorder stops before the whistle
+
+The 09-12 map is 44/44 yet only 36% of that day's venue rungs carry an ESPN
+settlement. Per-stage, the loss is not where anyone looked:
+
+| stage | 09-05 | 09-12 |
+|---|---:|---:|
+| venue game → map row | complete | complete |
+| map row → **any** ESPN state | 27/50 | **44/44** |
+| any state → **reaches `state='post'`** | **15** | **18** |
+
+**Across every mapped game with state, 53 end in `state='in'` and only 44 reach
+`post`.** The recorder polls the game live and stops before the final
+transition, so the game has state but never a final. That, not the map and not
+the start time, is the dominant loss on a healthy slate.
+
+Two independent routes agree: the prod query gives **18** finalised games for
+espn_date 09-12; counting the audit export by venue slate date gives **17**
+fully-settled games of 48 (and **zero partially-settled games** on either
+slate — a clean game-level split, which is what a per-game stage failure looks
+like and what a per-rung failure does not).
+
+> **Consequence for 09-19 / 09-21: ESPN can settle roughly 40% of games even
+> with the recorder up all slate. The venue endpoint is the only complete
+> settlement route for the football reads** — it returned 227/227 on the
+> flagship bucket with zero unsettled. ESPN stays useful as the *independent
+> frame check* (65/65 agreement) on the subset it does finalise; it is not a
+> settlement source for a headline number.
