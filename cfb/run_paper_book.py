@@ -33,7 +33,10 @@ from collections import defaultdict
 FEE = 0.06
 UTC = dt.timezone.utc
 
-def mid(r): return (r["bid"] + r["ask"]) / 2
+# The registry moved to strategies/ladder.py (ARCHITECTURE.md §4 step 2) so the
+# sandbox and anything later read one table. `mid` comes with it: a rule and the
+# helper its predicates are written in cannot live in different files.
+from strategies.ladder import STRATEGIES, mid, select
 
 
 def venue_patterns(lg):
@@ -93,74 +96,6 @@ def dump_json(preamble, weekly_rows, all_rows, footer, path=None):
     os.replace(tmp, path)          # the page never sees a half-written book
     return path
 # side: 'yes' = buy YES at ask; 'no' = buy NO at 1-bid. rule(r) -> bool on the priced row.
-STRATEGIES = {
-    # --- the two the operator asked to keep alive, exactly as they were found
-    "cfb_spread_no_20_30":    dict(league="cfb",  types=("full_game_spread",), side="no",
-                                   rule=lambda r: 0.20 <= mid(r) < 0.30),
-    "wnba_spread_yes_80_100": dict(league="wnba", types=("full_game_spread",), side="yes",
-                                   rule=lambda r: mid(r) >= 0.80),
-    # --- cricket and table tennis, registered 2026-09-13 BEFORE any tape.
-    # YES IS THE HOME TEAM on these (nfl/cfb/mlb are the exception, not these).
-    # county can settle 0.5 on a draw, which bet_pnl handles arithmetically:
-    # a half settlement pays half the ticket and still charges the full fee.
-    "cricket_home_yes_all":   dict(league="cricket", types=("match_winner",), side="yes",
-                                   rule=lambda r: True),
-    "cricket_away_no_all":    dict(league="cricket", types=("match_winner",), side="no",
-                                   rule=lambda r: True),
-    "cricket_home_fav_yes_60": dict(league="cricket", types=("match_winner",), side="yes",
-                                    rule=lambda r: mid(r) >= 0.60),
-    "cricket_home_dog_yes_40": dict(league="cricket", types=("match_winner",), side="yes",
-                                    rule=lambda r: mid(r) <= 0.40),
-    "tt_home_fav_yes_60":     dict(league="tabletennis", types=("match_winner",), side="yes",
-                                   rule=lambda r: mid(r) >= 0.60),
-    "tt_home_dog_yes_40":     dict(league="tabletennis", types=("match_winner",), side="yes",
-                                   rule=lambda r: mid(r) <= 0.40),
-    "wnba_total_under_all":   dict(league="wnba", types=("full_game_total",), side="no",
-                                   rule=lambda r: True),
-    # --- the decomposition's cleaner versions (home-referenced twins), beside them
-    "cfb_spread_home_all":    dict(league="cfb",  types=("full_game_spread",), side="no",
-                                   rule=lambda r: 0.05 <= mid(r) <= 0.95),   # NO on every away rung = home side, every rung
-    "wnba_spread_no_00_20":   dict(league="wnba", types=("full_game_spread",), side="no",
-                                   rule=lambda r: mid(r) <= 0.20),            # the home-favourite twin of yes_80_100
-    # --- NFL, same rules as CFB, no prior
-    "nfl_spread_no_20_30":    dict(league="nfl",  types=("full_game_spread",), side="no",
-                                   rule=lambda r: 0.20 <= mid(r) < 0.30),
-    "nfl_spread_home_all":    dict(league="nfl",  types=("full_game_spread",), side="no",
-                                   rule=lambda r: 0.05 <= mid(r) <= 0.95),
-    # --- MLB, registered before any tape exists (recorder overlay staged 2026-09-13)
-    "mlb_total_under_all":    dict(league="mlb",  types=("full_game_total",), side="no",
-                                   rule=lambda r: True),
-    "mlb_total_over_all":     dict(league="mlb",  types=("full_game_total",), side="yes",
-                                   rule=lambda r: True),
-    "mlb_winner_fav_yes":     dict(league="mlb",  types=("full_game_winner",), side="yes",
-                                   rule=lambda r: mid(r) >= 0.60),
-    "mlb_winner_dog_yes":     dict(league="mlb",  types=("full_game_winner",), side="yes",
-                                   rule=lambda r: mid(r) <= 0.40),
-    "mlb_spread_no_20_30":    dict(league="mlb",  types=("full_game_spread",), side="no",
-                                   rule=lambda r: 0.20 <= mid(r) < 0.30),
-    # --- registered 2026-09-13 18:30Z by the manager: the WNBA under/over asymmetry tried on football, and
-    #     MLB first-five markets (thinner, retail). CFB/NFL totals already have two Saturdays of tape: the
-    #     first read of those is a back-read, labelled so; pre-registered from 09-19 on.
-    "cfb_total_under_all":    dict(league="cfb",  types=("full_game_total",), side="no",  rule=lambda r: True),
-    "cfb_total_over_all":     dict(league="cfb",  types=("full_game_total",), side="yes", rule=lambda r: True),
-    "nfl_total_under_all":    dict(league="nfl",  types=("full_game_total",), side="no",  rule=lambda r: True),
-    "nfl_total_over_all":     dict(league="nfl",  types=("full_game_total",), side="yes", rule=lambda r: True),
-    "mlb_f5_total_under_all": dict(league="mlb",  types=("first_five_total",), side="no",  rule=lambda r: True),
-    "mlb_f5_total_over_all":  dict(league="mlb",  types=("first_five_total",), side="yes", rule=lambda r: True),
-    "mlb_f5_spread_no_20_30": dict(league="mlb",  types=("first_five_spread",), side="no",
-                                   rule=lambda r: 0.20 <= mid(r) < 0.30),
-    # --- registered 2026-09-13 20:05Z from the decomposition grid (cfb/run_longshot_decomp.py, one of ~20 cells looked
-    #     at): buying the AWAY side at YES-mid 50-60c lost -11.62c/contract [-21.74, -1.50] on 104 games; the mirror is
-    #     NO (home) on those rungs. Pre-registered here with its twin for the 09-19 read; NFL gets the same pair, no prior.
-    "cfb_spread_no_50_60":    dict(league="cfb",  types=("full_game_spread",), side="no",
-                                   rule=lambda r: 0.50 <= mid(r) < 0.60),
-    "cfb_spread_yes_40_50":   dict(league="cfb",  types=("full_game_spread",), side="yes",
-                                   rule=lambda r: 0.40 <= mid(r) < 0.50),   # the twin: away side at the same price
-    "nfl_spread_no_50_60":    dict(league="nfl",  types=("full_game_spread",), side="no",
-                                   rule=lambda r: 0.50 <= mid(r) < 0.60),
-    "nfl_spread_yes_40_50":   dict(league="nfl",  types=("full_game_spread",), side="yes",
-                                   rule=lambda r: 0.40 <= mid(r) < 0.50),
-}
 
 CLOSE_SQL = """
 WITH g AS (
@@ -244,16 +179,21 @@ def main():
             # cplcr/county/...; see core/leagues.py). LIKE ANY takes both.
             rows_by_league[lg] = [dict(r._mapping) for r in c.execute(
                 text(CLOSE_SQL), {"pats": list(venue_patterns(lg)), "since": since})]
+            for r in rows_by_league[lg]:
+                r["league"] = lg        # was the group key; select() reads it off the row
             preamble.append(f"{lg}: {len(rows_by_league[lg]):,} markets with a pregame close, "
                             f"{len({r['game_id'] for r in rows_by_league[lg]})} games")
             print(preamble[-1])
 
+    all_rows = [r for rs in rows_by_league.values() for r in rs]
+    chosen = select(all_rows)
+    by_slug = {r["market_slug"]: r for r in all_rows}
     print(f"\n{'strategy':<26}{'week':<12}{'bets':>6}{'games':>6}{'unsettled':>10}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}")
     grand = defaultdict(list)
     only = [x for x in os.environ.get("ONLY", "").split(",") if x]   # ONLY=a,b limits a run to those strategies
     for name, st in STRATEGIES.items():
         if only and name not in only: continue
-        rows = [r for r in rows_by_league.get(st["league"], []) if any(r["mtype"].endswith(t) for t in st["types"]) and st["rule"](r)]
+        rows = [by_slug[b.market_slug] for b in chosen.get(name, [])]
         if not rows:
             weekly_rows.append(_wk(name, st, note="no markets on tape"))
             print(f"{name:<26}{'-':<12}{0:>6}   no markets on tape"); continue
