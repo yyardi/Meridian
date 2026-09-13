@@ -36,6 +36,13 @@ services:
       DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       MERIDIAN_LEAGUE: cricket
       MERIDIAN_RPS: "2"
+      # MERIDIAN_EVENT_LIMIT defaults to 50 PER VENUE COMPETITION (core/config.py),
+      # and setkameua alone listed 237 events on 2026-09-13 — so the default silently
+      # records 50 of them and the board reads as a small league. Measured: limit 50
+      # gave 151 markets, limit 500 gave 336 with expected==observed on all four
+      # competitions. The coverage line is what makes this visible; the limit is what
+      # makes it right.
+      MERIDIAN_EVENT_LIMIT: "500"
   tt-recorder:
     build: .
     container_name: meridian-tt-recorder
@@ -46,3 +53,10 @@ services:
     environment:
       <<: *cr_env
       MERIDIAN_LEAGUE: tabletennis
+      # MERIDIAN_EVENT_LIMIT defaults to 50 PER VENUE COMPETITION (core/config.py),
+      # and setkameua alone listed 237 events on 2026-09-13 — so the default silently
+      # records 50 of them and the board reads as a small league. Measured: limit 50
+      # gave 151 markets, limit 500 gave 336 with expected==observed on all four
+      # competitions. The coverage line is what makes this visible; the limit is what
+      # makes it right.
+      MERIDIAN_EVENT_LIMIT: "500"
