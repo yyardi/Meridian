@@ -36,7 +36,10 @@ def test_slug_lookup_covers_event_and_market_shapes():
     assert leagues.league_of_slug("wnba-ny-chi-2026-08-18").slug == "wnba"
     assert leagues.league_of_slug("tsc-wnba-ny-chi-2026-08-18-191pt5").slug == "wnba"
     assert leagues.league_of_slug("nba-bos-lal-2026-10-21").slug == "nba"
-    assert leagues.league_of_slug("mlb-nyy-bos-2026-05-01") is None
+    # Was `is None` until MLB became a recorded league on 2026-09-13. The
+    # assertion outlived the fact it encoded and went red on main; a slug test
+    # that names a league must move when the table does.
+    assert leagues.league_of_slug("mlb-nyy-bos-2026-05-01").slug == "mlb"
     assert leagues.league_of_slug(None) is None
 
 
