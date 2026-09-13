@@ -1,0 +1,31 @@
+# MLB RECORDING overlay (2026-09-13, operator directive: "get started on MLB").
+#
+#     docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder
+#
+# Reverses the 2026-09-02 ruling in docker-compose.nfl.yml that cut MLB. Why
+# now: the venue lists ~50 MLB events a day with 15 markets each (winner,
+# spread, total, first-five spread/total); at 15 games a day the pregame
+# ladder-calibration test reaches 100 settled games in a week, where CFB
+# needs a month and NFL a season. RECORDING ONLY: pregame board sweeps, no
+# live recorder, no quoter, nothing here can place an order. Settlement for
+# the read comes from ESPN's baseball/mlb scoreboard (public) and the
+# venue's own settlement endpoint.
+#
+# Rate: 50 events x 15 markets = 750 markets ~ 1,500 requests a sweep; at
+# RPS 3 a sweep lands in ~8 minutes, which is far inside what a pregame
+# close needs. Gateway ceiling 20 req/s; existing recorders sum to ~23 of
+# CAPS (wnba 5+12 idle, nfl 6+4+2, cfb 4+4) but actual demand is well under
+# because wnba polls an empty league and live recorders idle between games.
+# Heartbeat row: pregame_recorder_mlb (league-suffixed, B11).
+services:
+  mlb-recorder:
+    build: .
+    container_name: meridian-mlb-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: mlb
+      MERIDIAN_RPS: "3"

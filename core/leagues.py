@@ -95,6 +95,19 @@ LEAGUES: dict[str, League] = {
             "GRIDIRON covers NFL and CFB; the modelling attention is NFL's."
         ),
     ),
+    "mlb": League(
+        slug="mlb",
+        name="MLB",
+        espn_path="baseball/mlb",
+        recorded=False,
+        empty_state=(
+            "MLB recording started 2026-09-13 (docker-compose.mlb.yml): the "
+            "venue lists ~50 events a day, 15 markets each. Pregame board "
+            "sweeps only; no live recorder, no model, no quoter. The first "
+            "read is the pregame ladder calibration once 100 games have "
+            "settled."
+        ),
+    ),
     "nba": League(
         slug="nba",
         name="NBA",
