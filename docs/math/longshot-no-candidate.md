@@ -16,7 +16,9 @@ Nothing in-game, no model, no discretion.
 | population | buy-NO net per $1 bet | 95% interval | markets | G | settle − mid |
 |---|---|---|---|---|---|
 | games through 09-06 (where it was found) | +6.88¢ | [−1.27, +15.03] | 164 | 60 | −9.94¢ [−18.07, −1.82] |
-| **held-out Saturday 09-12** | **+4.56¢** | [−13.80, +22.92] | 47 | 16 | −7.22¢ [−25.15, +10.71] |
+| ~~held-out Saturday 09-12 (partial slate, 34 games final)~~ | ~~+4.56¢~~ | ~~[−13.80, +22.92]~~ | ~~47~~ | ~~16~~ | ~~−7.22¢~~ |
+| **held-out Saturday 09-12, FULL slate (shadow lister, T−60..T−5 quote)** | **+0.84¢** | [−12.55, +14.24] | 116 | 37 | NO won 78.4% |
+| 09-05 slate, same lister | +10.16¢ | [−1.26, +21.58] | 88 | 31 | NO won 87.5% |
 | pooled | +6.36¢ | [−1.12, +13.85] | 211 | 76 | −9.34¢ [−16.76, −1.92] |
 
 Same sign out of sample; interval still spans zero because each bet is +24¢
@@ -86,6 +88,23 @@ of the centre line**. No fee, spread, price level or truncation confound; quoted
 in every game; a home-shift predicts under 50%, a longshot story predicts 50%.
 About 200 games (five weekends) resolve 10 points. If week 3's home-favourite
 share falls from 90%, the sign split starts to say which story it is.
+
+## 3c. The shadow lister, and what the full Saturday said (2026-09-13)
+
+`cfb/run_longshot_shadow.py` (replay and live modes; places nothing) reproduces
+the bet as a live process would see it: the last quote in [T−60, T−5] before
+ESPN's first play, depth at the bid from `book_levels`, ESPN settlement.
+On the FULL 09-12 slate the bet is **+0.84¢ [−12.55, +14.24] on 116 rungs /
+37 games** — the +4.56¢ in §2 was the 16 games that had finished when it was
+computed, and it is struck above. The 09-05 slate under the same process is
++10.16¢ [−1.26, +21.58] on 88 / 31. Depth is not the constraint (median 1,000–
+2,400 contracts at the bid, $800–1,800 per rung at NO ≈ 0.76). Two things a
+live process must handle, measured: the venue's `game_start_time` disagrees
+with itself inside a game on some slugs, and ESPN's first play differed from
+the venue start by more than an hour on 7 of 95 games — replay follows the
+play, live can only follow the venue clock, so the live rung set will differ
+from the backtest's on delayed games. Wide rungs (bid 0.01 / ask 0.51) land in
+the bucket by mid; a spread cap is needed before anything goes live.
 
 ## 4. The registered read (Saturday 2026-09-19; nothing else is added)
 
