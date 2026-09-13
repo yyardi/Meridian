@@ -19,7 +19,8 @@ services:
     build: .
     container_name: meridian-scalp-nfl
     restart: unless-stopped
-    command: ["python", "-m", "core.gridiron.scalp"]
+    # alembic upgrade first: paper_scalps is newer than any running deploy
+    command: ["sh", "-c", "alembic upgrade head && python -m core.gridiron.scalp"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,7 +37,8 @@ services:
     build: .
     container_name: meridian-scalp-cfb
     restart: unless-stopped
-    command: ["python", "-m", "core.gridiron.scalp"]
+    # alembic upgrade first: paper_scalps is newer than any running deploy
+    command: ["sh", "-c", "alembic upgrade head && python -m core.gridiron.scalp"]
     depends_on:
       postgres:
         condition: service_healthy
