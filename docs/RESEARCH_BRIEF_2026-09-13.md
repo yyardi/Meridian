@@ -56,8 +56,14 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
 - **In-game momentum scalp (the operator's rule):** buy the offence when a drive reaches the
   opponent's 40 / red zone, take profit 2/5/10%, stop 5/10/20%, taker and maker exits, CFB two
   Saturdays + NFL week 1. RESULT: pending.
-- **CFB 20–30¢ NO decomposed:** favourite-fails vs dog-covers; buckets 0–10 … 90–100 with
-  home-referenced twins; NO-mid definition. RESULT: pending.
+- **CFB 20–30¢ NO decomposed (done, `cfb/run_longshot_decomp.py`, 117 games):** the +5.44¢ is
+  carried by away-underdog games (+7.83 [+1.03, +14.64], G 94); 102 of 115 games are away
+  underdogs, so "away" and "underdog" are one variable. Across the ladder the home side beats
+  its price at every rung and the away side loses at every rung (home ≥ away in all five twin
+  pairs by 5–14¢); the only cell excluding zero is **buy AWAY at YES-mid 50–60¢: −11.62¢/contract
+  [−21.74, −1.50], n 227, G 104** (one of ~20 cells looked at). Not a longshot effect; a
+  home-shift effect. Registered from this for 09-19: NO (home) on 50–60¢ rungs and its twin.
+  NO-mid re-definition selects the same rungs to the boundary (venue publishes one YES book).
 - **Kalshi vs Polymarket same instant:** gap distribution, dutch count after both fees, who
   moves toward whom, the 20–30¢ rung on Kalshi. RESULT: pending.
 - **DraftKings move → venue lag (pregame):** census 15 CFB / 3 NFL spread moves ≥ 0.5 pt since
