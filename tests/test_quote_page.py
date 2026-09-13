@@ -101,9 +101,31 @@ def test_the_page_does_not_recompute_the_measurement(html):
 
 
 def test_the_explainer_says_what_quote_is_and_that_nothing_is_sent(html):
-    for phrase in ("posts both sides", "adverse selection", "−2.74¢",
-                   "requoting", "Nothing is sent"):
+    """Two pinned phrases are gone and neither loss is a regression.
+
+    "−2.74¢" was superseded: the explainer now carries −3.38¢ for real fills,
+    alongside the 2026-09-03 finding that 63.9% of simulated fills were
+    phantoms. "requoting" was dropped from the prose. Pinning either exact
+    string made this test fail whenever the page told the truth more recently
+    than the test did.
+
+    What is worth pinning is the mechanism and the disclaimer — and the NORM
+    that makes a measured figure in prose acceptable at all: it is dated and it
+    names the document it came from. An undated cent figure in an explainer
+    goes stale in silence, which is how −2.74¢ survived being superseded.
+    """
+    import re
+
+    for phrase in ("posts both sides", "adverse selection", "Nothing is sent"):
         assert phrase in html, f"the explainer lost {phrase!r}"
+
+    explainer = html[html.index('<details class="explain">'):]
+    explainer = explainer[:explainer.index("</details>")]
+    if re.search(r"&minus;\d|−\d", explainer):
+        assert re.search(r"\b20\d\d-\d\d-\d\d\b", explainer), (
+            "the explainer states a measured figure with no date")
+        assert "docs/math/" in explainer, (
+            "the explainer states a measured figure without naming its source")
 
 
 def test_the_reconstruction_is_labelled_as_one(html):

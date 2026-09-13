@@ -143,7 +143,15 @@ def test_the_api_is_given_reports_and_nothing_else():
     for volume in compose["services"]["api"]["volumes"]:
         # rsplit, not split: the host side is `${MERIDIAN_DATA_DIR:-./backups}`
         # and compose's default-value syntax contains a colon of its own.
-        host_side, container_side, _mode = volume.rsplit(":", 2)
+        # The MODE IS OPTIONAL — a mount written without `:ro` has two parts,
+        # and unpacking three raised ValueError, which reported a malformed
+        # test rather than the mount it was added to catch.
+        parts = volume.rsplit(":", 2)
+        if len(parts) == 3 and parts[2] in ("ro", "rw", "z", "Z", "cached",
+                                            "delegated", "consistent"):
+            host_side, container_side = parts[0], parts[1]
+        else:
+            host_side, container_side = volume.rsplit(":", 1)
         assert host_side.endswith("/reports"), (
             f"api mounts {host_side!r}; it needs reports/ and nothing else"
         )
