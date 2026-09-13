@@ -2337,6 +2337,19 @@ def _wallet_compute() -> dict:
 #: way, a stale FV on a live row is worse than a dash.
 PULSE_LATEST_MAX_AGE_SECONDS = 600.0
 
+#: PULSE runs on exactly one league. It is fitted and gated on WNBA
+#: (core/pulse, docs/math/pulse-live.md) and has never run on another, so a
+#: count — or a zero — under any other league's tab would read as "PULSE ran
+#: here and found this", which is false. Both PULSE endpoints name this league
+#: and the pages render one line, not numbers, anywhere else.
+PULSE_LEAGUE = "wnba"
+
+
+def _pulse_scope_note(lg) -> str:
+    return ("PULSE exists only for WNBA — it is fitted and gated there (core/pulse) "
+            f"and resumes with the WNBA playoffs. No PULSE runs on {lg.name}, so there "
+            "are no numbers to show.")
+
 
 @app.get("/api/pulse/latest")
 def pulse_latest(league: str | None = None) -> dict:
@@ -2410,6 +2423,7 @@ def pulse_latest(league: str | None = None) -> dict:
     now = dt.datetime.now(UTC)
     return {
         "league": lg.slug,
+        "pulse_league": PULSE_LEAGUE,
         "max_age_seconds": PULSE_LATEST_MAX_AGE_SECONDS,
         "markets": {r.market_slug: {
             "event_slug": r.event_slug,
@@ -2466,7 +2480,7 @@ def pulse_latest(league: str | None = None) -> dict:
 
 
 @app.get("/api/pulse")
-def pulse_status() -> dict:
+def pulse_status(league: str | None = None) -> dict:
     """PULSE's accruing record, for the Model performance page. Read-only.
 
     Serializes `core.pulse.live_report.build_report` verbatim — the same
@@ -2475,12 +2489,26 @@ def pulse_status() -> dict:
     nothing that could disagree with `python -m core.pulse.live_report`.
     Below the floors the page renders counts and an accruing state, never a
     performance number.
+
+    League-honest (2026-09-13). PULSE runs on `PULSE_LEAGUE` alone, so any
+    other league gets `available: False`, one line saying so, and no counts.
+    Before this the endpoint took no league and the page drew the WNBA count
+    under whichever tab was selected: a number that legitimately stopped
+    moving when the WNBA regular season ended (2026-08-31) sat, unlabelled,
+    under the CFB tab and read as a CFB PULSE that never worked. The count
+    still stands still between the season and the playoffs; `last_decision`
+    now sits beside it, and both describe the same estimates version.
     """
     from core.pulse.live_report import (
         FLOOR_ENTRY_FILLS,
         FLOOR_GAMES,
         build_report,
     )
+
+    lg = _league_or_400(league)
+    if lg.slug != PULSE_LEAGUE:
+        return {"available": False, "league": lg.slug, "pulse_league": PULSE_LEAGUE,
+                "note": _pulse_scope_note(lg)}
 
     with _Session() as s:
         # build_report returns one report PER ESTIMATES VERSION (era separation,
@@ -2489,13 +2517,18 @@ def pulse_status() -> dict:
         # 500'd on every call, which is why the PULSE page showed nothing.
         _reports = build_report(s)
         if not _reports:
-            return {"available": False, "note": "no PULSE decisions recorded yet",
+            return {"available": False, "league": lg.slug, "pulse_league": PULSE_LEAGUE,
+                    "note": "no PULSE decisions recorded yet",
                     "floors": {"entry_fills": FLOOR_ENTRY_FILLS, "games": FLOOR_GAMES}}
         _version = sorted(_reports)[-1]
         r = _reports[_version]
+        # The timestamps describe the population that was counted. The count
+        # is per estimates version; min/max over the whole table would date a
+        # v2 count with v1's first decision.
         bounds = s.execute(text(
-            "SELECT min(decided_at), max(decided_at) FROM pulse_decisions"
-        )).one()
+            "SELECT min(decided_at), max(decided_at) FROM pulse_decisions "
+            "WHERE estimates_version = :v"
+        ), {"v": _version}).one()
 
     def _cm(cm):
         return None if cm is None else {
@@ -2504,6 +2537,10 @@ def pulse_status() -> dict:
         }
 
     return {
+        "available": True,
+        "league": lg.slug,
+        "pulse_league": PULSE_LEAGUE,
+        "estimates_version": _version,
         "floors": {"entry_fills": FLOOR_ENTRY_FILLS, "games": FLOOR_GAMES},
         "n_decisions": r.n_decisions,
         "n_entries": r.n_entries,
@@ -2804,6 +2841,41 @@ def analytics() -> dict:
     return body
 
 
+@app.get("/api/paper-book")
+def paper_book() -> dict:
+    """The latest paper book on disk, parsed — the SCOREBOARD page's one source.
+
+    `cfb/run_paper_book.py` prints the per-strategy weekly P&L tables; a cron
+    on the prod box leaves that output as `paper_book*.txt` under
+    `MERIDIAN_READS_DIR` (default: the prod reads directory, see
+    `core/paper_book.py`). This serves the newest file with its mtime, parsed
+    by `parse_paper_book` and recomputed nowhere. Absent, it says so in one
+    line and serves no tables: the api container only sees the directory if
+    compose mounts it there, and "no paper book yet" must not look like an
+    empty book.
+    """
+    from core.paper_book import (
+        LEGEND,
+        PAPER_BOOK_GLOB,
+        latest_paper_book,
+        parse_paper_book,
+        reads_dir,
+    )
+
+    directory = reads_dir()
+    path = latest_paper_book(directory)
+    if path is None:
+        return {"available": False, "legend": LEGEND,
+                "note": f"no paper book yet — nothing matching {PAPER_BOOK_GLOB} in {directory}"}
+    return {
+        "available": True,
+        "file": path.name,
+        "generated_at": dt.datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(),
+        "legend": LEGEND,
+        **parse_paper_book(path.read_text(errors="replace")),
+    }
+
+
 @app.get("/quote")
 def quote_page() -> FileResponse:
     return FileResponse(STATIC / "quote.html")
@@ -2817,6 +2889,11 @@ def wallet_page() -> FileResponse:
 @app.get("/analytics")
 def analytics_page() -> FileResponse:
     return FileResponse(STATIC / "analytics.html")
+
+
+@app.get("/scoreboard")
+def scoreboard_page() -> FileResponse:
+    return FileResponse(STATIC / "scoreboard.html")
 
 
 @app.get("/")
