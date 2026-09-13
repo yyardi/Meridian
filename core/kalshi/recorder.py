@@ -51,8 +51,8 @@ from core.heartbeat import SERVICE_KALSHI, Heartbeat
 from core.kalshi.client import KalshiPublicClient
 from core.kalshi.mapping import (
     LEAGUE_CFB,
+    LEAGUE_NFL,
     LEAGUE_SERIES,
-    SERIES_MONEYLINE_NCAAF,
     SERIES_MONEYLINE,
     SERIES_SPREAD,
     SERIES_TO_LEAGUE,
@@ -86,6 +86,14 @@ UTC = dt.timezone.utc
 #: bucket (burst drains in ~10s); discovery adds 6 requests per 6h.
 POLLED_SERIES = (LEAGUE_SERIES["wnba"] + LEAGUE_SERIES["nfl"]
                  + LEAGUE_SERIES[LEAGUE_CFB])
+
+#: Leagues whose start time comes from the venue's own clock, because
+#: `_link_polymarket` cannot reach them: `core.team_mapping._EVENT_SLUG` is
+#: anchored to `^wnba-`, so their slugs parse to None and are skipped in
+#: silence. Named rather than inlined so the "every polled league has SOME
+#: clock" invariant is testable — a league discovered with neither source is
+#: recorded and then never polled, which reads as a quiet venue.
+VENUE_CLOCK_LEAGUES = (LEAGUE_CFB, LEAGUE_NFL)
 
 #: How far ahead a game may be and still get its venue occurrence stamp
 #: fetched. Leagues we do not quote have no Polymarket link, so their poll
@@ -392,27 +400,37 @@ class KalshiRecorder:
     def _fill_venue_occurrence(
         self, session: Session, stats: KalshiStats, now: dt.datetime
     ) -> None:
-        """Record the venue's own clock for leagues we do not quote.
+        """Record the venue's own clock for leagues with no Polymarket link.
 
-        `game_start_time` is populated only by the Polymarket link, and a
-        college game has no Polymarket slug — so without this every college
-        game would sit unpollable forever while the log said a cheerful
-        zero (rule 22's exact shape). What the venue gives is
-        `occurrence_datetime`, which is NOT a kickoff: measured at
-        kickoff + 3h on both boards. It is stored under its own name and
-        the window arithmetic applies the offset in the open.
+        `game_start_time` is populated only by `_link_polymarket`, and that
+        path is WNBA-only for a reason that is not obvious at this call site:
+        `core.team_mapping._EVENT_SLUG` is anchored to `^wnba-`, so every NFL
+        and college slug parses to None and is skipped silently. The index it
+        builds simply never contains them.
+
+        So NFL is here alongside CFB. Widening that regex instead would be
+        worse than doing nothing: POLYMARKET_TO_ESPN holds 15 WNBA teams, and
+        `sea`/`dal`/`la`/`ny`/`min` there are the Storm and the Wings, not the
+        Seahawks and the Cowboys — an NFL slug would resolve to a WNBA pair
+        and match the wrong game. A real Polymarket link for NFL needs a
+        league-scoped team map, which is a bigger change than a start time.
+
+        What the venue gives is `occurrence_datetime`, which is NOT a kickoff:
+        measured at kickoff + 3h on BOTH boards, NFL included (NE/SEA, ESPN
+        00:20Z vs venue 03:20Z). It is stored under its own name and the
+        window arithmetic applies the offset in the open.
         """
         horizon = now + dt.timedelta(days=VENUE_OCCURRENCE_HORIZON_DAYS)
         games = session.scalars(
             select(KalshiGame).where(
-                KalshiGame.league == LEAGUE_CFB,
+                KalshiGame.league.in_(VENUE_CLOCK_LEAGUES),
                 KalshiGame.venue_occurrence_time.is_(None),
                 KalshiGame.local_date >= now - dt.timedelta(days=1),
                 KalshiGame.local_date <= horizon,
             )
         ).all()
         for game in games:
-            event_ticker = f"{SERIES_MONEYLINE_NCAAF}-{game.game_key}"
+            event_ticker = f"{LEAGUE_SERIES[game.league][0]}-{game.game_key}"
             try:
                 markets = self._client.get_markets(event_ticker)
             except Exception as exc:
@@ -503,7 +521,7 @@ class KalshiRecorder:
             KalshiGame.game_start_time > now,
             KalshiGame.game_start_time <= now + window,
         )
-        # Leagues we do not quote have no tip time at all; their window is
+        # Leagues with no Polymarket link have no tip time at all; their window is
         # derived from the venue's occurrence stamp with the measured +3h
         # offset applied explicitly. Equivalent to [tip - window, tip + 3h),
         # so it also spans the game itself — a consequence of the only clock
