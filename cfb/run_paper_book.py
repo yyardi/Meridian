@@ -15,13 +15,16 @@ paper lines are positive, on how many games, with what interval -- and the
 same table next Monday. Fees: taker 0.06*p*(1-p) on Polymarket US.
 
 Registered 2026-09-13. LEAGUES env (comma list) limits the run; default all.
+Cron: scripts/prod_weekend_read.sh (gate mode, Monday) runs it after H4 and
+writes stdout to artifacts/reads/paper_book_<UTC>.txt.
+
+The per-bet arithmetic is the pure function bet_pnl (with bet_stake) at module
+level, tested without a database in tests/test_longshot_shadow_paper_book.py;
+the run is under main() and executes only when the file is the script.
 """
 import datetime as dt
 import os
-import sys
 from collections import defaultdict
-
-from sqlalchemy import create_engine, event, text
 
 FEE = 0.06
 UTC = dt.timezone.utc
@@ -59,11 +62,6 @@ STRATEGIES = {
                                    rule=lambda r: 0.20 <= mid(r) < 0.30),
 }
 
-eng = create_engine(os.environ["DATABASE_URL"])
-@event.listens_for(eng, "connect")
-def _np(c, _r):
-    cur = c.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); c.commit()
-
 CLOSE_SQL = """
 WITH g AS (
   SELECT game_id, min(game_start_time) ko FROM market_snapshots
@@ -77,6 +75,28 @@ WHERE s.market_slug LIKE :pat AND s.captured_at < g.ko AND s.captured_at > g.ko 
 ORDER BY s.market_slug, s.captured_at DESC
 """
 
+
+# ---------------------------------------------------------------- the per-bet arithmetic (pure, tested)
+def bet_stake(side, bid, ask):
+    """Dollars at risk on one $1 contract: YES costs the ask; NO costs 1 - bid."""
+    return ask if side == "yes" else 1 - bid
+
+
+def bet_pnl(side, y, bid, ask, fee=FEE):
+    """Net P&L in dollars on one $1 contract, settled y (1 = YES resolved), taker fee charged.
+
+    side 'yes': buy YES at the ask p:      y - p - fee*p*(1-p)
+    side 'no' : buy NO at 1 - bid, p = bid: (1-y) - (1-p) - fee*p*(1-p)
+    The fee is the venue's 0.06*p*(1-p) on the YES price p either way (p(1-p) is
+    symmetric in p and 1-p, so pricing the fee on the NO price gives the same number).
+    """
+    if side == "yes":
+        p = ask
+        return y - p - fee * p * (1 - p)
+    p = bid
+    return (1 - y) - (1 - p) - fee * p * (1 - p)
+
+
 def clustered(vals, keys):
     n = len(vals); m = sum(vals) / n
     res, size = defaultdict(float), defaultdict(int)
@@ -85,57 +105,66 @@ def clustered(vals, keys):
     se = (sum(x * x for x in res.values()) ** 0.5) / n * (G / (G - 1)) ** 0.5 if G > 1 else float("inf")
     return m, 1.96 * se, n, G, ge
 
-# settlement: the venue's own endpoint, cached in a small table-free dict per run;
-# rows the venue has not settled are skipped and counted.
-from core.polymarket.client import PolymarketGatewayClient  # noqa: E402
-client = PolymarketGatewayClient()
-_settle = {}
-def settlement(slug):
-    if slug not in _settle:
-        try:
-            r = client.get_settlement(slug); s = r.get("settlement")
-            _settle[slug] = int(s) if s in (0, 1, "0", "1") else None
-        except Exception:
-            _settle[slug] = None
-    return _settle[slug]
 
-leagues = [x for x in os.environ.get("LEAGUES", "cfb,nfl,wnba,mlb").split(",") if x]
-since = dt.datetime.now(UTC) - dt.timedelta(days=int(os.environ.get("DAYS", "60")))
-rows_by_league = {}
-with eng.connect() as c:
-    for lg in leagues:
-        rows_by_league[lg] = [dict(r._mapping) for r in c.execute(text(CLOSE_SQL), {"pat": f"%-{lg}-%", "since": since})]
-        print(f"{lg}: {len(rows_by_league[lg]):,} markets with a pregame close, {len({r['game_id'] for r in rows_by_league[lg]})} games")
+def main():
+    from sqlalchemy import create_engine, event, text
+    # settlement: the venue's own endpoint, cached in a small table-free dict per run;
+    # rows the venue has not settled are skipped and counted.
+    from core.polymarket.client import PolymarketGatewayClient
 
-print(f"\n{'strategy':<26}{'week':<12}{'bets':>6}{'games':>6}{'unsettled':>10}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}")
-grand = defaultdict(list)
-for name, st in STRATEGIES.items():
-    rows = [r for r in rows_by_league.get(st["league"], []) if any(r["mtype"].endswith(t) for t in st["types"]) and st["rule"](r)]
-    if not rows:
-        print(f"{name:<26}{'-':<12}{0:>6}   no markets on tape"); continue
-    weeks = defaultdict(list); unsettled = defaultdict(int)
-    for r in rows:
-        y = settlement(r["market_slug"]); wk = r["ko"].date() - dt.timedelta(days=r["ko"].weekday())
-        if y is None: unsettled[wk] += 1; continue
-        if st["side"] == "yes":
-            p = r["ask"]; stake = p; pnl = y - p - FEE * p * (1 - p)
-        else:
-            p = r["bid"]; stake = 1 - p; pnl = (1 - y) - (1 - p) - FEE * p * (1 - p)
-        weeks[wk].append((pnl, stake, r["game_id"]))
-    for wk in sorted(set(weeks) | set(unsettled)):
-        w = weeks.get(wk, [])
-        if not w:
-            print(f"{name:<26}{str(wk):<12}{0:>6}{0:>6}{unsettled[wk]:>10}"); continue
+    eng = create_engine(os.environ["DATABASE_URL"])
+    @event.listens_for(eng, "connect")
+    def _np(c, _r):
+        cur = c.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); c.commit()
+
+    client = PolymarketGatewayClient()
+    _settle = {}
+    def settlement(slug):
+        if slug not in _settle:
+            try:
+                r = client.get_settlement(slug); s = r.get("settlement")
+                _settle[slug] = int(s) if s in (0, 1, "0", "1") else None
+            except Exception:
+                _settle[slug] = None
+        return _settle[slug]
+
+    leagues = [x for x in os.environ.get("LEAGUES", "cfb,nfl,wnba,mlb").split(",") if x]
+    since = dt.datetime.now(UTC) - dt.timedelta(days=int(os.environ.get("DAYS", "60")))
+    rows_by_league = {}
+    with eng.connect() as c:
+        for lg in leagues:
+            rows_by_league[lg] = [dict(r._mapping) for r in c.execute(text(CLOSE_SQL), {"pat": f"%-{lg}-%", "since": since})]
+            print(f"{lg}: {len(rows_by_league[lg]):,} markets with a pregame close, {len({r['game_id'] for r in rows_by_league[lg]})} games")
+
+    print(f"\n{'strategy':<26}{'week':<12}{'bets':>6}{'games':>6}{'unsettled':>10}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}")
+    grand = defaultdict(list)
+    for name, st in STRATEGIES.items():
+        rows = [r for r in rows_by_league.get(st["league"], []) if any(r["mtype"].endswith(t) for t in st["types"]) and st["rule"](r)]
+        if not rows:
+            print(f"{name:<26}{'-':<12}{0:>6}   no markets on tape"); continue
+        weeks = defaultdict(list); unsettled = defaultdict(int)
+        for r in rows:
+            y = settlement(r["market_slug"]); wk = r["ko"].date() - dt.timedelta(days=r["ko"].weekday())
+            if y is None: unsettled[wk] += 1; continue
+            weeks[wk].append((bet_pnl(st["side"], y, r["bid"], r["ask"]), bet_stake(st["side"], r["bid"], r["ask"]), r["game_id"]))
+        for wk in sorted(set(weeks) | set(unsettled)):
+            w = weeks.get(wk, [])
+            if not w:
+                print(f"{name:<26}{str(wk):<12}{0:>6}{0:>6}{unsettled[wk]:>10}"); continue
+            m, h, n, G, ge = clustered([100 * p for p, _, _ in w], [g for _, _, g in w])
+            staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
+            print(f"{name:<26}{str(wk):<12}{n:>6}{G:>6}{unsettled[wk]:>10}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}"
+                  f"{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}{'  G<25' if G < 25 else ''}")
+            grand[name].extend(w)
+    print(f"\n{'strategy, ALL WEEKS':<26}{'bets':>6}{'games':>6}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}   verdict")
+    for name, w in grand.items():
         m, h, n, G, ge = clustered([100 * p for p, _, _ in w], [g for _, _, g in w])
         staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
-        print(f"{name:<26}{str(wk):<12}{n:>6}{G:>6}{unsettled[wk]:>10}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}"
-              f"{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}{'  G<25' if G < 25 else ''}")
-        grand[name].extend(w)
-print(f"\n{'strategy, ALL WEEKS':<26}{'bets':>6}{'games':>6}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}   verdict")
-for name, w in grand.items():
-    m, h, n, G, ge = clustered([100 * p for p, _, _ in w], [g for _, _, g in w])
-    staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
-    v = "UNDERPOWERED (G<25)" if G < 25 else ("POSITIVE, excludes 0" if m - h > 0 else ("NEGATIVE, excludes 0" if m + h < 0 else "spans 0"))
-    print(f"{name:<26}{n:>6}{G:>6}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}   {v}")
-print("\nP&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a candidate")
-print("at G >= 25 AND excludes 0 AND its home/away twin does not contradict it; nothing here is sized or armed.")
+        v = "UNDERPOWERED (G<25)" if G < 25 else ("POSITIVE, excludes 0" if m - h > 0 else ("NEGATIVE, excludes 0" if m + h < 0 else "spans 0"))
+        print(f"{name:<26}{n:>6}{G:>6}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}   {v}")
+    print("\nP&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a candidate")
+    print("at G >= 25 AND excludes 0 AND its home/away twin does not contradict it; nothing here is sized or armed.")
+
+
+if __name__ == "__main__":
+    main()

@@ -7,6 +7,15 @@
 #   crontab (UTC):  50 15 * * 0  /opt/meridian/scripts/prod_weekend_read.sh preflight
 #                   20 10 * * 1  /opt/meridian/scripts/prod_weekend_read.sh gate
 #   modes: preflight (coverage + gate + H4), gate (the full block), h4 (H4 only, a fast check)
+#   gate mode also runs THE PAPER BOOK (cfb/run_paper_book.py, via the api container: it
+#   needs the venue client for settlement) into artifacts/reads/paper_book_<UTC>.txt.
+#
+#   Saturday CFB shadow lister (cfb/run_longshot_shadow.py MODE=live: lists the longshot-NO
+#   intended orders, PLACES NOTHING, writes only artifacts/reads/longshot_shadow_orders.csv).
+#   NOT installed by this file -- the operator adds these two lines to the ubuntu crontab
+#   (UTC; same `sudo -n` shape as the two lines above), verbatim:
+#   */10 15-23 * * 6  sudo -n docker run --rm -i --network meridian_default -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian -e MODE=live -v /opt/meridian/cfb:/app/cfb -v /opt/meridian/artifacts:/app/artifacts -w /app meridian-trainer python3 - < /opt/meridian/cfb/run_longshot_shadow.py >> /opt/meridian/artifacts/reads/longshot_shadow_live.log 2>&1
+#   */10 0-4 * * 0    sudo -n docker run --rm -i --network meridian_default -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian -e MODE=live -v /opt/meridian/cfb:/app/cfb -v /opt/meridian/artifacts:/app/artifacts -w /app meridian-trainer python3 - < /opt/meridian/cfb/run_longshot_shadow.py >> /opt/meridian/artifacts/reads/longshot_shadow_live.log 2>&1
 set -u
 cd /opt/meridian || exit 1
 MODE=${1:-gate}
@@ -53,6 +62,21 @@ fi
 run_file "H4 softness snapshot polymarket" analysis/pregame_softness/pregame_softness_polymarket.py analysis/pregame_softness/pregame_softness_polymarket_snapshots.csv
 run_file "H4 softness snapshot kalshi"     analysis/pregame_softness/pregame_softness_kalshi.py     analysis/pregame_softness/pregame_softness_snapshots.csv
 run_file "H4 score" analysis/pregame_softness/score_softness.py
+
+# 2. THE PAPER BOOK (gate mode only): every registered shadow strategy, priced at the
+#    pregame close and settled by the venue's own endpoint, so it runs in the api
+#    container (the trainer image has no venue client). Its table goes to its own file;
+#    the read file names that file. Unsettled markets are counted, never scored.
+if [ "$MODE" = gate ]; then
+  { echo; echo "### PAPER BOOK  ($(date -u +%H:%MZ))"; } >> "$F"
+  if [ -f cfb/run_paper_book.py ]; then
+    PB="$OUT/paper_book_$(date -u +%Y-%m-%dT%H%MZ).txt"
+    docker exec -i meridian-api python - < cfb/run_paper_book.py > "$PB" 2>&1; PB_RC=$?
+    echo "paper book: $PB (exit $PB_RC)" >> "$F"
+  else
+    echo "paper book NOT run: cfb/run_paper_book.py is missing from this checkout" >> "$F"
+  fi
+fi
 
 GATE=$(grep -h "H1c GATE" "$F" | tail -1 | sed 's/^ *//' | cut -c1-400)
 { echo; echo "### GATE LINE"; echo "${GATE:-no gate line printed}"; } >> "$F"
