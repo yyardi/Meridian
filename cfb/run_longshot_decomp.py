@@ -12,6 +12,8 @@ book's, verbatim. Mids are rounded to 4 dp before bucketing (prices tick at 0.01
   Q1  buy NO at YES-mid [0.20,0.30), split by whether the cheap YES (the AWAY side, always: slug <away>-<home>)
       is the away FAVOURITE failing to cover or the away UNDERDOG covering; favourite = winner mid > 0.5, same close.
   Q5  the NO bet by YES-mid bucket 0-10 .. 40-50 and buy YES for 50-60 .. 90-100, each beside its home-referenced
+      twin. TWENTY CELLS PRINT, TEN ARE DISTINCT (each appears once as a main and once as its mirror's twin), and
+      each row now carries the UNSETTLED SKIP RATE for both sides -- an unbalanced drop breaks the comparison.
       twin (NO at YES-rung p is the home side at 1-p: the twin of "NO at YES 20-30" is "YES at YES 70-80").
   Q2  the bucket re-defined on NO mid [0.70,0.80): symmetric difference with the YES-mid set. One YES book is
       published (bestBidQuote/bestAskQuote), so NO mid = 1 - YES mid and the sets can differ only at the boundary.
@@ -130,12 +132,27 @@ def main():
                    ("away_dog", "away UNDERDOG (cheap YES = away dog covers)"), ("pick", "pick (winner mid = 0.5)"), (None, "no winner close")):
         print(f"  {lab:<44}{cell([b for b in bets if k == '*' or fav.get(b[2]) == k])}")
 
-    print(f"\nQ5  bet by YES-mid bucket, beside its home-referenced twin (same price, other team)\n  {'bucket':<11}{'bet':<5}{'cell':<78}{'twin':<17}cell")
+    print(f"\nQ5  bet by YES-mid bucket, beside its home-referenced twin (same price, other team)")
+    print("  NOTE: the 10 buckets print 20 cells but compute 10 DISTINCT statistics -- the twin printed beside")
+    print("  [0.5,0.6) IS the main of [0.4,0.5), and vice versa. Five comparisons, displayed ten times.")
+    print(f"  {'bucket':<11}{'bet':<5}{'cell':<78}{'twin':<17}{'cell':<78}unsettled bet/twin")
     for lo, hi in NO_BUCKETS + YES_BUCKETS:
         (side, tside), tlo, thi = ("no", "yes") if hi <= 0.5 else ("yes", "no"), round(1 - hi, 4), round(1 - lo, 4)
-        b, _ = bets_for([r for r in spreads if in_bucket(mid(r), lo, hi)], side, settle)
-        t, _ = bets_for([r for r in spreads if in_bucket(mid(r), tlo, thi)], tside, settle)
-        print(f"  [{lo:.1f},{hi:.1f})  {side.upper():<5}{cell(b):<78}{f'{tside.upper()} [{tlo:.1f},{thi:.1f})':<17}{cell(t)}")
+        brows = [r for r in spreads if in_bucket(mid(r), lo, hi)]
+        trows = [r for r in spreads if in_bucket(mid(r), tlo, thi)]
+        b, buns = bets_for(brows, side, settle)
+        t, tuns = bets_for(trows, tside, settle)
+        # The unsettled SKIP, printed per cell. Q1 printed it and Q5 did not, so a cell could
+        # lose any share of its rungs invisibly. It matters most across a twin pair: the pair is
+        # only comparable if both sides lost the same SHARE, and an unbalanced drop is exactly how
+        # a twin comparison stops being one. Rates, not counts -- the two sets differ in size.
+        br = 100 * buns / len(brows) if brows else 0.0
+        tr = 100 * tuns / len(trows) if trows else 0.0
+        # No threshold: ANY drop is unexplained selection and the reader judges the size. A
+        # tuned cutoff here would decide for them, and the honest cutoff is not knowable.
+        flag = ("  <- DROPPED ROWS, ASYMMETRIC" if buns != tuns else "  <- dropped rows") if (buns or tuns) else ""
+        print(f"  [{lo:.1f},{hi:.1f})  {side.upper():<5}{cell(b):<78}{f'{tside.upper()} [{tlo:.1f},{thi:.1f})':<17}{cell(t):<78}"
+              f"{buns}/{len(brows)} ({br:.0f}%)  {tuns}/{len(trows)} ({tr:.0f}%){flag}")
 
     A, by_slug = {r["market_slug"] for r in prim}, {r["market_slug"]: r for r in spreads}
     B = {r["market_slug"] for r in spreads if in_bucket(no_mid(r), 0.7, 0.8)}
