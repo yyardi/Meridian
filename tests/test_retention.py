@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, select, text
@@ -28,6 +29,7 @@ from core.retention import (
 from core.storage import BookLevel, MarketSnapshot, get_engine, get_sessionmaker
 
 UTC = dt.timezone.utc
+REPO = Path(__file__).resolve().parent.parent
 
 
 # ------------------------------------------------------------------ #
@@ -75,26 +77,125 @@ def test_nothing_recent_is_ever_detachable():
 # Routing on the real (converted) database
 # ------------------------------------------------------------------ #
 
-_Session = get_sessionmaker(get_engine())
+#: Set by `partitioned_db` — the CONVERTED database's engine/sessionmaker.
+#: Not the suite's: see that fixture for why the conversion cannot share one.
+_conv: dict = {}
+
+
+def _engine():
+    return _conv["engine"]
+
+
+def _Session():
+    return _conv["Session"]()
+
+
+def _indexes(conn, table: str) -> dict[str, str]:
+    """{name: shape} for every PLAIN index on `table`.
+
+    Constraint-backed indexes are excluded: the primary key deliberately
+    CHANGES shape in the conversion (a partitioned table's PK must contain the
+    partition key) and the unique constraints are declared explicitly by
+    `migrate()`, with their own test below. What is left is exactly the set
+    that used to be hand-copied into `_SNAPSHOT_INDEXES`.
+
+    `shape` is the definition from `USING` onward, so it carries the access
+    method, the columns AND the partial predicate — a plain index under a
+    partial index's name is a different index, not the same one.
+    """
+    rows = conn.execute(text("""
+        SELECT c.relname, pg_get_indexdef(c.oid)
+        FROM pg_index x
+        JOIN pg_class c ON c.oid = x.indexrelid
+        JOIN pg_class t ON t.oid = x.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public' AND t.relname = :t
+          AND NOT x.indisprimary
+          AND NOT EXISTS (SELECT 1 FROM pg_constraint k
+                          WHERE k.conindid = x.indexrelid)
+    """), {"t": table}).all()
+    return {name: d[d.index(" USING "):] for name, d in rows}
 
 
 @pytest.fixture(scope="module", autouse=True)
 def partitioned_db():
-    """Run the REAL conversion on the suite's per-run database.
+    """Run the REAL conversion — on a database of THIS MODULE'S OWN.
 
-    The conftest gives every run a fresh alembic-created database, which is
-    unpartitioned — so this fixture exercises `migrate()` itself (rename-away,
-    copy, swap, count-verify) on a disposable target, and the routing tests
-    below then run against genuinely partitioned tables. On the operator's
-    converted mirror it is a no-op.
+    `migrate()` is one-way and destructive: it rebuilds market_snapshots and
+    book_levels as partitioned tables, and Postgres marks a range-partition
+    key NOT NULL. Run against the suite's shared per-run database, that
+    leaked into every test that collected after it. `test_wallet_depth_join`
+    deliberately writes a NULL `captured_at` to model the legacy
+    fetched-together rows, and became 7 collection ERRORS the moment
+    retention converted the database first (r < w alphabetically). Those
+    seven tests pass in isolation and had stopped running in every full run.
+
+    The same leak is why nothing caught `_SNAPSHOT_INDEXES` dropping the
+    tipoff partial indexes: the only test that asserts them
+    (test_picks_tipoff) ran BEFORE the conversion and never saw a converted
+    table.
+
+    So the conversion gets its own database, created next to the suite's on
+    the same server and dropped afterwards. Nothing outside this module can
+    observe it. On the operator's already-converted mirror the fixture is a
+    no-op and yields {}.
+
+    Yields the pre-conversion index sets, or {} when there was nothing to
+    convert.
     """
-    from core.retention import migrate
+    import os
 
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine
+
+    from core.retention import migrate
+    from core.storage import get_database_url
+
+    suite_url = get_database_url()
     with get_engine().connect() as c:
-        already = is_partitioned(c, "market_snapshots")
-    if not already:
-        migrate(get_engine())
-    yield
+        if is_partitioned(c, "market_snapshots"):
+            _conv["engine"] = get_engine()
+            _conv["Session"] = get_sessionmaker(get_engine())
+            yield {}
+            return
+
+    base, _ = suite_url.rsplit("/", 1)
+    name = f"meridian_retention_{os.getpid()}"
+    url = f"{base}/{name}"
+    admin = create_engine(suite_url, isolation_level="AUTOCOMMIT",
+                          pool_size=1, max_overflow=0)
+    with admin.connect() as c:
+        c.execute(text(f'drop database if exists "{name}" with (force)'))
+        c.execute(text(f'create database "{name}"'))
+
+    # alembic/env.py reads DATABASE_URL, so point it at the new database for
+    # the upgrade and put it back immediately.
+    previous = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = url
+    try:
+        cfg = Config(str(REPO / "alembic.ini"))
+        command.upgrade(cfg, "head")
+    finally:
+        if previous is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous
+
+    engine = create_engine(url)
+    _conv["engine"] = engine
+    _conv["Session"] = get_sessionmaker(engine)
+    with engine.connect() as c:
+        before = {t: _indexes(c, t)
+                  for t in ("market_snapshots", "book_levels")}
+    migrate(engine)
+    try:
+        yield before
+    finally:
+        engine.dispose()
+        with admin.connect() as c:
+            c.execute(text(f'drop database if exists "{name}" with (force)'))
+        admin.dispose()
 
 
 needs_partitions = pytest.mark.usefixtures("partitioned_db")
@@ -117,6 +218,22 @@ def clean_rows():
         _wipe(s)
 
 
+#: A timestamp inside a month the conversion actually creates. `migrate()`
+#: covers [min(captured_at) … now] plus MONTHS_AHEAD, so on the suite's EMPTY
+#: per-run database that set STARTS at the current month — anything earlier
+#: routes to `_default`. These tests were written in August 2026 with the
+#: month hardcoded, and began failing on 2026-09-01 for that reason alone.
+#: Deriving the month from the clock is what they always meant.
+_MONTH = month_start(dt.datetime.now(UTC))
+_SNAPS_PARTITION = partition_name("market_snapshots", _MONTH)
+_BOOK_PARTITION = partition_name("book_levels", _MONTH)
+
+
+def _in_month(hour: int) -> dt.datetime:
+    """Day 3 of the current month — every month has one."""
+    return _MONTH + dt.timedelta(days=2, hours=hour)
+
+
 def _snap(captured_at):
     return MarketSnapshot(
         captured_at=captured_at, market_slug=SLUG,
@@ -125,19 +242,44 @@ def _snap(captured_at):
     )
 
 
+def test_every_index_survives_the_conversion(partitioned_db):
+    """The conversion rebuilds the table; whatever it does not rebuild is
+    GONE, silently, on the operator's mirror.
+
+    2026-09-05: `_SNAPSHOT_INDEXES` was a hand-kept copy of the table's index
+    set, and migration f3a8c1d92e47's two partial indexes — the ones that took
+    /api/picks from 4.75s to 0.42s in production — were never added to it. A
+    conversion would have dropped them and nothing would have said so; the
+    only symptom is the page getting slow again.
+
+    Compared by SHAPE, not just by name: a plain index under a partial
+    index's name reintroduces the full scan the partial one exists to
+    prevent."""
+    if not partitioned_db:
+        pytest.skip("database was already partitioned — no before-state to "
+                    "compare against")
+    with _engine().connect() as c:
+        for table, before in partitioned_db.items():
+            after = _indexes(c, table)
+            # A partitioned parent's indexes read as ON ONLY the parent.
+            norm = {n: d.replace(" ONLY ", " ") for n, d in after.items()}
+            for name, shape in before.items():
+                assert name in norm, (
+                    f"{table}.{name} did not survive the partition conversion")
+                assert norm[name] == shape.replace(" ONLY ", " "), (
+                    f"{table}.{name} came back a different index:\n"
+                    f"  before: {shape}\n  after:  {norm[name]}")
+
+
 @needs_partitions
 def test_rows_route_to_their_month_partition(clean_rows):
-    # THIS month, not a hardcoded one: migrate() creates partitions from
-    # now forward, so a fixed 2026-08 date routed to _default the moment
-    # the calendar left August and the test read as a routing failure.
-    at = month_start(dt.datetime.now(UTC)) + dt.timedelta(hours=1)
     with _Session() as s:
-        s.add(_snap(at))
+        s.add(_snap(_in_month(1)))
         s.commit()
         part = s.execute(text(
             "select tableoid::regclass::text from market_snapshots "
             "where market_slug = :m"), {"m": SLUG}).scalar()
-    assert part == f"market_snapshots_y{at:%Y}m{at:%m}"
+    assert part == _SNAPS_PARTITION
 
 
 @needs_partitions
@@ -159,8 +301,7 @@ def test_on_conflict_idempotency_survives_partitioning(clean_rows):
     the conversion must keep both the name and the semantics."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    at = dt.datetime(2026, 8, 3, 2, 0, tzinfo=UTC)
-    values = dict(captured_at=at, market_slug=SLUG, is_live=True)
+    values = dict(captured_at=_in_month(2), market_slug=SLUG, is_live=True)
     with _Session() as s:
         for _ in range(2):
             s.execute(pg_insert(MarketSnapshot).values(**values)
@@ -176,7 +317,7 @@ def test_on_conflict_idempotency_survives_partitioning(clean_rows):
 def test_book_levels_partitioned_and_unique_constraint_survives(clean_rows):
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-    at = month_start(dt.datetime.now(UTC)) + dt.timedelta(hours=3)
+    at = _in_month(3)
     with _Session() as s:
         s.add(_snap(at))
         s.commit()
@@ -191,7 +332,7 @@ def test_book_levels_partitioned_and_unique_constraint_survives(clean_rows):
         part, n = s.execute(text(
             "select tableoid::regclass::text, count(*) from book_levels "
             "where snapshot_id = :s group by 1"), {"s": sid}).one()
-    assert part == f"book_levels_y{at:%Y}m{at:%m}"
+    assert part == _BOOK_PARTITION
     assert n == 1
 
 
