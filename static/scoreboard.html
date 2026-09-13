@@ -118,6 +118,7 @@
     POSITIVE excludes 0 at G&gt;=25 is a candidate, nothing is armed</div>
   <div class="meta" id="meta">loading…</div>
   <div id="book"></div>
+  <div id="scalps"></div>
 </div>
 
 <footer id="foot">connecting…</footer>
@@ -168,7 +169,7 @@ fetch("/api/leagues").then(r=>r.json()).then(d=>{
              data-lg="${l.slug}">${l.name}</button>`).join("");
   const paint = () => {
     document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
-    render();
+    render(); renderScalps();
   };
   document.querySelectorAll(".lgt").forEach(b=>{
     b.addEventListener("click", ()=>{
@@ -190,6 +191,47 @@ async function loadBook(){
 }
 loadBook();
 setInterval(loadBook, 60000);
+
+/* ── PAPER SCALPS (2026-09-13): the in-game loop's closed positions. Polled
+   faster than the book because this one moves during a game, where the book is
+   a file a cron writes once. Rows are filtered to the league tab like the
+   book's are; the TOTALS are every league, because "how is the loop doing" is
+   not a per-tab question. Nothing here computes a P&L — the totals come from
+   /api/scalps, which sums in SQL over every row, not over these 200. ── */
+let SCALPS = null;
+async function loadScalps(){
+  try { SCALPS = await (await fetch("/api/scalps")).json(); }
+  catch(e){ SCALPS = {error:"/api/scalps unavailable"}; }
+  renderScalps();
+}
+loadScalps();
+setInterval(loadScalps, 15000);
+
+function renderScalps(){
+  const el = $("#scalps");
+  if(!el || !SCALPS) return;
+  const head = `<h2>Paper scalps <span class="dimc" style="font-weight:400">· in-game, read-only, nothing armed</span></h2>`;
+  if(SCALPS.error){ el.innerHTML = head + `<div class="empty">${esc(SCALPS.error)}</div>`; return; }
+  const totals = (SCALPS.totals || []).map(t =>
+    `${esc(t.league)} <b>${signed(t.pnl, 2)}</b> over ${t.n} (${t.wins} up, fees ${signed(-t.fee, 2)})`).join(" · ");
+  const rows = (SCALPS.rows || []).filter(r => r.league === LEAGUE);
+  if(!rows.length){
+    el.innerHTML = head + `<div class="note">${totals || "no closed scalps yet"}</div>`
+      + `<div class="empty">no closed scalps for ${esc(LEAGUE_NAMES[LEAGUE] || LEAGUE.toUpperCase())}</div>`;
+    return;
+  }
+  el.innerHTML = head + `<div class="note">${totals}</div><div class="tbl"><table><thead><tr>
+    <th class="l">exited</th><th class="l">league</th><th class="l">game</th><th class="l">side</th>
+    <th class="l">trigger</th><th>entry</th><th>exit</th><th class="l">reason</th><th>P&amp;L $</th>
+    </tr></thead><tbody>${rows.map(r => `<tr class="${r.exit_reason === "stale" ? "dim" : ""}">
+      <td class="l">${esc(new Date(r.exit_at).toLocaleTimeString())}</td>
+      <td class="l">${esc(r.league)}</td><td class="l">${esc(r.game_id)}</td>
+      <td class="l">${esc(r.side)}</td><td class="l">${esc(r.trigger)}</td>
+      <td>${r.entry_px == null ? "—" : r.entry_px.toFixed(3)}</td>
+      <td>${r.exit_px == null ? "—" : r.exit_px.toFixed(3)}</td>
+      <td class="l">${esc(r.exit_reason)}</td><td>${signed(r.pnl, 2)}</td></tr>`).join("")}
+  </tbody></table></div>`;
+}
 
 function render(){
   const el = $("#book");
