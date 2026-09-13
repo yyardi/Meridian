@@ -29,7 +29,7 @@ def test_an_unknown_league_raises_rather_than_guessing():
     derivation fails silently, and a silently unknown league renders an empty
     board that looks like a quiet evening."""
     with pytest.raises(leagues.UnknownLeagueError):
-        leagues.get_league("mlb")
+        leagues.get_league("curling")
 
 
 def test_slug_lookup_covers_event_and_market_shapes():
@@ -49,9 +49,9 @@ def test_a_bad_env_default_does_not_take_the_board_down(monkeypatch):
 
 
 def test_the_api_rejects_an_unknown_league(client):
-    assert client.get("/api/games?league=mlb").status_code == 400
-    assert client.get("/api/board?league=mlb").status_code == 400
-    assert client.get("/api/picks?league=mlb").status_code == 400
+    assert client.get("/api/games?league=curling").status_code == 400
+    assert client.get("/api/board?league=curling").status_code == 400
+    assert client.get("/api/picks?league=curling").status_code == 400
 
 
 def test_every_league_endpoint_carries_the_tab_context(client):
