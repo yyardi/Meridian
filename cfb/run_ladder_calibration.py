@@ -1,5 +1,8 @@
 """Pregame ladder calibration: is any rung of the venue's football ladders soft?
 
+LADDER STUDY, football and MLB only. Cricket and table tennis have ONE market per
+event with no line, so there is no ladder to calibrate -- not a routing gap.
+
 The well-known test, run broadly and model-free. For every full-game spread,
 total, team-total and winner market on a settled CFB/NFL game: the LAST quote
 before kickoff (kickoff = the first ESPN play's wall clock when we have plays,

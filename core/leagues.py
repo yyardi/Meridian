@@ -217,17 +217,51 @@ def strict_default_league() -> League:
     return get_league(DEFAULT_LEAGUE)
 
 
+#: Every token that can name a league in a slug -> the league it names. A
+#: league's own slug plus each of its venue competitions, so `cplcr` and
+#: `county` both resolve to cricket. Built once; `LEAGUES` is a constant table.
+_SLUG_TOKENS: dict[str, League] = {
+    token: lg
+    for lg in LEAGUES.values()
+    for token in (lg.slug, *lg.venue_leagues)
+}
+
+
+def venue_patterns(league_slug: str) -> tuple[str, ...]:
+    """SQL LIKE patterns matching every market slug of a league.
+
+    One place, because `%-cricket-%` and `%-tabletennis-%` match NOTHING on
+    this venue -- those leagues are split into competitions (`cplcr`, `county`,
+    `setkameua`...) and the league word never appears in a slug. Every consumer
+    that built its own `f"%-{lg}-%"` would return an empty table for them, and
+    an empty table reads as a quiet night rather than a wrong pattern.
+
+    Unknown leagues fall back to their own name rather than raising: callers
+    here are read-only analyses, and an unknown sport should return nothing
+    found, not a traceback.
+    """
+    lg = LEAGUES.get((league_slug or "").strip().lower())
+    return tuple(f"%-{v}-%" for v in (lg.venue_leagues if lg else (league_slug,)))
+
+
 def league_of_slug(event_or_market_slug: str | None) -> League | None:
     """The league an event or market slug belongs to, or None.
 
     Market slugs carry a type prefix (``tsc-wnba-...``); event slugs do not
-    (``wnba-...``). Both are matched, longest slug first so a future league
-    whose name prefixes another cannot shadow it.
+    (``wnba-...``). Both are matched, longest token first so a league whose
+    name prefixes another cannot shadow it.
+
+    **The token in the slug is the VENUE's, which is not always the league's.**
+    Cricket and table tennis are split by the venue into competitions --
+    ``aec-cplcr-bra-gaw-2026-09-13`` is cricket, ``aec-setkameua-...`` is table
+    tennis -- and neither slug contains the word. Matching only `LEAGUES` keys
+    returned None for every one of them, which is indistinguishable from "not a
+    sports slug" to every caller here.
     """
     s = (event_or_market_slug or "").strip().lower()
     if not s:
         return None
-    for slug in sorted(LEAGUES, key=len, reverse=True):
-        if s.startswith(f"{slug}-") or f"-{slug}-" in s:
-            return LEAGUES[slug]
+    for token in sorted(_SLUG_TOKENS, key=len, reverse=True):
+        if s.startswith(f"{token}-") or f"-{token}-" in s:
+            return _SLUG_TOKENS[token]
     return None

@@ -82,7 +82,7 @@ WITH f AS (
                ELSE quote_price-settlement END)::numeric AS pnl
   FROM shadow_quote_fills
   WHERE settlement IS NOT NULL
-    AND market_slug LIKE :slug_like
+    AND market_slug LIKE ANY(:slug_likes)
     AND filled_at >= :since
 ),
 sided AS (
@@ -108,11 +108,14 @@ SELECT (SELECT count(*) FROM kept)                                AS fills,
 
 def run(sport: str, strategy: str, wallet: float, since: str, db: str | None) -> Result:
     from sqlalchemy import text
+    from core.leagues import venue_patterns
     guard = 1 if strategy == "quote-guarded" else 0
     eng = _engine(db)
     with eng.connect() as c:
         row = c.execute(text(SQL), {
-            "slug_like": f"%-{sport}-%", "since": since, "guard": guard}).one()
+            # a sport can be several venue competitions (cricket -> cplcr,
+            # county, ...); `%-cricket-%` matches nothing at all
+            "slug_likes": list(venue_patterns(sport)), "since": since, "guard": guard}).one()
 
     fills, games, before, mean, sd, total = row
     mean, sd, total = float(mean), float(sd), float(total)
