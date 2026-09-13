@@ -65,11 +65,13 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
 
 - **CFB 20–30¢ NO decomposed (done, `cfb/run_longshot_decomp.py`, 117 games):** the +5.44¢ is
   carried by away-underdog games (+7.83 [+1.03, +14.64], G 94); 102 of 115 games are away
-  underdogs, so "away" and "underdog" are one variable. Across the ladder the home side beats
-  its price at every rung and the away side loses at every rung (home ≥ away in all five twin
-  pairs by 5–14¢); the only cell excluding zero is **buy AWAY at YES-mid 50–60¢: −11.62¢/contract
-  [−21.74, −1.50], n 227, G 104** (one of ~20 cells looked at). Not a longshot effect; a
-  home-shift effect. **The measurement reproduces**: independent SQL returns the same 227 rungs
+  underdogs, so "away" and "underdog" are one variable. The one cell excluding zero is
+  **buy AWAY at YES-mid 50–60¢: −11.62¢/contract [−21.74, −1.50], n 227, G 104** (one of ~20 cells
+  looked at, and ~10 distinct statistics — each appears once as a cell and once as a mirror's twin).
+  Its home twin is **+1.97¢ [−7.65, +11.59], n 282, G 113**, a null. **The pair is one measurement
+  and one null, not symmetric evidence of a home edge**; an earlier draft of this brief said "home
+  beats at every rung and away loses at every rung" as though those were two findings. What is
+  established is that the AWAY side is expensive at coin-flip rungs. Not a longshot effect. **The measurement reproduces**: independent SQL returns the same 227 rungs
   and 104 games, the venue settled 227/227, and the 65 rungs with an ESPN final agree 65/65 under
   the stated frame. **What the audit corrected was what I did with it:** the registered fade is the exact
   complement of that cell (same 227 rows, other side), so its in-sample expectation is

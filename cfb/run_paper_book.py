@@ -231,8 +231,13 @@ def main():
         print(f"{name:<26}{n:>6}{G:>6}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}   {v}")
     settlements.save(_settle)
     print(f"\nsettlement cache {settlements.PATH}: {_hits:,} reused, {len(_settle) - _hits:,} fetched, {len(_settle):,} stored")
-    footer = ["P&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a candidate",
-              "at G >= 25 AND excludes 0 AND its home/away twin does not contradict it; nothing here is sized or armed."]
+    footer = [
+        "P&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a",
+        "candidate at G >= 25 AND excludes 0. The home/away twin is PRINTED BESIDE, never gated on:",
+        "for a twin to 'contradict' it would have to be significantly negative, which on the tape so",
+        "far is an 11.6c swing from where it sits -- the clause passed on every achievable outcome",
+        "and tested nothing (audit, 2026-09-13). Nothing here is sized or armed.",
+    ]
     for line in footer:
         print(line)
     dump_json(preamble, weekly_rows, all_rows, footer)

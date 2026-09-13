@@ -32,9 +32,26 @@ Two things this fixes by naming them:
 Registered rule: **G ≥ 25 AND the 95% interval excludes 0 AND the home/away
 twin does not contradict.**
 
-Projected onto the outcomes this design can produce, **the third clause is
-much weaker than it looks and the second is not a 5% test.** Both are
-addressed in §3 and §4.
+Projected onto the outcomes this design can produce, **the third clause cannot
+fire and the second is not a 5% test.**
+
+**The third clause is a dead branch.** The home/away twin of the flagship cell
+measures **+1.97¢ [−7.65, +11.59], n 282, G 113, |t| 0.40**. To "contradict"
+the away cell it would have to be significantly negative — below −9.62¢ — so it
+needs an **11.59¢ swing from where it sits** before the clause can ever fire.
+A clause that passes on essentially every achievable outcome adds no evidence;
+it reads as corroboration while testing nothing. **Registered replacement:**
+report the twin's point estimate and interval beside the cell and let the
+reader see both, with no pass/fail gate on it.
+
+Note also what the twin's own number does to the decomposition's headline
+claim. "Home beats its price at every rung" is, at this rung, **+1.97¢ with an
+interval spanning zero** — the home side is indistinguishable from zero while
+the away side is the only one carrying a signal. The pair is not symmetric
+evidence of a home edge; it is one measurement and one null.
+
+The second clause is addressed in §3, and the structural problem with what was
+registered in §4.
 
 ## 3. Multiplicity — the binding constraint
 
@@ -107,6 +124,14 @@ Measured on those rungs: mean spread **1.21¢**, **round-trip 4.17¢**.
 
 > **E[`cfb_spread_no_50_60`] = +11.62 − 4.17 = +7.45¢, SE ≈ 5.16,
 > 95% CI [−2.67, +17.57] — SPANS ZERO, uncorrected, in-sample.**
+
+**That was a prediction, and it was then measured.** A full independent
+re-derivation — my own SQL, the venue's settlement, the paper book's P&L —
+returns **+7.51¢ [−2.62, +17.63], SE 5.17, |t| 1.45**: the predicted point to
+within 0.06¢. The same run reproduces the source cell at **−11.62¢
+[−21.74, −1.50], n 227, G 104 — the published figure exactly, to the cent.**
+The identity is not an approximation and the fade's weakness is not an
+artefact of how it was estimated.
 
 The registered line is *weaker than the observation that motivated it*, and
 was already insignificant on the tape it came from before any correction. The
