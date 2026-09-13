@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 23:20Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 23:40Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -59,6 +59,15 @@ of each pair. There are 24 distinct statistics on the table, not 29.
 code stays; the bet does not get money. All lines above are scored every Monday
 by `cfb/run_paper_book.py` (venue-settled, taker fee charged) and shown on the
 dashboard's SCOREBOARD page once that page lands (being built). First run 2026-09-13 17:45Z: `docs/paper_book_2026-09-13.txt`, also on the box in artifacts/reads.
+
+## 3b. Open defects found tonight (none is a strategy question)
+
+| defect | measurement | state |
+|---|---|---|
+| `/api/games` has no limit bound | `limit=-1` → 500 immediately; `limit=100000` → 200 in **29.1s**; a twelve-digit limit → 200 in 24.2s; `limit=abc` → 422 in 0.25s. An unauthenticated GET holds a worker for half a minute on a service bound to all interfaces | fix in progress (validation bound, both ends) |
+| ESPN recorder never observes the final | only ~41% of games reach `state='post'`; 14-day census 105 `post` vs 81 `in` | fix assigned; deploys Tuesday between slates |
+| `is_live` is never cleared | **5,364 of 12,160** markets whose last row says `is_live` are over a day stale (44%), so a dead stream and a frozen venue are indistinguishable by that flag alone | every consumer being listed; `scripts/alarm_v5.py` (merged) is the detector |
+| `core/retention.py` dropped two indexes | hand-kept index lists missed the tipoff partials that took `/api/picks` from 4.75s to 0.42s | FIXED, merged |
 
 ## 4. Registered reads (dates fixed, criteria written before the tape)
 
