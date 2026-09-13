@@ -37,7 +37,7 @@ RUN prod read-only, env flags INSIDE docker run (sudo drops an env prefix); need
 + checkout mounted for the venue client -- scripts/prod_weekend_read.sh V=(). Nothing is placed.
 G < 25 is UNDERPOWERED, reported and kept.
 """
-import datetime as dt, os, sys
+import datetime as dt, math, os, sys
 from bisect import bisect_right
 from collections import defaultdict
 
@@ -48,7 +48,7 @@ from core.polymarket.client import PolymarketGatewayClient
 
 sys.stdout.reconfigure(line_buffering=True)   # a long per-game run must show progress
 LG = os.environ.get("LEAGUE", "cfb")
-FEE, S120 = 0.06, dt.timedelta(seconds=120)
+FEE, S120, GAP = 0.06, dt.timedelta(seconds=120), 600.0
 NOW = dt.datetime.now(dt.timezone.utc)
 BANDS = [(0.900, 0.925), (0.925, 0.950), (0.950, 0.975), (0.975, 0.990)]
 BAD = ("timeout", "kickoff", "end period", "end of", "two-minute", "warning")
@@ -88,6 +88,21 @@ def clustered(vals, keys):                     # verbatim from cfb/run_paper_boo
 
 def med(xs): xs = sorted(xs); return xs[len(xs) // 2] if xs else float("nan")
 
+def cp_lo(k, n, a=0.05):
+    """Exact one-sided Clopper-Pearson LOWER bound on k/n. P(X>=k|p) rises in p, so bisect.
+
+    THE HONEST INSTRUMENT WHERE EVERY GAME WON. With k = n the P&L has no outcome
+    variance left, so the game-clustered sandwich collapses onto the band's own price
+    dispersion and reports an interval tighter than anything else on the board -- 7/7
+    read +1.68 [+1.41, +1.96] while being consistent with a true rate of 65%."""
+    if k <= 0: return 0.0
+    lo, hi = 0.0, 1.0
+    for _ in range(60):
+        m = (lo + hi) / 2
+        if sum(math.comb(n, i) * m ** i * (1 - m) ** (n - i) for i in range(k, n + 1)) > a: hi = m
+        else: lo = m
+    return lo
+
 def cell(bets, fld="net"):
     """bets: dicts with net/nm/calib/cross/fe ($ per $1 contract), win, game, secs, dips."""
     if not bets: return "n=0"
@@ -95,8 +110,10 @@ def cell(bets, fld="net"):
     ca, cr, fe = (100 * sum(b[k] for b in bets) / n for k in ("calib", "cross", "fe"))
     wr = sum(b["win"] for b in bets) / n
     be = sum(b["p"] + fee(b["p"]) for b in bets) / n
+    k = round(sum(b["win"] for b in bets))
     return (f"{m:+6.2f} [{m - h:+6.2f},{m + h:+6.2f}] n={n:<4} G={G:<3} Ge={ge:5.1f} "
-            f"| calib{ca:+6.2f} cross{cr:+6.2f} fee{fe:+6.2f} | win {wr:5.1%} need {be:5.1%} "
+            f"| calib{ca:+6.2f} cross{cr:+6.2f} fee{fe:+6.2f} | win {wr:5.1%} CPlo {cp_lo(k, n):5.1%} "
+            f"need {be:5.1%} "
             f"| {med([b['secs'] for b in bets]) / 60:4.0f}m {med([b['dips'] for b in bets]):3.0f}dip"
             + ("  UNDERPOWERED" if G < 25 else ""))
 
@@ -152,6 +169,8 @@ with eng.connect() as c:
                     out = (lambda j: M[j] < lo) if yes else (lambda j: M[j] > 1 - lo)
                     k = bisect_right(pw, T[i])
                     b = dict(net=win - paid - fee(p), nm=win - pm - fee(m), win=win, p=paid,
+                             gap=(T[i] - T[i - 1]).total_seconds() if i else 0.0,
+                             chg_age=(T[i] - chg[i]).total_seconds(),
                              calib=(y - m) if yes else (m - y), fe=-fee(p),
                              cross=-(A[i] - m) if yes else -(m - B[i]), game=g["eg"],
                              secs=(T[-1] - T[i]).total_seconds(),
@@ -176,6 +195,24 @@ for fld, lab in (("net", "PRIMARY (pre-registered), entry at the ASK, band x sid
     for lo, hi in BANDS:
         print(f"  [{lo:.3f},{hi:.3f})  YES/away  {cell(cells[(lo, hi, 'YES')], fld)}")
         print(f"  mirror ({1 - hi:.3f},{1 - lo:.3f}]  NO/home   {cell(cells[(lo, hi, 'NO')], fld)}")
+allb = [b for (lo, hi, side) in [(l, h, s2) for l, h in BANDS for s2 in ("YES", "NO")]
+        for b in cells[(lo, hi, side)]]
+gaps = sorted(b["gap"] for b in allb)
+print(f"\nGAP AT ENTRY, seconds since the PREVIOUS write (n={len(gaps)}): median {med(gaps):.1f}"
+      f"  p90 {gaps[int(0.9 * len(gaps))]:.1f}  max {max(gaps):.1f}  over {GAP:.0f}s: "
+      f"{sum(g > GAP for g in gaps)}")
+ca = sorted(b["chg_age"] for b in allb)
+print(f"  age of the last MID CHANGE at entry: median {med(ca):.1f}  max {max(ca):.1f}  -- the"
+      f" registered 120 s gate tests THIS and\n  it cannot fail on a change-detected tape:"
+      f" nearly every written row IS a change, so chg==T. A frozen board is a GAP.")
+print("\nPAIRED FRESHNESS CUT: registered (left) vs gap-to-previous-write <= "
+      f"{GAP:.0f}s (right). Reported, NOT substituted.")
+for lo, hi in BANDS:
+    for side in ("YES", "NO"):
+        b = cells[(lo, hi, side)]; f = [x for x in b if x["gap"] <= GAP]
+        print(f"  [{lo:.3f},{hi:.3f}) {side:<3} {cell(b)}")
+        if len(f) != len(b): print(f"  {'':>17}fresh  {cell(f)}")
+        else: print(f"  {'':>17}fresh  IDENTICAL: 0 of {len(b)} entries dropped")
 print("\nEXPLORATORY: by period and half (not pre-registered; 48 cells)")
 for lo, hi in BANDS:
     for side in ("YES", "NO"):
