@@ -296,3 +296,93 @@ def test_the_snapshot_row_itself_carries_the_key_not_just_the_helper():
     assert '"game_id": _event_key(event, stats)' in src, (
         "the snapshot row does not use the fallback key")
     assert '"game_id": event.game_id,' not in src
+
+
+# --------------------------------------------------------------------- #
+# board_coverage. A verdict that is true on every long-game league for most
+# of every day is the leak-guard failure arriving from the other direction.
+# --------------------------------------------------------------------- #
+class _Parsed:
+    def __init__(self, n):
+        self.events = [object()] * n
+
+
+def _coverage(rows, listing, limit=500):
+    """Run the check and return {venue_league: log kwargs}."""
+    from core import recorder as R
+
+    captured = {}
+
+    class _Log:
+        def info(self, event, **kw):
+            if event == "board_coverage":
+                captured[kw["venue_league"]] = kw
+
+    class _Client:
+        def get_sports_listing(self):
+            return listing
+
+    rec = object.__new__(R.Recorder)
+    rec._client = _Client()
+    rec.config = type("C", (), {"event_limit": limit})()
+    old, R.log = R.log, _Log()
+    try:
+        R.Recorder._log_expected_vs_observed(
+            rec, list(rows), [(vl, _Parsed(n)) for vl, n in rows.items()])
+    finally:
+        R.log = old
+    return captured
+
+
+def test_mlb_shaped_shortfall_is_reported_without_a_defect_verdict():
+    """★ THE POINT. /v2/sports and the events endpoint count DIFFERENT
+    POPULATIONS: measured on the saved listing, MLB lists 87 against 55 events
+    returned over five days, untruncated, while table tennis agrees exactly on
+    all four competitions. So `observed < expected` is a property of the
+    league, not a gap — and a boolean that is true on every long-game league
+    for most of every day is a check nobody reads.
+
+    The numbers are still reported. A reader interprets 43 against 75; a
+    permanently-true `missing` tells them nothing.
+    """
+    got = _coverage({"mlb": 43}, {"mlb": 75})["mlb"]
+    assert got["expected"] == 75 and got["observed"] == 43
+    assert got["shortfall"] == 32
+    assert got["not_swept"] is False
+    assert got["swept_nothing"] is False
+    assert got["truncated"] is False
+    assert "missing" not in got, (
+        "the always-true verdict is back; obs < exp is not a defect")
+
+
+def test_a_listed_competition_that_swept_nothing_is_still_loud():
+    """The case the check was built for: an unknown or empty competition
+    returns 200 with `events: []`, never a 404, so a wrong slug and a quiet
+    board are the same response."""
+    got = _coverage({"cplcr": 0}, {"cplcr": 15})["cplcr"]
+    assert got["swept_nothing"] is True
+
+
+def test_a_board_landing_exactly_on_the_limit_reads_as_truncated():
+    """This is what caught the default limit of 50 recording a fifth of
+    setkameua. Exactly-at-the-limit is the truncation signature: a real board
+    can land there and rarely does; a truncated one always does."""
+    assert _coverage({"setkameua": 50}, {"setkameua": 237}, limit=50)[
+        "setkameua"]["truncated"] is True
+    # ...and a board under the limit does not, or the flag would be constant.
+    assert _coverage({"setkameua": 237}, {"setkameua": 237}, limit=500)[
+        "setkameua"]["truncated"] is False
+
+
+def test_a_competition_absent_from_the_sweep_is_reported():
+    got = _coverage({}, {"ittf": 12})
+    assert got == {} or got.get("ittf", {}).get("not_swept") is True
+
+
+def test_the_exact_agreement_case_flags_nothing():
+    """Control. Four flag tests are equally satisfied by a check that flags
+    everything; table tennis matching exactly must be silent on all three."""
+    got = _coverage({"setkamemd": 19}, {"setkamemd": 19})["setkamemd"]
+    assert (got["not_swept"], got["swept_nothing"], got["truncated"]) == \
+        (False, False, False)
+    assert got["shortfall"] == 0
