@@ -177,6 +177,21 @@ table-tennis container would have deployed recording a fifth of the league it ex
 the only symptom would have been a league that looked small. The coverage line is what makes
 it visible; the limit is what makes it right.
 
+**The coverage check itself was then corrected, and my hypothesis about it was wrong.**
+I guessed its MLB warning (43 observed against 75 expected) was a false alarm caused by
+live games being counted on one side only, and proposed subtracting them. Refuted by one
+case: setkawoua listed 1 event, returned 1, and that event was LIVE — liveness appears on
+both sides and cancels. My fix would have removed from one side a quantity present in both,
+left MLB red at 43-vs-64, and made the next reader conclude the gap was real. The true cause
+is that the two endpoints count different populations by a different amount per league, and
+`missing` was therefore true on every long-game league most of the day. It is now reported
+as three numbers with no verdict, keeping three booleans that can only ever mean a defect:
+`not_swept`, `swept_nothing` (the wrong-slug case — an unknown competition returns 200 with
+an empty list, never a 404) and `truncated` (observed equals the limit exactly, which is what
+caught the 50). **Why the venue counts 32 more than it returns is still open and named
+rather than guessed.** One thing now excluded: I probed the events endpoint with a horizon
+out to 09-30 and it returns the same 42 events spanning five days, so it is not a date window.
+
 This does NOT say there is an edge there — the discovery found 1–2¢ spreads and
 a median 27k shares resting, i.e. a tight, liquid, well-attended book, and the
 0.06·p(1−p) fee is 6% of a 50¢ ticket against a 1–2¢ spread, so taking is
