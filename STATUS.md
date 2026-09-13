@@ -13,8 +13,11 @@ cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.
 # 2. rebuild the api: SCOREBOARD page (JSON paper book), honest PULSE page, reads mount, settlement cache
 cd /opt/meridian && sudo docker compose up -d --build api
 
-# verify both
-sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api"
+# 3. the football in-game PAPER taker loop (your rule, live on paper: TRIGGER ytg40, TP 5%, STOP 10%, $25 tickets; places nothing, opens no venue socket)
+cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb
+
+# verify all three
+sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp"
 ```
 Prod git is fast-forwarded to origin/main (main-deploy, 09-13 19:05Z); the earlier local edits are in `git stash list` and artifacts/reads/local_edits_0913. As of 19:05Z neither container above had been rebuilt (api image 09-05, no mlb container): compose is classifier-blocked for the manager, these two are yours.
 
@@ -70,12 +73,12 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 |---|---|
 | Debugger | main's CFB ESPN recorder regression (fa24613, prod's image predates it, 09-12 was not hit) + the leak guard; idempotent index migration (laptop Kalshi crash-loop); health.py's 6 missing containers; Kalshi recorder sets NFL kickoffs from ESPN |
 | Builder D (done) | MLB: settlement cache, MLB ladder calibration, daily 10:40Z `mlb` cron mode — MERGED, crontab line installed |
-| Quant A | DK line move → venue lag: taker P&L after fee on the implied rung, by side, by horizon, raw lag in minutes |
+| Quant A | DK line move → venue lag: first pass found the lag (CFB median 30 min, n=19, G=15; NFL median 61 min, n=7) but settled from the idle WNBA resolver table, so P&L had G=0; rerunning on the venue's settlement endpoint |
 | researcher 1 | CFB 20–30¢ NO decomposed: favourite-fails vs dog-covers, monotone buckets with home-referenced twins, NO-mid definition |
 | researcher 2 | Kalshi vs Polymarket cross-venue: gap, dutch count, who is stale, the longshot rung on Kalshi |
 | researcher 3 | the momentum scalp grid (§3), fee table first |
 | honest dashboard + JSON scoreboard | MERGED 09-13 (080aa97, 5891b4b, −255 lines); live after command 2 above |
-| Builder D | football in-game PAPER taker loop (`core/gridiron/scalp.py`): the operator's rule live on paper for NFL/CFB, `paper_scalps` table, `/api/scalps` |
+| Builder D (done) | football in-game PAPER taker loop `core/gridiron/scalp.py` — MERGED 09-13 19:40Z, 47 rule tests, read-only by construction; live after command 3 above; parameters get refitted from tonight's backtest |
 | researcher 4 | cricket / table tennis venue discovery: leagues, markets, depth, what the UI mislabels, ESPN + Cricinfo endpoints; recorder overlay follows |
 | codebase map / Kalshi–DK lag / shadow lister | merged earlier 09-13 |
 
