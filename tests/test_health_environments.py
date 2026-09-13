@@ -136,3 +136,41 @@ def test_disk_headroom_is_a_percentage_not_an_absolute(monkeypatch):
 
 def test_the_warning_threshold_is_the_one_the_runbook_promises():
     assert MAX_DISK_USED_PCT == 80.0
+
+
+def test_health_names_every_container_compose_defines():
+    """A container health.py does not name is one it cannot report on.
+
+    Five were missing on 2026-09-13 — MLB, both football ESPN feeds, both
+    football odds recorders — so `docker compose ps` could show every one of
+    them dead and health.py would still print a clean bill. The list is
+    hand-kept, and a hand-kept inventory of a thing that grows weekly drifts
+    in ONE direction: toward blindness, silently, because the missing row
+    cannot report its own absence.
+
+    Checked both ways on purpose. A name expected here with no compose service
+    behind it is the mirror defect — a row that can only ever read DEAD — and
+    that is the noise this module's docstring exists to prevent. Either
+    direction is a failure; neither is visible by reading the file.
+    """
+    import re
+
+    repo = pathlib.Path(__file__).resolve().parent.parent
+    compose = {
+        m.group(1)
+        for f in repo.glob("docker-compose*.yml")
+        for m in re.finditer(r"container_name:\s*(\S+)", f.read_text())
+    }
+    assert compose, "no compose files parsed — the check would pass vacuously"
+
+    src = _HEALTH.read_text()
+    block = src[src.index("    expected = {"):]
+    block = block[: block.index("\n    }\n")]
+    expected = set(re.findall(r'^\s*"(meridian-[^"]+)":', block, re.M))
+
+    assert not compose - expected, (
+        "compose defines containers health.py cannot report on: "
+        f"{sorted(compose - expected)}")
+    assert not expected - compose, (
+        "health.py expects containers no compose file defines — these can "
+        f"only ever read DEAD: {sorted(expected - compose)}")
