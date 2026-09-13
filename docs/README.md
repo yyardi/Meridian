@@ -69,7 +69,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 
 | Doc | Covers |
 |---|---|
-| [what-runs.md](infra/what-runs.md) | What the three containers do, and why quiet hours still matter |
+| [what-runs.md](infra/what-runs.md) | Superseded — pointer to ARCHITECTURE.md |
 | [live-cadence.md](infra/live-cadence.md) | 27s → 200ms: no websocket, the DB was the bottleneck, and storage now needs retention |
 | [artifact-paths.md](infra/artifact-paths.md) | One artifact root (`MERIDIAN_DATA_DIR`), two archive subtrees, and the compose mount contract |
 | [analytics-path.md](infra/analytics-path.md) | Why the model-performance page was empty: writer on the host, reader in an unmounted container |
@@ -84,7 +84,7 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 | [live-odds.md](infra/live-odds.md) | ESPN publishes **no** live in-game odds — measured, and what to record instead |
 | [bankroll.md](infra/bankroll.md) | The account balance, read from the venue — and the stale `35.68` it replaced |
 | [fill-watcher.md](infra/fill-watcher.md) | How order fill state comes back from the venue, and the pre-authorized exit rules |
-| [architecture.md](infra/architecture.md) | How the pieces fit together |
+| [architecture.md](infra/architecture.md) | Superseded — pointer to ARCHITECTURE.md |
 | [aws-history-merge.md](infra/aws-history-merge.md) | Folding the laptop's history into the live server DB: natural keys, server-wins, and the restore-in-flight guard |
 | [aws-migration.md](infra/aws-migration.md) | Moving the stack to EC2: the click list, the row-count verification, and what the cutover actually is |
 | [hosting.md](infra/hosting.md) | Where it runs and what it costs |
@@ -92,6 +92,6 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 
 ## Reading order
 
-New to the project? **[how-it-all-works.md](how-it-all-works.md)** first, then **[architecture.md](infra/architecture.md)** → **[fair-value.md](math/fair-value.md)** → **[clv.md](math/clv.md)**. That's the system, the model, and how we judge it.
+New to the project? **[how-it-all-works.md](how-it-all-works.md)** first, then **[ARCHITECTURE.md](ARCHITECTURE.md)** → **[fair-value.md](math/fair-value.md)** → **[clv.md](math/clv.md)**. That's the system, the model, and how we judge it.
 
 Re-reading with experience? Go **[findings.md](findings.md)** → **[math/market-shrinkage.md](math/market-shrinkage.md)** → **[math/calibration-problem.md](math/calibration-problem.md)**. That's what's broken, why, and the one thing still unexplained.
