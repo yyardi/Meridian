@@ -202,6 +202,20 @@ def test_a_game_with_no_shadow_trades_is_a_404():
     assert c.get("/api/game/wnba-sea-tor-2099-12-31").status_code == 404
 
 
+#: Must be a sport we will never record. "cricket" sat here until 2026-09-13,
+#: when 6c10ee6 added cricket as a league — the slug then parsed, passed league
+#: validation, and fell through to the ordinary "no shadow trades" 404. The
+#: test read as a broken endpoint; the endpoint was right and the fixture had
+#: rotted. Third time this shape has bitten in a week (test_leagues used "mlb",
+#: then "curling"), so the guard is inline rather than trusted.
+_NOT_A_LEAGUE = "kabaddi"
+
+
 def test_a_slug_from_no_known_league_is_refused():
+    from core import leagues
+
+    assert leagues.league_of_slug(f"{_NOT_A_LEAGUE}-a-b-2099-01-01") is None, (
+        f"{_NOT_A_LEAGUE} is a league now — this test has inverted and is "
+        "asserting that a KNOWN league is refused")
     c = TestClient(app)
-    assert c.get("/api/game/cricket-a-b-2099-01-01").status_code == 400
+    assert c.get(f"/api/game/{_NOT_A_LEAGUE}-a-b-2099-01-01").status_code == 400
