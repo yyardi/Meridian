@@ -55,6 +55,18 @@ class League:
     recorded: bool
     #: Shown in place of an empty table. Says *why* it is empty.
     empty_state: str
+    #: The venue slugs this league's recorder sweeps in one cycle. Most leagues
+    #: are one venue slug and this is just `(slug,)`. Cricket and table tennis
+    #: are not: the venue splits them into competition slugs (`cplcr`, `county`,
+    #: `setkameua`...) with 1-69 events each, so one MERIDIAN_LEAGUE fans out.
+    #: An unknown slug returns 200 with `events: []`, never a 404 -- which is
+    #: why the recorder logs expected-vs-observed per venue league instead of
+    #: trusting a quiet response.
+    venue_leagues: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.venue_leagues:
+            object.__setattr__(self, "venue_leagues", (self.slug,))
 
 
 LEAGUES: dict[str, League] = {
@@ -120,7 +132,39 @@ LEAGUES: dict[str, League] = {
             "gated on WNBA alone, and pointing it at NBA without refitting "
             "would produce numbers, not predictions."
         ),
+    ),    "cricket": League(
+        slug="cricket",
+        name="Cricket",
+        espn_path="cricket",
+        recorded=False,
+        # Verified against the venue 2026-09-13: one market per event,
+        # `cricket_match_winner`, slug `aec-<event slug>`, no line. county is
+        # first-class, so a DRAW SETTLES 0.5 -- the first league here where
+        # settlement is not binary.
+        empty_state=(
+            "Cricket recording started 2026-09-13 (docker-compose.cricket.yml): "
+            "5 venue competitions, ~15 events a day, one winner market each. "
+            "Pregame board sweeps only; no live recorder, no model, no quoter. "
+            "county settles 0.5 on a draw and carries 50-84c spreads."
+        ),
+        venue_leagues=("cplcr", "t20icr", "t20iwcr", "odicr", "county"),
     ),
+    "tabletennis": League(
+        slug="tabletennis",
+        name="Table Tennis",
+        espn_path="table-tennis",
+        recorded=False,
+        # 97 events a day across four Setka competitions at 1-2c spreads, all
+        # traded, and the venue carries its own live scores. The densest board
+        # on the venue by settled events per day.
+        empty_state=(
+            "Table tennis recording started 2026-09-13 "
+            "(docker-compose.cricket.yml): 4 Setka competitions, ~97 events a "
+            "day, one winner market each at 1-2c spreads. Pregame sweeps only."
+        ),
+        venue_leagues=("setkameua", "setkamemd", "setkamecz", "setkawoua"),
+    ),
+
 }
 
 #: The league the dashboard opens on. Same env var `core.config` already reads,
