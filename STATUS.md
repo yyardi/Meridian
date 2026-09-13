@@ -4,6 +4,23 @@ One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
 Plan for the live candidate: `docs/math/longshot-no-candidate.md`.
 
+## 0. One database fix I am not allowed to run (163 rows, blocked by the permission classifier)
+
+The 163 cricket/TT rows already recorded still have a NULL game id; the merged fix
+only affects rows written from now on, and these are pregame closes that a re-sweep
+cannot recreate. Counted first: the predicate matches exactly 163 rows and nothing else.
+
+```bash
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'sudo docker exec -i meridian-postgres psql -U meridian -d meridian' <<'SQL'
+UPDATE market_snapshots SET game_id = coalesce(event_id, event_slug)
+ WHERE game_id IS NULL AND (event_id IS NOT NULL OR event_slug IS NOT NULL)
+   AND market_slug LIKE ANY (ARRAY['aec-cplcr-%','aec-t20icr-%','aec-t20iwcr-%','aec-odicr-%','aec-county-%','aec-setkameua-%','aec-setkamemd-%','aec-setkamecz-%','aec-setkawoua-%']);
+SQL
+```
+`coalesce(event_id, event_slug)` is exactly the fixed recorder's precedence, so backfilled
+and future rows cluster together rather than separately. Skip it if you would rather not:
+it recovers one sweep, not a dataset.
+
 ## 1. Commands you need to run — ON THE BOX (paste from the laptop; the 20:00Z run built everything on the laptop instead)
 
 ```bash
@@ -81,6 +98,21 @@ empty list rather than a 404**. The tell was the duration: 0.03s against the
 real sweep's 5.5s. Mounting `/opt/meridian/core` and `/opt/meridian/strategies`
 fixes it, and the expected-vs-observed coverage line then proves the board was
 actually read. MLB is unaffected — "mlb" happens to be the venue's own slug too.
+
+**Cricket and table-tennis rows had NO game id, which is the column the paper
+book joins on.** Found by counting distinct join keys per league: MLB 53 across
+1,551 rows, cricket and TT **0** across 163. Cause (`core/polymarket/schemas.py`):
+the venue sends `gameId` on US team sports and not on these, so it defaulted to
+None and was written through. FIXED and merged: the key now falls back
+`gameId → event.id → event.slug`, both branches counted on the cycle line so a
+fallback becoming the normal path is visible, and an event with no identifier at
+all writes NULL loudly rather than getting a manufactured id. Without this, all
+six cricket/TT lines would have printed "no markets on tape" forever — the
+Kalshi-NFL shape, a third time.
+
+**Standing check this earned:** for any column two tables join on, count its
+distinct non-NULL values per league before trusting a report that reads off the
+join. Three leagues have now been caught this way and none by being told.
 
 ## 3b. Open defects found tonight (none is a strategy question)
 
