@@ -45,6 +45,41 @@ most of it: rungs > 14 points from the centre +11.89¢ [+5.47, +18.31] on 16
 markets / 12 games; rungs 7–14 points +5.58¢ [−2.52, +13.68] on 192 / 75.
 Twelve games is not evidence; it is where to look.
 
+## 3b. Decomposition, 2026-09-13 (full tables: `longshot-no-decomposition_2026-09-13.md`)
+
+**The mechanism in §3 is probably wrong, and this note sits above the read it
+affects.** Splitting the bucket every way the brief asked:
+
+- **It is not a cheap-rung effect.** The fee-free gap (mid − realised) on the
+  away side is +2.0, +5.0, +9.3, +3.0, +9.6, +7.1, −0.6, +7.4, +9.3 pp across
+  YES-mid buckets 0.05 → 0.50: as large at the centre of the ladder as at the
+  25¢ rung, and not monotone in cheapness. The [0.20, 0.30) bucket is where
+  the *interval* is tightest (smallest p(1−p)), not where the effect lives.
+- **Away and underdog cannot be separated on this tape.** 75 of 83 games are
+  away-underdog (median centre line +23: weeks 1–2 cupcakes), so "cheap YES =
+  away covers" and "cheap YES = underdog covers" are one variable. The
+  away-favourite cell has 8 games.
+- **Distance and time-to-kickoff carry nothing:** 190/211 rows sit 8–14 points
+  from the centre, 204/211 were quoted inside the last hour.
+- **Totals and team totals show nothing like it** (−2.96¢ and −10.16¢ for the
+  same bet; the cheap side of team totals paid out MORE than priced).
+- **Shape:** a whole-ladder shift of about 4 points toward the home team over
+  two weekends reproduces the gaps. Per game, the away team covered the centre
+  line 33/83 = 0.398 [0.292, 0.503]. Either the venue under-rated home
+  favourites in weeks 1–2, or it is a 1.9σ draw; 83 games cannot say which.
+- 40% of spread rungs (1,343 of 3,346) have a YES mid under 5¢: the ladder is
+  quoted around zero, so it is dead on the home-friendly side and truncated on
+  the away-friendly side for big favourites. Every mirror comparison on this
+  venue is shaped by that.
+
+**Consequence for the money read:** the §4 read stands exactly as registered
+(the money metric under its pre-set definition). Added BESIDE it, chosen after
+a look and labelled so: the **centre-rung away-cover rate, split by the sign
+of the centre line**. No fee, spread, price level or truncation confound; quoted
+in every game; a home-shift predicts under 50%, a longshot story predicts 50%.
+About 200 games (five weekends) resolve 10 points. If week 3's home-favourite
+share falls from 90%, the sign split starts to say which story it is.
+
 ## 4. The registered read (Saturday 2026-09-19; nothing else is added)
 
 1. **Held-out:** the rule in §1 on 09-19's games alone. Positive and excluding
