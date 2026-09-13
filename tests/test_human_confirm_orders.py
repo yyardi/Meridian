@@ -855,6 +855,7 @@ def test_only_the_api_endpoint_imports_the_order_client():
     correct — but it must be a decision someone made on purpose, and this test
     is where they have to say so.
     """
+    import ast
     import pathlib
 
     root = pathlib.Path(__file__).parent.parent
@@ -862,13 +863,39 @@ def test_only_the_api_endpoint_imports_the_order_client():
     # pre-authorized exits — orders whose every term a human fixed on the
     # ticket, which the watcher may only transmit when the entry fills.
     allowed = {"core/api.py", "core/polymarket/client.py", "core/fill_watcher.py"}
+
+    # AST, NOT a substring scan. `"PolymarketOrderClient" in text` flagged
+    # core/quote/engine_v2.py and analysis/archive/quote_v2_ledger.py, both of
+    # which name the symbol inside their OWN guard asserting they do not import
+    # it — the test fired on two modules enforcing the same rule more strictly
+    # than it does. A safety check that is red for a false reason is how a real
+    # second caller gets waved through, so the grep is the defect, not the code.
+    #
+    # This is also STRICTER than the old scan: an Attribute node catches
+    # `import core.polymarket.client` followed by `client.PolymarketOrderClient(...)`,
+    # which a from-import check alone would miss.
+    ORDER_CLIENT = "PolymarketOrderClient"
     offenders = []
-    for path in root.rglob("*.py"):
+    for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(root).as_posix()
-        if rel.startswith((".venv", "tests/")) or rel in allowed:
+        if rel.startswith((".venv", "tests/", ".claude/")) or rel in allowed:
             continue
-        if "PolymarketOrderClient" in path.read_text():
-            offenders.append(rel)
+        try:
+            tree = ast.parse(path.read_text(errors="ignore"))
+        except SyntaxError:                                # not our code to vouch for
+            continue
+        for node in ast.walk(tree):
+            reached = (
+                (isinstance(node, ast.ImportFrom)
+                 and any(a.name == ORDER_CLIENT for a in node.names))
+                or (isinstance(node, ast.Import)
+                    and any(a.name.split(".")[-1] == ORDER_CLIENT
+                            for a in node.names))
+                or (isinstance(node, ast.Attribute) and node.attr == ORDER_CLIENT)
+            )
+            if reached:
+                offenders.append(rel)
+                break
     assert not offenders, f"these modules can now place orders: {offenders}"
 
 

@@ -13,11 +13,18 @@ retracted the same week they were written:
 
 | script | status |
 |---|---|
-| `capture_is_not_a_proxy.py` | **live** — capture is an identity, not a measurement |
-| `placement_curve_real_fills.py` | **live** — but "wide is best" was refuted, see rule 25 |
-| `flattening_book_insertion.py` | **live** — exclusion ≠ insertion |
-| `quote_v2_*` | mixed — the phantom classifier they use tests the wrong condition |
-| `nba_*`, `nfl_day_one_survey` | surveys, superseded by live recording |
+| `quote_v2_*` (4) | mixed — the phantom classifier they use tests the wrong condition |
+| `nba_*` (10) | surveys and r1–r5 harnesses, superseded by live recording |
+| `nfl_day_one_survey.py` | survey, superseded by live recording |
+| `pulse_loss_map.py`, `pulse_execution_decomposition.py` | the 09-01 loss map and its execution split |
+| everything else (17) | one question each; read the finding in `docs/math/`, not the script |
+
+Three rows were removed on 2026-09-13 — capture_is_not_a_proxy,
+placement_curve_real_fills and flattening_book_insertion (named without
+backticks here, so that "every file this README names in backticks exists"
+stays a checkable claim). No such files are in this directory, anywhere in the
+repo, or in git's record of deletions. The findings they described may still
+stand; this table was never their home, `docs/math/` is.
 
 The load-bearing code is elsewhere: `core/` runs in production, `sandbox/` is
 what you run to test a strategy, `analysis/guards.py` enforces the standard's

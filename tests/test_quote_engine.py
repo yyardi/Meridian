@@ -26,7 +26,13 @@ from core.quote.storage import ASK, BID, INGAME, PREGAME, ShadowQuoteFill
 from core.storage import get_engine, get_sessionmaker
 
 UTC = dt.timezone.utc
-SLUG = "test-quote-engine-market"
+#: A slug the LEAGUE FILTER can resolve. Amendment 12 gave the engine a league
+#: and a write-path refusal: `lg is None or lg.slug != self._league`. The old
+#: "test-quote-engine-market" parses to no league at all, so every quote this
+#: file made was refused and `_standing` stayed empty — six tests failing on a
+#: fixture that had stopped being representative of anything the engine quotes.
+#: All the derived forms used below (-2, %, LIKE) resolve to wnba too.
+SLUG = "wnba-qe-test-2026-09-13"
 
 _Session = get_sessionmaker(get_engine())
 
