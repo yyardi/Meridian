@@ -256,7 +256,7 @@ services:
       # it reads the standby at localhost:5433, which does not exist in here.
       - ${MERIDIAN_DATA_DIR:-./backups}/reports:/data/reports:ro
       # the paper book the cron leaves on the box; /scoreboard reads the newest file (core/paper_book.py)
-      - ./artifacts/reads:/opt/meridian/artifacts/reads:ro
+      - ./artifacts/reads:/opt/meridian/artifacts/reads
     # --host 0.0.0.0 is the container binding; the ports line above is what
     # keeps it loopback-only on the host.
     command: ["sh", "-c", "alembic upgrade head && uvicorn core.api:app --host 0.0.0.0 --port 8008"]
