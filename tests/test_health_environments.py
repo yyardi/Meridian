@@ -174,3 +174,25 @@ def test_health_names_every_container_compose_defines():
     assert not expected - compose, (
         "health.py expects containers no compose file defines — these can "
         f"only ever read DEAD: {sorted(expected - compose)}")
+
+
+def test_the_archive_readme_names_only_files_that_exist():
+    """A README naming scripts that are not there is worse than no README.
+
+    Three rows in analysis/archive/README.md described `capture_is_not_a_proxy
+    .py`, `placement_curve_real_fills.py` and `flattening_book_insertion.py` as
+    "live" — reproduce-these-first entries for files absent from the directory,
+    from the repo, and from git's deletion history. Anyone following the
+    README's own instruction ("before running one, check whether its finding
+    still stands") hit nothing at all.
+
+    Backticked `.py` names are the checkable surface, which is why the note
+    about the removed three spells them without backticks.
+    """
+    import re
+
+    d = pathlib.Path(__file__).resolve().parent.parent / "analysis" / "archive"
+    named = set(re.findall(r"`([A-Za-z0-9_]+\.py)`", (d / "README.md").read_text()))
+    assert named, "no filenames parsed — the check would pass vacuously"
+    missing = sorted(n for n in named if not (d / n).exists())
+    assert not missing, f"README names files that are not in the directory: {missing}"

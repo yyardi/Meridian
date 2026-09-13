@@ -124,8 +124,10 @@ def test_compose_gives_the_api_both_halves_of_the_mount():
     assert mount in api["volumes"], "api must see the host reports subtree"
     assert api["environment"]["MERIDIAN_DATA_DIR"] == paths.DATA_DIR_CONTAINER
 
-    # Read-only: the api serves this artifact and never produces it.
-    assert all(v.endswith(":ro") for v in api["volumes"])
+    # Read-only: the api serves this artifact and never produces it. (The reads
+    # mount is the exception by design: the paper book runs inside this
+    # container and writes the settlement cache there.)
+    assert all(v.endswith(":ro") for v in api["volumes"] if "/reports:" in v)
 
 
 def test_the_api_is_given_reports_and_nothing_else():
@@ -143,8 +145,22 @@ def test_the_api_is_given_reports_and_nothing_else():
     for volume in compose["services"]["api"]["volumes"]:
         # rsplit, not split: the host side is `${MERIDIAN_DATA_DIR:-./backups}`
         # and compose's default-value syntax contains a colon of its own.
-        host_side, container_side, _mode = volume.rsplit(":", 2)
-        assert host_side.endswith("/reports"), (
-            f"api mounts {host_side!r}; it needs reports/ and nothing else"
+        # The MODE IS OPTIONAL — a mount written without `:ro` has two parts,
+        # and unpacking three raised ValueError, which reported a malformed
+        # test rather than the mount it was added to catch.
+        parts = volume.rsplit(":", 2)
+        if len(parts) == 3 and parts[2] in ("ro", "rw", "z", "Z", "cached",
+                                            "delegated", "consistent"):
+            host_side, container_side = parts[0], parts[1]
+        else:
+            host_side, container_side = volume.rsplit(":", 1)
+        # Two mounts and no more: the analytics report, and the reads directory
+        # where the cron leaves the paper book and the settlement cache lives
+        # (read-write, the book runs inside this container). Never the root.
+        allowed = {"/reports": f"{paths.DATA_DIR_CONTAINER}/reports",
+                   "./artifacts/reads": "/opt/meridian/artifacts/reads"}
+        key = "./artifacts/reads" if host_side == "./artifacts/reads" else "/reports"
+        assert host_side.endswith(key), (
+            f"api mounts {host_side!r}; it may see reports/ and artifacts/reads and nothing else"
         )
-        assert container_side == f"{paths.DATA_DIR_CONTAINER}/reports"
+        assert container_side == allowed[key]
