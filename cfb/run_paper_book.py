@@ -15,6 +15,10 @@ paper lines are positive, on how many games, with what interval -- and the
 same table next Monday. Fees: taker 0.06*p*(1-p) on Polymarket US.
 
 Registered 2026-09-13. LEAGUES env (comma list) limits the run; default all.
+Settled results are cached in artifacts/reads/settlements.json (SETTLE_CACHE
+env to move it) so a daily run costs a handful of HTTP calls instead of ~18k.
+Only 0/1 is ever written there -- see the cache block below for why None must
+not be.
 Cron: scripts/prod_weekend_read.sh (gate mode, Monday) runs it after H4 and
 writes stdout to artifacts/reads/paper_book_<UTC>.txt.
 
@@ -23,11 +27,68 @@ level, tested without a database in tests/test_longshot_shadow_paper_book.py;
 the run is under main() and executes only when the file is the script.
 """
 import datetime as dt
+import json
 import os
+import tempfile
 from collections import defaultdict
 
 FEE = 0.06
 UTC = dt.timezone.utc
+SETTLE_CACHE = os.environ.get("SETTLE_CACHE", "artifacts/reads/settlements.json")
+
+
+# --------------------------------------------------------------------------- #
+# Settlement cache: the venue is the authority, but it is the same answer
+# forever once a market settles, and re-asking cost ~18k HTTP calls per run.
+#
+# **Only 0 and 1 are ever stored.** A market the venue has not settled, and a
+# request that failed, both look like `None` here -- and caching either would
+# freeze a market as permanently unsettled, which is the one error this cache
+# could make that nobody would see: the book would silently skip those markets
+# on every future run and the `unsettled` count would look stable rather than
+# falling. Absence from the cache means "ask again", which is cheap and right.
+# --------------------------------------------------------------------------- #
+
+def load_settle_cache(path=SETTLE_CACHE):
+    """Slug -> 0|1. A missing, unreadable or malformed file is an empty cache.
+
+    Never raises: a corrupt cache must cost a slow run, not a failed one.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: int(v) for k, v in raw.items() if v in (0, 1)}
+
+
+def cache_put(cache, slug, value):
+    """Store only a real settlement. Returns True if it was stored."""
+    if value not in (0, 1):
+        return False
+    cache[slug] = int(value)
+    return True
+
+
+def save_settle_cache(cache, path=SETTLE_CACHE):
+    """Atomic write, so a crash mid-run cannot leave a half-written cache."""
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({k: int(v) for k, v in cache.items() if v in (0, 1)}, fh,
+                      sort_keys=True, separators=(",", ":"))
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return len(cache)
 
 def mid(r): return (r["bid"] + r["ask"]) / 2
 # side: 'yes' = buy YES at ask; 'no' = buy NO at 1-bid. rule(r) -> bool on the priced row.
@@ -118,15 +179,22 @@ def main():
         cur = c.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); c.commit()
 
     client = PolymarketGatewayClient()
-    _settle = {}
+    _settle = load_settle_cache()          # slug -> 0|1, from earlier runs
+    _hits = len(_settle)
+    _miss = {}                             # this run's unsettled/failed, not cached
     def settlement(slug):
-        if slug not in _settle:
-            try:
-                r = client.get_settlement(slug); s = r.get("settlement")
-                _settle[slug] = int(s) if s in (0, 1, "0", "1") else None
-            except Exception:
-                _settle[slug] = None
-        return _settle[slug]
+        if slug in _settle:
+            return _settle[slug]
+        if slug in _miss:
+            return None
+        try:
+            r = client.get_settlement(slug); s = r.get("settlement")
+            v = int(s) if s in (0, 1, "0", "1") else None
+        except Exception:
+            v = None
+        if not cache_put(_settle, slug, v):
+            _miss[slug] = None             # re-asked next run, never frozen
+        return v
 
     leagues = [x for x in os.environ.get("LEAGUES", "cfb,nfl,wnba,mlb").split(",") if x]
     since = dt.datetime.now(UTC) - dt.timedelta(days=int(os.environ.get("DAYS", "60")))
@@ -162,6 +230,10 @@ def main():
         staked = sum(s for _, s, _ in w); pnl = sum(p for p, _, _ in w)
         v = "UNDERPOWERED (G<25)" if G < 25 else ("POSITIVE, excludes 0" if m - h > 0 else ("NEGATIVE, excludes 0" if m + h < 0 else "spans 0"))
         print(f"{name:<26}{n:>6}{G:>6}{staked:>10.0f}{pnl:>+9.2f}{pnl/staked if staked else 0:>+9.3f}{'%+.2f [%+.2f, %+.2f]' % (m, m-h, m+h):>26}   {v}")
+    fetched = len(_settle) - _hits
+    n = save_settle_cache(_settle)
+    print(f"\nsettlement cache {SETTLE_CACHE}: {_hits:,} reused, {fetched:,} fetched, "
+          f"{len(_miss):,} unsettled this run (not cached, re-asked next run), {n:,} stored")
     print("\nP&L is per $1-contract bets, taker fee charged, venue-settled. A positive line becomes a candidate")
     print("at G >= 25 AND excludes 0 AND its home/away twin does not contradict it; nothing here is sized or armed.")
 
