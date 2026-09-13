@@ -14,7 +14,7 @@ name. The point is one table the operator can read on Monday that says which
 paper lines are positive, on how many games, with what interval -- and the
 same table next Monday. Fees: taker 0.06*p*(1-p) on Polymarket US.
 
-Registered 2026-09-13. LEAGUES env (comma list) limits the run; default all.
+Registered 2026-09-13. LEAGUES env (comma list) limits the run; default all. ONLY=name,name limits strategies.
 Cron: scripts/prod_weekend_read.sh (gate mode, Monday) runs it after H4 and
 writes stdout to artifacts/reads/paper_book_<UTC>.txt.
 
@@ -59,6 +59,17 @@ STRATEGIES = {
     "mlb_winner_dog_yes":     dict(league="mlb",  types=("full_game_winner",), side="yes",
                                    rule=lambda r: mid(r) <= 0.40),
     "mlb_spread_no_20_30":    dict(league="mlb",  types=("full_game_spread",), side="no",
+                                   rule=lambda r: 0.20 <= mid(r) < 0.30),
+    # --- registered 2026-09-13 18:30Z by the manager: the WNBA under/over asymmetry tried on football, and
+    #     MLB first-five markets (thinner, retail). CFB/NFL totals already have two Saturdays of tape: the
+    #     first read of those is a back-read, labelled so; pre-registered from 09-19 on.
+    "cfb_total_under_all":    dict(league="cfb",  types=("full_game_total",), side="no",  rule=lambda r: True),
+    "cfb_total_over_all":     dict(league="cfb",  types=("full_game_total",), side="yes", rule=lambda r: True),
+    "nfl_total_under_all":    dict(league="nfl",  types=("full_game_total",), side="no",  rule=lambda r: True),
+    "nfl_total_over_all":     dict(league="nfl",  types=("full_game_total",), side="yes", rule=lambda r: True),
+    "mlb_f5_total_under_all": dict(league="mlb",  types=("first_five_total",), side="no",  rule=lambda r: True),
+    "mlb_f5_total_over_all":  dict(league="mlb",  types=("first_five_total",), side="yes", rule=lambda r: True),
+    "mlb_f5_spread_no_20_30": dict(league="mlb",  types=("first_five_spread",), side="no",
                                    rule=lambda r: 0.20 <= mid(r) < 0.30),
 }
 
@@ -138,7 +149,9 @@ def main():
 
     print(f"\n{'strategy':<26}{'week':<12}{'bets':>6}{'games':>6}{'unsettled':>10}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}")
     grand = defaultdict(list)
+    only = [x for x in os.environ.get("ONLY", "").split(",") if x]   # ONLY=a,b limits a run to those strategies
     for name, st in STRATEGIES.items():
+        if only and name not in only: continue
         rows = [r for r in rows_by_league.get(st["league"], []) if any(r["mtype"].endswith(t) for t in st["types"]) and st["rule"](r)]
         if not rows:
             print(f"{name:<26}{'-':<12}{0:>6}   no markets on tape"); continue
