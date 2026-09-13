@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 20:40Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 21:10Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -10,7 +10,7 @@ Plan for the live candidate: `docs/math/longshot-no-candidate.md`.
 # one paste from the laptop: builds MLB, api, both paper scalp engines, Kalshi, cricket + table-tennis recorders on the box, then lists them
 ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder && sudo docker compose up -d --build api && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb && sudo docker compose up -d --build kalshi-recorder && sudo docker compose -f docker-compose.yml -f docker-compose.cricket.yml up -d --build cricket-recorder tt-recorder && sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp|kalshi|cricket|tt-"'
 ```
-Prod git is at origin/main (main-deploy); compose is classifier-blocked for the manager, so the paste is yours.
+Prod git is at origin/main (main-deploy); compose is classifier-blocked for the manager (an allow rule cannot match the `$(cat …)` prefix; an ssh alias `meridian-prod` would), so the paste is yours. **Hard dependency: Monday 10:20Z's paper book imports strategies/ladder.py and core/settlements.py, neither in the 09-05 api image — the api rebuild must happen before then or the read fails.**
 
 Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated on 09-06.
 
@@ -72,6 +72,7 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 | honest dashboard + JSON scoreboard | MERGED 09-13 (080aa97, 5891b4b, −255 lines); live after command 2 above |
 | Builder D (done) | football in-game PAPER taker loop `core/gridiron/scalp.py` — MERGED 09-13 19:40Z, 47 rule tests, read-only by construction; live after command 3 above; parameters get refitted from tonight's backtest |
 | researcher 4 (done) | cricket / TT discovery: 15 cricket events (CPL liquid), 4 Setka Cup TT leagues (69 events/day, 1–2¢), YES = home there; ENG v SL was England Lions; ESPN header/summary endpoints give toss, innings, result; Cricinfo 403 |
+| Builder D (done) | league sweep: cricket/TT slugs resolved to NO league (fixed, 8 consumers route through one function); strategies/ interface (base.py, ladder.py) with a 198-row oracle proving identical selection; sandbox guard against a ladder name running the quote query — all MERGED |
 | Builder D (done) | cricket + table-tennis recorder overlay (docker-compose.cricket.yml, venue_leagues sweep, expected-vs-observed per competition, settlements accept 0.5, six paper lines registered) — MERGED, in the paste above |
 | builder (ESPN cricket feed) | core/feeds/espn_cricket_recorder.py: toss timestamp, innings, result per venue-listed match — building |
 | codebase map / Kalshi–DK lag / shadow lister | merged earlier 09-13 |
