@@ -34,16 +34,17 @@ Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated
 |---|---|---|
 | QUOTE shadow maker (3 leagues) | measured negative with power | −2.2% ROI in-game [−3.8, −0.6], −4.1% pregame; 169k fills, 149 games |
 | PULSE (WNBA in-game model loop) | paused for lack of games since 08-31; resumes on playoffs | 57 fills, below its 100-fill floor; round trips +8.5% in the unregistered view |
-| CFB spread: buy NO on 20–30¢ rungs | paper line, read 09-19 | +6.36¢/$1 pooled [−1.12, +13.85] G=76; full 09-12 slate +0.84¢ |
-| WNBA spread: buy favourites 80–100¢ | paper line, read on playoffs | +5.78¢ [+2.96, +8.60] but home-side twin −2.51¢, pooled +0.81¢ |
-| WNBA totals: buy UNDER every rung | paper line, read on playoffs | +5.40¢ [−2.24, +13.04]; same on Kalshi; a late-August regime |
-| CFB/NFL: home side every rung ("home shift") | paper line, read 09-19 | away covered the centre 33/83 = 40% [29, 50] |
+| CFB spread: buy NO on 20–30¢ rungs | paper line, read 09-19 | **+$15.73 on $220 staked**, 289 bets, 107 games: +5.44¢ per $1 [−1.46, +12.35], spans 0 |
+| WNBA spread: buy favourites 80–100¢ | paper line, read on playoffs | +$5.84 on $93, 101 bets, 40 games: +5.78¢ [+2.96, +8.60] excludes 0 — BUT its home-side twin is −2.05¢ [−8.27, +4.16]: an away-listing artifact until the playoffs say otherwise |
+| WNBA totals: buy UNDER every rung | paper line, read on playoffs | +$43.75 on $414, 792 bets, 88 games: +5.52¢ [−2.10, +13.15], spans 0; two of six weeks carried it |
+| CFB: home side every rung ("home shift") | paper line, read 09-19 | +$47.44 on $1,571, 2,503 bets, 117 games: +1.90¢ [−3.83, +7.62], spans 0 |
+| NFL: same two rules | paper line, 2 games | −$17.91, UNDERPOWERED |
 | MLB: under/over, favourite/dog, 20–30¢ NO | registered, no tape yet | — |
 
 "Measured negative with power" means: bet it and you lose, on the evidence. The
 code stays; the bet does not get money. All lines above are scored every Monday
 by `cfb/run_paper_book.py` (venue-settled, taker fee charged) and shown on the
-dashboard's SCOREBOARD page once that page lands (being built).
+dashboard's SCOREBOARD page once that page lands (being built). First run 2026-09-13 17:45Z: `docs/paper_book_2026-09-13.txt`, also on the box in artifacts/reads.
 
 ## 4. Registered reads (dates fixed, criteria written before the tape)
 
