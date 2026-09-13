@@ -53,9 +53,16 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
 
 ## 4. Reads that ran tonight (09-13) — filled in as they land
 
-- **In-game momentum scalp (the operator's rule):** buy the offence when a drive reaches the
-  opponent's 40 / red zone, take profit 2/5/10%, stop 5/10/20%, taker and maker exits, CFB two
-  Saturdays + NFL week 1. RESULT: pending.
+- **In-game momentum scalp (the operator's rule, done, `cfb/run_momentum_scalp.py`, CFB 60 games):**
+  buy the offence at the opponent's 40 (T1), the red zone (T2), or after a ≥2¢ move (T3); take
+  profit 2/5/10%, stop 5/10/20%; taker and maker exits; 3 s latency. Every one of 27 cells nets
+  −7.2 to −11.0¢ per $1 ticket with the 95% game-clustered interval entirely below zero (G 37–42),
+  home and away twins both negative. Exact decomposition: mid drift after the trigger ≈ 0
+  (−0.6 to +0.7¢) in every cell; the loss is half-spreads paid (3.8–5.7¢, wide books at stop and
+  drive-end ticks) plus two taker fees (4.1–5.4¢). Maker exit within 0.3¢ of taker. Holding to
+  settlement: no interval (G 16). NFL: no finals yet. Measured negative with power: the venue
+  already prices field position; the rule buys the spread and the fee.
+
 - **CFB 20–30¢ NO decomposed (done, `cfb/run_longshot_decomp.py`, 117 games):** the +5.44¢ is
   carried by away-underdog games (+7.83 [+1.03, +14.64], G 94); 102 of 115 games are away
   underdogs, so "away" and "underdog" are one variable. Across the ladder the home side beats
