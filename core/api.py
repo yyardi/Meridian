@@ -24,7 +24,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
@@ -796,7 +796,8 @@ def board(include_finished: bool = False, league: str | None = None) -> dict:
 
 
 @app.get("/api/history/{market_slug}")
-def history(market_slug: str, limit: int = 60) -> dict:
+def history(market_slug: str,
+            limit: int = Query(60, ge=1, le=2000)) -> dict:
     """Recent mid-price history for one market — drives the sparklines."""
     with _Session() as s:
         rows = s.execute(
@@ -1186,7 +1187,7 @@ def _era_window(s, era: str):
 
 
 @app.get("/api/results")
-def results(limit: int = 2000, era: str = "pulse",
+def results(limit: int = Query(2000, ge=1, le=20000), era: str = "pulse",
             include_rows: bool = False) -> dict:
     """Resolved live predictions — what the model called, and what happened.
 
@@ -1878,7 +1879,7 @@ def cancel_order(order_id: int, request: Request) -> dict:
 
 
 @app.get("/api/orders/recent")
-def recent_orders(limit: int = 25) -> dict:
+def recent_orders(limit: int = Query(25, ge=1, le=500)) -> dict:
     """Real orders with their venue-truth fill state, plus attached exits.
 
     This is what the picks page's order panel reads. `fill_status` of null
@@ -2568,7 +2569,8 @@ def _league_or_400(slug: str | None):
 
 
 @app.get("/api/games")
-def games(league: str | None = None, limit: int = 60, era: str = "pulse") -> dict:
+def games(league: str | None = None, limit: int = Query(60, ge=1, le=500),
+          era: str = "pulse") -> dict:
     """Games this league's model has shadow-traded, newest first.
 
     Driven by `shadow_orders`: a game the model never decided anything in has
@@ -2855,7 +2857,7 @@ def paper_book() -> dict:
 
 
 @app.get("/api/scalps")
-def scalps(limit: int = 200) -> dict:
+def scalps(limit: int = Query(200, ge=1, le=1000)) -> dict:
     """The paper scalp engine's last rows, plus a per-league total.
 
     `core/gridiron/scalp.py` writes one row per CLOSED position. **Nothing here
@@ -2868,7 +2870,10 @@ def scalps(limit: int = 200) -> dict:
     from sqlalchemy import text
     from core.storage.base import get_engine
 
-    n = max(1, min(int(limit), 1000))
+    # No clamp: the bound is declared on the parameter above, so an
+    # out-of-range limit is a 422 from validation rather than a value
+    # silently rewritten to something the caller did not ask for.
+    n = limit
     with get_engine().connect() as c:
         rows = [dict(r._mapping) for r in c.execute(text(
             "SELECT league, game_id, market_slug, side, trigger, entered_at,"
