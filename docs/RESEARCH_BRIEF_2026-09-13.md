@@ -64,8 +64,11 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
   [−21.74, −1.50], n 227, G 104** (one of ~20 cells looked at). Not a longshot effect; a
   home-shift effect. Registered from this for 09-19: NO (home) on 50–60¢ rungs and its twin.
   NO-mid re-definition selects the same rungs to the boundary (venue publishes one YES book).
-- **Kalshi vs Polymarket same instant:** gap distribution, dutch count after both fees, who
-  moves toward whom, the 20–30¢ rung on Kalshi. RESULT: pending.
+- **Kalshi vs Polymarket same instant (done for A/B, CFB 09-12, 45 matched games, 66k pairs):**
+  median |gap| 0.25¢ (winner) to 0.5¢ (spread, total); < 1% of instants beyond 3¢; 49 after-fee
+  dutch instants in 66k (0.07%). Who-is-stale: episodes too rare on one Saturday (G 6–7), the
+  median > 3¢ gap persists unchanged at the next sweep. No pregame cross-venue trade exists on
+  this tape. Kalshi's own 20–30¢ rung (C): pending.
 - **DraftKings move → venue lag (pregame):** census 15 CFB / 3 NFL spread moves ≥ 0.5 pt since
   09-12; raw lag to the first venue tick the implied way: CFB median 30 min (q25 20, q75 65,
   n = 19, G = 15), NFL median 61 min (n = 7); venue sweep cadence ≈ 68 min so this is an upper
