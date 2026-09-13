@@ -130,6 +130,9 @@ def check_containers() -> list[Check]:
         "meridian-mlb-recorder": "MLB pregame board (recording only)",
         "meridian-scalp-nfl": "NFL paper taker loop (reads tape, places nothing)",
         "meridian-scalp-cfb": "CFB paper taker loop (reads tape, places nothing)",
+        # Cricket signal side (core.feeds.espn_cricket_recorder): toss,
+        # innings, result of every match ESPN lists, change-detected rows.
+        "meridian-cricket-espn-recorder": "cricket ESPN feed (toss/innings/result)",
     }
     try:
         out = subprocess.run(

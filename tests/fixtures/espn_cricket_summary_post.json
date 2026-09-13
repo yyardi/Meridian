@@ -1,0 +1,142 @@
+{
+ "header": {
+  "id": "1549533",
+  "name": "Namibia v South Africa",
+  "competitions": [
+   {
+    "id": "1549533",
+    "date": "2026-09-13T07:30Z",
+    "status": {
+     "displayClock": "0'",
+     "presentLocalTime": "",
+     "period": 2,
+     "summary": "South Africa won by 9 wkts (171b rem)",
+     "type": {
+      "id": "1",
+      "description": "Result",
+      "detail": "Final",
+      "shortDetail": "Final",
+      "state": "post"
+     },
+     "displayPeriod": "2nd"
+    },
+    "competitors": [
+     {
+      "id": "28",
+      "order": 1,
+      "homeAway": "home",
+      "winner": "false",
+      "score": "156",
+      "team": {
+       "id": "28",
+       "displayName": "Namibia",
+       "abbreviation": "NAM"
+      },
+      "linescores": [
+       {
+        "period": 1,
+        "runs": 156,
+        "wickets": 10,
+        "overs": 36.2,
+        "isBatting": true,
+        "target": 0,
+        "description": "all out",
+        "isCurrent": 0,
+        "score": "156"
+       },
+       {
+        "period": 2,
+        "runs": 0,
+        "wickets": 0,
+        "overs": 21.3,
+        "isBatting": false,
+        "target": 157,
+        "description": "target reached",
+        "isCurrent": 1
+       }
+      ]
+     },
+     {
+      "id": "3",
+      "order": 2,
+      "homeAway": "away",
+      "winner": "true",
+      "score": "157/1 (21.3/50 ov, target 157)",
+      "team": {
+       "id": "3",
+       "displayName": "South Africa",
+       "abbreviation": "SA"
+      },
+      "linescores": [
+       {
+        "period": 1,
+        "runs": 0,
+        "wickets": 0,
+        "overs": 36.2,
+        "isBatting": false,
+        "target": 0,
+        "description": "all out",
+        "isCurrent": 0
+       },
+       {
+        "period": 2,
+        "runs": 157,
+        "wickets": 1,
+        "overs": 21.3,
+        "isBatting": true,
+        "target": 157,
+        "description": "target reached",
+        "isCurrent": 1,
+        "score": "157/1 (21.3/50 ov, target 157)"
+       }
+      ]
+     }
+    ],
+    "commentaryCount": 358,
+    "commentaries": {
+     "221020": {
+      "id": "221020",
+      "sequence": 202102,
+      "period": 2,
+      "shortText": "Heingo to Brevis, no run",
+      "text": "a short ball outside off. Brevis was coiling up but ends up leaving it"
+     },
+     "221030": {
+      "id": "221030",
+      "sequence": 202103,
+      "period": 2,
+      "shortText": "Heingo to Brevis, SIX",
+      "text": "short and pulled away over deep square leg. Out of the ground for a massive, massive six. That seals the game and the series for South Africa"
+     }
+    }
+   }
+  ],
+  "league": {
+   "id": "24670",
+   "name": "South Africa tour of Namibia 2026"
+  }
+ },
+ "notes": [
+  {
+   "text": "South Africa won the 3-match series 3-0",
+   "type": "seriesnote"
+  },
+  {
+   "text": "13 September 2026 (50-over match)",
+   "type": "matchdays"
+  },
+  {
+   "text": "Namibia , elected to bat first",
+   "type": "toss"
+  }
+ ],
+ "rosters": [
+  {
+   "note": "trimmed: 237 KB in the real payload"
+  }
+ ],
+ "meta": {
+  "gameSwitcherEnabled": false,
+  "gameState": "post"
+ }
+}
