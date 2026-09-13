@@ -97,11 +97,27 @@ def test_picks_counts_slugs_it_cannot_place(client):
         assert "unknown_league" in body["filtered"]
 
 
+#: The wallet is the one page that must NOT be league-tabbed, and this is a
+#: design decision rather than an omission: it shows ONE $1,000 bankroll as two
+#: league-tagged ledgers side by side (`core/api.py` "Not league-tabbed: the
+#: wallet is two ledgers shown side by side"; `docs/math/paper-wallet-scoreboard.md`).
+#: A tab would hide one arm of a shared bankroll, which is the thing the page
+#: exists to show together. Named here rather than satisfied with an empty div,
+#: which would turn this guard green without making it true.
+NOT_TABBED = {"wallet.html"}
+
+
 def test_no_page_hardcodes_the_league_in_its_header():
     """The literal this whole change exists to delete."""
     for page in (REPO / "static").glob("*.html"):
         head = page.read_text().split("</header>")[0]
         assert "MERIDIAN<span>·</span>WNBA" not in head, page.name
+        if page.name in NOT_TABBED:
+            assert 'id="lgtabs"' not in head, (
+                f"{page.name} is exempt because it shows every league at once; "
+                "it now has tabs, so either the exemption or the page is wrong"
+            )
+            continue
         assert 'id="lgtabs"' in head, f"{page.name} has no league tabs"
 
 
