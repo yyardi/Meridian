@@ -16,8 +16,12 @@ cd /opt/meridian && sudo docker compose up -d --build api
 # 3. the football in-game PAPER taker loop (your rule, live on paper: TRIGGER ytg40, TP 5%, STOP 10%, $25 tickets; places nothing, opens no venue socket)
 cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb
 
-# verify all three
-sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp"
+# 4. Kalshi recorder now gives NFL games a clock (never polled before); rebuild it before Thursday's NFL game. The CFB/NFL ESPN
+#    recorders carry a plays-regression fix for their NEXT rebuild (do it Tuesday, between slates, never during one).
+cd /opt/meridian && sudo docker compose up -d --build kalshi-recorder
+
+# verify all
+sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp|kalshi"
 ```
 Prod git is fast-forwarded to origin/main (main-deploy, 09-13 19:05Z); the earlier local edits are in `git stash list` and artifacts/reads/local_edits_0913. As of 19:05Z neither container above had been rebuilt (api image 09-05, no mlb container): compose is classifier-blocked for the manager, these two are yours.
 
@@ -52,7 +56,7 @@ Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated
 | MLB first-five totals under/over; first-five spread NO 20–30¢ | registered 09-13 18:30Z, no tape | — |
 | **NFL/CFB in-game momentum scalp** (the operator's rule: buy the offence driving into opponent territory / red zone, take profit 2–10%, stop 5–20%, maker-exit variant) | being scored on the in-game tape now, grid by trigger × take-profit × stop, both leagues, home/away split | — |
 | DraftKings line move → Polymarket lag, taker on the implied rung (NFL/CFB pregame) | being scored (Quant A) | — |
-| Kalshi vs Polymarket same instant: gap distribution, dutch count after both fees, who is stale, the 20–30¢ rung on Kalshi | being scored | — |
+| Kalshi vs Polymarket same instant (CFB 09-12, 45 matched games, 66k pairs) | measured: median gap 0.25–0.5¢, <1% of instants beyond 3¢, 49 after-fee dutch instants in 66k (0.07%); who-is-stale underpowered (G 6–7). No pregame cross-venue trade. Kalshi 20–30¢ rung pending | — |
 
 "Measured negative with power" means: bet it and you lose, on the evidence. The
 code stays; the bet does not get money. All lines above are scored every Monday
@@ -72,7 +76,7 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 
 | agent | deliverable |
 |---|---|
-| Debugger | main's CFB ESPN recorder regression (fa24613, prod's image predates it, 09-12 was not hit) + the leak guard; idempotent index migration (laptop Kalshi crash-loop); health.py's 6 missing containers; Kalshi recorder sets NFL kickoffs from ESPN |
+| Debugger (done) | MERGED 09-13 20:30Z: recorder plays regression + leak guard, idempotent index migration, health.py sees all 24 containers (test fails both ways), Kalshi recorder gives NFL a clock from the venue (kickoff+3h occurrence, applied in the open; the team map is WNBA-only so ESPN linking would mis-pair). Suite 1437→1451 passed, 25→21 failed (residual predates) |
 | Builder D (done) | MLB: settlement cache, MLB ladder calibration, daily 10:40Z `mlb` cron mode — MERGED, crontab line installed |
 | Quant A | DK line move → venue lag: first pass found the lag (CFB median 30 min, n=19, G=15; NFL median 61 min, n=7) but settled from the idle WNBA resolver table, so P&L had G=0; rerunning on the venue's settlement endpoint |
 | researcher 1 | CFB 20–30¢ NO decomposed: favourite-fails vs dog-covers, monotone buckets with home-referenced twins, NO-mid definition |
