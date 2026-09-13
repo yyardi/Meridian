@@ -132,7 +132,8 @@ LEAGUES: dict[str, League] = {
             "gated on WNBA alone, and pointing it at NBA without refitting "
             "would produce numbers, not predictions."
         ),
-    ),    "cricket": League(
+    ),
+    "cricket": League(
         slug="cricket",
         name="Cricket",
         espn_path="cricket",
