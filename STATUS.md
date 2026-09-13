@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 18:40Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 19:05Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -7,18 +7,16 @@ Plan for the live candidate: `docs/math/longshot-no-candidate.md`.
 ## 1. Commands you need to run on the AWS box (from a fresh shell there)
 
 ```bash
-# 1. start MLB recording (staged on the box; ~55 events/day, 495 markets, boards ~4 days ahead, RPS 3)
+# 1. start MLB recording (overlay is on the box; 55 events / 495 markets live on the venue right now)
 cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder
 
-# 2. rebuild the api: SCOREBOARD page + honest PULSE page merged 09-13 18:20Z; files and the reads mount are staged on the box
+# 2. rebuild the api: SCOREBOARD page (JSON paper book), honest PULSE page, reads mount, settlement cache
 cd /opt/meridian && sudo docker compose up -d --build api
 
-# 3. make prod's git match main (an untracked file blocks the fast-forward; this keeps the two locally-edited files)
-cd /opt/meridian && sudo mv cfb/run_making.py cfb/run_making.py.old && sudo git stash && sudo git merge --ff-only origin/main && sudo git stash pop
-
-# 4. (laptop, optional) three recorder containers have run on the laptop since 09-12, one crash-looping; the rule is nothing runs on the laptop
-docker stop meridian-kalshi-recorder meridian-nfl-odds-recorder meridian-cfb-odds-recorder
+# verify both
+sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api"
 ```
+Prod git is fast-forwarded to origin/main (main-deploy, 09-13 19:05Z); the earlier local edits are in `git stash list` and artifacts/reads/local_edits_0913. As of 19:05Z neither container above had been rebuilt (api image 09-05, no mlb container): compose is classifier-blocked for the manager, these two are yours.
 
 Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated on 09-06.
 
@@ -71,12 +69,14 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 | agent | deliverable |
 |---|---|
 | Debugger | main's CFB ESPN recorder regression (fa24613, prod's image predates it, 09-12 was not hit) + the leak guard; idempotent index migration (laptop Kalshi crash-loop); health.py's 6 missing containers; Kalshi recorder sets NFL kickoffs from ESPN |
-| Builder D | MLB: settlement cache so the paper book can run daily; ladder calibration for MLB from day one settled by the venue; a daily 10:40Z `mlb` cron mode |
+| Builder D (done) | MLB: settlement cache, MLB ladder calibration, daily 10:40Z `mlb` cron mode — MERGED, crontab line installed |
 | Quant A | DK line move → venue lag: taker P&L after fee on the implied rung, by side, by horizon, raw lag in minutes |
 | researcher 1 | CFB 20–30¢ NO decomposed: favourite-fails vs dog-covers, monotone buckets with home-referenced twins, NO-mid definition |
 | researcher 2 | Kalshi vs Polymarket cross-venue: gap, dutch count, who is stale, the longshot rung on Kalshi |
 | researcher 3 | the momentum scalp grid (§3), fee table first |
-| honest dashboard | MERGED 09-13 18:20Z (080aa97); live after command 2 above |
+| honest dashboard + JSON scoreboard | MERGED 09-13 (080aa97, 5891b4b, −255 lines); live after command 2 above |
+| Builder D | football in-game PAPER taker loop (`core/gridiron/scalp.py`): the operator's rule live on paper for NFL/CFB, `paper_scalps` table, `/api/scalps` |
+| researcher 4 | cricket / table tennis venue discovery: leagues, markets, depth, what the UI mislabels, ESPN + Cricinfo endpoints; recorder overlay follows |
 | codebase map / Kalshi–DK lag / shadow lister | merged earlier 09-13 |
 
 ## 6. Open questions for the researcher (docs/math/longshot-no-candidate.md §7)
