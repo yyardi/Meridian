@@ -62,7 +62,13 @@ class FakeESPN:
         self.boards = boards
         self.calls = 0
 
-    def get_scoreboard(self, date_yyyymmdd: str):
+    def get_scoreboard(self, date_yyyymmdd: str, **kw):
+        # **kw, and it is load-bearing. The real client gained `groups` and
+        # `limit`; this fake did not, so every call raised TypeError —
+        # swallowed by _fetch_board's `except Exception` and logged as
+        # `scoreboard_failed`. Seven tests then asserted on rows that were
+        # never fetched, and read as a recorder that had stopped writing.
+        # A double that does not track its real signature fails as an OUTAGE.
         payload = self.boards[min(self.calls, len(self.boards) - 1)]
         self.calls += 1
         return payload
@@ -275,3 +281,33 @@ def test_malformed_event_does_not_lose_the_rest_of_the_slate(clean_db):
         client=FakeESPN([board]), sessionmaker=Session
     ).poll_once()
     assert stats.rows_written == 1
+
+
+
+def test_the_fake_client_still_matches_the_real_signature():
+    """The seven failures above were a drifted double, not a broken recorder.
+
+    _fetch_board wraps the call in `except Exception`, so a TypeError from a
+    signature change is logged as `scoreboard_failed` and counted as an
+    outage. That is right for the network and wrong for a fake: the tests go
+    red with no hint that the double is what broke, and the recorder under
+    test looks like it stopped writing.
+
+    Binds the fake to the REAL signature, so the next parameter added to the
+    client fails here — naming the double — instead of seven tests away.
+    """
+    import inspect
+
+    from core.feeds.espn_client import ESPNClient
+
+    real = inspect.signature(ESPNClient.get_scoreboard)
+    # every name the recorder could pass must be absorbable by the fake
+    bound = inspect.signature(FakeESPN.get_scoreboard)
+    try:
+        bound.bind(None, "20260913",
+                   **{n: None for n in list(real.parameters)[2:]})
+    except TypeError as exc:
+        raise AssertionError(
+            f"FakeESPN.get_scoreboard{tuple(bound.parameters)} cannot absorb "
+            f"the real {tuple(real.parameters)}: {exc}. The recorder will read "
+            "the TypeError as a scoreboard outage.") from None
