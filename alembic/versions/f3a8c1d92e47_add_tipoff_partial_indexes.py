@@ -35,12 +35,16 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # IF NOT EXISTS because the index can already be present when this runs
+    # (observed 2026-09-13: the laptop's kalshi-recorder crash-looped on
+    # DuplicateTable). How it got there is not recorded; what matters is that
+    # a step already done must skip, not abort the process that needs it.
     op.create_index(
         'ix_snapshots_slug_has_start', 'market_snapshots', ['market_slug'],
-        postgresql_where='game_start_time IS NOT NULL')
+        postgresql_where='game_start_time IS NOT NULL', if_not_exists=True)
     op.create_index(
         'ix_snapshots_event_has_start', 'market_snapshots', ['event_slug'],
-        postgresql_where='game_start_time IS NOT NULL')
+        postgresql_where='game_start_time IS NOT NULL', if_not_exists=True)
 
 
 def downgrade() -> None:
