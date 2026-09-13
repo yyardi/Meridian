@@ -106,6 +106,7 @@
     <span class="grplbl">books</span>
     <a class="" href="/wallet" title="The $1,000 paper scoreboard — simulated positions and running P&amp;L.">WALLET</a>
     <a class="on" href="/analytics" title="Model vs market — where our fair value disagrees with the venue price.">MODEL</a>
+    <a class="" href="/scoreboard" title="SCOREBOARD — the paper book: every registered shadow strategy, one P&amp;L line per week, venue-settled. Nothing is armed.">SCOREBOARD</a>
   </div>
  </div>
  <div class="hrow statusrow">
@@ -275,6 +276,7 @@ fetch("/api/leagues").then(r=>r.json()).then(d=>{
   const byslug = Object.fromEntries(d.leagues.map(l=>[l.slug,l]));
   const paint = () => {
     document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
+    loadPulse();   // league-honest too: WNBA gets counts, any other tab one line
     const lg = byslug[LEAGUE];
     if(lg && !lg.recorded){
       $("#scope").textContent = lg.empty_state;
@@ -361,10 +363,23 @@ function meter(now, floor){
   return `<div style="height:4px;background:#1a2029;border-radius:2px;overflow:hidden;margin-top:4px">
     <i style="display:block;height:100%;width:${Math.min(100, now/floor*100)}%;background:var(--accent)"></i></div>`;
 }
+/* Every league-scoped loader drops a response for a league you have since
+   switched away from (the landing page's rule, pinned in tests/test_leagues). */
+function stale(league){ return league !== LEAGUE; }
+
 async function loadPulse(){
   const el = document.getElementById("pulsebody");
+  const league = LEAGUE;
   try{
-    const d = await (await fetch("/api/pulse")).json();
+    const d = await (await fetch(`/api/pulse?league=${encodeURIComponent(league)}`)).json();
+    if(stale(league)) return;
+    // PULSE runs on one league and the server names it. Any other tab gets
+    // the server's one line and NO numbers: a zero here would read as
+    // "PULSE ran on this league and found nothing", which is false.
+    if(d.available === false && d.pulse_league && d.pulse_league !== league){
+      el.innerHTML = `<div class="note">${d.note}</div>`;
+      return;
+    }
     if(!d.n_decisions){
       el.innerHTML = `<div style="padding:18px;text-align:center;color:var(--faint)">
         No decisions yet — the PULSE era begins with its first live game.<br>
@@ -377,12 +392,21 @@ async function loadPulse(){
       : `<span style="background:#16243a;border:1px solid #2c4a7a;color:#cfe2ff;border-radius:3px;
            padding:1px 7px;font-size:9.5px;letter-spacing:.06em">accruing — no verdict yet</span>`;
     const cm = c => c ? `${pct(c.mean,2)} <span class="dimc">[${pct(c.lo,2)}, ${pct(c.hi,2)}]</span>` : "—";
+    const when = ts => ts ? new Date(ts).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+    // The count is a count of rows, and the rows stop when the games do. The
+    // date of the last one is what tells "still" from "stuck".
+    const ago = sec => sec < 5400 ? Math.round(sec/60) + "m"
+      : sec < 172800 ? Math.round(sec/3600) + "h" : Math.round(sec/86400) + "d";
+    const last = d.last_decision ? new Date(d.last_decision) : null;
     el.innerHTML = `<div class="kpis">
       <div class="kpi"><div class="k">standing</div><div class="v">${v}</div>
-        <div class="n">first decision ${d.first_decision ? new Date(d.first_decision).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"}</div></div>
+        <div class="n">estimates ${d.estimates_version || "—"} · first decision ${when(d.first_decision)}</div></div>
       <div class="kpi"><div class="k">filled entries</div><div class="v">${d.n_entry_fills}/${d.floors.entry_fills}</div>
         ${meter(d.n_entry_fills, d.floors.entry_fills)}
         <div class="n">${d.n_decisions} decisions · ${d.n_entries} entries</div></div>
+      <div class="kpi" title="The newest row in pulse_decisions for this estimates version. The counts cannot move while this stands still.">
+        <div class="k">last decision</div><div class="v">${last ? ago((Date.now() - last.getTime())/1000) + " ago" : "—"}</div>
+        <div class="n">${when(d.last_decision)} · PULSE decides only during live WNBA games; it resumes with the WNBA playoffs</div></div>
       <div class="kpi"><div class="k">games</div><div class="v">${d.n_games}/${d.floors.games}</div>
         ${meter(d.n_games, d.floors.games)}
         <div class="n">distinct events with a filled entry</div></div>

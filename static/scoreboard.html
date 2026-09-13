@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Algo — Scoreboard</title>
+<style>
+  :root{
+    --bg:#0a0c10; --panel:#11141b; --line:#1e2430; --txt:#d7dde8;
+    --dim:#7c879b; --faint:#4a5568; --pos:#26d07c; --neg:#ff5c62;
+    --warn:#ffb020; --accent:#4c8dff;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:12px/1.5 var(--mono);font-variant-numeric:tabular-nums}
+  .stat{display:flex;gap:6px;align-items:baseline}
+  .stat .k{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em}
+  .stat .v{font-size:11.5px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+  .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
+  .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
+  /* --- league tabs (core/leagues.py) ------------------------------------ */
+  .lg{display:flex;gap:2px;margin-left:10px}
+  .lgt{font:inherit;font-size:10px;letter-spacing:.09em;padding:3px 9px;border-radius:3px;
+       background:transparent;color:var(--faint);border:1px solid transparent;cursor:pointer}
+  .lgt:hover{color:var(--txt)}
+  .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .lgt.empty{color:var(--faint);opacity:.75}
+  .wrap{padding:14px;max-width:1500px}
+  h2{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);
+     margin:18px 0 8px;font-weight:600}
+  .banner{border:1px solid #3d2a17;background:#221708;color:var(--warn);
+          padding:9px 12px;border-radius:4px;margin-bottom:14px;font-size:11px}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--warn)}
+  .tbl{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:18px}
+  th{text-align:right;color:var(--faint);font-size:9.5px;letter-spacing:.08em;
+     text-transform:uppercase;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th.l,td.l{text-align:left}
+  td{text-align:right;padding:4px 8px;border-bottom:1px solid #131720;white-space:nowrap}
+  tr:hover{background:#12161e}
+  tr.dim td{color:var(--faint)}
+  .note{color:var(--faint);font-size:10.5px;margin-top:9px;line-height:1.5;
+        border-left:2px solid var(--line);padding-left:9px}
+  .meta{color:var(--dim);font-size:11px;margin-bottom:10px}
+  .meta b{color:var(--txt)}
+  .empty{padding:24px;color:var(--faint);text-align:center}
+  /* The verdict is the producer's string, verbatim; only its colour is ours. */
+  .vpositive{color:var(--pos);font-weight:700}
+  .vnegative{color:var(--neg);font-weight:700}
+  .vspans,.vunderpowered,.vunknown{color:var(--faint)}
+  footer{padding:6px 14px;font-size:10px;color:var(--faint);
+         border-top:1px solid var(--line);background:var(--panel)}
+
+  /* ── Header, same bar as every other page (rebuilt 2026-09-03): book, then
+     the leagues inside it; nav and health on separate rows. ── */
+  header{background:var(--panel);border-bottom:1px solid var(--line);
+         position:sticky;top:0;z-index:9;display:block;padding:0}
+  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px}
+  .hrow+.hrow{border-top:1px solid var(--line)}
+  .hsep{width:1px;height:15px;background:var(--line);flex:none}
+  .brand{font-weight:700;letter-spacing:.18em;font-size:13px}
+  .bookgrp{display:flex;gap:3px}
+  .book{font:inherit;font-size:11px;font-weight:700;letter-spacing:.07em;
+        padding:4px 10px;border-radius:3px;background:transparent;
+        border:1px solid transparent;color:var(--faint);cursor:pointer}
+  .book:hover{color:var(--txt)}
+  .book.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .navgrp{display:flex;align-items:center;gap:3px}
+  .grplbl{color:var(--faint);font-size:8.5px;letter-spacing:.13em;
+          text-transform:uppercase;margin-right:3px}
+  .navgrp a{color:var(--faint);text-decoration:none;font-size:11px;
+            letter-spacing:.05em;padding:4px 9px;border-radius:3px}
+  .navgrp a:hover{color:var(--txt)}
+  .navgrp a.on{color:var(--txt);background:#1a1f2b}
+  .statusrow{gap:16px;padding:6px 14px;background:#0c0f15}
+</style>
+</head>
+<body>
+<!-- Same bar as the landing page, deliberately — one header, learned once.
+     No token box: nothing on this page can place an order. -->
+<header>
+ <div class="hrow">
+  <div class="brand">ALGO</div>
+  <div class="hsep"></div>
+  <div class="bookgrp" id="bookgrp"></div>
+  <div class="lg" id="lgtabs"></div>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">strategy</span>
+    <a class="" href="/" title="PULSE — directional. Takes a side: picks a team and holds a position.">PULSE</a>
+    <a class="" href="/quote" title="QUOTE — market making. Quotes both sides and earns the spread, without a view on the game.">QUOTE</a>
+  </div>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">books</span>
+    <a class="" href="/wallet" title="The $1,000 paper scoreboard — simulated positions and running P&amp;L.">WALLET</a>
+    <a class="" href="/analytics" title="Model vs market — where our fair value disagrees with the venue price.">MODEL</a>
+    <a class="on" href="/scoreboard" title="SCOREBOARD — the paper book: every registered shadow strategy, one P&amp;L line per week, venue-settled. Nothing is armed.">SCOREBOARD</a>
+  </div>
+ </div>
+ <div class="hrow statusrow">
+  <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
+  <div class="stat" title="How old the pregame recorder's newest data is. Stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
+  <div class="stat" title="Account balance from Polymarket US."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
+ </div>
+</header>
+
+<div class="wrap">
+  <h2 style="font-size:13px;letter-spacing:.12em;margin:4px 0 8px">SCOREBOARD
+    <span class="dimc" style="font-size:10.5px;letter-spacing:0;text-transform:none">
+    · the paper book · every registered shadow strategy, one P&amp;L line per week
+    (<code>cfb/run_paper_book.py</code>)</span></h2>
+  <!-- The one line that matters, above every number. -->
+  <div class="banner" id="legend">paper P&amp;L per $1 bet, venue-settled, taker fee charged;
+    POSITIVE excludes 0 at G&gt;=25 is a candidate, nothing is armed</div>
+  <div class="meta" id="meta">loading…</div>
+  <div id="book"></div>
+</div>
+
+<footer id="foot">connecting…</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const LG_KEY = "meridian.league";
+let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
+let LEAGUE_NAMES = {};
+//: The last /api/paper-book payload. A tab click re-renders it; a refresh refetches.
+let BOOK = null;
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const agef = sec => sec == null ? "—"
+  : sec < 90 ? sec.toFixed(0) + "s"
+  : sec < 5400 ? Math.round(sec/60) + "m"
+  : sec < 172800 ? Math.round(sec/3600) + "h"
+  : Math.round(sec/86400) + "d";
+const signed = (v, d) => v == null ? "—" : (v > 0 ? "+" : "") + v.toFixed(d);
+
+/* Header stats — the same signals and units as the landing page's header. */
+async function loadHeader(){
+  try{
+    const d = await (await fetch("/api/status")).json();
+    $("#s-health").innerHTML =
+      `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
+    $("#s-pregame").textContent = agef(d.pregame_age_seconds);
+    $("#s-pregame").className = "v " + (d.healthy ? "pos" : "neg");
+    $("#s-live").textContent = agef(d.live_age_seconds);
+    const br = d.bankroll;
+    $("#s-bankroll").textContent =
+      br && br.bankroll != null ? "$" + br.bankroll.toFixed(2) : "?";
+  } catch(e){ /* informational */ }
+}
+loadHeader();
+setInterval(loadHeader, 30000);
+
+/* League tabs. The book is ONE file across every league (the producer runs
+   all of them in one pass), so the tab is a row filter by the strategy's
+   league prefix — never a separate computation — and the page says how many
+   rows the filter hid. */
+fetch("/api/leagues").then(r=>r.json()).then(d=>{
+  if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
+  LEAGUE_NAMES = Object.fromEntries(d.leagues.map(l=>[l.slug,l.name]));
+  const el = document.getElementById("lgtabs");
+  if(el) el.innerHTML = d.leagues.map(l =>
+    `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
+             data-lg="${l.slug}">${l.name}</button>`).join("");
+  const paint = () => {
+    document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
+    render();
+  };
+  document.querySelectorAll(".lgt").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      if(b.dataset.lg === LEAGUE) return;
+      LEAGUE = b.dataset.lg; localStorage.setItem(LG_KEY, LEAGUE); paint();
+    });
+  });
+  paint();
+});
+
+async function loadBook(){
+  try{
+    BOOK = await (await fetch("/api/paper-book")).json();
+  } catch(e){
+    BOOK = {available:false, note:"/api/paper-book unavailable"};
+  }
+  render();
+  $("#foot").textContent = "read-only · the paper book is a file the prod cron writes; this page renders it and computes nothing";
+}
+loadBook();
+setInterval(loadBook, 60000);
+
+function render(){
+  const el = $("#book");
+  if(!BOOK) return;
+  if(BOOK.available === false){
+    $("#meta").textContent = BOOK.note;
+    el.innerHTML = "";
+    return;
+  }
+  const when = new Date(BOOK.generated_at);
+  $("#meta").innerHTML = `<b>${esc(BOOK.file)}</b> · written ${when.toLocaleString()}
+    (${agef((Date.now() - when.getTime())/1000)} ago)`
+    + (BOOK.preamble.length ? ` <span class="dimc">· ${BOOK.preamble.map(esc).join(" · ")}</span>` : "");
+
+  const name = LEAGUE_NAMES[LEAGUE] || LEAGUE.toUpperCase();
+  const allRows = BOOK.all_weeks.rows.filter(r => r.league === LEAGUE);
+  const wkRows  = BOOK.weekly.rows.filter(r => r.league === LEAGUE);
+  const total   = BOOK.all_weeks.rows.length;
+  const scope = `<div class="note">showing ${esc(name)}: ${allRows.length} of ${total} registered
+    strategies — the book is one file across every league; the book/league tabs filter its rows.</div>`;
+  if(!allRows.length && !wkRows.length){
+    el.innerHTML = scope + `<div class="empty">no strategy registered for ${esc(name)} in this book</div>`;
+    return;
+  }
+  el.innerHTML = scope
+    + `<h2>All weeks</h2>` + allTable(allRows)
+    + `<h2>By week</h2>` + weekTable(wkRows)
+    + (BOOK.footer.length ? `<div class="note">${BOOK.footer.map(esc).join("<br>")}</div>` : "")
+    + (BOOK.unparsed.length
+        ? `<div class="banner" style="margin-top:12px">lines in the file the parser did not recognise — shown, not dropped:<br>
+           ${BOOK.unparsed.map(esc).join("<br>")}</div>` : "");
+}
+
+function allTable(rows){
+  if(!rows.length) return `<div class="empty">no settled weeks yet</div>`;
+  return `<div class="tbl"><table><thead><tr>
+    <th class="l">strategy</th><th>bets</th><th>games</th><th>staked $</th><th>P&amp;L $</th>
+    <th>net/$1</th><th title="game-clustered 95% interval on the per-bet mean, in cents">95% CI on mean bet (c)</th>
+    <th class="l">verdict</th></tr></thead><tbody>
+    ${rows.map(r => `<tr class="${r.verdict_kind==="positive"||r.verdict_kind==="negative"?"":"dim"}">
+      <td class="l">${esc(r.strategy)}</td><td>${r.bets}</td><td>${r.games}</td><td>${r.staked}</td>
+      <td>${signed(r.pnl, 2)}</td><td>${signed(r.net_per_dollar, 3)}</td><td>${esc(r.ci)}</td>
+      <td class="l v${esc(r.verdict_kind)}">${esc(r.verdict)}</td></tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+function weekTable(rows){
+  if(!rows.length) return `<div class="empty">no weekly rows</div>`;
+  return `<div class="tbl"><table><thead><tr>
+    <th class="l">strategy</th><th class="l">week</th><th>bets</th><th>games</th><th>unsettled</th>
+    <th>staked $</th><th>P&amp;L $</th><th>net/$1</th>
+    <th title="game-clustered 95% interval on the per-bet mean, in cents; G<25 marks a week too small to read">95% CI on mean bet (c)</th></tr></thead><tbody>
+    ${rows.map(r => `<tr class="${r.underpowered || r.note ? "dim" : ""}">
+      <td class="l">${esc(r.strategy)}</td><td class="l">${r.week ?? "—"}</td>
+      <td>${r.bets ?? "—"}</td><td>${r.games ?? "—"}</td><td>${r.unsettled ?? "—"}</td>
+      <td>${r.staked ?? "—"}</td><td>${signed(r.pnl, 2)}</td><td>${signed(r.net_per_dollar, 3)}</td>
+      <td>${r.note ? `<span class="dimc">${esc(r.note)}</span>`
+                   : esc(r.ci) + (r.underpowered ? ' <span class="warnc">G&lt;25</span>' : "")}</td></tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+/* ── BOOK grouping adapter (2026-09-03), copied from the other pages: a book
+   click just clicks the underlying league tab, so there is exactly one code
+   path that changes leagues. ── */
+const BOOKS = [
+  {id:"meridian", label:"MERIDIAN", note:"basketball", leagues:["wnba","nba"]},
+  {id:"gridiron", label:"GRIDIRON", note:"football",   leagues:["nfl","cfb"]},
+];
+const bookOf = s => (BOOKS.find(b => b.leagues.includes(s)) || {id:"other"}).id;
+function applyBooks(){
+  const lgEl = document.getElementById("lgtabs");
+  const bkEl = document.getElementById("bookgrp");
+  if(!lgEl || !bkEl) return;
+  const tabs = [...lgEl.querySelectorAll(".lgt")];
+  if(!tabs.length) return;
+  const cur = (tabs.find(t => t.classList.contains("on")) || tabs[0]).dataset.lg;
+  const active = bookOf(cur);
+  const groups = BOOKS.map(b => ({...b, items: tabs.filter(t => b.leagues.includes(t.dataset.lg))}))
+                      .filter(b => b.items.length);
+  const orphans = tabs.filter(t => bookOf(t.dataset.lg) === "other");
+  if(orphans.length) groups.push({id:"other", label:"OTHER", note:"unmapped", items:orphans});
+
+  bkEl.innerHTML = groups.map(g =>
+    `<button class="book ${g.id===active?"on":""}" data-book="${g.id}"
+             title="${g.label} — ${g.note}: ${g.items.map(i=>i.textContent.trim()).join(", ")}"
+     >${g.label}</button>`).join("");
+  bkEl.querySelectorAll(".book").forEach(btn => btn.addEventListener("click", () => {
+    const g = groups.find(x => x.id === btn.dataset.book);
+    if(!g) return;
+    (g.items.find(i => !i.classList.contains("empty")) || g.items[0]).click();
+  }));
+  const shown = (groups.find(g => g.id === active) || {items:[]}).items;
+  tabs.forEach(t => { t.style.display = shown.includes(t) && shown.length > 1 ? "" : "none"; });
+}
+new MutationObserver(applyBooks).observe(
+  document.getElementById("lgtabs") || document.body, {childList:true, subtree:true});
+</script>
+</body>
+</html>
