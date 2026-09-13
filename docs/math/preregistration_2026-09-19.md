@@ -169,17 +169,31 @@ they are a genuine out-of-sample test of the CFB hypothesis and their family is
 the 2 (or 4) NFL cells, not 24. **This is the strongest test on the board**
 and it is the one nobody has to correct heavily.
 
-## 7. Held open
+## 7. Settlement — checked, and it holds
 
-- Whether the venue's settlement agrees with ESPN finals under the stated
-  frame (YES = away margin + line > 0) on the flagship rungs. My independent
-  SQL reproduces the script's population **exactly — 227 rungs, 104 games** —
-  so the *selector* is verified; settlement is the one input I could not
-  reproduce without the venue client. ESPN can settle only 65 of the 227
-  (29%; `cfb_game_map` covers 0% of 09-03/09-04). On that subsample the cell
-  is **−9.03¢ [−28.28, +10.22]** — same sign, same order, interval spans zero
-  at 29% of the data. **Neither confirmation nor refutation.**
-- `run_longshot_decomp.py` Q5 **discards the unsettled count** (`b, _ =
-  bets_for(...)`), so the reader cannot see what fraction of a cell was
-  dropped for want of a settlement, or whether the drop is balanced across a
-  twin pair. Q1 prints it; Q5 should too.
+The one input my SQL route could not reproduce was settlement. It has now been
+checked against the venue directly, on the flagship bucket:
+
+- **Population: reproduced exactly.** Independent SQL returns **227 rungs,
+  104 games** for YES-mid ∈ [0.50,0.60) — the script's n and G to the unit.
+  The selector is verified.
+- **Venue settlement coverage: 227/227. Zero unsettled.**
+- **Frame check: 65 rungs where both the venue's label and an ESPN final
+  exist — 65 agree, 0 disagree.** ESPN scored under the venue's stated frame
+  (YES = away margin + line > 0). By the rule of three, 0 disagreements in 65
+  bounds the frame-error rate at **≤ 4.6% (95%)** — small, not zero.
+
+**A criticism of mine that the data retires:** Q5 discards the unsettled count
+(`b, _ = bets_for(...)`), so a reader cannot see how much of a cell was
+dropped. On this cell the answer is **nothing — 0 of 227**, so the omission
+changes no number here. It stays worth fixing, because the next cell that
+drops rows will drop them silently, but it is a hygiene point and **not** a
+defect in the −11.62¢ figure.
+
+**What this means for the headline.** The number is not wrong. Its selector,
+its population and its settlement all reproduce. **The case against acting on
+it is entirely power and multiplicity** — §3 and §5 — plus the structural
+point in §4 that the line actually registered is the fade, not the finding.
+Those are the grounds to hold it as an interim observation, and the ESPN
+subsample (−9.03¢ on 29% of the rungs, §5) is consistent with the effect being
+real and simply too small to read on one slate.
