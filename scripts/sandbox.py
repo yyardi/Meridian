@@ -38,16 +38,38 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Strategies. Add one here and it appears in --list automatically.
 # --------------------------------------------------------------------------
 
-STRATEGIES: dict[str, str] = {
+#: The sandbox's own two, which are MARKET-MAKING strategies over
+#: shadow_quote_fills -- a different question and a different tape from the
+#: ladder registry below.
+QUOTE_STRATEGIES: dict[str, str] = {
     "quote": "Shadow market maker — quotes both sides at the touch (the v1 engine).",
     "quote-guarded": "Same, but withdraws a side once fills go >=65% one-way "
                      "(the circuit breaker; measured -10.91c vs -1.68c balanced).",
 }
 
+
+def _ladder_names() -> dict[str, str]:
+    """The shared registry (strategies/ladder.py), so `--strategy` lists one
+    table rather than a second copy that drifts."""
+    try:
+        from strategies.ladder import STRATEGIES as LADDER
+        return {n: f"ladder rule on {st['league']} {'/'.join(st['types'])}, buys {st['side']}"
+                for n, st in LADDER.items()}
+    except Exception:
+        return {}
+
+
+STRATEGIES: dict[str, str] = {**QUOTE_STRATEGIES, **_ladder_names()}
+
 SPORTS: dict[str, str] = {
     "wnba": "basketball · MERIDIAN",
     "nfl": "football · GRIDIRON",
     "cfb": "college football · GRIDIRON",
+    "mlb": "baseball",
+    # these two are several venue competitions each; venue_patterns() expands
+    # them, because `%-cricket-%` matches no slug this venue has ever written
+    "cricket": "cricket · 5 competitions",
+    "tabletennis": "table tennis · 4 competitions",
 }
 
 
@@ -109,6 +131,16 @@ SELECT (SELECT count(*) FROM kept)                                AS fills,
 def run(sport: str, strategy: str, wallet: float, since: str, db: str | None) -> Result:
     from sqlalchemy import text
     from core.leagues import venue_patterns
+    if strategy not in QUOTE_STRATEGIES:
+        # The ladder registry is LISTED here so there is one table of strategy
+        # names, but it runs on a different tape (market_snapshots priced at
+        # the pregame close, settled from the venue) than this query, which
+        # reads shadow_quote_fills. Falling through would have run the QUOTE
+        # strategy and labelled the answer with a ladder name -- a wrong number
+        # that looks right, which is the one outcome worth refusing over.
+        sys.exit(f"{strategy!r} is a ladder strategy: run it with the paper book "
+                 f"(cfb/run_paper_book.py). The sandbox only runs "
+                 f"{'/'.join(sorted(QUOTE_STRATEGIES))} today.")
     guard = 1 if strategy == "quote-guarded" else 0
     eng = _engine(db)
     with eng.connect() as c:
