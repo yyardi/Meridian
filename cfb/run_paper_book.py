@@ -188,6 +188,23 @@ def main():
     all_rows = [r for rs in rows_by_league.values() for r in rs]
     chosen = select(all_rows)
     by_slug = {r["market_slug"]: r for r in all_rows}
+
+    # COVERAGE, per league. Every strategy prints the bets it made; none of
+    # them prints the markets NOBODY took, and that is the number that says
+    # whether a league is being read or merely sampled. Measured on the MLB
+    # tape 2026-09-14: of 49 winner markets with a two-sided quote, 17 are
+    # fav (mid >= 0.60) and 4 are dog (mid <= 0.40) — so 28, FIFTY-SEVEN
+    # PERCENT, are selected by no winner rule at all. That is legitimate (the
+    # rules are deliberately not a partition) and it was invisible, which is
+    # the half that is not.
+    taken = {b.market_slug for bets in chosen.values() for b in bets}
+    for lg, rs in rows_by_league.items():
+        on_tape = {r["market_slug"] for r in rs}
+        if not on_tape:
+            continue
+        used = len(on_tape & taken)
+        print(f"{lg}: {used:,} of {len(on_tape):,} markets selected by some "
+              f"rule, {len(on_tape) - used:,} matched none")
     print(f"\n{'strategy':<26}{'week':<12}{'bets':>6}{'games':>6}{'unsettled':>10}{'staked $':>10}{'P&L $':>9}{'net/$1':>9}{'95% CI on mean bet (c)':>26}")
     grand = defaultdict(list)
     only = [x for x in os.environ.get("ONLY", "").split(",") if x]   # ONLY=a,b limits a run to those strategies
