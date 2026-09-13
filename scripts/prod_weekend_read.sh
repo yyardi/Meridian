@@ -57,6 +57,7 @@ if [ "$MODE" = gate ]; then
   run "H2 E6 dead windows, NFL" -e LEAGUE=nfl -e DEAD_WINDOW=1 < cfb/run_making_touch.py
   run "H3 ladder RV, NFL" -e LEAGUE=nfl < cfb/run_ladder_rv.py
   run "Saturday hypothesis: CFB spread rungs mid 0.2-0.3, buy NO (pregame-ladder-calibration.md)" -e LEAGUE=cfb < cfb/run_ladder_calibration.py
+  run "Kalshi vs DraftKings lag, hour by hour (kalshi-early-week.md; registered read 09-19)" < cfb/run_kalshi_dk_lag.py
 fi
 # H4: append a snapshot (public APIs) and score what has settled
 run_file "H4 softness snapshot polymarket" analysis/pregame_softness/pregame_softness_polymarket.py analysis/pregame_softness/pregame_softness_polymarket_snapshots.csv
