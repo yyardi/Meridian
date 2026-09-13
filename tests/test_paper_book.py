@@ -152,6 +152,30 @@ def test_preamble_and_footer_travel_with_the_tables(book):
     assert "legend" not in book, "the page's one-line LEGEND is the endpoint's, not the file's"
 
 
+REAL_BOOK = Path(__file__).resolve().parent.parent / "docs" / "paper_book_2026-09-13.txt"
+
+
+@pytest.mark.skipif(not REAL_BOOK.exists(), reason="the committed first run is absent")
+def test_the_producers_first_real_run_parses_completely():
+    """A second sample the test did not construct: the first run on 60 days
+    of tape, committed as docs/paper_book_2026-09-13.txt. The constructed
+    sample can only agree with the format strings it was built from; this one
+    can disagree with the parser."""
+    book = parse_paper_book(REAL_BOOK.read_text())
+    assert book["unparsed"] == []
+    assert len(book["preamble"]) == 4 and book["preamble"][0].startswith("cfb: ")
+    assert len(book["weekly"]["rows"]) == 28
+    assert len(book["all_weeks"]["rows"]) == 7
+    kinds = {r["strategy"]: r["verdict_kind"] for r in book["all_weeks"]["rows"]}
+    assert kinds["wnba_spread_yes_80_100"] == "positive"
+    assert kinds["nfl_spread_home_all"] == "underpowered"
+    assert kinds["cfb_spread_home_all"] == "spans"
+    one_game = [r for r in book["weekly"]["rows"]
+                if r["strategy"] == "wnba_total_under_all" and r["week"] == "2026-08-31"]
+    assert one_game[0]["ci"] == "-11.27 [-inf, +inf]" and one_game[0]["ci_lo"] is None
+    assert sum(r["note"] == "no markets on tape" for r in book["weekly"]["rows"]) == 5
+
+
 def test_an_unrecognised_table_line_is_reported_not_dropped():
     drifted = SAMPLE.replace(
         "cfb_spread_home_all          300    88       150    +3.30   +0.022      +2.20 [-3.30, +7.70]   spans 0",
