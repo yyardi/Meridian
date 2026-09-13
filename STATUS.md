@@ -1,29 +1,19 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 19:05Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 20:10Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
 Plan for the live candidate: `docs/math/longshot-no-candidate.md`.
 
-## 1. Commands you need to run on the AWS box (from a fresh shell there)
+## 1. Commands you need to run — ON THE BOX (paste from the laptop; the 20:00Z run built everything on the laptop instead)
 
 ```bash
-# 1. start MLB recording (overlay is on the box; 55 events / 495 markets live on the venue right now)
-cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder
+# one paste: builds MLB recorder, api, both paper scalp engines, Kalshi recorder on the AWS box, then lists them
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder && sudo docker compose up -d --build api && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb && sudo docker compose up -d --build kalshi-recorder && sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp|kalshi"'
 
-# 2. rebuild the api: SCOREBOARD page (JSON paper book), honest PULSE page, reads mount, settlement cache
-cd /opt/meridian && sudo docker compose up -d --build api
-
-# 3. the football in-game PAPER taker loop (your rule, live on paper: TRIGGER ytg40, TP 5%, STOP 10%, $25 tickets; places nothing, opens no venue socket)
-cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb
-
-# 4. Kalshi recorder now gives NFL games a clock (never polled before); rebuild it before Thursday's NFL game. The CFB/NFL ESPN
-#    recorders carry a plays-regression fix for their NEXT rebuild (do it Tuesday, between slates, never during one).
-cd /opt/meridian && sudo docker compose up -d --build kalshi-recorder
-
-# verify all
-sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp|kalshi"
+# then stop the copies running on the laptop (they share the venue key with the box and read an empty local tape)
+docker stop meridian-mlb-recorder meridian-api meridian-scalp-nfl meridian-scalp-cfb meridian-kalshi-recorder meridian-nfl-odds-recorder meridian-cfb-odds-recorder
 ```
-Prod git is fast-forwarded to origin/main (main-deploy, 09-13 19:05Z); the earlier local edits are in `git stash list` and artifacts/reads/local_edits_0913. As of 19:05Z neither container above had been rebuilt (api image 09-05, no mlb container): compose is classifier-blocked for the manager, these two are yours.
+Prod git is at origin/main (main-deploy); compose is classifier-blocked for the manager, so the paste is yours.
 
 Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated on 09-06.
 
@@ -55,7 +45,7 @@ Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated
 | CFB / NFL totals: buy UNDER every rung; buy OVER every rung (mirror) | registered 09-13 18:30Z; the two-Saturday back-read is running, labelled a back-read | — |
 | MLB first-five totals under/over; first-five spread NO 20–30¢ | registered 09-13 18:30Z, no tape | — |
 | **NFL/CFB in-game momentum scalp** (the operator's rule: buy the offence driving into opponent territory / red zone, take profit 2–10%, stop 5–20%, maker-exit variant) | being scored on the in-game tape now, grid by trigger × take-profit × stop, both leagues, home/away split | — |
-| DraftKings line move → Polymarket lag, taker on the implied rung (NFL/CFB pregame) | being scored (Quant A) | — |
+| DraftKings line move → Polymarket lag, take the DK-implied rung at the ask | measured on CFB 09-12 (23 games, 25 bets): venue lags DK by a median 30 min (n 19), but taking the rung is −9.2¢/$1 [−30.7, +12.3] at the first sweep, −13.0 at +1h, −24.5 [−46.7, −2.4] at +3h, all UNDERPOWERED (G 14–15); 5 of 24 moves already at price. Frame audit requested; NFL settles tonight; read 09-19 | — |
 | Kalshi vs Polymarket same instant (CFB 09-12, 45 matched games, 66k pairs) | measured: median gap 0.25–0.5¢, <1% of instants beyond 3¢, 49 after-fee dutch instants in 66k (0.07%); who-is-stale underpowered (G 6–7). No pregame cross-venue trade. Kalshi 20–30¢ rung pending | — |
 
 "Measured negative with power" means: bet it and you lose, on the evidence. The

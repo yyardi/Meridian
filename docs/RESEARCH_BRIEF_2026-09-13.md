@@ -69,10 +69,12 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
   dutch instants in 66k (0.07%). Who-is-stale: episodes too rare on one Saturday (G 6–7), the
   median > 3¢ gap persists unchanged at the next sweep. No pregame cross-venue trade exists on
   this tape. Kalshi's own 20–30¢ rung (C): pending.
-- **DraftKings move → venue lag (pregame):** census 15 CFB / 3 NFL spread moves ≥ 0.5 pt since
-  09-12; raw lag to the first venue tick the implied way: CFB median 30 min (q25 20, q75 65,
-  n = 19, G = 15), NFL median 61 min (n = 7); venue sweep cadence ≈ 68 min so this is an upper
-  bound. P&L: rerunning on venue settlement (first pass used an idle resolver table).
+- **DraftKings move → venue lag (pregame, CFB 09-12, 23 settled games):** census 15 spread / 10
+  total moves ≥ 0.5 pt; venue lags DK by a median 30 min (q25 20, q75 65, n 19; sweep cadence
+  ≈ 68 min so an upper bound); 5 of 24 moves were already at the implied price. Taking the
+  DK-implied rung at the venue ask, net of fee: −9.2¢/$1 [−30.7, +12.3] at the first sweep,
+  −13.0 at +1 h, −24.5 [−46.7, −2.4] at +3 h; all UNDERPOWERED (G 14–15). Directional: the lag is
+  real, the crossing cost plus fee exceeds it. Frame audit pending; NFL settles tonight.
 
 ## 5. Running on paper from the next deploy
 
