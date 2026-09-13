@@ -131,7 +131,18 @@ def main():
         cur = c.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); c.commit()
 
     client = PolymarketGatewayClient()
-    from core import settlements
+    try:
+        from core import settlements
+    except ImportError:                    # api image predates core/settlements.py (rebuild pending): same numbers, nothing persisted
+        import types
+        def _memo(client, cache):
+            def settlement(slug):
+                if slug not in cache:
+                    try: s = client.get_settlement(slug).get("settlement"); cache[slug] = int(s) if s in (0, 1, "0", "1") else None
+                    except Exception: cache[slug] = None
+                return cache[slug]
+            return settlement
+        settlements = types.SimpleNamespace(PATH="none (uncached)", load=dict, save=lambda c: None, settler=_memo)
     _settle = settlements.load(); _hits = len(_settle)
     settlement = settlements.settler(client, _settle)
 
