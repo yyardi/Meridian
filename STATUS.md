@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 17:32Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 18:40Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -7,11 +7,17 @@ Plan for the live candidate: `docs/math/longshot-no-candidate.md`.
 ## 1. Commands you need to run on the AWS box (from a fresh shell there)
 
 ```bash
-# start MLB recording (staged on the box; ~50 events/day, pregame boards, RPS 3)
+# 1. start MLB recording (staged on the box; ~55 events/day, 495 markets, boards ~4 days ahead, RPS 3)
 cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder
 
-# make prod's git match main (an untracked file blocks the fast-forward; this keeps the two locally-edited files)
+# 2. rebuild the api: SCOREBOARD page + honest PULSE page merged 09-13 18:20Z; files and the reads mount are staged on the box
+cd /opt/meridian && sudo docker compose up -d --build api
+
+# 3. make prod's git match main (an untracked file blocks the fast-forward; this keeps the two locally-edited files)
 cd /opt/meridian && sudo mv cfb/run_making.py cfb/run_making.py.old && sudo git stash && sudo git merge --ff-only origin/main && sudo git stash pop
+
+# 4. (laptop, optional) three recorder containers have run on the laptop since 09-12, one crash-looping; the rule is nothing runs on the laptop
+docker stop meridian-kalshi-recorder meridian-nfl-odds-recorder meridian-cfb-odds-recorder
 ```
 
 Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated on 09-06.
@@ -40,6 +46,11 @@ Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated
 | CFB: home side every rung ("home shift") | paper line, read 09-19 | +$47.44 on $1,571, 2,503 bets, 117 games: +1.90¢ [−3.83, +7.62], spans 0 |
 | NFL: same two rules | paper line, 2 games | −$17.91, UNDERPOWERED |
 | MLB: under/over, favourite/dog, 20–30¢ NO | registered, no tape yet | — |
+| CFB / NFL totals: buy UNDER every rung; buy OVER every rung (mirror) | registered 09-13 18:30Z; the two-Saturday back-read is running, labelled a back-read | — |
+| MLB first-five totals under/over; first-five spread NO 20–30¢ | registered 09-13 18:30Z, no tape | — |
+| **NFL/CFB in-game momentum scalp** (the operator's rule: buy the offence driving into opponent territory / red zone, take profit 2–10%, stop 5–20%, maker-exit variant) | being scored on the in-game tape now, grid by trigger × take-profit × stop, both leagues, home/away split | — |
+| DraftKings line move → Polymarket lag, taker on the implied rung (NFL/CFB pregame) | being scored (Quant A) | — |
+| Kalshi vs Polymarket same instant: gap distribution, dutch count after both fees, who is stale, the 20–30¢ rung on Kalshi | being scored | — |
 
 "Measured negative with power" means: bet it and you lose, on the evidence. The
 code stays; the bet does not get money. All lines above are scored every Monday
@@ -53,14 +64,20 @@ dashboard's SCOREBOARD page once that page lands (being built). First run 2026-0
 - **MLB:** ladder calibration at 100 settled games (≈ one week after the recorder starts).
 - **Mon 09-14 10:20Z:** the automatic NFL/CFB read (maker gate already FAIL at G=43).
 
-## 5. Being built right now (agents, in isolated worktrees, reviewed before merge)
+## 5. Being built right now (agents, in their own worktrees, reviewed before merge)
+
+Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), simple take-profit/stop rules scored as paper lines, MLB recording daily. Aim $7k/week; $1k/week matters. Three peer sessions were alive at hand-over (Debugger, Builder D, Quant A); three researcher agents were spawned by the manager; a manager check-in runs every 30 min.
 
 | agent | deliverable |
 |---|---|
-| honest dashboard | PULSE page says WNBA-only / resumes on playoffs; the stuck "1335" diagnosed and fixed; new SCOREBOARD page rendering the paper book |
-| codebase map | BUILT and merged: `docs/ARCHITECTURE.md`; 15 dead research scripts archived; engines' dashboard import, missing heartbeats, and the health script's 5 blind containers listed for the migration |
-| Kalshi–DraftKings lag | BUILT: `cfb/run_kalshi_dk_lag.py`, in the Monday cron; smoke run: NFL 14 games unsettled, CFB 09-12 72 settled G=24 pooled +1.50¢ [−5.76, +8.76] underpowered; gaps are tiny at h ≤ 6 (median 0.6–1.1¢), the h = 24–72 question needs 09-19 |
-| live-safe shadow lister | BUILT and merged: spread cap, venue clock, paper book in the Monday cron, 30 tests |
+| Debugger | main's CFB ESPN recorder regression (fa24613, prod's image predates it, 09-12 was not hit) + the leak guard; idempotent index migration (laptop Kalshi crash-loop); health.py's 6 missing containers; Kalshi recorder sets NFL kickoffs from ESPN |
+| Builder D | MLB: settlement cache so the paper book can run daily; ladder calibration for MLB from day one settled by the venue; a daily 10:40Z `mlb` cron mode |
+| Quant A | DK line move → venue lag: taker P&L after fee on the implied rung, by side, by horizon, raw lag in minutes |
+| researcher 1 | CFB 20–30¢ NO decomposed: favourite-fails vs dog-covers, monotone buckets with home-referenced twins, NO-mid definition |
+| researcher 2 | Kalshi vs Polymarket cross-venue: gap, dutch count, who is stale, the longshot rung on Kalshi |
+| researcher 3 | the momentum scalp grid (§3), fee table first |
+| honest dashboard | MERGED 09-13 18:20Z (080aa97); live after command 2 above |
+| codebase map / Kalshi–DK lag / shadow lister | merged earlier 09-13 |
 
 ## 6. Open questions for the researcher (docs/math/longshot-no-candidate.md §7)
 
