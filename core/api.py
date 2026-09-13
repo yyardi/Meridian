@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hmac
+import json
 import os
 import time
 from decimal import Decimal
@@ -2843,37 +2844,38 @@ def analytics() -> dict:
 
 @app.get("/api/paper-book")
 def paper_book() -> dict:
-    """The latest paper book on disk, parsed — the SCOREBOARD page's one source.
+    """The latest paper book on disk, served verbatim — the SCOREBOARD's source.
 
-    `cfb/run_paper_book.py` prints the per-strategy weekly P&L tables; a cron
-    on the prod box leaves that output as `paper_book*.txt` under
-    `MERIDIAN_READS_DIR` (default: the prod reads directory, see
-    `core/paper_book.py`). This serves the newest file with its mtime, parsed
-    by `parse_paper_book` and recomputed nowhere. Absent, it says so in one
-    line and serves no tables: the api container only sees the directory if
-    compose mounts it there, and "no paper book yet" must not look like an
-    empty book.
+    `cfb/run_paper_book.py` now writes `paper_book_<UTC>.json` beside its txt,
+    with the rows already shaped for the page. This reads the newest one and
+    returns it unchanged: **nothing here parses, derives or recomputes.** The
+    producer owns the shape, because it is the only thing that has the numbers.
+
+    It replaced 198 lines of fixed-width regex plus 262 lines of tests for
+    them. That parser could only ever be a guess at a table written for a
+    human, and a column drifting by one space was a silent row loss — the
+    reason it carried an `unparsed` list at all.
+
+    Absent, it says so in one line and serves no tables: the api container sees
+    the directory only if compose mounts it, and "no paper book yet" must not
+    look like an empty book.
     """
-    from core.paper_book import (
-        LEGEND,
-        PAPER_BOOK_GLOB,
-        latest_paper_book,
-        parse_paper_book,
-        reads_dir,
-    )
-
-    directory = reads_dir()
-    path = latest_paper_book(directory)
-    if path is None:
-        return {"available": False, "legend": LEGEND,
-                "note": f"no paper book yet — nothing matching {PAPER_BOOK_GLOB} in {directory}"}
-    return {
-        "available": True,
-        "file": path.name,
-        "generated_at": dt.datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(),
-        "legend": LEGEND,
-        **parse_paper_book(path.read_text(errors="replace")),
-    }
+    directory = Path((os.environ.get("MERIDIAN_READS_DIR") or "").strip()
+                     or "/opt/meridian/artifacts/reads")
+    files = sorted((p for p in directory.glob("paper_book*.json") if p.is_file()),
+                   key=lambda p: (p.stat().st_mtime, p.name)) if directory.is_dir() else []
+    if not files:
+        return {"available": False,
+                "note": f"no paper book yet — nothing matching paper_book*.json in {directory}"}
+    path = files[-1]
+    try:
+        doc = json.loads(path.read_text(errors="replace"))
+    except ValueError as exc:
+        return {"available": False, "note": f"{path.name} is not readable JSON: {exc}"}
+    doc.setdefault("file", path.name)
+    doc.setdefault("generated_at",
+                   dt.datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat())
+    return doc
 
 
 @app.get("/quote")

@@ -22,6 +22,9 @@ set -u
 cd /opt/meridian || exit 1
 MODE=${1:-gate}
 OUT=/opt/meridian/artifacts/reads; mkdir -p "$OUT"
+# the same directory as the api container sees it (compose mounts ./artifacts/reads there),
+# so PB_JSON is a path the container can write and /api/paper-book can then read
+RD=${MERIDIAN_READS_DIR:-/opt/meridian/artifacts/reads}
 F="$OUT/$(date -u +%Y-%m-%dT%H%MZ)-$MODE.txt"
 D=(docker run --rm -i --network meridian_default
    -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian
@@ -51,7 +54,8 @@ run_file() {  # run_file LABEL path/inside/app [args...]   (script run AS A FILE
 # --------------------------------------------------------------------------- #
 if [ "$MODE" = mlb ]; then
   { echo; echo "### PAPER BOOK, mlb  ($(date -u +%H:%MZ))"; } >> "$F"
-  docker exec -i -e LEAGUES=mlb meridian-api python - < cfb/run_paper_book.py >> "$F" 2>&1
+  docker exec -i -e LEAGUES=mlb -e PB_JSON="$RD/paper_book_$(date -u +%Y-%m-%dT%H%MZ).json" \
+    meridian-api python - < cfb/run_paper_book.py >> "$F" 2>&1
   echo "paper book exit $?" >> "$F"
   { echo; echo "### MLB LADDER CALIBRATION  ($(date -u +%H:%MZ))"; } >> "$F"
   docker exec -i -e LEAGUE=mlb meridian-api python - < cfb/run_ladder_calibration.py >> "$F" 2>&1
@@ -92,8 +96,10 @@ run_file "H4 score" analysis/pregame_softness/score_softness.py
 if [ "$MODE" = gate ]; then
   { echo; echo "### PAPER BOOK  ($(date -u +%H:%MZ))"; } >> "$F"
   if [ -f cfb/run_paper_book.py ]; then
-    PB="$OUT/paper_book_$(date -u +%Y-%m-%dT%H%MZ).txt"
-    docker exec -i meridian-api python - < cfb/run_paper_book.py > "$PB" 2>&1; PB_RC=$?
+    TS=$(date -u +%Y-%m-%dT%H%MZ)
+    PB="$OUT/paper_book_$TS.txt"
+    # PB_JSON is the path INSIDE the api container, which mounts ./artifacts/reads
+    docker exec -i -e PB_JSON="$RD/paper_book_$TS.json" meridian-api python - < cfb/run_paper_book.py > "$PB" 2>&1; PB_RC=$?
     echo "paper book: $PB (exit $PB_RC)" >> "$F"
   else
     echo "paper book NOT run: cfb/run_paper_book.py is missing from this checkout" >> "$F"
