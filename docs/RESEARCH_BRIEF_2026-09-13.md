@@ -69,7 +69,9 @@ whole-ladder home shift in CFB weeks 1–2 (or a 1.9σ draw). Centre-rung away c
   its price at every rung and the away side loses at every rung (home ≥ away in all five twin
   pairs by 5–14¢); the only cell excluding zero is **buy AWAY at YES-mid 50–60¢: −11.62¢/contract
   [−21.74, −1.50], n 227, G 104** (one of ~20 cells looked at). Not a longshot effect; a
-  home-shift effect. **Corrected by audit the same night:** the registered fade is the exact
+  home-shift effect. **The measurement reproduces**: independent SQL returns the same 227 rungs
+  and 104 games, the venue settled 227/227, and the 65 rungs with an ESPN final agree 65/65 under
+  the stated frame. **What the audit corrected was what I did with it:** the registered fade is the exact
   complement of that cell (same 227 rows, other side), so its in-sample expectation is
   +11.62 − 4.17 round-trip = +7.45¢ [−2.67, +17.57], spanning zero, and it inherits the source's
   standard error. The source was one of ≥10 statistics; at 20 looks the expected number of false
