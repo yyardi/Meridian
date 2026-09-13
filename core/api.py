@@ -2878,6 +2878,35 @@ def paper_book() -> dict:
     return doc
 
 
+@app.get("/api/scalps")
+def scalps(limit: int = 200) -> dict:
+    """The paper scalp engine's last rows, plus a per-league total.
+
+    `core/gridiron/scalp.py` writes one row per CLOSED position. **Nothing here
+    is a trade**: the engine reads the recorders' tape and can place no order.
+
+    `totals` is computed in SQL over EVERY row, not over the `rows` page --
+    summing the 200 returned would silently become a different statistic the
+    moment the table outgrew the page, and it would keep looking right.
+    """
+    from sqlalchemy import text
+    from core.storage.base import get_engine
+
+    n = max(1, min(int(limit), 1000))
+    with get_engine().connect() as c:
+        rows = [dict(r._mapping) for r in c.execute(text(
+            "SELECT league, game_id, market_slug, side, trigger, entered_at,"
+            " entry_px::float, exit_at, exit_px::float, exit_reason,"
+            " pnl::float, fee::float, params FROM paper_scalps"
+            " ORDER BY exit_at DESC LIMIT :n"), {"n": n})]
+        totals = [dict(r._mapping) for r in c.execute(text(
+            "SELECT league, count(*) n, sum(pnl)::float pnl, sum(fee)::float fee,"
+            " count(*) FILTER (WHERE pnl > 0) wins"
+            " FROM paper_scalps GROUP BY league ORDER BY league"))]
+    return {"rows": rows, "totals": totals, "limit": n,
+            "note": "paper only — the scalp engine reads the tape and places nothing"}
+
+
 @app.get("/quote")
 def quote_page() -> FileResponse:
     return FileResponse(STATIC / "quote.html")
