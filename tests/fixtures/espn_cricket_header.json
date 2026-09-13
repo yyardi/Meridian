@@ -1,0 +1,190 @@
+{
+ "sports": [
+  {
+   "id": "200",
+   "leagues": [
+    {
+     "id": "24670",
+     "name": "South Africa tour of Namibia 2026",
+     "events": [
+      {
+       "id": "1549533",
+       "date": "2026-09-13T07:30:00Z",
+       "name": "Namibia v South Africa",
+       "period": 2,
+       "status": "post",
+       "summary": "Result",
+       "fullStatus": {
+        "clock": 0,
+        "addedClock": 0,
+        "displayClock": "0'",
+        "presentLocalTime": "",
+        "period": 2,
+        "dayNumber": 1,
+        "longSummary": "South Africa won by 9 wickets (with 171 balls remaining)",
+        "summary": "South Africa won by 9 wkts (171b rem)",
+        "type": {
+         "id": "1",
+         "description": "Result",
+         "detail": "Final",
+         "shortDetail": "Final",
+         "state": "post"
+        }
+       },
+       "notes": [
+        {
+         "text": "13 September 2026 (50-over match)",
+         "type": "matchdays"
+        },
+        {
+         "text": "Namibia , elected to bat first",
+         "type": "toss"
+        }
+       ],
+       "competitors": [
+        {
+         "id": "28",
+         "order": 1,
+         "homeAway": "home",
+         "winner": false,
+         "score": "156",
+         "displayName": "Namibia",
+         "abbreviation": "NAM"
+        },
+        {
+         "id": "3",
+         "order": 2,
+         "homeAway": "away",
+         "winner": true,
+         "score": "157/1 (21.3/50 ov, target 157)",
+         "displayName": "South Africa",
+         "abbreviation": "SA"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "20898",
+     "name": "Women's Caribbean Premier League",
+     "events": [
+      {
+       "id": "1540218",
+       "date": "2026-09-13T18:00:00Z",
+       "name": "Barbados Tridents Women v Guyana Amazon Warriors Women",
+       "period": 1,
+       "status": "in",
+       "summary": "Live",
+       "fullStatus": {
+        "clock": 0,
+        "addedClock": 0,
+        "displayClock": "0'",
+        "presentLocalTime": "14:41",
+        "period": 1,
+        "session": "",
+        "battingTeamId": 1323140,
+        "dayNumber": 1,
+        "longSummary": "Guyana Amazon Warriors Women won the toss and elected to field",
+        "summary": "Warriors won toss & fielded",
+        "type": {
+         "id": "0",
+         "description": "Live",
+         "detail": "Live",
+         "shortDetail": "Live",
+         "state": "in"
+        }
+       },
+       "notes": [
+        {
+         "text": "13 September 2026 (20-over match)",
+         "type": "matchdays"
+        },
+        {
+         "text": "Guyana Amazon Warriors Women , elected to field first",
+         "type": "toss"
+        }
+       ],
+       "competitors": [
+        {
+         "id": "1323140",
+         "order": 1,
+         "homeAway": "home",
+         "winner": false,
+         "score": "49/1 (8.2/20 ov)",
+         "displayName": "Barbados Tridents Women",
+         "abbreviation": "BTW"
+        },
+        {
+         "id": "1323141",
+         "order": 2,
+         "homeAway": "away",
+         "winner": false,
+         "score": "",
+         "displayName": "Guyana Amazon Warriors Women",
+         "abbreviation": "GAW"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8623",
+     "name": "Caribbean Premier League",
+     "events": [
+      {
+       "id": "1534213",
+       "date": "2026-09-13T23:00:00Z",
+       "name": "Barbados Tridents v Guyana Amazon Warriors",
+       "period": 0,
+       "status": "pre",
+       "summary": "Scheduled",
+       "fullStatus": {
+        "clock": 0,
+        "addedClock": 0,
+        "displayClock": "0'",
+        "presentLocalTime": "14:39",
+        "period": 0,
+        "dayNumber": 0,
+        "longSummary": "Match scheduled to begin at 19:00 local time (23:00 GMT)",
+        "summary": "Starts at 19:00 local time",
+        "type": {
+         "id": "0",
+         "description": "Scheduled",
+         "detail": "Scheduled",
+         "shortDetail": "Scheduled",
+         "state": "pre"
+        }
+       },
+       "notes": [
+        {
+         "text": "13 September 2026 - night match (20-over match)",
+         "type": "matchdays"
+        }
+       ],
+       "competitors": [
+        {
+         "id": "642411",
+         "order": 1,
+         "homeAway": "home",
+         "winner": false,
+         "score": "",
+         "displayName": "Barbados Tridents",
+         "abbreviation": "BT"
+        },
+        {
+         "id": "642413",
+         "order": 2,
+         "homeAway": "away",
+         "winner": false,
+         "score": "",
+         "displayName": "Guyana Amazon Warriors",
+         "abbreviation": "GAW"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
