@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 23:40Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-14 00:00Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -60,6 +60,16 @@ code stays; the bet does not get money. All lines above are scored every Monday
 by `cfb/run_paper_book.py` (venue-settled, taker fee charged) and shown on the
 dashboard's SCOREBOARD page once that page lands (being built). First run 2026-09-13 17:45Z: `docs/paper_book_2026-09-13.txt`, also on the box in artifacts/reads.
 
+**The decision rule lost a clause tonight, and only a projection catches that
+kind.** The registered rule was "G ≥ 25 AND excludes 0 AND the home/away twin
+does not contradict". Projected onto the outcomes this design can produce, the
+third clause passes on essentially all of them: for the twin to contradict the
+away cell it would have to sit below −9.62¢, an 11.59¢ swing from where it
+measures. A clause that cannot fire reads as corroboration while testing
+nothing, and makes the rule look like three hurdles when it has two. **The twin
+is now reported beside the cell and never gated on** — in the rule, in the paper
+book's own footer, and in the pre-registration.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
@@ -107,7 +117,7 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 
 ## 6. Open questions for the researcher (docs/math/longshot-no-candidate.md §7)
 
-1. ANSWERED 09-13 (`cfb/run_longshot_decomp.py`): home-shift, not longshot. Home side beats its price at every rung, away loses at every rung (5/5 twin pairs, 5–14¢); the 20–30¢ cell is where a noisy home series peaks. Only cell excluding 0: away at 50–60¢, −11.62 [−21.74, −1.50], G 104.
+1. ANSWERED 09-13 (`cfb/run_longshot_decomp.py`), then narrowed by audit: not a longshot effect. The one cell excluding zero is away at 50–60¢, −11.62 [−21.74, −1.50], G 104, verified end to end by an independent route. Its home twin is +1.97 [−7.65, +11.59], a null — what is established is that the AWAY side is expensive at coin-flip rungs, not that the home side is cheap everywhere.
 2. Home shift in CFB weeks 1–2: real early-season mispricing or a 1.9σ draw? ~200 games decide.
 3. Does the WNBA under-bias exist outside late August? Playoffs answer.
 4. Kalshi vs DraftKings during the week: which moves first? Tape now exists.
