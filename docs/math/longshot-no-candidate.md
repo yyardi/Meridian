@@ -45,6 +45,13 @@ most of it: rungs > 14 points from the centre +11.89¢ [+5.47, +18.31] on 16
 markets / 12 games; rungs 7–14 points +5.58¢ [−2.52, +13.68] on 192 / 75.
 Twelve games is not evidence; it is where to look.
 
+> **Status 2026-09-13 evening: every "excludes zero" positive this candidate
+> family produced has been traced to the venue's away-referenced listing or to
+> a calendar regime (see §3b and `wnba-kalshi-cross-venue_2026-09-13.md`).
+> The registered 09-19 money read stands because it was registered, and the
+> centre-rung home-shift read beside it is the one that can actually tell a
+> mechanism from a draw.**
+
 ## 3b. Decomposition, 2026-09-13 (full tables: `longshot-no-decomposition_2026-09-13.md`)
 
 **The mechanism in §3 is probably wrong, and this note sits above the read it

@@ -45,7 +45,24 @@ then checked out of sample and on a second sport with the venue's own settlement
 One-sided: cheap YES overpriced, expensive YES not underpriced — the classic
 shape. Registered read: Saturday 09-19, held-out or pooled at G ≥ 25.
 
-**WNBA, 88 games, 1,582 markets settled BY THE VENUE (not by us):**
+> **RETRACTED, same day (decomposition + Kalshi cross-check, details in
+> `docs/math/wnba-kalshi-cross-venue_2026-09-13.md` and
+> `docs/math/longshot-no-decomposition_2026-09-13.md`).** The WNBA favourite
+> bet (+5.78¢ excludes 0) is an artifact of how the venue lists markets: its
+> YES side is always the away team, so a "favourite at 80–100¢" rung can only
+> exist when the favourite is AWAY. The home-favourite twin of the same bet is
+> −2.51¢ [−10.09, +5.07] and the two pooled are +0.81¢ [−3.75, +5.37]. Not a
+> favourite effect. The WNBA under bet is the same direction on Kalshi (+8.91¢
+> [+0.85, +16.97]) but at the same prices on the same games with the same
+> scores — zero independent power — and it is a late-August regime (games ran
+> 3.9 points under the total for four weeks; the 13 games before that ran the
+> other way). The CFB bet decomposes the same way: "cheap ticket" and "away
+> team" are one variable on a tape that is 90% away underdogs. What survives is
+> ONE open question, stated in §3b of the candidate doc: did the venue
+> under-price home teams by ~4 points in CFB weeks 1–2, or was that a 1.9σ
+> draw. The table below is left as printed, struck.
+
+~~**WNBA, 88 games, 1,582 markets settled BY THE VENUE (not by us):**~~
 
 | bet | net per $1 | interval | markets | G | games positive |
 |---|---|---|---|---|---|
