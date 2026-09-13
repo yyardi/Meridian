@@ -1,4 +1,4 @@
-# STATUS — Meridian / Gridiron (updated 2026-09-13 20:10Z)
+# STATUS — Meridian / Gridiron (updated 2026-09-13 20:40Z)
 
 One file. What runs, what it has earned on paper, what is being read next, what
 you need to run, and who is building what. Full numbers: `docs/RESEARCH_REPORT_2026-09-13.md`.
@@ -7,11 +7,8 @@ Plan for the live candidate: `docs/math/longshot-no-candidate.md`.
 ## 1. Commands you need to run — ON THE BOX (paste from the laptop; the 20:00Z run built everything on the laptop instead)
 
 ```bash
-# one paste: builds MLB recorder, api, both paper scalp engines, Kalshi recorder on the AWS box, then lists them
-ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder && sudo docker compose up -d --build api && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb && sudo docker compose up -d --build kalshi-recorder && sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp|kalshi"'
-
-# then stop the copies running on the laptop (they share the venue key with the box and read an empty local tape)
-docker stop meridian-mlb-recorder meridian-api meridian-scalp-nfl meridian-scalp-cfb meridian-kalshi-recorder meridian-nfl-odds-recorder meridian-cfb-odds-recorder
+# one paste from the laptop: builds MLB, api, both paper scalp engines, Kalshi, cricket + table-tennis recorders on the box, then lists them
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridian && sudo docker compose -f docker-compose.yml -f docker-compose.mlb.yml up -d --build mlb-recorder && sudo docker compose up -d --build api && sudo docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl scalp-cfb && sudo docker compose up -d --build kalshi-recorder && sudo docker compose -f docker-compose.yml -f docker-compose.cricket.yml up -d --build cricket-recorder tt-recorder && sudo docker ps --format "{{.Names}} {{.Status}}" | grep -E "mlb|api|scalp|kalshi|cricket|tt-"'
 ```
 Prod git is at origin/main (main-deploy); compose is classifier-blocked for the manager, so the paste is yours.
 
@@ -44,7 +41,7 @@ Dashboard: `http://<address in ~/.meridian-server>:8008` — the address rotated
 | **CFB / NFL spreads: buy NO (home) on rungs whose YES mid is 50–60¢**, twin = buy YES (away) at 40–50¢ | registered 09-13 20:05Z from the decomposition grid: away side at 50–60¢ lost −11.62¢/contract [−21.74, −1.50] on 104 games, one of ~20 cells; read 09-19 | — |
 | CFB / NFL totals: buy UNDER every rung; buy OVER every rung (mirror) | registered 09-13 18:30Z; the two-Saturday back-read is running, labelled a back-read | — |
 | MLB first-five totals under/over; first-five spread NO 20–30¢ | registered 09-13 18:30Z, no tape | — |
-| **NFL/CFB in-game momentum scalp** (the operator's rule: buy the offence driving into opponent territory / red zone, take profit 2–10%, stop 5–20%, maker-exit variant) | being scored on the in-game tape now, grid by trigger × take-profit × stop, both leagues, home/away split | — |
+| **NFL/CFB in-game momentum scalp** (buy the offence at the opponent's 40 / red zone / after a 2¢ move; take profit 2–10%, stop 5–20%; taker and maker exits) | **measured negative with power on CFB** (60 games, 27 cells, G 37–42): every cell −7.2 to −11.0¢ per $1 ticket, every interval below zero, home and away both negative. Mid drift after the trigger ≈ 0 (−0.6 to +0.7¢): the loss is half-spreads (3.8–5.7¢) plus two fees (4.1–5.4¢). Maker exit within 0.3¢ of taker. NFL: no finals yet, rerun tonight. Script `cfb/run_momentum_scalp.py`; the live paper loop still deploys so the same number accrues on the dashboard | best cell T2 red zone, TP 10 / stop 5: −7.22¢ [−9.52, −4.93] |
 | DraftKings line move → Polymarket lag, take the DK-implied rung at the ask | measured on CFB 09-12 (23 games, 25 bets): venue lags DK by a median 30 min (n 19), but taking the rung is −9.2¢/$1 [−30.7, +12.3] at the first sweep, −13.0 at +1h, −24.5 [−46.7, −2.4] at +3h, all UNDERPOWERED (G 14–15); 5 of 24 moves already at price. Frame audit requested; NFL settles tonight; read 09-19 | — |
 | Kalshi vs Polymarket same instant (CFB 09-12, 45 matched games, 66k pairs) | measured: median gap 0.25–0.5¢, <1% of instants beyond 3¢, 49 after-fee dutch instants in 66k (0.07%); who-is-stale underpowered (G 6–7). No pregame cross-venue trade. The 20–30¢ NO rung on Kalshi: −2.33¢/$1 [−13.31, +8.66], 36 games, loses about its fee | — |
 
@@ -71,10 +68,12 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 | Quant A | DK line move → venue lag: first pass found the lag (CFB median 30 min, n=19, G=15; NFL median 61 min, n=7) but settled from the idle WNBA resolver table, so P&L had G=0; rerunning on the venue's settlement endpoint |
 | researcher 1 | CFB 20–30¢ NO decomposed: favourite-fails vs dog-covers, monotone buckets with home-referenced twins, NO-mid definition |
 | researcher 2 | Kalshi vs Polymarket cross-venue: gap, dutch count, who is stale, the longshot rung on Kalshi |
-| researcher 3 | the momentum scalp grid (§3), fee table first |
+| researcher 3 (done) | momentum scalp grid: measured negative with power, see §3 |
 | honest dashboard + JSON scoreboard | MERGED 09-13 (080aa97, 5891b4b, −255 lines); live after command 2 above |
 | Builder D (done) | football in-game PAPER taker loop `core/gridiron/scalp.py` — MERGED 09-13 19:40Z, 47 rule tests, read-only by construction; live after command 3 above; parameters get refitted from tonight's backtest |
-| researcher 4 | cricket / table tennis venue discovery: leagues, markets, depth, what the UI mislabels, ESPN + Cricinfo endpoints; recorder overlay follows |
+| researcher 4 (done) | cricket / TT discovery: 15 cricket events (CPL liquid), 4 Setka Cup TT leagues (69 events/day, 1–2¢), YES = home there; ENG v SL was England Lions; ESPN header/summary endpoints give toss, innings, result; Cricinfo 403 |
+| Builder D (done) | cricket + table-tennis recorder overlay (docker-compose.cricket.yml, venue_leagues sweep, expected-vs-observed per competition, settlements accept 0.5, six paper lines registered) — MERGED, in the paste above |
+| builder (ESPN cricket feed) | core/feeds/espn_cricket_recorder.py: toss timestamp, innings, result per venue-listed match — building |
 | codebase map / Kalshi–DK lag / shadow lister | merged earlier 09-13 |
 
 ## 6. Open questions for the researcher (docs/math/longshot-no-candidate.md §7)
