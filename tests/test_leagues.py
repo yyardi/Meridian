@@ -24,19 +24,38 @@ def client():
     return TestClient(app)
 
 
+#: A slug that is not a league and is not going to become one. These tests
+#: used "mlb" — a real sport we did not yet record — and MLB was added on
+#: 2026-09-13, at which point three tests asserting "unknown leagues are
+#: rejected" quietly became tests that a KNOWN league is rejected, and failed.
+#: A negative fixture must be something that cannot turn positive.
+NOT_A_LEAGUE = "kabaddi"
+
+
+def test_the_unknown_league_fixture_is_actually_unknown():
+    """Guards the constant above: if NOT_A_LEAGUE is ever added as a league,
+    the three tests below stop testing rejection and start asserting a bug."""
+    assert leagues.league_of_slug(f"{NOT_A_LEAGUE}-a-b-2026-05-01") is None
+    with pytest.raises(leagues.UnknownLeagueError):
+        leagues.get_league(NOT_A_LEAGUE)
+
+
 def test_an_unknown_league_raises_rather_than_guessing():
     """The `UnknownTeamError` pattern: an explicit table fails loudly where a
     derivation fails silently, and a silently unknown league renders an empty
     board that looks like a quiet evening."""
     with pytest.raises(leagues.UnknownLeagueError):
-        leagues.get_league("mlb")
+        leagues.get_league(NOT_A_LEAGUE)
 
 
 def test_slug_lookup_covers_event_and_market_shapes():
     assert leagues.league_of_slug("wnba-ny-chi-2026-08-18").slug == "wnba"
     assert leagues.league_of_slug("tsc-wnba-ny-chi-2026-08-18-191pt5").slug == "wnba"
     assert leagues.league_of_slug("nba-bos-lal-2026-10-21").slug == "nba"
-    assert leagues.league_of_slug("mlb-nyy-bos-2026-05-01") is None
+    # MLB became a league on 2026-09-13, so this is now a POSITIVE case; the
+    # negative below uses a slug that cannot be promoted out from under it.
+    assert leagues.league_of_slug("mlb-nyy-bos-2026-05-01").slug == "mlb"
+    assert leagues.league_of_slug(f"{NOT_A_LEAGUE}-a-b-2026-05-01") is None
     assert leagues.league_of_slug(None) is None
 
 
@@ -46,9 +65,8 @@ def test_a_bad_env_default_does_not_take_the_board_down(monkeypatch):
 
 
 def test_the_api_rejects_an_unknown_league(client):
-    assert client.get("/api/games?league=mlb").status_code == 400
-    assert client.get("/api/board?league=mlb").status_code == 400
-    assert client.get("/api/picks?league=mlb").status_code == 400
+    for path in ("/api/games", "/api/board", "/api/picks"):
+        assert client.get(f"{path}?league={NOT_A_LEAGUE}").status_code == 400
 
 
 def test_every_league_endpoint_carries_the_tab_context(client):
