@@ -1,0 +1,81 @@
+{
+ "header": {
+  "id": "1534213",
+  "name": "Barbados Tridents v Guyana Amazon Warriors",
+  "competitions": [
+   {
+    "id": "1534213",
+    "date": "2026-09-13T23:00Z",
+    "status": {
+     "displayClock": "0'",
+     "presentLocalTime": "14:41",
+     "period": 0,
+     "summary": "Starts at 19:00 local time",
+     "type": {
+      "id": "0",
+      "description": "Scheduled",
+      "detail": "Scheduled",
+      "shortDetail": "Scheduled",
+      "state": "pre"
+     },
+     "displayPeriod": "0th"
+    },
+    "competitors": [
+     {
+      "id": "642411",
+      "order": 1,
+      "homeAway": "home",
+      "winner": false,
+      "team": {
+       "id": "642411",
+       "displayName": "Barbados Tridents",
+       "abbreviation": "BT"
+      },
+      "linescores": []
+     },
+     {
+      "id": "642413",
+      "order": 2,
+      "homeAway": "away",
+      "winner": false,
+      "team": {
+       "id": "642413",
+       "displayName": "Guyana Amazon Warriors",
+       "abbreviation": "GAW"
+      },
+      "linescores": []
+     }
+    ],
+    "commentaryCount": 1,
+    "commentaries": {
+     "999999999999999": {
+      "id": "999999999999999",
+      "sequence": 100001,
+      "period": 1,
+      "shortText": "",
+      "text": ""
+     }
+    }
+   }
+  ],
+  "league": {
+   "id": "8623",
+   "name": "Caribbean Premier League"
+  }
+ },
+ "notes": [
+  {
+   "text": "13 September 2026 - night match (20-over match)",
+   "type": "matchdays"
+  }
+ ],
+ "rosters": [
+  {
+   "note": "trimmed: 237 KB in the real payload"
+  }
+ ],
+ "meta": {
+  "gameSwitcherEnabled": false,
+  "gameState": "pre"
+ }
+}

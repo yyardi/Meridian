@@ -1,0 +1,34 @@
+# Cricket signal side, as a compose OVERLAY (read-only against ESPN):
+#
+#     docker compose -f docker-compose.yml -f docker-compose.cricket-espn.yml up -d cricket-espn-recorder
+#
+# Timestamps the toss, the innings state and the result of every cricket
+# match ESPN lists (all series, today and tomorrow UTC) into one
+# change-detected table, so the venue's price move around the toss can be
+# measured and settlements validated. Header/60s + summary/15s per active
+# match, one worker, sequential GETs, 10 s timeout, 60 s backoff on failure.
+#
+# No credentials exist to mount: ESPN is unauthenticated. Writes its own
+# table + one heartbeat (espn_cricket_recorder). Deploy stays operator-gated.
+#
+# One cycle by hand (after `up -d`, so the table exists), then look at
+# `select event_id, state, toss_text, captured_at from espn_cricket_events`:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.cricket-espn.yml run --rm \
+#       cricket-espn-recorder python -c "from core.feeds.espn_cricket_recorder import *; \
+#       print(CricketRecorder(get_sessionmaker(get_engine())).cycle())"
+services:
+  cricket-espn-recorder:
+    build: .
+    container_name: meridian-cricket-espn-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # LOCAL, like every recorder: signals join the tick stream in replays.
+      DATABASE_URL: postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+      ESPN_RPS: "3"
+    # alembic upgrade first: the table is newer than any running deploy.
+    # Concurrent upgrades are safe (advisory lock).
+    command: ["sh", "-c", "alembic upgrade head && python -m core.feeds.espn_cricket_recorder"]
