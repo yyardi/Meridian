@@ -169,8 +169,13 @@ player per day, max 5, and **zero players cross competitions** — so within a d
 effect is only ~1.3. Whether the pool recurs ACROSS days is the one measurement that decides
 whether this family can ever answer anything, and it cannot be made from one day of tape.
 
-Open discrepancy: I counted 301 events listed, the sweep recorded 151 matches. Until that is
-explained, every day-count above may be off by a factor of two in either direction.
+**RESOLVED, and it was a defect in the thing about to be deployed.** `MERIDIAN_EVENT_LIMIT`
+defaults to 50 PER COMPETITION, and setkameua alone lists 237 — so the recorder was taking 50
+of them. Measured on the box: limit 50 → 151 markets, limit 500 → **336 with expected ==
+observed on all four competitions**. The overlays now set it explicitly. Without this the
+table-tennis container would have deployed recording a fifth of the league it exists for, and
+the only symptom would have been a league that looked small. The coverage line is what makes
+it visible; the limit is what makes it right.
 
 This does NOT say there is an edge there — the discovery found 1–2¢ spreads and
 a median 27k shares resting, i.e. a tight, liquid, well-attended book, and the
