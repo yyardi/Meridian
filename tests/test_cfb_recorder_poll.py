@@ -149,3 +149,137 @@ def test_a_normal_payload_still_writes_its_state_row():
 
     assert (n_plays, n_wp, n_state) == (2, 2, 1)
     assert len(session.added) == 1, "the state row is the one session.add"
+
+
+# ------------------------------------------------ polling through the end #
+class _Board:
+    """Scoreboard + summary in one fake, branching on the URL.
+
+    `on_board` is separate from `states` on purpose: ESPN drops a game from
+    the scoreboard's `in` list BEFORE the summary reports `post`, and that gap
+    is the whole defect.
+    """
+
+    def __init__(self, states: dict, on_board: set | None = None):
+        self.states = states                       # game_id -> (state, clock)
+        self.on_board = set(states) if on_board is None else set(on_board)
+        self.polled: list[str] = []
+
+    def _site(self, what: str) -> str:
+        return f"https://example.invalid/{what}"
+
+    def get(self, url, params=None):
+        if "scoreboard" in url:
+            return {"events": [
+                {"id": g, "status": {"type": {"state": self.states[g][0]}}}
+                for g in sorted(self.on_board)
+            ]}
+        gid = (params or {}).get("event")
+        self.polled.append(gid)
+        st, clk = self.states[gid]
+        return {
+            "header": {"competitions": [{
+                "status": {"type": {"state": st}, "period": 4,
+                           "displayClock": clk},
+                "competitors": [
+                    {"homeAway": "home", "id": "1", "timeoutsUsed": 0, "score": "21"},
+                    {"homeAway": "away", "id": "2", "timeoutsUsed": 0, "score": "17"},
+                ]}]},
+            "drives": {"current": {"team": {"id": "1"}, "plays": [
+                {"id": f"p-{gid}-{st}-{clk}-{len(self.polled)}",
+                 "period": {"number": 4}, "clock": {"displayValue": clk},
+                 "start": {"team": {"id": "1"}, "down": 1, "distance": 10,
+                           "yardsToEndzone": 50},
+                 "homeScore": 21, "awayScore": 17}]}},
+            "winprobability": [],
+        }
+
+
+def _rec(board, monkeypatch, now):
+    """Recorder on a controllable clock. SCOREBOARD_INTERVAL is also measured
+    on monotonic(), so driving it keeps the board refresh honest."""
+    session = _Session()
+    monkeypatch.setattr(rec.time, "monotonic", lambda: now[0])
+    return rec.CfbLiveRecorder(board, lambda: session, league="cfb")
+
+
+def test_a_game_at_in_with_a_zero_clock_is_still_polled(monkeypatch):
+    """★ THE DEFECT. `refresh_live` collects only `state == "in"`, so a game
+    that leaves the board is never polled again and its `post` transition is
+    never observed — live state, no result, on roughly 59% of games.
+
+    A ZERO CLOCK IS NOT A TERMINAL SIGNAL: games sit at `in` with 0:00 through
+    reviews, between quarters and all of overtime, and display_clock reads
+    "15:00" on a game already 21-0. So the exit is the state field, and this
+    game — off the board, still `in`, clock expired — must keep being polled.
+    """
+    board = _Board({"401": ("in", "12:00")})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()                                    # live, on the board
+
+    board.on_board.clear()                       # ESPN drops it from `in`
+    board.states["401"] = ("in", "0:00")         # still not final
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
+    before = len(board.polled)
+    out = r.cycle()
+
+    assert len(board.polled) > before, (
+        "a game off the board and still `in` was not polled — its post "
+        "transition can never be observed")
+    assert out["live"] == 0 and out["settling"] == 1
+
+
+def test_a_post_observation_stops_the_polling(monkeypatch):
+    """And it must STOP, on the state field rather than a timer, so a finished
+    game costs nothing further."""
+    board = _Board({"401": ("in", "12:00")})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()
+
+    board.on_board.clear()
+    board.states["401"] = ("post", "0:00")
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
+    r.cycle()
+    assert "401" in r._final, "a `post` observation did not retire the game"
+
+    settled = len(board.polled)
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS * 10
+    out = r.cycle()
+    assert len(board.polled) == settled, "kept polling a game already final"
+    assert out["settling"] == 0
+
+
+def test_a_game_that_never_posts_is_abandoned_loudly(monkeypatch):
+    """Bounded give-up, clocked from DEPARTURE rather than kickoff. A silent
+    give-up is what produced this defect, so the log names the game and how
+    long it waited — asserted here as the game leaving the queue without ever
+    being counted final."""
+    board = _Board({"401": ("in", "12:00")})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()
+
+    board.on_board.clear()
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
+    assert r.cycle()["settling"] == 1             # departure observed here
+
+    now[0] += rec.SETTLE_MAX_SECONDS + 1
+    out = r.cycle()
+    assert out["settling"] == 0
+    assert "401" not in r._seen_live, "abandoned game still queued"
+    assert "401" not in r._final, "abandoned is not final — it never posted"
+
+
+def test_a_live_game_is_still_polled_every_cycle(monkeypatch):
+    """The control. Three tests above are equally satisfied by a recorder that
+    polls nothing; the settle cadence must not slow down a game in progress."""
+    board = _Board({"401": ("in", "12:00")})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()
+    n1 = len(board.polled)
+    now[0] += 1.0                                 # well under SETTLE_INTERVAL
+    r.cycle()
+    assert len(board.polled) == n1 + 1, "a live game was throttled"
