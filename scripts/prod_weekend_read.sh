@@ -52,13 +52,28 @@ run_file() {  # run_file LABEL path/inside/app [args...]   (script run AS A FILE
 # artifacts/reads/settlements.json, so the second run costs a few HTTP calls
 # instead of ~18k.
 # --------------------------------------------------------------------------- #
+# Scripts that need the VENUE CLIENT (settlement) run against the api image --
+# the trainer image has no venue client. They run as a ONE-OFF container with
+# the host checkout mounted over the image's code, NOT `docker exec` into the
+# running api: a long-lived container carries whatever code it was built with,
+# and on 2026-09-13 that was eight days stale, so `docker exec` died on
+# `No module named 'strategies.ladder'` while the file sat on the box. Mounting
+# the checkout means this read tracks git, not the last rebuild.
+# --------------------------------------------------------------------------- #
+API_IMAGE=$(docker inspect meridian-api --format "{{.Config.Image}}" 2>/dev/null || echo meridian-api)
+V=(docker run --rm -i --network meridian_default
+   -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian
+   -e SETTLE_CACHE=/opt/meridian/artifacts/reads/settlements.json
+   -v /opt/meridian/core:/app/core -v /opt/meridian/strategies:/app/strategies
+   -v /opt/meridian/artifacts:/opt/meridian/artifacts -w /app)
+
 if [ "$MODE" = mlb ]; then
   { echo; echo "### PAPER BOOK, mlb  ($(date -u +%H:%MZ))"; } >> "$F"
-  docker exec -i -e LEAGUES=mlb -e PB_JSON="$RD/paper_book_$(date -u +%Y-%m-%dT%H%MZ).json" \
-    meridian-api python - < cfb/run_paper_book.py >> "$F" 2>&1
+  "${V[@]}" -e LEAGUES=mlb -e PB_JSON="$RD/paper_book_$(date -u +%Y-%m-%dT%H%MZ).json" \
+    "$API_IMAGE" python - < cfb/run_paper_book.py >> "$F" 2>&1
   echo "paper book exit $?" >> "$F"
   { echo; echo "### MLB LADDER CALIBRATION  ($(date -u +%H:%MZ))"; } >> "$F"
-  docker exec -i -e LEAGUE=mlb meridian-api python - < cfb/run_ladder_calibration.py >> "$F" 2>&1
+  "${V[@]}" -e LEAGUE=mlb "$API_IMAGE" python - < cfb/run_ladder_calibration.py >> "$F" 2>&1
   echo "calibration exit $?" >> "$F"
   echo "wrote $F"
   exit 0
@@ -99,7 +114,7 @@ if [ "$MODE" = gate ]; then
     TS=$(date -u +%Y-%m-%dT%H%MZ)
     PB="$OUT/paper_book_$TS.txt"
     # PB_JSON is the path INSIDE the api container, which mounts ./artifacts/reads
-    docker exec -i -e PB_JSON="$RD/paper_book_$TS.json" meridian-api python - < cfb/run_paper_book.py > "$PB" 2>&1; PB_RC=$?
+    "${V[@]}" -e PB_JSON="$RD/paper_book_$TS.json" "$API_IMAGE" python - < cfb/run_paper_book.py > "$PB" 2>&1; PB_RC=$?
     echo "paper book: $PB (exit $PB_RC)" >> "$F"
   else
     echo "paper book NOT run: cfb/run_paper_book.py is missing from this checkout" >> "$F"

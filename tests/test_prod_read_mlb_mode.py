@@ -35,11 +35,22 @@ def test_mlb_returns_before_the_football_block():
 def test_both_mlb_jobs_run_where_the_venue_client_lives():
     """Settlement comes from the venue for both, and the trainer image has no
     venue client -- that is why the football calibration runs in trainer and
-    these two do not."""
+    these two do not.
+
+    They run as a ONE-OFF container off the api IMAGE with the host checkout
+    mounted, not `docker exec` into the running api: on 2026-09-13 that
+    container was eight days old and died on `No module named
+    'strategies.ladder'` with the file present on the box. The mount is the
+    property under test -- without it the read tracks the last rebuild
+    instead of git."""
     block = TEXT[TEXT.index('if [ "$MODE" = mlb ]; then'):TEXT.index("# 0. coverage")]
     for script in ("cfb/run_paper_book.py", "cfb/run_ladder_calibration.py"):
         line = next(l for l in block.splitlines() if script in l)
-        assert "meridian-api" in line, f"{script} must run in the api container"
+        assert '"$API_IMAGE"' in line, f"{script} must run off the api image"
+        assert "docker exec" not in line, f"{script} must not exec into the stale container"
+    assert 'API_IMAGE=$(docker inspect meridian-api' in TEXT
+    for mount in ("/opt/meridian/core:/app/core", "/opt/meridian/strategies:/app/strategies"):
+        assert mount in TEXT, f"the venue run must mount {mount} so it tracks git"
     assert "LEAGUES=mlb" in block and "LEAGUE=mlb" in block
 
 
