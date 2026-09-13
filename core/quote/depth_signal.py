@@ -308,6 +308,15 @@ def load_book_states(
         .group_by(MarketSnapshot.id)
     )
     if live_only:
+        # CONTAMINATED POPULATION, NOT CHANGED ON PURPOSE (findings C16).
+        # `is_live` is never cleared: 11,227 of 12,290 markets whose last
+        # row says live were last written over 600s ago, oldest 43 days
+        # (prod, 2026-09-14). So this selects genuine live-flagged rows
+        # PLUS frozen tails from dead streams, which drag a movement
+        # statistic toward zero. Left as-is deliberately: these
+        # populations are already published, and silently re-cutting
+        # them would make the printed numbers irreproducible. Re-cut it
+        # with a captured_at freshness guard, under a new registration.
         stmt = stmt.where(MarketSnapshot.is_live.is_(True))
     if as_of is not None:
         stmt = stmt.where(MarketSnapshot.captured_at < as_of)

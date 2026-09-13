@@ -266,3 +266,66 @@ def test_fair_value_stays_finite_across_the_whole_price_range():
         for minutes in (0.1, 10.0, 40.0):
             fv = fair_value(margin=0, minutes_left=minutes, pregame_price=price)
             assert fv is not None and math.isfinite(fv) and 0.0 <= fv <= 1.0
+
+
+# --------------------------------------------------------------------- #
+# The stale-flag filter. C16: `is_live` is never cleared.
+# --------------------------------------------------------------------- #
+def test_a_market_whose_stream_died_is_not_priced_as_live():
+    """★ `is_live IS TRUE` selects a FROZEN flag, not a live market.
+
+    Measured on prod 2026-09-14: 11,227 of 12,290 markets whose last row says
+    live have not been written in over 600 seconds, and the oldest such row is
+    43 days old. Nothing clears the flag — when a game ends its markets drop
+    off the venue's board, so the last row says live forever.
+
+    Two markets here differ ONLY in how old their newest row is. The fresh one
+    must price; the stale one must not, or a 43-day-old quote is fair value.
+    The decision is core/board.py:market_state(), so there is one definition
+    of live rather than a second freshness rule written here.
+    """
+    import datetime as _dt
+
+    from sqlalchemy import text
+
+    from core.live_fv import build_live_fv
+    from core.storage import get_engine, get_sessionmaker
+
+    UTC = _dt.timezone.utc
+    now = _dt.datetime.now(UTC)
+    start = now - _dt.timedelta(hours=1)          # tipped off, well inside 3.5h
+    Session = get_sessionmaker(get_engine())
+
+    def _mk(s, slug, captured_at):
+        s.execute(text("""
+            INSERT INTO market_snapshots
+              (market_slug, event_slug, captured_at, is_live, game_start_time,
+               sports_market_type, event_period, event_score,
+               best_bid, best_ask)
+            VALUES (:m, :e, :c, true, :g,
+                    'basketball_team_full_game_winner', 2, '50-48', 0.50, 0.52)
+        """), {"m": slug, "e": slug, "c": captured_at, "g": start})
+
+    fresh, stale = "wnba-fresh-stream-2099-01-01", "wnba-dead-stream-2099-01-01"
+    with Session() as s:
+        for slug in (fresh, stale):
+            s.execute(text("DELETE FROM market_snapshots WHERE market_slug = :m"),
+                      {"m": slug})
+        _mk(s, fresh, now - _dt.timedelta(seconds=5))
+        _mk(s, stale, now - _dt.timedelta(hours=2))     # writer died 2h ago
+        s.commit()
+    try:
+        with Session() as s:
+            got = {r.market_slug for r in build_live_fv(s, within_hours=6.0)}
+        assert stale not in got, (
+            "a market last written 2 hours ago was priced as live — the "
+            "frozen is_live flag was believed")
+        assert fresh in got, (
+            "the control failed: a market written 5 seconds ago was dropped, "
+            "so this test would pass against a function that returns nothing")
+    finally:
+        with Session() as s:
+            for slug in (fresh, stale):
+                s.execute(text("DELETE FROM market_snapshots WHERE market_slug = :m"),
+                          {"m": slug})
+            s.commit()

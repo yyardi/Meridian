@@ -253,6 +253,9 @@ def load_series(
     counts = session.execute(text("""
         SELECT coalesce(book_tier, 'NULL') AS tier, count(*) AS n
         FROM market_snapshots
+        -- CONTAMINATED (findings C16): is_live is never cleared, so this
+        -- population includes frozen tails from dead streams. Left as-is —
+        -- these numbers are published; re-cut under a new registration.
         WHERE is_live IS TRUE
           AND best_bid IS NOT NULL AND best_ask IS NOT NULL AND best_ask > best_bid
         GROUP BY 1

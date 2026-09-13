@@ -286,6 +286,7 @@ def build_live_totals_fv(session, *, within_hours: float = 6.0) -> list[TotalsFV
     rows = session.execute(text("""
         SELECT DISTINCT ON (market_slug)
                market_slug, event_slug, captured_at, event_period, event_score,
+               game_start_time, is_live,
                line, best_bid, best_ask
         FROM market_snapshots
         WHERE sports_market_type = 'basketball_team_full_game_total'
@@ -294,6 +295,17 @@ def build_live_totals_fv(session, *, within_hours: float = 6.0) -> list[TotalsFV
           AND game_start_time >= now() - make_interval(hours => :hours)
         ORDER BY market_slug, captured_at DESC
     """), {"hours": int(within_hours)}).all()
+    # ONE DEFINITION OF LIVE. `is_live IS TRUE` above is a prefilter, not the
+    # decision: the flag is never cleared, so a market whose stream died keeps
+    # a frozen last row saying live forever. Measured on prod 2026-09-14 —
+    # 11,227 of 12,290 markets whose last row says live have not been written
+    # in over 600s, the oldest 43 days. core/board.py:market_state() is the
+    # only place that resolves this, and it resolves it in BOTH directions
+    # (a pregame row can also lie, just after tip-off).
+    from core.board import IN_PLAY, market_state
+
+    now = dt.datetime.now(dt.timezone.utc)
+    rows = [r for r in rows if market_state(r, as_of=now) == IN_PLAY]
     if not rows:
         return []
 
