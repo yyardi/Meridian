@@ -306,6 +306,7 @@
     <span class="grplbl">books</span>
     <a class="" href="/wallet" title="The $1,000 paper scoreboard — simulated positions and running P&amp;L.">WALLET</a>
     <a class="" href="/analytics" title="Model vs market — where our fair value disagrees with the venue's price.">MODEL</a>
+    <a class="" href="/scoreboard" title="SCOREBOARD — the paper book: every registered shadow strategy, one P&amp;L line per week, venue-settled. Nothing is armed.">SCOREBOARD</a>
   </div>
   <div id="tokwrap">
     <input id="tok" type="password" placeholder="order token" autocomplete="off"
@@ -1307,6 +1308,16 @@ async function loadPulseLatest(league){
     if(!r.ok) return;
     const d = await r.json();
     if(stale(league)) return;
+    // PULSE runs on one league and the server names it. Under any other tab:
+    // no estimates, no positions, no feed — one line in PULSE's slot, and
+    // nothing on the board that could read as a PULSE number.
+    if(d.pulse_league && d.pulse_league !== league){
+      PULSE_LATEST = {}; PULSE_POSITIONS = {}; PULSE_FEED = [];
+      rebuildLiveCtx();
+      renderPulseAbsent(d.pulse_league);
+      if(LAST_BOARD) renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
+      return;
+    }
     PULSE_LATEST = d.markets || {};
     PULSE_POSITIONS = d.positions || {};
     PULSE_FEED = d.feed || [];
@@ -1315,6 +1326,19 @@ async function loadPulseLatest(league){
     if(LAST_BOARD) renderBoard(LAST_BOARD, LAST_PICKS_BYSLUG || {});
   } catch(e){ /* display only; the board stands without it */ }
 }
+/* PULSE's slot on the board, under a league PULSE does not run on: one line,
+   nothing else. The league is the server's word (`pulse_league`), not a
+   list kept here — and no zero, because a zero reads as "ran, found nothing". */
+function renderPulseAbsent(pulseLeague){
+  const el = document.getElementById("pulsefeed");
+  if(!el) return;
+  const name = String(pulseLeague).toUpperCase();
+  el.style.display = "block";
+  el.innerHTML = `<span class="pubadge" style="margin-right:8px">PULSE</span>
+    <span class="dimc">PULSE exists only for ${name} — it is fitted and gated there — and resumes
+    with the ${name} playoffs. No PULSE runs on this league.</span>`;
+}
+
 /* THE BOARD ITSELF IS LIVE NOW. One heartbeat: every 10s the PULSE
    estimates refresh; the full board+picks refetch on the same beat whenever
    anything is live, and every 6th beat (60s) otherwise — pregame books drift
