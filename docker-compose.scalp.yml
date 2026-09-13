@@ -1,0 +1,45 @@
+# PAPER IN-GAME SCALP overlay (2026-09-13). One container per league.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-nfl
+#   docker compose -f docker-compose.yml -f docker-compose.scalp.yml up -d --build scalp-cfb
+#
+# READ-ONLY AGAINST THE VENUE. core/gridiron/scalp.py imports no venue client
+# and opens no socket to one: it reads espn_cfb_live_plays and market_snapshots,
+# which the recorders already fill, and writes paper_scalps. Nothing in it can
+# place an order, and that is a property of the module's imports rather than a
+# promise -- tests/test_scalp_rule.py asserts it.
+#
+# Heartbeat rows: scalp_engine_nfl / scalp_engine_cfb (B11: every writer beats
+# every cycle, game or no game, so idle is distinguishable from dead).
+#
+# Parameters are the operator's to set from tonight's backtest; the defaults
+# below are the spec's, not a fitted result.
+services:
+  scalp-nfl:
+    build: .
+    container_name: meridian-scalp-nfl
+    restart: unless-stopped
+    command: ["python", "-m", "core.gridiron.scalp"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &scalp_env
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: nfl
+      TRIGGER: ${SCALP_TRIGGER:-ytg40}
+      TP: ${SCALP_TP:-5}
+      STOP: ${SCALP_STOP:-10}
+      SIZE_USD: ${SCALP_SIZE_USD:-25}
+      MAKER_EXIT: ${SCALP_MAKER_EXIT:-0}
+      MAX_AGE_S: ${SCALP_MAX_AGE_S:-30}
+  scalp-cfb:
+    build: .
+    container_name: meridian-scalp-cfb
+    restart: unless-stopped
+    command: ["python", "-m", "core.gridiron.scalp"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *scalp_env
+      MERIDIAN_LEAGUE: cfb
