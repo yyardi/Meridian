@@ -81,14 +81,28 @@ class KalshiPublicClient:
         return _do()
 
     def iter_events(
-        self, series_ticker: str, *, status: str | None = "open", limit: int = 200
+        self,
+        series_ticker: str,
+        *,
+        status: str | None = "open",
+        limit: int = 200,
+        with_nested_markets: bool = False,
     ) -> Iterator[dict[str, Any]]:
-        """Yield every event in a series, following the cursor to the end."""
+        """Yield every event in a series, following the cursor to the end.
+
+        `with_nested_markets` puts every market of the event in the event's
+        own payload, so one request covers the whole board of a series
+        (measured 2026-09-14: 11,697 events / 107,599 markets in 15s for the
+        entire venue). Default False — the sports recorder's callers page
+        events and then fetch markets per event.
+        """
         cursor: str | None = None
         while True:
             params: dict[str, Any] = {"series_ticker": series_ticker, "limit": limit}
             if status:
                 params["status"] = status
+            if with_nested_markets:
+                params["with_nested_markets"] = "true"
             if cursor:
                 params["cursor"] = cursor
             page = self._get("/events", params=params)
@@ -108,3 +122,51 @@ class KalshiPublicClient:
         """
         raw = self._get("/markets", params={"event_ticker": event_ticker, "limit": 200})
         return raw.get("markets") or []
+
+    def count_series_markets(self, series_ticker: str, *, status: str = "open") -> int:
+        """How many markets `/markets` says the series has — the INDEPENDENT
+        side of the recorder's coverage check.
+
+        A different endpoint with its own pagination, so it can disagree with
+        the nested-events sweep: an events page whose cursor ends early, or a
+        market whose event is not listed at this status, shows up here as a
+        shortfall instead of as a quiet series.
+        """
+        total, cursor = 0, None
+        while True:
+            params: dict[str, Any] = {
+                "series_ticker": series_ticker, "status": status, "limit": 1000,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            page = self._get("/markets", params=params)
+            markets = page.get("markets") or []
+            total += len(markets)
+            cursor = page.get("cursor") or None
+            if not cursor or not markets:
+                return total
+
+    def get_series(self, series_ticker: str) -> dict[str, Any]:
+        """Series metadata — `fee_type` and `fee_multiplier` live here.
+
+        Re-read, never cached across a run: the venue publishes DATED
+        per-series fee transitions, so this field moves under a running
+        process.
+        """
+        return self._get(f"/series/{series_ticker}").get("series") or {}
+
+    def get_orderbooks(self, tickers: list[str]) -> dict[str, Any]:
+        """Full depth for up to 100 markets in one request, keyed by ticker.
+
+        Keyed by the ticker the venue ECHOES in each entry, never by request
+        order — a book filed under the wrong market is the silent kind of
+        wrong.
+        """
+        if not tickers:
+            return {}
+        raw = self._get("/markets/orderbooks", params={"tickers": ",".join(tickers[:100])})
+        return {
+            str(ob.get("ticker")): ob.get("orderbook_fp") or ob.get("orderbook")
+            for ob in raw.get("orderbooks") or []
+            if ob.get("ticker")
+        }
