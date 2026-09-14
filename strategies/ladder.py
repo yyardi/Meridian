@@ -29,6 +29,11 @@ COMPLEMENTS = {
     "nfl_total_under_all": "nfl_total_over_all",
     "mlb_total_under_all": "mlb_total_over_all",
     "mlb_f5_total_under_all": "mlb_f5_total_over_all",
+    # Identical rows, opposite side: all winner rows in 0.05-0.95, and the
+    # coin-flip band of the first-five spread. Their P&Ls sum to minus the
+    # round-trip cost, so one beating the other is arithmetic.
+    "mlb_winner_home_all": "mlb_winner_away_all",
+    "mlb_f5_spread_no_40_60": "mlb_f5_spread_yes_40_60",
     "cricket_home_yes_all": "cricket_away_no_all",
 }
 COMPLEMENTS.update({v: k for k, v in list(COMPLEMENTS.items())})
@@ -89,6 +94,36 @@ STRATEGIES = {
     "mlb_f5_total_over_all":  dict(league="mlb",  types=("first_five_total",), side="yes", rule=lambda r: True),
     "mlb_f5_spread_no_20_30": dict(league="mlb",  types=("first_five_spread",), side="no",
                                    rule=lambda r: 0.20 <= mid(r) < 0.30),
+    # --- MLB, registered 2026-09-14 15:00Z by the manager, BEFORE the tape exists:
+    #     exactly ONE MLB game has settled, so no outcome can have chosen these.
+    #     They are POPULATIONS, not theories about what the venue gets wrong. Each
+    #     is picked because baseball's structure differs from football in a way
+    #     that makes the football-derived buckets the wrong shape:
+    #
+    #     * Home advantage is the smallest of the major leagues, so a generic home
+    #       adjustment is a larger relative error here than anywhere else. That
+    #       makes the home/away split the FIRST cut on this league rather than a
+    #       robustness check -- and every price-bucket finding this project has
+    #       produced turned out to be that split.
+    #     * The run line is a FIXED +/-1.5, not a fitted spread, so "heavy
+    #       favourite on the spread" is one population in baseball and a moving
+    #       target in football. The two arms below are the away-favourite and the
+    #       home-favourite versions of the same bet, in the two frames the venue
+    #       offers, so neither can be reported without the other.
+    #     * First five innings excludes the bullpen entirely, which is a different
+    #       game with different variance, and it is the thinnest MLB market.
+    "mlb_winner_away_all":    dict(league="mlb",  types=("full_game_winner",), side="yes",
+                                   rule=lambda r: 0.05 <= mid(r) <= 0.95),
+    "mlb_winner_home_all":    dict(league="mlb",  types=("full_game_winner",), side="no",
+                                   rule=lambda r: 0.05 <= mid(r) <= 0.95),
+    "mlb_spread_yes_70_100":  dict(league="mlb",  types=("full_game_spread",), side="yes",
+                                   rule=lambda r: mid(r) >= 0.70),
+    "mlb_spread_no_00_30":    dict(league="mlb",  types=("full_game_spread",), side="no",
+                                   rule=lambda r: mid(r) <= 0.30),
+    "mlb_f5_spread_yes_40_60": dict(league="mlb", types=("first_five_spread",), side="yes",
+                                    rule=lambda r: 0.40 <= mid(r) <= 0.60),
+    "mlb_f5_spread_no_40_60": dict(league="mlb",  types=("first_five_spread",), side="no",
+                                   rule=lambda r: 0.40 <= mid(r) <= 0.60),
     # --- registered 2026-09-13 20:05Z from the decomposition grid (cfb/run_longshot_decomp.py, one of ~20 cells looked
     #     at): buying the AWAY side at YES-mid 50-60c lost -11.62c/contract [-21.74, -1.50] on 104 games; the mirror is
     #     NO (home) on those rungs. Pre-registered here with its twin for the 09-19 read; NFL gets the same pair, no prior.
