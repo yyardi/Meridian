@@ -213,6 +213,19 @@ and must never be used as automation targets.**
 
 ---
 
+## 3b. Checked 2026-09-14: not exposed to the Polymarket listing gap
+
+Polymarket US emptied its board for **2h05m** mid-morning UTC today, which moved
+a registered anchor in the cricket work. **Checked here: this registration
+declares NO time anchors** (no T−6h, no T−1h) — its gate is a price-level
+quantity, `p̄_fav`, which has no timestamp. **So there is nothing for a listing
+gap to displace.**
+
+**Recorded as checked rather than left to be re-asked**, and noting the obvious:
+Kalshi is a different venue and was writing throughout. **When time anchors are
+added here, this check has to be re-run against KALSHI's own listing behaviour,
+which has not been measured.**
+
 ## 4. What may not be claimed yet
 
 - **No power claim** until the cumulative-players diagnostic (§1) returns.

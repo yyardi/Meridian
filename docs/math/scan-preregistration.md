@@ -27,9 +27,33 @@ scan must be a **screen**, and the reason its primary output must be the
 
 ### What a conclusive negative would require
 
-A family is **conclusive** when its minimum detectable effect drops **below the
-cost hurdle** — then anything undetectable is also untradeable and a null is a
-real answer rather than an absence of evidence.
+A family is **conclusive** when a tradeable edge is **excluded by its interval** —
+then anything undetectable is also untradeable and a null is a real answer rather
+than an absence of evidence.
+
+> **⚠ CORRECTED 2026-09-14. The definition above originally read "minimum detectable
+> effect drops below the cost hurdle". That shortcut compares a HALF-WIDTH to a
+> threshold, which silently assumes the point estimate sits at ZERO.** It does
+> not. Measured:
+>
+> | | gross edge | 95% CI | hurdle | shortcut | interval test |
+> |---|---:|---|---:|---|---|
+> | pregame | +0.357 | [−2.160, **+2.874**] | 4.101 | passes | **excludes — conclusive** |
+> | in-play | +2.055 | [−3.041, **+7.151**] | 6.905 | passes | **INCLUDES — not conclusive** |
+>
+> In-play's estimate sits **0.79 SE above zero**, pushing its upper end past the
+> hurdle. The shortcut cannot see that because it never looks at where the
+> estimate is.
+>
+> **REGISTERED: test the INTERVAL against the hurdle, never the half-width
+> alone.** And since "no tradeable edge" is directional, the one-sided test
+> carries the programme's own multiplicity — with two populations, m=2:
+> **pregame z 2.92 clears (and would clear m=10); in-play z 1.87 clears a bare
+> one-sided 5% and FAILS at m=2.**
+>
+> `excess over −cost` **is the gross edge** (`pnl + cost`), and tradeability
+> requires gross > cost — so the hurdle is the **population's own** mean cost
+> (4.101¢ pregame, 6.905¢ in-play), never a constant carried from one league.
 
 | family | cell G / week | G needed | weeks |
 |---|---:|---:|---:|
@@ -47,6 +71,28 @@ sample caps at `P/(2ρ)`, giving a best-ever MDE of **4.1¢ at ρ=0.05 and 10.1�
 rate**; the **settled stock is ~35**, because 91–100% of listed TT markets have
 not started at any moment. **A scan run this week gets the stock, not the rate.**
 Weight the grid on settled counts, never on a projection.
+
+> **⚠ SUPERSEDED 2026-09-14 BY MEASUREMENT — the 5–15¢ below was a PROJECTION
+> and it was optimistic by about 3×.** I projected per-cell G (238, 84) instead
+> of measuring it. Measured on the actual scan:
+>
+> | | per-cell G_eff | per-cell bound | G_union | **pooled bound** | hurdle |
+> |---|---:|---:|---:|---:|---:|
+> | pregame | 27.1 | 27.0¢ | 263 | **6.04¢** | 2.1¢ |
+> | in-play | 12.1 | 40.4¢ | 140 | **8.28¢** | 3.0¢ |
+>
+> **Even fully pooled the programme is ~3× short of its own hurdle**, and
+> `G_union` is an upper bound on effective clusters (median 16 cells per game,
+> max 144), so the true pooled bound is worse — 7.2¢ at 70% of union.
+> **Conclusiveness needs 8.3× more distinct games pregame, 7.6× in-play.**
+>
+> **The gap between bound and hurdle — 2.1¢ to 6.0¢ — is exactly the range a
+> real but modest edge would occupy. The programme cannot rule out precisely the
+> effect sizes that would be worth trading.**
+>
+> **A projected G is the population error this programme exists to catch,
+> committed in the document that defines the catching.** The original text
+> follows, kept so the error is visible rather than revised away.
 
 > **This must be stated in every write-up: after eight weeks the programme can
 > rule out edges above roughly 5–15¢ depending on family. It cannot rule out
@@ -254,6 +300,43 @@ significance. **The permutation null — settlements shuffled within games —
 reproduces the dependence and is the only valid reference.** Every distributional
 statistic is read against its permutation distribution, never against theory.
 
+> **⚠ CORRECTED 2026-09-14: "the only valid reference" is wrong, and wrong in the
+> direction that confirms artifacts.** A within-game shuffle **preserves each
+> cell's marginal win count**, so it cannot be the reference for any hypothesis
+> about that marginal. Worse, it **destroys outcome-homogeneity**, which is
+> common under H0 at these n — 3.2% for a 12-market cell at break-even 0.25,
+> 11.8% for a 6-market cell at 0.70. So null replicates contain fewer homogeneous
+> cells than H0 produces, every replicate's min-p is **less extreme than it
+> should be**, and the observed min-p reads as too significant. **The bias runs
+> the same direction for min-p as for Var(t)** — AMENDMENT 1 identifies it for
+> the latter; it applies to the former too.
+>
+> **REPLACEMENT — already implemented, retracted by its author independently:**
+> `y_i ~ Bernoulli(break_even(ask_i))`, drawn within game clusters. **Simulate
+> the null, do not shuffle it.** Shuffling preserves the observed outcome
+> multiset — the very quantity under test.
+>
+> Their reason is sharper than mine and mine is **downstream of it, not
+> independent**: the shuffle **spans price deciles**, handing a 5¢ longshot a
+> favourite's outcome, so it destroys the null's *defining property* —
+> calibration — rather than one of its consequences. Measured: decile 0 goes
+> 0.039 → 0.140, decile 9 goes 0.935 → 0.766, and cells-excluding-zero came out
+> at **95 where a correct null gives ~16**.
+>
+> **What the homogeneity argument adds is SCOPE.** The calibration argument is
+> about Var(t) and the per-cell test. Homogeneity is specifically about
+> **min-p**, which is the one use AMENDMENT 1 still assigns to the permutation.
+> **So the parametric null replaces the shuffle for MULTIPLICITY too, not only
+> for the per-cell test.** AMENDMENT 1 needs that reconciliation.
+>
+> **Calibration condition the null generator must pass — and the parametric one
+> CAN still fail it:** count outcome-homogeneous cells across null replicates
+> and check against the Poisson-binomial prediction. **If the simulation draws
+> outcomes independently within a game rather than from a shared game-level
+> latent, it will undershoot homogeneity too, for a different reason.** That is
+> the specific defect this check catches in the new implementation, and it is
+> why a control that "passes by construction" is still worth running.
+
 ### The planted-edge control must be able to fail
 
 A control that cannot fail tests nothing. **Registered:**
@@ -349,6 +432,47 @@ exclusion is how a family shrinks without anyone deciding to shrink it.
 strictly later weeks.
 
 ### The pre-committed conclusion
+
+### ⚠ AMENDED 2026-09-14 — the conclusiveness test, and tonight's result
+
+**The test in §0 originally compared a half-width to the hurdle.** Corrected
+there: **test the INTERVAL against the hurdle.** Consequence for the stopping
+rule, since this is where the verdict is issued:
+
+| | gross edge | 95% CI | hurdle | one-sided z | m=2 |
+|---|---:|---|---:|---:|---|
+| pregame | +0.357 | [−2.160, **+2.874**] | 4.101 | **2.92** | **CONCLUSIVE** (p 0.0018) |
+| in-play | +2.055 | [−3.041, **+7.151**] | 6.905 | 1.87 | **FAILS** (p 0.031) |
+
+**"No tradeable edge" is directional, so it carries the programme's own
+multiplicity — two populations, m=2.** In-play clears a bare one-sided 5% and
+fails at m=2. **Reporting both as conclusive overstates the weaker one**, in a
+programme whose subject is multiplicity.
+
+### Tonight's scan, and both halves must be quoted together
+
+m = **286** scored cells:
+
+| statistic | observed | null | |
+|---|---:|---|---|
+| Var(t) | **1.443** | baseline 1.147 (G-implied) | excess +0.296 |
+| cells \|t\|>1.96 | **36** | 14.3 expected, band [4.1, 24.5] | **outside the band** |
+| cells p<0.01 | **14** | 2.9 expected | 4.9× |
+| max \|t\| | 3.993 | Bonferroni 4.28 | **no cell survives** |
+
+> **The family is more dispersed than its own clustered null, AND no single cell
+> survives multiplicity.** Under §2 that licenses exactly one thing: nominating
+> for a held-out read.
+
+**⚠ And a third half that must travel with the other two.** On the **tradeable**
+subset — cost held constant — the same scan produced **zero** cells at p<0.01
+against 2.2 expected, and the p<0.01 count rises **monotonically with the spread
+cap (0, 0, 2, 5, 16)**. Tonight's 14 sits at that loosest cap.
+
+> **The dispersion excess is concentrated in the WIDE-SPREAD, UNTRADEABLE cells.**
+> Quoting "more dispersed than its null" without this reads as a lead. It is a
+> cost effect, which is what the monotone spread-cap response says and what an
+> edge would not do.
 
 > **If eight weeks of screening produce no cell that survives a pre-registered
 > held-out read, we conclude that no edge LARGER THAN THE BOUND WE ACHIEVED

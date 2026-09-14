@@ -319,6 +319,36 @@ sample tilts toward **matches following a long match**, i.e. a possibly-fatigued
 player. **That shares a cause with registered hypothesis #5 (within-day sequence
 effects), so #5 cannot be read on hand-swept tape at all.**
 
+### ⚠ AMENDED 2026-09-14 — the venue's daily listing gap hits the CLOSE, not an anchor
+
+**Measured on Polymarket US today: the board was empty 09:35:26Z → 11:40:59Z —
+2h05m33s**, a mid-morning roll rather than an incident (it returned before the
+MLB slate; zero-hours peak at 10–11Z across 44 days).
+
+**This registration has no T−6h/T−1h anchors, so the cricket anchor problem does
+not apply. The exposure here is the CLOSE itself.** Table tennis runs around the
+clock — measured kickoffs in **every UTC hour, 6 to 24 each** — so matches
+starting inside the gap have their last-quote-before-start pushed back by up to
+two hours.
+
+**Measured: kickoffs at 09Z, 10Z and 11Z are 34 of 299 — about 11% of the
+slate.**
+
+> **The registered `mins_before` rule already catches it** — those matches would
+> show `mins_before` of up to 120 minutes against a measured p90 of 22.9, far
+> outside the registered (0, S] band. **But catching is not the whole job:
+> excluding them removes ~11% of matches concentrated in ONE TIME BAND.**
+>
+> **REGISTERED: exclusions driven by the listing gap are reported BY COMPETITION
+> and by UTC hour, not just counted.** The four Setka competitions are
+> Ukrainian and Czech and do not run the same hours, so a time-of-day exclusion
+> is potentially a competition-correlated exclusion — and competition is the
+> disjoint-pool axis the whole replication design rests on.
+
+**A rule being present is not the same as its threshold being survivable when the
+gap is two hours wide.** Here it survives, and the cost is a structured 11% hole
+that must be shown rather than absorbed.
+
 **Registered diagnostics, one column each:**
 1. `mins_before` per captured close. Under capture ≈ 1 it lies in (0, S]; **mass
    beyond S means the market stopped being swept — a genuine drop.**
