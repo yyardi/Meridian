@@ -167,9 +167,45 @@ matches that started after the 11:10Z cadence change:
 
 Unsplit, the post-fix sample reads median 12.0 and p90 181.7 -- a p90 twice as bad as before the
 fix, which is what I saw first and what would have read as the fix failing. It is the outage, not
-the cadence. The real test is tomorrow on gap-free tape, reported in minutes **and** as a ratio,
-because a cadence fix that moves the minutes without moving the ratio under 0.10 is not a
-staleness fix.
+the cadence.
+
+**My proposed fix for that -- exclude gap-affected closes -- is withdrawn. It is vacuous.** 7d
+measured it: a 6-hour close window intersects a gap longer than 30 minutes for **91.6% of CFB
+closes and 89.2% of table-tennis closes**. That is a deletion, not an exclusion. Worse, it does
+not separate the two leagues, whose close ages differ by twenty minutes, so it cannot be the
+mechanism. The structural reason is that **close age and gap-adjacency are the same quantity**: a
+close is old exactly when a gap sits between the last observation and the start, so excluding
+gap-affected closes from a close-age measurement removes the observations the measurement is
+about.
+
+**The test that needs no exclusion: do the median and the p90 move together?** A cadence fix
+compresses the whole distribution. An outage leaves the median alone and explodes the tail. My own
+early read is that signature exactly -- median 19.5 to 12.0 better, p90 91.7 to 181.7 worse -- and
+it reproduces my split's conclusion without identifying a single gap or deleting any data.
+
+**Table tennis was the loudest league, not the only one.** MLB's close is 28.1 minutes early on a
+roughly three-hour game, a ratio of 0.156, which fails the 0.10 threshold and which nobody had
+checked. **That is one game.** I verified it by a second route and the second route found n=1, so
+it is an observation, not a measurement, and MLB is the operator's daily-volume league so it will
+have a real sample within days. The single `t20icr` close is 123 minutes early.
+
+## 0f. Scan cost has two regimes, and the cadence budget depends on which one you are in
+
+| run | queries | cache | floor | wall | settlement calls |
+|---|---:|---|---|---:|---:|
+| 05:28Z | 13 | cold | none | 115.5 min | 22,503 |
+| 10:07Z | 1 | warm | 2026-09-01 | 9.2 min | 20,954 |
+| 12:34Z | 1 | warm | none | 14.0 min | 22,577 |
+
+**Cold cache is settlement-bound**: 22,503 HTTP calls at 200-300 ms is 4,500-6,750s, which
+accounts for essentially the whole 115 minutes. **Warm cache is query-bound**: the calls become
+cache hits and the floor's measured saving is **34.1%**, against **33.5% predicted by EXPLAIN**
+from planner cost alone. Two routes that share no implementation, agreeing to 0.6 percentage
+points.
+
+So the fifty-strategies-a-week cadence budgets against **query cost in steady state** and against
+**venue calls and rate limits for the first run of any new league**. 7d withdrew an earlier
+reading of this and so did I; the table above is the resolved version.
 
 ## 1. What I need from you (everything else I now run myself)
 
