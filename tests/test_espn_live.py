@@ -336,3 +336,48 @@ def test_the_signal_side_cannot_place_modify_or_cancel_anything():
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
         }
         assert not {"submit_limit_order", "cancel_order"} & calls
+
+
+# --------------------------------------------------------------------------- #
+# rows_written is a LIVENESS signal, so it has to be the real number.
+# --------------------------------------------------------------------------- #
+def _db_total() -> int:
+    return sum(_count(t) for t in
+               ("espn_live_plays", "espn_live_win_probability",
+                "espn_live_injury_observations", "espn_live_box_snapshots",
+                "espn_live_player_snapshots"))
+
+
+def test_rows_written_is_the_number_of_rows_actually_written():
+    """★ IT USED TO BE NEGATIVE. Three inserts here did `rows += result.rowcount
+    or 0`, and every SQLAlchemy Core insert reports -1 (measured: single row,
+    multi row, with and without `on_conflict_do_nothing`; raw `text()` inserts
+    report correctly, so it is the insertmanyvalues path, not the driver and not
+    the conflict clause). -1 is truthy, so each site contributed -1.
+
+    A first poll reported 10 while 71 rows landed, and a steady-state poll
+    reported -2. This module's docstring makes `rows_written=0` the signal that
+    separates IDLE from DEAD, and a live game with two player rows due lands on
+    exactly 0 -- a working recorder reporting the value that means nothing is
+    happening. Asserted against a count taken from the database, not against a
+    constant, so the two cannot drift into agreement."""
+    r = _recorder(FakeESPN())
+    first = r.record_game(GAME)
+    assert first == _db_total() == 71
+    assert first > 0
+
+
+def test_a_repoll_reports_only_what_it_added():
+    """★ AND `len(values)` WOULD NOT HAVE FIXED IT. That counts rows ATTEMPTED,
+    so a frozen feed re-offering the same plays every poll would report them as
+    written and look healthy -- freshness is not liveness. RETURNING counts what
+    the conflict clause let through, which is the question being asked."""
+    r = _recorder(FakeESPN())
+    r.record_game(GAME)
+    before = _db_total()
+    second = r.record_game(GAME)
+    assert second == _db_total() - before, (
+        f"reported {second} written, database grew by {_db_total() - before}")
+    # one box snapshot, because the cadence IS the data there; everything else
+    # deduplicated. Not 58, which is what counting attempts would have said.
+    assert second == 1

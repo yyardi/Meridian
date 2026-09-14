@@ -128,6 +128,33 @@ def _wallclock(value) -> dt.datetime | None:
         return None
 
 
+
+def _inserted(session, stmt, pk) -> int:
+    """Rows this statement ACTUALLY wrote, counted from RETURNING.
+
+    ★ `result.rowcount` IS NOT THAT, AND IT IS NOT -1 ONLY UNDER `ON CONFLICT`.
+    Measured 2026-09-14 against postgres 16 / SQLAlchemy 2.0.51 / psycopg3:
+    every Core `insert()` construct reports **-1** -- single row, multi row,
+    with or without `on_conflict_do_nothing`. Raw `text()` inserts report
+    correctly (7, 1, 2 for SELECT, single VALUES, multi VALUES), so this is
+    SQLAlchemy's insertmanyvalues path, not the driver and not the conflict
+    clause. Three sites here did `rows += result.rowcount or 0`, and -1 is
+    truthy, so each contributed **-1**.
+
+    What that cost: a first poll of one game reported `rows_written=10` while
+    71 rows landed, and a steady-state poll reported **-2**. This module's own
+    docstring makes `rows_written=0` the signal that separates IDLE from DEAD,
+    and a live game with two player rows due lands on exactly 0 -- a working
+    recorder reporting the value that means "nothing is happening".
+
+    `len(values)` would be the cheaper fix and the wrong one: it counts rows
+    ATTEMPTED, so a frozen feed re-offering the same plays would report them as
+    written every poll and look healthy. Freshness is not liveness. RETURNING
+    counts what the conflict clause let through, which is the question.
+    """
+    return len(session.execute(stmt.returning(pk)).all())
+
+
 def parse_plays(payload: dict, *, espn_game_id: str, first_seen_at: dt.datetime,
                 ) -> list[dict]:
     """Summary ``plays`` -> insertable rows. Transcription only."""
@@ -402,18 +429,16 @@ class EspnLiveRecorder:
             plays = parse_plays(payload, espn_game_id=espn_game_id,
                                 first_seen_at=first_seen_at)
             if plays:
-                result = s.execute(
-                    pg_insert(EspnLivePlay).values(plays)
-                    .on_conflict_do_nothing(index_elements=["play_id"]))
-                rows += result.rowcount or 0
+                rows += _inserted(s, pg_insert(EspnLivePlay).values(plays)
+                                  .on_conflict_do_nothing(index_elements=["play_id"]),
+                                  EspnLivePlay.id)
 
             wp = parse_win_probability(payload, espn_game_id=espn_game_id,
                                        first_seen_at=first_seen_at)
             if wp:
-                result = s.execute(
-                    pg_insert(EspnLiveWinProbability).values(wp)
-                    .on_conflict_do_nothing(index_elements=["play_id"]))
-                rows += result.rowcount or 0
+                rows += _inserted(s, pg_insert(EspnLiveWinProbability).values(wp)
+                                  .on_conflict_do_nothing(index_elements=["play_id"]),
+                                  EspnLiveWinProbability.id)
 
             box = parse_box(payload, espn_game_id=espn_game_id,
                             first_seen_at=first_seen_at)
@@ -436,11 +461,11 @@ class EspnLiveRecorder:
             injuries = parse_injuries(payload, espn_game_id=espn_game_id,
                                       first_seen_at=first_seen_at)
             if injuries:
-                result = s.execute(
-                    pg_insert(EspnLiveInjuryObservation).values(injuries)
+                rows += _inserted(
+                    s, pg_insert(EspnLiveInjuryObservation).values(injuries)
                     .on_conflict_do_nothing(
-                        index_elements=["espn_game_id", "athlete_id", "status"]))
-                rows += result.rowcount or 0
+                        index_elements=["espn_game_id", "athlete_id", "status"]),
+                    EspnLiveInjuryObservation.id)
 
             s.commit()
 
