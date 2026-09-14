@@ -10,7 +10,34 @@ P(some cell exceeds |t|=3) = 1-(1-0.0027)^m. At m=500 that is |t| ~ 2.9 and **P 
 **A three-sigma cell is the MODAL OUTPUT OF NOISE at this m.** The top row of the appendix
 table is not a find. Every number below is printed beside what the null gives.
 
-## THE THREE STATISTICS, all from one pass, none chosen after its value was seen
+## ★ THE PRIMARY SCORE IS BINOMIAL ON THE WIN COUNT, NOT A t ON THE P&L
+
+**A cell whose bets all resolve the same way has NO outcome variance**, so the game-clustered
+sandwich SE collapses onto the band's price dispersion and |t| explodes. Measured on the first
+pass: all twelve of the most extreme cells were outcome-homogeneous, and against a binomial on
+the same cell the t overstated the evidence by **five to thirty orders of magnitude** --
+
+    cfb full_game_winner dec 0.2   n=12  k=0    p from t 3.9e-12   p binomial 6.3e-02
+    nfl 1q_spread        dec 0.0   n=68  k=0    p from t 7.9e-33   p binomial 6.1e-02
+    cfb 2q_total         dec 0.8   n=46  k=44   p from t 1.2e-25   p binomial 4.7e-02
+
+Those cells are not wrong -- 12 of 12 losing a 25c bet is p=0.03 and worth noticing -- but
+Var(t)=18.6 was built almost entirely out of that gap. **Second appearance of this defect: the
+extreme-hold study needed the same correction (a 7/7 cell reading +1.68 [+1.41,+1.96] whose
+binomial lower bound was 65.2% against a 98.3% break-even). Twice is a property of the
+substrate, not a one-off**: binary outcomes at small G make homogeneous cells common.
+
+So every cell is scored BOTH ways and both print. The binomial needs no exclusion. The sandwich
+statistics run only on cells with genuine outcome variation, and every excluded cell prints.
+
+## ★ AND THE PERMUTATION NULL IS BIASED FOR THIS FAILURE MODE
+
+Shuffling settlements within games **breaks** the homogeneity that creates the degeneracy, so
+the null's Var(t) comes out small and the observed excess reads as signal. The reference
+registered as "the only valid one" confirms this artifact rather than catching it. Pre- and
+post-exclusion figures are NOT comparable and must never be quoted beside each other.
+
+## THE THREE t-STATISTICS, all from one pass, none chosen after its value was seen
 
 1. **Var(t)** -- dense alternative (many small effects). PRINTED BESIDE ITS G-IMPLIED NULL
    BASELINE, which is NOT 1: a cell's t is ~ t with nu = G-1, and Var(t_nu) = nu/(nu-2), so
@@ -59,7 +86,7 @@ Nothing is placed. Nothing here decides anything.
 import datetime as dt, json, math, os, sys
 from collections import defaultdict
 
-from scipy.stats import t as tdist
+from scipy.stats import binomtest, t as tdist
 from sqlalchemy import create_engine, event, text
 
 from core import settlements
@@ -157,8 +184,23 @@ print(f"  {'league':12} {'market type':40} {'closes':>7} {'unsettled':>10} {'gam
 for (lg, mt), (tot, uns, gs) in sorted(STOCK.items(), key=lambda x: -len(x[1][2])):
     if tot >= 10: print(f"  {lg:12} {mt[:40]:40} {tot:>7,} {uns:>10,} {len(gs):>6}")
 
+print(f"\n{'='*100}\nPRIMARY: BINOMIAL ON THE WIN COUNT (no exclusion needed)\n{'='*100}")
+bp = sorted(r["p"] for r in binom_rows if r["p"] == r["p"])
+if bp:
+    print(f"  cells scored {len(bp)}   p<0.05: {sum(x < 0.05 for x in bp)}"
+          f" (null {0.05*len(bp):.1f})   p<0.01: {sum(x < 0.01 for x in bp)}"
+          f" (null {0.01*len(bp):.1f})   min p {bp[0]:.2e}")
+    print(f"  Bonferroni at m_eff={len(bp)} needs p < {0.05/len(bp):.2e};"
+          f" cells clearing it: {sum(x < 0.05/len(bp) for x in bp)}")
+    print(f"  {'cell':52} {'k/n':>9} {'rate':>7} {'b/e':>7} {'p':>10}")
+    for r in sorted(binom_rows, key=lambda x: x["p"])[:10]:
+        lg, mt, lo = r["key"]
+        print(f"  {lg + ' ' + mt[:34] + ' ' + format(lo, '.1f'):52} {str(r['k'])+'/'+str(r['n']):>9}"
+              f" {r['rate']:7.1%} {r['p0']:7.1%} {r['p']:10.2e}")
+
 m_eff = len(scored)
-print(f"\n{'='*100}\nTHE PRIMARY RESULT: THE DISTRIBUTION\n{'='*100}")
+print(f"\n{'='*100}\nSECONDARY: THE t DISTRIBUTION, degenerate cells EXCLUDED FIRST\n{'='*100}")
+print("  pre-exclusion figures are NOT comparable to these and must not be quoted beside them")
 print(f"  m_eff = {m_eff} scored cells (YES side only; the NO twin is -t by identity, so the")
 print(f"          cell count is NOT the multiplicity -- see the module docstring)")
 if m_eff < 2: raise SystemExit("NO DATA: fewer than two scorable cells")
