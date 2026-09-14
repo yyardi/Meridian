@@ -10,6 +10,15 @@
 # cell > 3) is ~0.74. A striking cell is the modal output of noise. The full
 # cell table and the nominations live in the artifact, which the dashboard reads.
 set -u
+# SCAN_SINCE is a PARTITION BOUNDARY, written here rather than left to the
+# environment so the exclusion is visible in version control. Without it the
+# query does two serial full scans of all five market_snapshots partitions per
+# league pattern (planner cost 7,023,098); with it, 4,671,180 -- a 33.5% cut,
+# because August alone costs 2,525,216 to return a few thousand rows that
+# predate every league we scan. It must sit ON a boundary: 2026-08-25 lands
+# inside the August partition and made the cost go UP. The scan refuses a
+# non-boundary value and prints the floor it used on its coverage line, so a
+# reader never sees a close count without seeing what was excluded to get it.
 cd /opt/meridian || exit 1
 OUT=/opt/meridian/artifacts/reads; mkdir -p "$OUT"
 TS=$(date -u +%Y-%m-%dT%H%MZ)
@@ -22,6 +31,7 @@ IMG=$(docker inspect meridian-api --format "{{.Config.Image}}" 2>/dev/null || ec
 docker run --rm -i --network meridian_default \
   -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian \
   -e SETTLE_CACHE="$OUT/settlements.json" \
+  -e SCAN_SINCE="${SCAN_SINCE:-2026-09-01}" \
   -e ROWS_JSON="$OUT/scan_rows.json" -e CELLS_JSON="$OUT/scan_cells.json" \
   -v /opt/meridian/core:/app/core -v /opt/meridian/strategies:/app/strategies \
   -v /opt/meridian/artifacts:/opt/meridian/artifacts -w /app \
