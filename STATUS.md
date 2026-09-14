@@ -560,10 +560,36 @@ What NFL lacks is Kalshi's `result` -- but for a total or a spread that is a fun
 score, which the ESPN ids supply. **Deriving the outcome from the score removes the selection bias
 and can be validated against the 610 CFB results**, which settling from `result` cannot.
 
-**No verdict either way today.** G = 14 against the book's floor of 25, and the clustering caution
-binds hardest here: 547 band markets on 14 games is ~39 each, and a totals ladder and a spread
-ladder move with the same score, so the effective sample is at most 14 and realistically fewer.
-About 14 games a week puts G = 25 near 2026-09-20.
+**No verdict either way today, and the numbers moved twice.**
+
+*My pessimism was wrong.* I said the effective sample was "at most 14 and realistically fewer".
+7d measured it: a totals ladder is ~15 deterministic step functions of one scalar, a spread ladder
+~22 of another, and on 114 CFB finals the two scalars correlate at 0.524, worth about 1.31
+independent draws per game. So fourteen games behave like 14 clusters for totals alone and ~18
+with spreads -- not 547, and **not fewer than 14**, because "fewer" would require the games to be
+correlated with each other and they are not. (That rho is a CFB number on a blowout-heavy league;
+NFL needs its own once there are finals.)
+
+*The real population is smaller, for a reason on our side.* Only **9 of 15** NFL games reached
+state `post` in our ESPN recorder, so only 9 have a final score to derive a settlement from.
+Verified here independently: CFB 105 of 186, **56.5%**; NFL 9 of 15, **60.0%**. Deriving from a
+game stuck at `in` would be a bias and not a gap -- a truncated game has a lower total, so Over
+markets would settle NO when the real total cleared the strike, which is the CFB capture bias from
+the opposite side and flattering in the same direction.
+
+So **G = 9**, and what decides when we reach 25 is our own ESPN recorder, not Kalshi.
+
+**The frame validated with no join at all.** Within a settled totals ladder every strike below the
+final must be yes and every above must be no, checkable from Kalshi alone. Of 81 games with
+settled totals, 2 carry both a yes and a no; both are monotone with **zero violations** and a mean
+bracket of 3.00 points, exactly the strike spacing. Two games is not a small sample for a binary
+structural fact -- an inverted frame violates on both.
+
+**And a fourth fix is waiting on the rebuild.** `core/feeds/espn_cfb_recorder.py` in main already
+keeps polling a departed game until `post` is observed, with a bounded three-hour give-up, written
+against this exact measurement. The running image is from 2026-09-06 and does not contain it:
+`grep` returns 0 inside the container and 4 in the checkout. **So the thing now gating the second
+venue is fixed on disk and not running.**
 
 **Two corrections to my brief.** The fee cannot be read from the tape: `kalshi_events` and
 `kalshi_event_snapshots` are both empty, so the columns exist and carry nothing. The substitution
