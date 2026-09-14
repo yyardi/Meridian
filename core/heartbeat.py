@@ -132,6 +132,7 @@ class Heartbeat:
         *,
         interval_seconds: float,
         rows_written: int | None = None,
+        markets_seen: int | None = None,
         cycle_seconds: float | None = None,
         game_live: bool | None = None,
         beat_at=None,
@@ -151,6 +152,10 @@ class Heartbeat:
                 round(float(cycle_seconds), 3) if cycle_seconds is not None else None
             ),
             "rows_written": rows_written,
+            # What the sweep SAW. rows_written=0 cannot tell an empty board from
+            # a quiet one; this can, and it is the only place the number survives
+            # the process that computed it.
+            "markets_seen": markets_seen,
             "rows_total": self._rows_total,
             "game_live": game_live,
         }
