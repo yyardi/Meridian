@@ -33,6 +33,12 @@ _Session = get_sessionmaker(get_engine())
 
 NOW = dt.datetime.now(UTC)
 
+
+#: Re-pinned per test by conftest's `module_now_is_per_test`: these
+#: offsets mean "N seconds ago", not "N seconds before collection".
+#: Without it this file had a 30s budget of suite elapsed time
+#: before its own snapshots aged out of the engine's 60s window.
+NOW_PER_TEST = True
 #: The measured five-dollar-night reading, verbatim.
 TINY_BANKROLL = 1.87
 

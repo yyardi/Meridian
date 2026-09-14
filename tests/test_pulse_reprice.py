@@ -222,6 +222,12 @@ EVENT = "test-reprice-event"
 NOW = dt.datetime.now(UTC)
 
 
+
+#: Re-pinned per test by conftest's `module_now_is_per_test`: these
+#: offsets mean "N seconds ago", not "N seconds before collection".
+#: Without it this file had a 20s budget of suite elapsed time
+#: before its own snapshots aged out of the engine's 60s window.
+NOW_PER_TEST = True
 @pytest.fixture(autouse=True)
 def clean():
     yield
