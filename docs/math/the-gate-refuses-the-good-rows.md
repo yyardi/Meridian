@@ -154,16 +154,34 @@ replay generous.
 stamps, so the interval after a game's final play has no segment and leaves
 the denominator. A smaller denominator raises the percentage.
 
-## And the arrival process is bursty, which is the mechanism
+## RETRACTED: the arrival process is not bursty. That was a pooling artifact
 
-Distinct arrival stamps for the 09-13 NFL slate: **2,238**, with a median gap
-of **1.6 seconds** and p90 **40.3 seconds** — against a median gap of 43
-seconds between the plays' own `wall_clock` values. So ESPN publishes several
-plays at once and then nothing for half a minute.
+I wrote that arrivals come in bursts a median 1.6 seconds apart, and
+concluded ESPN publishes several plays at once. **That figure pools thirteen
+concurrent games**, and the engine does not see a pooled stream: `LIVE_SQL`
+filters by league and takes `DISTINCT ON (game_id)`, so what matters is how
+often ONE game gets a new row.
 
-That is why the passing time is so small rather than merely small. Each burst
-arrives with its newest play already ~50s old, so `[w, w+30)` is **entirely
-in the past** and contributes zero passing time. A window only opens when a
-play happens to arrive with a lag under 30 seconds — 6.3% of NFL plays — and
-then it is `30 - lag` seconds wide. The gate is not sampling a stream too
-slowly; it is asking for a freshness the arrival process almost never has.
+| population | stamps | median gap | p90 |
+|---|---|---|---|
+| NFL, pooled across 13 games (what I reported) | 2,239 | 1.6s | 40.3s |
+| all leagues, pooled (a peer's figure, same day) | 9,431 | 0.7s | 21.2s |
+| **NFL, PER GAME — what the engine sees** | 2,226 | **44.1s** | 154.5s |
+
+Per game the median gap is **44.1 seconds**, which is essentially the 43.0s
+median spacing of the plays themselves. Nothing is bursty. The pooled 1.6s
+was thirteen games' streams interleaved, and the peer's 0.7s was every league
+interleaved — the same artifact one level further out, which is how we came
+to two different numbers for a thing neither of us should have pooled.
+
+**The mechanism never rested on this**, and the peer said so before I
+measured it. It rests on the LAG. A play's window opens at its own
+`wall_clock` and the play arrives a median 52.8 seconds later, so the window
+is already entirely in the past on arrival for 93.7% of plays. One opens at
+all only for the 6.3% arriving inside 30 seconds, and is then `30 - lag`
+seconds wide. Per-game spacing only says that nothing rescues the gap in
+between: the next row for that game is another 44 seconds away.
+
+The gate is not sampling a fresh stream too slowly. It is asking for a
+freshness the feed almost never delivers — and that conclusion is unchanged,
+which is exactly why the wrong description survived.
