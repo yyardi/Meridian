@@ -243,6 +243,7 @@ def main():                                                   # pragma: no cover
     # entry behind every closed position and make "is there a position on this
     # game" depend on a string prefix.
     open_pos, prev_play, unmapped, stale_skips, written = {}, {}, set(), 0, 0
+    last_skip_report = -1
     log.info("scalp.start", league=lg, params={k: v for k, v in p.items()}, db=get_database_url()[:24])
 
     while True:
@@ -313,6 +314,20 @@ def main():                                                   # pragma: no cover
                 cycle_seconds=time.monotonic() - t0, game_live=bool(plays))
         if unmapped:
             log.info("scalp.unmapped", league=lg, n=len(unmapped))
+        # ★ THE REFUSAL COUNT WAS COUNTED AND THROWN AWAY. `stale_skips` was
+        # incremented and never reported anywhere, so a night of zero trades read
+        # as "the strategy found no opportunities" when it may have been "the gate
+        # refused every play". Those are opposite conclusions from identical
+        # output, and the number that separates them already existed.
+        #
+        # It is not academic: an NFL play is a median 52.8s old when we FIRST see
+        # it and 93.7% are already past a 30s gate on arrival, so the expected
+        # refusal rate is near-total. Logged only while a game is live and only
+        # when it changes, so an idle engine stays quiet.
+        if plays and stale_skips != last_skip_report:
+            log.info("scalp.stale_skips", league=lg, skipped=stale_skips,
+                     opened=len(open_pos), written=written, max_age_s=p["max_age_s"])
+            last_skip_report = stale_skips
         time.sleep(max(0.0, 2.0 - (time.monotonic() - t0)))
 
 
