@@ -128,6 +128,39 @@ same-weekday-and-hour priors, so a rank rule false-alarms 14.3% per check, 3.4 t
 Two-hour persistence needs about 19 weeks, mid-January. Three-hour persistence works today at the
 cost of three hours of latency.
 
+## 0e. Every table-tennis result in the scan is priced off a stale close
+
+meridian-7f checked the three pre-registrations against the listing gap. I checked the scan,
+which nobody had, and it is exposed worse than any of them -- not by the gap alone but by cadence.
+
+How far before the start the scan's "pregame close" actually sits, since 2026-09-01:
+
+| league | games | median | p90 | share more than 60 min early |
+|---|---:|---:|---:|---:|
+| setkamecz | 23 | 44 min | 141 min | **39.1%** |
+| setkawoua | 15 | 32 min | 152 min | **33.3%** |
+| setkameua | 119 | 20 min | 106 min | **22.7%** |
+| cfb | 117 | 0 min | 0 min | 1.7% |
+| nfl | 15 | 0 min | 0 min | 0.0% |
+
+**A table-tennis match lasts about twenty minutes.** A close taken a median of 20 to 44 minutes
+before it starts, and more than two hours before it in the tail, is not a close. It is a
+different market state wearing the word. Football is unaffected: CFB and NFL close at the whistle.
+
+The scan reports "markets with a pregame close" and never reports the age of that close, so this
+has been invisible in every table-tennis number the programme has produced. It is not a bug in
+the scan's arithmetic; it is a population the label misdescribes.
+
+Cause is mostly cadence, not the listing gap. Until 11:10Z today the table-tennis recorder had no
+cadence variables at all and ran on the 900-second default inside 6 hours of start, which
+reproduces the 20-minute median almost exactly. It now sweeps every 300 seconds within 24 hours
+of start, so the same table should read roughly 2-3 minutes from tomorrow. That is a prediction
+this table will test, and if it does not move, cadence was not the cause and I am wrong about it.
+
+**Until then, treat the table-tennis rows in any scan output as measured on a price that is
+typically 20-44 minutes old.** The operator asked specifically about this space, so this caveat
+matters more than its size suggests.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
