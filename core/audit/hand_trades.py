@@ -512,19 +512,40 @@ def button_order_ids() -> set[str]:
 
 
 def _gateway_settlement(slug: str, _cache: dict = {}) -> Decimal | None:
+    """Venue settlement for one market, memoised for the process.
+
+    ★ A FAILED FETCH IS NOT CACHED, AND THAT IS THE WHOLE FIX. This used to do
+    `result = None` in the except branch and then `_cache[slug] = result`, so
+    ONE transient network error marked that market unsettled for the rest of the
+    run and the audit reported it as unresolved. `core/settlements.py` has the
+    rule in its module docstring -- "an unsettled market or a failed request is
+    None and is asked again next run, so nothing can be frozen as never
+    settled" -- and it was not carried across. A genuine "fetched, not settled
+    yet" IS cached, because that is an answer; a failure is not an answer.
+
+    ★ AND 0.5 IS A REAL SETTLEMENT. This used to read
+    `value in (0, 1) else None`, which silently discards a draw -- first-class
+    cricket and an NFL tie both settle at a half, and `core/settlements.py`
+    names that exact expression as the mistake. Routed through
+    `settlements.label`, which is the one place that decides, rather than a
+    third copy of the rule. Measured 2026-09-14: zero 0.5s in 20,026 cached
+    settlements, so this is a trap that has not fired rather than a live loss --
+    and the cricket recorder is hours old.
+    """
     if slug in _cache:
         return _cache[slug]
+    from core import settlements
     from core.polymarket.client import PolymarketGatewayClient
 
     try:
         with PolymarketGatewayClient() as gw:
             body = gw.get_settlement(slug)
-        value = body.get("settlement")
-        result = Decimal(value) if value in (0, 1) else None
     except Exception as exc:
         log.warning("hand_audit_settlement_fetch_failed", market=slug,
                     error=str(exc)[:120])
-        result = None
+        return None                      # NOT cached -- ask again
+    label = settlements.label(body.get("settlement"))
+    result = None if label is None else Decimal(str(label))
     _cache[slug] = result
     return result
 
