@@ -57,10 +57,16 @@ game        post score   in-game max   total understated   rows at that max
 ```
 
 **And the obvious fix is the wrong one.** I was about to recommend
-`max(home_score), max(away_score)` across the game's rows. Seven of the
+`max(home_score), max(away_score)` across the game's rows. **Nine** of the
 twelve have `rows at that max = 0` — the maximum home score and the maximum
 away score **never co-existed in a single row**, so the "in-game max" is not a
-scoreline that ever existed. These are ESPN publishing a score and correcting
+scoreline that ever existed.
+
+(Nine, not the seven I first reported. That was not a different row
+restriction, which is the generous reading I was offered and should not take:
+I miscounted the zeros in my own printed table. Re-running the count gives
+12 / 9 / 3. The conclusion was unaffected, which is exactly why the miscount
+survived.) These are ESPN publishing a score and correcting
 it downward, and the post row carries the corrected value. Taking `max()`
 would have overstated twelve totals by 2–7 points and pushed Over markets
 toward YES: the same flattering direction as every other defect found today.
@@ -103,3 +109,53 @@ and every future CFB settlement usable. Deriving a settlement from a game
 still at `in` would be a bias and not a gap: a truncated game has a lower
 total, so Over markets settle NO when the real total cleared the strike.
 Derive only from the last `post` row, and count everything else unsettled.
+
+
+---
+
+# What was built, 2026-09-14
+
+`SETTLE_CONFIRM_SECONDS = 300.0` in `core/feeds/espn_cfb_recorder.py`. The
+exit is no longer the first `post`: it is a `post` whose SCORE is unchanged
+across two observations at least that far apart. A score that moves RESTARTS
+the window rather than failing it, and the corrected value is the one that
+retires the game.
+
+**Why five minutes and not 1.3.** The two observed changes spanned about 1.3
+minutes, and that number is *when we looked*, not when ESPN corrected — an
+artefact of the poll cadence, not a measurement of correction latency, which
+is unmeasured. Five minutes is a margin over an unmeasured quantity, stated
+as such.
+
+**Why it costs one extra request and not five.** A game awaiting confirmation
+is due at `SETTLE_CONFIRM_SECONDS`, not at `SETTLE_INTERVAL_SECONDS` (60s).
+Polling at the settle cadence through a five-minute window would be five.
+There is a test that fails if the due interval reverts.
+
+**The three-hour bound is unchanged, and now carries its reason** in the
+constant's docstring: the censored 0.5-minute delay that cannot answer the
+question, and the stuck-at-the-whistle census that can.
+
+**The revert decision, stated rather than inherited.** Once a `post` is
+confirmed we do not re-open the game through the settle path. ESPN does
+revert — one game went post → in → post with the `in` row 9.75 hours later —
+and a three-hour bound could never cover that anyway. What makes the choice
+safe rather than convenient: across the games re-observed over the long spans
+(586 and 1,335 minutes) the score did not change, so the measured rate of
+LATE corrections is zero, while an unbounded re-open reintroduces the
+poll-forever problem the bound exists to prevent. A revert BEFORE
+confirmation clears the pending post and starts over; if ESPN puts a
+confirmed game back on the live board we follow it again as live.
+
+**Nothing downstream re-reads a settled game today.** Consumers read the
+table, which keeps every poll's row, and no consumer aggregates scores across
+rows — `grep` for `max(home_score)` in Python finds nothing, and the only
+settlement derivation in the repo (`cfb/run_making_touch.py`) reads
+`espn_cfb_backfill_games` instead. The last-post-row rule is therefore
+written on `CfbGameState` itself, where the next consumer will meet it,
+rather than only in the recorder.
+
+Five tests, each dead under its own mutation: a single post does not retire;
+a confirmed post does; a moved score restarts and the corrected score is
+kept; a revert before confirmation clears the pending post; and confirmation
+costs one extra request rather than five.
