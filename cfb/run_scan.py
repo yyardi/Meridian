@@ -151,6 +151,45 @@ def fee(p, k=FEE_PM): return k * p * (1 - p)
 def mid(bid, ask): return round((bid + ask) / 2, 4)
 
 
+def poisson_binomial_p(trials):
+    """Exact two-sided p for k wins among independent Bernoullis with DIFFERENT p0.
+
+    ONE TRIAL PER GAME. A cell holds several rungs of the same game -- 305 of 324 cells
+    have n > G, median 1.66 rungs per game, max 14.58 -- and those rungs are functions of
+    ONE game outcome. A Poisson-binomial over all n bets treats them as independent and
+    understates p by roughly the clustering factor, which is the dependence the sandwich
+    existed to handle: swapping t -> Poisson-binomial fixes degeneracy and would silently
+    RE-IMPORT clustering. So trials are one per game.
+
+    AND THE PICK IS THE RUNG NEAREST THE DECILE CENTRE, not the first by slug. Slugs sort
+    by side then by line as a STRING, so first-by-slug systematically selects one corner
+    of the decile -- which would bias the very break-even variation the Poisson-binomial
+    was adopted to respect. Nearest-to-centre is deterministic and unbiased with respect
+    to price within the band.
+
+    Break-even varies per trial (a single midpoint-derived break-even was wrong by 3.4c
+    on one measured cell), so each trial carries its own ask_i + fee(ask_i).
+
+    TWO-SIDED BY THE SMALL-p METHOD: the total probability of every outcome AT MOST AS
+    LIKELY as the observed one -- scipy.binomtest's convention, so this reduces EXACTLY
+    to it when the p0 are equal (asserted in cfb/test_scan_statistic.py) and the numbers
+    in the pre-registration stay on one convention. Twice-the-smaller-tail is the other
+    defensible choice and differs materially here: 0.0122 vs 0.0131 on the 46/46 cell,
+    0.0634 vs 0.0459 on the 12/0 one. Named rather than assumed.
+    """
+    ps = [q for q, _ in trials]
+    k = sum(w for _, w in trials)
+    pmf = [1.0]
+    for q in ps:                                    # O(G^2) DP, trivial at these G
+        nxt = [0.0] * (len(pmf) + 1)
+        for i, v in enumerate(pmf):
+            nxt[i] += v * (1 - q)
+            nxt[i + 1] += v * q
+        pmf = nxt
+    tol = pmf[k] * (1 + 1e-9)
+    return min(1.0, sum(v for v in pmf if v <= tol)), k, len(ps)
+
+
 def clustered(vals, keys):                        # verbatim from cfb/run_paper_book.py
     n = len(vals); m = sum(vals) / n
     res, size = defaultdict(float), defaultdict(int)
@@ -276,7 +315,8 @@ for lg, pat in PATS:
         for lo, hi in DECILES:
             if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
             a = r["ask"]
-            CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y))
+            CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y,
+                                        abs(m - (lo + 0.05))))   # |mid - decile centre|
             STOCK[(lg, mt)][2].add(r["gid"])
     # The floor rides on the SAME LINE as the count it produced. A reader
     # cannot see "22,870 closes" without seeing what was excluded to get it.
@@ -298,9 +338,27 @@ if not CELLS:
     raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")
 
 # ---- cells, then the distribution -------------------------------------------------------
-scored, excluded = [], []
+scored, excluded, pb_rows, pb_excluded = [], [], [], []
 for key, bets in sorted(CELLS.items()):
     m, se, n, G, ge = clustered([100 * b[0] for b in bets], [b[1] for b in bets])
+    # PRIMARY, and it needs no exclusion: a degenerate cell gets a legitimate p here.
+    # one trial per GAME, and within a game the rung NEAREST THE DECILE CENTRE (index 5).
+    best = {}
+    for bb in bets:
+        if bb[1] not in best or bb[5] < best[bb[1]][5]: best[bb[1]] = bb
+    tr = [(min(max(bb[3] + fee(bb[3]), 1e-9), 1 - 1e-9), 1 if bb[4] == 1 else 0)
+          for bb in best.values() if bb[4] in (0, 1)]
+    # THE G FLOOR GATES THIS PATH TOO. It used to gate only the sandwich, so a TWO-GAME
+    # cell ranked in the top ten at p=8.9e-04 -- and a two-game cell cannot nominate
+    # anything, which is what the floor is for. Excluded primary cells print below.
+    hs = sorted((bb[3] - (bb[3] + bb[2]) / 2) * 100 for bb in bets)   # half-spread, cents
+    med_hs = hs[len(hs) // 2]
+    if tr and len(tr) >= G_FLOOR:
+        pv, kk, gt = poisson_binomial_p(tr)
+        pb_rows.append(dict(key=key, p=pv, k=kk, G=gt, n=n, dropped=n - gt, mean=m,
+                            be=sum(q for q, _ in tr) / gt, hs=med_hs))
+    elif tr:
+        pb_excluded.append((key, len(tr), f"G={len(tr)} < {G_FLOOR} floor: cannot nominate"))
     # DEGENERACY GUARD, before the G floor. A cell in which every bet settled the SAME
     # WAY has no outcome variation, so the sandwich measures the cell's price dispersion
     # rather than its risk, and the interval collapses toward zero width while the mean
@@ -329,6 +387,43 @@ for (lg, mt), (tot, uns, gs) in sorted(STOCK.items(), key=lambda x: -len(x[1][2]
     if tot >= 10: print(f"  {lg:12} {mt[:40]:40} {tot:>7,} {uns:>10,} {len(gs):>6}")
 
 m_eff = len(scored)
+print(f"\n{'='*100}\nPRIMARY: POISSON-BINOMIAL, ONE TRIAL PER GAME (no exclusion needed)\n{'='*100}")
+bp = sorted(r["p"] for r in pb_rows)
+if bp:
+    print(f"  cells {len(bp)}   p<0.05: {sum(x < 0.05 for x in bp)} (null {0.05*len(bp):.1f})"
+          f"   p<0.01: {sum(x < 0.01 for x in bp)} (null {0.01*len(bp):.1f})   min p {bp[0]:.2e}")
+    print(f"  Bonferroni at m={len(bp)} needs p < {0.05/len(bp):.2e};"
+          f" cells clearing it: {sum(x < 0.05/len(bp) for x in bp)}")
+    print(f"  {'cell':50} {'k/G':>8} {'rate':>7} {'b/e':>7} {'p':>10} {'rungs':>7} {'half-sp':>8}")
+    for r in sorted(pb_rows, key=lambda x: x["p"])[:10]:
+        lg2, mt2, lo2 = r["key"]
+        print(f"  {lg2 + ' ' + mt2[:32] + ' ' + format(lo2, '.1f'):50} "
+              f"{str(r['k'])+'/'+str(r['G']):>8} {r['k']/r['G']:7.1%} {r['be']:7.1%} "
+              f"{r['p']:10.2e} {r['dropped']:>7} {r['hs']:7.1f}c")
+if pb_excluded:
+    print(f"\n  PRIMARY cells excluded by the G floor ({len(pb_excluded)}), printed not dropped:")
+    for k2, g2, why in pb_excluded[:12]: print(f"    {str(k2):58} {why}")
+
+# ---- CONDITIONING ON COST. The top cells lose because the ASK is 7-14c above the MID
+# on thin market types, which is the venue's spread and not an edge: nobody crosses a
+# 14c spread, and selling into it is the making study, already negative with power. So
+# the question is whether anything survives once cost is held roughly constant.
+print(f"\n{'='*100}\nCONDITIONED ON COST: the same primary, restricted by median half-spread")
+print(f"{'='*100}")
+print(f"  {'max half-spread':>16} {'cells':>6} {'p<0.05':>7} {'null':>6} {'p<0.01':>7} "
+      f"{'null':>6} {'min p':>10}  losing/winning among p<0.05")
+for cap in (1.0, 2.0, 3.0, 5.0, 1e9):
+    sub = [r for r in pb_rows if r["hs"] <= cap]
+    if len(sub) < 5: continue
+    ps2 = sorted(r["p"] for r in sub)
+    sig = [r for r in sub if r["p"] < 0.05]
+    lose = sum(1 for r in sig if r["k"] / r["G"] < r["be"])
+    lab = "all" if cap > 100 else f"<= {cap:.0f}c"
+    print(f"  {lab:>16} {len(sub):>6} {sum(x < 0.05 for x in ps2):>7} {0.05*len(sub):>6.1f} "
+          f"{sum(x < 0.01 for x in ps2):>7} {0.01*len(sub):>6.1f} {ps2[0]:10.2e}  "
+          f"{lose}/{len(sig)-lose}")
+print("  a cost effect shrinks toward the null as the cap tightens; an EDGE would not.")
+
 print(f"\n{'='*100}\nTHE PRIMARY RESULT: THE DISTRIBUTION\n{'='*100}")
 print(f"  m_eff = {m_eff} scored cells (YES side only; the NO twin is -t by identity, so the")
 print(f"          cell count is NOT the multiplicity -- see the module docstring)")

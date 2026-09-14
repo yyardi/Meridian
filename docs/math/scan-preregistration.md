@@ -376,3 +376,103 @@ to a single family.** One week is a look; two independent weeks is a pattern.
 Anything else — a striking cell, a near-miss, a plausible story — is not grounds,
 and if it is argued for after the fact that argument must be **written down and
 dated before it is acted on**.
+
+---
+
+## AMENDMENT 1 — 2026-09-14: the primary score becomes the binomial win count
+
+**This is a change to the registered statistic, not a patch to the harness.** It
+was made after the first pass was scored and before any cell was nominated; the
+figures that prompted it are below so the amendment can be judged, not trusted.
+
+### What happened
+
+Two implementations of this grid — written independently, no shared code — were
+run against the same tape. Both produced an apparently enormous global effect:
+
+| | manager's pass | quant-b's pass |
+|---|---:|---:|
+| max \|t\| | 30.01 | 31.543 |
+| Var(t) | 17.282 | 18.637 |
+| cells excluding zero | 54 of 324 | 62 of 324 |
+
+**In both, every one of the top twelve cells was outcome-homogeneous** — every
+bet in the cell resolved the same way. When that happens the P&L has no outcome
+variance left, so the game-clustered sandwich SE collapses onto the band's price
+dispersion and `|t|` explodes. Removing the degenerate cells took the manager's
+figures to max |t| 5.87 and Var(t) 1.308.
+
+Against a binomial on the win count of the *same cell*, the t overstates the
+evidence by **five to thirty orders of magnitude**:
+
+| cell | n | k | p from t | p binomial |
+|---|---:|---:|---:|---:|
+| cfb full_game_winner dec 0.2 | 12 | 0 | 3.9e-12 | 6.3e-02 |
+| nfl 1q_spread dec 0.0 | 68 | 0 | 7.9e-33 | 6.1e-02 |
+| cfb 2q_total dec 0.8 | 46 | **46** | 1.2e-25 | **1.3e-02** |
+| tabletennis winner dec 0.7 | 6 | 6 | 6.6e-06 | 3.6e-01 |
+
+> **CORRECTION, same day, at the table rather than below it.** The `k=46` row
+> above first read `k=44`, and its binomial p first read 4.7e-02. **I had backed
+> the win count out of each cell's mean and price instead of reading `y`** — a
+> reconstruction, where a binomial p depends on `k` exactly. Read directly from
+> the settlements the cell is **46 of 46**, which also makes it *degenerate* and
+> moves it from the scored set into the excluded set.
+>
+> When the manager corrected me I defended the old number with a second
+> reconstruction — inferring the cell's mean ask from the decile midpoint (0.855)
+> and arguing a 3.2¢ gap proved a membership difference between our two scans.
+> The real mean ask is **0.889**: asks sit near the top of a `[0.8,0.9)` *mid*
+> band, not in its middle. **There was no membership difference. It was the same
+> reconstructed-not-observed error, twice, the second time deployed to defend the
+> first.** This is also the sharpest argument for the Poisson-binomial below: a
+> single midpoint-derived break-even is wrong by 3.4¢ on this cell alone.
+
+Those cells are not *wrong*: 12 of 12 losing a 25¢ bet is p=0.03 and is worth
+noticing. They are not 1e-12 evidence, and **Var(t) = 18.6 was built almost
+entirely out of that gap.**
+
+### The registered change
+
+1. **The primary score is a two-sided exact POISSON-binomial on the cell's win
+   count against its own per-market break-even** (`ask_i + fee(ask_i)`). A decile
+   spans a 0.1 price band so break-even **varies within the cell**; collapsing it
+   to one number mis-states the tail in whichever direction the within-cell price
+   distribution leans, and on the cell above that collapse was worth 3.4¢. Exact
+   and cheap at these n. It requires no exclusion: a homogeneous cell gets a
+   legitimate p rather than an exploded t.
+2. **The sandwich becomes secondary** and runs only on cells with genuine
+   outcome variation. Every excluded cell prints its reason *and its binomial p*.
+3. **Both print for every cell**, so the gap between them stays visible rather
+   than being resolved silently.
+
+### The permutation's job is multiplicity, not the per-cell test
+
+**The shuffle holds each cell's marginal win count fixed by construction**, so it
+cannot be the reference for "is this cell's win rate above break-even" — that
+hypothesis is a claim about the marginal, and the permutation preserves it. Per
+cell the Poisson-binomial is exact and needs no permutation. **Across** cells, the
+minimum p over ~324 correlated cells is what needs one: recompute every cell's p
+inside each replicate and take min-p. That is the multiplicity reference and the
+only thing the permutation is for. (Debugger's correction; it sharpens rather
+than contradicts the bias note below, which is about Var(t).)
+
+### ★ The permutation null is biased for this failure mode
+
+Shuffling settlements within games **breaks the homogeneity that creates the
+degeneracy**. So the null's Var(t) comes out small, the observed excess reads as
+signal, and the reference this document registered as *"the only valid one"*
+confirms the artifact instead of catching it. **Pre-exclusion and post-exclusion
+figures are not comparable and must never be quoted beside each other.**
+
+### Why this is a property of the substrate, not an incident
+
+**Second appearance.** `docs/math/extreme-hold_2026-09-13.md` needed the identical
+correction one day earlier: a 7/7 cell reported +1.68 [+1.41, +1.96] — *the
+tightest interval on that board, because nothing varied* — whose binomial lower
+bound was 65.2% against a 98.3% break-even.
+
+Binary outcomes at the G this programme can reach make outcome-homogeneous cells
+**common**, not exceptional. Any statistic built on the dispersion of a P&L will
+meet this again. Twice is the point at which it stops being an incident and
+becomes something the estimator has to handle by design.
