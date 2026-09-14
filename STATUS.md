@@ -15,6 +15,21 @@ Measured on 59 CFB games, 577 midfield triggers, game-clustered intervals, no fe
 | had the ball, own half | 300s | −0.294 | −0.601 to +0.014 | 10.2% | 11.1% |
 | scoring play (control) | 300s | +0.599 | +0.101 to +1.096 | 12.5% | 7.4% |
 
+**REPLICATED ON NFL, 2026-09-15**, on 15 games by a different implementation after meridian-06
+stopped responding. Same structure: the control fires, the trigger does not.
+
+| arm | horizon | n | G | mean | 95% CI |
+|---|---|---:|---:|---:|---|
+| inside the opponent's 40 | 30s | 187 | 15 | +0.332¢ | [−0.091, +0.755] spans zero |
+| inside the opponent's 40 | 300s | 181 | 15 | +0.927¢ | [−0.217, +2.070] spans zero |
+| scoring play (control) | 30s | 127 | 15 | +1.467¢ | [+0.327, **+2.606**] excludes zero |
+| scoring play (control) | 300s | 126 | 15 | +1.973¢ | [+0.733, **+3.212**] excludes zero |
+
+Median move 0.00¢ in every arm at every horizon, as on CFB. **Two leagues, two implementations,
+same answer.** The honest limit: at 300s the trigger's interval reaches +2.07¢ and a round trip
+costs about 3¢, so this does not clear costs -- but with 15 clusters it cannot exclude a 2¢ effect
+either, and should not be read as if it could. Write-up: `docs/math/nfl-drive-drift.md`.
+
 The control is the part that makes this worth reading. The same instrument detects a
 touchdown and finds nothing when a drive crosses midfield, so the null is a measurement
 and not a failure to look.
