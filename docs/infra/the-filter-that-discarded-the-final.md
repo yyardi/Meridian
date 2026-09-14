@@ -143,3 +143,53 @@ backfill is the wrong one there — 1 of 11. Preferring `post` over `backfill`
 for the overlap would resolve it in post's favour and change one game's
 settlement. That is a data-source decision, not a filter fix, and it is
 routed.
+
+
+---
+
+# The fourth category, and an allowlist instead of a blocklist
+
+`GAMES_SQL` inner-joined the finals, so a mapped game with **no score source
+at all** — no post row, no backfill row, not even a proxy — vanished from the
+result. The printed route mix then summed to less than the mapped games and
+nothing said so.
+
+| mapped games with a venue id | post | backfill | proxy (excluded) | **no source** |
+|---|---|---|---|---|
+| **139** | 52 | 44 | 42 | **1** |
+
+The one game is `401872931`, `nfl-den-kc-2026-09-14`, with **zero** state
+rows — it has not been played yet. Harmless today, silent always, which is
+the objection.
+
+Two changes:
+
+* `GAMES_SQL` **LEFT JOINs** the finals and labels the gap `src = 'none'`, so
+  four numbers now reconcile against the mapped-game count and the run prints
+  `accounted N of M`. A mismatch is printed **loudly rather than asserted** —
+  it can only happen if two mapped rows share an ESPN id, and a daily
+  calibration should say the mix does not reconcile, not die on it.
+* `usable_games` now filters on `CONFIRMED_ROUTES = ("post", "backfill")` —
+  an **allowlist**, not `!= "proxy"`. A route nobody has vetted should cost a
+  smaller sample, which the excluded count makes visible, rather than a
+  biased one, which is invisible. `'none'` is precisely the category that fell
+  through under the blocklist.
+
+The reconciliation set is keyed on `espn_game_id`, the map's own identity and
+the join key to the finals, rather than on `venue_game_id`. Both are unique
+across the 139 rows today; keying on a uniqueness nobody enforces is how a
+reconciliation line starts disagreeing with itself.
+
+Two more tests, both dead under the same mutation (reverting to the
+blocklist): a no-source game is excluded **and counted**, and an unrecognised
+route is excluded rather than trusted.
+
+## On the precedence: verified, not tested
+
+`fin` prefers a confirmed post row over the backfill as of 2026-09-14.
+Verified read-only on prod — 237 rows before and after, one total changed
+(401856660, 34 → 61), zero winners, 11 games changed route. **Not tested**,
+because `GAMES_SQL` reads `espn_cfb_backfill_games` and a migrated schema does
+not have it: a precedence between two sources cannot be tested while one of
+them cannot be created. That is the argument for the migration, and the
+precedence test arrives with it.
