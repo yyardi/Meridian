@@ -233,9 +233,27 @@ sides go to zero together and `swept_nothing` is false by construction. This is 
 two sides are not the same unit, so `shortfall` is a difference between incomparable numbers and
 has presumably been non-zero on every league every cycle since it was written.
 
-**What I am not claiming.** I cannot show nothing is missing. I can show the events endpoint
-returns 49 when asked for up to 500, so our limit is not truncating, and that the 81 is a
-different quantity from the 49. Establishing what `activeEventCount` counts is open work.
+**Resolved, mostly.** 7d tested eleven candidate parameters on the events endpoint -- `closed`,
+`active`, `archived`, `hidden`, `includeClosed`, `status`, `page`, `days`, `horizon`, `offset` --
+and none changes the count. `offset=500` returns 0, so nothing sits beyond what the endpoint
+gives. All 33 NFL events are active, not closed, not archived, not hidden, so it is not a flag
+filter, and every league reports the same section, so it is not that either.
+
+**Not a horizon**, which was the hypothesis worth testing because it would have been repairable.
+Forward windows: nfl 14.5 days, cfb 12.6, mlb 3.5, wnba 3.5, setkameua 0.6, setkamecz 0.3. No
+fixed window explains those.
+
+**The two numbers do share a unit.** Verified independently of 7d's run: five leagues agree
+exactly -- setkameua 168=168, setkamecz 32=32, setkamemd 34=34, setkawoua 6=6, t20icr 2=2 -- and
+the three that disagree, MLB, NFL and CFB, are exactly the leagues that schedule furthest ahead.
+Consistent with events being listed beyond what the board returns. **Not proven**: what the larger
+population is remains open, and 7d is explicit that they could not establish it.
+
+So `shortfall` is deleted and the two fields are renamed `venue_active_events` and
+`board_events_returned` so nobody subtracts them again. Both stay, because the exact agreements
+are the evidence they share a unit; it is only their difference that was meaningless. In its place
+is the one like-for-like comparison available: the same call's raw payload against what parsing
+kept.
 
 **The `EVENT_LIMIT` change stays.** It was a fix for a problem I had not established, but the
 default of 50 against a board that returns 49 is a margin of one, and it costs nothing.
