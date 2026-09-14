@@ -90,7 +90,7 @@ FROM market_snapshots s JOIN g ON g.game_id = s.game_id
 WHERE s.market_slug LIKE ANY(:pats)
   -- LIVE FROM THE CLOCK, never from is_live (core/board.py: the flag freezes true forever
   -- when a market drops off the board; 11,227 such rows are >600s stale).
-  AND s.captured_at >= g.ko AND s.captured_at < g.ko + make_interval(hours => :liveh)
+  AND s.captured_at >= g.ko AND s.captured_at < g.ko + (:liveh * interval '1 hour')
   AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL AND s.best_ask >= s.best_bid
   AND g.ko < now() - interval '6 hours'
 ORDER BY s.market_slug, floor(extract(epoch from s.captured_at) / (60 * :smin)), s.captured_at
