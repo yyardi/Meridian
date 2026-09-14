@@ -219,3 +219,57 @@ def test_a_slug_from_no_known_league_is_refused():
         "asserting that a KNOWN league is refused")
     c = TestClient(app)
     assert c.get(f"/api/game/{_NOT_A_LEAGUE}-a-b-2099-01-01").status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# The clock model is basketball's. This view is not basketball-only.
+# --------------------------------------------------------------------------- #
+class _Row:
+    """The fields `_context_for` reads, and nothing else."""
+
+    def __init__(self, mtype, period="Q3"):
+        self.sports_market_type = mtype
+        self.event_period = period
+        self.event_score = "21-17"
+        self.is_live = True
+        self.decided_at = dt.datetime(2026, 9, 13, 20, 30, tzinfo=UTC)
+        self.context_at = self.decided_at - dt.timedelta(seconds=30)
+
+
+def test_a_football_trade_gets_no_minutes_left_rather_than_a_basketball_one():
+    """★ `minutes_remaining` TAKES REGULATION_MINUTES = 40.0 AND
+    QUARTER_MINUTES = 10.0 FROM `core/pulse/win_curve.py` -- WNBA values.
+    Football is 60 minutes in 15-minute quarters, so a CFB Q3 trade would read
+    40-20-elapsed instead of 60-30-elapsed: ten minutes short, twenty in Q1.
+
+    `build_live_fv` is safe because it selects on
+    `sports_market_type = 'basketball_team_full_game_winner'`. This view is
+    league-parameterised and is not. Measured 2026-09-14, every row it can
+    reach is WNBA (18,449 shadow_orders, 19,333 pulse_decisions, zero
+    football), so this is a latent trap -- and it now cannot fire."""
+    from core.game_detail import _context_for
+
+    starts = {"Q3": dt.datetime(2026, 9, 13, 20, 25, tzinfo=UTC)}
+    ctx = _context_for(_Row("football_team_spread"), period_starts=starts)
+    assert ctx.minutes_left is None, (
+        f"a football trade got {ctx.minutes_left} minutes left from a "
+        "40-minute basketball clock")
+    assert ctx.minutes_left_usable is False
+    assert "basketball" in (ctx.note or "")
+    # the rest of the context is still reported -- only the clock is withheld
+    assert ctx.period == "Q3" and ctx.margin == 4 and ctx.is_live is True
+    assert ctx.context_age_seconds == 30.0
+
+
+def test_a_basketball_trade_still_gets_its_clock():
+    """The control. If this failed, the guard above would be suppressing every
+    league and the test would pass for the wrong reason."""
+    from core.game_detail import _context_for
+
+    starts = {"Q3": dt.datetime(2026, 9, 13, 20, 25, tzinfo=UTC)}
+    ctx = _context_for(_Row("basketball_team_full_game_winner"),
+                       period_starts=starts)
+    assert ctx.minutes_left is not None
+    assert ctx.minutes_left_usable is True
+    # 40-minute game, two quarters done, five minutes into Q3
+    assert ctx.minutes_left == pytest.approx(15.0)

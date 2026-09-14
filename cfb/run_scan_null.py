@@ -60,6 +60,7 @@ def _load(name: str):
 _pb = _load("run_paper_book")
 bet_pnl, bet_stake, clustered = _pb.bet_pnl, _pb.bet_stake, _pb.clustered
 
+from strategies.base import Bet  # noqa: E402
 from strategies.ladder import select  # noqa: E402
 
 
@@ -260,7 +261,8 @@ def summarise(cells: dict) -> dict:
 
 
 # ---------------------------------------------------------------- the null
-def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
+def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914,
+                      chosen: dict | None = None) -> dict:
     """Permutation null. Seeded: the same rows and seed give the same numbers.
 
     ★ REPORTS THE CELLS ACTUALLY SCORED, NOT THE CELLS SELECTED. `score_cells`
@@ -272,7 +274,7 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
     measured per replicate and asserted constant, because it is the parameter
     every one of these statistics is read against.
     """
-    chosen = select(rows)
+    chosen = select(rows) if chosen is None else chosen
     rng = random.Random(seed)
     draws = {k: [] for k in ("max_abs_t", "n_excluding_zero",
                              "best_net_per_1", "var_t", "hc", "min_p")}
@@ -305,7 +307,11 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
         # because a permutation can create it and destroy it. Reported, not
         # asserted away — and the degenerate count per replicate is itself a
         # measure of how thin the tape is.
-        "cells_scored": (statistics.median(eff_m) if eff_m else 0),
+        # A CELL COUNT IS AN INTEGER. This was the raw median, which is x.5
+        # whenever m varies across an even number of replicates -- and it then
+        # reached `range(m)` in the independent calibration as a float and
+        # raised. The spread is not lost: cells_scored_min/max carry it.
+        "cells_scored": (int(round(statistics.median(eff_m))) if eff_m else 0),
         "cells_scored_min": (min(eff_m) if eff_m else 0),
         "cells_scored_max": (max(eff_m) if eff_m else 0),
         "cells_scored_varied": len(set(eff_m)) > 1,
@@ -359,8 +365,8 @@ def _q(xs) -> dict:
     s = sorted(xs)
     def at(p):
         return s[min(len(s) - 1, max(0, int(round(p * (len(s) - 1)))))]
-    return {"p50": at(0.50), "p90": at(0.90), "p95": at(0.95),
-            "p99": at(0.99), "max": s[-1]}
+    return {"min": s[0], "p01": at(0.01), "p05": at(0.05), "p50": at(0.50),
+            "p90": at(0.90), "p95": at(0.95), "p99": at(0.99), "max": s[-1]}
 
 
 # ------------------------------------------------- the control on the control
@@ -513,7 +519,7 @@ def calibration_independent(m: int, *, trials: int = 2000, seed: int = 99) -> di
 
 
 def report(rows, *, reps: int, seed: int, lo: float, hi: float,
-           trials: int = 60) -> str:
+           trials: int = 60, chosen: dict | None = None) -> str:
     """Every statistic's null AND the two-sided control, together.
 
     One function on purpose. Quantiles alone describe a null that may be
@@ -521,9 +527,17 @@ def report(rows, *, reps: int, seed: int, lo: float, hi: float,
     without saying what to compare against. A caller cannot take one and leave
     the other.
     """
-    null = null_distribution(rows, reps=reps, seed=seed)
+    null = null_distribution(rows, reps=reps, seed=seed, chosen=chosen)
     q = null["quantiles"]
-    observed = summarise(score_cells(rows, [r["y"] for r in rows]))
+    ys = [r["y"] for r in rows]
+    observed = summarise(score_cells(rows, ys, chosen))
+    # The binomial branch, on the OBSERVED tape. Clustered to games, because a
+    # binomial over bets assumes independence that bets in one game do not have.
+    btable = cell_price_table(rows, chosen if chosen is not None else select(rows),
+                              cluster=True)
+    obs_b = binomial_cells(rows, ys, chosen if chosen is not None else select(rows),
+                           cluster=True, table=btable)
+    observed["min_p"] = min_p(obs_b)
     ind = calibration_independent(max(2, null["cells_scored"]))
 
     L = [
@@ -548,7 +562,26 @@ def report(rows, *, reps: int, seed: int, lo: float, hi: float,
                                      for p in ("p50", "p95", "p99", "max"))
             + fmt.format(o).rjust(11)
             + ("   CLEARS p95" if o > d["p95"] else "   inside the null"))
+    mp = q["min_p"]
     L += [
+        "",
+        "MIN-P — the exact per-cell test, with its own tail because SMALL is",
+        "extreme. Reported against p05/p01/min, not p95, which is why it is not",
+        "in the table above: those columns mean the upper tail.",
+        f"{'statistic':<18}{'p50':>9}{'p05':>9}{'p01':>9}{'min':>9}"
+        f"{'observed':>11}   verdict",
+        f"{'min-p (binomial)':<18}"
+        + "".join(f"{mp[k]:.2e}".rjust(9) for k in ("p50", "p05", "p01", "min"))
+        + f"{observed['min_p']:.2e}".rjust(11)
+        + ("   CLEARS p05" if observed["min_p"] < mp["p05"] else "   inside the null"),
+        "",
+        "min-p is the EXACT per-cell test (Poisson-binomial on the win count,",
+        "one observation per GAME) with a permutation reference across cells.",
+        "Per cell it needs no permutation and a permutation would absorb it:",
+        "shuffling settlements holds the marginal win count fixed. Small is",
+        "extreme, so its p05 is the threshold and not its p95. A single-p",
+        "binomial was the first approximation and is wrong in a decile, which",
+        "spans a 0.1 price band, so break-even varies inside every cell.",
         "",
         "max|t| is the WEAKEST of the three against many modest effects: ten",
         "cells at a true t of 3 lift Var(t) and HC while no single one clears",
@@ -592,6 +625,50 @@ def report(rows, *, reps: int, seed: int, lo: float, hi: float,
     return "\n".join(L)
 
 
+
+def load_canonical(path) -> tuple[list[dict], dict]:
+    """The scan's own ROWS_JSON, with the scan's own cells. Not re-selected.
+
+    ★ THE CELLS COME FROM THE ARTIFACT'S `dec`, NOT FROM `select()`.
+    `cfb/run_scan.py` writes one row per scored bet carrying the decile IT
+    assigned, so calling the ladder selector again would be a SECOND selection
+    route over the same rows -- and two routes that can disagree would silently
+    move bets between cells, which is a population change to the thing the null
+    is supposed to be a reference for. The whole point of consuming the scan's
+    inputs is that the cells are not re-derived.
+
+    The canonical shape is `{lg, mt, dec, game, bid, ask, y}` and carries NO
+    market identifier, so one is synthesised per row index: each row already IS
+    one bet, and the index is the only key that cannot collide. (A shape with
+    `market_slug` is the Manager's scratch scan, not this program -- that
+    distinction cost an hour tonight, so `main` refuses the wrong one by name.)
+    """
+    raw = json.loads(pathlib.Path(path).read_text())
+    need = {"lg", "mt", "dec", "game", "bid", "ask", "y"}
+    if not raw or not need.issubset(raw[0]):
+        raise SystemExit(
+            f"{path} is not a canonical scan artifact. Expected keys {sorted(need)}, "
+            f"got {sorted(raw[0]) if raw else 'an empty list'}. A shape with "
+            "'market_slug' is a scratch scan and its cells are not the scan's.")
+    rows, chosen = [], defaultdict(list)
+    for i, r in enumerate(raw):
+        slug = f"row{i}"
+        rows.append({"market_slug": slug, "league": r["lg"], "mtype": r["mt"],
+                     "game_id": str(r["game"]), "bid": float(r["bid"]),
+                     "ask": float(r["ask"]), "y": float(r["y"]), "dec": float(r["dec"])})
+        chosen[f'{r["lg"]}/{r["mt"]}/dec{int(round(float(r["dec"]) * 10))}'].append(
+            Bet(market_slug=slug, side="yes", price=float(r["ask"]),
+                stake=float(r["ask"]), game_id=str(r["game"])))
+    cells = {(r["lg"], r["mt"], r["dec"]) for r in raw}
+    if len(chosen) != len(cells):
+        raise SystemExit(
+            f"cell key collision: {len(cells)} distinct (lg, mt, dec) in the "
+            f"artifact but {len(chosen)} cell names built from them")
+    if sum(len(v) for v in chosen.values()) != len(raw):
+        raise SystemExit("bets built != rows read -- a row was dropped or doubled")
+    return rows, dict(chosen)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--reps", type=int, default=1000)
@@ -599,6 +676,9 @@ def main(argv=None) -> int:
     ap.add_argument("--trials", type=int, default=60)
     ap.add_argument("--bucket", default="0.60,0.80")
     ap.add_argument("--rows-json", help="pre-extracted rows, to avoid a DB hit")
+    ap.add_argument("--canonical", action="store_true",
+                    help="--rows-json is cfb/run_scan.py's own ROWS_JSON "
+                         "({lg,mt,dec,game,bid,ask,y}); use ITS cells, do not reselect")
     a = ap.parse_args(argv)
     lo, hi = (float(x) for x in a.bucket.split(","))
     if not a.rows_json:                              # pragma: no cover
@@ -606,13 +686,18 @@ def main(argv=None) -> int:
             "no --rows-json given. This reads the same closes the scan reads; "
             "extract them alongside a scan run rather than paying for a second "
             "full pass over the tape.")
-    rows = json.loads(pathlib.Path(a.rows_json).read_text())
-    print(report(rows, reps=a.reps, seed=a.seed, lo=lo, hi=hi, trials=a.trials))
+    if a.canonical:
+        rows, chosen = load_canonical(a.rows_json)
+        print(f"canonical artifact: {len(rows):,} bets, {len(chosen)} cells, "
+              f"{len({r['game_id'] for r in rows})} games, "
+              f"cells taken from the scan's own `dec`\n")
+    else:
+        rows, chosen = json.loads(pathlib.Path(a.rows_json).read_text()), None
+    print(report(rows, reps=a.reps, seed=a.seed, lo=lo, hi=hi, trials=a.trials,
+                 chosen=chosen))
     return 0
 
 
-if __name__ == "__main__":                            # pragma: no cover
-    raise SystemExit(main())
 
 
 # ------------------------------------------------------- the binomial branch
@@ -763,3 +848,7 @@ def min_p(bcells: dict) -> float:
     cells, and that is what the permutation supplies, conditional on the
     observed marginal."""
     return min((c["p"] for c in bcells.values()), default=1.0)
+
+
+if __name__ == "__main__":                            # pragma: no cover
+    raise SystemExit(main())
