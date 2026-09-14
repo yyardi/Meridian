@@ -211,8 +211,27 @@ this project is waiting on is waiting on games. The registered CFB lines need
 first structural route to the operator's number that is not "wait for more
 football". Requires the recorder to actually run.
 
-★ **THE TABLE-TENNIS FRAME GATE IS TRENDING TOWARD FAILURE, AND THAT IS THE
-REGISTERED HALT CONDITION.** Measured 00:45Z on the 21 settled matches with a
+★ **FRAME QUESTION RESOLVED BY LOOKUP: THE FRAME IS CORRECT (30 of 30).**
+`cfb/run_tt_frame_lookup.py`. A RESOLVED market states its own outcome — its
+`marketSides[]` prices become 1 and 0 — so the settlement label can be checked
+against a DIFFERENT field written by a different part of the venue. On every
+settled table-tennis match: **30 compared, 30 agree, 0 disagree.** Settlement
+follows `marketSides[0]`, which is what we record as the YES price. **The frame
+is not inverted**, so the shortfall below is either noise at n=21 or genuine
+overpricing of favourites — the calibration slope separates those, and no halt
+is required. (Secondary: `outcomes[]` order disagreed with `marketSides[]` on
+3 of 30, confirming the known trap; we read sides, never outcomes.)
+
+**This replaced a 61-match statistical gate with a lookup, and that was the
+researcher's correction to their own design:** a frame error is a global,
+code-level mismatch between the price field and the settlement field, so one
+piece of ground truth settles what 61 matches settle only probabilistically. The
+registered gate could not have separated inversion from mispricing at any n,
+because both predict the same thing.
+
+### The shortfall that prompted it, now a mispricing question rather than a frame one
+
+**Table-tennis favourites are underperforming their price.** Measured 00:45Z on the 21 settled matches with a
 pregame close (`cfb/run_tt_frame_gate.py`):
 
 | arm | value | direction |
