@@ -161,7 +161,9 @@ def higher_criticism(ts, alpha0: float = 0.25) -> float:
     ps = sorted(_p_two_sided(t) for t in ts)
     floor = 1.0 / m
     best = 0.0
-    for i, pi in enumerate(ps[:max(1, int(alpha0 * m))], start=1):
+    # max(2, ...): int() truncation leaves a SINGLE term below m=8,
+    # which is how a working statistic looked dead.
+    for i, pi in enumerate(ps[:max(2, int(alpha0 * m))], start=1):
         pt = max(pi, floor)
         denom = math.sqrt(pt * (1.0 - pt))
         if denom > 0.0:
@@ -201,24 +203,77 @@ def summarise(cells: dict) -> dict:
 
 # ---------------------------------------------------------------- the null
 def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
-    """Permutation null. Seeded: the same rows and seed give the same numbers."""
+    """Permutation null. Seeded: the same rows and seed give the same numbers.
+
+    ★ REPORTS THE CELLS ACTUALLY SCORED, NOT THE CELLS SELECTED. `score_cells`
+    drops any cell with fewer than two bets, so `len(select(rows))` overstates
+    m whenever a league is thin. I reported 29 while computing on 7 and
+    concluded from it that Higher Criticism was dead — at m=7,
+    `int(0.25 * m) == 1`, so HC examined a SINGLE term and of course barely
+    moved. The statistic was fine; the m was a fiction. Effective m is now
+    measured per replicate and asserted constant, because it is the parameter
+    every one of these statistics is read against.
+    """
     chosen = select(rows)
     rng = random.Random(seed)
     draws = {k: [] for k in ("max_abs_t", "n_excluding_zero",
-                         "best_net_per_1", "var_t", "hc")}
+                             "best_net_per_1", "var_t", "hc")}
+    per_cell: dict[str, list[float]] = defaultdict(list)
     frozen_rows = 0
+    eff_m = set()
     for _ in range(reps):
         ys, frozen = permute_settlements(rows, rng)
         frozen_rows = frozen
-        s = summarise(score_cells(rows, ys, chosen))
+        cells = score_cells(rows, ys, chosen)
+        eff_m.add(len(cells))
+        for name, c in cells.items():
+            per_cell[name].append(abs(c["t"]))
+        s = summarise(cells)
         for k in draws:
             draws[k].append(s[k])
     return {
-        "reps": reps, "seed": seed, "cells": len(chosen), "rows": len(rows),
-        "frozen_rows": frozen_rows,
+        "reps": reps, "seed": seed,
+        "cells_selected": len(chosen),
+        "cells_scored": (sorted(eff_m)[-1] if eff_m else 0),
+        "cells_scored_varied": len(eff_m) > 1,
+        "rows": len(rows), "frozen_rows": frozen_rows,
+        "per_cell_abs_t": {k: sorted(v) for k, v in per_cell.items()},
         "quantiles": {k: _q(v) for k, v in draws.items()},
         "draws": draws,
     }
+
+
+def empirical_hc(cells: dict, null: dict, alpha0: float = 0.25) -> float:
+    """HC on EMPIRICAL p-values — each cell's |t| ranked against its OWN
+    permutation draws.
+
+    The principled form inside a permutation framework, and it removes the
+    whole family of failures at once: p >= 1/(reps+1) by construction, so
+    there is nothing to explode, nothing to skip below a floor, and no
+    denominator to clamp — which is what gave the clamped version a ceiling at
+    alpha0*m that the permutation could sit on. Calibrated by the same
+    machinery that produces the null, rather than by normal theory that the
+    cluster-robust t does not obey at finite G.
+    """
+    import bisect
+
+    reps = null["reps"]
+    ps = []
+    for name, c in cells.items():
+        draws = null["per_cell_abs_t"].get(name)
+        if not draws:
+            continue
+        at_least = len(draws) - bisect.bisect_left(draws, abs(c["t"]))
+        ps.append((1 + at_least) / (reps + 1))
+    m = len(ps)
+    if m == 0:
+        return 0.0
+    ps.sort()
+    best = 0.0
+    for i, pi in enumerate(ps[:max(2, int(alpha0 * m))], start=1):
+        denom = math.sqrt(max(1e-12, pi * (1.0 - pi)))
+        best = max(best, math.sqrt(m) * (i / m - pi) / denom)
+    return best
 
 
 def _q(xs) -> dict:
@@ -365,10 +420,13 @@ def report(rows, *, reps: int, seed: int, lo: float, hi: float,
     null = null_distribution(rows, reps=reps, seed=seed)
     q = null["quantiles"]
     observed = summarise(score_cells(rows, [r["y"] for r in rows]))
-    ind = calibration_independent(max(2, null["cells"]))
+    ind = calibration_independent(max(2, null["cells_scored"]))
 
     L = [
-        f"rows {null['rows']:,}  cells {null['cells']}  reps {reps}  seed {seed}",
+        f"rows {null['rows']:,}  reps {reps}  seed {seed}",
+        f"cells: {null['cells_scored']} SCORED of {null['cells_selected']} "
+        f"selected — m is the scored count, and every statistic below is read "
+        f"against it",
         f"frozen rows (unpermutable, no null variance): {null['frozen_rows']:,}",
         "",
         "NULL — the scan with the edge removed and everything else intact",
