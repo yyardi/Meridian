@@ -37,6 +37,10 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 
+import structlog
+
+log = structlog.get_logger(__name__)
+
 #: Polymarket abbreviation -> ESPN abbreviation.
 #: Only two genuinely differ; the rest are a case change. Listed in full
 #: anyway, because an explicit table fails loudly when a franchise is added
@@ -227,12 +231,25 @@ def orientation_from_scoreboard(
 
     Keyed by (unordered team pair, UTC date) so it tolerates the slug-order
     inconsistency entirely.
+
+    A day whose scoreboard fetch fails is SKIPPED AND SAID SO. It used to be a
+    bare `except Exception: continue`, which made a failed fetch and a day with
+    no games identical from outside -- and the cost landed somewhere misleading:
+    a game with no orientation is skipped by `predictions._predict_one` as
+    `skipped_unknown_team`, so an ESPN outage was reported as a team-mapping
+    problem and pointed whoever read it at the wrong table. The skip itself is
+    correct (the alternative is guessing orientation from slug order, which
+    flips the sign on half the games); only its visibility was missing.
     """
     out: dict[tuple[frozenset[str], dt.date], GameOrientation] = {}
+    failed: list[str] = []
     for day in dates:
         try:
             board = espn_client.get_scoreboard(day.strftime("%Y%m%d"))
-        except Exception:
+        except Exception as exc:   # noqa: BLE001 - one bad day must not lose the rest
+            failed.append(day.isoformat())
+            log.warning("orientation_scoreboard_failed", day=day.isoformat(),
+                        error=str(exc)[:200])
             continue
         for event in board.get("events", []):
             comps = event.get("competitions") or []
@@ -260,6 +277,14 @@ def orientation_from_scoreboard(
                 game_date=game_dt,
                 first_is_home=False,   # caller sets this against its own slug
             )
+    # Expected vs observed, at the site that knows both. `games=N` alone is
+    # unreadable: it looks the same whether every day answered or half of them
+    # failed, and every game on a failed day is silently unpredictable.
+    log.info("orientation_map_built", days_requested=len(dates),
+             days_failed=len(failed), failed_days=failed, games=len(out),
+             # A partial map is not a small slate. Named so the caller's
+             # `skipped_unknown_team` count can be read against it.
+             partial=bool(failed))
     return out
 
 
