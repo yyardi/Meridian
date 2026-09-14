@@ -359,6 +359,47 @@ What IS established, and it is worth having: the venue settles Setka Cup markets
 settlement path reads them — 17 for 17 through `core/settlements.py`. The end-to-end route
 from board sweep to settled outcome works on this family.
 
+★★ **KALSHI IS 1,000× BIGGER THAN WHAT WE RECORD, AND THE SAMPLE-SIZE PROBLEM
+IS SOLVED THERE.** Survey 2026-09-14 (raw under scratchpad/kalshi/). The public
+API exposes **14,018 series across 20 categories, 11,697 open events, 107,599
+open markets**. We record football winner markets on a 72h window — about 0.1%
+of it, and the 0.1% that is worst for us.
+
+| lead | settled events/week | spread | maker fee | why |
+|---|---:|---:|---|---|
+| **ITF Women's + ATP Challenger tennis** | **833** | 1.0¢ | **none** | 7× the outcomes of our entire CFB tape, two-sided on 23 of 25 books |
+| Crypto 15-min + hourly ladders | 664 + 164 | 1.0–2.0¢ | none | continuous settled outcomes, 96/day, forever |
+| Weather (rain, city highs) | 7 per series | 1–2¢ | none | no Polymarket equivalent; settles on a public forecast release |
+| Mentions / Entertainment | 2–27 | 1–4¢ | none | $99k of live maker incentives; plausibly the least sophisticated crowd on the venue |
+
+**Three facts that change what is possible:**
+
+1. **Maker fees apply to only 160 of 14,018 series — and every series we currently
+   record is in that 160.** The high-volume tennis, weather, crypto and mentions
+   series carry **no maker fee at all**. The making case was killed on the one
+   corner of this venue where making is most expensive.
+2. **2,469 markets run live Liquidity Incentive Programs with $373,187 in pools**,
+   paying makers to rest two-sided quotes whether or not they fill. There is no
+   Polymarket analogue. `GET /incentive_programs` is public and we did not know
+   it existed.
+3. **Fee rounding is better than recorded**: not "round up to the cent" but
+   `ceil_6dp` plus a per-order accumulator that rebates the overpayment, with a
+   $0.0001 grid for direct members. Materially cheaper at small edges.
+
+**Do NOT move football to Kalshi.** Measured same-instant: Kalshi is never
+tighter at the touch, Polymarket quotes a half-cent tick on NFL where Kalshi is
+on whole cents, Polymarket is far better on far-dated CFB (3¢ vs 25¢), and those
+are exactly the series that carry maker fees. Keep the 72h pregame Kalshi
+recording as the cross-venue reference it already is.
+
+**★ One number is blocked and it decides whether making is alive here.**
+`docs/math/the-rebate.md` asserts a Kalshi maker fee of 0.07·p(1−p) ≈ 1.75¢ and
+concludes making is "structurally impossible". Third-party sources say
+0.0175·p(1−p) ≈ 0.44¢ — **4× apart**. The venue's own fee schedule is behind a
+Cloudflare block, and adjacent sources have burned this project twice. **Someone
+with a Kalshi account must read the PDF.** Irrelevant for the four leads above,
+which carry no maker fee — but it decides the making question everywhere else.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
