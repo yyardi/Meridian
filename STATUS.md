@@ -550,7 +550,50 @@ on an EXPLAIN or a unit test rather than on a real unattended run:** does
 materially under tonight's two hours (the single-pass query), and does CELLS_JSON
 parse (the int64 fix).
 
-★★★★★ **REPLICATED IN-PLAY ON A POPULATION 790× LARGER. The pregame conclusion
+★★★★★ **THE CAPABILITY STATEMENT, CORRECTED TWICE AND NOW MEASURED — THE
+PROGRAMME CANNOT RULE OUT THE EDGE SIZES WORTH TRADING.**
+
+| population | distinct game-clusters | pooled bound | hurdle | short by |
+|---|---:|---:|---:|---:|
+| pregame | **263** | **6.04¢** | 2.1¢ | 2.9× |
+| in-play | **140** | **8.28¢** | 3.0¢ | 2.8× |
+
+**Even fully pooled — one statistic, no multiplicity at all — the programme is
+about three times short of its own hurdle.** And 263 is an UPPER bound on
+effective clusters: a pregame game appears in a median of 16 cells and up to 144,
+so the true figure is worse (7.2¢ at 70% of union, 8.6¢ at 50%).
+
+> **The gap between the bound and the hurdle — 2.1¢ to 6.0¢ — is exactly the
+> range a real but modest edge would occupy. The programme cannot rule out
+> precisely the effect sizes that would be worth trading.**
+
+**Two corrections that produced this, both from the author of the original
+figure.** The registered 5–15¢ detection bound was **projected, not measured** —
+per-cell G was assumed rather than counted, and the real grid slices far finer.
+Measured per-cell it is **27–40¢**. A projected G is exactly the population error
+this programme exists to catch, committed inside the document that defines the
+catching. And my "790× larger population" for the in-play scan was true of rows
+and false of information: **32,402 ticks carry 1,738 effective clusters against
+pregame's 19,316 rows carrying 8,371** — 1.7× the rows, one fifth the information.
+
+★ **THE PER-CELL ARM IS DEAD, NOT WEAK.** At G_eff 27.1 pregame and 12.1 in-play,
+no cell in either population could clear a nomination at ANY achievable effect
+size (they would need 27¢ and 40¢), and in-play fails the registered G≥25 floor
+outright. **So the screen/confirm design has no stage-1 output at these cell
+sizes, and computing per-cell p-values was measuring a branch that cannot fire** —
+the same defect as the retired decision-rule clause, one level up.
+
+> **The entire pregame tape supports 1.87 decision-grade cells. It was cut into
+> 309. In-play supports 0.79. It was cut into 144.**
+
+**What survives, and why:** the headline negative was always a POOLED statistic
+across all cells, never a claim about any one of them, and pooling is precisely
+why it has force. Zero cells at p<0.01 against 2.2 expected stands. The honest
+headline is **"no edge above ~6¢"**, not "the venue is efficient". To become
+conclusive needs **8.3× more distinct games pregame and 7.6× in-play** — 2,178
+and 1,067 against 263 and 140.
+
+★★★★★ **REPLICATED IN-PLAY (on rows, not on information). The pregame conclusion
 holds on continuously moving prices, and the expectation was on the record before
 the data was seen.** 296,964 sampled in-game ticks (cfb 212,643, nfl 65,308,
 wnba 17,739, mlb 228):
