@@ -258,6 +258,38 @@ kept.
 **The `EVENT_LIMIT` change stays.** It was a fix for a problem I had not established, but the
 default of 50 against a board that returns 49 is a margin of one, and it costs nothing.
 
+## 0h. A migration defect with a possible footprint in prod data. Not established.
+
+7d swept for the pipeline-status shape and found five real sites in
+`deploy/aws/merge_history.sh`, a data migration. The defect is not the one the sweep was aimed
+at: `set -o pipefail` was already on, so a psql failure was reported correctly. **The logic then
+mapped that failure onto "the table is not there."** An existing remap looked absent and was
+rebuilt; a present parent looked absent and its remap was silently skipped. A partial migration
+that reports success. All five now go through one `table_exists` that aborts when it cannot ask.
+
+`set -e` protects none of them, and I verified that directly rather than accepting it: a failing
+function inside an `if` condition takes the else branch and execution continues, while `V=$(f)`
+does abort. That is why the defect clustered in `&&`, `||` and `if`.
+
+**The possible footprint, which I am recording as a question and not a finding.** The remap tables
+exist on prod with data:
+
+| table | rows | parent rows |
+|---|---:|---:|
+| `remap_predictions` | 121,185 | 121,185 |
+| `remap_shadow_orders` | 14,315 | 14,315 |
+| `remap_pulse_decisions` | **0** | 19,333 |
+
+Two remaps match their parent exactly. The third is empty against a parent with 19,333 rows whose
+oldest is 2026-08-18, three days before the migration script's own file date. That is the shape
+the skip defect would leave.
+
+**What stops it being a finding:** the file's date is when it was written, not when it ran. If the
+migration ran before 2026-08-18 the empty remap is correct and there is nothing here. Nothing in
+the repository reads `remap_pulse_decisions` by name, so the consequence, if any, is unremapped
+ids inside merged PULSE history rather than a live breakage, and PULSE has been paused since
+08-31. Handed to 7d with that framing.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
