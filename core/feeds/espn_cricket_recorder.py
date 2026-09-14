@@ -25,7 +25,7 @@ import time
 
 import sqlalchemy as sa
 import structlog
-from sqlalchemy.dialects.postgresql import BIGINT, JSONB
+from sqlalchemy.dialects.postgresql import BIGINT, JSONB, insert as pg_insert
 
 from core import heartbeat as hb
 from core.config import ESPNConfig
@@ -146,8 +146,22 @@ class CricketRecorder:
         new = merge(self._last[eid], row, now)
         if new is None:
             return 0
+        # UPSERT, not insert. A cycle looks at one instant twice: the header sweep
+        # files a row, then poll_summary files the richer view of the SAME match at
+        # the SAME `now`, and (event_id, captured_at) is unique. On 2026-09-14 that
+        # raised UniqueViolation and run_forever logged espn_cricket_cycle_failed
+        # and threw the whole cycle away -- including, on a match at the toss, the
+        # one observation that cannot be backfilled.
+        #
+        # Nudging the timestamp would have fixed the error by fabricating an
+        # observation time. The constraint is right: an event has one state per
+        # instant. The summary view is strictly richer than the header view, so
+        # the later write wins and the table keeps one row per event per instant.
         with self._Session() as s:
-            s.execute(sa.insert(EVENTS).values(**new))
+            stmt = pg_insert(EVENTS).values(**new)
+            s.execute(stmt.on_conflict_do_update(
+                index_elements=["event_id", "captured_at"],
+                set_={k: stmt.excluded[k] for k in new if k not in ("event_id", "captured_at")}))
             s.commit()
         self._last[eid] = {**new, "raw": None}
         return 1
