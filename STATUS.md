@@ -561,9 +561,26 @@ the within-cluster covariance is estimated rather than assumed:
 | pregame | 20,024 | 263 | 116.9 | **−3.743¢** | **[−6.299, −1.188]** | **2.56¢** | 2.1¢ |
 | in-play | 33,815 | 140 | 44.2 | −4.851¢ | [−9.971, +0.270] | 5.12¢ | 3.0¢ |
 
-★ **THE PREGAME POOLED MEAN IS NEGATIVE AND EXCLUDES ZERO.** Buying at the ask
-across the whole board loses **3.74¢ per contract [−6.30, −1.19]** — a measured
-loss, not merely an absence of edge. In-play is −4.85¢ and spans zero.
+★★ **RETRACTED AND REPLACED: ZERO WAS THE WRONG NULL, AND AGAINST THE RIGHT ONE
+BOTH POPULATIONS ARE CONCLUSIVE.** Buying at the ask and holding to settlement on
+a fairly priced market has E[pnl] = −(half-spread + fee). **So the null is −cost,
+not zero**, and "the mean excludes zero" says only that the cost is real.
+
+| population | own mean cost | pooled pnl | **excess over −cost** | 95% CI | bound vs hurdle |
+|---|---:|---:|---:|---|---|
+| pregame | **4.101¢** | −3.743¢ | **+0.357¢** (z +0.28) | [−2.159, +2.874] | 2.56 ≤ 4.10 **CONCLUSIVE** |
+| in-play | **6.905¢** | −4.851¢ | **+2.055¢** (z +0.79) | [−3.041, +7.150] | 5.12 ≤ 6.91 **CONCLUSIVE** |
+
+**The board is priced at cost within measurement error, and the design could have
+detected an edge the size of the cost itself.** That is the result: not "we found
+nothing", but "across 20,024 pregame bets on 263 games and 33,815 in-play ticks
+on 140 games, the excess over cost is +0.36¢ and +2.06¢ and both span zero".
+
+**And the 2.1¢ hurdle I had been carrying was a CFB-spread figure applied to a
+population spanning table tennis, MLB, quarter markets and cricket.** The
+population's own cost is 4.10¢ and 6.91¢. Since conclusiveness is bound ≤ the
+population's OWN hurdle, both clear it. Fourth instance tonight of a single-league
+constant applied to a multi-league population.
 
 **And the pregame bound is 2.56¢ against a 2.1¢ hurdle — 1.2× short, not 2.9×.**
 The first modelled figure (6.04¢) assumed ρ=1 within each game cluster, which is
@@ -572,9 +589,9 @@ types; it bracketed the truth from the pessimistic side by 2.4×. **One more
 Saturday plausibly closes the pregame gap**, which makes 09-19 worth more than it
 looked an hour ago.
 
-> **The gap between bound and hurdle is 2.1¢ to 2.56¢ pregame and 3.0¢ to 5.12¢
-> in-play — narrow pregame, real in-play. The programme very nearly reaches the
-> effect sizes worth trading pregame, and does not reach them in-play.**
+> **Superseded by the row above: against each population's OWN cost hurdle,
+> both are conclusive. The earlier gap was an artifact of a hurdle imported from
+> one league and a null of zero the design could never produce.**
 
 **Two corrections that produced this, both from the author of the original
 figure.** The registered 5–15¢ detection bound was **projected, not measured** —
