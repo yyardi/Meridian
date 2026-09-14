@@ -826,6 +826,33 @@ with. 7d widened the matcher to walk locals, re-ran the mutation, found it still
 reverted the widening as dead complexity. Second guard they wrote today that could not fire, and
 both times the mutation noticed and reading did not.
 
+## 0y. MLB reaches the power floor this week, and it is the only league that will
+
+First pitch tonight **22:40Z**. Measured at 21:52Z:
+
+| | |
+|---|---|
+| MLB games starting in the next 12h | **10**, all 10 with a pre-game close already recorded |
+| MLB games on the board with live quotes | 49, spanning several days |
+| MLB rows on tape | 16,377, from 6,081 this morning |
+| settled MLB games to date | **1** |
+
+**So tonight takes MLB from 1 settled game to about 11.** At roughly 10-15 a night it clears the
+paper book's G ≥ 25 floor around **Wednesday** and reaches 100 games inside a week. Nothing else
+in the programme accrues at that rate: CFB gives ~117 games a week but only on Saturdays, NFL gives
+15, WNBA is 5 games on Thursday and cricket is two settled matches in total.
+
+**That is the whole reason the operator asked for MLB**, and it is the first forward-looking number
+today that is not a defect. The six MLB strategies registered at 15:00Z -- registered while exactly
+one game had settled, so no outcome could have chosen them -- get their first real tape tonight and
+a properly powered read within the week.
+
+**Caution, stated now rather than when the number arrives.** Ten games is ten clusters, not ten
+independent observations per market type: a full-game winner, a full-game spread and a first-five
+spread on the same game all move with the same result. The G that matters is the game count, which
+is the mistake that made 525 Kalshi markets look like a sample and 547 band markets look like a
+population.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
