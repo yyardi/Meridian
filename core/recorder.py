@@ -258,6 +258,16 @@ class Recorder:
                 # A real board landing exactly on the limit is possible and
                 # rare; a truncated one always does.
                 truncated=(obs is not None and obs == limit),
+                # `truncated` compares a POST-filter count to a PRE-fetch limit,
+                # so it reads False whenever the sweep fetched `limit` events and
+                # dropped even one. On 2026-09-14 MLB logged observed=49 against
+                # limit=50 and truncated=false, 32 events short of the listing:
+                # the flag built to catch the default-50 truncation was silent in
+                # exactly the case it exists for. Fixing the comparison needs the
+                # pre-filter count, which this method does not have. Logging the
+                # limit costs nothing and lets a reader see 49 against 50, which
+                # is the fact the boolean was hiding.
+                limit=limit,
             )
 
     def _record_market(

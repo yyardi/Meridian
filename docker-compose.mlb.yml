@@ -29,3 +29,11 @@ services:
       DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       MERIDIAN_LEAGUE: mlb
       MERIDIAN_RPS: "3"
+      # The default is 50 and the venue listed 81 MLB events on 2026-09-14 while
+      # this recorder observed 49 -- a 40% shortfall sitting one under the limit.
+      # The same default was recording a fifth of the table-tennis board. Raised
+      # here rather than in core so the change is visible per league; if observed
+      # does not move off 49 after the restart then the limit was NOT the cause
+      # and the shortfall is upstream of it, which is the point of changing one
+      # thing. Board coverage is logged every cycle as `board_coverage`.
+      MERIDIAN_EVENT_LIMIT: "500"
