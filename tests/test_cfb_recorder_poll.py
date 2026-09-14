@@ -160,10 +160,15 @@ class _Board:
     is the whole defect.
     """
 
-    def __init__(self, states: dict, on_board: set | None = None):
+    def __init__(self, states: dict, on_board: set | None = None,
+                 scores: dict | None = None):
         self.states = states                       # game_id -> (state, clock)
         self.on_board = set(states) if on_board is None else set(on_board)
         self.polled: list[str] = []
+        #: game_id -> (home, away). ESPN publishes a score and corrects it
+        #: DOWNWARD after `post`, which is why the exit needs a confirming
+        #: poll; a fake that cannot change its score cannot test that.
+        self.scores = dict(scores or {})
 
     def _site(self, what: str) -> str:
         return f"https://example.invalid/{what}"
@@ -177,20 +182,23 @@ class _Board:
         gid = (params or {}).get("event")
         self.polled.append(gid)
         st, clk = self.states[gid]
+        hs, as_ = self.scores.get(gid, (21, 17))
         return {
             "header": {"competitions": [{
                 "status": {"type": {"state": st}, "period": 4,
                            "displayClock": clk},
                 "competitors": [
-                    {"homeAway": "home", "id": "1", "timeoutsUsed": 0, "score": "21"},
-                    {"homeAway": "away", "id": "2", "timeoutsUsed": 0, "score": "17"},
+                    {"homeAway": "home", "id": "1", "timeoutsUsed": 0,
+                     "score": str(hs)},
+                    {"homeAway": "away", "id": "2", "timeoutsUsed": 0,
+                     "score": str(as_)},
                 ]}]},
             "drives": {"current": {"team": {"id": "1"}, "plays": [
                 {"id": f"p-{gid}-{st}-{clk}-{len(self.polled)}",
                  "period": {"number": 4}, "clock": {"displayValue": clk},
                  "start": {"team": {"id": "1"}, "down": 1, "distance": 10,
                            "yardsToEndzone": 50},
-                 "homeScore": 21, "awayScore": 17}]}},
+                 "homeScore": hs, "awayScore": as_}]}},
             "winprobability": [],
         }
 
@@ -230,9 +238,89 @@ def test_a_game_at_in_with_a_zero_clock_is_still_polled(monkeypatch):
     assert out["live"] == 0 and out["settling"] == 1
 
 
-def test_a_post_observation_stops_the_polling(monkeypatch):
-    """And it must STOP, on the state field rather than a timer, so a finished
-    game costs nothing further."""
+def test_a_single_post_does_not_retire_the_game(monkeypatch):
+    """★ `post` IS COMPLETE BUT NOT STABLE. Measured 2026-09-14: 12 of 105 CFB
+    post games carry a post score BELOW a score seen earlier in the game, and
+    the score can still move AFTER the first `post` is observed — 2 of the 37
+    games where that is observable, by up to 9 points on the total. (The 112
+    of 114 that "agree" are mostly a row compared with itself: the median game
+    has exactly ONE post row.)
+
+    So one `post` is not the exit.
+    """
+    board = _Board({"401": ("in", "12:00")})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()
+
+    board.on_board.clear()
+    board.states["401"] = ("post", "0:00")
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
+    out = r.cycle()
+
+    assert "401" not in r._final, "retired on a single, unconfirmed post"
+    assert "401" in r._post_pending
+    assert out["settling"] == 1
+
+
+def test_a_confirmed_post_retires_the_game(monkeypatch):
+    """Two `post` observations SETTLE_CONFIRM_SECONDS apart with the same
+    score, and then it costs nothing further."""
+    board = _Board({"401": ("in", "12:00")})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()
+
+    board.on_board.clear()
+    board.states["401"] = ("post", "0:00")
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
+    r.cycle()                                    # first post
+    assert "401" not in r._final
+
+    now[0] += rec.SETTLE_CONFIRM_SECONDS + 1
+    r.cycle()                                    # confirming poll
+    assert "401" in r._final, "a confirmed post did not retire the game"
+
+    settled = len(board.polled)
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_CONFIRM_SECONDS * 10
+    out = r.cycle()
+    assert len(board.polled) == settled, "kept polling a game already final"
+    assert out["settling"] == 0
+
+
+def test_a_post_score_that_moves_restarts_the_confirmation(monkeypatch):
+    """The correction is the point. ESPN publishes a score and corrects it
+    DOWNWARD — in 9 of the 12 measured cases the maximum home score and the
+    maximum away score never co-existed in any row, so the earlier value was
+    never a real scoreline. A move restarts the window rather than failing it,
+    and the CORRECTED score is what retires the game.
+    """
+    board = _Board({"401": ("in", "12:00")}, scores={"401": (31, 17)})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()
+
+    board.on_board.clear()
+    board.states["401"] = ("post", "0:00")
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
+    r.cycle()                                    # post at 31-17
+
+    board.scores["401"] = (24, 17)               # ESPN takes 7 points back
+    now[0] += rec.SETTLE_CONFIRM_SECONDS + 1
+    r.cycle()
+    assert "401" not in r._final, "retired on a score that had just moved"
+    assert r._post_pending["401"][1] == (24, 17)
+
+    now[0] += rec.SETTLE_CONFIRM_SECONDS + 1
+    r.cycle()
+    assert "401" in r._final
+    assert r._observed_score["401"] == (24, 17), "kept the pre-correction score"
+
+
+def test_a_revert_to_in_before_confirmation_starts_over(monkeypatch):
+    """ESPN reverts: one game went post -> in -> post with the `in` row 9.75
+    hours after the first post. A revert before confirmation must clear the
+    pending post, not confirm against it."""
     board = _Board({"401": ("in", "12:00")})
     now = [1000.0]
     r = _rec(board, monkeypatch, now)
@@ -242,13 +330,42 @@ def test_a_post_observation_stops_the_polling(monkeypatch):
     board.states["401"] = ("post", "0:00")
     now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
     r.cycle()
-    assert "401" in r._final, "a `post` observation did not retire the game"
+    assert "401" in r._post_pending
 
-    settled = len(board.polled)
-    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS * 10
-    out = r.cycle()
-    assert len(board.polled) == settled, "kept polling a game already final"
-    assert out["settling"] == 0
+    board.states["401"] = ("in", "0:00")         # back under review
+    now[0] += rec.SETTLE_CONFIRM_SECONDS + 1
+    r.cycle()
+    assert "401" not in r._post_pending, "confirmed against a reverted game"
+    assert "401" not in r._final
+
+
+def test_confirmation_costs_one_extra_poll_not_five(monkeypatch):
+    """A game awaiting confirmation is due at SETTLE_CONFIRM_SECONDS, not at
+    SETTLE_INTERVAL_SECONDS. At 60s settle and 300s confirm, polling at the
+    settle cadence would cost five extra requests per game instead of one."""
+    board = _Board({"401": ("in", "12:00")})
+    now = [1000.0]
+    r = _rec(board, monkeypatch, now)
+    r.cycle()
+
+    board.on_board.clear()
+    board.states["401"] = ("post", "0:00")
+    now[0] += rec.SCOREBOARD_INTERVAL + rec.SETTLE_INTERVAL_SECONDS + 1
+    r.cycle()                                    # first post
+    after_first = len(board.polled)
+
+    # Four settle intervals pass, short of the confirm interval: no poll.
+    for _ in range(4):
+        now[0] += rec.SETTLE_INTERVAL_SECONDS + 1
+        r.cycle()
+    assert len(board.polled) == after_first, (
+        "polled at the settle cadence while awaiting confirmation")
+    assert "401" not in r._final
+
+    now[0] += rec.SETTLE_CONFIRM_SECONDS + 1
+    r.cycle()
+    assert len(board.polled) == after_first + 1, "more than one extra request"
+    assert "401" in r._final
 
 
 def test_a_game_that_never_posts_is_abandoned_loudly(monkeypatch):

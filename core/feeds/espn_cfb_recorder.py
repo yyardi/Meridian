@@ -85,11 +85,47 @@ IDLE_INTERVAL = 300.0
 #: not a terminal signal (it reads "15:00" on a game already 21-0).
 SETTLE_INTERVAL_SECONDS = 60.0
 
-#: Bounded give-up. A game that never posts — abandoned, ESPN dropping it,
-#: a bad id — cannot be polled forever. Three hours after it LEAVES the board
-#: (not after kickoff), it is abandoned LOUDLY: a silent give-up is what
-#: produced this defect, so the log names the game and how long it waited.
+#: Bounded give-up, and THREE HOURS NOW HAS A REASON. A game that never
+#: posts — abandoned, ESPN dropping it, a bad id — cannot be polled forever.
+#: Three hours after it LEAVES the board (not after kickoff), it is abandoned
+#: LOUDLY: a silent give-up is what produced this defect, so the log names the
+#: game and how long it waited.
+#:
+#: Why three hours is generous rather than arbitrary (measured 2026-09-14, and
+#: the obvious measurement is the WRONG one). Among games that DID post, the
+#: delay from the last `in` row to the first `post` row is a median 0.5
+#: minutes, max 0.7 — but that population is selected on having posted WHILE
+#: POLLING CONTINUED, so it cannot bound the games that did not. The answer
+#: comes from the stuck games instead: of 81 stuck at `in`, 69 were at period
+#: 4 with the clock between 0:00 and 2:46 over a median observed span of 3.28
+#: hours — a full college football game — plus 6 NFL at period 4 (0:00–0:34)
+#: and one in overtime at 0:00. They are abandoned AT THE WHISTLE, not
+#: mid-game, so the gap to bridge is minutes and three hours is orders of
+#: magnitude of margin.
 SETTLE_MAX_SECONDS = 3 * 3600.0
+
+#: A CONFIRMING POLL, BECAUSE `post` IS COMPLETE BUT NOT STABLE. Over 114
+#: post games the scores are complete — zero NULLs, zero 0-0, zero ties — but
+#: 12 of 105 CFB post games (11.4%) carry a post score BELOW a score seen
+#: earlier in the game, and the score can still move AFTER the first `post` is
+#: observed. The naive check says 112 of 114 games have the same score at
+#: first and last post, and that number is mostly VACUOUS: the median game has
+#: exactly ONE post row, so for 77 of 114 it compares a row with itself and
+#: cannot fail. Restricted to the 37 games where it CAN fail (34 with two post
+#: rows, 2 with three, 1 with four), 2 changed — 5.4% — by up to 9 points on
+#: the total.
+#:
+#: So the exit is not the first `post`: it is a `post` whose SCORE is
+#: unchanged across two observations at least this far apart. A change
+#: restarts the window. The window is five minutes rather than the 1.3 minutes
+#: those two changes spanned, because 1.3 minutes is WHEN WE LOOKED and not
+#: when ESPN corrected — the correction latency is unmeasured, and the
+#: observed span is an artefact of the poll cadence.
+#:
+#: Cost: ONE extra request per game in the common case, because a game
+#: awaiting confirmation is due at this interval rather than at
+#: SETTLE_INTERVAL_SECONDS.
+SETTLE_CONFIRM_SECONDS = 300.0
 
 #: US Eastern offset for scoreboard date math — ESPN scoreboards are keyed by
 #: the US-local date, so a late kickoff lands on the previous UTC day.
@@ -297,12 +333,39 @@ class CfbLiveRecorder:
         #: Games seen at `in` at least once, minus those observed at `post`.
         #: The settle clock starts when a game LEAVES the board, not at kickoff.
         self._seen_live: set[str] = set()
+        #: Games whose `post` has been CONFIRMED. A DECISION, not an
+        #: accident of the exit condition: once confirmed we do not re-open a
+        #: game through the settle path. ESPN does revert — one game went
+        #: post -> in -> post with the `in` row 585.5 minutes (9.75 hours)
+        #: after the first post, and another was re-observed across a
+        #: 1,335-minute post window — so a three-hour give-up could never
+        #: cover it anyway. What makes the choice safe rather than convenient:
+        #: across the games re-observed over those long spans (586 and 1,335
+        #: minutes) the score did NOT change, so the measured rate of LATE
+        #: score corrections is zero, while an unbounded re-open reintroduces
+        #: the poll-forever problem this bound exists to prevent. If ESPN puts
+        #: a confirmed game back on the LIVE board we follow it again as live;
+        #: we simply do not chase it once it has left twice.
+        #:
+        #: Nothing downstream re-reads a settled game today: consumers read
+        #: this table, which keeps every poll's row, and no consumer
+        #: aggregates scores across rows (the only settlement derivation in
+        #: the repo, cfb/run_making_touch.py, reads espn_cfb_backfill_games
+        #: instead). If one ever does, it must take the LAST `post` row — see
+        #: the CfbGameState docstring.
         self._final: set[str] = set()
         self._left_at: dict[str, float] = {}
         self._settle_polled: dict[str, float] = {}
         #: Last `state` each poll observed, recorded rather than returned so
         #: poll_game keeps its (plays, wp, state_rows) signature.
         self._observed: dict[str, str | None] = {}
+        #: (home_score, away_score) as of the last poll — the confirming
+        #: poll compares these, not the state flag.
+        self._observed_score: dict[str, tuple[int | None, int | None]] = {}
+        #: game_id -> (monotonic when this score was first seen at `post`,
+        #: that score). Cleared when the score moves, which restarts the
+        #: confirmation window.
+        self._post_pending: dict[str, tuple[float, tuple[int | None, int | None]]] = {}
 
     def _board_dates(self, now: dt.datetime) -> list[str]:
         et = now.astimezone(_ET)
@@ -373,6 +436,8 @@ class CfbLiveRecorder:
                       error=str(exc))
             state = None
         self._observed[game_id] = (state or {}).get("state")
+        self._observed_score[game_id] = (
+            (state or {}).get("home_score"), (state or {}).get("away_score"))
         home = state.get("home") if state else None
         away = state.get("away") if state else None
         plays = parse_plays(payload, game_id, home, away)
@@ -418,10 +483,35 @@ class CfbLiveRecorder:
                 self._left_at.pop(gid, None)
                 self._settle_polled.pop(gid, None)
                 continue
-            if mono - self._settle_polled.get(gid, float("-inf")) >= \
-                    SETTLE_INTERVAL_SECONDS:
+            # A game awaiting CONFIRMATION is due at the confirm interval,
+            # not the settle interval: that is what makes the confirming poll
+            # one extra request per game rather than five.
+            due = (SETTLE_CONFIRM_SECONDS if gid in self._post_pending
+                   else SETTLE_INTERVAL_SECONDS)
+            if mono - self._settle_polled.get(gid, float("-inf")) >= due:
                 out.append(gid)
         return out
+
+    def _confirm_final(self, gid: str, mono: float) -> bool:
+        """True when `post` has been observed twice, SETTLE_CONFIRM_SECONDS
+        apart, with the SAME score.
+
+        A score that moves restarts the window rather than failing it: ESPN
+        publishes and corrects, and the corrected value is the one we want.
+        """
+        if self._observed.get(gid) != "post":
+            self._post_pending.pop(gid, None)   # reverted; start over
+            return False
+        score = self._observed_score.get(gid, (None, None))
+        first_at, first_score = self._post_pending.get(gid, (None, None))
+        if first_at is None or score != first_score:
+            self._post_pending[gid] = (mono, score)
+            if first_at is not None:
+                log.info("cfb_post_score_moved", league=self.league,
+                         game_id=gid, was=first_score, now=score,
+                         after_s=round(mono - first_at))
+            return False
+        return mono - first_at >= SETTLE_CONFIRM_SECONDS
 
     def cycle(self) -> dict:
         now = dt.datetime.now(dt.timezone.utc)
@@ -442,12 +532,17 @@ class CfbLiveRecorder:
                     self._settle_polled[gid] = mono
             # THE STATE FIELD DECIDES, NOT THE CLOCK. A game sits at `in` with
             # 0:00 through reviews, between quarters and all of overtime.
-            if self._observed.get(gid) == "post":
+            # And a CONFIRMED post decides, not the first one: the score moves
+            # after the first `post` in 2 of the 37 games where that is
+            # observable (see SETTLE_CONFIRM_SECONDS).
+            if self._confirm_final(gid, mono):
                 self._final.add(gid)
                 self._seen_live.discard(gid)
                 self._left_at.pop(gid, None)
                 self._settle_polled.pop(gid, None)
-                log.info("cfb_game_final", league=self.league, game_id=gid)
+                self._post_pending.pop(gid, None)
+                log.info("cfb_game_final", league=self.league, game_id=gid,
+                         score=self._observed_score.get(gid))
 
         log.info("espn_cycle", league=self.league, live_games=len(live),
                  settling_games=len(settling),
