@@ -151,9 +151,15 @@ ko AS (
   UNION ALL
   SELECT game_id, min(wall_clock) FROM espn_cfb_live_plays WHERE wall_clock IS NOT NULL
     AND game_id NOT IN (SELECT game_id FROM espn_cfb_backfill_plays WHERE wall_clock IS NOT NULL) GROUP BY 1)
-SELECT m.venue_game_id vg, m.espn_game_id eg, m.event_slug, f.h, f.a, f.lg,
-       f.src, k.ko
-FROM cfb_game_map m JOIN fin f ON f.eg = m.espn_game_id
+-- LEFT JOIN, not JOIN. A mapped game with NO score source at all -- no post
+-- row, no backfill row, not even a proxy -- used to vanish from the result
+-- entirely, so the printed route mix summed to LESS than the mapped games and
+-- nothing said so. One game today (401872931, nfl-den-kc-2026-09-14, zero
+-- state rows: it has not been played yet). Harmless now, silent always.
+-- `usable_games` drops 'none' along with 'proxy'.
+SELECT m.venue_game_id vg, m.espn_game_id eg, m.event_slug, f.h, f.a,
+       coalesce(f.lg, 'unknown') lg, coalesce(f.src, 'none') src, k.ko
+FROM cfb_game_map m LEFT JOIN fin f ON f.eg = m.espn_game_id
 LEFT JOIN ko k ON k.eg = m.espn_game_id
 WHERE m.venue_game_id IS NOT NULL
 """
@@ -336,6 +342,14 @@ def main_mlb():
               f"{r['bid']},{r['ask']},{r['ttk_min']:.0f},{r['y']}")
 
 
+#: Routes whose final is CONFIRMED. An allowlist rather than a blocklist, on
+#: purpose: a route nobody has vetted should cost a smaller sample (visible in
+#: the excluded count) rather than a biased one (invisible). 'none' — a mapped
+#: game with no score source at all — is exactly the category that fell
+#: through when this was `!= "proxy"`.
+CONFIRMED_ROUTES = ("post", "backfill")
+
+
 def usable_games(games: list[dict]) -> tuple[list[dict], int]:
     """EXCLUDE AND COUNT, never settle from a proxy (decision 2026-09-14).
 
@@ -359,7 +373,7 @@ def usable_games(games: list[dict]) -> tuple[list[dict], int]:
     Returns (kept, excluded_count). The count is half the policy: a game
     dropped silently turns a shrinking sample into an invisible one.
     """
-    kept = [g for g in games if g.get("src") != "proxy"]
+    kept = [g for g in games if g.get("src") in CONFIRMED_ROUTES]
     return kept, len(games) - len(kept)
 
 
@@ -405,11 +419,23 @@ def main_football():
     # from one biases a totals market toward UNDER. Counted here so the loss
     # is visible -- an exclusion nobody can see is how a shrinking sample
     # becomes a silent one.
+    # Keyed on the ESPN id, which is the map's identity and the join key to
+    # the finals -- not on venue_game_id. Both are unique across the 139
+    # mapped games today, and keying on a uniqueness nobody enforces is how a
+    # reconciliation line starts disagreeing with itself.
     src_games = defaultdict(set)
-    for g in all_games: src_games[g["src"]].add(g["vg"])
+    for g in all_games: src_games[g["src"]].add(g["eg"])
+    accounted = sum(len(v) for v in src_games.values())
     print("  finals by route: " + "  ".join(
-        f"{k} {len(v)}" for k, v in sorted(src_games.items())))
-    print(f"  EXCLUDED, no confirmed final (state != 'post'): {unsettled} games"
+        f"{k} {len(v)}" for k, v in sorted(src_games.items()))
+        + f"   (accounted {accounted} of {len(all_games)} mapped games)")
+    # LOUD, not fatal. A daily run should say the mix does not reconcile, not
+    # die on it -- and it can only fail if two mapped rows share an ESPN id.
+    if accounted != len(all_games):
+        print(f"  ROUTE MIX DOES NOT RECONCILE: {len(all_games) - accounted} "
+              "mapped games unaccounted for -- duplicate espn_game_id in "
+              "cfb_game_map?")
+    print(f"  EXCLUDED, no confirmed final: {unsettled} games"
           + ("   never settled from a proxy" if unsettled else ""))
     print(f"markets with a pregame close and a derived settlement: {len(rows):,}")
     src_rows = defaultdict(int)
