@@ -68,9 +68,14 @@ from strategies.ladder import select  # noqa: E402
 def permute_settlements(rows, rng) -> tuple[list[int], int]:
     """Return permuted settlements, and how many rows could not be moved.
 
-    Strata are (league, market type, rows-in-this-game). Whole game blocks are
-    exchanged inside a stratum, so every outcome a game produced travels with
-    the rest of that game's outcomes and the marginal win rate is unchanged.
+    ★★ NOT THE NULL ANY MORE. KEPT ONLY BECAUSE ITS FAILURE IS THE LESSON. ★★
+
+    Strata are (league, market type, rows-in-this-game), and whole game blocks
+    are exchanged inside a stratum -- which spans every price decile, so this
+    hands a 5c longshot's cell the outcome of a favourite. It preserves the
+    MARGINAL win rate and destroys the CONDITIONAL one, which is the only one
+    the hypothesis is about. See `draw_under_h0` for the measurement and the
+    replacement. Do not pass this as `draw=`.
     """
     out = [r["y"] for r in rows]
     blocks: dict[tuple, dict] = defaultdict(lambda: defaultdict(list))
@@ -92,6 +97,58 @@ def permute_settlements(rows, rng) -> tuple[list[int], int]:
                 for k in range(size):
                     out[dest[k]] = rows[src[k]]["y"]
     return out, frozen
+
+
+
+def draw_under_h0(rows, rng, *, cluster: bool = True) -> list[float]:
+    """Settlements drawn from each bet's OWN break-even price. The reference.
+
+    ★ THIS REPLACES `permute_settlements` AS THE NULL, AND THE REASON IS A
+    DEFECT I SHIPPED. Permutation strata were `(league, market_type)`, which
+    span every price decile, so the shuffle handed a 5c longshot's cell the
+    outcome of a favourite. Measured on the canonical artifact, observed
+    against permuted win rate:
+
+        decile  mean ask  observed  permuted  break-even
+        0.0        0.056     0.039     0.140       0.059
+        0.5        0.580     0.541     0.513       0.595
+        0.9        0.958     0.935     0.766       0.961
+
+    Observed tracks price almost exactly -- the venue is calibrated. The
+    permutation FLATTENS every decile toward the pooled 0.439, so a 5.6c market
+    "wins" 14% of the time: about +8c per contract of pure artifact, and about
+    -19c at the top. Null max|t| p50 reached 7.56 against an independent-cell
+    median of 3.08. **The permutation removed CALIBRATION, not the edge**, and
+    then reported that nothing cleared it. The tell was observed coming in BELOW
+    the null median on all six statistics, plus `cells excl. zero` at 95 of 325
+    where a correct null gives ~16.
+
+    No re-stratification repairs that: across deciles destroys calibration,
+    within a decile holds the cell's win count fixed and gives zero null
+    variance. The scan's cells ARE the price strata.
+
+    So the hypothesis is stated properly instead: **each cell's win rate equals
+    the break-even its own prices imply.** Calibration is preserved by
+    construction, because the null win rate IS the price.
+
+    `cluster=True` draws ONE uniform per game and applies it to every bet in
+    that game, which keeps the within-game dependence the sandwich exists to
+    handle. Independent draws would produce a null that is too narrow by
+    roughly sqrt(n/G) -- the same factor, in the same direction, as the
+    independent binomial overstating a cell.
+    """
+    out = [0.0] * len(rows)
+    if cluster:
+        u: dict = {}
+        for i, r in enumerate(rows):
+            g = r["game_id"]
+            if g not in u:
+                u[g] = rng.random()
+            out[i] = float(u[g] < break_even(r["ask"]))
+    else:
+        for i, r in enumerate(rows):
+            out[i] = float(rng.random() < break_even(r["ask"]))
+    return out
 
 
 # ------------------------------------------------------------------- scoring
@@ -262,7 +319,7 @@ def summarise(cells: dict) -> dict:
 
 # ---------------------------------------------------------------- the null
 def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914,
-                      chosen: dict | None = None) -> dict:
+                      chosen: dict | None = None, draw=None) -> dict:
     """Permutation null. Seeded: the same rows and seed give the same numbers.
 
     ★ REPORTS THE CELLS ACTUALLY SCORED, NOT THE CELLS SELECTED. `score_cells`
@@ -275,6 +332,11 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914,
     every one of these statistics is read against.
     """
     chosen = select(rows) if chosen is None else chosen
+    # ★ THE PARAMETRIC DRAW, NOT THE PERMUTATION -- see `draw_under_h0`. The
+    # permutation is still in this file because its defect is documented there
+    # and tested, but it is NOT the null: it removed calibration rather than
+    # the edge.
+    draw = draw_under_h0 if draw is None else draw
     rng = random.Random(seed)
     draws = {k: [] for k in ("max_abs_t", "n_excluding_zero",
                              "best_net_per_1", "var_t", "hc", "min_p")}
@@ -286,8 +348,8 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914,
     degen: list[int] = []
     mixed: list[int] = []
     for _ in range(reps):
-        ys, frozen = permute_settlements(rows, rng)
-        frozen_rows = frozen
+        ys = draw(rows, rng)
+        frozen_rows = 0          # nothing is immovable under a parametric draw
         drop: dict = {}
         cells = score_cells(rows, ys, chosen, dropped=drop)
         eff_m.append(len(cells))
@@ -370,27 +432,75 @@ def _q(xs) -> dict:
 
 
 # ------------------------------------------------- the control on the control
-def plant_edge(rows, *, lo: float, hi: float, cents: float, seed: int = 7):
-    """Return settlements carrying a known edge in one price bucket.
+def plant_edge(rows, *, lo: float, hi: float, cents: float, seed: int = 7,
+               cluster: bool = True, baseline: str = "h0"):
+    """Settlements drawn EXACTLY AS THE NULL DRAWS THEM, plus an edge in one
+    price bucket.
 
     Without this the harness cannot tell a null that flags nothing from one
-    that works — both print quantiles and look equally healthy. `cents` is the
-    YES-side edge in cents per contract: outcomes in the bucket are re-drawn so
-    the realised YES win rate exceeds the ask by cents/100.
+    that works -- both print quantiles and look equally healthy. `cents` is the
+    YES-side edge in cents per contract: the bucket's win probability is its
+    break-even plus cents/100.
+
+    ★ IT MUST MATCH THE NULL'S DEPENDENCE STRUCTURE, AND THE FIRST VERSION DID
+    NOT. It redrew each bet INDEPENDENTLY while `draw_under_h0` draws one
+    uniform per GAME, so the planted tape carried less within-game correlation
+    than the reference it was compared against. Measured: min-p "recovered" at
+    0.70 with a **ZERO** cent plant, the same rate as at 1c and 3c and -3c --
+    the statistic was firing on the REDRAW, not on any edge. A control whose
+    false-positive rate at zero effect is 0.70 against a nominal 0.05 measures
+    nothing, and it would have certified an instrument as sensitive to a 1c
+    edge.
+
+    ★★ AND EVERYTHING OUTSIDE THE BUCKET MUST BE AT H0 TOO. `baseline="observed"`
+    keeps the real settlements outside the bucket, which sounds better -- the
+    plant sits on the real tape -- and it broke the control a SECOND time.
+    min-p is a MINIMUM over all cells, so it picked up the observed tape's own
+    most extreme cell (cfb/football_game_third_quarter_total/dec7, p=1.17e-04),
+    which lies outside the bucket and is never touched by the plant. Measured:
+    a **ZERO** cent plant recovered 0.97 of the time against a nominal 0.05 --
+    the statistic was reporting that the real tape contains an extreme cell,
+    which it does, and not that the plant was detected.
+
+    The sandwich statistics escaped only by magnitude, not by design: observed
+    max|t| is 3.99 against a p95 of 9.21, so their false-positive rate came out
+    at 0.00 for the wrong reason. A control has to be right for the right
+    reason or the next statistic added to it inherits the bug.
+
+    So `baseline="h0"` (the default) draws EVERY row under H0 and adds the edge
+    only inside the bucket. At zero cents that is a pure H0 draw and the
+    recovery rate must land near 0.05, which is the only reading that makes the
+    numbers above it mean anything. `baseline="observed"` is kept for an
+    in-situ question -- can this edge be seen ON TOP of the real tape -- and is
+    not a calibration control.
     """
+    if baseline not in ("h0", "observed"):
+        raise SystemExit(f"baseline must be 'h0' or 'observed', got {baseline!r}")
     rng = random.Random(seed)
-    ys = [r["y"] for r in rows]
-    for i, r in enumerate(rows):
+    obs = [float(r["y"]) for r in rows]
+    u: dict = {}
+    out = []
+    for r in rows:
         mid = (r["bid"] + r["ask"]) / 2
-        if lo <= mid < hi:
-            # CAPPED AWAY FROM THE BOUNDARY. An uncapped edge drives the
-            # bucket's win rate to 1, the cell loses all outcome variation, the
-            # degeneracy guard correctly removes it — and the control then
-            # reports "not detected" because the cell carrying the signal
-            # stopped existing. Measured: a 40c plant on a 1-row-per-game
-            # fixture made the target cell degenerate and max|t| fell to 0.38.
-            ys[i] = 1 if rng.random() < min(0.97, r["ask"] + cents / 100.0) else 0
-    return ys
+        inside = lo <= mid < hi
+        if baseline == "observed" and not inside:
+            out.append(obs[len(out)])
+            continue
+        # CAPPED AWAY FROM THE BOUNDARY. An uncapped edge drives the bucket's
+        # win rate to 1, the cell loses all outcome variation, the degeneracy
+        # guard correctly removes it -- and the control then reports "not
+        # detected" because the cell carrying the signal stopped existing.
+        # Measured: a 40c plant on a 1-row-per-game fixture made the target
+        # cell degenerate and max|t| fell to 0.38.
+        pr = min(0.97, break_even(r["ask"]) + (cents / 100.0 if inside else 0.0))
+        if cluster:
+            g = r["game_id"]
+            if g not in u:
+                u[g] = rng.random()
+            out.append(float(u[g] < pr))
+        else:
+            out.append(float(rng.random() < pr))
+    return out
 
 
 def recovery_rate(rows, null, *, lo: float, hi: float, cents: float,
