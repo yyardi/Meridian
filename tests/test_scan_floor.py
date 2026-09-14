@@ -62,7 +62,7 @@ def test_absent_floor_means_the_clause_is_not_in_the_sql_at_all():
     disappears with nothing to show it did. Two literal strings depend on
     nothing."""
     assert _exec_block('_FLOOR = "', "def partition_floors",
-                       SINCE=None)["CLOSE"].count("captured_at >= :since") == 0
+                       SINCE=None)["CLOSE"].count(":since") == 0
 
 
 def test_a_floor_is_applied_to_BOTH_scans_not_just_one():
@@ -70,10 +70,17 @@ def test_a_floor_is_applied_to_BOTH_scans_not_just_one():
     floor on one of them prunes half the work and, worse, makes the two halves
     disagree about which games exist."""
     sql = _exec_block('_FLOOR = "', "def partition_floors", SINCE="2026-09-01")["CLOSE"]
-    assert sql.count("captured_at >= :since") == 2
-    # the CTE's copy is unqualified, the close's is qualified to the alias
-    assert "AND captured_at >= :since" in sql
-    assert "AND s.captured_at >= :since" in sql
+    # Matched on the BOUND NAME, not on a spelling of the cast. The first
+    # version asserted `captured_at >= :since`, which pinned the exact defect
+    # that killed the 09:52Z run: `:since::timestamptz` binds NOTHING, because
+    # SQLAlchemy will not recognise a parameter followed by a colon. A test that
+    # pins a broken spelling defends it.
+    assert sql.count(":since") == 2
+    assert "AND captured_at >= CAST(:since" in sql        # the CTE's copy
+    assert "AND s.captured_at >= CAST(:since" in sql      # the close's copy
+    # and the cast must be the form that actually binds
+    assert "::timestamptz" not in sql, (
+        "a parameter immediately followed by `::` is not bound by SQLAlchemy")
 
 
 def test_there_is_no_default_floor_in_the_source():
