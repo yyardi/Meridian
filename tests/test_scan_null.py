@@ -10,6 +10,7 @@ import importlib.util
 import pathlib
 import math
 import random
+import statistics
 import sys
 
 import pytest
@@ -667,3 +668,109 @@ def test_min_p_is_drawn_in_the_null_and_has_a_spread():
     assert len(set(null["draws"]["min_p"])) > 1, "min-p is degenerate"
     assert null["binomial_cells"] > 0
     assert null["mixed_games_per_rep"] is not None
+
+
+# --------------------------------------------------------------------------- #
+# The null is PARAMETRIC now, and the control took three tries to become real.
+# --------------------------------------------------------------------------- #
+def test_the_h0_draw_reproduces_the_prices_it_was_built_from():
+    """★ THE PROPERTY THE PERMUTATION DESTROYED. Permutation strata were
+    (league, market type), which span every price decile, so a shuffle handed a
+    5c longshot's cell the outcome of a favourite: decile 0's win rate went
+    0.039 -> 0.140 and decile 9's 0.935 -> 0.766, everything flattened toward
+    the pooled 0.439. That is roughly +8c/contract of artifact at the cheap end.
+
+    Under the parametric draw each bet's win probability IS its break-even, so
+    calibration holds by construction. Checked per price band, because a pooled
+    win rate cannot see this -- the permutation preserved the pooled rate
+    exactly and that is what made it look sound."""
+    rows = _rows_every_cell()
+    rng = random.Random(4)
+    bands = [(0.0, 0.2), (0.4, 0.6), (0.8, 1.0)]
+    tot = {b: [0.0, 0] for b in bands}
+    for _ in range(60):
+        ys = N.draw_under_h0(rows, rng)
+        for r, y in zip(rows, ys):
+            for b in bands:
+                if b[0] <= r["ask"] < b[1]:
+                    tot[b][0] += y
+                    tot[b][1] += 1
+    for b in bands:
+        got = tot[b][0] / tot[b][1]
+        want = statistics.fmean(N.break_even(r["ask"]) for r in rows
+                                if b[0] <= r["ask"] < b[1])
+        assert abs(got - want) < 0.06, (
+            f"band {b}: drew {got:.3f} where break-even is {want:.3f} — the "
+            "null is not reproducing the prices it claims to hold fixed")
+
+
+def test_the_draw_keeps_a_games_bets_together():
+    """One uniform per GAME, not per bet. Independent draws give a null too
+    narrow by roughly sqrt(n/G) -- the same factor, in the same direction, as an
+    independent binomial overstating a cell."""
+    rows = [{"market_slug": f"m{i}", "game_id": f"g{i // 4}", "league": "cfb",
+             "mtype": "full_game_winner", "bid": 0.49, "ask": 0.50, "y": 0.0}
+            for i in range(40)]
+    rng = random.Random(9)
+    agreed = sum(len({*ys[i:i + 4]}) == 1
+                 for _ in range(40)
+                 for ys in [N.draw_under_h0(rows, rng)]
+                 for i in range(0, 40, 4))
+    # every game's four bets must agree, every time
+    assert agreed == 40 * 10, f"{agreed} of 400 game blocks agreed internally"
+
+
+def test_the_control_does_not_fire_when_nothing_is_planted():
+    """★★ THE TEST THAT BROKE THE CONTROL TWICE, AND THE ONLY ONE THAT COULD.
+    Ask what the instrument does at ZERO effect.
+
+    First version: `plant_edge` redrew each bet INDEPENDENTLY while the null
+    draws one uniform per game, so min-p "recovered" at 0.70 with a zero-cent
+    plant -- firing on the redraw, not on any edge.
+
+    Second version: it kept OBSERVED settlements outside the bucket, so min-p,
+    being a MINIMUM over all cells, picked up the real tape's own most extreme
+    cell (third_quarter_total/dec7, p=1.17e-04) which the plant never touches.
+    Zero-cent recovery 0.97 against a nominal 0.05. The sandwich statistics
+    escaped that one only by magnitude -- observed max|t| 3.99 against a p95 of
+    9.21 -- which is being right for the wrong reason.
+
+    Third version draws every row under H0 with one uniform per game and adds
+    the edge only inside the bucket. Measured on the canonical artifact, 120
+    trials: 0c gives max|t| 0.07, Var(t) 0.04, HC 0.04, min-p 0.07."""
+    rows = _rows_every_cell()
+    zero = N.plant_edge(rows, lo=0.60, hi=0.80, cents=0.0, seed=11)
+    big = N.plant_edge(rows, lo=0.60, hi=0.80, cents=25.0, seed=11)
+    assert zero != big, "the plant is ignoring `cents`"
+
+    # a zero plant is a pure H0 draw: its win rate in the bucket is break-even
+    idx = [i for i, r in enumerate(rows) if 0.60 <= (r["bid"] + r["ask"]) / 2 < 0.80]
+    assert idx, "fixture has no rows in the control bucket"
+    be = statistics.fmean(N.break_even(rows[i]["ask"]) for i in idx)
+    got = statistics.fmean(
+        statistics.fmean(N.plant_edge(rows, lo=0.60, hi=0.80, cents=0.0,
+                                      seed=200 + k)[i] for i in idx)
+        for k in range(40))
+    assert abs(got - be) < 0.08, (
+        f"a ZERO-cent plant won {got:.3f} of the time where break-even is "
+        f"{be:.3f} — the control is not at H0 and its recovery rates are not "
+        "power")
+    # and outside the bucket it is H0 too, not the observed tape
+    out = [i for i in range(len(rows)) if i not in set(idx)]
+    if out:
+        assert any(N.plant_edge(rows, lo=0.60, hi=0.80, cents=0.0, seed=s)[i]
+                   != rows[i]["y"] for s in range(6) for i in out), (
+            "outside the bucket the plant reproduced the observed settlements — "
+            "min-p then reports the real tape's extremes as a recovery")
+
+
+def test_the_permutation_is_no_longer_the_null():
+    """It stays in the file because its failure is the lesson, but it must not
+    be what `null_distribution` uses. Asserted at the source: a default that
+    silently went back to permuting would reproduce the whole defect."""
+    src = pathlib.Path(N.__file__).read_text()
+    fn = src[src.index("def null_distribution("):src.index("def empirical_hc(")]
+    assert "draw = draw_under_h0 if draw is None else draw" in fn
+    assert "permute_settlements(" not in fn, (
+        "null_distribution is permuting again — that removes calibration, not "
+        "the edge")
