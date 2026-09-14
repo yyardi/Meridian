@@ -159,6 +159,32 @@ SELECT market_slug,
  WHERE first_play IS NOT NULL"""
 
 
+#: What the floor EXCLUDED, per market. Runs only when SINCE is set.
+#:
+#: ★ A ZERO THAT READS AS DATA LOSS NEEDS ITS REASON ON THE SAME PAGE. The
+#: 10:07Z run of 2026-09-14 was the first with a floor, and wnba went from 1,582
+#: closes to 0 because all its tape predates 2026-09-01. That is the floor
+#: working, and it is indistinguishable from a broken recorder to anyone reading
+#: the artifact.
+#:
+#: Cheap BECAUSE it is the complement: `captured_at < :since` prunes to the
+#: pre-floor partitions (m07+m08, ~16 GB) instead of September (~42 GB), so this
+#: costs less than the scan it annotates. Same close shape as CLOSE_SQL --
+#: DISTINCT ON the market, last row before kickoff, priced, game long finished --
+#: so the two counts are comparable rather than merely adjacent.
+EXCLUDED_SQL = """
+WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
+  WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL GROUP BY 1)
+SELECT DISTINCT ON (s.market_slug) s.market_slug slug
+FROM market_snapshots s JOIN g ON g.game_id = s.game_id
+WHERE s.market_slug LIKE ANY(:pats)
+  AND s.captured_at < CAST(:since AS timestamptz)
+  AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
+  AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL AND s.best_ask >= s.best_bid
+  AND g.ko < now() - interval '4 hours'
+ORDER BY s.market_slug, s.captured_at DESC"""
+
+
 def partition_floors(conn, table="market_snapshots"):
     """Every partition's LOWER bound, asked of the catalogue rather than assumed.
 
@@ -373,11 +399,27 @@ for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis"):
 with eng.connect() as c:
     args = {"pats": [p for _, p in PATS]} | ({"since": SINCE} if SINCE else {})
     allrows = [dict(r._mapping) for r in c.execute(text(CLOSE), args)]
+    # What the floor cost, per market. Only meaningful when there IS a floor.
+    EXCLUDED = []
+    if SINCE:
+        try:
+            EXCLUDED = [r[0] for r in c.execute(
+                text(EXCLUDED_SQL), {"pats": [p for _, p in PATS], "since": SINCE})]
+        except Exception as exc:          # noqa: BLE001 - an annotation must not kill the scan
+            print(f"  floor-exclusion count unavailable: {str(exc)[:80]}")
 
 BY_PAT: dict = defaultdict(list)
 for r in allrows:
     lg, pat = attribute(r["slug"])
     BY_PAT[pat].append((lg, r))
+
+BY_EXCL: dict = defaultdict(int)
+for slug in EXCLUDED:
+    try:
+        _lg, _pat = attribute(slug)
+    except SystemExit:
+        continue
+    BY_EXCL[_pat] += 1
 
 for lg, pat in PATS:
     rows = BY_PAT.get(pat, [])
@@ -399,7 +441,12 @@ for lg, pat in PATS:
     # Per-pattern counts survive the rewrite on purpose: they are the only
     # resolution at which the one-query form can be compared to the old one.
     ages = [r["close_age_min"] for _lg, r in rows if r.get("close_age_min") is not None]
-    print(f"  ... {pat} {len(rows):,} closes, {age_summary(ages)}, {calls:,} settlement calls"
+    # The floor's cost rides on the same line as the count it reduced, for the
+    # same reason the floor itself does: a reader must not see "0 closes"
+    # without seeing that 1,582 were excluded by a boundary they chose.
+    ex = BY_EXCL.get(pat, 0)
+    excl = f", {ex:,} excluded by since" if ex else ""
+    print(f"  ... {pat} {len(rows):,} closes{excl}, {age_summary(ages)}, {calls:,} settlement calls"
           f", since={SINCE or 'ALL (no floor)'}")
 
 if EXPECT:
