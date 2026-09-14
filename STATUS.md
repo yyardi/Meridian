@@ -667,6 +667,39 @@ on 59 CFB games and the answer was no drift at the trigger, with a median move o
 is a live-path check: does the engine see plays, price them, open and close positions, and write
 rows. A negative P&L tonight confirms the measurement rather than adding to it.
 
+## 0s. The daily ladder calibration settles from scores that were never confirmed final
+
+Chased 7d's consumer warning into the code rather than taking it as a caution. Fourteen files read
+`home_score`/`away_score` from `espn_cfb_game_state`. Most are fine and the **primary gate script
+is safe** -- `cfb/run_making_touch.py` settles from `espn_cfb_backfill_games`, not from game state,
+which is what 7d said and what I confirmed.
+
+**`cfb/run_ladder_calibration.py` is not, and it runs daily at 10:40Z.** Its fallback takes the
+last game-state row with `period >= 4` when a game is absent from the backfill table. That is a
+proxy for a final score and it is not `state = 'post'`. Measured:
+
+| league | games from the fallback | confirmed final | proxy only | proxy with a running clock |
+|---|---:|---:|---:|---:|
+| cfb | 167 | **5** | **162** | 58 |
+| nfl | 15 | **1** | **14** | 12 |
+
+**And the population is enriched for the failure by construction.** The fallback only fires for
+games missing from the backfill table, which is very nearly the set that never reached `post`. So
+the one code path that most needs a confirmed final is the one guaranteed not to have one.
+
+**Direction of the error, which is the part that matters.** A score taken before the whistle is
+too low, so totals settle **under** when the real total may have cleared. `cfb_total_under_all`
+and `mlb_total_under_all` are registered strategies, and this would flatter both. Same direction
+as every other defect found today.
+
+**What I have not established:** how wrong the scores actually are. 7d's census says stuck games
+are abandoned at the whistle, clock 0:00 to 2:46, which would make most of these right or nearly
+right. Against that, 58 CFB and 12 NFL of them show a clock that is not 0:00 -- though this
+project has already recorded that `display_clock` is unreliable and that the state field is the
+authority, which is exactly why the proxy is the problem. **Nothing available today separates a
+correct proxy from a short one.** The confirming poll does, which raises the value of that fix
+from "unblocks Kalshi later" to "corrects a daily read now".
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
