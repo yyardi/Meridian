@@ -351,6 +351,12 @@ with local Docker down it is the only way to run the tests that need no database
 pass right now. But it is a different regime and nobody had written that down, so every "green"
 I have reported today was from the regime without the fix.
 
+**As of 14:40Z the operator closed local Docker, so there is no local test database at all.**
+Database-backed tests cannot run on the laptop until it is back; `--noconftest` still runs the 209
+tests that need no database and they pass. Verification of database-backed work is therefore on
+the peer who wrote it plus the prod read, not on a second local run, and any claim resting on it
+should say so rather than inherit the word "verified".
+
 
 
 `tests/test_pulse_live.py` fails 4 tests before this merge and 6 after, and **every one of them
