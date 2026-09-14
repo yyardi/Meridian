@@ -550,6 +550,35 @@ on an EXPLAIN or a unit test rather than on a real unattended run:** does
 materially under tonight's two hours (the single-pass query), and does CELLS_JSON
 parse (the int64 fix).
 
+★★★★★ **REPLICATED IN-PLAY ON A POPULATION 790× LARGER. The pregame conclusion
+holds on continuously moving prices, and the expectation was on the record before
+the data was seen.** 296,964 sampled in-game ticks (cfb 212,643, nfl 65,308,
+wnba 17,739, mlb 228):
+
+| max half-spread | cells | p<0.05 / null | p<0.01 / null | best p | null E[min p] | lose/win |
+|---|---:|---|---|---|---|---|
+| ≤1¢ | 52 | 2 / 2.6 | **0 / 0.5** | 2.00e-02 | 1.9e-02 | 0/2 |
+| ≤2¢ | 88 | 2 / 4.4 | **0 / 0.9** | 2.00e-02 | — | 0/2 |
+| ≤5¢ | 97 | 2 / 4.9 | **0 / 1.0** | 2.00e-02 | — | 0/2 |
+| all | 161 | 27 / 8.1 | 17 / 1.6 | 5.38e-06 | — | 25/2 |
+
+**At every tradeable cap the count is at or below the null, zero clears p<0.01,
+and the best cell is essentially exactly what chance produces** (2.00e-02 against
+an expected minimum of 1.9e-02). All ten top cells are wide-spread — 11 to 22¢ —
+and every one loses. Nothing nominated at any tradeable cap.
+
+**Recorded and not smoothed:** the two surviving tight cells are WINNING, where
+pregame tight cells ran 10/1 losing. Two of 52 against 2.6 expected is noise, and
+it is the one place the two populations' directional signatures differ. Worth a
+look only if it recurs on independent tape.
+
+★ **The diagnostic that made this readable:** in-play a cell carries a **median
+11× and up to 91× ticks per effective cluster** (pregame: 1.66 rungs per game).
+A cell reading n=2,715 holds about 30 independent observations. Printing
+`G_eff` on every row rather than in the summary is now a requirement for any
+scan this project runs — without it that cell looks like 2,715 observations and
+every interval built from it is spectacular and meaningless.
+
 ★★★★ **SCREEN CLOSED: NO EDGE ON ANY TRADEABLE SPREAD, AND THE BOARD IS
 QUIETER THAN NOISE THERE.** Conditioning on cost, which needed no new tape:
 
