@@ -49,6 +49,28 @@ def _rows(n_games=60, *, seed=1, rungs=1, league="mlb", mtype=MTYPE):
     return out
 
 
+def _rows_every_cell(n_games=70, seed=77):
+    """Rows across every (league, type) the registry scores, so m is not
+    artificially small. A 1-row-per-game single-league fixture scores TWO cells
+    of 29 and cannot support a control at all — which is how a planted-edge
+    test came to fail for want of cells rather than want of signal."""
+    from strategies.ladder import STRATEGIES
+    pairs = sorted({(st["league"], ty) for st in STRATEGIES.values()
+                    for ty in st["types"]})
+    rng = random.Random(seed)
+    out = []
+    for lg, ty in pairs:
+        for g in range(n_games):
+            mid = rng.choice([0.18, 0.26, 0.34, 0.45, 0.55, 0.63, 0.72, 0.85])
+            y = 1 if rng.random() < mid else 0
+            for k in range(2):
+                out.append({"market_slug": f"aec-{lg}-{ty}-{g}-{k}",
+                            "game_id": f"{lg}-g{g}", "league": lg,
+                            "mtype": f"x_{ty}", "bid": round(mid - 0.01, 3),
+                            "ask": round(mid + 0.01, 3), "y": y})
+    return out
+
+
 # ------------------------------------------------------------ the permutation
 def test_the_marginal_win_rate_is_preserved_exactly():
     """The null must destroy the price-outcome PAIRING and nothing else. A
@@ -168,9 +190,9 @@ def test_the_monte_carlo_detects_a_planted_edge():
     """★ NEITHER NUMBER MEANS ANYTHING ALONE. Quantiles say what noise looks
     like; this says the instrument can tell signal from it. A null that flags
     nothing prints exactly the same quantiles as one that works."""
-    rows = _rows(n_games=120, seed=21)
-    null = N.null_distribution(rows, reps=150, seed=555)
-    planted = N.plant_edge(rows, lo=0.60, hi=0.80, cents=40.0, seed=7)
+    rows = _rows_every_cell()
+    null = N.null_distribution(rows, reps=120, seed=555)
+    planted = N.plant_edge(rows, lo=0.60, hi=0.90, cents=25.0, seed=7)
     observed = N.summarise(N.score_cells(rows, planted))
     assert observed["max_abs_t"] > null["quantiles"]["max_abs_t"]["p95"], (
         f"the Monte Carlo did not see a planted 40c edge: observed "
@@ -190,9 +212,9 @@ def test_the_control_reports_the_smallest_edge_it_could_have_seen():
     size rather than a defect. Asserted loosely because the exact floor moves
     with the fixture; what is pinned is that a floor EXISTS and is reported.
     """
-    rows = _rows(n_games=120, seed=21)
-    null = N.null_distribution(rows, reps=150, seed=555)
-    floor = N.min_detectable_edge(rows, null, lo=0.60, hi=0.80)
+    rows = _rows_every_cell()
+    null = N.null_distribution(rows, reps=120, seed=555)
+    floor = N.min_detectable_edge(rows, null, lo=0.60, hi=0.90, trials=20)
     assert floor is not None, "no candidate edge was detectable at all"
     assert floor >= 5, (
         "a 2c edge cleared a max-|t| null over many cells, which would mean "
@@ -400,3 +422,82 @@ def test_empirical_hc_moves_across_null_draws():
         ys, _ = N.permute_settlements(rows, rng)
         vals.add(round(N.empirical_hc(N.score_cells(rows, ys, chosen), null), 6))
     assert len(vals) > 5, f"empirical HC took only {len(vals)} distinct values"
+
+
+# --------------------------------------------------------------------- #
+# Degeneracy, judged inside every replicate.
+# --------------------------------------------------------------------- #
+def test_a_cell_with_no_outcome_variation_is_excluded():
+    """★ 40 bets all settling YES, prices over 40 ticks: t = 67.14. The same
+    prices with outcomes varying: t = 1.94. The sandwich has no risk to measure
+    so it measures PRICE DISPERSION, the interval collapses and the mean stays
+    large. On the real scan 16 such cells were all twelve of the top twelve."""
+    from strategies.base import Bet
+
+    rows = [{"market_slug": f"m{g}", "game_id": f"g{g}", "league": "mlb",
+             "mtype": "baseball_team_full_game_winner",
+             "bid": round(0.40 + 0.004 * g - 0.01, 4),
+             "ask": round(0.40 + 0.004 * g + 0.01, 4), "y": 1} for g in range(40)]
+    chosen = {"deg": [Bet(market_slug=r["market_slug"], side="yes",
+                          price=r["ask"], stake=r["ask"],
+                          game_id=r["game_id"]) for r in rows]}
+    drop = {}
+    cells = N.score_cells(rows, [1] * 40, chosen, dropped=drop)
+    assert cells == {}, "a cell with no outcome variation was scored"
+    assert drop["degenerate"] == 1
+
+    varied = [1 if g % 2 else 0 for g in range(40)]
+    drop2 = {}
+    assert N.score_cells(rows, varied, chosen, dropped=drop2) != {}
+    assert drop2["degenerate"] == 0
+
+
+def test_the_guard_runs_inside_the_replicate_not_once():
+    """★ Permutation CREATES and DESTROYS degeneracy, so m varies by replicate.
+    A null filtered on the observed degeneracy set would reproduce the artifact
+    in the reference and then agree with the observed value for the wrong
+    reason."""
+    rows = _rows_every_cell(n_games=12, seed=5)     # thin: degeneracy will occur
+    null = N.null_distribution(rows, reps=40, seed=3)
+    assert "degenerate_per_rep" in null and "reps_with_degenerate" in null
+    assert null["cells_scored_min"] <= null["cells_scored"] <= null["cells_scored_max"]
+    assert null["reps_with_degenerate"] >= 0
+
+
+def test_the_scan_floors_are_matched_not_chosen():
+    r"""G_FLOOR is the scan's, so the reference is filtered like the instrument
+    it calibrates.
+
+    Read by AST, not by regex: the scan declares it as a TUPLE,
+    `FEE_PM, G_FLOOR = 0.06, 6`, and `G_FLOOR\s*=\s*(\d+)` matched
+    "G_FLOOR = 0" out of the 0.06. Importing the module is not an option — it
+    runs the scan at import.
+    """
+    import ast
+
+    tree = ast.parse((REPO / "cfb" / "run_scan.py").read_text())
+    found = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for tgt in node.targets:
+            names = (tgt.elts if isinstance(tgt, ast.Tuple) else [tgt])
+            vals = (node.value.elts if isinstance(node.value, ast.Tuple)
+                    else [node.value])
+            if len(names) != len(vals):
+                continue
+            for nm, vl in zip(names, vals):
+                if isinstance(nm, ast.Name) and isinstance(vl, ast.Constant):
+                    found[nm.id] = vl.value
+    assert "G_FLOOR" in found, "could not read G_FLOOR from the scan"
+    assert N.G_FLOOR == found["G_FLOOR"], (
+        f"null uses G_FLOOR={N.G_FLOOR}, the scan uses {found['G_FLOOR']} — "
+        "the reference would be over a different population")
+
+
+def test_p_values_use_the_scans_t_distribution_not_the_normal():
+    """At G=6 the scan's df is 5 and t(5).sf(3)=0.01505 against the normal
+    0.00135 — an 11x gap at a t the scan sees routinely. HC reads the SMALLEST
+    p-values, so the convention has to match."""
+    assert N._p_two_sided(3.0, 5) > 8 * N._p_two_sided(3.0, None)
+    assert N._p_two_sided(3.0, None) < 0.01
