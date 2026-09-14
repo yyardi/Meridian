@@ -50,55 +50,63 @@ Two independent routes agree: our sensitivity is 10–15¢ per bet, and we are b
 One route is pooled algebra, the other a planted-edge recovery curve, and they share no
 implementation. An edge smaller than 5¢ exists or does not; we cannot tell from this tape.
 
-## 0d. The venue board has been empty since 09:35Z. I called this an incident; that was too strong.
+## 0d. The board emptied at 09:35Z and came back at 11:40:59Z. Two of my three claims about it were wrong.
 
-**Correction, before the table.** I read a zero row-count at 10Z and 11Z against last Monday's
-7,973 and 7,974 and called it an incident. meridian-7f measured the right population, all 44.5
-days of history, and zero-hours *peak* at exactly these hours: 8 of 44 days at 10Z and 9 of 44
-at 11Z, against 2 of 44 overnight. An empty 10-11Z is the **most common zero-hour we have**,
-roughly one day in five. My last-Monday check was one draw from a distribution I had not looked at.
+**Correction 1, and it invalidates my headline measurement.** I reported "venue events endpoint,
+asked directly per league: 0 for cricket x5, table tennis, NFL, MLB" and called it a direct read
+of venue content. `get_league_events` returns a **tuple**; my probe did
+`getattr(r, "events", None) or []`, which on a tuple is always `[]`. **It printed zero no matter
+what the venue said.** Its value under signal equalled its value under no signal, which is the
+defect family I have a standing note about, and I used it as the load-bearing evidence. Unpacked
+correctly at 11:44Z it reports NFL 29, MLB 43, table tennis 192, cricket 8.
 
-**And neither figure settles it, for the reason that is the whole problem: a row count cannot
-tell an empty board from a full and quiet one.** A sweep that sees 450 markets and writes
-nothing because no price moved produces a zero-row hour on a perfectly healthy board. So those
-8 days are not evidence the board was empty then, and we cannot find out, because board content
-was never stored.
+**Correction 2.** I called this an incident. meridian-7f measured all 44.5 days: zero-hours peak
+at exactly 10Z and 11Z, 8 and 9 of 44 days against 2 of 44 overnight. An empty 10-11Z is the most
+common zero-hour we have.
 
-| what is actually measured | value |
+**What actually survives, from the one instrument that was working.** The venue's own sports
+listing reported **one** active event across the whole venue at 10:34Z and 11:17Z, and **1,150**
+across 39 leagues at 11:44Z. That is a real change measured by a correct reading. Zero market rows
+were written between 09:35:26Z and 11:40:59Z, a gap of 2h05m, and the first rows back were all
+cricket.
+
+| | value |
 |---|---|
-| newest market row, any league | 2026-09-14 09:35:26Z |
-| venue events endpoint, asked directly per league | 0 for cricket x5, table tennis, NFL, MLB |
-| venue sports listing | one active event across the whole venue |
-| zero-hours at 10Z / 11Z in 44 days of history | 8 / 44 and 9 / 44 |
-| Kalshi | unaffected, still writing |
+| last row before the gap | 2026-09-14 09:35:26Z |
+| first row after | 2026-09-14 11:40:59.536Z |
+| gap | 2h05m |
+| venue listing during the gap / now | 1 event / 1,150 events |
+| Kalshi | unaffected throughout |
 
-The board **is** empty right now; that is a direct read of venue content, not a row count. What
-is unresolved is whether an empty board at this hour is normal, and that question is currently
-unanswerable from our own data.
+**So I had two routes agreeing and one of them could not disagree.** The listing and the events
+probe told the same story, which is why I stopped checking. The events probe would have told that
+story on any input.
 
-**It is the venue, not our access.** Both endpoints require API key headers -- an
-unauthenticated request returns `Missing required API key headers` -- so a wrong or expired key
-cannot present as an empty board. Our authenticated call returns a well-formed sports list
-naming every league.
+**Neither of us has evidence about whether this is normal.** 7f used a row count to argue an empty
+10-11Z is ordinary, immediately after establishing that a row count cannot tell empty from quiet,
+so their eight days are equally consistent with a full and quiet board. My last Monday is one
+draw. What the 44 days CAN say once the new column has data: 957 of 1,057 hours had at least one
+row, so the board was provably non-empty and the alarm could not have fired, bounding its
+false-positive rate at **9.5% or lower and no lower**. The unresolvable 100 hours are exactly the
+ones the column exists to classify.
 
 **Why no alarm fired, and why the obvious one cannot be it.** `board_coverage` takes its
 `expected` from the sports listing, a different endpoint on the *same venue*. When the board
 empties both sides go to zero together and `swept_nothing = (exp > 0 and obs == 0)` is false by
 construction. It was built to catch a wrong slug, which is our error; it cannot catch the venue
-going empty, which is theirs. An expected-versus-observed check only works when the expectation
-is independent of what is observed.
+going empty, which is theirs. An expected-versus-observed check only works when the expectation is
+independent of what is observed.
 
 **Shipped the missing quantity** (`dc2f676`): `service_heartbeats.markets_seen`, what the sweep
 saw rather than what it wrote. The alarm is then "a completed sweep returned zero markets while
 our own last 24 hours held markets whose start time is still in the future" -- expectation from
-our past tape, observation from now, no threshold to tune, no weekday cells. It is
-forward-looking only: the expectation side can be reconstructed from history, the observation
-side starts empty on deploy.
+our past tape, observation from now. Forward-looking only: the observation side starts empty on
+deploy. Staged on the box and not yet applied; it lands with the fleet rebuild.
 
-**The weekday rule is right in principle and not buildable yet.** 6.4 weeks of history gives
-about 6 same-weekday-and-hour priors, so a rank rule false-alarms 14.3% per check, 3.4 times a
-day. Two-hour persistence needs about 19 weeks, which is mid-January. Three-hour persistence
-works today at the cost of three hours of latency.
+**The weekday rule is right in principle and not buildable yet.** 6.4 weeks gives about 6
+same-weekday-and-hour priors, so a rank rule false-alarms 14.3% per check, 3.4 times a day.
+Two-hour persistence needs about 19 weeks, mid-January. Three-hour persistence works today at the
+cost of three hours of latency.
 
 ## 1. What I need from you (everything else I now run myself)
 
@@ -124,7 +132,31 @@ ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridia
 
 Expect 30. Best run now or any time the venue board is empty.
 
-**It now also carries a schema migration** (`a1c7e35b9d20`, adding `service_heartbeats.markets_seen`). That makes a PARTIAL rebuild worse than none: the first rebuilt container to start advances the database, and any container still on an older image then cannot pass migration either. Run the whole loop or none of it.
+**The rebuild is the fix, not the risk.** I wrote earlier that a partial rebuild is worse than
+none; meridian-7f corrected the mechanism and they are right. The strand already exists. Every
+container built before 2026-09-14 00:51 has been unable to restart since this morning, and a
+partial rebuild does not newly strand anything. What it does is leave a subset on stale images
+that report perfectly healthy until the next restart.
+
+It also now carries a schema migration (`a1c7e35b9d20`, adding
+`service_heartbeats.markets_seen`). The one genuinely new exposure is a container rebuilt from a
+ref *between* the two migrations, which cannot arise if everything is rebuilt from one ref in
+one pass. The command above does that.
+
+**Verify afterwards, because the failure is silent.** Every container should be on the same
+newly built image; any whose image ID differs is still stranded.
+
+```bash
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'for n in $(sudo docker ps --format "{{.Names}}" | grep "^meridian-" | grep -v postgres); do sudo docker image inspect $(sudo docker inspect $n --format "{{.Config.Image}}") --format "{{.Created}}" | cut -c1-10; done | sort | uniq -c | sort -rn'
+```
+
+A single line dated today is a complete rebuild. Today it prints nine dates, 8 on 2026-09-14 and
+21 spread over 2026-08-21 to 2026-09-12.
+
+I first wrote this check against image **IDs**, expecting one shared ID. Every service builds its
+own tagged image, so the IDs always differ and the check could not have distinguished a finished
+rebuild from an untouched fleet. Build **date** is the quantity that varies with the thing being
+tested.
 
 **2. Is the Kalshi account a direct member, or an FCM/broker customer?** This gates every
 making strategy on Kalshi and I cannot find it out from the API. One sentence.
