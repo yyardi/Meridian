@@ -886,6 +886,29 @@ this afternoon, committed twice in one day.
 a detached HEAD is where it goes to die. Worth asking every peer to push before they stop, and
 worth me checking `git status` there whenever a session disappears.
 
+## 0aa. Three times today a proxy stood in for the thing, and all three answered CLEAN
+
+| who | the check | the proxy | the thing | what the proxy said |
+|---|---|---|---|---|
+| me | is the table-tennis amendment in the rescued file? | my own summary of it | its actual wording | **0 hits** -- nearly reported it lost |
+| 7d | which thresholds are duplicated? | the numeric **value** | the constant's **name** | **383 pairs**, almost all coincidences |
+| 7d | is any debugger branch unmerged? | commit **reachability** | whether the content is on main | **1 unmerged commit** -- nothing was lost |
+
+**Every one gave a clean-looking answer**, which is why none of them announced itself. A proxy does
+not fail loudly; it answers a question next to the one you asked, and the answer is well-formed.
+
+Verified the third myself by content rather than by graph: the five `Query(..., ge=1, le=...)`
+bounds from `debugger/bounds` are present on main, five for five, and the branch's apparent
+divergence is main having moved 212 commits since. All eleven debugger branches check out.
+
+**The rule, in the form that says when it binds:** when a check is cheap, ask what it is actually
+matching. The cheap handle for a thing -- its value, its name in your head, its position in a
+graph -- is not the thing, and the moment the two can differ is exactly the moment nobody looks.
+
+**And on work safety:** 7d has no push rights, so what protects their output is that refs live in
+the shared `.git` rather than in their `/private/tmp` worktree. Committed work survives the session;
+uncommitted work would not. They hold none. The exposure was 7f's alone and it is closed.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
