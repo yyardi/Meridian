@@ -464,8 +464,21 @@ so a rebuild after Thursday means the first live WNBA tape in three weeks was re
 known-broken version.
 
 **This is the abstract fleet-rebuild exposure with a date on it.** The rebuild command is in
-section 1 and has not been run. If only one service is rebuilt before Thursday, this is the one,
-though a partial rebuild leaves the rest on stale images reporting healthy.
+section 1 and has not been run.
+
+**I considered rebuilding just this one and decided not to, for a reason I had not seen until I
+checked.** `meridian-pulse-engine` starts with `alembic upgrade head && python -m core.pulse.live`,
+so rebuilding it applies migration `a1c7e35b9d20` and advances the database from
+`c2d9a7e51f83`. Eight containers were rebuilt today and can currently restart -- api, kalshi,
+mlb, cricket, tt, cricket-espn and both scalp engines -- and every one of them was built **before**
+that migration was committed. Advancing the database to fix PULSE would take those eight from
+restartable to stranded.
+
+So a single-service fix here is not free, and doing the fleet one service at a time is the same
+action the permission classifier declined in bulk. **The fleet rebuild is the right instrument and
+it is the operator's to run.** If it has not run by Wednesday I will rebuild PULSE alone and accept
+the eight, because a compromised Thursday tape costs more than a restart capability nothing has
+needed in three weeks -- but that is a worse outcome than one paste tonight.
 
 ## 0o. "Staged on prod" is not "deployed". No container mounts the checkout.
 
