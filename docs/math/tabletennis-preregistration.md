@@ -94,9 +94,13 @@ and it is large.
 | spread | p | hurdle |
 |---:|---:|---:|
 | 1¢ | 0.50 | 2.00¢ |
-| 1¢ | 0.65 | 1.86¢ |
 | 2¢ | 0.50 | 2.50¢ |
-| 2¢ | 0.65 | 2.36¢ |
+| **2.59¢ MEASURED** | **0.6152 MEASURED** | **2.72¢** |
+| 2.59¢ measured | 0.50 | 2.80¢ |
+
+> **Measured on the 27 started matches: mean spread 2.59¢, median 3.00¢** — not
+> the 1–2¢ the brief assumed, so **the hurdle is 2.7–2.8¢, not 2.0–2.5¢.**
+> Every "days to detect" figure below is correspondingly optimistic.
 
 > **Correction:** the venue fee `0.06·p(1−p)` is charged **once** on a position
 > held to settlement, not on entry *and* exit — verified against `bet_pnl` in
@@ -196,6 +200,17 @@ continuously, an unsettled market vanishes from a cell unnoticed. **Print the
 unsettled count per cell from day one** — the defect just fixed in
 `cfb/run_longshot_decomp.py`.
 
+**TRAP 8 — "the last quote before kickoff" is a trap on a forward-listed board,
+and it nearly produced a fabricated headline here.** At any moment ~92% of
+listed Setka markets have not started (measured: **325 of 352**). For those, the
+last quote *before* kickoff is simply **the most recent sweep**, hours ahead of
+a kickoff that has not happened. Selecting without a `kickoff < now` filter
+gave a **median staleness of 11 hours and a median spread of 50¢** — both pure
+artefacts of unstarted markets carrying placeholder books. Filtered to started
+matches the same data gives **8.2 minutes and 3.0¢**. **Every pregame-close
+query on this family must filter `ko < now()`**, and any figure that looks
+catastrophic should be checked against that filter before it is reported.
+
 **TRAP 7 — the complement identity.** YES and NO on one match sum to
 `−(spread + both fees)`. Any grid reporting both sides prints double what it
 computes, and "YES beat NO" is then arithmetic, not a finding.
@@ -210,3 +225,103 @@ computes, and "YES beat NO" is then arithmetic, not a finding.
    disjoint-pool competition before it is called real.
 5. **No verdict before** the 7-day recurrence measurement returns ρ, because
    until then `n_eff` is unknown and every interval is provisional.
+
+## 8. The frame gate: the registered n, and which arm to watch
+
+Added after the gate was first run on 17 matches (mean YES price 0.5588,
+realized YES rate 0.5294, favourites 6 of 11). **That was correctly recorded as
+NO POWER YET, not as a pass** — P(≥6 of 11 | true rate 0.50) = 0.5000 exactly,
+so the test could not have failed and a "pass" would have been an artefact of
+running it.
+
+### It is a discrimination, not a significance test
+
+The two hypotheses are **exact mirror images about 0.5**: correct frame puts the
+favourite's win rate at p̄_fav, a flipped frame at 1 − p̄_fav. With equal priors
+the rule is "decide at the midpoint, 0.5" and the error is symmetric.
+
+> **n ≥ z²·E[p_f(1−p_f)] / (p̄_fav − 0.5)² × deff**
+> z = 1.645 for a 5% wrong-call rate, 2.326 for 1%; deff = 1.3 (§2).
+
+| p̄_fav | n (5%) | n (1%) | hours at 156/day |
+|---:|---:|---:|---:|
+| 0.55 | 348 | 696 | 54 |
+| 0.60 | 84 | 169 | 13 |
+| 0.65 | 36 | 71 | 5.5 |
+| 0.70 | 18 | 37 | 2.8 |
+| 0.75 | 11 | 21 | 1.6 |
+
+### MEASURED, on the 27 matches that have actually started
+
+> **p̄_fav = 0.6152** (sd 0.078), E[p_f(1−p_f)] = 0.2367, mean YES mid 0.5541.
+>
+> **n = 61 matches for a 5% wrong-call rate (9.4h at 156/day); 122 for 1%
+> (18.8h).** The 17 already run carry a **19.3%** wrong-call probability.
+
+So the gate is **decisive by tomorrow, not in "a few hundred"** — but it is not
+decisive yet, and 19.3% is the number that says so.
+
+### Which arm — and why the obvious one is wrong
+
+| arm | statistic | distance to boundary |
+|---|---|---|
+| A | favourite win-rate vs 0.5 | p̄_fav − 0.5 |
+| **B** | **oriented gap `mean(y_f − p_f)`** | **p̄_fav − 0.5**, lower variance than A |
+| C | unoriented `mean(y) − mean(p)` | p̄_YES − 0.5 |
+
+**B dominates A for free**: subtracting p_f removes Var(p_f) from the variance
+while leaving the signal untouched.
+
+**C's entire signal is an accident of slug ordering.** If the venue assigned YES
+without regard to strength, p̄_YES → 0.500 and **C has no power at any n** — 196
+matches at p̄_YES = 0.5588, 1,691 at 0.52, 27,055 at 0.505. A and B *construct*
+their signal by orienting on the favourite, which guarantees a positive
+distance. At p̄_fav = 0.65, C needs **7× the matches B does.**
+
+> **Registered: the gate is arm B. C is secondary and never counts as the gate.**
+
+## 9. What the sweep interval does to the estimator
+
+Sweeps ~8 min apart; matches last ~20 min.
+
+**MEASURED, on started matches: it does neither. Capture is good and staleness
+costs nothing detectable.**
+
+| `mins_before` | p10 | p50 | p90 | max |
+|---|---:|---:|---:|---:|
+| started matches (n=27) | 2.9 | **8.2** | 22.9 | <120 |
+
+The median close is **8.2 minutes** before start — exactly one sweep interval,
+as designed — with **no mass beyond 120 minutes.** Capture ≈ 1; no match is
+being dropped.
+
+The registered diagnostic was run: **|p − 0.5| regressed on `mins_before` gives
+slope +0.00007/min, r = +0.006** — no detectable attenuation over the observed
+0–23 minute range. **Staleness at this sweep rate is free.**
+
+> **Honest limit: n = 27 bounds |r| only below about 0.39** (Fisher-z 95%).
+> This is "no detectable attenuation", not "no attenuation". **Re-run the same
+> regression at n ≈ 200 before treating it as settled.**
+
+**And the gate would survive it even if it were there.** Attenuation shrinks
+toward the null and cannot pass it, so **a flipped frame still shows favourites
+winning under half.**
+
+**Price-bucket hypotheses do not survive it.** A stale price misassigns matches
+to buckets, and selecting on a noisy variable is regression to the mean.
+**Do not run bucketed favourite–longshot on hand-swept tape.**
+
+**A real selection channel, second-order, with the mechanism inverted from the
+obvious guess:** a long match does not over-represent *itself* — it delays the
+**next** match on that table, lengthening that one's window and making it *more*
+likely captured. With players at ~2.7 matches/day back-to-back, the surviving
+sample tilts toward **matches following a long match**, i.e. a possibly-fatigued
+player. **That shares a cause with registered hypothesis #5 (within-day sequence
+effects), so #5 cannot be read on hand-swept tape at all.**
+
+**Registered diagnostics, one column each:**
+1. `mins_before` per captured close. Under capture ≈ 1 it lies in (0, S]; **mass
+   beyond S means the market stopped being swept — a genuine drop.**
+2. **`mins_before` distribution for matches settling YES vs NO.** If capture is
+   outcome-independent they coincide. This is the direct falsification of the
+   selection worry and costs one query.
