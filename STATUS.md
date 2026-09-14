@@ -517,6 +517,36 @@ morning's two-hour gap happens.
 used that word after a merge. For the six rows above marked yes it happened to be true by another
 route; for the three marked no it was not.
 
+## 0p. Kalshi can have a paper book today: it settles itself in our own tape
+
+The operator asked months of work ago for Kalshi to be treated as an equal venue. The blocker
+everyone assumed was settlement, because the Polymarket paper book settles through a venue client
+and no such client exists for Kalshi. **That assumption is wrong.** `kalshi_snapshots` carries
+`result` and `status` columns, so the settlement is already recorded by our own recorder.
+
+Measured:
+
+| | |
+|---|---|
+| settled tickers (`result` in yes/no) | **610** |
+| of those, with at least one two-sided quote | **610** |
+| with five or more quotes | 609 |
+| distinct games | **85** |
+
+By series: `KXNCAAFTOTAL` 525 settled over 81 games, `KXNCAAFSPREAD` 71 over 4,
+`KXNCAAFGAME` 14 over 7.
+
+**So college football totals on Kalshi are a testable population right now**: 81 games is above the
+G ≥ 25 power floor the paper book already uses, and every settled market has a price history. No
+new feed, no venue client, no waiting.
+
+**Two cautions before anyone builds on it.** The 525 markets sit on 81 games, about 6.5 strike
+levels per game, so they are heavily clustered and **G is 81, not 525** -- the same mistake that
+made a cell count look like a sample size earlier today. And NFL is entirely absent from the
+settled set despite 216,000 `KXNFLSPREAD` rows, which means our recorder is not capturing NFL
+settlement; that is a separate question and should be answered before anyone concludes NFL cannot
+be tested on Kalshi.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
