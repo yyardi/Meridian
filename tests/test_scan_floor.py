@@ -208,8 +208,21 @@ def test_one_query_reads_the_table_twice_not_twenty_six_times():
     two full scans. Asserted on the SQL and on the absence of the old loop,
     because a rewrite that left one `LIKE :pat` behind would still work and
     still be slow."""
-    assert SRC.count("LIKE ANY(:pats)") == 2
-    assert "LIKE :pat " not in SRC and "LIKE :pat\n" not in SRC
+    # SCOPED TO THE CLOSE QUERY, which is this test's subject. It used to count
+    # over the whole file, and it caught a real defect doing so: my first
+    # START_LAG used `LIKE :pat`, which would have been 13 more full scans of a
+    # 57 GB table -- exactly what this rewrite removed. But the assertion cannot
+    # stay file-wide, or no second query may ever exist. The close query reads
+    # the table twice, once for the kickoff CTE and once for the close, and that
+    # is what is pinned here.
+    close = SRC[SRC.index("CLOSE_SQL = "):SRC.index("CLOSE = CLOSE_SQL.format")]
+    assert close.count("LIKE ANY(:pats)") == 2
+    assert ":pat " not in close and ":pat\n" not in close, (
+        "the close query is per-pattern again -- that is 26 full passes over a "
+        "57 GB table")
+    # and no OTHER query may be per-pattern either, which is the file-wide half
+    assert "LIKE :pat" not in SRC, (
+        "a per-pattern LIKE remains somewhere: every one is a full scan")
     # exactly one execute of the close query, not one per pattern
     tree = ast.parse(SRC)
     execs = [n for n in ast.walk(tree)
@@ -383,3 +396,63 @@ def test_the_equivalence_reference_must_declare_its_floor():
     assert _run("since=2026-09-01,%-cfb-%=10", "2026-09-01")["EXPECT"] == {"%-cfb-%": 10}
     # no reference at all is not an error
     assert _run("", None)["EXPECT"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# The close COUNT is a label; the close AGE is the thing that varies.
+# --------------------------------------------------------------------------- #
+def _age_summary():
+    tree = ast.parse(SRC)
+    fn = next(n for n in tree.body
+              if isinstance(n, ast.FunctionDef) and n.name == "age_summary")
+    ns: dict = {}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), "<scan>", "exec"), ns)  # noqa: S102
+    return ns["age_summary"]
+
+
+def test_the_coverage_line_carries_the_close_age_not_just_the_count():
+    """★ A COUNT OF CLOSES WITHOUT THEIR AGE MISDESCRIBES ITS POPULATION.
+    Football closes at the whistle; table tennis does not. Measured 2026-09-01
+    onward on the scan's own population, close age / event duration: cfb median
+    0.000 p90 0.001, nfl 0.000/0.000, tabletennis **0.405 / 5.852** -- a median
+    table-tennis close is 40% of a ~14-minute match before it starts and the p90
+    is nearly six matches. No artifact reported it, so every table-tennis number
+    the programme produced described a population nobody had measured."""
+    assert "close_age_min" in SRC
+    line = next(ln for ln in SRC.splitlines() if "closes," in ln and "settlement calls" in ln)
+    assert "age_summary(ages)" in line, f"age not on the coverage line: {line}"
+
+
+def test_age_summary_separates_football_from_table_tennis():
+    """The discriminating property, on the two real shapes. If these collapsed to
+    the same string the statistic would not be worth printing."""
+    A = _age_summary()
+    football = A([0.0] * 50)
+    tt = A([2, 5, 8, 8, 12, 20, 34, 44, 90, 141])
+    assert football == "age med 0m p90 0m >1h 0%"
+    assert football != tt
+    assert ">1h 20%" in tt and "p90 90m" in tt
+    # and an empty pattern says so rather than printing a zero that reads as fresh
+    assert A([]) == "age n/a", "no closes must not render as a 0-minute age"
+
+
+def test_the_circularity_is_printed_not_implied():
+    """★ THE AGE IS COMPUTED FROM `game_start_time`, THE SAME COLUMN THE CLOSE
+    SELECTION USES, so it agrees with itself by construction and cannot detect a
+    wrong schedule. The only independent handle is `event_period` leaving its
+    pregame state -- an observation, not a schedule -- and it covers a minority
+    of games: table tennis has 249 in-play rows across 386 games since
+    2026-09-01, 82 games with any observed play. So it validates rather than
+    replaces, and both facts are printed. Measured: scheduled start LEADS
+    observed play by a median 2.5 min in cfb (159 games) and 6.6 in table tennis
+    (82), so the circular age UNDERSTATES the true one."""
+    assert "START_LAG" in SRC
+    assert "cannot detect a wrong schedule" in SRC
+    assert "NO independent check possible" in SRC, (
+        "a league with no observed play must say the age is circular, not go quiet")
+    # the independent query must not read game_start_time as its start signal
+    lag = SRC[SRC.index('START_LAG = """'):]
+    lag = lag[:lag.index('"""', 15)]
+    assert "event_period" in lag, "the independent check is not independent"
+    # and it must survive its own failure rather than killing the scan
+    assert "start-lag unavailable" in SRC
