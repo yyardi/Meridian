@@ -14,19 +14,42 @@ Source: the venue's published schedule (docs.polymarket.us/fees, effective
 **Maker rebate is applied at the point of trade.** Our engine posts and never
 crosses — by construction, every one of our fills is a maker fill.
 
-## The venue question, settled
+## The NCAAF maker-fee series — and what this does NOT settle
 
 Kalshi's NCAAF series are all **`quadratic_with_maker_fees`** (read from
 `/series`, multiplier 1): **0.07·p·(1−p) ≈ 1.75¢ per contract CHARGED to the
 maker** at mid-book.
 
-> **Polymarket US pays a maker 0.31¢. Kalshi charges one 1.75¢. A 2.06¢ swing
-> per contract, against a strategy whose entire loss is under 0.4¢.**
+> **AMENDED 2026-09-14 — TWO INDEPENDENT LIMITS ON WHAT FOLLOWS, AND BOTH MUST
+> HOLD.** (1) `/series` returns the fee TYPE and the MULTIPLIER; it does not
+> return the coefficient. **0.07 is the one number in this document with no
+> stated source**, and a third-party figure of 0.0175 was read as a competing
+> coefficient. It is not one: 0.07/0.0175 = 4.0 and 1/p(1−p) at p=0.5 = 4.0 to
+> machine precision, so 0.0175 is 0.07's VALUE at mid-book and reading it as a
+> coefficient applies p(1−p) twice. The discriminator needs no schedule —
+> whether the source attaches `·p(1−p)` or quotes a flat per-contract figure —
+> and 1.75¢ stands for these series pending it. (2) **The scope below is NCAAF,
+> not the venue.** Maker fees exist on **160 of 14,018 Kalshi series**, with
+> `fee_multiplier` 0 on 14 and 0.5 on 19; the high-volume tennis, crypto and
+> weather series are `quadratic` — **taker-only, charging makers nothing**. The
+> conclusions in this section are therefore about the maker-fee series and say
+> nothing about the venue.
 
-Kalshi's 1¢ median spread is not an advantage: half-spread 0.5¢ against a 1.75¢
-maker fee means **−1.25¢ before adverse selection**. Market making there is
-structurally impossible at those spreads. **Switching venues would be the most
-expensive decision available to us.**
+> **Polymarket US pays a maker 0.31¢. Kalshi's NCAAF series charge one 1.75¢. A
+> 2.06¢ swing per contract, against a strategy whose entire loss is under
+> 0.4¢.**
+
+The 1¢ median spread on those series is not an advantage: half-spread 0.5¢
+against a 1.75¢ maker fee means **−1.25¢ before adverse selection**. Market
+making **on the maker-fee series** is structurally impossible at those spreads.
+**Moving the book onto them would be the most expensive decision available to
+us.**
+
+**The impossibility claim rests on the fee constant and not on adverse
+selection** — the −1.25¢ above is explicitly *before* adverse selection, so at
+a zero maker fee the half-spread is not consumed before adverse selection
+begins and the question becomes empirical rather than arithmetic. That is the
+open question for the `quadratic` series, and it is not answered here.
 
 ## What it does to our measured results
 
