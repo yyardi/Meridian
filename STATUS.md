@@ -385,7 +385,18 @@ that a service died.
 | my own network (`curl https://github.com`) | 200 in 0.24s |
 | `~/.meridian-server` last written | 2026-09-05 |
 
-**I cannot tell whether the instance is down or has moved.** Timeouts on every port with a healthy
+**The established session was RESET, not dropped.** A long-running ssh that was open at the time
+died with `Read from remote host: Connection reset by peer` followed by `Broken pipe`, and every
+connect since has timed out. That ordering discriminates: a host that actively sends a reset was
+still on the network at that instant and then stopped answering. **A pure address rotation would
+not reset an established session on the old address** -- it would leave it hanging. An instance
+stopping or restarting produces exactly reset-then-timeout, and a restart also rotates the public
+address unless an Elastic IP is attached, which unifies both symptoms under one cause.
+
+So the leading hypothesis is now **the instance stopped or restarted at about 15:55Z**, not that
+the address quietly moved. That raises the stakes rather than lowering them.
+
+**I still cannot confirm it from here.** Timeouts on every port with a healthy
 local network fit three causes and I cannot separate them from here: the instance stopped, a
 security group changed, or the public address rotated and the file is stale. The address file was
 written on 09-05 and the address is known to rotate, so a stale file is a live possibility and
