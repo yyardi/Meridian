@@ -40,6 +40,7 @@ import math
 import json
 import pathlib
 import random
+import statistics
 import sys
 from collections import defaultdict
 
@@ -93,46 +94,100 @@ def permute_settlements(rows, rng) -> tuple[list[int], int]:
 
 
 # ------------------------------------------------------------------- scoring
-def score_cells(rows, ys, chosen=None) -> dict:
-    """Per-cell clustered mean, t, and net per $1. `chosen` is passed in
-    because selection depends on PRICES ONLY — it is identical in every
-    replicate, and recomputing it would be both slow and a lie about what the
-    permutation changes."""
+#: The scan's power floor (cfb/run_scan.py:69). Matched, not chosen: a cell the
+#: scan never reports must not sit in the reference distribution.
+G_FLOOR = 6
+
+
+def score_cells(rows, ys, chosen=None, dropped: dict | None = None) -> dict:
+    """Per-cell clustered mean, t and net per $1, with the SCAN'S OWN EXCLUSIONS.
+
+    `chosen` is passed in because selection reads PRICES ONLY — identical in
+    every replicate, and recomputing it would be both slow and a lie about what
+    the permutation changes.
+
+    ★ A CELL WHOSE BETS ALL SETTLE THE SAME WAY IS NOT A MEASUREMENT. With no
+    outcome variation the sandwich has no risk to measure, so it measures the
+    cell's PRICE DISPERSION instead: the interval collapses while the mean stays
+    large. Reproduced here on 40 bets all settling YES, prices over 40 ticks:
+
+        all-same outcome      mean +49.714c  half 1.4513   t = 67.14
+        same prices, varying  mean +14.714c  half 14.8349  t =  1.94
+
+    35x on |t| from identical prices. On the real scan 16 of 324 cells were
+    degenerate and were ALL TWELVE of the top twelve by |t|; removing them took
+    max|t| 30.01 -> 5.87 and Var(t) 17.282 -> 1.308.
+
+    ★ THE GUARD RUNS INSIDE EVERY REPLICATE, not once on the observed data.
+    Permuting settlements can CREATE a degenerate cell that was not degenerate
+    on the real tape and DESTROY one that was, so a null filtered on the
+    observed degeneracy set would reproduce the artifact in the reference and
+    then agree with the observed value for the wrong reason. Effective m
+    therefore varies by replicate, and that is reported rather than asserted
+    away.
+
+    ★ AND THE G FLOOR AND se CHECK ARE THE SCAN'S, verbatim from
+    cfb/run_scan.py:146. A reference distribution filtered differently from the
+    instrument it calibrates is a reference for a different statistic.
+    """
     if chosen is None:
         chosen = select(rows)
     idx = {r["market_slug"]: i for i, r in enumerate(rows)}
+    thin = degenerate = floored = 0
     out = {}
     for name, bets in chosen.items():
-        vals, keys, pnl, staked = [], [], 0.0, 0.0
+        vals, keys, pnl, staked, outcomes = [], [], 0.0, 0.0, set()
         for b in bets:
-            r = rows[idx[b.market_slug]]
-            y = ys[idx[b.market_slug]]
-            p = bet_pnl(b.side, y, r["bid"], r["ask"])
-            vals.append(100 * p)
+            i = idx[b.market_slug]
+            r, y = rows[i], ys[i]
+            outcomes.add(y)
+            pv = bet_pnl(b.side, y, r["bid"], r["ask"])
+            vals.append(100 * pv)
             keys.append(r["game_id"])
-            pnl += p
+            pnl += pv
             staked += bet_stake(b.side, r["bid"], r["ask"])
         if len(vals) < 2 or staked <= 0:
+            thin += 1
+            continue
+        if len(outcomes) < 2:
+            degenerate += 1
             continue
         m, h, n, G, ge = clustered(vals, keys)
         se = h / 1.96 if h not in (0.0, float("inf")) else float("inf")
+        if G < G_FLOOR or se in (0.0, float("inf")) or not math.isfinite(se):
+            floored += 1
+            continue
         out[name] = {
             "mean_c": m, "half": h, "n": n, "games": G, "g_eff": ge,
-            "t": (m / se) if se not in (0.0, float("inf")) else 0.0,
+            "t": m / se,
             "net_per_1": pnl / staked,
             "excludes_zero": abs(m) > h,
         }
+    if dropped is not None:
+        dropped.update(thin=thin, degenerate=degenerate, floored=floored)
     return out
 
 
-def _p_two_sided(t: float) -> float:
-    """Normal two-sided p. The cells share games, so these are NOT independent
-    — which is the whole reason the reference is a permutation null and not a
-    table. They are still the right per-cell input to HC."""
-    return max(1e-15, math.erfc(abs(t) / math.sqrt(2.0)))
+def _p_two_sided(t: float, df: int | None = None) -> float:
+    """Two-sided p on t(df), MATCHING the scan (`tdist.sf(|t|, df=G-1)`).
+
+    ★ NOT normal, and the difference is large where it matters most. At G=6 the
+    scan's df is 5, and t(5).sf(3) = 0.01505 against the normal 0.00135 — an
+    11x gap in the p-value at a t the scan sees routinely. HC reads the
+    SMALLEST p-values, so computing them on the normal would hand it p's an
+    order of magnitude too small at the low-G end and inflate it against a
+    scan that never saw those numbers.
+
+    df=None falls back to the normal, for the independent-cell calibration
+    where there is no G.
+    """
+    if df is None or df < 1:
+        return max(1e-15, math.erfc(abs(t) / math.sqrt(2.0)))
+    from scipy.stats import t as tdist
+    return max(1e-15, float(2.0 * tdist.sf(abs(t), df=df)))
 
 
-def higher_criticism(ts, alpha0: float = 0.25) -> float:
+def higher_criticism(ts, alpha0: float = 0.25, dfs=None) -> float:
     """Donoho-Jin HC, stabilised by CLAMPING THE DENOMINATOR at 1/m.
 
         HC* = max_i  sqrt(m) (i/m - p_(i)) / sqrt(p~(1 - p~)),  p~ = max(p_(i), 1/m)
@@ -158,7 +213,9 @@ def higher_criticism(ts, alpha0: float = 0.25) -> float:
     m = len(ts)
     if m == 0:
         return 0.0
-    ps = sorted(_p_two_sided(t) for t in ts)
+    if dfs is None:
+        dfs = [None] * m
+    ps = sorted(_p_two_sided(t, d) for t, d in zip(ts, dfs))
     floor = 1.0 / m
     best = 0.0
     # max(2, ...): int() truncation leaves a SINGLE term below m=8,
@@ -192,12 +249,13 @@ def summarise(cells: dict) -> dict:
         return {"max_abs_t": 0.0, "n_excluding_zero": 0, "best_net_per_1": 0.0,
                 "var_t": 0.0, "hc": 0.0}
     ts = [c["t"] for c in cells.values()]
+    dfs = [max(1, c["games"] - 1) for c in cells.values()]
     return {
         "max_abs_t": max(abs(t) for t in ts),
         "n_excluding_zero": sum(1 for c in cells.values() if c["excludes_zero"]),
         "best_net_per_1": max(c["net_per_1"] for c in cells.values()),
         "var_t": var_t(ts),
-        "hc": higher_criticism(ts),
+        "hc": higher_criticism(ts, dfs=dfs),
     }
 
 
@@ -220,12 +278,15 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
                              "best_net_per_1", "var_t", "hc")}
     per_cell: dict[str, list[float]] = defaultdict(list)
     frozen_rows = 0
-    eff_m = set()
+    eff_m: list[int] = []
+    degen: list[int] = []
     for _ in range(reps):
         ys, frozen = permute_settlements(rows, rng)
         frozen_rows = frozen
-        cells = score_cells(rows, ys, chosen)
-        eff_m.add(len(cells))
+        drop: dict = {}
+        cells = score_cells(rows, ys, chosen, dropped=drop)
+        eff_m.append(len(cells))
+        degen.append(drop.get("degenerate", 0))
         for name, c in cells.items():
             per_cell[name].append(abs(c["t"]))
         s = summarise(cells)
@@ -234,8 +295,16 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
     return {
         "reps": reps, "seed": seed,
         "cells_selected": len(chosen),
-        "cells_scored": (sorted(eff_m)[-1] if eff_m else 0),
-        "cells_scored_varied": len(eff_m) > 1,
+        # m VARIES BY REPLICATE once degeneracy is judged inside the replicate,
+        # because a permutation can create it and destroy it. Reported, not
+        # asserted away — and the degenerate count per replicate is itself a
+        # measure of how thin the tape is.
+        "cells_scored": (statistics.median(eff_m) if eff_m else 0),
+        "cells_scored_min": (min(eff_m) if eff_m else 0),
+        "cells_scored_max": (max(eff_m) if eff_m else 0),
+        "cells_scored_varied": len(set(eff_m)) > 1,
+        "degenerate_per_rep": (_q(degen) if degen else None),
+        "reps_with_degenerate": sum(1 for d in degen if d > 0),
         "rows": len(rows), "frozen_rows": frozen_rows,
         "per_cell_abs_t": {k: sorted(v) for k, v in per_cell.items()},
         "quantiles": {k: _q(v) for k, v in draws.items()},
@@ -298,7 +367,13 @@ def plant_edge(rows, *, lo: float, hi: float, cents: float, seed: int = 7):
     for i, r in enumerate(rows):
         mid = (r["bid"] + r["ask"]) / 2
         if lo <= mid < hi:
-            ys[i] = 1 if rng.random() < min(1.0, r["ask"] + cents / 100.0) else 0
+            # CAPPED AWAY FROM THE BOUNDARY. An uncapped edge drives the
+            # bucket's win rate to 1, the cell loses all outcome variation, the
+            # degeneracy guard correctly removes it — and the control then
+            # reports "not detected" because the cell carrying the signal
+            # stopped existing. Measured: a 40c plant on a 1-row-per-game
+            # fixture made the target cell degenerate and max|t| fell to 0.38.
+            ys[i] = 1 if rng.random() < min(0.97, r["ask"] + cents / 100.0) else 0
     return ys
 
 
@@ -311,12 +386,31 @@ def recovery_rate(rows, null, *, lo: float, hi: float, cents: float,
     the rate is what the two-sided band is stated against.
     """
     thr = null["quantiles"][stat]["p95"]
-    hits = 0
+    hits = lost = 0
     for k in range(trials):
         ys = plant_edge(rows, lo=lo, hi=hi, cents=cents, seed=seed + k)
-        if summarise(score_cells(rows, ys))[stat] > thr:
+        drop: dict = {}
+        cells = score_cells(rows, ys, dropped=drop)
+        # A planted trial whose target cell went DEGENERATE is not a miss — the
+        # cell stopped existing. Counted separately so a control cannot report
+        # "undetectable" for a reason that is really "removed by the guard".
+        if drop.get("degenerate", 0) > null_degenerate_floor(null):
+            lost += 1
+            continue
+        if summarise(cells)[stat] > thr:
             hits += 1
-    return hits / trials
+    usable = trials - lost
+    if usable == 0:
+        return float("nan")
+    return hits / usable
+
+
+def null_degenerate_floor(null) -> int:
+    """How many degenerate cells the NULL itself produces, at its median. A
+    planted trial only counts as 'cell removed' if it exceeds what permutation
+    alone does."""
+    d = null.get("degenerate_per_rep")
+    return int(d["p50"]) if d else 0
 
 
 def min_detectable_edge(rows, null, *, lo: float, hi: float,
