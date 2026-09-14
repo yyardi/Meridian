@@ -550,7 +550,38 @@ on an EXPLAIN or a unit test rather than on a real unattended run:** does
 materially under tonight's two hours (the single-pass query), and does CELLS_JSON
 parse (the int64 fix).
 
-★★★ **THE SCAN'S EXCESS IS THE SPREAD, NOT AN EDGE — AND THAT CLOSES THE SCREEN.**
+★★★★ **SCREEN CLOSED: NO EDGE ON ANY TRADEABLE SPREAD, AND THE BOARD IS
+QUIETER THAN NOISE THERE.** Conditioning on cost, which needed no new tape:
+
+| max half-spread | cells | p<0.05 obs/null | p<0.01 obs/null | best p | null E[min p] | lose/win |
+|---|---:|---|---|---|---|---|
+| ≤1¢ | 131 | 11 / 6.6 | **0 / 1.3** | 1.18e-02 | 7.58e-03 | 10/1 |
+| ≤2¢ | 221 | 16 / 11.1 | **0 / 2.2** | 1.18e-02 | 4.50e-03 | 15/1 |
+| ≤3¢ | 244 | 20 / 12.2 | 2 / 2.4 | 7.30e-04 | 4.08e-03 | 19/1 |
+| ≤5¢ | 270 | 26 / 13.5 | 5 / 2.7 | 1.64e-04 | 3.69e-03 | 24/2 |
+| all | 327 | 43 / 16.4 | 16 / 3.3 | 1.21e-04 | 3.05e-03 | 40/3 |
+
+**The p<0.01 count is 0, 0, 2, 5, 16 — strictly increasing with the spread cap.
+A cost effect shrinks toward the null as the cap tightens; an edge does not.**
+And the direction never moves: if an edge were hiding under the cost, winners
+would appear as the cost is removed, and the opposite happens at every cap.
+
+**On the tradeable subset (221 cells, half-spread ≤2¢): zero at p<0.01 against
+2.2 expected, and the best cell is 2.6× LESS extreme than a pure null produces**,
+52× from the Bonferroni bar. Not "nothing found" — the tight-spread board is
+measurably flatter than chance. **Zero cells nominated at any tradeable cap.**
+The three that clear unconditionally have half-spreads of 4.5–19.5¢.
+
+Not leaned on: the ≤1¢ row's 1.67× excess at p<0.05 with **zero** at p<0.01 and a
+minimum p above the null expectation is the signature of many marginal cells, not
+one real one — recorded as unexplained, likely residual clustering, rather than
+claimed clean.
+
+Also fixed: the G floor gated only the sandwich path, so **57 primary cells were
+ranking without it**, including a G=2 cell at p=8.9e-04. All 57 now print with
+their reason; m 383 → 327.
+
+★★★ **Why the excess existed at all: it is the spread, not an edge.**
 Post-exclusion the distribution IS wider than the null (Var(t) 1.503 against a
 1.148 baseline, 44 cells over |t|>1.96 against 15.5, 16 at p<0.01 against 3.1).
 The width has a cause and it is not opportunity:
