@@ -392,13 +392,28 @@ on whole cents, Polymarket is far better on far-dated CFB (3¢ vs 25¢), and tho
 are exactly the series that carry maker fees. Keep the 72h pregame Kalshi
 recording as the cross-venue reference it already is.
 
-**★ One number is blocked and it decides whether making is alive here.**
-`docs/math/the-rebate.md` asserts a Kalshi maker fee of 0.07·p(1−p) ≈ 1.75¢ and
-concludes making is "structurally impossible". Third-party sources say
-0.0175·p(1−p) ≈ 0.44¢ — **4× apart**. The venue's own fee schedule is behind a
-Cloudflare block, and adjacent sources have burned this project twice. **Someone
-with a Kalshi account must read the PDF.** Irrelevant for the four leads above,
-which carry no maker fee — but it decides the making question everywhere else.
+**★ The "4× fee dispute" is probably OUR OWN transcription error, and the real
+defect is a scope error.** 0.07 / 0.0175 = 4.0, and 1/p(1−p) at p=0.5 = 4.0 to
+machine precision: **0.0175 IS the coefficient's value at mid-book**, so reading
+it as a coefficient applies p(1−p) twice. Treat 1.75¢ as standing for the
+maker-fee series. The discriminator needs no PDF — whether the third-party text
+attaches `·p(1−p)` or states a flat per-contract figure.
+
+**What does not dissolve is the scope.** `docs/math/the-rebate.md` derives
+"structurally impossible" from fee arithmetic alone and says so —
+*"half-spread 0.5¢ against a 1.75¢ maker fee means −1.25¢ **before** adverse
+selection"* — so adverse selection was never load-bearing in that conclusion.
+Its evidence sentence is correctly scoped to NCAAF; its three conclusion
+sentences say "Kalshi", "there" and "venues". Against 160 maker-fee series of
+14,018, that does not follow. **And on the series we actually want — tennis,
+crypto, weather — the maker fee is zero, so the half-spread is not eaten before
+adverse selection even begins and the question becomes empirical.** Making was
+closed on an arithmetic that does not apply to the markets we now care about.
+
+What survives regardless, being Polymarket-side: the maker rebate, the guarded
+true-P&L column (+0.023¢ WNBA, −0.062¢ CFB), the +0.061¢ [−0.762, +0.883] over
+24 games, and the circuit-breaker effect. **None of the positive Polymarket
+result is at risk.**
 
 ## 3b. Open defects found tonight (none is a strategy question)
 
