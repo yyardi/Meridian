@@ -36,6 +36,12 @@ services:
       DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
       MERIDIAN_LEAGUE: cricket
       MERIDIAN_RPS: "2"
+      # Cricket matches run for hours or days and the board is listed well ahead, so
+      # the football default is closer to right here -- but county boards are thin and
+      # move on team news, so near-start is tightened a little.
+      MERIDIAN_NEAR_TIPOFF_HOURS: "12"
+      MERIDIAN_INTERVAL_NEAR: "600"
+      MERIDIAN_INTERVAL_IDLE: "1800"
       # MERIDIAN_EVENT_LIMIT defaults to 50 PER VENUE COMPETITION (core/config.py),
       # and setkameua alone listed 237 events on 2026-09-13 — so the default silently
       # records 50 of them and the board reads as a small league. Measured: limit 50
@@ -53,6 +59,17 @@ services:
     environment:
       <<: *cr_env
       MERIDIAN_LEAGUE: tabletennis
+      # CADENCE. The recorder's default is 15 min near tip-off and 60 min idle, which
+      # is right for a football board and wrong here: a Setka Cup match lasts ~20
+      # MINUTES, so an hourly sweep misses most pregame closes outright and leaves the
+      # rest up to an hour stale. Hand-sweeping at 8-minute intervals on 2026-09-14
+      # measured a median close 8.2 min before start with no detectable price
+      # attenuation; at 60 min that median becomes ~30 and the attenuation question
+      # goes live. The listing window is ~24h ahead, so NEAR must cover it or every
+      # market falls into the idle branch.
+      MERIDIAN_NEAR_TIPOFF_HOURS: "24"
+      MERIDIAN_INTERVAL_NEAR: "300"
+      MERIDIAN_INTERVAL_IDLE: "600"
       # MERIDIAN_EVENT_LIMIT defaults to 50 PER VENUE COMPETITION (core/config.py),
       # and setkameua alone listed 237 events on 2026-09-13 — so the default silently
       # records 50 of them and the board reads as a small league. Measured: limit 50
