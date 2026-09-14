@@ -550,6 +550,38 @@ on an EXPLAIN or a unit test rather than on a real unattended run:** does
 materially under tonight's two hours (the single-pass query), and does CELLS_JSON
 parse (the int64 fix).
 
+★★★ **THE SCAN'S EXCESS IS THE SPREAD, NOT AN EDGE — AND THAT CLOSES THE SCREEN.**
+Post-exclusion the distribution IS wider than the null (Var(t) 1.503 against a
+1.148 baseline, 44 cells over |t|>1.96 against 15.5, 16 at p<0.01 against 3.1).
+The width has a cause and it is not opportunity:
+
+| cell | G | win rate | break-even | mid | ask − mid |
+|---|---:|---:|---:|---:|---:|
+| cfb 4th-quarter total, dec 0.7 | 36 | 63.9% | 87.9% | 75.0 | **+12.9** |
+| cfb 3rd-quarter total, dec 0.7 | 20 | 50.0% | 84.7% | 75.0 | **+9.7** |
+| cfb 1st-quarter total, dec 0.7 | 27 | 63.0% | 89.0% | 75.0 | **+14.0** |
+| cfb 1st-quarter spread, dec 0.5 | 61 | 37.7% | 61.7% | 55.0 | **+6.7** |
+
+**Break-even sits a median +9.7pp above the decile centre**, because the ask is
+7–14¢ above the mid in these thin quarter markets. **Ten of ten top cells lose;
+none wins.** The scan is correctly detecting the venue's spread on illiquid market
+types. It is untradeable in the direction it points — nobody crosses a 14¢ spread
+— and the mirror, selling into those spreads, is the making study already measured
+negative with power.
+
+**So the screen is answered: no edge, and the apparent global effect is cost.**
+Consistent from four directions now — the decile calibration table, the
+directional split (6 above break-even against ~12 by chance), the aggregate
+(−0.0157 mean win rate minus break-even), and this.
+
+**Next scan, and it needs no new tape: condition on the spread.** Bucket on
+ask-minus-mid rather than on the mid alone and ask whether anything survives with
+cost held constant.
+
+**Not yet comparable:** two implementations give post-exclusion Var(t) 1.308 and
+1.503, but on 308 versus 309 cells and with different within-game rung selection.
+Non-convergence is only a finding once the inputs are shown identical.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
