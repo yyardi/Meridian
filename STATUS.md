@@ -601,6 +601,47 @@ clean and better than the other venue's: `yes_sub_title` names the side on every
 **One thing worth keeping beyond Kalshi:** the local database mirror holds 98 settled rows against
 production's 13,097, so this same analysis run locally concludes the population is empty.
 
+## 0q. "Reached post" is not "has a final score", and the obvious repair is worse than the defect
+
+The ESPN fix waiting on the rebuild polls a departed game until `post` is observed. Two questions
+about it, both answered before the rebuild rather than after, and the second one found a defect in
+the repair rather than in the recorder.
+
+**Is the three-hour give-up long enough? Yes, by orders of magnitude, and the obvious measurement
+would have been censored.** Among games that reached post the delay from the last `in` row is a
+median 0.5 minutes -- but that population is selected on having posted *while polling continued*,
+which is the Kalshi capture bias in miniature and cannot bound the 81 stuck games. The answer
+comes from the other side: the stuck games are abandoned **at the whistle**, not mid-game. CFB
+period 4, 69 games, median observed span 3.28 hours, clock 0:00. A 3.28-hour span is a full
+college football game. The gap to bridge is minutes.
+
+A separate worry of mine was real and is not the bound: one game went post, back to `in` 9.75
+hours later, then post again. A three-hour bound would not cover that, but post had already been
+observed, so the exit condition rather than the bound was always the binding constraint.
+
+**Is `post` sufficient for a final score? Complete yes, stable no.** Verified here independently:
+105 CFB post games, **zero** null scores, and **12** whose post score is *below* a score seen
+earlier in the same game, understating by up to 7 points. NFL: 9 post games, zero of either.
+
+**And the obvious repair is the wrong one.** Taking `max(home_score)` and `max(away_score)` across
+the game looks right and is not: in **9 of those 12** the maximum home score and the maximum away
+score **never co-existed in any single row**, so the per-column max names a scoreline that never
+happened. (7d measured 7 of 12 by a slightly different row restriction; the direction and the
+conclusion are the same and my count is the larger.) These are ESPN publishing a score and
+correcting it *downward*, with the post row carrying the correction. `max()` would overstate up to
+seven totals points and push Over markets toward YES -- the same flattering direction as every
+other defect today, introduced while fixing one.
+
+**The rule is the LAST post row.** A non-monotone score history is a flag to inspect, not a reason
+to reach for `max()`.
+
+**One change to the fix before it ships.** Exit on `post` observed **twice, a few minutes apart,
+with the same score**, rather than on the first post. Of 114 post games the median has exactly one
+post row, so the naive "112 of 114 unchanged" is vacuous for 77 of them -- the comparison is a row
+against itself. Among the 37 where it *can* fail, **2 changed score after first post**, 5.4%, by up
+to 9 total points. One confirming poll, one extra request per game, against a measured 5% rather
+than an imagined tail.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
