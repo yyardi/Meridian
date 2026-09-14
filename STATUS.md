@@ -642,6 +642,31 @@ against itself. Among the 37 where it *can* fail, **2 changed score after first 
 to 9 total points. One confirming poll, one extra request per game, against a measured 5% rather
 than an imagined tail.
 
+## 0r. Tonight is the first live run of the operator's own strategy, on paper
+
+Denver at Kansas City, kickoff **2026-09-15 00:15Z**. It is the only NFL game in the next twelve
+hours and the first live football since Sunday.
+
+`meridian-scalp-nfl` has been up since 05:20Z and has produced **zero** rows in `paper_scalps`,
+because there has been no live game since it started. Its parameters: trigger `ytg40` (inside the
+opponent's 40), take profit 5%, stop 10%, size $25, `max_age_s` 30.
+
+**The feeds are idle by design, not broken.** The NFL ESPN recorder is polling every five minutes
+and logging `live_games=0`; the newest `espn_cfb_game_state` row is 03:28:50Z, when Sunday's games
+ended. `refresh_live` only collects games at state `in`, so nothing is written until kickoff. That
+is the same exit condition that causes the missing-final-score defect, seen from its harmless side.
+
+**One thing to watch rather than assume.** The engine refuses data older than 30 seconds and the
+ESPN summary poll runs at 20-second intervals during a live game. That is inside the limit with
+ten seconds of margin, so a slipped cycle means a skipped trigger. The check tomorrow is how many
+triggers fired against how many were skipped for stale data; if the skip rate is material, the
+binding constraint on the operator's strategy is our poll interval rather than the market.
+
+**What this is not.** It is not a test of whether the idea makes money -- that was measured today
+on 59 CFB games and the answer was no drift at the trigger, with a median move of 0.00¢. Tonight
+is a live-path check: does the engine see plays, price them, open and close positions, and write
+rows. A negative P&L tonight confirms the measurement rather than adding to it.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
