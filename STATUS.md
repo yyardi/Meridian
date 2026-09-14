@@ -642,169 +642,52 @@ against itself. Among the 37 where it *can* fail, **2 changed score after first 
 to 9 total points. One confirming poll, one extra request per game, against a measured 5% rather
 than an imagined tail.
 
-## 0r. Tonight is the first live run of the operator's own strategy, on paper
+## 0r. The operator's strategy cannot be executed on this feed at 30 seconds
 
-Denver at Kansas City, kickoff **2026-09-15 00:15Z**. It is the only NFL game in the next twelve
-hours and the first live football since Sunday.
+Denver at Kansas City, kickoff **2026-09-15 00:15Z**. `meridian-scalp-nfl` has been up since
+05:20Z with zero rows in `paper_scalps`. It beats every 2 seconds, so its silence is liveness and
+not death -- the heartbeat table answers what the log cannot.
 
-`meridian-scalp-nfl` has been up since 05:20Z and has produced **zero** rows in `paper_scalps`,
-because there has been no live game since it started. Its parameters: trigger `ytg40` (inside the
-opponent's 40), take profit 5%, stop 10%, size $25, `max_age_s` 30.
+**The freshness gate cannot be met by the data.** Verified independently, six days of tape:
 
-**The feeds are idle by design, not broken.** The NFL ESPN recorder is polling every five minutes
-and logging `live_games=0`; the newest `espn_cfb_game_state` row is 03:28:50Z, when Sunday's games
-ended. `refresh_live` only collects games at state `in`, so nothing is written until kickoff. That
-is the same exit condition that causes the missing-final-score defect, seen from its harmless side.
+| league | plays | age when FIRST seen, median | p90 | already past a 30s gate on arrival |
+|---|---:|---:|---:|---:|
+| nfl | 2,727 | **53s** | 73s | **93.7%** |
+| cfb | 23,094 | 58s | 93s | 97.3% |
 
-**One thing to watch rather than assume.** The engine refuses data older than 30 seconds and the
-ESPN summary poll runs at 20-second intervals during a live game. That is inside the limit with
-ten seconds of margin, so a slipped cycle means a skipped trigger. The check tomorrow is how many
-triggers fired against how many were skipped for stale data; if the skip rate is material, the
-binding constraint on the operator's strategy is our poll interval rather than the market.
+The engine evaluates at or after first sight, so 93.7% is a **lower bound** on refusals, not an
+estimate. Consecutive plays are a median 43 seconds apart, so even with zero pipeline lag the
+newest play is usually older than the gate. **The poll interval is not the cause**: a 53-second
+median against a 20-second poll puts ESPN's own publishing lag at 30-45 seconds. The venue tick
+half never refuses anything -- zero of 11,665 gaps over 30 seconds.
 
-**What this is not.** It is not a test of whether the idea makes money -- that was measured today
-on 59 CFB games and the answer was no drift at the trigger, with a median move of 0.00¢. Tonight
-is a live-path check: does the engine see plays, price them, open and close positions, and write
-rows. A negative P&L tonight confirms the measurement rather than adding to it.
+**So the expected result tonight is near-zero triggers, and it will read as "the strategy found no
+opportunities" rather than "the gate refused everything".** Recorded as a prediction before the
+game rather than an explanation after it.
 
-## 0s. A filter threw away the final score it was looking for, on 99 of 105 games
+**The gate was also selecting for corrupt rows.** `(now - t) > max_age` treats a *negative* age as
+perfectly fresh, and **85 of 2,727 NFL plays (3.1%) carry a wall clock 24 hours in the future** --
+min lag −86,378s, which is −86,400 plus the usual lag. CFB has zero negatives, so this is an
+NFL-specific date defect in the parser, not a clock misalignment. Those 85 were among the few rows
+that **passed** while 93.7% of good ones were refused: the one gate meant to stop bad data was
+selecting for it. Fixed on main (`age > max_age_s or age < -1.0`, a day is not skew).
 
-**ESPN drops `period` on the final row.** Verified here independently: of 142 CFB post rows, 136
-carry `period IS NULL` (95.8%); NFL, 12 of 13. The daily ladder calibration's fallback filtered
-`WHERE period >= 4`, so it excluded the post row for **99 of the 105 CFB games that had one**, and
-8 of 9 NFL, then took the last in-game row instead -- a pre-whistle score for a game whose true
-final was sitting in the same table.
+**Two things that fix does not reach tonight.** It needs a rebuild, and rebuilding this container
+runs `alembic upgrade head`, which advances the database and strands the containers built earlier
+today. **I am not rebuilding for tonight, because nothing is lost by waiting:** the plays and the
+venue ticks are both recorded, so the engine can be re-run against tonight's tape once the fix
+ships. The live-path check is worth less than the restart capability.
 
-**That reconciles two counts that looked contradictory.** My "5 confirmed, 162 not" was right about
-*the row the query reads*. 7d's "94 reached post" was right about *the game*. Neither is wrong and
-together they say what neither says alone: this was not a fallback firing where no truth existed,
-it was a filter discarding the truth.
+**And the engine counted its refusals and threw the number away.** `stale_skips` was incremented
+and never logged, so zero trades and total refusal produce identical output. Now reported while a
+game is live.
 
-**The fix changes provenance and not one number.** Preferring `state='post'` moves 28 CFB and 8 NFL
-games from proxy to post, and the totals are **identical in 36 of 36**. No published calibration
-figure changes. The reason is the stuck-game census: games are abandoned at the whistle, so the
-last in-game row usually already held the final. The defect was real and its cost so far is zero,
-and those two facts belong in the same sentence.
-
-**The proxy error, measured where the truth exists: 8 of 8 exact** among games that never posted,
-margins agreeing too. 10 of 11 among those that did, and the single disagreement is the backfill
-table's fault -- one game recorded 3-31 in backfill against 10-51 live at 0:15 remaining, and a
-truncated game cannot outscore its own final. **That population is exhausted, not sampled:** the
-backfill holds 55 games all imported on 2026-09-06 against a live tape spanning 09-05 to 09-14, so
-only 19 overlap and 8 are informative.
-
-**DECISION, mine to make and made: exclude and count, do not settle from a proxy.** After the fix,
-36 CFB and 6 NFL games still have no post row and nothing on disk can validate them. An excluded
-game is a smaller sample; a wrongly settled one is a biased sample, and the bias runs toward UNDER,
-which flatters a registered strategy. The deciding argument is consistency rather than principle:
-`collect_mlb` **in this same file** already counts unsettled and skips, and says so -- "never
-guessed, and never derived from a box score". CFB was the inconsistent one, not the case needing a
-new policy.
-
-**A correction to what I told the operator.** `mlb_total_under_all` is **not** flattered by this.
-MLB settles from the venue and skips what the venue has not settled; 7d checked the code rather
-than the docstring. The registered strategy at risk is `cfb_total_under_all` alone.
-
-**And a structural finding on the way:** `espn_cfb_backfill_games` has no Alembic migration and no
-model. It is created by `archive/cfb/backfill_cfb.py`, in `archive/`. **The daily calibration's
-primary settlement source is a one-shot import from an archived script**, and its query cannot run
-against a migrated schema at all.
-
-## 0t. DECISION: the confirmed final wins over the backfill, and the backfill is not retired
-
-Two questions routed to me, both decided, both measured first.
-
-**Which source wins where both exist.** The confirmed post row. Measured on the 11 overlapping
-games: **1 disagrees on the total, 0 on the winner.** The disagreement is game 401856660, where the
-backfill holds 31-3 for a total of 34 and the confirmed final holds 51-10 for a total of **61**.
-That is 27 points, and it is not truncation, because the higher number is the post row -- the
-backfill import is simply wrong there. Winner settlement is untouched, so the change is confined to
-totals, and the backfill's error runs **low**, which would settle totals UNDER. Third defect today
-pointing the same way.
-
-**Whether to retire the backfill. No, and the measurement inverted my expectation and 7d's.** Of
-its 55 games, 11 also have a post row and **44 do not**. Those 44 finished before the live recorder
-existed and the live table can never acquire them retrospectively, so a correct post-row filter
-does not supersede the table -- it would lose 80% of what the table supplies. It is also not the
-calibration's table alone: all 55 rows carry a DraftKings closing spread that
-`cfb/run_making_touch.py` reads.
-
-**So the exposure is the opposite of retirement.** `espn_cfb_backfill_games` has no model and no
-migration; it exists only where `archive/cfb/backfill_cfb.py` was once run. A migrated schema does
-not have it, and if it were lost, nothing in the live tree could recreate 44 finals and 55 closing
-spreads. **It needs a model and a migration, not deletion.**
-
-**Our two period counts reconcile by a transform, not a choice.** I had 99 of 105 games, 7d had 101
-of 107. Two games carry both a NULL-period post row and a period-4 one, so they landed in both of
-their buckets; a period-4 post row survives the filter, so those two are not excluded. 99 answers
-the question actually asked. The row-level figures agree exactly at 136 of 142.
-
-## 0u. Truncation has two signs, and "they all point the same way" was my error
-
-I told the operator that three defects today all flattered in the same direction. 7d pushed back
-and is right: they share a **cause** and split on **sign**, and reading them as one direction would
-have had us correcting the wrong way on one of them.
-
-The cause is a premature read of a process that only accumulates. A football score is monotone
-non-decreasing in time.
-
-| | what truncation touched | example | market bias |
-|---|---|---|---|
-| sign one | the **value** | `period >= 4` reading a pre-whistle row; backfill's 34 against a final of 61 | settles totals **UNDER** |
-| sign two | the **sample** | an Over market resolves the instant the total passes X, so stopping early captures the ones that went over early | over-represents **OVER**: 93.9% of captured Kalshi settlements are YES, settled-yes mean strike 45.7 against 55.8 never-settled |
-
-**Same stopping condition, opposite market bias**, depending on whether truncation corrupted the
-number or selected which rows exist.
-
-**And a repair does not inherit its defect's sign.** The `max()` repair I nearly approved for sign
-one would have overstated twelve totals by 2-7 points and flattered **OVER**, the opposite of the
-defect it was fixing, because in nine of twelve the maximum home and away scores never co-existed.
-
-**The practical form is two questions, not one.** Was the value read after the process finished?
-And was the observation's *existence* conditional on the process finishing? The second is the one
-nobody asks, and it is the one that made a 610-market population unusable while every number in it
-was individually correct. `docs/math/truncation-has-two-signs.md`.
-
-**Precedence implemented and verified on prod**, not merely claimed: confirmed final first, backfill
-where no final exists, proxy only where neither does. 237 rows before and after, **one total
-changed** (34 → 61), **zero winners changed**, 11 games changed route. Independently reproduced
-here:
-
-| route | games with a venue id |
-|---|---:|
-| confirmed final | 52 |
-| backfill | 44 |
-| proxy -- **excluded** | 42 |
-| no source at all | 1 |
-
-The calibration keeps 96 and excludes 42. There is **no test yet**, and the reason is the reason
-for the migration: the query reads a table a migrated schema does not have, so a precedence between
-two sources cannot be tested until one of them can be created. 7d stated that as verified rather
-than claiming it as tested, which is the distinction worth more than the result.
-
-## 0v. A blocklist trusts every category it does not recognise
-
-The fourth settlement route I found -- one mapped game with no score source at all -- is
-**401872931, `nfl-den-kc-2026-09-14`, zero state rows**: tonight's game, not yet played. Verified
-here. Benign in itself, and it recurs every day there is a fixture on the board, which is what
-makes labelling it rather than dropping it worth doing.
-
-**But it exposed a real defect in the exclusion policy I had just approved.** The filter was
-`route != "proxy"` -- a blocklist. `none` is precisely the category a blocklist does not recognise,
-so it would have been **kept** and then crashed on a NULL score. It is now an allowlist,
-`CONFIRMED_ROUTES = ("post", "backfill")`.
-
-The asymmetry decides it and generalises past this case: **an unvetted category should cost a
-smaller sample, which the excluded count makes visible, rather than a biased one, which is
-invisible.** A blocklist inverts that by trusting whatever it has not been told to distrust.
-
-**Two smaller judgements by 7d that I would have got wrong.** Their first version *asserted* the
-four route counts sum to the mapped total. That assert can only fail on a data condition -- two
-mapped rows sharing an ESPN id -- and a daily 10:40Z calibration should report a mix that does not
-reconcile rather than die on it. It prints loudly instead. And the reconciliation is keyed on
-`espn_game_id`, the map's own identity and the join key to the finals, rather than
-`venue_game_id`; both are unique across all 139 rows today (139/139/139, checked here) but keying a
-reconciliation on a uniqueness nobody enforces is how the line starts disagreeing with itself.
+**A DECISION FOR THE OPERATOR, not one I should take.** `MAX_AGE_S` is 30 and the feed's median
+play is 53 seconds old on arrival. The floor is ESPN's publishing lag, so **the real choice is
+roughly 60-75 seconds or not trading on plays at all.** Raising it admits older information, and
+whether that is acceptable depends on how fast the edge decays -- which nothing measured here
+touches, and which the drive-scalp study says is moot anyway, since the conditional move at the
+trigger is 0.00¢ at the median.
 
 ## 1. What I need from you (everything else I now run myself)
 
