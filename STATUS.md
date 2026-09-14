@@ -484,6 +484,49 @@ within game clusters, so calibration is preserved by construction. It does not
 enter the pre-registration until its control recovers a planted edge — the bar
 the permutation version never cleared.
 
+★★★ **THE SCAN IS ANSWERED, ON A REFERENCE THAT CAN BE DEFENDED — AND THE
+CAPABILITY STATEMENT MATTERS MORE THAN THE RESULT.**
+
+**The result.** 362 cells, 36 significant at p<0.05 — but split by direction,
+**6 above break-even and 30 below.** Six is BELOW the ~12 that chance alone
+gives, so there is no evidence of an edge anywhere; the excess is losses. Mean
+win rate minus break-even across all cells is **−0.0157**. Best cell above
+break-even is p = 1.70e-02 against a Bonferroni threshold of 1.4e-04 — **short by
+a factor of 120**; two of those six are 32/32 and 35/35 on high-priced favourites
+where a single loss erases them. Consistent from three directions: the decile
+calibration table, the directional split, and the aggregate.
+
+**The capability statement, which is the part that changes what we do next.**
+Power measured by planting known edges into H0 data, 120 trials per point:
+
+| planted edge | 0¢ | 2¢ | 5¢ | 10¢ | 15¢ | 20¢ |
+|---|---:|---:|---:|---:|---:|---:|
+| min-p detects | 0.07 | 0.06 | 0.11 | 0.42 | 0.93 | 1.00 |
+
+**Minimum detectable edge is ~10–15¢ per contract. Below 5¢ the scan is blind** —
+power is indistinguishable from the false-positive rate. **A 1–3¢ edge, the size
+actually worth trading, is NOT answerable with this tape.** So "no edge found" and
+"no edge exists" are different statements and only the first is supported.
+
+**The new null is calibrated where the old one was not:** Var(t) p50 **1.096**
+against a theoretical G-implied 1.15, cells-excluding-zero **21 of 310 (6.8%)**
+against a nominal 5% — where the permutation gave **95**. It reproduces
+break-even at every decile because the null win rate IS the price.
+
+★ **And the control was broken twice, both found by one question: what does it
+do at ZERO effect?** Version one redrew each bet independently while the null
+draws one uniform per game, so it "recovered" a **zero**-cent plant 70% of the
+time — firing on the redraw. Version two kept real settlements outside the
+planted bucket, so min-p picked up the tape's own most extreme cell and scored
+**0.97 recovery at zero cents** against a nominal 0.05. The sandwich statistics
+escaped that one only by magnitude, which is being right for the wrong reason,
+and the next statistic added would have inherited it. Version three draws every
+row under H0; all four statistics now sit at 0.04–0.07 at zero plant.
+
+The permutation stays in the file marked NOT-the-null, with the decile table in
+its docstring, because its failure is the most instructive artifact in the
+programme — and a test asserts the code cannot silently go back to it.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
