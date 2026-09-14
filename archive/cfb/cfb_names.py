@@ -69,8 +69,6 @@ def _selftest():
           f"(Miami FL/OH, Texas/Texas Tech, Louisiana/La Tech all caught)")
 
 
-if __name__ == "__main__":
-    _selftest()
 
 
 # --------------------------------------------------------------------------
@@ -136,4 +134,12 @@ def _selftest_providers():
 
 
 if __name__ == "__main__":
+    _selftest_providers()
+
+
+if __name__ == "__main__":
+    # Both self-tests, and at the END of the file. The guard used to sit at
+    # line 72 with the whole PROVIDER family defined below it, so
+    # `_selftest_providers` was unreachable to a script and never ran.
+    _selftest()
     _selftest_providers()

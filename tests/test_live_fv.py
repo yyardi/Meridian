@@ -23,7 +23,6 @@ import pytest
 from core.live_fv import (
     DEFAULT_SIGMA,
     GAP_HIGHLIGHT,
-    OT_MINUTES,
     REGULATION_MINUTES,
     LiveFV,
     fair_value,
@@ -202,17 +201,52 @@ def test_halftime_is_exact_and_does_not_burn_clock():
     assert note == "halftime"
 
 
-def test_overtime_uses_the_ot_clock_and_says_the_model_does_not_apply():
-    left, is_estimate, note = minutes_remaining("OT", seconds_into_period=0.0)
-    assert left == pytest.approx(OT_MINUTES)
-    assert is_estimate is True
-    assert "overtime" in note.lower()
+def test_overtime_has_no_regulation_minutes_left_and_says_so():
+    """★ THIS TEST USED TO PIN `left == OT_MINUTES`, AND `OT_MINUTES = 5.0` HAD
+    THE COMMENT "overtime periods are 5 minutes in the WNBA". A WNBA length, and
+    the tape says it is exercised on football: 23,760 CFB rows over 3 games and
+    15,209 NFL rows over 1 carry `event_period='OT'`.
+
+    CFB overtime is UNTIMED possessions, so there is no remaining-minutes
+    quantity to compute; the old countdown reached 0.0 after five wall-clock
+    minutes and sat there through the rest of a real overtime. NFL regulation
+    overtime is 10 minutes, not 5.
+
+    This field means REGULATION minutes remaining, and in overtime that is
+    exactly zero for every league -- the true value, not a safer guess, which is
+    why the constant is gone rather than becoming a per-league map."""
+    clock = minutes_remaining("OT", seconds_into_period=0.0)
+    assert clock.minutes_left == 0.0
+    assert clock.usable is False
+    assert "overtime" in (clock.note or "").lower()
+    # and no length is asserted in the note any more
+    assert "5 minutes" not in (clock.note or "")
 
 
-def test_overtime_never_produces_a_negative_or_regulation_length_clock():
-    for secs in (0.0, 120.0, 300.0, 3600.0):
-        left, _, _ = minutes_remaining("OT2", seconds_into_period=secs)
-        assert 0.0 <= left <= OT_MINUTES
+def test_overtime_is_zero_at_every_elapsed_including_past_any_ot_length():
+    """A CFB overtime can run half an hour of wall clock. The old form was
+    monotonically decreasing and floored at five minutes in, so it looked
+    plausible early and was pinned at zero for the part that mattered."""
+    for secs in (0.0, 120.0, 300.0, 1800.0, 3600.0):
+        clock = minutes_remaining("OT2", seconds_into_period=secs)
+        assert clock.minutes_left == 0.0, f"OT2 at {secs}s gave {clock.minutes_left}"
+        assert clock.usable is False
+
+
+def test_the_stronger_flag_survives_the_legacy_tuple_unpacking():
+    """★ THE MECHANISM BY WHICH `usable` WENT MISSING. `Clock.__iter__` offers
+    3-tuple unpacking of (minutes_left, is_estimate, note), so dropping the
+    stronger flag is what happens by DEFAULT -- including in the tests just
+    above, which unpacked three values for years. `Clock`'s own docstring calls
+    `usable` the stronger of the two, and both places that showed
+    `minutes_left` to a human dropped it."""
+    clock = minutes_remaining("OT", seconds_into_period=60.0)
+    left, is_estimate, note = clock          # the lossy interface
+    assert (left, is_estimate) == (0.0, True)
+    assert clock.usable is False             # only reachable on the object
+    # is_estimate does NOT carry the same information, which is the whole point
+    est_only = minutes_remaining("Q3", seconds_into_period=60.0)
+    assert est_only.is_estimate is True and est_only.usable is True
 
 
 def test_a_final_game_has_no_time_left_and_a_step_function_value():
@@ -326,6 +360,96 @@ def test_a_market_whose_stream_died_is_not_priced_as_live():
     finally:
         with Session() as s:
             for slug in (fresh, stale):
+                s.execute(text("DELETE FROM market_snapshots WHERE market_slug = :m"),
+                          {"m": slug})
+            s.commit()
+
+
+def test_the_api_row_carries_usable_not_only_is_estimate():
+    """★ THE FLAG STOPPED AT THE BOUNDARY. `fair_value` respects `usable`, and
+    the two places that surface `minutes_left` to a human -- `as_dict` for
+    /api and `game_detail.TradeContext` -- both dropped it. So a reading the
+    module had marked unusable arrived on a screen labelled only "est.".
+    Asserted on the serialised row, which is what the UI actually receives."""
+    from core.live_fv import LiveFV, as_dict
+
+    row = LiveFV(
+        event_slug="e", market_slug="m", label="L", period="OT", score="10-10",
+        margin=0, minutes_left=0.0, minutes_left_is_estimate=True,
+        pregame_price=0.5, fair_value=None, bid=0.4, ask=0.6,
+        minutes_left_usable=False,
+    )
+    d = as_dict(row)
+    assert d["minutes_left_usable"] is False
+    assert d["minutes_left_is_estimate"] is True      # both present, not one
+    assert d["fair_value"] is None                    # and the FV is suppressed
+
+
+def test_game_detail_context_carries_usable_too():
+    """The second consumer. It reads the three fields by hand, which is the same
+    omission the legacy tuple makes automatically."""
+    import inspect
+
+    from core.game_detail import TradeContext
+
+    assert "minutes_left_usable" in inspect.signature(TradeContext).parameters
+    src = inspect.getsource(__import__("core.game_detail", fromlist=["x"]))
+    assert "minutes_left_usable=minutes_left_usable" in src
+
+
+def test_usable_survives_the_real_construction_path_not_just_a_hand_built_row():
+    """★ THE TEST THAT WAS MISSING, AND A MUTATION FOUND THE GAP. My first
+    version of the usable tests built a `LiveFV` by hand, so deleting the
+    `minutes_left_usable=clock.usable` line in `build_live_fv` broke nothing --
+    the field's default answered for it. This goes through the database and the
+    real function, for a REGULATION row (usable) and an OVERTIME row (not), so
+    the propagation itself is what is under test rather than the dataclass.
+    """
+    import datetime as _dt
+
+    from sqlalchemy import text
+
+    from core.live_fv import build_live_fv
+    from core.storage import get_engine, get_sessionmaker
+
+    UTC = _dt.timezone.utc
+    now = _dt.datetime.now(UTC)
+    start = now - _dt.timedelta(hours=1)
+    Session = get_sessionmaker(get_engine())
+    q3 = "dbg-usable-q3-aec-wnba-conn-dal-2026-09-14"
+    ot = "dbg-usable-ot-aec-wnba-conn-dal-2026-09-14"
+
+    def _mk(s, slug, period):
+        s.execute(text("""
+            INSERT INTO market_snapshots
+              (market_slug, event_slug, captured_at, is_live, game_start_time,
+               sports_market_type, event_period, event_score, best_bid, best_ask)
+            VALUES (:m, :e, :c, true, :g,
+                    'basketball_team_full_game_winner', :p, '80-80', 0.48, 0.52)
+        """), {"m": slug, "e": f"ev-{slug}", "c": now - _dt.timedelta(seconds=5),
+               "g": start, "p": period})
+
+    try:
+        with Session() as s:
+            for slug in (q3, ot):
+                s.execute(text("DELETE FROM market_snapshots WHERE market_slug = :m"),
+                          {"m": slug})
+            _mk(s, q3, "Q3")
+            _mk(s, ot, "OT")
+            s.commit()
+        with Session() as s:
+            rows = {r.market_slug: r for r in build_live_fv(s, within_hours=6.0)}
+
+        assert q3 in rows and ot in rows, f"setup failed, got {sorted(rows)}"
+        # The control: a regulation row must come back USABLE, or this test
+        # would pass against a build_live_fv that hardcoded False.
+        assert rows[q3].minutes_left_usable is True
+        assert rows[ot].minutes_left_usable is False
+        assert rows[ot].minutes_left == 0.0
+        assert rows[ot].fair_value is None
+    finally:
+        with Session() as s:
+            for slug in (q3, ot):
                 s.execute(text("DELETE FROM market_snapshots WHERE market_slug = :m"),
                           {"m": slug})
             s.commit()

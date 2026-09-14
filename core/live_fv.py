@@ -67,9 +67,6 @@ UTC = dt.timezone.utc
 #: history grows, and bump the note in the doc when you do.
 DEFAULT_SIGMA = 2.628
 
-#: Overtime periods are 5 minutes in the WNBA.
-OT_MINUTES = 5.0
-
 #: How far apart the model and the market must be before the gap is coloured.
 #: Below this the difference is inside the noise the formula carries anyway.
 GAP_HIGHLIGHT = 0.03
@@ -119,6 +116,18 @@ class LiveFV:
     def highlight(self) -> bool:
         g = self.gap
         return g is not None and abs(g) > GAP_HIGHLIGHT
+    #: The stronger of the two clock flags -- see `Clock`. Carried all the way
+    #: out rather than consumed at the fair-value branch and dropped.
+    #:
+    #: ★ DEFAULTS TO FALSE, DELIBERATELY. It defaulted to True for one commit
+    #: and a mutation showed why that was wrong: deleting the
+    #: `minutes_left_usable=clock.usable` propagation left every test passing,
+    #: because the default silently reported every row -- overtime included --
+    #: as usable. Same shape as `rowcount or 0`: a default that passes through
+    #: the failure it was meant to carry. False means a dropped propagation
+    #: SUPPRESSES a good number, which is visible and annoying, rather than
+    #: publishing a bad one, which is neither.
+    minutes_left_usable: bool = False
 
 
 @dataclass(frozen=True)
@@ -173,14 +182,27 @@ def minutes_remaining(
     p = period.upper()
 
     if p == "OT" or p.startswith("OT"):
-        # Overtime is not the model's domain: the pregame edge has been spent
-        # by definition (the teams are level), the period is 5 minutes rather
-        # than 10, and the 40-minute denominator describes nothing. Suppressed
-        # rather than approximated — printing a number under a note that says
-        # the model does not apply just invites reading the number.
-        elapsed = min(max(seconds_into_period, 0.0) / 60.0, OT_MINUTES)
-        left = max(OT_MINUTES - elapsed, 0.0)
-        return Clock(left, True,
+        # Overtime is not the model's domain: the pregame edge has been spent by
+        # definition (the teams are level) and the regulation denominator
+        # describes nothing. Suppressed rather than approximated — printing a
+        # number under a note that says the model does not apply just invites
+        # reading the number.
+        #
+        # ★ AND `minutes_left` IS ZERO, NOT A COUNTDOWN. This used to compute
+        # `max(OT_MINUTES - elapsed, 0)` off `OT_MINUTES = 5.0`, whose comment
+        # read "overtime periods are 5 minutes in the WNBA" — a WNBA length
+        # applied to football. Measured on the tape: 23,760 CFB rows over 3
+        # games and 15,209 NFL rows over 1 carry `event_period='OT'`, so the
+        # path is exercised. CFB overtime is UNTIMED possessions, so there is no
+        # remaining-minutes quantity to compute at all, and the countdown hit
+        # 0.0 after five wall-clock minutes and sat there for the rest of a real
+        # overtime; NFL regulation overtime is 10 minutes, not 5.
+        #
+        # This field means REGULATION game-minutes remaining, and in overtime
+        # that is exactly zero for every league. Zero is the true value rather
+        # than a safer guess, which is why the constant is gone instead of
+        # becoming a per-league map.
+        return Clock(0.0, True,
                      "overtime: regulation model does not apply, pregame edge spent",
                      usable=False)
 
@@ -372,6 +394,7 @@ def build_live_fv(
             margin=margin,
             minutes_left=minutes_left,
             minutes_left_is_estimate=is_estimate,
+            minutes_left_usable=clock.usable,
             pregame_price=pre,
             fair_value=fv,
             bid=float(r.best_bid) if r.best_bid is not None else None,
@@ -392,6 +415,12 @@ def as_dict(row: LiveFV) -> dict:
         "margin": row.margin,
         "minutes_left": round(row.minutes_left, 1),
         "minutes_left_is_estimate": row.minutes_left_is_estimate,
+        # `usable` is the STRONGER flag of the two and it used to stop here.
+        # `Clock`'s own docstring says so, `fair_value` respects it, and the
+        # only two places that surface `minutes_left` to a human both dropped
+        # it -- so a number the module had marked unusable arrived on a screen
+        # labelled only "estimate".
+        "minutes_left_usable": row.minutes_left_usable,
         "pregame_price": row.pregame_price,
         "fair_value": row.fair_value,
         "bid": row.bid,

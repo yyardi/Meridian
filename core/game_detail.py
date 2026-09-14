@@ -98,6 +98,12 @@ class TradeContext:
     @property
     def is_pregame(self) -> bool:
         return not self.is_live
+    #: The stronger clock flag -- see `core.live_fv.Clock`. False means the
+    #: reading is not to be used at all (overtime, an unrecognised period, an
+    #: exhausted estimate), which "is_estimate" does not say. Defaults to
+    #: FALSE for the reason given on `core.live_fv.LiveFV.minutes_left_usable`:
+    #: a True default makes a dropped propagation invisible.
+    minutes_left_usable: bool = False
 
 
 @dataclass(frozen=True)
@@ -432,6 +438,37 @@ def _context_for(
     minutes_left = None
     is_estimate = False
     note = None
+    # False when there is no clock at all, matching the field's fail-safe
+    # default -- a missing reading is not a usable one.
+    minutes_left_usable = False
+
+    # ★ `minutes_remaining` IS A BASKETBALL CLOCK AND THIS VIEW IS NOT
+    # BASKETBALL-ONLY. It takes REGULATION_MINUTES = 40.0 and
+    # QUARTER_MINUTES = 10.0 from `core/pulse/win_curve.py`, which are WNBA
+    # values; football is 60 minutes in 15-minute quarters, so a CFB Q3 trade
+    # would read 40-20-elapsed instead of 60-30-elapsed -- short by ten
+    # minutes, and by twenty in Q1.
+    #
+    # `build_live_fv` is safe because it selects
+    # `sports_market_type = 'basketball_team_full_game_winner'`. This function
+    # is not: it is league-parameterised (`event_slug LIKE :league_prefix`).
+    # Measured 2026-09-14, every row it can reach is WNBA -- 18,449
+    # shadow_orders and 19,333 pulse_decisions, zero football -- so this was a
+    # LATENT trap rather than a live defect, and it stops being reachable here
+    # rather than waiting for the first football trade to land in those tables.
+    basketball = (row.sports_market_type or "").startswith("basketball_")
+    if is_live and period and not basketball:
+        return TradeContext(
+            score=score, margin=margin, period=period,
+            minutes_left=None, minutes_left_is_estimate=False, is_live=is_live,
+            context_age_seconds=(
+                (row.decided_at - row.context_at).total_seconds()
+                if row.context_at is not None else None),
+            note=f"no clock model for {row.sports_market_type or 'this market'}"
+                 " — minutes_remaining is calibrated on 40-minute basketball",
+            minutes_left_usable=False,
+        )
+
     if is_live and period:
         started = period_starts.get(period)
         seconds_in = (
@@ -441,6 +478,11 @@ def _context_for(
         minutes_left = clock.minutes_left
         is_estimate = clock.is_estimate
         note = clock.note
+        # `usable` used to stop here. `Clock` offers legacy 3-tuple unpacking of
+        # (minutes_left, is_estimate, note), which makes DROPPING the stronger
+        # flag the default -- and this reads the three fields individually, which
+        # is the same omission by hand.
+        minutes_left_usable = clock.usable
 
     age = None
     if row.context_at is not None:
@@ -452,6 +494,7 @@ def _context_for(
         period=period,
         minutes_left=minutes_left,
         minutes_left_is_estimate=is_estimate,
+        minutes_left_usable=minutes_left_usable,
         is_live=is_live,
         context_age_seconds=age,
         note=note,

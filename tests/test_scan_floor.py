@@ -280,3 +280,99 @@ def test_the_equivalence_check_is_opt_in_and_not_hardcoded():
     assert "SCAN_EXPECT mismatch" in SRC
     # no hardcoded reference counts anywhere in the file
     assert "15818" not in SRC and "15,818" not in SRC
+
+
+# --------------------------------------------------------------------------- #
+# The artifact writers, and the floor the equivalence check is pinned to.
+# --------------------------------------------------------------------------- #
+def test_a_numpy_scalar_no_longer_kills_the_artifact_write(tmp_path):
+    """★ THE 05:28Z RUN OF 2026-09-14 DIED HERE. `p_lt_01` is
+    `sum(p < 0.01 for p in ps)` over scipy p-values -- a numpy int64 -- and
+    `json.dump` raised after writing 225 bytes, leaving CELLS_JSON as truncated,
+    unparseable JSON with a plausible size and a fresh mtime. The scan exited 1
+    as its contract promises; the artifact it left behind was worse than none."""
+    import json as _json
+
+    # ONE namespace, used as globals: `_write_json` looks `_plain` up in its
+    # own globals, so exec'ing with separate globals/locals hid it and the
+    # NameError read like a bug in the source.
+    ns = {"os": __import__("os"), "json": _json}
+    exec(SRC[SRC.index("def _plain("):
+             SRC.index('if os.environ.get("ROWS_JSON")')], ns)  # noqa: S102
+
+    class _Int64:                      # what numpy hands json.dump
+        def item(self): return 34
+
+    # ★ THROUGH `_write_json`, NOT `_plain` ALONE. My first version called
+    # `json.dumps(..., default=_plain)` itself, so deleting the `default=_plain`
+    # wiring inside `_write_json` broke nothing -- I was testing the helper and
+    # not the thing that uses it, the same gap a mutation found in the live_fv
+    # `usable` propagation an hour earlier.
+    out = tmp_path / "cells.json"
+    ns["_write_json"](str(out), {"p_lt_01": _Int64()})
+    assert _json.loads(out.read_text()) == {"p_lt_01": 34}
+
+    # and it stays NARROW -- a genuinely unserialisable object must still raise
+    with pytest.raises(TypeError):
+        ns["_write_json"](str(tmp_path / "x.json"), {"x": object()})
+
+
+def test_a_crash_mid_write_leaves_the_old_artifact_not_half_a_new_one(tmp_path):
+    """The idiom is lifted from `core/settlements.py`, which has had it for
+    weeks. A partial artifact that looks complete is the failure both guard
+    against, and only one of them was doing it."""
+    import json as _json
+
+    # ONE namespace, used as globals: `_write_json` looks `_plain` up in its
+    # own globals, so exec'ing with separate globals/locals hid it and the
+    # NameError read like a bug in the source.
+    ns = {"os": __import__("os"), "json": _json}
+    exec(SRC[SRC.index("def _plain("):
+             SRC.index('if os.environ.get("ROWS_JSON")')], ns)  # noqa: S102
+
+    target = tmp_path / "cells.json"
+    target.write_text('{"run": "previous"}', encoding="utf-8")
+    with pytest.raises(TypeError):
+        ns["_write_json"](str(target), {"ok": 1, "bad": object()})
+    # the OLD file survives, intact and parseable
+    assert _json.loads(target.read_text())["run"] == "previous"
+    assert not list(tmp_path.glob("*.tmp")), "temp file left behind"
+    # and a good write replaces it
+    ns["_write_json"](str(target), {"run": "new"})
+    assert _json.loads(target.read_text())["run"] == "new"
+
+
+def test_the_equivalence_reference_must_declare_its_floor():
+    """★ A GUARD THAT FIRES ON A CORRECT CHANGE TRAINS PEOPLE TO IGNORE IT.
+    Row counts depend on the floor as well as the window: the 05:28Z reference
+    was taken with NO floor, and cfb, nfl and wnba all have pre-September tape,
+    so a floored run legitimately returns fewer rows for them. A floor mismatch
+    is a refusal to compare, not a count mismatch. Asserted at the source
+    because the check runs at import, before anything is testable."""
+    # ★ RUN IT, DO NOT GREP FOR IT. My first version asserted the error strings
+    # were present in the source -- and a mutation that replaced the condition
+    # with `if False:` left every string in place and passed. A disabled branch
+    # is invisible to a source-text assertion.
+    blk = SRC[SRC.index("_EXP = dict("):SRC.index("\n\n", SRC.index("_ref != SINCE"))]
+
+    def _run(scan_expect, since):
+        ns = {"os": type("O", (), {"environ": {"SCAN_EXPECT": scan_expect}})(),
+              "SINCE": since, "SystemExit": SystemExit}
+        exec(blk, ns)                                        # noqa: S102
+        return ns
+
+    # a reference with no floor term cannot be compared at all
+    with pytest.raises(SystemExit) as e:
+        _run("%-cfb-%=10", None)
+    assert "missing its `since=` term" in str(e.value)
+
+    # floored run against an unfloored reference: REFUSED, not a count mismatch
+    with pytest.raises(SystemExit) as e:
+        _run("since=NONE,%-cfb-%=10", "2026-09-01")
+    assert "not comparable across floors" in str(e.value)
+
+    # and the matching cases pass through to the count comparison
+    assert _run("since=NONE,%-cfb-%=10", None)["EXPECT"] == {"%-cfb-%": 10}
+    assert _run("since=2026-09-01,%-cfb-%=10", "2026-09-01")["EXPECT"] == {"%-cfb-%": 10}
+    # no reference at all is not an error
+    assert _run("", None)["EXPECT"] == {}
