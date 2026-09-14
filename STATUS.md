@@ -251,7 +251,34 @@ against a mean price of 0.5393. Positive and near +1 as a point estimate, and it
 nothing here is readable as an edge in either direction. The slope reaches a 1.5%
 wrong-call rate at n=61; we have 35. **No table-tennis edge number until then.**
 
-### Superseded: the shortfall that prompted all of this
+### RETIRED, not superseded: "favourites underperform" was never a trend
+
+The YES-frame gap was **−2.9¢ at n=21 and +3.2¢ at n=35**. The 21 are inside the
+35, so **the 14 new matches averaged +12.35¢** — two adjacent subsamples of one
+process differing by 15.3¢. The standard error of that mean is 10.9¢ at n=21 and
+8.5¢ at n=35, **both larger than either observed gap**, so neither reading was
+ever readable. A real −13.8¢ effect does not flip sign on the next fourteen
+draws. The story is retired rather than carried forward as a trend; it was the
+first draw from a wide distribution.
+
+**The slope also rejects inversion on its own, independently of the field check:**
+
+| hypothesis | z | p | |
+|---|---:|---:|---|
+| inverted (slope = −1) | +3.267 | 0.0011 | **REJECTED** |
+| prices uninformative (slope = 0) | +1.547 | 0.122 | not rejected |
+| perfect calibration (slope = +1) | −0.174 | 0.862 | not rejected |
+
+Two routes sharing no code, same answer. That is corroboration rather than
+repetition, which most of tonight's agreements were not. Also confirmed across
+the whole sample rather than the 30: `side0.long == true` on all 6,560 rows.
+
+**So the reason no table-tennis number is readable has CHANGED**: not "the frame
+is under suspicion", which is settled, but "the prices have not yet been shown to
+carry information at all". Next milestone **n = 56** gets the slope interval off
+zero, about 8.6 hours of recording.
+
+### The original shortfall, for the record
 
 **Table-tennis favourites underperformed their price early on.**
 `cfb/run_tt_frame_lookup.py`. A RESOLVED market states its own outcome — its
