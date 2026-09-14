@@ -52,9 +52,33 @@ implementation. An edge smaller than 5¢ exists or does not; we cannot tell from
 
 ## 1. What I need from you (everything else I now run myself)
 
-1. **Is the Kalshi account a direct member, or an FCM/broker customer?** This gates every
-   making strategy on Kalshi and I cannot find it out from the API. One sentence.
-2. One SQL backfill the permission classifier blocks (163 cricket/TT rows with a NULL game
+**1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
+
+Twenty of the thirty containers run on images built before 2026-09-14 00:51, when the
+Kalshi migration `c2d9a7e51f83` was added. The database is now stamped at that revision.
+Those images do not contain it, so their start-up `alembic upgrade head` cannot resolve
+where the database already is and the container dies. They are running only because they
+started before the migration was applied and have not been restarted since.
+
+Nothing is down right now. A reboot, an out-of-memory kill, or any single `docker restart`
+takes that container down permanently until it is rebuilt, and a reboot takes all twenty at
+once. Credit to meridian-7f for spotting that my two failing recorders were the symptom and
+not the cause.
+
+I rebuilt the four I touched today. A fleet-wide rebuild was refused by the permission
+classifier, which I think is the right line for an action this size, so it is yours:
+
+```bash
+ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridian && sudo docker compose up -d --build && for f in nfl cfb-live espn-live quote pulse scalp mlb cricket cricket-espn; do sudo docker compose -f docker-compose.yml -f docker-compose.$f.yml up -d --build; done; sudo docker ps --format "{{.Names}} {{.Status}}" | wc -l'
+```
+
+Expect 30. Best run now or any time the venue board is empty; it is empty between slates,
+which is most of a Monday morning.
+
+**2. Is the Kalshi account a direct member, or an FCM/broker customer?** This gates every
+making strategy on Kalshi and I cannot find it out from the API. One sentence.
+
+**3.** One SQL backfill the permission classifier blocks (163 cricket/TT rows with a NULL game
    id, pregame closes a re-sweep cannot recreate). Optional; it recovers one sweep.
 
 ```bash
