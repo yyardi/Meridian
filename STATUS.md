@@ -372,6 +372,41 @@ dismissed it as interference without recording it.
 exact line and this is the third time. The rule is `pytest ...; rc=$?` or `set -o pipefail`, never
 a pipe into `tail` as the gate.
 
+## 0k. THE BOX IS UNREACHABLE AS OF ~15:55Z. This is the first thing to deal with.
+
+Last successful contact 15:52Z. Unreachable since, on **both** SSH (22) and the dashboard/API
+(8008). Connections **time out** rather than being refused, which means packets are dropped, not
+that a service died.
+
+| check | result |
+|---|---|
+| ssh, 8 attempts over 5 minutes | all timed out |
+| `curl http://<box>:8008/api/health` | no response, 15s timeout |
+| my own network (`curl https://github.com`) | 200 in 0.24s |
+| `~/.meridian-server` last written | 2026-09-05 |
+
+**I cannot tell whether the instance is down or has moved.** Timeouts on every port with a healthy
+local network fit three causes and I cannot separate them from here: the instance stopped, a
+security group changed, or the public address rotated and the file is stale. The address file was
+written on 09-05 and the address is known to rotate, so a stale file is a live possibility and
+would mean the box is fine and still recording while we are blind to it.
+
+**Why it matters beyond visibility.** If the instance actually restarted, the migration trap in
+section 1 has fired: 21 of 30 containers were on images that cannot pass `alembic upgrade head`
+against the current database, so they are down and stay down until rebuilt. And cricket toss
+times, which cannot be backfilled, stop accruing the moment the ESPN recorder stops.
+
+**What the operator can do that I cannot:** read the instance's current public address and state
+from the AWS console. If the address has changed, write the new one into `~/.meridian-server` and
+everything else resumes.
+
+```bash
+aws ec2 describe-instances --filters "Name=tag:Name,Values=*meridian*" \
+  --query "Reservations[].Instances[].{state:State.Name,ip:PublicIpAddress,id:InstanceId}" --output table
+```
+
+A monitor is armed here and will report the moment SSH answers again.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
