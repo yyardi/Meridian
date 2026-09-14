@@ -18,6 +18,7 @@ The extracted CTE is the part this change touched.
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 
 import pytest
 from sqlalchemy import text
@@ -129,3 +130,38 @@ def test_the_last_post_row_wins_among_post_rows():
     got = _finals()[EG]
     assert (got["h"], got["a"]) == (24, 17), "kept the pre-correction score"
     assert got["src"] == "post"
+
+
+def test_a_proxy_final_is_excluded_and_counted_not_settled():
+    """★ THE POLICY (decided 2026-09-14). A 'proxy' final is the last in-game
+    row of a game that never reached `post`: a LOWER BOUND on the total, so
+    settling from it puts a totals market UNDER more often than the truth,
+    and `cfb_total_under_all` is registered.
+
+    `collect_mlb` in the same file has always done this — counts `unsettled`
+    and skips, "never guessed, and never derived from a box score". CFB was
+    the inconsistent one.
+
+    The count matters as much as the exclusion: a game dropped silently turns
+    a shrinking sample into an invisible one.
+    """
+    from cfb.run_ladder_calibration import usable_games
+
+    games = [{"vg": "a", "src": "post"}, {"vg": "b", "src": "backfill"},
+             {"vg": "c", "src": "proxy"}, {"vg": "d", "src": "proxy"}]
+    kept, excluded = usable_games(games)
+
+    assert [g["vg"] for g in kept] == ["a", "b"], (
+        "a pre-whistle score survived into the settled set")
+    assert excluded == 2, "excluded without counting"
+    assert len(kept) + excluded == len(games), "a game went missing entirely"
+
+
+def test_a_confirmed_only_slate_excludes_nothing():
+    """The control that can fail in the other direction: exclusion must not
+    fire on finals that ARE confirmed, or the sample shrinks for nothing."""
+    from cfb.run_ladder_calibration import usable_games
+
+    kept, excluded = usable_games(
+        [{"vg": "a", "src": "post"}, {"vg": "b", "src": "backfill"}])
+    assert excluded == 0 and len(kept) == 2

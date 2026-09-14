@@ -321,10 +321,38 @@ def main_mlb():
               f"{r['bid']},{r['ask']},{r['ttk_min']:.0f},{r['y']}")
 
 
+def usable_games(games: list[dict]) -> tuple[list[dict], int]:
+    """EXCLUDE AND COUNT, never settle from a proxy (decision 2026-09-14).
+
+    A 'proxy' final is the last in-game row of a game that never reached
+    `state = 'post'`. It is a LOWER BOUND on the total, so settling from it
+    puts a totals market UNDER more often than the truth, and
+    `cfb_total_under_all` is registered. An excluded game is a smaller
+    sample; a wrongly settled one is a biased sample.
+
+    `collect_mlb` in this same file has done exactly this since it was
+    written — it counts `unsettled` and skips, "never guessed, and never
+    derived from a box score". CFB was the inconsistent one, which is why
+    this is a consistency fix rather than a new policy.
+
+    Why exclusion rather than repair: on the eight unconfirmed games where a
+    backfill final also exists the proxy was exact 8 times out of 8 — but
+    eight is the WHOLE overlap population and not a sample of it (the
+    backfill is 55 games imported on one day against a live tape spanning
+    ten), so it cannot be extrapolated to the games being dropped.
+
+    Returns (kept, excluded_count). The count is half the policy: a game
+    dropped silently turns a shrinking sample into an invisible one.
+    """
+    kept = [g for g in games if g.get("src") != "proxy"]
+    return kept, len(games) - len(kept)
+
+
 def main_football():
     eng = _engine()
     with eng.connect() as c:
-        games = [dict(r._mapping) for r in c.execute(text(GAMES_SQL))]
+        all_games = [dict(r._mapping) for r in c.execute(text(GAMES_SQL))]
+        games, unsettled = usable_games(all_games)
         rows, ko_gap, no_ko, no_start = [], [], 0, 0
         for g in games:
             start = c.execute(text(START_SQL), {"vg": g["vg"]}).scalar()
@@ -346,23 +374,28 @@ def main_football():
                          event_slug=g["event_slug"], final_src=g["src"])
                 rows.append(r)
 
-    print(f"settled mapped games {len(games)}  (kickoff from plays for {len(games) - no_ko - no_start}, "
+    # `unsettled` games never reach the kickoff logic, so they have to come
+    # out of the denominator too — an exclusion that moves a total and not the
+    # arithmetic that reports it is how a summary line starts lying.
+    kept = len(games)
+    print(f"settled mapped games {kept} of {len(all_games)}  "
+          f"(kickoff from plays for {kept - no_ko - no_start}, "
           f"from venue start time for {no_ko}, neither {no_start})")
     if ko_gap:
         ko_gap.sort()
         print(f"ESPN first play vs venue game_start_time, minutes: median {ko_gap[len(ko_gap)//2]:.0f}  "
               f"p90 {ko_gap[int(len(ko_gap)*0.9)]:.0f}  max {ko_gap[-1]:.0f}")
-    # WHERE EACH FINAL CAME FROM. 'proxy' is a pre-whistle score: the game
-    # never reached `post`, so the total is a lower bound and a totals market
-    # settles UNDER more often than the truth. PRINTED, not excluded --
-    # excluding is a strategy decision (see the GAMES_SQL note). Whoever reads
-    # a verdict off this run should read this line first.
+    # WHERE EACH FINAL CAME FROM, and what was dropped. 'proxy' finals are
+    # EXCLUDED, not settled: a pre-whistle total is a lower bound, so settling
+    # from one biases a totals market toward UNDER. Counted here so the loss
+    # is visible -- an exclusion nobody can see is how a shrinking sample
+    # becomes a silent one.
     src_games = defaultdict(set)
-    for g in games: src_games[g["src"]].add(g["vg"])
+    for g in all_games: src_games[g["src"]].add(g["vg"])
     print("  finals by route: " + "  ".join(
-        f"{k} {len(v)}" for k, v in sorted(src_games.items()))
-        + ("   <-- 'proxy' is PRE-WHISTLE, biased toward UNDER"
-           if src_games.get("proxy") else ""))
+        f"{k} {len(v)}" for k, v in sorted(src_games.items())))
+    print(f"  EXCLUDED, no confirmed final (state != 'post'): {unsettled} games"
+          + ("   never settled from a proxy" if unsettled else ""))
     print(f"markets with a pregame close and a derived settlement: {len(rows):,}")
     src_rows = defaultdict(int)
     for r in rows: src_rows[r["final_src"]] += 1
