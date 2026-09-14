@@ -103,11 +103,25 @@ def _manages_lifecycle() -> bool:
 
 
 def pytest_report_header(config) -> str:
+    """Name the isolation REGIME, not just the database.
+
+    The old line said "(dedicated per-run database)" unconditionally — an
+    assertion the header had not checked, and exactly the kind of label that
+    makes a green run uninterpretable when someone has set an override.
+    """
     from core.storage import get_database_url
 
     url = get_database_url()
     host = url.split("@")[-1] if "@" in url else url
-    return f"meridian: tests pinned to {host} (dedicated per-run database)"
+    regime = ("dedicated per-run database, created and dropped here"
+              if _manages_lifecycle() else
+              "CALLER-MANAGED override: this run neither creates nor drops "
+              "it, and isolation from concurrent suites is yours to ensure")
+    line = f"meridian: tests pinned to {host} ({regime})"
+    if NOW_SHIFT_SECONDS:
+        line += (f"\nmeridian: module NOW shifted back {NOW_SHIFT_SECONDS}s "
+                 "(elapsed-time probe — NOT a normal run)")
+    return line
 
 
 def _create_and_migrate() -> None:
@@ -262,3 +276,62 @@ def guard_against_production(test_database):
             returncode=1,
         )
     yield
+
+
+#: Simulated suite-elapsed-time, in seconds, for the order-dependence probe
+#: (`scripts/elapsed_probe.sh`). Zero on every normal run.
+NOW_SHIFT_SECONDS = float(os.environ.get("MERIDIAN_TEST_NOW_SHIFT", "0"))
+
+
+@pytest.fixture(autouse=True)
+def module_now_is_per_test(request):
+    """Re-pin a test module's `NOW` to the instant its test runs.
+
+    THE BUG THIS REMOVES (measured 2026-09-14). Eleven test modules do
+    `NOW = dt.datetime.now(UTC)` at import — which happens at COLLECTION,
+    once, at the start of the run — and then insert snapshots at
+    `NOW - 30s`. The engine's own predicate is
+    `captured_at > now() - MAX_OBSERVATION_AGE_SECONDS` (60s), evaluated at
+    EXECUTION. So each such module carries a silent budget of
+    `60 - worst_offset` seconds of suite elapsed time, after which its own
+    fixtures age out of the window it is testing. The full suite takes ~34s,
+    so whether a file passes depended on its POSITION in the run: shuffling
+    the file order produced 2 failures in 1 of 4 seeds, and the same tests
+    passed alone. Three files, four tests, all with a 20-30s budget:
+    test_pulse_daily_budget (2), test_pulse_reprice (1),
+    test_pulse_shadow_min_bankroll (1).
+
+    It is not state leakage — nothing is shared. Earlier tests consume TIME.
+    Proved by shifting one module's NOW back 32s and running it ALONE: the
+    same two tests fail, with no other test in the process.
+
+    Re-pinning makes the offsets mean what they say ("30 seconds ago", not
+    "30 seconds before collection"). MERIDIAN_TEST_NOW_SHIFT keeps the
+    fragility measurable afterwards — a fix that blinds its own instrument
+    is not a fix.
+
+    OPT-IN, by `NOW_PER_TEST = True` in the module. The first version of
+    this fixture re-pinned any module global named NOW that happened to be a
+    datetime, and clobbered two modules whose NOW is a deliberately FIXED
+    calendar timestamp (test_kalshi_events_recorder, test_espn_cricket_
+    recorder) — 9 tests red. The matcher was broader than the measurement
+    that justified it, which is its own lesson. Modules whose NOW is a fixed
+    instant must not opt in.
+
+    Module constants DERIVED from NOW at import (three files build an event
+    slug from its date) are deliberately left alone: they are date-grained,
+    and re-deriving them per test would change a slug mid-module.
+    """
+    import datetime as _dt
+
+    mod = request.module
+    original = getattr(mod, "NOW", None)
+    if getattr(mod, "NOW_PER_TEST", False) and isinstance(original, _dt.datetime):
+        mod.NOW = (_dt.datetime.now(_dt.timezone.utc)
+                   - _dt.timedelta(seconds=NOW_SHIFT_SECONDS))
+        try:
+            yield
+        finally:
+            mod.NOW = original
+    else:
+        yield

@@ -369,6 +369,14 @@ class MarketState:
     entry_stake: float = 0.0
     position: OpenPosition | None = None
     last_seen_monotonic: float = field(default_factory=time.monotonic)
+    #: The captured_at of the last observation this market was ACTED on.
+    #: `_observations` re-serves the newest snapshot under the age window
+    #: every cycle whether or not it is new, and the interval is 1s against
+    #: feed cadences measured at 0.2s AND 30s in one game — so a slow
+    #: market's snapshot was priced up to 30 times. The floor is per market
+    #: for exactly that reason: a global one would starve the fast market or
+    #: leave the slow one unprotected (docs/math/one-observation-twice.md).
+    acted_captured_at: dt.datetime | None = None
     #: Dynamic-exit shadow arms, keyed by entry_decision_id. Independent of
     #: `position`'s life: an arm outlives the incumbent's exit so it can hold
     #: out for a repriced target (core/pulse/reprice.py). Re-entry adds a
@@ -389,6 +397,9 @@ class CycleResult:
     #: target filled this cycle, and arms finalised as riding to settlement.
     reprice_fills: int = 0
     reprice_finalized: int = 0
+    #: Observations served again that had already been acted on — the
+    #: blindness this engine accepts between two snapshots of one market.
+    observations_repeated: int = 0
 
 
 @dataclass(frozen=True)
@@ -1101,7 +1112,8 @@ class PulseEngine:
         ))
 
     def _manage_position(self, session, state: MarketState, ob: Observation,
-                         est: Estimate, result: CycleResult) -> None:
+                         est: Estimate, result: CycleResult, *,
+                         repeated: bool = False) -> None:
         pos = state.position
         if pos is None:
             return
@@ -1113,7 +1125,31 @@ class PulseEngine:
         # after FV moves stop_adverse through the entry. Either way, only
         # when the estimate is currently trustworthy — a dead clock does not
         # get to panic a position (fills stay price-based).
-        if (not pos.exit_is_stop and est.fair_value is not None
+        #
+        # NOT ON A SNAPSHOT ALREADY PRICED (`repeated`). The stop compares a
+        # moving fair value against a FIXED entry price, so it is the one
+        # decision here that can change its answer with no market
+        # information at all: on an unchanged book, every cent of movement
+        # comes from `_estimate`'s other inputs -- the venue clock and the
+        # v4 availability flags, both rebuilt from the database every cycle.
+        # Measured on the live tape 2026-09-14: 7 exit pairs written 13-28s
+        # apart against ONE snapshot, fair value moving a mean 5.05c (max
+        # 9.75c) on a frozen book, and one stop resting at 0.7600 when the
+        # next snapshot's ask was 0.7400. An order can only rest at a price
+        # the venue is showing.
+        #
+        # DELIBERATELY NOT GATED, and this is the honest part: `_manage_entry`
+        # and `_maybe_enter` compare the same moving fair value and carry the
+        # same exposure. Neither has produced an instance in the tape, and
+        # gating `_maybe_enter` breaks something that is money -- a market
+        # blocked by the daily cap must still enter when ANOTHER market's
+        # fill releases the budget in the same cycle, which is a change in
+        # the ENGINE's state, not in the book (test_pulse_daily_budget's
+        # Wednesday shape). The general fix is an age bound tied to each
+        # market's measured cadence, not a repeat test; that is a strategy
+        # decision, and it is written down rather than taken here.
+        if (not pos.exit_is_stop and not repeated
+                and est.fair_value is not None
                 and est.clock.usable):
             adverse = (pos.entry_price - est.fair_value if pos.side == YES
                        else est.fair_value - pos.entry_price)
@@ -1407,6 +1443,19 @@ class PulseEngine:
                 state = self._markets.setdefault(ob.market_slug, MarketState())
                 state.event_slug = ob.event_slug
                 state.last_seen_monotonic = time.monotonic()
+                # THE SAME SNAPSHOT, READ AGAIN. `_observations` serves the
+                # newest row under the age window every cycle whether or not
+                # it is new, and the interval is 1s against feed cadences
+                # measured at 0.2s AND 30.0s in one game -- so a slow
+                # market's snapshot is re-read up to thirty times. What is
+                # gated on that is deliberately NARROW; see
+                # `_manage_position` and docs/math/one-observation-twice.md.
+                repeated = (state.acted_captured_at is not None
+                            and ob.captured_at <= state.acted_captured_at)
+                if repeated:
+                    result.observations_repeated += 1
+                else:
+                    state.acted_captured_at = ob.captured_at
                 est = self._estimate(ob)
                 if est.abstain_guard is not None:
                     self._record_abstention(session, ob, est)
@@ -1417,7 +1466,8 @@ class PulseEngine:
                 self._check_exit_fill(session, state, ob, result)
 
                 if state.position is not None:
-                    self._manage_position(session, state, ob, est, result)
+                    self._manage_position(session, state, ob, est, result,
+                                          repeated=repeated)
                 elif state.entry_order is not None:
                     self._manage_entry(session, state, ob, est, result)
                 else:
@@ -1540,6 +1590,12 @@ class PulseEngine:
             except Exception as exc:   # one bad cycle must not kill the run
                 log.error("pulse_engine_cycle_failed", error=str(exc)[:300])
                 result, any_live = CycleResult(), None
+            if result.observations_repeated:
+                log.debug("pulse_observations_repeated",
+                          n=result.observations_repeated,
+                          observed=result.observed,
+                          note="snapshots already acted on; the feed has not "
+                               "ticked since")
             self._heartbeat.beat(
                 interval_seconds=self.interval_seconds,
                 rows_written=result.decisions,
