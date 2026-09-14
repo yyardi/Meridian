@@ -63,3 +63,53 @@ does; the value is the operator's.
 
 The underlying NFL 24-hour date defect is also unfixed — the gate now refuses
 those rows rather than trading on them, but the parser still writes them.
+
+
+---
+
+# Replayed exactly over the prior slate: the gate passes 0.23% of live time
+
+Tonight's run does not have to be predicted. The 2026-09-13 NFL slate is
+recorded, and the engine's own selection rule can be replayed over it with no
+sampling and no simulation.
+
+The engine takes `DISTINCT ON (game_id) ... ORDER BY wall_clock DESC`, so at
+any instant it holds the greatest `wall_clock` among rows **already
+recorded**. That makes the visible maximum a step function of the recording
+times, so the passing intervals are exact arithmetic rather than a sampled
+estimate: within each segment `[t_i, t_{i+1})` holding visible maximum `w`,
+the gate passes over `[w, w+30) ∩ [t_i, t_{i+1})`.
+
+| games | live hours | **time the gate passes** |
+|---|---|---|
+| 13 | 40.62 | **0.23%** |
+
+Per game, 0.09% to 0.40% — **thirteen games inside a four-fold band**, so the
+0.23% is not an average over a bimodal mixture. It is structural, not an
+incident.
+
+At the engine's 2-second cycle that is roughly 73,000 evaluations across the
+slate and about 170 that clear the gate, ~13 per game, in games lasting three
+hours. And clearing the gate is necessary but not sufficient — a trigger
+condition still has to fire inside that window.
+
+## Correcting the shared expectation about the 85
+
+Both of us said tonight's fired trades would be disproportionately the
+future-stamped rows. **They will not be, and neither of us checked.**
+
+All 85 future-stamped NFL plays belong to **one game** — 401872657, recorded
+2026-09-11 00:41–01:54Z with `wall_clock` stamped 2026-09-12 00:37, exactly
+24 hours ahead. A single game, three days ago, long outside the engine's
+six-hour window. Nothing tonight will be pinned to them.
+
+Which changes what the fix is for. `age < -1.0` closes a real hole and the
+defect will recur — one game in four days is a rate, not a one-off — but it
+is **not** a protection for tonight, and saying so is the difference between
+a fix and a story about a fix. Tonight's near-zero fired count will be
+entirely ESPN's publishing lag exceeding a 30-second gate, with no corrupt
+row involved.
+
+The replay figure is also what makes `stale_skips` worth logging rather than
+merely present: 0.23% predicts skipped in the tens of thousands against fired
+in single digits, and those two numbers are the whole content of the run.
