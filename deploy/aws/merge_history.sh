@@ -96,7 +96,28 @@ TABLES=(
   # --- five do not use ON CONFLICT.
   "pending_exits|entry_order_id||"
   "retention_log|partition_name||"
-  "pulse_decisions|market_slug,decided_at,action||"
+  # ★ +side,limit_price. `market_slug,decided_at,action` IS NOT UNIQUE and never
+  # was: 84 collisions in 19,333 live rows (0.44%), measured 2026-09-14, with no
+  # unique constraint on the table beyond its id to prevent them. Two causes,
+  # only one of which is a defect:
+  #
+  #   24 groups, action='enter' -- ALL 24 differ in BOTH side and limit_price.
+  #     They are a YES and a NO entry on the same market at the same microsecond,
+  #     each with its own price, contracts, stake and positive edge. Two
+  #     LEGITIMATE decisions; the key simply did not name the side.
+  #   60 groups, action='exit' -- `ev_stop` and `profit_target` co-firing on the
+  #     same tick, identical in side, price, contracts and created_at, differing
+  #     only in `reason`. That is ONE decision written twice, i.e. a writer
+  #     defect, reported separately.
+  #
+  # `reason` is NOT added, even though +reason+contracts reaches zero
+  # collisions: reason is NULL on every `enter` row, this script joins with
+  # PLAIN EQUALITY, and equality never matches NULL -- so adding it would leave
+  # all 2,974 enter rows unmappable. Strictly worse than the collisions it fixes.
+  #
+  # +side,limit_price resolves 75 of 84 with no nullable column. The remaining 9
+  # are the exit co-fire, and fixing that writer removes them at source.
+  "pulse_decisions|market_slug,decided_at,action,side,limit_price||"
   "shadow_quote_fills|market_slug,quoted_at,side||"
   "account_balances|observed_at||"
 )
@@ -185,7 +206,7 @@ FK_REMAP=(
   "pending_exits|entry_order_id|orders|idempotency_key"
   "pending_exits|submitted_order_id|orders|idempotency_key"
   # Self-referential: an exit points at the entry it closes.
-  "pulse_decisions|entry_id|pulse_decisions|market_slug,decided_at,action"
+  "pulse_decisions|entry_id|pulse_decisions|market_slug,decided_at,action,side,limit_price"
 )
 FK_REMAPPED=""
 for spec in "${FK_REMAP[@]}"; do

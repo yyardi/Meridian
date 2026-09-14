@@ -79,5 +79,66 @@ def test_no_existence_check_bypasses_the_helper():
         "a piped existence check remains in the code")
 
 
+
+
+# --------------------------------------------------------------------------- #
+# The natural keys this script joins on must actually be keys.
+# --------------------------------------------------------------------------- #
+def _specs():
+    """{table: [key cols]} from the TABLES array."""
+    block = SRC[SRC.index("TABLES=("):SRC.index("\n)", SRC.index("TABLES=("))]
+    out = {}
+    for ln in block.splitlines():
+        ln = ln.strip()
+        if not ln.startswith('"'):
+            continue
+        parts = ln.strip('"').split("|")
+        if len(parts) >= 2 and parts[0]:
+            out[parts[0]] = [c for c in parts[1].split(",") if c]
+    return out
+
+
+def test_pulse_decisions_key_includes_side_and_price():
+    """★ `market_slug,decided_at,action` IS NOT UNIQUE and never was: 84
+    collisions in 19,333 live rows (0.44%), with no unique constraint on the
+    table beyond its id.
+
+    24 of them are action='enter' and differ in BOTH side and limit_price -- a
+    YES and a NO entry on the same market at the same microsecond, each with its
+    own price, contracts, stake and positive edge. Two legitimate decisions the
+    key did not name. The other 60 are action='exit' with `ev_stop` and
+    `profit_target` co-firing, identical everywhere but `reason`: one decision
+    written twice, which is a writer defect and not this script's to fix.
+
+    +side,limit_price resolves 75 of 84 with no nullable column."""
+    keys = _specs()["pulse_decisions"]
+    assert keys == ["market_slug", "decided_at", "action", "side", "limit_price"], keys
+    # the child spec must agree, or the remap joins on a different key than the
+    # one that made it
+    child = [ln for ln in SRC.splitlines() if '"pulse_decisions|entry_id|' in ln]
+    assert len(child) == 1 and ",".join(keys) in child[0], child
+
+
+def test_no_key_uses_a_column_that_is_null_in_practice():
+    """★ THIS SCRIPT JOINS WITH PLAIN EQUALITY, WHICH NEVER MATCHES NULL -- its
+    own comment says so. So a nullable column in a natural key does not tighten
+    it, it makes every row carrying a NULL unmappable.
+
+    `reason` reaches ZERO collisions on pulse_decisions and is still refused:
+    it is NULL on all 2,974 `enter` rows, so adding it would trade 84
+    collisions for 2,974 unmapped rows. Measured, not assumed."""
+    assert "reason" not in _specs()["pulse_decisions"], (
+        "reason is NULL on every enter row; plain equality cannot match it")
+    # and the reasoning is recorded where the next person will look
+    assert "never matches NULL" in SRC or "equality never matches NULL" in SRC
+
+
+def test_every_table_has_a_nonempty_key():
+    """A blank key column list would make the remap join on nothing and match
+    every row against every row."""
+    for tbl, keys in _specs().items():
+        assert keys, f"{tbl} has no natural key columns"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
