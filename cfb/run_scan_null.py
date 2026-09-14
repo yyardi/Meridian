@@ -275,11 +275,14 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
     chosen = select(rows)
     rng = random.Random(seed)
     draws = {k: [] for k in ("max_abs_t", "n_excluding_zero",
-                             "best_net_per_1", "var_t", "hc")}
+                             "best_net_per_1", "var_t", "hc", "min_p")}
+    # Fixed across replicates -- see cell_price_table. One setup, not reps setups.
+    btable = cell_price_table(rows, chosen, cluster=True)
     per_cell: dict[str, list[float]] = defaultdict(list)
     frozen_rows = 0
     eff_m: list[int] = []
     degen: list[int] = []
+    mixed: list[int] = []
     for _ in range(reps):
         ys, frozen = permute_settlements(rows, rng)
         frozen_rows = frozen
@@ -290,6 +293,9 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
         for name, c in cells.items():
             per_cell[name].append(abs(c["t"]))
         s = summarise(cells)
+        bc = binomial_cells(rows, ys, chosen, cluster=True, rng=rng, table=btable)
+        s["min_p"] = min_p(bc)
+        mixed.append(sum(c["mixed_games"] for c in bc.values()))
         for k in draws:
             draws[k].append(s[k])
     return {
@@ -306,6 +312,10 @@ def null_distribution(rows, *, reps: int = 1000, seed: int = 20260914) -> dict:
         "degenerate_per_rep": (_q(degen) if degen else None),
         "reps_with_degenerate": sum(1 for d in degen if d > 0),
         "rows": len(rows), "frozen_rows": frozen_rows,
+        # The binomial branch's own diagnostic: how much within-game agreement
+        # the permutation destroyed. Observed is near zero by construction.
+        "binomial_cells": len(btable),
+        "mixed_games_per_rep": (_q(mixed) if mixed else None),
         "per_cell_abs_t": {k: sorted(v) for k, v in per_cell.items()},
         "quantiles": {k: _q(v) for k, v in draws.items()},
         "draws": draws,
@@ -603,3 +613,153 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":                            # pragma: no cover
     raise SystemExit(main())
+
+
+# ------------------------------------------------------- the binomial branch
+def poisson_binomial_pmf(ps) -> list[float]:
+    """Exact pmf of a sum of independent Bernoullis with DIFFERENT p.
+
+    A decile cell spans a 0.1 PRICE BAND, so every bet in it has its own
+    break-even and the null is Poisson-binomial rather than binomial.
+    Collapsing to one p mis-states the tail in whichever direction the
+    within-cell price distribution leans — the same class of approximation as
+    the sandwich it replaces, milder but not free. Exact by convolution; n here
+    is at most a few hundred, so there is no reason to approximate.
+    """
+    pmf = [1.0]
+    for p in ps:
+        nxt = [0.0] * (len(pmf) + 1)
+        for k, w in enumerate(pmf):
+            nxt[k] += w * (1.0 - p)
+            nxt[k + 1] += w * p
+        pmf = nxt
+    return pmf
+
+
+def poisson_binomial_p(k: int, ps) -> float:
+    """Two-sided p for observing k wins, by the method of small probabilities:
+    sum every outcome no more likely than the one observed."""
+    pmf = poisson_binomial_pmf(ps)
+    if not (0 <= k < len(pmf)):
+        return 1.0
+    obs = pmf[k]
+    return min(1.0, sum(w for w in pmf if w <= obs * (1 + 1e-12)))
+
+
+def break_even(ask: float, fee_rate: float = 0.06) -> float:
+    """Win probability a YES-at-ask bet needs to break even: you pay the ask
+    plus the fee, so EV = p - ask - fee = 0."""
+    return ask + fee_rate * ask * (1.0 - ask)
+
+
+def cell_price_table(rows, chosen, *, cluster: bool = True) -> dict:
+    """Precompute, ONCE, everything about a cell that a permutation cannot change.
+
+    ★ THE PERMUTATION SHUFFLES `y`, NOT PRICES. So each cell's break-even vector
+    is fixed across every replicate, and therefore so is its Poisson-binomial
+    pmf — only the win count `k` moves. Caching the pmf per cell turns the null
+    from O(reps * cells * G^2) into one O(cells * G^2) setup plus an O(rows)
+    lookup per replicate, which is the difference between minutes and hours.
+
+    Returns per cell: the game grouping, the price vector, and `pval[k]` — the
+    two-sided exact p for every achievable k, so a replicate is a table read.
+    """
+    idx = {r["market_slug"]: i for i, r in enumerate(rows)}
+    table = {}
+    for name, bets in chosen.items():
+        by_game: dict[str, list[int]] = defaultdict(list)
+        prices: dict[str, list[float]] = defaultdict(list)
+        for b in bets:
+            i = idx[b.market_slug]
+            g = rows[i]["game_id"]
+            by_game[g].append(i)
+            prices[g].append(break_even(rows[i]["ask"]))
+        n = sum(len(v) for v in by_game.values())
+        if n < 2:
+            continue
+        gids = list(by_game)
+        if cluster:
+            ps = [sum(prices[g]) / len(prices[g]) for g in gids]
+        else:
+            ps = [q for g in gids for q in prices[g]]
+        pmf = poisson_binomial_pmf(ps)
+        pval = [min(1.0, sum(w for w in pmf if w <= pmf[k] * (1 + 1e-12)))
+                for k in range(len(pmf))]
+        table[name] = {
+            "gids": gids,
+            "members": [by_game[g] for g in gids],
+            "bets": n, "games": len(gids),
+            "n_over_g": n / len(gids),
+            "mean_break_even": sum(ps) / len(ps),
+            "unit_n": len(ps),
+            "pval": pval,
+        }
+    return table
+
+
+def binomial_cells(rows, ys, chosen, *, cluster: bool = True, rng=None,
+                   table: dict | None = None) -> dict:
+    """Per-cell exact test on the WIN COUNT, which the sandwich cannot express.
+
+    Quant B's measurement of the overstatement, same cells, sandwich against
+    binomial: p 3.9e-12 vs 6.3e-02, 7.9e-33 vs 6.1e-02, 1.2e-25 vs 4.7e-02.
+    Five to thirty orders of magnitude, and Var(t) was built out of that gap.
+
+    ★ BUT A BINOMIAL ASSUMES INDEPENDENT BETS, AND BETS IN ONE GAME ARE NOT.
+    That is precisely why the sandwich clusters. Replacing one with the other
+    trades a homogeneity failure for a clustering failure: with n bets over G
+    games the independent test overstates evidence by roughly sqrt(n/G), which
+    at n=68 over G=15 is a factor of ~2.1 in z. So `cluster=True` reduces each
+    game to ONE observation and the n/G ratio is reported either way.
+
+    ★ MIXED GAMES ARE KEPT BY MAJORITY, NOT DROPPED, AND THE REASON IS THE NULL.
+    Dropping a game whose bets disagree looks cleaner, but a permutation BREAKS
+    within-game agreement by construction: the observed tape has few mixed games
+    (that agreement is what produced the degenerate cells), the permuted tape has
+    many. Dropping them would shrink G in the null and not in the observed, so
+    the null would be built from smaller-G cells that cannot reach as far into
+    the tail — anti-conservative, in the direction of my own hypothesis. Majority
+    vote holds G fixed at a property of the price/game structure, which is what
+    makes observed and null comparable at all. Exact ties carry no direction, so
+    they are broken by the same rng that drew the permutation (a fixed `>= 0.5`
+    would count every tie as a win and lift the null's k on both tails).
+    """
+    if table is None:
+        table = cell_price_table(rows, chosen, cluster=cluster)
+    out = {}
+    for name, t in table.items():
+        k, mixed = 0, 0
+        if cluster:
+            for members in t["members"]:
+                vals = [float(ys[i]) for i in members]
+                s = sum(vals)
+                if len(set(vals)) > 1:
+                    mixed += 1
+                half = len(vals) / 2.0
+                if s > half:
+                    won = True
+                elif s < half:
+                    won = False
+                else:
+                    won = (rng.random() < 0.5) if rng is not None else True
+                k += int(won)
+        else:
+            k = int(sum(float(ys[i]) for m in t["members"] for i in m))
+        out[name] = {
+            "k": k, "unit_n": t["unit_n"], "bets": t["bets"],
+            "games": t["games"], "n_over_g": t["n_over_g"],
+            "mixed_games": mixed,
+            "mean_break_even": t["mean_break_even"],
+            "p": t["pval"][k] if 0 <= k < len(t["pval"]) else 1.0,
+        }
+    return out
+
+
+def min_p(bcells: dict) -> float:
+    """The across-cell statistic. A per-cell binomial is exact and needs no
+    permutation — and the permutation would ABSORB it, since shuffling existing
+    settlements holds the marginal win count fixed, which is the quantity that
+    hypothesis is about. What needs a reference is the MINIMUM over correlated
+    cells, and that is what the permutation supplies, conditional on the
+    observed marginal."""
+    return min((c["p"] for c in bcells.values()), default=1.0)
