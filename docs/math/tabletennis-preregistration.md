@@ -422,3 +422,135 @@ Two candidate explanations sized rather than asserted:
   is **~0.03¢ against a 13.8¢ miss — under 0.3%.** Negligible.
 - **Settlement-order selection** (Step 4) — unsized, untested, and the largest
   unexamined term.
+
+## 11. Step 2 executed — and a retraction placed where it belongs
+
+### The audit: our code is clean
+
+- `core/recorder.py:212` writes `best_bid`/`best_ask` from `market.best_bid` →
+  `schemas.py:96` → **`bestBidQuote.value`**, a venue **market-level** field.
+  **No index selection, no `outcomes[]` read, no `marketSides[i]` pick.**
+- `core/polymarket/client.py:163` `get_settlement` →
+  `/v1/markets/{slug}/settlement`, **the same slug, also market-level.**
+  `core/settlements.py` adds only the 0.5 draw label.
+- **No per-league or per-sport branching on this path.**
+
+> **Our code cannot introduce a price/settlement mismatch.**
+
+### But that does not close it
+
+**"Consistent by construction" does not follow.** The audit **relocates** the
+question from our code to **the venue's** convention: does `bestBidQuote` refer
+to the same side that `/settlement` reports? **A code audit cannot answer that.**
+If the venue is internally inconsistent for this family, a faithful reading of
+both fields reproduces the inconsistency exactly. Our cleanliness is **necessary,
+not sufficient.**
+
+### RETRACTED, before it was published: the "±12¢ therefore not inverted" argument
+
+I drafted, and did not send, this: *"the four measured CFB cells sit within
+±12¢, and an inversion would show ±50–90¢, therefore the venue's fields agree in
+side."*
+
+**It is wrong. All four cells sit at p ≈ 0.5, where the two hypotheses differ by
+only ~10¢ against ~20¢ intervals.**
+
+| cell | m | correct | inverted | measured | separation |
+|---|---:|---:|---:|---:|---:|
+| away @0.55 | 0.55 | −3.0¢ | −13.0¢ | −11.6¢ | **10¢** |
+| home @0.45 | 0.45 | −3.0¢ | −13.0¢ | +7.5¢ | **10¢** |
+
+**That is reading a test at the price where its two hypotheses coincide** — the
+same defect retired in §2's twin clause. **The discriminating information lives
+in the price TAILS**, where inversion moves E[pnl] by 40–90¢.
+
+**The genuine CFB evidence is the ESPN check**, for a different reason: 65/65
+compares venue settlement to **real-world outcomes directly, independent of
+price.** That establishes settlement↔reality **for CFB**. It says nothing about
+table tennis.
+
+### MEASURED correction: the price sd, and what it buys
+
+**sd(YES mid) = 0.1355** on started markets, range **0.200 – 0.775**. §8 had been
+quoting 0.078, which is the sd of **p_fav**, not of the price. **8 of 35 markets
+sit at |p − 0.5| ≥ 0.20**, where inversion moves E[pnl] by ≥40¢ — and the slope
+weights that tail automatically.
+
+| n | calibration slope, wrong-call | arm B, wrong-call |
+|---:|---:|---:|
+| **21 (already settled)** | **10.0%** | 17.1% |
+| 35 | 4.9% | 11.0% |
+| 61 | 1.5% | 5.2% |
+| 150 | 0.0% | 0.5% |
+
+> **On the same 21 matches the slope is about twice as informative as arm B, and
+> it separates inversion from overpricing, which arm B cannot. It needs no new
+> tape. Run it before waiting for n = 61.**
+
+### Registered amendment to Step 1
+
+**Verify two or three matches, not one, and choose them at |p − 0.5| ≥ 0.20.**
+A single match at p ≈ 0.55 is consistent with both hypotheses; one at p = 0.775
+going the wrong way is already strong evidence. **The information is in the
+tails, so choose the lookups there** — the same principle as the slope.
+
+## 12. TRAP 1 CLOSED — the frame is sound, and the shortfall was noise
+
+### The chain, verified end to end by two independent routes
+
+    bestBidQuote == marketSides[0]  [10/10 exact]  →  /settlement  [30/30 agree]
+
+**Route 1, field identity.** `bestBidQuote.value == marketSides[0].price` and
+`bestAskQuote.value == marketSides[1].price`, **exactly, on every market
+checked.** And `marketSides[0].long = true` on **all 6,560** recorded rows.
+
+> **`marketSides[]` is NOT two contracts. It is the BID and the ASK of one book
+> — the YES book.** side0 is the YES bid, side1 the YES ask. The array's naming
+> (each entry carries a team/player description) invites reading it as two
+> opposing sides, which is the venue's presentation defect. Anything that treats
+> side0 and side1 as complementary outcomes is wrong.
+
+**Route 2, the calibration slope.** n=35, slope **+0.8990 (se 0.5813)**:
+
+| hypothesis | z | p | |
+|---|---:|---:|---|
+| **inverted frame (slope = −1)** | +3.267 | **0.0011** | **REJECTED** |
+| prices uninformative (slope = 0) | +1.547 | 0.122 | not rejected |
+| perfect calibration (slope = +1) | −0.174 | 0.862 | not rejected |
+
+**The slope rejects inversion on its own, with no shared code with Route 1.**
+Two genuinely independent instruments, same answer. **TRAP 1 is closed.**
+
+### The "favourites underperform by 13.8¢" reading is retired — it was noise
+
+The YES-frame calibration gap was **−2.9¢ at n=21** and **+3.2¢ at n=35**. The
+21 are a subset of the 35, so **the 14 new matches averaged +12.35¢** — two
+adjacent subsamples of one process differing by **15.3¢**.
+
+**The SE of a mean gap is 10.9¢ at n=21 and 8.5¢ at n=35 — both larger than
+either observed gap. Neither reading was ever readable.** It was not a trend
+that reversed; it was the first draw from a wide distribution, and recording it
+as "trending" gave it more standing than the arithmetic supported.
+
+> **Registered correction: do not carry a direction forward from a sample whose
+> SE exceeds the effect. "Trending" is a claim about a sequence, and one draw is
+> not a sequence.**
+
+### What is actually open
+
+Not the frame. **Whether these prices carry any information at all** — slope
++0.899 cannot be distinguished from 0 (p=0.12) or from 1 (p=0.86).
+
+> **Next milestone: n = 56 puts the slope CI off zero — about 8.6 hours at
+> 156/day.** Until then no TT number is readable in either direction.
+
+### A method note worth keeping
+
+My own test of Route 1 was **built on a wrong model of the field** — I compared
+the mid against side0 and side1 as if they were complementary outcomes, so
+`mid = (side0+side1)/2` was **equidistant from both by construction** and the
+statistic could never discriminate. **48% of rows came back as exact ties**,
+which was the answer in disguise. And `avg(side0+side1) ≈ 1.0091` looked like
+confirmation of the wrong model, because averaging a symmetric high/low mix
+destroys the shape. **Check what your statistic can produce under the model you
+are testing before you run it.**
