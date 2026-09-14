@@ -164,6 +164,76 @@ reference.
 > its own t(G−1). **HC is automatically calibrated across a ragged-G scan where
 > Var(t) is not.**
 
+### The HC promotion is CONDITIONAL — a validity check that can fail
+
+HC has **two demonstrated failure modes that look identical in a summary table**:
+unclamped it divides by `√(p(1−p))` and returned p99 **2,864** / max **10,626**
+on pure null data; the textbook HC+ restriction then made it **identically 0.00
+across 400 null replicates and the observed value** — dead rather than
+conservative. A denominator-clamped version measured a null range of
+**1.06–1.08 at m=29**, nearly saturated.
+
+**A reference implementation does not reproduce that saturation.** Denominator-
+clamped, 600 replicates:
+
+| m | null p50 | null p95 | IQR | distinct values |
+|---:|---:|---:|---:|---:|
+| 29 | 0.550 | 1.683 | **1.130** | 600 / 600 |
+| 250 | 1.218 | **3.103** | 1.132 | 599 / 600 |
+| 500 | 1.303 | 3.165 | 1.228 | 600 / 600 |
+
+and it is **responsive at m=29** (98–100% power against 5–25 planted cells at
+μ=3). **So saturation to a 0.02-wide range is a property of an implementation,
+not of HC at small m** — it should be diagnosed, not accepted.
+
+**Note the m that matters is `m_eff ≈ 250`, not 500**, after the side-axis
+collapse. At m=250 HC retains full spread and **97.3% power against 10 cells at
+μ=3**.
+
+> **REGISTERED — run on the permutation replicates at the real m, BEFORE the
+> observed HC is read:**
+>
+> **(a) Spread.** Null IQR ≥ 0.5 HC units over ≥400 replicates, and ≥100
+> distinct values. *(Reference: 1.13.)*
+> **(b) No boundary pile-up.** <5% of null replicates at the extreme value the
+> clamp can produce.
+> **(c) Responsiveness — decisive.** Plant 10 cells at μ=3 into permuted data;
+> **HC must exceed its own null p95 in ≥80% of planted replicates.**
+> *(Reference 97.3%; a dead statistic gives ~5%.)*
+> **(d)** The observed HC must not equal a clamp boundary.
+
+### If HC fails the check, this is primary instead — declared now
+
+Measured at m=250, power against the null p95 of each statistic:
+
+| scenario | HC | count(p<.01) | max\|t\| |
+|---|---:|---:|---:|
+| 5 cells at μ=3 | 65.8% | 53.8% | **79.3%** |
+| 10 cells at μ=3 | **97.3%** | 96.2% | 96.2% |
+| 10 cells at μ=2.5 | **84.5%** | 73.7% | 72.0% |
+| 25 cells at μ=2.5 | 100% | 100% | 96.7% |
+| 50 cells at μ=2.0 | 100% | 100% | 90.0% |
+
+**HC is the best all-rounder; max|t| wins at extreme sparsity; the count is
+never best but never bad — and it cannot break** (no division by a small
+number, bounded, no moment requirement, exact under permutation).
+
+> **REGISTERED: if HC fails (a)–(d), `count(p < 0.01)` becomes primary with
+> `max|t|` reported beside it. All three are reported every week regardless, so
+> a disagreement between them is visible rather than resolved by choice.**
+> **No statistic may be selected after its value is seen.**
+
+### Correcting my own over-statement
+
+I wrote that Var(t) "is not usable across a ragged-G scan". **Too strong.** Read
+against the **permutation** null it is perfectly valid — the permutation
+reproduces each cell's realized G, so the `(G−1)/(G−3)` inflation is embedded in
+the reference distribution automatically. **My objection was to reading it
+against a THEORETICAL baseline of 1**, which is an interpretability defect in the
+printed number, not a validity defect in the test. **The G ≥ 6 floor still
+stands, but for POWER** — small-ν cells have heavy tails and dominate the
+variance — **not for validity.**
+
 ### The statistic
 
 Report **three**, because they answer different alternatives:
