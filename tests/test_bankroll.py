@@ -487,3 +487,47 @@ def test_picks_carries_bankroll_on_an_unrecorded_league(monkeypatch):
         "'unknown' about a number we have."
     )
     assert body["bankroll"]["bankroll"] == 23.82
+
+
+# --------------------------------------------------------------------------- #
+# A named failure must not arrive as "Internal Server Error".
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("exc_name", ["BankrollUnavailable", "MissingCredentialsError"])
+def test_a_named_bankroll_failure_is_a_503_with_its_reason(monkeypatch, exc_name):
+    """★ `MissingCredentialsError` IS A SIBLING OF `BankrollUnavailable`, NOT A
+    SUBCLASS -- both derive straight from RuntimeError -- so `except
+    BankrollUnavailable` never caught it and it surfaced as a bare 500. Found by
+    loading the dashboard and reading the one 500 in the console that I had not
+    caused myself.
+
+    On prod, credentials are present and this never fires. On a rotation or an
+    expiry it fires on the page-load request of the one endpoint whose job is to
+    say what the account looks like, and the operator would get no reason at
+    all. Parametrised over BOTH exceptions so the fix cannot regress by
+    narrowing the handler back to one of them."""
+    from fastapi.testclient import TestClient
+
+    from core.api import app
+    from core.bankroll import BankrollUnavailable
+    from core.polymarket.client import MissingCredentialsError
+
+    exc = {"BankrollUnavailable": BankrollUnavailable,
+           "MissingCredentialsError": MissingCredentialsError}[exc_name]
+
+    # MissingCredentialsError takes a LIST and joins it; passing a string makes
+    # it iterate characters, which is how my first version of this test failed
+    # while the handler was already correct.
+    arg = (["POLYMARKET_KEY_ID"] if exc is MissingCredentialsError
+           else "the venue said no")
+    want = ("missing credentials in env: POLYMARKET_KEY_ID"
+            if exc is MissingCredentialsError else "the venue said no")
+
+    def _boom(*a, **k):
+        raise exc(arg)
+
+    monkeypatch.setattr("core.bankroll.refresh", _boom)
+    r = TestClient(app, raise_server_exceptions=False).get("/api/bankroll?refresh=true")
+    assert r.status_code == 503, (
+        f"{exc_name} gave {r.status_code}; a named condition must not arrive as "
+        "an unhandled 500 with no reason")
+    assert want in r.json()["detail"]

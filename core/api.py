@@ -2742,12 +2742,20 @@ def bankroll(refresh: bool = False) -> dict:
     """
     from core.bankroll import BankrollUnavailable
     from core.bankroll import refresh as refresh_bankroll
+    from core.polymarket.client import MissingCredentialsError
 
     if not refresh:
         return _bankroll_block() or {}
     try:
         return refresh_bankroll().to_dict()
-    except BankrollUnavailable as exc:
+    # MissingCredentialsError is a SIBLING of BankrollUnavailable, not a
+    # subclass -- both derive straight from RuntimeError -- so it used to escape
+    # this handler and surface as a bare 500 "Internal Server Error". It is a
+    # NAMED, expected condition, and on a credential rotation or expiry the
+    # operator would get no reason at all from the one endpoint whose job is to
+    # say what the account looks like. Same 503, and the detail names the
+    # missing variables.
+    except (BankrollUnavailable, MissingCredentialsError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)[:200]) from exc
 
 
