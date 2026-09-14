@@ -77,6 +77,26 @@ cricket.
 | gap | 2h05m |
 | venue listing during the gap / now | 1 event / 1,150 events |
 | Kalshi | unaffected throughout |
+| repopulation window, from `markets_seen` in the logs | 11:35:43Z saw 0, 11:40:59Z saw 11 -- 5m16s |
+
+**It is a daily listing gap, not an incident.** The board came back well before tonight's MLB
+first pitches, which was the criterion, and we now know the shape: **the venue's board is empty
+for about two hours in the mid-morning UTC.** Only cricket is confirmed back; the other recorders
+last swept at 11:30-11:35 and saw zero, so they have simply not looked since, which is the same
+quiet-versus-empty trap running in the recovery direction.
+
+**★ That gap lands on a registered measurement anchor.** For a 17:30Z kickoff, which is exactly
+the England-Sri Lanka T20I the operator traded, `T-6h` is 11:30Z and sits inside the gap. The
+cricket reversion anchor is being redefined as the last quote at or before `T-6h` with the
+realised offset reported, so a match with a large offset is excluded and counted rather than
+silently mis-anchored. Without it the measurement would have dropped or mis-anchored exactly the
+afternoon-start matches, which are most of the ODI and T20I slate. Found by meridian-7f, and only
+findable because the outage happened while someone was watching.
+
+**And it is a live demonstration that the new column was the right fix.** Separating empty from
+quiet during this gap took four `docker logs` calls grepping `markets_seen` out of container
+output. As a column it is one query, and the alarm would have fired at 09:35 and cleared at 11:41
+with nobody watching.
 
 **So I had two routes agreeing and one of them could not disagree.** The listing and the events
 probe told the same story, which is why I stopped checking. The events probe would have told that
