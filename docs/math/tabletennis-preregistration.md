@@ -325,3 +325,100 @@ effects), so #5 cannot be read on hand-swept tape at all.**
 2. **`mins_before` distribution for matches settling YES vs NO.** If capture is
    outcome-independent they coincide. This is the direct falsification of the
    selection worry and costs one query.
+
+## 10. If the gate fails: the re-derivation procedure, written before the answer
+
+Written 2026-09-14 with the gate **trending against the frame and undecided**
+(21 settled: favourite win rate 47.6% against a priced 0.6145). Written now
+precisely because writing it afterwards is how people talk themselves into the
+frame they wanted.
+
+### First, a correction to §6 and §8 — the gate was the wrong instrument
+
+**A "frame error" is not a mislabelling of which player is YES.** If price and
+settlement both come from the venue in the same frame, our interpretation of who
+YES refers to **does not affect any statistic**: the venue says "YES priced
+0.62, YES settled 1" and that is internally consistent whoever YES is.
+
+> **A frame error can only bite as a MISMATCH between the PRICE field and the
+> SETTLEMENT field** — for example reading `outcomes[]` order, which is
+> documented as unreliable, instead of `marketSides[1].price`.
+
+That is a **code-level field-mapping bug**. It is global, it is symmetric across
+YES/NO, and — decisively — **it is a lookup question, not an inference
+question.** §6 registered a 61-match statistical gate for it. That was the wrong
+instrument, and cheaper ground truth was available all along.
+
+### Step 1 — one hand-verified match beats sixty-one statistical ones
+
+Take a single settled match. Read the venue's recorded price and its settlement.
+Check who actually won from the competition's own published result. **n = 1 of
+ground truth settles a binary frame question that n = 61 settles only
+probabilistically.** The "no independent settlement source" constraint in §6 is
+about *routine settlement at scale*; it never meant ground truth was
+unobtainable for a handful of matches. **Do this first.**
+
+### Step 2 — audit the mapping in code, not in statistics
+
+Confirm which field is the YES book (`marketSides[1].price`, **not** `outcomes[]`
+ordering) and what `settlement` 0/1 refers to. Steps 1 and 2 together either
+find the bug or exonerate the mapping; everything below is a fallback for when
+they cannot be completed.
+
+### Step 3 — the calibration slope, which separates what the gate conflates
+
+Regress settled `y` on YES mid across **all** markets, not the favourite-oriented
+subset.
+
+| slope | reading |
+|---|---|
+| ≈ **+1** | frame correct; any shortfall is **mispricing** |
+| ≈ **−1** | **frame inverted** |
+| ≈ **0** | prices carry no information — a third state the gate cannot express |
+
+**This is the answer to a defect in arm B: "frame inverted" and "favourites
+systematically overpriced" make the SAME prediction — favourites winning below
+their price — so arm B cannot distinguish them, and a gate failure would not
+establish a frame error.** The slope can: mispricing shifts the intercept and
+leaves the slope positive; inversion flips the sign.
+
+Power, y on price: at sd(price) = 0.12, **n = 61 gives a 2.8% wrong-call rate;
+n = 150 gives 0.13%** — better than arm B at equal n *and* it separates the two
+hypotheses.
+
+### Step 4 — settlement-order selection
+
+Only ~21 of ~156 daily matches have settled with a pregame close: **the
+fastest-settling ~13%.** If settlement speed correlates with outcome
+(retirements, disputes, five-setters posting late) the sample is biased, and
+nothing makes that bias symmetric. **Compare win rate and p̄_fav across
+settlement-lag quantiles; flat means no selection.** This is TRAP 6 and it is
+live right now.
+
+### Step 5 — pre-committed decisions
+
+- **slope significantly < 0** → frame inverted. **Halt all table-tennis work**,
+  fix the field mapping, re-run every number from scratch.
+- **slope ≈ +1 and the shortfall persists** → a **mispricing** result, subject to
+  the full multiplicity and power discipline of §3–§4. **Not an edge** until it
+  clears them.
+- **slope ≈ 0** → prices are uninformative; there is nothing here to trade.
+- **To conclude the frame is FINE requires both**: slope > 0 with an interval
+  excluding 0, **and** at least one hand-verified match agreeing.
+
+> **Anti-rationalisation clause.** The four readings above are exhaustive as of
+> this writing. If, after seeing the resolved data, anyone argues for a fifth,
+> that argument must be written down and dated **before** it is acted on.
+
+### What the current 21 matches actually say
+
+**Likelihood ratio for inverted over correct: 1.59 to 1.** A Bayes factor of 3
+is "substantial" and 10 is "strong". **1.6 is not evidence**, and "trending, not
+decided" is the correct record.
+
+Two candidate explanations sized rather than asserted:
+- **max() bias.** Defining the favourite as `max(mid, 1−mid)` on a noisy mid
+  overstates p̄_fav by Jensen. Real and correctly signed, but at a 3¢ spread it
+  is **~0.03¢ against a 13.8¢ miss — under 0.3%.** Negligible.
+- **Settlement-order selection** (Step 4) — unsized, untested, and the largest
+  unexamined term.
