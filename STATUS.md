@@ -372,51 +372,54 @@ dismissed it as interference without recording it.
 exact line and this is the third time. The rule is `pytest ...; rc=$?` or `set -o pipefail`, never
 a pipe into `tail` as the gate.
 
-## 0k. THE BOX IS UNREACHABLE AS OF ~15:55Z. This is the first thing to deal with.
+## 0k. The box was never down. I was blind to it for 70 minutes and reasoned my way to the wrong cause.
 
-Last successful contact 15:52Z. Unreachable since, on **both** SSH (22) and the dashboard/API
-(8008). Connections **time out** rather than being refused, which means packets are dropped, not
-that a service died.
+Unreachable 15:55Z to 17:05Z on both SSH and the dashboard port. It is back on **the same
+address**, and nothing was wrong with it.
 
-| check | result |
+| check, after recovery | result |
 |---|---|
-| ssh, 8 attempts over 5 minutes | all timed out |
-| `curl http://<box>:8008/api/health` | no response, 15s timeout |
-| my own network (`curl https://github.com`) | 200 in 0.24s |
-| `~/.meridian-server` last written | 2026-09-05 |
+| uptime | **3 weeks 3 days**, boot 2026-08-20 |
+| containers running | 29 of 29 |
+| newest market row | 17:04Z, and rows exist throughout the outage |
+| cricket toss records | 459, latest 17:03Z |
 
-**The established session was RESET, not dropped.** A long-running ssh that was open at the time
-died with `Read from remote host: Connection reset by peer` followed by `Broken pipe`, and every
-connect since has timed out. That ordering discriminates: a host that actively sends a reset was
-still on the network at that instant and then stopped answering. **A pure address rotation would
-not reset an established session on the old address** -- it would leave it hanging. An instance
-stopping or restarting produces exactly reset-then-timeout, and a restart also rotates the public
-address unless an Elastic IP is attached, which unifies both symptoms under one cause.
+**Nothing stopped. No reboot, so the migration trap never fired, and no data was lost.** The box
+recorded normally for the whole seventy minutes; only my path to it was broken.
 
-So the leading hypothesis is now **the instance stopped or restarted at about 15:55Z**, not that
-the address quietly moved. That raises the stakes rather than lowering them.
+**My leading hypothesis was wrong and the reasoning behind it looked good.** An established ssh
+session died with `Connection reset by peer` and every later connect timed out. I argued that a
+host sending a reset was on the network at that instant and then stopped answering, that a pure
+address rotation would leave an old session hanging rather than reset it, and that instance
+stop-or-restart produces exactly reset-then-timeout. Each step is defensible and the conclusion
+was false: uptime says three weeks. A reset can also come from a device in the path, and I had
+assigned it to the only endpoint I was thinking about.
 
-**I still cannot confirm it from here.** Timeouts on every port with a healthy
-local network fit three causes and I cannot separate them from here: the instance stopped, a
-security group changed, or the public address rotated and the file is stale. The address file was
-written on 09-05 and the address is known to rotate, so a stale file is a live possibility and
-would mean the box is fine and still recording while we are blind to it.
+**Two things that worked, both by prior design rather than by luck.** The detached paper book
+survived my connection dying and completed on the box -- the standing rule that killing a piped
+ssh does not kill the container, for once paying off in the useful direction. And the monitor
+armed on recovery reported the exact minute without anyone watching.
 
-**Why it matters beyond visibility.** If the instance actually restarted, the migration trap in
-section 1 has fired: 21 of 30 containers were on images that cannot pass `alembic upgrade head`
-against the current database, so they are down and stay down until rebuilt. And cricket toss
-times, which cannot be backfilled, stop accruing the moment the ESPN recorder stops.
+**And one probe that lied.** My first reachability test used `/dev/tcp` and said my own machine
+could not reach a public DNS resolver or github, which would have made this a local network
+fault. That syscall
+is blocked by the sandbox, so the failure meant nothing; `curl` showed the network was fine. A
+probe that cannot succeed says nothing when it fails.
 
-**What the operator can do that I cannot:** read the instance's current public address and state
-from the AWS console. If the address has changed, write the new one into `~/.meridian-server` and
-everything else resumes.
+## 0l. The six new MLB strategies select rows and their pairing is printed correctly
 
-```bash
-aws ec2 describe-instances --filters "Name=tag:Name,Values=*meridian*" \
-  --query "Reservations[].Instances[].{state:State.Name,ip:PublicIpAddress,id:InstanceId}" --output table
-```
+Verified end to end on the 15:52Z paper book, which ran on the box while I could not see it:
 
-A monitor is armed here and will report the moment SSH answers again.
+| strategy | bets | printed as |
+|---|---:|---|
+| `mlb_winner_away_all` | 1 | complement of `mlb_winner_home_all` |
+| `mlb_winner_home_all` | 1 | complement of `mlb_winner_away_all` |
+| `mlb_spread_yes_70_100` | 2 | no complement, correctly |
+
+All on one settled game, so every line reads UNDERPOWERED, which is the honest state. What is
+confirmed is the wiring: the rules match real market types, the declared pair is annotated, and
+the away-favourite arm is **not** annotated as a complement, which is the distinction the test
+asserts and the reason both arms can be reported together.
 
 ## 1. What I need from you (everything else I now run myself)
 
