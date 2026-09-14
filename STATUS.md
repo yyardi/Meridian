@@ -282,51 +282,57 @@ double-inserted. 7d's first test was the circular one -- re-running the join aga
 migration itself created -- and they caught it before sending. **Recorded as explained, not
 observed:** nothing logged the join result at run time.
 
-## 0i. PULSE writes the same exit twice, at two different prices
+## 0i. The exit pairs are registered behaviour. The defect is one observation priced twice.
 
-84 duplicate natural keys in live `pulse_decisions`, 0.44% of 19,333 rows, no exact copies. Two
-causes, and only one is a defect. Characterised by 7d; the exit half is corrected here because my
-independent check disagreed with theirs.
+**Retracted, mine and 7d's.** They called the 60 exit pairs "one decision written twice". I went
+further and said nothing records which price governs. **Both wrong, and mine was checkable in one
+query.** Verified here independently:
 
-**24 `enter` groups are not a defect.** All 24 differ in both side and limit price: a YES and a NO
-entry on the same market in the same microsecond, each with its own price and stake. Two
-legitimately distinct decisions the key failed to name.
+| reason | rows | live | withdrawn | filled |
+|---|---:|---:|---:|---:|
+| `ev_stop` | 60 | 50 | 10 | **50** |
+| `profit_target` | 60 | **0** | 60 | 0 |
 
-**60 `exit` groups are the defect, and it is worse than "one decision written twice".** `ev_stop`
-and `profit_target` co-fire on one tick and the exit path emits a row per satisfied condition
-rather than per decision.
+Groups with two live orders: **0**. So `withdrawn_at IS NULL` names the governing price
+unanimously, without any tie-break: the stop supersedes the target 60 times out of 60, because the
+fill rests the target and `_manage_position` withdraws the incumbent before placing, in the same
+cycle. That is registered behaviour with suite coverage, not a defect. A dedupe would have been
+strictly worse than doing nothing: it would delete a limit that really rested and really stood
+down, and could pick a price up to 9¢ wrong. PULSE is shadow-only, so nothing was ever placed at
+either price.
 
-| across the 60 exit groups | |
-|---|---|
-| differ in side | 0 |
-| differ in contracts | 0 |
-| **differ in limit price** | **52** |
-| mean price gap | **3.67¢** |
-| max price gap | **9.00¢** |
+**The real defect is the 7 pairs I noticed and mis-attributed.** Those differ in `created_at`,
+13-28 seconds apart, in separate transactions **against one unchanged snapshot**. `_observations`
+serves the newest row under a 60-second age window every cycle whether or not it is new, with no
+watermark, and the fair value is not a function of the observation -- the ESPN venue clock and the
+v4 availability flags are rebuilt from the database each cycle. So on a frozen book the clock
+advanced 0.20-0.58 minutes and fair value moved a mean of 5.05¢, max 9.75¢. One stop rested at
+0.7600 when the next snapshot's ask was 0.7400.
 
-Same side, same size, same microsecond, **two different limit prices up to nine cents apart, and
-nothing records which one governs.** 7d characterised these as identical in price and differing
-only in reason; that holds for 8 of 60. For the other 52 the two rows would place different
-orders. Sample: one WNBA market at 0.5600 for `profit_target` against 0.6100 for `ev_stop`.
+**Scope beyond those 7:** `decided_at` is the data's time, not the decision's. The gap between
+them reaches 59.5 seconds, the configured window. **23.7% of 13,680 hold rows are priced off a
+snapshot more than 10 seconds old.** Cadence is not uniform either -- in one hour of one game, one
+market got 6,520 snapshots at a 0.2s median gap and another got 26 at 30.0s, so a sub-30-second
+cycle re-prices the slow markets repeatedly.
 
-**The trigger is none of the obvious ones.** `decided_at` is microsecond-precision and no group
-shares a whole-second timestamp, so it is one writer in one tick, not a retry, a restart or two
-writers. Strategy, phase, line, market type, entry id and score differ in zero groups. Spread over
-seven days, 08-23 to 08-31, peaking at 29 on 08-29. There is no unique constraint on the table
-beyond its id, so nothing could ever have caught it.
+Fix is a per-market floor on `captured_at`. Not made; `test_an_observation_is_evaluated_once` is
+`xfail(strict=True)` and XPASSes when the watermark lands. Write-up in
+`docs/math/one-observation-twice.md`.
 
-**Downstream, already measurable.** `core/pulse/diagnostics.py` counts `exit_rows` as `count(*)`
-while `entries_with_exit_row` is `count(distinct entry_id)`, so `exit_rows` is over by 60, 2.24%,
-and any ratio between the two mixes units -- the same shape as the coverage `shortfall` deleted
-this morning. Flagged, not changed.
+## 0j. The test suite is order-dependent, so a green run proves less than it looks
 
-**The natural key is extended to include side and limit price**, which resolves 75 of 84 with no
-nullable column. 7d refused to add `reason` and the refusal is right: `reason` is NULL on all
-2,974 `enter` rows, verified here independently, and the script joins with plain equality, so
-adding it would trade 84 collisions for 2,974 unmappable rows. There is a mutation pinning that
-refusal because it is the wrong fix a future reader will reach for.
+`tests/test_pulse_live.py` fails 4 tests before this merge and 6 after, and **every one of them
+passes in isolation**. The two new tests pass and xfail exactly as designed when run alone. The
+file shares a database across tests and earlier tests leave state behind.
 
+This is not cosmetic. It means a green suite is evidence about an ordering, not about the code,
+and it has been true all day: I saw the same shape in `test_recorder.py` this morning and
+dismissed it as interference without recording it.
 
+**And I pushed on it.** `pytest ... | tail -3 && git push` takes the pipeline's exit status from
+`tail`, which always succeeds, so the push ran on a red suite. I have a standing note about this
+exact line and this is the third time. The rule is `pytest ...; rc=$?` or `set -o pipefail`, never
+a pipe into `tail` as the gate.
 
 ## 1. What I need from you (everything else I now run myself)
 
