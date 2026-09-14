@@ -553,19 +553,28 @@ parse (the int64 fix).
 ★★★★★ **THE CAPABILITY STATEMENT, CORRECTED TWICE AND NOW MEASURED — THE
 PROGRAMME CANNOT RULE OUT THE EDGE SIZES WORTH TRADING.**
 
-| population | distinct game-clusters | pooled bound | hurdle | short by |
-|---|---:|---:|---:|---:|
-| pregame | **263** | **6.04¢** | 2.1¢ | 2.9× |
-| in-play | **140** | **8.28¢** | 3.0¢ | 2.8× |
+**MEASURED, not modelled** — `clustered()` on the bets with game as the key, so
+the within-cluster covariance is estimated rather than assumed:
 
-**Even fully pooled — one statistic, no multiplicity at all — the programme is
-about three times short of its own hurdle.** And 263 is an UPPER bound on
-effective clusters: a pregame game appears in a median of 16 cells and up to 144,
-so the true figure is worse (7.2¢ at 70% of union, 8.6¢ at 50%).
+| population | n | G | G_eff | pooled mean | 95% CI | bound | hurdle |
+|---|---:|---:|---:|---:|---|---:|---:|
+| pregame | 20,024 | 263 | 116.9 | **−3.743¢** | **[−6.299, −1.188]** | **2.56¢** | 2.1¢ |
+| in-play | 33,815 | 140 | 44.2 | −4.851¢ | [−9.971, +0.270] | 5.12¢ | 3.0¢ |
 
-> **The gap between the bound and the hurdle — 2.1¢ to 6.0¢ — is exactly the
-> range a real but modest edge would occupy. The programme cannot rule out
-> precisely the effect sizes that would be worth trading.**
+★ **THE PREGAME POOLED MEAN IS NEGATIVE AND EXCLUDES ZERO.** Buying at the ask
+across the whole board loses **3.74¢ per contract [−6.30, −1.19]** — a measured
+loss, not merely an absence of edge. In-play is −4.85¢ and spans zero.
+
+**And the pregame bound is 2.56¢ against a 2.1¢ hurdle — 1.2× short, not 2.9×.**
+The first modelled figure (6.04¢) assumed ρ=1 within each game cluster, which is
+nearly true for spread rungs settling off one margin and false across market
+types; it bracketed the truth from the pessimistic side by 2.4×. **One more
+Saturday plausibly closes the pregame gap**, which makes 09-19 worth more than it
+looked an hour ago.
+
+> **The gap between bound and hurdle is 2.1¢ to 2.56¢ pregame and 3.0¢ to 5.12¢
+> in-play — narrow pregame, real in-play. The programme very nearly reaches the
+> effect sizes worth trading pregame, and does not reach them in-play.**
 
 **Two corrections that produced this, both from the author of the original
 figure.** The registered 5–15¢ detection bound was **projected, not measured** —
