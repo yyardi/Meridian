@@ -75,6 +75,10 @@ SQL
 | settle cache read a truncated file as empty, then overwrote it | would have destroyed ~20,000 cached settlements | fixed, quarantines instead |
 | MLB recorded 49 of 81 listed events | 40% of your daily-volume league missing | limit raised, awaiting tonight's slate |
 | board coverage `truncated` flag silent at 49 vs 50 | the guard for this exact default read false | limit now logged beside observed |
+| cricket cadence env never reached the containers | I recorded a 5-min cadence in this file that the containers did not have; they were sleeping the 3600s code default | containers recreated; cadence now 60s near start |
+| cricket ESPN recorder was not running at all | no toss time exists for any match, and toss times cannot be backfilled | started 10:48Z, 24 matches and 16 toss times in the first minutes |
+| that recorder failed a whole cycle on a duplicate write | one match seen twice in one instant discarded every match in that cycle | upsert, real-database test |
+| paper book died writing its JSON on a datetime | no paper book for the day, two hours after the scan was fixed for the same thing | one shared writer in core/jsonio.py |
 
 Scan runtime went from 1h56m to **9 minutes** once the floor actually bound and the
 settlement cache was warm.
@@ -92,7 +96,8 @@ settlement cache was warm.
 | cron Sun 15:50Z / Mon 10:20Z | the pre-registered read, to /opt/meridian/artifacts/reads | — |
 | cron daily 04:40Z | nightly strategy scan, full table to artifacts/reads, terse push to ntfy | all |
 | scalp-nfl / scalp-cfb | paper taker loop, ytg40 trigger, tp 5% stop 10% | NFL, CFB |
-| cricket-recorder / tt-recorder | venue boards, event limit 500, 5-min cadence near start | cricket, table tennis |
+| cricket-recorder / tt-recorder | venue boards, event limit 500; cricket 60s within 8h of start, TT 300s | cricket, table tennis |
+| cricket-espn-recorder | ESPN toss time, innings state, result | cricket |
 
 ## 3. Strategies and paper P&L (nothing has ever been placed)
 

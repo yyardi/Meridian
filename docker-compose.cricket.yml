@@ -39,9 +39,17 @@ services:
       # Cricket matches run for hours or days and the board is listed well ahead, so
       # the football default is closer to right here -- but county boards are thin and
       # move on team news, so near-start is tightened a little.
-      MERIDIAN_NEAR_TIPOFF_HOURS: "12"
-      MERIDIAN_INTERVAL_NEAR: "600"
-      MERIDIAN_INTERVAL_IDLE: "1800"
+      # MEASURED 2026-09-14: a cricket sweep is 15 markets and 5.52 s, so a
+      # 60 s near-window costs ~9% duty and is not close to the RPS 2 ceiling.
+      # The old 600 s could not resolve the thing this recorder exists to catch.
+      # The operator's account is a ~30c move "within a few minutes" around the
+      # toss; at 10-minute sampling we would see the before and the after and
+      # never the move, so the claim would be unfalsifiable by construction.
+      # 8 hours rather than 6 so the registered p(T-6h) anchor sits inside the
+      # fine-grained window rather than on its boundary.
+      MERIDIAN_NEAR_TIPOFF_HOURS: "8"
+      MERIDIAN_INTERVAL_NEAR: "60"
+      MERIDIAN_INTERVAL_IDLE: "900"
       # MERIDIAN_EVENT_LIMIT defaults to 50 PER VENUE COMPETITION (core/config.py),
       # and setkameua alone listed 237 events on 2026-09-13 — so the default silently
       # records 50 of them and the board reads as a small league. Measured: limit 50
