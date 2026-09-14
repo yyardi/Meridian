@@ -672,6 +672,28 @@ NFL-specific date defect in the parser, not a clock misalignment. Those 85 were 
 that **passed** while 93.7% of good ones were refused: the one gate meant to stop bad data was
 selecting for it. Fixed on main (`age > max_age_s or age < -1.0`, a day is not skew).
 
+**CORRECTION, to 7d and to me, said twice by both of us without checking.** We each wrote that
+tonight's few trades would be disproportionately those corrupt rows. **They will not be.** All 85
+belong to **one game**, 401872657, seen 2026-09-11 00:41 to 01:55Z and stamped 2026-09-12 00:37 --
+verified here, a single row in the group-by. That is three days ago and far outside the engine's
+six-hour window. **Tonight's near-zero count will be entirely ESPN's publishing lag against a
+30-second gate, with no corrupt row involved.** The fix closes a real hole and one game in four
+days is a rate rather than a one-off, so it will recur -- but it is not a protection for tonight,
+and saying so is the difference between a fix and a story about a fix.
+
+**What the corrupt row does when it lands is worse than "it passes", which is why the hole
+matters.** The engine takes `DISTINCT ON (game_id) ORDER BY wall_clock DESC`, so one
+future-stamped play **wins that selection for as long as it sits in the window** -- pinning the
+engine's whole view of that game to itself, on every 2-second cycle, with a negative age the old
+test read as perfectly fresh. On the 09-11 game that is 85 rows over 73 minutes.
+
+**And tonight did not need predicting: the gate replays exactly over the recorded 09-13 slate.**
+13 games, 40.62 live hours, no sampling. **The gate passes 0.23% of live time**, per game 0.09% to
+0.40% -- thirteen games inside a four-fold band, so it is structural rather than an incident. At
+the 2-second cycle that is roughly 73,000 evaluations across the slate and about **170** that clear
+it, ~13 per game. Clearing the gate is necessary and not sufficient; a trigger still has to fire
+inside that window.
+
 **Two things that fix does not reach tonight.** It needs a rebuild, and rebuilding this container
 runs `alembic upgrade head`, which advances the database and strands the containers built earlier
 today. **I am not rebuilding for tonight, because nothing is lost by waiting:** the plays and the
