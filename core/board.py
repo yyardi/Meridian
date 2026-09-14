@@ -135,10 +135,62 @@ def latest_snapshot_per_market(
     )
 
 
-#: A WNBA game is 40 minutes of clock and roughly two hours of wall time. 3.5h
-#: covers overtime, a long stoppage and settlement lag, and anything past it is
-#: over whatever the flag says.
+#: Wall-clock ceiling PER LEAGUE, in hours. Past it, a started game is finished
+#: whatever the flag says.
+#:
+#: ★ THIS WAS ONE NUMBER, 3.5, AND ITS OWN COMMENT NAMED THE POPULATION IT CAME
+#: FROM: "a WNBA game is 40 minutes of clock and roughly two hours of wall
+#: time". Correct for WNBA. Then it was applied to college football, where 3.5h
+#: is barely the AVERAGE.
+#:
+#: Measured 2026-09-14 against ESPN's `state` field -- the independent
+#: authority, `espn_cfb_game_state`, from `in` to `post` -- over the 09-12/09-13
+#: slate: CFB 72 games, mean 3.37h, p95 4.19h, p99 4.64h, max 5.11h, and **18 of
+#: 72 (25%) longer than 3.5h**. NFL 9 games, mean 3.09h, max 3.64h. The cost of
+#: the single value was **491 live-minutes across 18 games in one weekend**, a
+#: mean of 27 minutes per affected game, classified FINISHED while ESPN still
+#: said `in` -- and it is the LAST 27 minutes, the part of a game that carries
+#: the most information.
+#:
+#: The same span measured on the venue's own rows gives max 13.26h, which is
+#: NOT usable for sizing: those rows are contaminated by the frozen `is_live`
+#: this function exists to defend against, so the measurement of the defect
+#: cannot calibrate the fix. ESPN is the second, independent source.
+#:
+#: Sized as a BACKSTOP, not a bound. `LIVE_STREAM_STALE_SECONDS` does the real
+#: work -- a game whose stream stopped is finished within ten minutes at any
+#: league -- so being generous here costs little and being tight costs the end
+#: of games.
+_WALL_HOURS = {
+    "wnba": 3.5,          # ~2h wall, as originally documented
+    "nba": 3.5,           # same shape as WNBA
+    "nfl": 4.5,           # measured max 3.64h
+    "cfb": 6.0,           # measured max 5.11h, p99 4.64h
+    "mlb": 6.0,           # only 1 streamed game on tape (3.35h); extra innings
+                          # and rain delays run long, so generous by default
+    "cricket": 12.0,      # an ODI is ~8h. **COUNTY/FIRST-CLASS IS MULTI-DAY AND
+                          # IS NOT COVERED BY THIS.** No cricket market has
+                          # streamed live yet (none had >100 live rows in 6
+                          # days), so this is unreached rather than verified --
+                          # named here so it fails loudly to a reader instead of
+                          # quietly to a match.
+    "tabletennis": 3.5,   # a match is minutes
+}
+
+#: For a league not in the map, and the value this used to be for everyone.
+DEFAULT_WALL_HOURS = 6.0
+
+#: Kept as a name because it reads as a constant elsewhere; it is the WNBA value
+#: it always was, no longer applied to leagues it was never measured on.
 MAX_GAME_WALL_HOURS = 3.5
+
+
+def wall_hours_for(market_slug: str | None) -> float:
+    """The wall-clock ceiling for this market's league."""
+    from core.leagues import league_of_slug
+
+    lg = league_of_slug(market_slug)
+    return _WALL_HOURS.get(lg.slug, DEFAULT_WALL_HOURS) if lg else DEFAULT_WALL_HOURS
 
 #: The live recorder writes every 200ms during a game. If a started game's
 #: newest row is older than this, the game has ended and its markets have
@@ -178,7 +230,7 @@ def market_state(snap: MarketSnapshot, *, as_of: dt.datetime) -> str:
     start = snap.game_start_time
     if start is None or start > as_of:
         return PREGAME
-    if (as_of - start) > dt.timedelta(hours=MAX_GAME_WALL_HOURS):
+    if (as_of - start) > dt.timedelta(hours=wall_hours_for(snap.market_slug)):
         return FINISHED
     if snap.is_live and snapshot_age_seconds(snap, as_of=as_of) <= LIVE_STREAM_STALE_SECONDS:
         return IN_PLAY

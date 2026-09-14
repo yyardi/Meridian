@@ -139,7 +139,10 @@ def _inserted(session, stmt, pk) -> int:
     correctly (7, 1, 2 for SELECT, single VALUES, multi VALUES), so this is
     SQLAlchemy's insertmanyvalues path, not the driver and not the conflict
     clause. Three sites here did `rows += result.rowcount or 0`, and -1 is
-    truthy, so each contributed **-1**.
+    truthy, so each contributed **-1**. `core/feeds/espn_player_boxscores.py`
+    already guarded it, two files away, with a comment naming the behaviour --
+    and chose `len(values)` there, correctly, because that one backfills
+    finished games once. Both sites now point at each other.
 
     What that cost: a first poll of one game reported `rows_written=10` while
     71 rows landed, and a steady-state poll reported **-2**. This module's own
