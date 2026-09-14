@@ -421,6 +421,27 @@ confirmed is the wiring: the rules match real market types, the declared pair is
 the away-favourite arm is **not** annotated as a complement, which is the distinction the test
 asserts and the reason both arms can be reported together.
 
+## 0m. Every prod ssh needs keepalives, or a stalled path hangs forever
+
+The network path to the box is intermittently slow since this afternoon's outage. Twice now a
+routine check has hung until its own timeout killed it, once at 600 seconds, while the box itself
+was fine: uptime unchanged, all containers up, newest market row 17:28:27Z against a wall clock of
+17:30:58Z.
+
+Without `ServerAliveInterval`, ssh waits indefinitely on a stalled connection, so an unreachable
+moment and a slow moment look identical and both consume the full timeout. Every prod command
+should carry:
+
+```
+ssh -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=4 ...
+```
+
+That turns an indefinite hang into a failure in about twenty seconds, which is the difference
+between knowing the path is bad and waiting ten minutes to learn nothing.
+
+**Current counts, 17:30Z:** MLB 8,781 rows over 62 games. Cricket toss records 474, of which 456
+carry a toss time. Table tennis, cricket and MLB all recording, no container down.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
@@ -512,7 +533,7 @@ settlement cache was warm.
 | live-recorder / cfb-live-recorder / nfl-live-recorder | in-game book at 0.2–1s | WNBA, CFB, NFL |
 | nfl-odds-recorder / cfb-odds-recorder | DraftKings pregame line path, 7 days ahead | NFL, CFB |
 | kalshi-recorder | Kalshi boards, 72h pregame window | CFB, NFL (WNBA when listed) |
-| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 6,081 rows, 62 events, latest 09:29:43Z; 0 in the last hour, see §0d** |
+| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 8,781 rows over 62 games at 17:30Z** |
 | cron Sun 15:50Z / Mon 10:20Z | the pre-registered read, to /opt/meridian/artifacts/reads | — |
 | cron daily 04:40Z | nightly strategy scan, full table to artifacts/reads, terse push to ntfy | all |
 | scalp-nfl / scalp-cfb | paper taker loop, ytg40 trigger, tp 5% stop 10% | NFL, CFB |
