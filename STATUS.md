@@ -211,8 +211,46 @@ this project is waiting on is waiting on games. The registered CFB lines need
 first structural route to the operator's number that is not "wait for more
 football". Requires the recorder to actually run.
 
-**First table-tennis numbers, and the honest reading is "the pipeline works, the
-gate does not yet".** Ran the pre-registration's frame gate (`cfb/run_tt_frame_gate.py`)
+★ **THE TABLE-TENNIS FRAME GATE IS TRENDING TOWARD FAILURE, AND THAT IS THE
+REGISTERED HALT CONDITION.** Measured 00:45Z on the 21 settled matches with a
+pregame close (`cfb/run_tt_frame_gate.py`):
+
+| arm | value | direction |
+|---|---|---|
+| mean FAVOURITE price | 0.6145 | — |
+| **arm B, mean(y_f − p_f)** — the one to watch | **−0.1383** | **wrong side of zero** |
+| arm A, favourite win rate | 0.4762 | below 0.5, the flipped-frame signature |
+| YES is favourite | 7 of 14 won, mean p_f 0.621 | 50.0% |
+| NO is favourite | 3 of 7 won, mean p_f 0.602 | 42.9% |
+
+**n needed 61 for a 5% wrong-call rate, 122 for 1%. We have 21**, so this is NOT
+a verdict — the 17-match version carried a 19.3% wrong-call probability. But the
+sign is the one the pre-registration says to halt on, and the registered response
+to a failing gate is **halt and re-derive the frame, never report an edge**. No
+table-tennis edge number may be computed until this resolves, which is ~9 hours of
+recording at the listed rate. Watch arm B, not arm A: subtracting p_f removes
+Var(p_f) so it dominates for free, and the unoriented YES-frame version has zero
+power by construction when the venue assigns YES without regard to strength.
+
+**Corrections to my own table-tennis numbers, measured:** the spread is **2.59¢
+mean / 3.00¢ median**, not the 1–2¢ the discovery reported, so the hurdle is
+**2.72–2.80¢** rather than 2.00–2.50 and every "days to detect" figure was ~12%
+optimistic. And a trap that nearly produced a fabricated headline in the other
+direction: **~92% of listed Setka markets have not started**, so an unfiltered
+"last quote before kickoff" is just the newest sweep hours ahead of a kickoff that
+has not happened — that gives median staleness 11 hours and a 50¢ median spread,
+both artifacts. Filtered to started matches the same data gives 8.2 minutes and
+3.0¢. Every pregame-close query on this family needs `ko < now()`.
+
+**The sweep gap costs nothing measurable**, now from data: median close 8.2 min
+before start, no mass beyond 120 min so capture ≈ 1, and regressing |p−0.5| on
+minutes-before gives slope +0.00007/min (r = +0.006). Honest limit: n=27 bounds
+|r| only below ~0.39, so that is "no detectable attenuation", not "none" — re-run
+at n≈200. It still does NOT license price-bucket hypotheses on hand-swept tape,
+and hypothesis #5 (within-day sequence effects) shares a cause with the sampling
+and cannot be read on it at all.
+
+**Earlier, superseded reading —**  Ran the pre-registration's frame gate (`cfb/run_tt_frame_gate.py`)
 at 00:20Z on the 17 matches with a pregame close that started more than 45 minutes ago:
 
 | | |
