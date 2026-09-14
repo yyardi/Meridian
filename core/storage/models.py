@@ -43,6 +43,11 @@ from core.storage.base import Base
 Price = Numeric(6, 4)  # 0.0000 - 1.0000 contract prices
 Qty = Numeric(18, 4)  # contract quantities
 Points = Numeric(8, 2)  # basketball lines/scores
+#: Strikes on NON-SPORTS Kalshi series. `Points` cannot hold them: it is
+#: NUMERIC(8,2), i.e. |x| < 1,000,000 — and KXBTCD quotes floor_strike
+#: 67099.99 today against a ceiling one bull market away, while other series
+#: strike on indices and rates that want more than two decimals.
+Strike = Numeric(18, 6)
 
 
 class MarketSnapshot(Base):
@@ -388,6 +393,184 @@ class KalshiSnapshot(Base):
         Index("ix_kalshi_snapshots_captured_at", "captured_at"),
         Index("ix_kalshi_snapshots_ticker_time", "ticker", "captured_at"),
         Index("ix_kalshi_snapshots_game_key", "game_key"),
+    )
+
+
+class KalshiEvent(Base):
+    """Terms of one NON-SPORTS Kalshi market, point-in-time — the sibling of
+    `kalshi_contracts` for everything `kalshi_games` structurally cannot hold.
+
+    Why a sibling table and not a widening of `kalshi_games` (verified against
+    the code and the venue 2026-09-14):
+
+    * `kalshi_games` is keyed on an **ESPN team pair plus a local date**, and
+      `first_code`/`second_code` are NOT NULL. `KXRAIN-26SEP13` has no team
+      pair at all, so no row can exist for it.
+    * `core.kalshi.mapping.parse_game_key` needs `YYMMMDD` + two known team
+      codes; `'26SEP13'` is 7 characters and returns None on the length check
+      before it ever looks at a table.
+    * `game_start_time` is copied from our own Polymarket snapshots, so an
+      event with no Polymarket twin is unpollable by construction — which is
+      every weather, crypto and challenger-tennis event on the venue.
+
+    Identity here is the venue's own: `(market_ticker, captured_at)`, with
+    `event_ticker` as the grouping key. Append-only on CHANGE, like
+    `kalshi_contracts`: rules text is ~1 KB and the board is ~550 markets.
+    """
+
+    __tablename__ = "kalshi_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: When WE observed these terms.
+    captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    series_ticker: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_ticker: Mapped[str] = mapped_column(String(128), nullable=False)
+    market_ticker: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: The leg code — `'LEY'` of `KXITFWMATCH-26SEP13LEYSUN-LEY`. THE KEY,
+    #: together with `event_ticker`, and never a display name. A tennis event
+    #: is two markets, one per player (2 legs on 95 of 95 open tennis events,
+    #: 2026-09-14), so `(event_ticker, ticker_suffix)` is what recovers the
+    #: pairing and what stops a consumer counting four tradeable positions as
+    #: four independent observations of one match.
+    ticker_suffix: Mapped[str | None] = mapped_column(String(64))
+
+    title: Mapped[str | None] = mapped_column(Text)         # the market's
+    #: The EVENT's title — 'Leykina vs Sun'. Display only, NEVER a join key:
+    #: 166 of 190 open tennis title name-slots are a bare surname (87%), and
+    #: 'Liu' spans KXATPCHALLENGERMATCH and KXWTAMATCH while 'Lee' spans
+    #: three series. Merging two players understates correlation in the
+    #: dangerous direction. `yes_sub_title` is fuller (0 of 190 bare) but is
+    #: still a name; the identity is `ticker_suffix` + `custom_strike`.
+    event_title: Mapped[str | None] = mapped_column(Text)
+    yes_sub_title: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(64))
+
+    #: 'structured' | 'greater' | 'greater_or_equal' | 'less' | 'less_or_equal'
+    #: | 'between' | 'custom' | NULL. Counted over the 107,599 open markets in
+    #: the 2026-09-14 survey: 30,465 / 28,969 / 20,934 / 524 / 28 / 2,986 /
+    #: 19,165 / 4,528. The last two are why this is a string and not an enum,
+    #: and `less_or_equal` and NULL are why the set is not the six the design
+    #: note listed.
+    strike_type: Mapped[str | None] = mapped_column(String(32))
+    floor_strike: Mapped[Decimal | None] = mapped_column(Strike)
+    cap_strike: Mapped[Decimal | None] = mapped_column(Strike)
+    #: `custom_strike`, verbatim — a dict on 'custom'/'structured' markets,
+    #: NULL elsewhere. THE PLAYER ID LIVES HERE: every one of the 40 open WTA
+    #: legs read 2026-09-14 carries `{"tennis_competitor": "<uuid>"}`. Keyed
+    #: on, a name is not; see `event_title` for what a name collides with.
+    custom_strike: Mapped[dict | None] = mapped_column(JSONB)
+
+    open_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    close_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    expected_expiration_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: min(close_time, expected_expiration_time) — the poll anchor, stored so
+    #: a query can reproduce the recorder's window without redoing the
+    #: arithmetic. NOT the same as close_time on 74.0% of the open board
+    #: (79,605/107,599): on KXITFWMATCH close_time is **+330h** — the
+    #: two-week postponement clause — so a window hung on close_time alone
+    #: opens thirteen days after the match it was meant to record.
+    poll_anchor: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    status: Mapped[str | None] = mapped_column(String(32))
+    market_type: Mapped[str | None] = mapped_column(String(32))
+    #: True = the event's legs sum to 1 (a ladder). 4,377 of 11,696 open
+    #: events on 2026-09-14; carried because a leg of a mutually-exclusive
+    #: ladder cannot be priced as a standalone binary.
+    mutually_exclusive: Mapped[bool | None] = mapped_column(Boolean)
+
+    #: THE TICK GRID IS NOT 1c EVERYWHERE. `price_level_structure` is the
+    #: venue's name for it ('linear_cent' 98,216, 'tapered_deci_cent' 8,758,
+    #: 'deci_cent' 592, 'center_half_edge_half_cent' 33 over the open board);
+    #: `price_ranges` is the grid itself, verbatim, as [{start,end,step}].
+    #: `min_tick` is the smallest step in that grid, denormalized so a
+    #: threshold can be rounded to tick BEFORE any float comparison.
+    price_level_structure: Mapped[str | None] = mapped_column(String(48))
+    price_ranges: Mapped[list | None] = mapped_column(JSONB)
+    min_tick: Mapped[Decimal | None] = mapped_column(Price)
+
+    rules_primary: Mapped[str | None] = mapped_column(Text)
+    rules_secondary: Mapped[str | None] = mapped_column(Text)
+    #: Verbatim, for the NAMES. The URLs are not automation targets and
+    #: nothing here fetches them: KXITFWMATCH is the ITF *Women's* series and
+    #: its Flashscore entry points at `/tennis/itf-men-singles/` (read at the
+    #: venue 2026-09-14). The venue's own metadata is wrong in places.
+    settlement_sources: Mapped[list | None] = mapped_column(JSONB)
+
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("market_ticker", "captured_at", name="uq_kalshi_event_market_time"),
+        Index("ix_kalshi_events_event_ticker", "event_ticker"),
+        Index("ix_kalshi_events_series_anchor", "series_ticker", "poll_anchor"),
+    )
+
+
+class KalshiEventSnapshot(Base):
+    """One row per non-sports Kalshi market per OBSERVED CHANGE.
+
+    `kalshi_snapshots` writes every cycle; this one writes only when the
+    quoted state moved. The reason is the board: KXBTC15M alone reopens every
+    fifteen minutes forever, and an unconditional 60s write on a 550-market
+    allowlist is ~790k rows a day of mostly identical numbers. A reader must
+    therefore treat a row as "the state from this captured_at until the next
+    row", not as a sample.
+    """
+
+    __tablename__ = "kalshi_event_snapshots"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    market_ticker: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_ticker: Mapped[str] = mapped_column(String(128), nullable=False)
+    series_ticker: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    yes_bid: Mapped[Decimal | None] = mapped_column(Price)
+    yes_ask: Mapped[Decimal | None] = mapped_column(Price)
+    yes_bid_size: Mapped[Decimal | None] = mapped_column(Qty)
+    yes_ask_size: Mapped[Decimal | None] = mapped_column(Qty)
+    last_price: Mapped[Decimal | None] = mapped_column(Price)
+
+    volume: Mapped[Decimal | None] = mapped_column(Qty)
+    open_interest: Mapped[Decimal | None] = mapped_column(Qty)
+    status: Mapped[str | None] = mapped_column(String(32))
+    result: Mapped[str | None] = mapped_column(String(16))
+
+    #: THE FEE REGIME AT THIS INSTANT, re-read from `/series/{ticker}` every
+    #: cycle rather than looked up once. It is per-series and it MOVES: the
+    #: venue publishes dated transitions (`series_fee_change_arr`, 147 of
+    #: them), and two are tennis — KXATPMATCH and KXWTAMATCH both went to
+    #: `quadratic_with_maker_fees` on 2025-11-15. Today KXWTAMATCH still
+    #: reads `quadratic_with_maker_fees` while KXITFWMATCH,
+    #: KXATPCHALLENGERMATCH, KXBTCD and KXRAIN read `quadratic` (venue,
+    #: 2026-09-14). A cached fee would let a series acquire maker fees under
+    #: a running strategy and keep reporting as free, so it is stamped on
+    #: every row and nothing downstream may assume a value.
+    fee_type: Mapped[str | None] = mapped_column(String(48))
+    fee_multiplier: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+
+    #: Full depth from `GET /markets/orderbooks`, verbatim. NULL unless
+    #: KALSHI_EVENTS_DEPTH is set — see the recorder for the row arithmetic.
+    book: Mapped[dict | None] = mapped_column(JSONB)
+    #: NULL unless KALSHI_EVENTS_SNAPSHOT_RAW is set; the verbatim payload is
+    #: already kept point-in-time in `kalshi_events`.
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "market_ticker", "captured_at", name="uq_kalshi_event_snapshot_market_time"
+        ),
+        Index("ix_kalshi_event_snapshots_captured_at", "captured_at"),
+        Index("ix_kalshi_event_snapshots_event_ticker", "event_ticker"),
+        Index("ix_kalshi_event_snapshots_series_time", "series_ticker", "captured_at"),
     )
 
 

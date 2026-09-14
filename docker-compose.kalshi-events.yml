@@ -1,0 +1,47 @@
+# KALSHI NON-SPORTS RECORDING overlay (2026-09-14).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.kalshi-events.yml \
+#     up -d --build kalshi-events-recorder
+#
+# RECORDING ONLY: public unauthenticated GETs, no engine, no order path.
+# Separate from `kalshi-recorder` (docker-compose.yml), which records the nine
+# SPORTS series through kalshi_games and cannot reach these: that table is
+# keyed on an ESPN team pair plus a local date and its start time is copied
+# from our Polymarket snapshots, so an event with no Polymarket twin -- every
+# weather, crypto and challenger-tennis event -- is unpollable there by
+# construction. This one keys on the venue's own event_ticker/market_ticker.
+#
+# THE POLL WINDOW HANGS OFF min(close_time, expected_expiration_time), NOT
+# close_time. Both are present on 107,599 of 107,599 open markets, and they
+# differ on 74.0% of them: on KXITFWMATCH close_time is the +330h two-week
+# postponement backstop, so a close_time window would open thirteen days after
+# the match. See core/kalshi/events_shape.py.
+#
+# Request budget at this allowlist (measured board, 2026-09-14): ~547 open
+# markets across 8 series; one nested-events request per series (200 events a
+# page), one /series fee read, one /markets coverage count = ~24 requests per
+# 60s cycle = 0.4 req/s against the client's 5/s bucket.
+services:
+  kalshi-events-recorder:
+    build: .
+    container_name: meridian-kalshi-events-recorder
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      # The allowlist. Unset would fall back to the same eight targets, but it
+      # is stated here so the operator can read what is being recorded without
+      # opening the code.
+      KALSHI_SERIES: "KXITFWMATCH,KXATPCHALLENGERMATCH,KXBTC15M,KXBTCD,KXRAIN,KXHIGHNY,KXHIGHMIA,KXHIGHLAX"
+      # W, in hours, before a market's anchor. 24h covers a daily weather
+      # event from its open and a tennis match from the morning of.
+      KALSHI_EVENTS_WINDOW_HOURS: "24"
+      KALSHI_EVENTS_INTERVAL: "60"
+      # Full order books from /markets/orderbooks, 100 per request. OFF: a
+      # KXBTCD book is ~100 levels and a moving 550-market board at 60s is
+      # order GB/day of JSONB. The touch (bid/ask + both sizes) is already in
+      # the events payload and is recorded unconditionally.
+      KALSHI_EVENTS_DEPTH: "0"
+    command: ["sh", "-c", "alembic upgrade head && python -m core.kalshi.events"]
