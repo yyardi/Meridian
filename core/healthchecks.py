@@ -227,8 +227,18 @@ def check_app_heartbeats() -> list[Check]:
         return [Check(DEAD, "heartbeats", f"query failed: {str(exc)[:60]}")]
 
     seen = {r[0]: r for r in rows}
+    # ★ CHECK EVERY WRITER THAT BEATS, not only the ones somebody listed.
+    # On 2026-09-14 this table carried 22 writers and APP_DB_SERVICES named 5,
+    # so 17 processes beat every cycle and were never checked -- among them the
+    # PULSE engine, both quote engines and both paper-scalp engines. A service
+    # that is absent from the list is not absent from production, and if one of
+    # them stops, this script reports healthy. The list still does the job only
+    # it can do: assert that an EXPECTED service is present, so a writer that
+    # never starts reads DEAD rather than simply not appearing. Presence comes
+    # from the table; expectation comes from the list; neither substitutes for
+    # the other.
     checks: list[Check] = []
-    for service in hb.APP_DB_SERVICES:
+    for service in sorted({*hb.APP_DB_SERVICES, *seen}):
         row = seen.get(service)
         if row is None:
             checks.append(Check(DEAD, f"beat: {service}",
