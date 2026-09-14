@@ -782,6 +782,30 @@ for the migration: the query reads a table a migrated schema does not have, so a
 two sources cannot be tested until one of them can be created. 7d stated that as verified rather
 than claiming it as tested, which is the distinction worth more than the result.
 
+## 0v. A blocklist trusts every category it does not recognise
+
+The fourth settlement route I found -- one mapped game with no score source at all -- is
+**401872931, `nfl-den-kc-2026-09-14`, zero state rows**: tonight's game, not yet played. Verified
+here. Benign in itself, and it recurs every day there is a fixture on the board, which is what
+makes labelling it rather than dropping it worth doing.
+
+**But it exposed a real defect in the exclusion policy I had just approved.** The filter was
+`route != "proxy"` -- a blocklist. `none` is precisely the category a blocklist does not recognise,
+so it would have been **kept** and then crashed on a NULL score. It is now an allowlist,
+`CONFIRMED_ROUTES = ("post", "backfill")`.
+
+The asymmetry decides it and generalises past this case: **an unvetted category should cost a
+smaller sample, which the excluded count makes visible, rather than a biased one, which is
+invisible.** A blocklist inverts that by trusting whatever it has not been told to distrust.
+
+**Two smaller judgements by 7d that I would have got wrong.** Their first version *asserted* the
+four route counts sum to the mapped total. That assert can only fail on a data condition -- two
+mapped rows sharing an ESPN id -- and a daily 10:40Z calibration should report a mix that does not
+reconcile rather than die on it. It prints loudly instead. And the reconciliation is keyed on
+`espn_game_id`, the map's own identity and the join key to the finals, rather than
+`venue_game_id`; both are unique across all 139 rows today (139/139/139, checked here) but keying a
+reconciliation on a uniqueness nobody enforces is how the line starts disagreeing with itself.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
