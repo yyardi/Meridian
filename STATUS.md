@@ -765,6 +765,27 @@ whether that is acceptable depends on how fast the edge decays -- which nothing 
 touches, and which the drive-scalp study says is moot anyway, since the conditional move at the
 trigger is 0.00¢ at the median.
 
+## 0w. Tonight's order of events, checked against the crontab rather than repeated
+
+I told the operator twice that the nightly scan was "about ninety minutes" and then "inside the
+hour" away. **Both were wrong.** I inherited the figure from a peer's messages and repeated it
+across several reports without ever reading the crontab. Checked at 21:21:48Z:
+
+| event | time | from 21:21Z |
+|---|---|---|
+| NFL kickoff, Denver at Kansas City | **2026-09-15 00:15Z** | 2h54m |
+| nightly scan + paper book | **2026-09-15 04:40Z** | **7h18m** |
+| daily MLB read | 2026-09-15 10:40Z | 13h18m |
+
+**The game comes first, not the nightly**, and by four and a half hours. I had the order backwards
+as well as the interval, and said so to the operator.
+
+This is the day's own lesson landing on the smallest possible claim. A peer said "nightly in about
+two hours" in several messages, it was consistent with nothing I had checked and contradicted by a
+crontab line I had read hours earlier for a different reason, and I repeated it because it was
+adjacent to work I trusted. The standing note about verifying the clock exists because of exactly
+this, twice before.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
