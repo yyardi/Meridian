@@ -164,7 +164,10 @@ def test_the_floor_is_printed_on_the_same_line_as_the_closes_count():
     """★ A reader must not be able to see "22,870 closes" without seeing what
     was excluded to get it. In a footer it is a caveat nobody reads; on the
     same line it is part of the number."""
-    line = next(l for l in SRC.splitlines() if "closes," in l and "settlement calls" in l)
+    # keyed on "settlement calls", not on "closes," -- the literal fragment was
+    # displaced when the exclusion clause made the line `closes{excl},`, which
+    # broke this test and one other at the same time.
+    line = next(l for l in SRC.splitlines() if "settlement calls" in l and "print" in l)
     nxt = SRC.splitlines()[SRC.splitlines().index(line) + 1]
     assert "since=" in line or "since=" in nxt, f"floor not on the coverage line: {line}"
     assert "ALL (no floor)" in SRC, "an absent floor must say so, not print blank"
@@ -419,7 +422,7 @@ def test_the_coverage_line_carries_the_close_age_not_just_the_count():
     is nearly six matches. No artifact reported it, so every table-tennis number
     the programme produced described a population nobody had measured."""
     assert "close_age_min" in SRC
-    line = next(ln for ln in SRC.splitlines() if "closes," in ln and "settlement calls" in ln)
+    line = next(ln for ln in SRC.splitlines() if "settlement calls" in ln and "print" in ln)
     assert "age_summary(ages)" in line, f"age not on the coverage line: {line}"
 
 
@@ -456,3 +459,55 @@ def test_the_circularity_is_printed_not_implied():
     assert "event_period" in lag, "the independent check is not independent"
     # and it must survive its own failure rather than killing the scan
     assert "start-lag unavailable" in SRC
+
+
+# --------------------------------------------------------------------------- #
+# A zero that reads as data loss needs its reason on the same page.
+# --------------------------------------------------------------------------- #
+def test_the_floor_reports_what_it_excluded_per_pattern():
+    """★ THE 10:07Z RUN OF 2026-09-14 WAS THE FIRST WITH A FLOOR AND WNBA WENT
+    FROM 1,582 CLOSES TO 0, because all its tape predates 2026-09-01. That is
+    the floor working exactly as designed, and it is indistinguishable from a
+    broken recorder to anyone reading the artifact.
+
+    Verified against prod: the complement query returns 1,582 for wnba and 0
+    for cfb, nfl and setkameua -- matching the count the UNFLOORED 05:28Z run
+    reported, from an independent route. So the floor cost football nothing and
+    wnba everything."""
+    assert "EXCLUDED_SQL" in SRC
+    line = next(ln for ln in SRC.splitlines() if "closes{excl}" in ln)
+    assert "excluded by since" in SRC and "closes{excl}" in line, (
+        f"the exclusion count is not on the coverage line: {line}")
+
+
+def test_the_exclusion_count_is_the_complement_not_a_second_full_scan():
+    """It must look BELOW the floor, which prunes to the pre-floor partitions
+    (~16 GB) instead of September (~42 GB) -- so it costs less than the scan it
+    annotates. A version filtering `>= :since` would be a third full pass over
+    the table, which is what the single-pass rewrite existed to remove."""
+    q = SRC[SRC.index('EXCLUDED_SQL = """'):]
+    q = q[:q.index('"""', 20)]
+    assert "s.captured_at < CAST(:since AS timestamptz)" in q, (
+        "the complement query is not looking below the floor")
+    assert ">= CAST(:since" not in q
+    # and it must share the close shape, or the two counts are not comparable
+    for shape in ("DISTINCT ON (s.market_slug)", "s.captured_at < g.ko",
+                  "g.ko - interval '6 hours'", "g.ko < now() - interval '4 hours'",
+                  "s.best_ask >= s.best_bid"):
+        assert shape in q, f"the complement lost the close shape: {shape}"
+
+
+def test_no_floor_means_no_exclusion_query_at_all():
+    """With no floor nothing is excluded, so the extra pass must not run --
+    otherwise the unfloored nightly pays for an annotation that is always zero."""
+    body = SRC[SRC.index("    EXCLUDED = []"):SRC.index("BY_PAT: dict")]
+    assert "if SINCE:" in body, "the complement query runs even with no floor"
+    assert body.index("EXCLUDED = []") < body.index("if SINCE:")
+
+
+def test_a_pattern_with_nothing_excluded_prints_no_noise():
+    """Football excludes zero, and a ", 0 excluded by since" on every football
+    line would bury the one line that matters. Absence is the signal."""
+    body = SRC[SRC.index("    ex = BY_EXCL.get(pat, 0)"):]
+    body = body[:body.index("print(f\"  ... {pat}")]
+    assert 'if ex else ""' in body, "a zero exclusion still prints a clause"
