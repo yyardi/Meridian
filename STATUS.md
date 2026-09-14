@@ -50,6 +50,32 @@ Two independent routes agree: our sensitivity is 10–15¢ per bet, and we are b
 One route is pooled algebra, the other a planted-edge recovery curve, and they share no
 implementation. An edge smaller than 5¢ exists or does not; we cannot tell from this tape.
 
+## 0d. OPEN INCIDENT: the venue board has been empty since 09:30Z
+
+Every recorder is up, every log is clean, every heartbeat is green, and nothing has been
+recorded for two hours.
+
+| check | today | last Monday, same hours |
+|---|---|---|
+| market rows at 10Z | 0 | 7,973 |
+| market rows at 11Z | 0 | 7,974 |
+| venue events endpoint, per league | 0 for cricket x5, table tennis, NFL, MLB | — |
+| venue sports listing | one active event, a Europa Conference League match | — |
+
+Compared against last Monday on purpose. Thursday to Sunday carried six to twenty-three
+thousand rows in these hours, but those are game days and comparing a Monday to them would
+have manufactured the answer. The last full cycle was MLB at 09:29Z with 450 markets.
+
+Not claiming a cause. Both endpoints respond and return well-formed data, which argues
+against an outage and against a credential failure, since a credential failure would not
+return a Europa Conference League match. Kalshi is unaffected and still writing.
+
+**There is no alarm anywhere in this system whose value differs between "the board is empty"
+and "the board is full and quiet."** Every freshness check we own measures what arrived.
+Writing the one that would have caught this is assigned to the researcher; the naive version,
+alert on zero rows, fires every night and is ignored within a week, so it has to compare this
+hour against the same hour on the same weekday.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
