@@ -667,38 +667,48 @@ on 59 CFB games and the answer was no drift at the trigger, with a median move o
 is a live-path check: does the engine see plays, price them, open and close positions, and write
 rows. A negative P&L tonight confirms the measurement rather than adding to it.
 
-## 0s. The daily ladder calibration settles from scores that were never confirmed final
+## 0s. A filter threw away the final score it was looking for, on 99 of 105 games
 
-Chased 7d's consumer warning into the code rather than taking it as a caution. Fourteen files read
-`home_score`/`away_score` from `espn_cfb_game_state`. Most are fine and the **primary gate script
-is safe** -- `cfb/run_making_touch.py` settles from `espn_cfb_backfill_games`, not from game state,
-which is what 7d said and what I confirmed.
+**ESPN drops `period` on the final row.** Verified here independently: of 142 CFB post rows, 136
+carry `period IS NULL` (95.8%); NFL, 12 of 13. The daily ladder calibration's fallback filtered
+`WHERE period >= 4`, so it excluded the post row for **99 of the 105 CFB games that had one**, and
+8 of 9 NFL, then took the last in-game row instead -- a pre-whistle score for a game whose true
+final was sitting in the same table.
 
-**`cfb/run_ladder_calibration.py` is not, and it runs daily at 10:40Z.** Its fallback takes the
-last game-state row with `period >= 4` when a game is absent from the backfill table. That is a
-proxy for a final score and it is not `state = 'post'`. Measured:
+**That reconciles two counts that looked contradictory.** My "5 confirmed, 162 not" was right about
+*the row the query reads*. 7d's "94 reached post" was right about *the game*. Neither is wrong and
+together they say what neither says alone: this was not a fallback firing where no truth existed,
+it was a filter discarding the truth.
 
-| league | games from the fallback | confirmed final | proxy only | proxy with a running clock |
-|---|---:|---:|---:|---:|
-| cfb | 167 | **5** | **162** | 58 |
-| nfl | 15 | **1** | **14** | 12 |
+**The fix changes provenance and not one number.** Preferring `state='post'` moves 28 CFB and 8 NFL
+games from proxy to post, and the totals are **identical in 36 of 36**. No published calibration
+figure changes. The reason is the stuck-game census: games are abandoned at the whistle, so the
+last in-game row usually already held the final. The defect was real and its cost so far is zero,
+and those two facts belong in the same sentence.
 
-**And the population is enriched for the failure by construction.** The fallback only fires for
-games missing from the backfill table, which is very nearly the set that never reached `post`. So
-the one code path that most needs a confirmed final is the one guaranteed not to have one.
+**The proxy error, measured where the truth exists: 8 of 8 exact** among games that never posted,
+margins agreeing too. 10 of 11 among those that did, and the single disagreement is the backfill
+table's fault -- one game recorded 3-31 in backfill against 10-51 live at 0:15 remaining, and a
+truncated game cannot outscore its own final. **That population is exhausted, not sampled:** the
+backfill holds 55 games all imported on 2026-09-06 against a live tape spanning 09-05 to 09-14, so
+only 19 overlap and 8 are informative.
 
-**Direction of the error, which is the part that matters.** A score taken before the whistle is
-too low, so totals settle **under** when the real total may have cleared. `cfb_total_under_all`
-and `mlb_total_under_all` are registered strategies, and this would flatter both. Same direction
-as every other defect found today.
+**DECISION, mine to make and made: exclude and count, do not settle from a proxy.** After the fix,
+36 CFB and 6 NFL games still have no post row and nothing on disk can validate them. An excluded
+game is a smaller sample; a wrongly settled one is a biased sample, and the bias runs toward UNDER,
+which flatters a registered strategy. The deciding argument is consistency rather than principle:
+`collect_mlb` **in this same file** already counts unsettled and skips, and says so -- "never
+guessed, and never derived from a box score". CFB was the inconsistent one, not the case needing a
+new policy.
 
-**What I have not established:** how wrong the scores actually are. 7d's census says stuck games
-are abandoned at the whistle, clock 0:00 to 2:46, which would make most of these right or nearly
-right. Against that, 58 CFB and 12 NFL of them show a clock that is not 0:00 -- though this
-project has already recorded that `display_clock` is unreliable and that the state field is the
-authority, which is exactly why the proxy is the problem. **Nothing available today separates a
-correct proxy from a short one.** The confirming poll does, which raises the value of that fix
-from "unblocks Kalshi later" to "corrects a daily read now".
+**A correction to what I told the operator.** `mlb_total_under_all` is **not** flattered by this.
+MLB settles from the venue and skips what the venue has not settled; 7d checked the code rather
+than the docstring. The registered strategy at risk is `cfb_total_under_all` alone.
+
+**And a structural finding on the way:** `espn_cfb_backfill_games` has no Alembic migration and no
+model. It is created by `archive/cfb/backfill_cfb.py`, in `archive/`. **The daily calibration's
+primary settlement source is a one-shot import from an archived script**, and its query cannot run
+against a migrated schema at all.
 
 ## 1. What I need from you (everything else I now run myself)
 
