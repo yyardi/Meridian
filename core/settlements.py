@@ -12,6 +12,11 @@ never stored. One rule, here, so there is one place that decides."""
 import json
 import os
 import tempfile
+import time
+
+import structlog
+
+log = structlog.get_logger(__name__)
 
 PATH = os.environ.get("SETTLE_CACHE", "/opt/meridian/artifacts/reads/settlements.json")
 #: The three the venue can return. A draw is 0.5; anything else is not a label.
@@ -37,12 +42,42 @@ def label(v):
 
 
 def load(path=PATH):
-    """A missing, unreadable or malformed file is an empty cache, never an error."""
+    """A missing cache is an empty cache. A CORRUPT one is quarantined first.
+
+    Absent and unparseable were the same case here, and returning `{}` for both
+    was silent PERMANENT LOSS rather than tolerance: five programs call `save()`
+    at the end of a run -- `cfb/run_scan.py`, `run_scan_live.py`,
+    `run_extreme_hold.py`, `run_tt_frame_gate.py` -- so a truncated file was read
+    as empty, the run re-fetched only what it needed, and then overwrote the
+    file. A 911 KB cache of ~20,000 settlements becomes a few hundred, and
+    nothing says so; the next run pays thousands of venue calls it had already
+    paid for.
+
+    So a file that EXISTS and does not parse is renamed aside before `{}` is
+    returned. The run proceeds on a cold cache (correct -- it re-asks the venue,
+    and `label` means nothing can be frozen as never-settled), `save()` writes a
+    fresh file, and the bad one is kept for inspection instead of being
+    overwritten. That is what quarantining it by hand looked like on 2026-09-14;
+    doing it here means nobody has to be watching.
+    """
     try:
         raw = json.load(open(path, encoding="utf-8"))
-        return {k: label(v) for k, v in raw.items() if label(v) is not None}
-    except Exception:
+    except FileNotFoundError:
         return {}
+    except Exception as exc:
+        try:
+            bad = f"{path}.corrupt-{int(time.time())}"
+            os.replace(path, bad)
+            log.error("settlement_cache_corrupt", path=str(path), moved_to=bad,
+                      error=str(exc)[:200], note="cache rebuilt from the venue; "
+                      "the unreadable file was kept, not overwritten")
+        except OSError:
+            log.error("settlement_cache_corrupt_and_unmovable", path=str(path),
+                      error=str(exc)[:200])
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: label(v) for k, v in raw.items() if label(v) is not None}
 
 
 def save(cache, path=PATH):
