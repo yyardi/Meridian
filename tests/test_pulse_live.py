@@ -9,6 +9,10 @@ What is defended:
 * the stop is the model's own estimate crossing back through the entry, it
   reprices the exit to the touch as a LIMIT, and a withdrawn exit says so;
 * a resting entry whose edge is gone stands down with `withdrawn_at` set;
+* a fill and a stop born on ONE observation collide on the natural key, and
+  `withdrawn_at` — never row order — names which price governs;
+* one observation is evaluated once (xfail: the engine has no watermark and
+  re-prices a snapshot it has already acted on);
 * no bankroll reading means no entries — never a default;
 * decision rows carry the full game context (score, margin, period, clock,
   tempo, book, fair value, edge, size, bankroll) and the tape's join keys,
@@ -647,3 +651,73 @@ def test_report_population_ruling_live_faithful_vs_full_intent():
     assert "DESCRIPTIVE ONLY" in text_full
     text_reg = prr.format_report({"v1": faithful})
     assert "VERDICT" in text_reg
+
+
+# --------------------------------------------------------------------- #
+# One observation, one evaluation — and whose price governs when two
+# exits are born on the same tick (measured 2026-09-14 on the live tape)
+# --------------------------------------------------------------------- #
+
+
+def test_fill_and_stop_on_one_observation_name_the_governing_price():
+    """The fill and the stop can land in ONE cycle: `_check_entry_fill`
+    rests the profit target, then `_manage_position`, later in the same
+    iteration on the SAME observation, sees fair value already through the
+    entry and supersedes it. Both rows carry `decided_at = ob.captured_at`,
+    so the natural key collides — 53 such pairs in the live tape.
+
+    The collision is harmless because the supersession is WRITTEN DOWN: the
+    target says `withdrawn_at`, the stop does not. Whoever reads this tape
+    must select on `withdrawn_at IS NULL`, never on row order — an ORDER BY
+    would make the exit price depend on which row a query happened to see
+    first, and the two prices differ by up to 9c.
+    """
+    with _Session() as s:
+        _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=10))
+    eng = _engine()
+    eng.cycle()                                      # entry rests at the bid
+    with _Session() as s:                            # the game flips at once
+        _snap(s, bid=0.30, ask=0.34, score="45-55",
+              at=NOW - dt.timedelta(seconds=6))
+    eng.cycle()                                      # fills AND stops, one ob
+
+    exits = _rows(EXIT)
+    assert len(exits) == 2
+    target, stop = exits
+    assert target.decided_at == stop.decided_at      # the key collides
+    assert target.reason == "profit_target"
+    assert stop.reason == "ev_stop"
+    # The provenance, and the whole reason a dedupe must not pick a row:
+    assert target.withdrawn_at is not None
+    assert stop.withdrawn_at is None
+    assert len([r for r in exits if r.withdrawn_at is None]) == 1
+    assert float(stop.limit_price) == pytest.approx(0.34)     # the touch
+    assert float(target.limit_price) != float(stop.limit_price)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "no watermark on the observation: `_observations` serves the newest "
+    "snapshot under MAX_OBSERVATION_AGE_SECONDS every cycle, whether or not "
+    "it is new, so the engine re-prices data it has already acted on. "
+    "Measured on the live tape 2026-09-14: 7 of the 60 duplicate exit pairs "
+    "were written 13-28s apart in separate transactions against ONE "
+    "unchanged snapshot, fair value moving up to 9.1c because the venue "
+    "clock and the v4 availability flags are re-read every cycle while the "
+    "book stands still. 23.7% of hold rows priced a snapshot >10s old. The "
+    "fix is a per-market floor on captured_at; this test then XPASSes."))
+def test_an_observation_is_evaluated_once():
+    """A cycle that sees no new snapshot must decide nothing. The hold trail
+    is the visible witness (throttle off here so a repeat evaluation shows
+    up as a row); the consequential one is the stop, which fires on a price
+    that no longer exists.
+    """
+    with _Session() as s:
+        _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=10))
+    eng = _engine(hold_log_seconds=0.0)
+    eng.cycle()
+    with _Session() as s:
+        _snap(s, bid=0.59, ask=0.61, at=NOW - dt.timedelta(seconds=6))
+    eng.cycle()                                      # entry fills, holds open
+    before = len(_rows())
+    eng.cycle()                                      # same snapshot, again
+    assert len(_rows()) == before
