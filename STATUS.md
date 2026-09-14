@@ -853,6 +853,39 @@ spread on the same game all move with the same result. The G that matters is the
 is the mistake that made 525 Kalshi markets look like a sample and 547 band markets look like a
 population.
 
+## 0z. The researcher's session ended with four files uncommitted. Rescued.
+
+meridian-7f is gone from the peer list. Four files of their work existed **only** as uncommitted
+changes in the shared checkout at a detached HEAD, where the next `git checkout` anyone ran would
+have destroyed them:
+
+| file | state |
+|---|---|
+| `docs/math/cricket-preregistration.md` | **221 lines, untracked, never committed** |
+| `docs/math/scan-preregistration.md` | +230, the conclusiveness correction |
+| `docs/math/tabletennis-preregistration.md` | +30, the listing-gap amendment |
+| `docs/math/kalshi-tennis-preregistration.md` | +13, recorded as checked |
+
+**This is not recoverable work in the ordinary sense.** A pre-registration's entire value is that
+it was written before anyone looked at the prices, and nobody can recreate that property
+afterwards, including its author.
+
+**Not copied wholesale, because that would have been a delete.** `origin/main` carried 100 lines on
+`scan-preregistration.md` that the researcher's base did not have, so a straight copy would have
+silently reverted them -- the same shape as closing a duplicate PR that turns out to carry
+something. Extracted as patches against their own base and applied with `--3way`; all three applied
+cleanly and the merged file is 602 lines.
+
+**Verified in both directions rather than trusting the clean apply.** The only lines removed
+relative to main are the three carrying the old definition of "conclusive" that the correction
+replaces. My first check for the table-tennis amendment returned zero because I searched for my own
+summary of it instead of its wording -- the same proxy-matching error the threshold sweep found
+this afternoon, committed twice in one day.
+
+**Standing consequence:** an agent's work is not safe until it is pushed, and the shared checkout at
+a detached HEAD is where it goes to die. Worth asking every peer to push before they stop, and
+worth me checking `git status` there whenever a session disappears.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
