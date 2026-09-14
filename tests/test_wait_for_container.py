@@ -121,5 +121,24 @@ def test_usage_errors_are_distinct_from_outcomes(tmp_path):
     assert _run(env, "--bogus", "x").returncode == 4
 
 
+
+
+def test_a_failing_inspect_is_not_a_missing_container(tmp_path):
+    """★ ONE LINE BELOW THE `docker ps` FIX, AND IT HAD THE SAME BUG.
+    `docker inspect | grep -q` reads a FAILED inspect as "no match", so a
+    transient failure undercounts -- and if it hit every container, the job
+    would be reported finished. Found by a deliberate sweep for the
+    pipeline-status shape, not by re-reading my own diff, which is the argument
+    for the sweep."""
+    env = _stub(tmp_path, '''
+if [ "$1" = ps ]; then echo abc123; exit 0; fi
+if [ "$1" = inspect ]; then echo "no such object" >&2; exit 1; fi
+exit 0
+''')
+    r = _run(env, "--env-contains", "isolate_rows")
+    assert r.returncode == 5, (r.returncode, r.stdout, r.stderr)
+    assert "not reporting this as finished" in r.stderr
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

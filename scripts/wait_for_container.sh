@@ -78,8 +78,15 @@ probe() {
   else
     out=$($SUDO docker ps -q) || return 1
     for id in $out; do
-      if $SUDO docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id" \
-           2>/dev/null | grep -q -- "$ENVSTR"; then n=$((n + 1)); fi
+      # ★ AND INSPECT'S OWN STATUS TOO. `docker inspect | grep -q` reads a
+      # FAILED inspect as "no match", so a transient failure undercounts and --
+      # if it hit every container -- would report the job finished. One line
+      # below the identical fix for `docker ps`, found by a deliberate sweep
+      # rather than by reading my own diff.
+      local env_out
+      env_out=$($SUDO docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \
+                  "$id" 2>/dev/null) || return 1
+      if printf '%s' "$env_out" | grep -q -- "$ENVSTR"; then n=$((n + 1)); fi
     done
     echo "$n"
   fi
