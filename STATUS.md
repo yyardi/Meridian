@@ -527,6 +527,19 @@ The permutation stays in the file marked NOT-the-null, with the decile table in
 its docstring, because its failure is the most instructive artifact in the
 programme — and a test asserts the code cannot silently go back to it.
 
+**TUESDAY LIST — three changes that need the operator and must not go mid-slate:**
+
+1. **ESPN recorder final-state fix** (merged, not deployed): a game leaves the
+   live board before it is final, so only ~41% ever reached `post`.
+2. **NFL ties cannot be recorded by the quote engine.** `core/quote/engine.py`
+   and `storage.py` run for NFL, where a tie settles at 0.5, but the storage
+   `CheckConstraint` is `settlement in (0,1)`. Changing the Python alone turns a
+   silent discard into a **write failure on the first tied game** in a live
+   engine — so the migration widens the constraint first, then the Python routes
+   through `settlements.label`. Rare, but both football engines are running now.
+3. **`shared_buffers` is 128 MB** against a 57 GB table on a 7 GB box — measure
+   before changing, and it needs a postgres restart that drops every recorder.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
