@@ -66,9 +66,14 @@ Compared against last Monday on purpose. Thursday to Sunday carried six to twent
 thousand rows in these hours, but those are game days and comparing a Monday to them would
 have manufactured the answer. The last full cycle was MLB at 09:29Z with 450 markets.
 
-Not claiming a cause. Both endpoints respond and return well-formed data, which argues
-against an outage and against a credential failure, since a credential failure would not
-return a Europa Conference League match. Kalshi is unaffected and still writing.
+**It is the venue, not our access.** `/v2/sports` and `/v2/leagues/<lg>/events` both
+require API key headers -- an unauthenticated request returns `Missing required API key
+headers`, so an expired or wrong key cannot present as an empty board. Our authenticated
+call returns a well-formed sports list naming every league and reporting one active event
+across the venue. Kalshi is unaffected and still writing.
+
+Newest row in `market_snapshots` for ANY league: **2026-09-14 09:35:26Z**. Nothing recorded
+anywhere since. MLB stands at 6,081 rows, latest 09:29:43Z.
 
 **There is no alarm anywhere in this system whose value differs between "the board is empty"
 and "the board is full and quiet."** Every freshness check we own measures what arrived.
