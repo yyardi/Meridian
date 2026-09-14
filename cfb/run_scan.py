@@ -107,7 +107,15 @@ CLOSE_SQL = """
 WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
   WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL{floor_g} GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug slug, s.sports_market_type mt, s.game_id gid,
-       s.best_bid::float bid, s.best_ask::float ask
+       s.best_bid::float bid, s.best_ask::float ask,
+       -- ★ THE AGE OF THE CLOSE. A count of closes without their age is a label
+       -- that misdescribes its population: a table-tennis match lasts ~14-20
+       -- minutes, and a close taken 20 minutes early is a different market state
+       -- wearing the word. Measured 2026-09-01 onward on the scan's own
+       -- population, close age / event duration: cfb median 0.000 p90 0.001,
+       -- nfl 0.000/0.000, tabletennis **0.405 / 5.852** -- a median TT close is
+       -- 40% of a match before it starts and the p90 is nearly six matches.
+       EXTRACT(EPOCH FROM (g.ko - s.captured_at)) / 60.0 AS close_age_min
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
 WHERE s.market_slug LIKE ANY(:pats) AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
   AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL AND s.best_ask >= s.best_bid
@@ -115,6 +123,40 @@ WHERE s.market_slug LIKE ANY(:pats) AND s.captured_at < g.ko AND s.captured_at >
 ORDER BY s.market_slug, s.captured_at DESC"""
 CLOSE = CLOSE_SQL.format(floor_g=_FLOOR.format(a="") if SINCE else "",
                          floor_s=_FLOOR.format(a="s.") if SINCE else "")
+
+
+#: Scheduled start vs FIRST OBSERVED PLAY. The close age is computed from
+#: `game_start_time`, the same column the close SELECTION uses, so it agrees
+#: with itself by construction and cannot report a scheduled time that is
+#: wrong. This is the only independent handle in the substrate: `event_period`
+#: leaving its pregame state is an OBSERVATION, not a schedule.
+#:
+#: It exists for a MINORITY of games -- table tennis has 249 in-play rows across
+#: 386 games since 2026-09-01, and only 82 games with any observed play -- so it
+#: cannot replace the circular measure, it validates it. Measured: scheduled
+#: start LEADS observed play by a median 2.5 min in cfb (159 games) and 6.6 min
+#: in table tennis (82), so the circular close age UNDERSTATES the true age by
+#: about that much. For TT that turns a median 8-minute close into ~15 minutes
+#: before play on a 14-minute match.
+START_LAG = """
+SELECT market_slug,
+       EXTRACT(EPOCH FROM (first_play - ko)) / 60.0 lag_min
+  FROM (SELECT market_slug, min(game_start_time) ko,
+               -- ★ A PERIOD LABEL IS NOT PLAY. NFL carries 2,274 PREGAME rows
+               -- labelled 'Q1' with score '0-0', and 156,084 labelled 'NS'.
+               -- Filtering on the period alone made "first play" land BEFORE
+               -- the scheduled start and gave NFL a median lag of -8.1 min --
+               -- an artifact of the label, not a late schedule. The score is
+               -- the event: gate on both.
+               min(captured_at) FILTER (
+                 WHERE event_period IS NOT NULL
+                   AND event_period NOT IN ('', 'NS', 'FT')
+                   AND event_score IS NOT NULL
+                   AND event_score <> '0-0') first_play
+          FROM market_snapshots
+         WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL
+         GROUP BY 1) q
+ WHERE first_play IS NOT NULL"""
 
 
 def partition_floors(conn, table="market_snapshots"):
@@ -162,6 +204,23 @@ def check_since(conn, since):
             f"SCAN_SINCE={since} is not a market_snapshots partition boundary.\n"
             f"  A floor inside a partition prunes NOTHING and is slower than no floor,\n"
             f"  while still narrowing the population. Boundaries: {sorted(floors)}")
+
+
+def age_summary(ages) -> str:
+    """median / p90 / share over an hour, for the coverage line.
+
+    ★ THE COUNT OF CLOSES IS A LABEL AND THIS IS THE THING THAT VARIES. Football
+    closes at the whistle (median 0.0 min) and table tennis does not (median
+    8-20 min on a 14-20 minute match), and no artifact reported it, so every
+    table-tennis number this programme produced was describing a population
+    nobody had measured.
+    """
+    if not ages:
+        return "age n/a"
+    a = sorted(ages)
+    def q(f): return a[min(len(a) - 1, max(0, int(round(f * (len(a) - 1)))))]
+    over = 100.0 * sum(1 for x in a if x > 60.0) / len(a)
+    return f"age med {q(0.50):.0f}m p90 {q(0.90):.0f}m >1h {over:.0f}%"
 
 
 def fee(p, k=FEE_PM): return k * p * (1 - p)
@@ -339,7 +398,8 @@ for lg, pat in PATS:
     # cannot see "22,870 closes" without seeing what was excluded to get it.
     # Per-pattern counts survive the rewrite on purpose: they are the only
     # resolution at which the one-query form can be compared to the old one.
-    print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls"
+    ages = [r["close_age_min"] for _lg, r in rows if r.get("close_age_min") is not None]
+    print(f"  ... {pat} {len(rows):,} closes, {age_summary(ages)}, {calls:,} settlement calls"
           f", since={SINCE or 'ALL (no floor)'}")
 
 if EXPECT:
@@ -350,6 +410,50 @@ if EXPECT:
         raise SystemExit("SCAN_EXPECT mismatch (got, expected): "
                          + ", ".join(f"{p} {g} != {e}" for p, (g, e) in sorted(off.items())))
     print(f"  equivalence: {len(EXPECT)} pattern counts reproduce the reference run exactly")
+# ★ THE INDEPENDENCE CHECK, PRINTED WHETHER OR NOT IT IS FLATTERING. The ages
+# above come from `game_start_time`, the same column the close selection uses,
+# so they agree with themselves by construction. This is the only handle the
+# substrate offers on whether that schedule is right, and it covers a minority
+# of games -- so it is printed WITH its game count, and the circularity of the
+# per-pattern ages is stated rather than implied.
+print("\n  close ages above are measured against the SCHEDULED start "
+      "(game_start_time), the same column the close selection uses --")
+print("  so they cannot detect a wrong schedule. Independent check -- FIRST "
+      "SCORED POINT, not the period label:")
+# ★ AND THIS PROXY IS LATE WHERE SCORING IS SLOW, which is most of its error.
+# Measured 2026-09-14: cfb +31.4 min, nfl +15.6, setkameua +6.4, setkamecz +8.2.
+# A football game can be 0-0 for half a quarter, so the football figures are
+# mostly TIME-TO-FIRST-SCORE and only a little schedule error. Table tennis
+# scores within a point or two, so there the number is close to a real lag --
+# which is the league where the close age matters.
+print("  (a late proxy where scoring is slow: football is mostly "
+      "time-to-first-score, table tennis is close to a true lag)")
+# ONE query for every pattern, bucketed by the SAME `attribute` the closes use.
+# A per-pattern version would be 13 more full scans of a 57 GB table, which is
+# exactly what the single-pass rewrite removed -- and the test guarding that
+# rewrite is what caught it.
+try:
+    with eng.connect() as c:
+        lags = c.execute(text(START_LAG), {"pats": [p for _, p in PATS]}).all()
+except Exception as exc:                  # noqa: BLE001 - a check must not kill the scan
+    print(f"    start-lag unavailable: {str(exc)[:80]}")
+    lags = []
+BY_LAG: dict = defaultdict(list)
+for slug, lag in lags:
+    try:
+        _lg, _pat = attribute(slug)
+    except SystemExit:
+        continue                          # not ours to attribute; counted below
+    BY_LAG[_pat].append(float(lag))
+for lg, pat in PATS:
+    v = sorted(BY_LAG.get(pat, []))
+    if v:
+        print(f"    {pat:16} {len(v):>4} games with observed play, "
+              f"scheduled start leads it by {v[len(v) // 2]:+.1f} min (median)")
+    else:
+        print(f"    {pat:16}    0 games with observed play -- "
+              f"NO independent check possible, ages above are circular")
+
 settlements.save(CACHE)
 if not CELLS:
     raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")
