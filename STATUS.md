@@ -739,6 +739,49 @@ of 107. Two games carry both a NULL-period post row and a period-4 one, so they 
 their buckets; a period-4 post row survives the filter, so those two are not excluded. 99 answers
 the question actually asked. The row-level figures agree exactly at 136 of 142.
 
+## 0u. Truncation has two signs, and "they all point the same way" was my error
+
+I told the operator that three defects today all flattered in the same direction. 7d pushed back
+and is right: they share a **cause** and split on **sign**, and reading them as one direction would
+have had us correcting the wrong way on one of them.
+
+The cause is a premature read of a process that only accumulates. A football score is monotone
+non-decreasing in time.
+
+| | what truncation touched | example | market bias |
+|---|---|---|---|
+| sign one | the **value** | `period >= 4` reading a pre-whistle row; backfill's 34 against a final of 61 | settles totals **UNDER** |
+| sign two | the **sample** | an Over market resolves the instant the total passes X, so stopping early captures the ones that went over early | over-represents **OVER**: 93.9% of captured Kalshi settlements are YES, settled-yes mean strike 45.7 against 55.8 never-settled |
+
+**Same stopping condition, opposite market bias**, depending on whether truncation corrupted the
+number or selected which rows exist.
+
+**And a repair does not inherit its defect's sign.** The `max()` repair I nearly approved for sign
+one would have overstated twelve totals by 2-7 points and flattered **OVER**, the opposite of the
+defect it was fixing, because in nine of twelve the maximum home and away scores never co-existed.
+
+**The practical form is two questions, not one.** Was the value read after the process finished?
+And was the observation's *existence* conditional on the process finishing? The second is the one
+nobody asks, and it is the one that made a 610-market population unusable while every number in it
+was individually correct. `docs/math/truncation-has-two-signs.md`.
+
+**Precedence implemented and verified on prod**, not merely claimed: confirmed final first, backfill
+where no final exists, proxy only where neither does. 237 rows before and after, **one total
+changed** (34 → 61), **zero winners changed**, 11 games changed route. Independently reproduced
+here:
+
+| route | games with a venue id |
+|---|---:|
+| confirmed final | 52 |
+| backfill | 44 |
+| proxy -- **excluded** | 42 |
+| no source at all | 1 |
+
+The calibration keeps 96 and excludes 42. There is **no test yet**, and the reason is the reason
+for the migration: the query reads a table a migrated schema does not have, so a precedence between
+two sources cannot be tested until one of them can be created. 7d stated that as verified rather
+than claiming it as tested, which is the distinction worth more than the result.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
