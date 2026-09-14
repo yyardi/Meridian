@@ -1013,6 +1013,16 @@ class ResolvedOutcome(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     market_slug: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     event_slug: Mapped[str | None] = mapped_column(String(200))
+    #: **ALWAYS NULL, AND LEAVE IT THAT WAY.** Measured 2026-09-14 on prod: NULL
+    #: on 2,778 of 2,778 rows, because `core/resolution.py` -- the writer that
+    #: actually runs -- omits it. Every reader joins on `market_slug` instead.
+    #:
+    #: Do not "fix" it by populating it. Only 57% is recoverable from
+    #: `market_snapshots`, and **filling it is the worst of the three states**: a
+    #: column that is 100% NULL makes a join return zero rows and read as
+    #: obviously broken, while one that is 57% populated returns a
+    #: plausible-looking subset SILENTLY. The index below costs nothing on 2,778
+    #: rows, so the column stays rather than earning a prod migration.
     game_id: Mapped[str | None] = mapped_column(String(64))
 
     settlement: Mapped[int] = mapped_column(SmallInteger, nullable=False)  # 0 = No, 1 = Yes

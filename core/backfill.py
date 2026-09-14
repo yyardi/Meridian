@@ -177,7 +177,12 @@ class Backfill:
                         .values(
                             market_slug=slug,
                             event_slug=market.get("eventSlug"),
-                            game_id=str(market["gameId"]) if market.get("gameId") else None,
+                            # `game_id` is deliberately NOT set: see the column
+                            # comment on ResolvedOutcome. core/resolution.py never
+                            # sets it, and a backfill that did would leave the
+                            # column partially populated -- the one state that is
+                            # worse than all-NULL, because a join then returns a
+                            # plausible subset instead of nothing.
                             settlement=int(settlement),
                             resolved_at=dt.datetime.now(UTC),
                         )

@@ -56,7 +56,7 @@ RUN prod read-only, one pass (the box carries sweeps), env flags INSIDE docker r
   scripts/prod_weekend_read.sh V=() with the API image and the checkout mounted.
 Nothing is placed. Nothing here decides anything.
 """
-import datetime as dt, json, math, os, sys
+import datetime as dt, json, math, os, re, sys
 from collections import defaultdict
 
 from scipy.stats import t as tdist
@@ -77,16 +77,74 @@ eng = create_engine(os.environ["DATABASE_URL"])
 def _np(c, _r):
     cur = c.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); c.commit()
 
-CLOSE = """
+#: Opt-in lower bound on `captured_at`. **NO DEFAULT, DELIBERATELY.** The scan
+#: reads every partition of a 62M-row table TWICE per league pattern -- once for
+#: the kickoff CTE, once for the close -- because `market_slug LIKE '%-cfb-%'`
+#: has a leading wildcard no btree can serve and `captured_at` is constrained
+#: only RELATIVE to `g.ko`, which the planner cannot push down. A floor prunes
+#: partitions and is worth a third of the run. But the floor cannot be DERIVED
+#: without the aggregate it is avoiding, so it has to come from the caller --
+#: and a default would be a silent narrowing of the population, which is the
+#: one defect this programme exists to avoid. Absent, nothing is excluded.
+SINCE = (os.environ.get("SCAN_SINCE") or "").strip() or None
+
+#: The clause is OMITTED rather than neutralised when there is no floor. A
+#: `(:since IS NULL OR captured_at >= :since)` form does in fact prune on
+#: postgres 16 -- verified -- but only while the planner substitutes the
+#: parameter and builds a CUSTOM plan; after five executions it may switch to a
+#: generic plan, and a generic plan cannot fold `$1 IS NULL`, so pruning would
+#: disappear silently and the scan would just get slow again. Two literal
+#: strings depend on nothing.
+_FLOOR = "\n    AND {a}captured_at >= :since::timestamptz"
+CLOSE_SQL = """
 WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
-  WHERE market_slug LIKE :pat AND game_start_time IS NOT NULL GROUP BY 1)
+  WHERE market_slug LIKE :pat AND game_start_time IS NOT NULL{floor_g} GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug slug, s.sports_market_type mt, s.game_id gid,
        s.best_bid::float bid, s.best_ask::float ask
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
 WHERE s.market_slug LIKE :pat AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
   AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL AND s.best_ask >= s.best_bid
-  AND g.ko < now() - interval '4 hours'          -- STARTED and long finished, never an open board
+  AND g.ko < now() - interval '4 hours'          -- STARTED and long finished, never an open board{floor_s}
 ORDER BY s.market_slug, s.captured_at DESC"""
+CLOSE = CLOSE_SQL.format(floor_g=_FLOOR.format(a="") if SINCE else "",
+                         floor_s=_FLOOR.format(a="s.") if SINCE else "")
+
+
+def partition_floors(conn, table="market_snapshots"):
+    """Every partition's LOWER bound, asked of the catalogue rather than assumed.
+
+    The scheme is monthly today. A check that hardcoded "the first of a month"
+    would keep passing and silently stop pruning if retention ever moved to
+    weekly partitions, so the boundaries are read from `relpartbound`.
+    """
+    rows = conn.execute(text(
+        "SELECT pg_get_expr(c.relpartbound, c.oid) b FROM pg_class c "
+        "JOIN pg_inherits i ON i.inhrelid = c.oid WHERE i.inhparent = :t::regclass"),
+        {"t": table}).all()
+    out = set()
+    for (b,) in rows:
+        m = re.search(r"FROM \('([^']+)'", b or "")     # DEFAULT has no FROM; skipped
+        if m: out.add(m.group(1)[:10])
+    return out
+
+
+def check_since(conn, since):
+    """Refuse a floor that is not ON a partition boundary.
+
+    A floor inside a partition cannot prune it -- postgres still reads the whole
+    thing to filter rows -- so such a value is BOTH narrower and slower than no
+    floor at all. Measured 2026-09-14 with the scan's own
+    `max_parallel_workers_per_gather = 0`: no floor 7,023,098; `2026-09-01`
+    (a boundary) 4,671,180, a 33.5% cut; `2026-08-25` (inside August)
+    6,349,000-odd, i.e. MORE than no floor. A parameter whose wrong values are
+    both slower and narrower must reject them, not accept them quietly.
+    """
+    floors = partition_floors(conn)
+    if since[:10] not in floors:
+        raise SystemExit(
+            f"SCAN_SINCE={since} is not a market_snapshots partition boundary.\n"
+            f"  A floor inside a partition prunes NOTHING and is slower than no floor,\n"
+            f"  while still narrowing the population. Boundaries: {sorted(floors)}")
 
 
 def fee(p, k=FEE_PM): return k * p * (1 - p)
@@ -102,13 +160,18 @@ def clustered(vals, keys):                        # verbatim from cfb/run_paper_
     return m, se, n, G, ge
 
 
+# Fail fast: a bad floor is caught before the first 62M-row scan, not after it.
+if SINCE:
+    with eng.connect() as _c: check_since(_c, SINCE)
+
 CELLS, STOCK, DROP = defaultdict(list), defaultdict(lambda: [0, 0, set()]), defaultdict(int)
 calls = 0
 for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis"):
     if lg not in LEAGUES: DROP[f"{lg}: not in core.leagues"] += 1; continue
     for pat in venue_patterns(lg):
         with eng.connect() as c:
-            rows = [dict(r._mapping) for r in c.execute(text(CLOSE), {"pat": pat})]
+            args = {"pat": pat} | ({"since": SINCE} if SINCE else {})
+            rows = [dict(r._mapping) for r in c.execute(text(CLOSE), args)]
         for r in rows:
             mt = (r["mt"] or "?")
             STOCK[(lg, mt)][0] += 1
@@ -121,7 +184,10 @@ for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis"):
                 a = r["ask"]
                 CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y))
                 STOCK[(lg, mt)][2].add(r["gid"])
-        print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls")
+        # The floor rides on the SAME LINE as the count it produced. A reader
+        # cannot see "22,870 closes" without seeing what was excluded to get it.
+        print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls"
+              f", since={SINCE or 'ALL (no floor)'}")
 settlements.save(CACHE)
 if not CELLS:
     raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")
