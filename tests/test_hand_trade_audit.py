@@ -394,3 +394,101 @@ def test_hand_fill_sign_follows_intent(intent, side, outcome, expect_positive, w
         f"{what} ({intent}) booked {fills[0].yes_delta:+} YES exposure; "
         f"side={side} reads the opposite because that is where the order RESTS"
     )
+
+
+# --------------------------------------------------------------------------- #
+# A failed settlement fetch must not be remembered as "not settled".
+# --------------------------------------------------------------------------- #
+def test_a_transient_fetch_failure_is_not_cached():
+    """★ ONE NETWORK ERROR USED TO MARK A MARKET UNSETTLED FOR THE WHOLE RUN.
+    The except branch set `result = None` and then cached it, so the audit
+    reported that market as unresolved and never asked again.
+    `core/settlements.py` states the rule in its module docstring -- "a failed
+    request is None and is asked again next run, so nothing can be frozen as
+    never settled" -- and it had not been carried across."""
+    from decimal import Decimal
+
+    import core.audit.hand_trades as HT
+
+    calls = {"n": 0}
+
+    class _GW:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get_settlement(self, slug):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("gateway timeout")
+            return {"settlement": 1}
+
+    import core.polymarket.client as C
+    old = C.PolymarketGatewayClient
+    C.PolymarketGatewayClient = _GW
+    try:
+        cache: dict = {}
+        assert HT._gateway_settlement("slug-x", cache) is None
+        assert cache == {}, f"a failure was cached: {cache}"
+        # asked again, and the real answer lands and IS cached
+        assert HT._gateway_settlement("slug-x", cache) == Decimal("1")
+        assert cache == {"slug-x": Decimal("1")}
+        assert calls["n"] == 2
+    finally:
+        C.PolymarketGatewayClient = old
+
+
+def test_a_genuine_unsettled_answer_is_cached():
+    """The control: "asked, and the venue says not yet" IS an answer and must
+    not cost a second call. Only failures are re-asked."""
+    import core.audit.hand_trades as HT
+
+    calls = {"n": 0}
+
+    class _GW:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get_settlement(self, slug):
+            calls["n"] += 1
+            return {"settlement": None}
+
+    import core.polymarket.client as C
+    old = C.PolymarketGatewayClient
+    C.PolymarketGatewayClient = _GW
+    try:
+        cache: dict = {}
+        assert HT._gateway_settlement("s", cache) is None
+        assert cache == {"s": None}
+        assert HT._gateway_settlement("s", cache) is None
+        assert calls["n"] == 1, "a cached unsettled answer was re-fetched"
+    finally:
+        C.PolymarketGatewayClient = old
+
+
+def test_a_draw_is_a_settlement_not_a_missing_one():
+    """★ `value in (0, 1) else None` SILENTLY DISCARDED A HALF. First-class
+    cricket and an NFL tie both settle at 0.5, and `core/settlements.py` names
+    that exact expression as the mistake. Now routed through
+    `settlements.label`, the one place that decides, rather than a third copy of
+    the rule. Zero 0.5s in 20,026 cached settlements as of 2026-09-14, so this
+    is a trap that has not fired -- and the cricket recorder is hours old."""
+    from decimal import Decimal
+
+    import core.audit.hand_trades as HT
+
+    class _GW:
+        def __init__(self, v): self.v = v
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get_settlement(self, slug): return {"settlement": self.v}
+
+    import core.polymarket.client as C
+    old = C.PolymarketGatewayClient
+    try:
+        for raw, want in ((0.5, Decimal("0.5")), ("0.5", Decimal("0.5")),
+                          (1, Decimal("1")), (0, Decimal("0")),
+                          (None, None), ("junk", None), (True, None)):
+            C.PolymarketGatewayClient = lambda v=raw: _GW(v)
+            assert HT._gateway_settlement(f"k{raw!r}", {}) == want, (
+                f"settlement {raw!r} became {HT._gateway_settlement(f'k{raw!r}', {})!r}, "
+                f"expected {want!r}")
+    finally:
+        C.PolymarketGatewayClient = old
