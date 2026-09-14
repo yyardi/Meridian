@@ -12,6 +12,7 @@ summaries (1549533 finished with toss+innings+result, 1534213 not started).
 from __future__ import annotations
 
 import datetime as dt
+import pathlib
 import json
 import os
 from typing import ClassVar
@@ -195,11 +196,17 @@ def test_pre_match_enters_the_active_set_90_minutes_out(minutes_before, active):
 @pytest.fixture()
 def _clean_events():
     from core.storage import get_engine
-    # create_all(checkfirst) rather than an alembic run: this table is newer than
-    # most deploys and the suite's database may not carry it yet. The DDL comes
-    # from the recorder's own metadata, so the UNIQUE(event_id, captured_at) under
-    # test is the one the module declares, not one retyped into a fixture.
-    rec.EVENTS.create(bind=get_engine(), checkfirst=True)
+    # alembic, NOT rec.EVENTS.create(checkfirst=True). The first version of this
+    # fixture used create_all, which built the table OUTSIDE alembic's
+    # bookkeeping: the migration that creates it then failed with
+    # `relation "espn_cricket_events" already exists` and the shared development
+    # database could no longer reach head at all. A fixture that reaches for DDL
+    # because the schema might be missing is papering over the one mechanism the
+    # project has for making sure it is not.
+    from alembic import command
+    from alembic.config import Config
+    cfg = Config(str(pathlib.Path(__file__).resolve().parents[1] / "alembic.ini"))
+    command.upgrade(cfg, "head")
     with get_engine().begin() as c:
         c.execute(sa.text("DELETE FROM espn_cricket_events WHERE event_id = 'utest-1'"))
     yield

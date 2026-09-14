@@ -420,6 +420,7 @@ class Recorder:
             self._heartbeat.beat(
                 interval_seconds=interval,
                 rows_written=stats.snapshots_written,
+                markets_seen=stats.markets_seen,
                 cycle_seconds=time.monotonic() - started,
             )
             log.info("sleeping", seconds=interval)

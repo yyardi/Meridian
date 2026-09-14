@@ -839,6 +839,14 @@ class ServiceHeartbeat(Base):
     rows_written: Mapped[int | None] = mapped_column(Integer)
     #: Cumulative rows since process start, for eyeballing a delta.
     rows_total: Mapped[int | None] = mapped_column(BigInteger)
+    #: Markets the last sweep OBSERVED, which is a different question from how
+    #: many rows it wrote. rows_written=0 has two causes that matter in opposite
+    #: directions: the board was empty (the venue has nothing listed) or the
+    #: board was full and no price moved. On 2026-09-14 the venue's entire board
+    #: emptied at 09:35Z with every container up and every log clean, and no
+    #: quantity in this database could separate the two. NULL means "not
+    #: measured", like rows_written: a writer with no board has no honest value.
+    markets_seen: Mapped[int | None] = mapped_column(Integer)
     #: What the writer itself believed about game state this cycle. Readers
     #: with an independent game signal (ESPN) should prefer their own.
     game_live: Mapped[bool | None] = mapped_column(Boolean)
