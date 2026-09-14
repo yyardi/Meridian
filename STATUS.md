@@ -415,6 +415,35 @@ true-P&L column (+0.023¢ WNBA, −0.062¢ CFB), the +0.061¢ [−0.762, +0.883]
 24 games, and the circuit-breaker effect. **None of the positive Polymarket
 result is at risk.**
 
+**FIRST FULL SCAN COMPLETED 07:24Z — and its headline is the artifact, for the
+third independent time.** `scan_2026-09-14T0528Z.txt`, 22,503 settlement calls
+over 13 patterns. It launched at 05:28, before the degeneracy guard landed, so it
+carries the full inflation: **Var(t) 18.527 against a 1.153 baseline, max|t|
+31.543 against an expected 3.402, 62 cells over |t|>1.96 against 16.3 expected.**
+Two agents and I each measured this independently on our own passes; this is the
+same thing a third time on the canonical code. Its Higher Criticism printed
+**169,089.25**, the known ceiling failure appearing in production rather than in
+a synthetic — flagged `[CONTESTED]` in the output with the registered fallback
+`count(p<0.01)=34` printed beside it, which is why all three statistics are
+reported every run and none is chosen after its value is seen.
+
+**Per-pattern closes, valid (the guard does not affect row counts):**
+
+| pattern | closes | | pattern | closes |
+|---|---:|---|---|---:|
+| cfb | 15,818 | | cplcr | 1 |
+| nfl | 5,051 | | t20icr | 1 |
+| wnba | 1,582 | | setkameua | 29 |
+| mlb | 15 | | setkamemd | 6 |
+| | | | t20iwcr / odicr / county / setkamecz / setkawoua | 0 |
+
+**Tomorrow 04:40Z is the first trustworthy run**, carrying the degeneracy guard,
+the `2026-09-01` partition floor and the single-pass `LIKE ANY`. Three changes in
+one unattended run is more than ideal, but they are independent and each kills
+the run rather than warning: a cell with no outcome variation is excluded with
+its reason printed, a non-boundary floor is refused, and a row matching two
+patterns aborts.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
