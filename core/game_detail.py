@@ -98,6 +98,12 @@ class TradeContext:
     @property
     def is_pregame(self) -> bool:
         return not self.is_live
+    #: The stronger clock flag -- see `core.live_fv.Clock`. False means the
+    #: reading is not to be used at all (overtime, an unrecognised period, an
+    #: exhausted estimate), which "is_estimate" does not say. Defaults to
+    #: FALSE for the reason given on `core.live_fv.LiveFV.minutes_left_usable`:
+    #: a True default makes a dropped propagation invisible.
+    minutes_left_usable: bool = False
 
 
 @dataclass(frozen=True)
@@ -432,6 +438,9 @@ def _context_for(
     minutes_left = None
     is_estimate = False
     note = None
+    # False when there is no clock at all, matching the field's fail-safe
+    # default -- a missing reading is not a usable one.
+    minutes_left_usable = False
     if is_live and period:
         started = period_starts.get(period)
         seconds_in = (
@@ -441,6 +450,11 @@ def _context_for(
         minutes_left = clock.minutes_left
         is_estimate = clock.is_estimate
         note = clock.note
+        # `usable` used to stop here. `Clock` offers legacy 3-tuple unpacking of
+        # (minutes_left, is_estimate, note), which makes DROPPING the stronger
+        # flag the default -- and this reads the three fields individually, which
+        # is the same omission by hand.
+        minutes_left_usable = clock.usable
 
     age = None
     if row.context_at is not None:
@@ -452,6 +466,7 @@ def _context_for(
         period=period,
         minutes_left=minutes_left,
         minutes_left_is_estimate=is_estimate,
+        minutes_left_usable=minutes_left_usable,
         is_live=is_live,
         context_age_seconds=age,
         note=note,
