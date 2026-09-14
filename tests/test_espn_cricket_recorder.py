@@ -17,6 +17,7 @@ import os
 from typing import ClassVar
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import Insert
 from sqlalchemy.dialects import postgresql
 
@@ -178,3 +179,75 @@ def test_pre_match_enters_the_active_set_90_minutes_out(minutes_before, active):
     _Session.stmts = []
     now = dt.datetime(2026, 9, 13, 23, 0, tzinfo=UTC) - dt.timedelta(minutes=minutes_before)
     assert rec.CricketRecorder(_Session, client=_Client()).cycle(now)[0] == active
+
+
+# --------------------------------------------------------------------------- #
+# A REAL database. Everything above this line runs against `_Session`, which
+# collects statements and never sends them anywhere, so it cannot see a
+# constraint. The defect of 2026-09-14 was a UniqueViolation, and nine green
+# tests had no way to notice it: within one cycle the header sweep files a row
+# and poll_summary files the richer view of the same match at the SAME `now`,
+# and (event_id, captured_at) is unique. run_forever caught it, logged
+# espn_cricket_cycle_failed and discarded the whole cycle -- on a match at the
+# toss, that is the one observation that cannot be backfilled.
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture()
+def _clean_events():
+    from core.storage import get_engine
+    # create_all(checkfirst) rather than an alembic run: this table is newer than
+    # most deploys and the suite's database may not carry it yet. The DDL comes
+    # from the recorder's own metadata, so the UNIQUE(event_id, captured_at) under
+    # test is the one the module declares, not one retyped into a fixture.
+    rec.EVENTS.create(bind=get_engine(), checkfirst=True)
+    with get_engine().begin() as c:
+        c.execute(sa.text("DELETE FROM espn_cricket_events WHERE event_id = 'utest-1'"))
+    yield
+    with get_engine().begin() as c:
+        c.execute(sa.text("DELETE FROM espn_cricket_events WHERE event_id = 'utest-1'"))
+
+
+def _sessionmaker():
+    from sqlalchemy.orm import sessionmaker
+    from core.storage import get_engine
+    return sessionmaker(bind=get_engine())
+
+
+def test_two_views_of_one_instant_collapse_to_the_richer_row(_clean_events):
+    """The header view then the summary view, same match, same `now`.
+
+    Before the upsert this raised UniqueViolation and the caller threw the cycle
+    away. The table's constraint is right -- an event has one state per instant --
+    so the fix keeps one row and lets the later, richer write win."""
+    from core.storage import get_engine
+    now = dt.datetime(2026, 9, 14, 10, 51, tzinfo=dt.timezone.utc)
+    r = rec.CricketRecorder(_sessionmaker(), client=_Client())
+    thin = {"series_id": "24740", "event_id": "utest-1", "name": "A v B",
+            "scheduled_start": now, "state": "in", "period": 1,
+            "status_detail": None, "result_text": None, "toss_text": None,
+            "home_team": "A", "away_team": "B", "home_score": None, "away_score": None}
+    assert r.observe(dict(thin), now) == 1
+    assert r.observe({**thin, "toss_text": "A won the toss"}, now) == 1
+    with get_engine().connect() as c:
+        rows = c.execute(sa.text(
+            "SELECT toss_text FROM espn_cricket_events WHERE event_id='utest-1'")).all()
+    assert len(rows) == 1, f"one event, one instant, one row -- got {len(rows)}"
+    assert rows[0][0] == "A won the toss", "the richer view must win"
+
+
+def test_a_later_instant_is_a_new_row(_clean_events):
+    """Guards the guard: an upsert that collapsed everything onto one row would
+    pass the test above and silently destroy the time series."""
+    from core.storage import get_engine
+    t0 = dt.datetime(2026, 9, 14, 10, 51, tzinfo=dt.timezone.utc)
+    r = rec.CricketRecorder(_sessionmaker(), client=_Client())
+    base = {"series_id": "24740", "event_id": "utest-1", "name": "A v B",
+            "scheduled_start": t0, "state": "in", "period": 1,
+            "status_detail": None, "result_text": None, "toss_text": None,
+            "home_team": "A", "away_team": "B", "home_score": None, "away_score": None}
+    r.observe(dict(base), t0)
+    r.observe({**base, "state": "post"}, t0 + dt.timedelta(minutes=1))
+    with get_engine().connect() as c:
+        n = c.execute(sa.text(
+            "SELECT count(*) FROM espn_cricket_events WHERE event_id='utest-1'")).scalar()
+    assert n == 2
