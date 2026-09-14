@@ -146,3 +146,110 @@ validate against the 610 CFB results. Report G, not market count. And fix
 the CFB recorder's stop-at-the-last-poll behaviour before trusting any
 future CFB settlement, because today's CFB settled set will keep growing in
 the same biased direction.
+
+---
+
+# Addendum, same day: what the build needs, and what it cannot have yet
+
+Three answers to the build brief, all read-only, no code.
+
+## 1. The validation plan cannot be executed as specified
+
+The instruction was to validate the derived settlement against Kalshi's 610
+CFB `result` values. **There is no population where we hold both Kalshi's
+`result` and a joinable final score.**
+
+| | Kalshi settlements | `espn_game_id` | pm slug |
+|---|---|---|---|
+| CFB | **610** on 85 games | 0 of 492 | 0 of 492 |
+| NFL | 0 | 30 of 32 | 0 |
+| WNBA | 0 | 75 of 75 | 75 of 75 |
+
+The entire settled inventory is CFB, and CFB is the one league with no join
+key. That is not a coincidence — it is the same stop condition seen from two
+sides: the leagues whose recorder stops at kickoff never see a settlement,
+and CFB, the league that kept polling into the game, is the one that was
+never wired to ESPN.
+
+Nor is a name match available as a fallback. `espn_cfb_game_state` stores
+teams as **numeric ESPN ids** (`away = 103`, `home = 2116`), not names, so
+bridging Kalshi's "Akron vs Wake Forest" to a score needs a school-name →
+ESPN-id vocabulary that is not in the tape. Polymarket carries 247 football
+games with scores over 09-02 → 09-14, but the Kalshi → Polymarket join is
+the same missing key.
+
+## 2. The frame CAN be validated, with no join at all — and it holds
+
+Within one settled totals ladder, every strike below the final total must
+settle YES and every strike above it must settle NO. That is checkable from
+Kalshi alone, and it is the one thing that would be catastrophic to get
+wrong.
+
+| games with settled totals | with BOTH a yes and a no | monotone | violations | mean bracket |
+|---|---|---|---|---|
+| 81 | 2 | 2 | **0** | 3.00 pts |
+
+```
+26SEP05FORNDSU   max yes strike 36.50   min no strike 39.50
+26SEP12WEBBLIB   max yes strike 46.50   min no strike 49.50
+```
+
+The bracket width equals the 3-point strike spacing, and an inverted frame
+would have violated on both. Two games is not a small sample here — the
+frame is a binary structural fact, and one correctly-bracketed ladder
+settles it. (Only 2 of 81 games have both sides, which is the capture bias
+again, from the same direction.)
+
+## 3. The design effect, measured rather than assumed
+
+A totals ladder is ~15 deterministic step functions of ONE scalar (the
+total); a spread ladder ~22 of another (the margin); the winner is
+`sign(margin)`. So a game contributes at most two outcome scalars, and they
+are **not** independent — on 114 CFB finals:
+
+| mean total | sd | mean abs margin | sd | corr(total, abs margin) |
+|---|---|---|---|---|
+| 54.3 | 17.1 | 26.7 | 19.7 | **0.524** |
+
+At ρ = 0.52 the two scalars are worth about `2/(1+ρ) = 1.31` independent
+draws per game. So **14 games behave like 14 clusters for a totals-only
+book and ~18 for totals plus spreads** — not 547, and not 6. Six would
+require the GAMES to be correlated with each other, which they are not:
+different teams, different days. The pessimistic reading of the cluster
+caution is wrong in this direction.
+
+Transported with a flag, not silently: ρ is measured on CFB, where the mean
+margin is 26.7 with sd 19.7 — a blowout-heavy league. NFL totals and margins
+are tighter, so the NFL ρ must be re-measured once there are enough finals.
+A defect cannot calibrate its own fix and neither can a league.
+
+## 4. Today's derivable NFL population is 9 games, not 14
+
+The NFL score source does exist: `espn_cfb_game_state` carries
+`league='nfl'` (15 games, 09-10 → 09-14) and joins **directly on
+`espn_game_id`** — no name matching anywhere. But:
+
+| | games | reached `post` | stuck `in` |
+|---|---|---|---|
+| ESPN nfl | 15 | **9** | 6 |
+| ESPN cfb | 186 | 105 (56.5%) | 81 |
+| Kalshi NFL ∩ ESPN | 13 | **9** | 4 |
+
+**Deriving a settlement from a game still in state `in` would be a bias, not
+a gap.** A truncated game has a lower total, so "Over" markets would settle
+NO when the real total cleared the strike — the same directional error as
+the CFB capture bias, from the opposite side. The rule has to be: derive
+only from `state='post'`, and count the rest as unsettled rather than as
+losses.
+
+So G = 9 today against a floor of 25, and the 09-20 estimate depends on the
+ESPN football recorder reaching `post`, which it manages 56.5% of the time
+on CFB and 9 of 15 on NFL. **That, not the Kalshi side, is now the binding
+constraint** — and it is the same stop-before-the-whistle defect as the
+other two found today.
+
+(One correction inside this addendum: `max(state)` is alphabetical, and
+`'pre' > 'post' > 'in'`, so a game with a pre-game row reports `pre` no
+matter how it ended. Re-run with `bool_or(state = 'post')` the CFB counts
+moved 111/84/6 to 105/81/0 and NFL stayed at 9. The conclusion did not move,
+but the instrument was wrong and would have gone on being wrong.)
