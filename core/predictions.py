@@ -400,7 +400,8 @@ class PredictionLogger:
             orientation_map = orientation_from_scoreboard(
                 espn_client=ESPNClient(), dates=sorted(set(span))
             )
-            log.info("orientation_map_built", games=len(orientation_map))
+            # `orientation_from_scoreboard` logs this itself now, WITH the
+            # failed-day count that this line could not see.
 
             # One projection per event, reused across that event's ~18 markets.
             # (projection, features, was_anchored_to_a_book_line, anchor_age_s)

@@ -16,6 +16,7 @@ from core.team_mapping import (
     GameOrientation,
     UnknownTeamError,
     orient_for_slug,
+    orientation_from_scoreboard,
     parse_market_slug,
     resolve_orientation,
     to_espn_abbrev,
@@ -142,3 +143,67 @@ def test_slug_prefixes_are_recognised():
 def test_garbage_slug_returns_none():
     assert parse_market_slug("not-a-slug") is None
     assert parse_market_slug("") is None
+
+
+# --------------------------------------------------------------------------- #
+# A day the scoreboard could not answer for must not look like a quiet day.
+# --------------------------------------------------------------------------- #
+class _Board:
+    """Answers for some days, raises for others."""
+
+    def __init__(self, bad: set[str]):
+        self.bad = bad
+
+    def get_scoreboard(self, yyyymmdd: str) -> dict:
+        if yyyymmdd in self.bad:
+            raise RuntimeError("ESPN 503")
+        return {"events": [{
+            "id": f"401{yyyymmdd}",
+            "date": f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:]}T23:00Z",
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"abbreviation": "KC"}},
+                {"homeAway": "away", "team": {"abbreviation": "BUF"}}]}],
+        }]}
+
+
+_DAYS = [dt.date(2026, 9, 12), dt.date(2026, 9, 13), dt.date(2026, 9, 14)]
+
+
+def test_a_failed_scoreboard_day_is_reported_not_swallowed():
+    """★ It used to be `except Exception: continue`, so a failed fetch and a day
+    with no games were identical from outside -- and the cost surfaced in the
+    wrong place: a game with no orientation is skipped by
+    `predictions._predict_one` as `skipped_unknown_team`, so an ESPN outage read
+    as a team-mapping problem. The SKIP is right; guessing orientation from slug
+    order would flip the sign on half the games. Only the silence was wrong."""
+    from structlog.testing import capture_logs
+
+    with capture_logs() as logs:
+        out = orientation_from_scoreboard(espn_client=_Board({"20260913"}),
+                                          dates=list(_DAYS))
+
+    assert len(out) == 2, "a failed day must not cost the other days"
+    fails = [e for e in logs if e["event"] == "orientation_scoreboard_failed"]
+    assert [e["day"] for e in fails] == ["2026-09-13"]
+
+    built = next(e for e in logs if e["event"] == "orientation_map_built")
+    assert built["days_requested"] == 3
+    assert built["days_failed"] == 1
+    assert built["failed_days"] == ["2026-09-13"]
+    assert built["partial"] is True, (
+        "a partial map is not a small slate -- the caller reads its own "
+        "skipped_unknown_team count against this flag")
+
+
+def test_a_clean_run_says_it_is_not_partial():
+    """The control. `partial` must be capable of being False, or it is decoration
+    rather than a signal."""
+    from structlog.testing import capture_logs
+
+    with capture_logs() as logs:
+        out = orientation_from_scoreboard(espn_client=_Board(set()), dates=list(_DAYS))
+
+    assert len(out) == 3
+    built = next(e for e in logs if e["event"] == "orientation_map_built")
+    assert built["days_failed"] == 0 and built["partial"] is False
+    assert not [e for e in logs if e["event"] == "orientation_scoreboard_failed"]
