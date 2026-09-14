@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# NIGHTLY SCAN + PUSH. Runs the strategy scan over every league and venue on
+# tape, writes the full table to artifacts/reads, and pushes a terse summary to
+# ntfy. The topic is read from .env and NEVER echoed.
+#
+#   crontab (UTC):  40 4 * * *  sudo -n /opt/meridian/scripts/nightly_scan.sh
+#
+# The push carries the DISTRIBUTION first, because with ~250 cells the best one
+# is large by construction: under a pure null the top |t| is ~3.2 and P(any
+# cell > 3) is ~0.74. A striking cell is the modal output of noise. The full
+# cell table and the nominations live in the artifact, which the dashboard reads.
+set -u
+cd /opt/meridian || exit 1
+OUT=/opt/meridian/artifacts/reads; mkdir -p "$OUT"
+TS=$(date -u +%Y-%m-%dT%H%MZ)
+F="$OUT/scan_$TS.txt"
+IMG=$(docker inspect meridian-api --format "{{.Config.Image}}" 2>/dev/null || echo meridian-api)
+
+# The api IMAGE with the checkout mounted, never `docker exec` into the running
+# container: that one carries whatever code it was built with (2026-09-13: it was
+# eight days stale and died on a module that was sitting on the box).
+docker run --rm -i --network meridian_default \
+  -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian \
+  -e SETTLE_CACHE="$OUT/settlements.json" \
+  -e ROWS_JSON="$OUT/scan_rows.json" -e CELLS_JSON="$OUT/scan_cells.json" \
+  -v /opt/meridian/core:/app/core -v /opt/meridian/strategies:/app/strategies \
+  -v /opt/meridian/artifacts:/opt/meridian/artifacts -w /app \
+  "$IMG" python - < cfb/run_scan.py > "$F" 2>&1
+RC=$?
+echo "exit $RC" >> "$F"
+
+# --- the push: distribution first, then the nominations, then the coverage ---
+DIST=$(grep -A5 "=== DISTRIBUTION" "$F" | grep -E "cells excluding|Var\(t\)|max\|t\|" \
+       | sed 's/^ *//' | tr '\n' ' ' | cut -c1-220)
+TOP=$(grep -A4 "TOP 12" "$F" | tail -3 | awk '{printf "%s %s %s ", $1, $4, $NF}' | cut -c1-140)
+COV=$(grep -E "^markets with a pregame close|^settled |^cells scored" "$F" | tr '\n' ' ' | cut -c1-120)
+MSG="SCAN $TS
+$COV
+$DIST
+top: $TOP
+null: best |t|~3.2, P(any>3)=.74 -- read the spread, not the max
+$F"
+MSG=$(printf '%s' "$MSG" | cut -c1-480)
+
+TOPIC=$(grep -E '^MERIDIAN_NTFY_TOPIC=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
+if [ -n "$TOPIC" ]; then
+  curl -s -m 20 -H "Title: Meridian nightly scan" -d "$MSG" "https://ntfy.sh/$TOPIC" >/dev/null 2>&1 \
+    && echo "pushed" >> "$F" || echo "push failed" >> "$F"
+else
+  echo "no ntfy topic in .env; not pushed" >> "$F"
+fi
+echo "wrote $F"
