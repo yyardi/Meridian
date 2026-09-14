@@ -140,7 +140,7 @@ class Recorder:
         except Exception:
             venue_leagues = (self.config.league_slug,)
 
-        boards, raw_events = [], {}
+        boards, raw_events, raw_per_league = [], {}, {}
         for vl in venue_leagues:
             try:
                 parsed_vl, raw_vl = self._client.get_league_events(league=vl)
@@ -150,12 +150,18 @@ class Recorder:
                 log.error("board_fetch_failed", venue_league=vl, error=str(exc), exc_info=True)
                 continue
             boards.append((vl, parsed_vl))
+            # The raw count, taken HERE because this is the only scope that has
+            # the raw payload. `_log_expected_vs_observed` was reading
+            # `parsed._raw`, which does not exist -- the client returns
+            # (parsed, raw) as a TUPLE -- so `raw_events`/`parse_dropped` were
+            # always None. A field I added minutes earlier and never tested.
+            raw_per_league[vl] = len(raw_vl.get("events") or [])
             for e in raw_vl.get("events", []):
                 if isinstance(e, dict):
                     raw_events[str(e.get("slug"))] = e
         if not boards:
             return stats
-        self._log_expected_vs_observed(venue_leagues, boards)
+        self._log_expected_vs_observed(venue_leagues, boards, raw_per_league)
 
         events = [e for _vl, parsed in boards for e in parsed.events]
         with self._Session() as session:
@@ -207,7 +213,8 @@ class Recorder:
         )
         return stats
 
-    def _log_expected_vs_observed(self, venue_leagues, boards) -> None:
+    def _log_expected_vs_observed(self, venue_leagues, boards,
+                                  raw_counts: dict | None = None) -> None:
         """What the venue's own listing SAYS, against what the sweep returned.
 
         An unknown or empty competition returns **200 with `events: []`**, never
@@ -234,6 +241,7 @@ class Recorder:
         three that cannot be anything but a defect.
         """
         observed = {vl: len(parsed.events) for vl, parsed in boards}
+        raw_counts = raw_counts or {}
         limit = self.config.event_limit
         try:
             listing = self._client.get_sports_listing()
@@ -245,9 +253,35 @@ class Recorder:
             exp = listing.get(vl)
             obs = observed.get(vl)
             log.info(
-                "board_coverage", venue_league=vl, expected=exp, observed=obs,
-                shortfall=(exp - obs if exp is not None and obs is not None
-                           else None),
+                "board_coverage", venue_league=vl,
+                # ★ RENAMED FROM expected/observed, AND `shortfall` IS GONE.
+                # The two numbers count the same UNIT -- events -- over
+                # populations the venue will not let us align, so their
+                # DIFFERENCE was a subtraction between incomparable counts and
+                # has been non-zero on every multi-day league on every cycle
+                # since it was written. Measured 2026-09-14 with an explicit
+                # limit of 500, so truncation is excluded: nfl 316 listed
+                # against 33 returned, cfb 263 against 211, mlb 81 against 49,
+                # wnba 8 against 5 -- while every table-tennis competition
+                # agrees EXACTLY (169=169, 32=32, 9=9).
+                #
+                # Eleven candidate parameters were tried on the events endpoint
+                # (closed, active, archived, hidden, includeClosed, status,
+                # page, days, horizon, offset) and NONE changes the count;
+                # `offset=500` returns 0, so there is nothing beyond what it
+                # gives. All returned events are active/open/unarchived/unhidden
+                # and `section`/`type` are identical across leagues, so it is
+                # not a flag filter and not a section. **So the population
+                # cannot be requested, which is why this is a rename and a
+                # deletion rather than a repair.**
+                #
+                # What activeEventCount counts is NOT established. The listing
+                # carries `activeMarketCount` beside it and the implied
+                # markets-per-event are plausible per league, so it is an event
+                # count; the gap tracks how far ahead a league schedules, which
+                # is consistent with events listed beyond the board but
+                # unproven.
+                venue_active_events=exp, board_events_returned=obs,
                 # The competition was not in the sweep at all.
                 not_swept=(obs is None),
                 # The listing says there are events and we got none: the
@@ -268,6 +302,13 @@ class Recorder:
                 # limit costs nothing and lets a reader see 49 against 50, which
                 # is the fact the boolean was hiding.
                 limit=limit,
+                # The one like-for-like comparison available: the SAME call's
+                # raw payload against what parsing kept. Measured green on all
+                # three leagues (raw == parsed), but it can fail, which is more
+                # than `shortfall` could ever do.
+                raw_events=raw_counts.get(vl),
+                parse_dropped=(None if raw_counts.get(vl) is None or obs is None
+                               else raw_counts[vl] - obs),
             )
 
     def _record_market(

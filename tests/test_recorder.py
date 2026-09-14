@@ -307,8 +307,14 @@ class _Parsed:
         self.events = [object()] * n
 
 
-def _coverage(rows, listing, limit=500):
-    """Run the check and return {venue_league: log kwargs}."""
+def _coverage(rows, listing, limit=500, raw=None):
+    """Run the check and return {venue_league: log kwargs}.
+
+    `raw` is the per-league RAW payload event count, which the production caller
+    collects at the fetch site. Passing it is what makes `parse_dropped`
+    testable -- the first version read `parsed._raw`, which never exists,
+    because the client returns (parsed, raw) as a tuple.
+    """
     from core import recorder as R
 
     captured = {}
@@ -328,7 +334,7 @@ def _coverage(rows, listing, limit=500):
     old, R.log = R.log, _Log()
     try:
         R.Recorder._log_expected_vs_observed(
-            rec, list(rows), [(vl, _Parsed(n)) for vl, n in rows.items()])
+            rec, list(rows), [(vl, _Parsed(n)) for vl, n in rows.items()], raw)
     finally:
         R.log = old
     return captured
@@ -344,10 +350,21 @@ def test_mlb_shaped_shortfall_is_reported_without_a_defect_verdict():
 
     The numbers are still reported. A reader interprets 43 against 75; a
     permanently-true `missing` tells them nothing.
-    """
+
+    ★ AND `shortfall` IS NOW GONE TOO, for the same reason one level down: a
+    DIFFERENCE between incomparable counts is not a quantity. Measured
+    2026-09-14 with an explicit limit of 500 so truncation is excluded -- nfl
+    316 against 33, cfb 263 against 211, mlb 81 against 49 -- and eleven
+    candidate parameters on the events endpoint change the count by nothing, so
+    the two populations cannot be aligned and the subtraction cannot be
+    repaired. The fields are renamed so nobody subtracts them again."""
     got = _coverage({"mlb": 43}, {"mlb": 75})["mlb"]
-    assert got["expected"] == 75 and got["observed"] == 43
-    assert got["shortfall"] == 32
+    assert got["venue_active_events"] == 75
+    assert got["board_events_returned"] == 43
+    assert "shortfall" not in got, (
+        "a difference between incomparable counts is back")
+    assert "expected" not in got and "observed" not in got, (
+        "the old names invite the subtraction that was just deleted")
     assert got["not_swept"] is False
     assert got["swept_nothing"] is False
     assert got["truncated"] is False
@@ -385,4 +402,35 @@ def test_the_exact_agreement_case_flags_nothing():
     got = _coverage({"setkamemd": 19}, {"setkamemd": 19})["setkamemd"]
     assert (got["not_swept"], got["swept_nothing"], got["truncated"]) == \
         (False, False, False)
-    assert got["shortfall"] == 0
+    # The exact-agreement case is the EVIDENCE that the two counts share a unit
+    # and differ only in population: every table-tennis competition matches
+    # (169=169, 32=32, 9=9) because its whole board is listed within the day,
+    # while nfl lists 316 against 33. So the pair is worth printing; their
+    # difference is not.
+    assert got["venue_active_events"] == got["board_events_returned"] == 19
+
+
+def test_parse_loss_is_visible_and_is_a_like_for_like_comparison():
+    """★ THE ONLY COMPARISON LEFT THAT CAN FAIL. `shortfall` subtracted two
+    counts over populations the venue will not align. This one compares the SAME
+    call's raw payload against what parsing kept, so a schema drift that
+    silently drops events shows up as a positive number.
+
+    It replaced a version of itself that was dead on arrival: the first
+    implementation read `parsed._raw`, which does not exist -- the client
+    returns (parsed, raw) as a TUPLE -- so the field was always None and a
+    mutation hardcoding `parse_dropped=0` passed. The raw count is now taken at
+    the fetch site, which is the only scope that has the payload."""
+    got = _coverage({"cfb": 211}, {"cfb": 263}, raw={"cfb": 211})["cfb"]
+    assert got["raw_events"] == 211
+    assert got["parse_dropped"] == 0, "green on the measured case, as it should be"
+
+    # and it must be capable of being non-zero
+    lossy = _coverage({"cfb": 200}, {"cfb": 263}, raw={"cfb": 211})["cfb"]
+    assert lossy["raw_events"] == 211
+    assert lossy["parse_dropped"] == 11, (
+        "parsing dropped 11 events and the check did not say so")
+
+    # absent raw is None, not a silent zero -- "not measured" is not "no loss"
+    unknown = _coverage({"cfb": 211}, {"cfb": 263})["cfb"]
+    assert unknown["raw_events"] is None and unknown["parse_dropped"] is None
