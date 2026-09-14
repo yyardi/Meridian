@@ -128,38 +128,48 @@ same-weekday-and-hour priors, so a rank rule false-alarms 14.3% per check, 3.4 t
 Two-hour persistence needs about 19 weeks, mid-January. Three-hour persistence works today at the
 cost of three hours of latency.
 
-## 0e. Every table-tennis result in the scan is priced off a stale close
+## 0e. Table-tennis closes are stale, but I reported it against the wrong population
 
-meridian-7f checked the three pre-registrations against the listing gap. I checked the scan,
-which nobody had, and it is exposed worse than any of them -- not by the gap alone but by cadence.
+**Correction, before the table.** I reported "22.7% and 39.1% of table-tennis closes more than an
+hour early" and gave those figures to the operator. They are measured on games that have merely
+*started* (`ko < now()`). **The scan only scores games finished more than four hours ago**, and on
+that population the same query reads 1.3% and 0.0%. My figures describe games the scan never
+scores. Caught by meridian-7d, who reproduced my numbers exactly on my population before finding
+the population was wrong -- which is the only way that error is findable.
 
-How far before the start the scan's "pregame close" actually sits, since 2026-09-01:
+Age of the scan's pregame close, on the population the scan actually scores, since 2026-09-01:
 
-| league | games | median | p90 | share more than 60 min early |
+| league | games | median | p90 | over 60 min early |
 |---|---:|---:|---:|---:|
-| setkamecz | 23 | 44 min | 141 min | **39.1%** |
-| setkawoua | 15 | 32 min | 152 min | **33.3%** |
-| setkameua | 119 | 20 min | 106 min | **22.7%** |
-| cfb | 117 | 0 min | 0 min | 1.7% |
-| nfl | 15 | 0 min | 0 min | 0.0% |
+| setkamecz | 12 | 19.2 min | 44.5 min | 0.0% |
+| setkameua | 80 | 7.9 min | 39.2 min | 1.3% |
+| cfb | 117 | 0.1 min | 0.2 min | 1.7% |
+| nfl | 15 | 0.0 min | 0.1 min | 0.0% |
 
-**A table-tennis match lasts about twenty minutes.** A close taken a median of 20 to 44 minutes
-before it starts, and more than two hours before it in the tail, is not a close. It is a
-different market state wearing the word. Football is unaffected: CFB and NFL close at the whistle.
+**The conclusion survives and the exposure is smaller than I said.** A 19-minute close on an
+11-minute match is still the whole event. But the tail I led with was not the scan's tail.
 
-The scan reports "markets with a pregame close" and never reports the age of that close, so this
-has been invisible in every table-tennis number the programme has produced. It is not a bug in
-the scan's arithmetic; it is a population the label misdescribes.
+**Minutes are the wrong unit; the ratio of close age to event duration is the right one.** 7d
+measured it: cfb median 0.000, nfl 0.000, table tennis 0.405 with a p90 of 5.852. Their proposed
+threshold is **0.10**, which passes 92.3% of cfb and 100% of nfl and 13.3% of table tennis, with
+football clearing by three orders of magnitude rather than by tuning. Adopted.
 
-Cause is mostly cadence, not the listing gap. Until 11:10Z today the table-tennis recorder had no
-cadence variables at all and ran on the 900-second default inside 6 hours of start, which
-reproduces the 20-minute median almost exactly. It now sweeps every 300 seconds within 24 hours
-of start, so the same table should read roughly 2-3 minutes from tomorrow. That is a prediction
-this table will test, and if it does not move, cadence was not the cause and I am wrong about it.
+**Football is clean in the median, not perfectly.** At market level, which is what the scan sums,
+CFB is p90 56 minutes with 10% of closes more than an hour old.
 
-**Until then, treat the table-tennis rows in any scan output as measured on a price that is
-typically 20-44 minutes old.** The operator asked specifically about this space, so this caveat
-matters more than its size suggests.
+**My cadence prediction: early evidence says yes, and the first read nearly said no.** Splitting
+matches that started after the 11:10Z cadence change:
+
+| post-fix matches | n | median | p90 |
+|---|---:|---:|---:|
+| close fell inside the 09:35-11:41 listing gap | 10 | 176.7 min | 186.7 min |
+| close clear of the gap | 12 | 7.0 min | 12.0 min |
+
+Unsplit, the post-fix sample reads median 12.0 and p90 181.7 -- a p90 twice as bad as before the
+fix, which is what I saw first and what would have read as the fix failing. It is the outage, not
+the cadence. The real test is tomorrow on gap-free tape, reported in minutes **and** as a ratio,
+because a cadence fix that moves the minutes without moving the ratio under 0.10 is not a
+staleness fix.
 
 ## 1. What I need from you (everything else I now run myself)
 
