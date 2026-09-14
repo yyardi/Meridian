@@ -10,34 +10,7 @@ P(some cell exceeds |t|=3) = 1-(1-0.0027)^m. At m=500 that is |t| ~ 2.9 and **P 
 **A three-sigma cell is the MODAL OUTPUT OF NOISE at this m.** The top row of the appendix
 table is not a find. Every number below is printed beside what the null gives.
 
-## ★ THE PRIMARY SCORE IS BINOMIAL ON THE WIN COUNT, NOT A t ON THE P&L
-
-**A cell whose bets all resolve the same way has NO outcome variance**, so the game-clustered
-sandwich SE collapses onto the band's price dispersion and |t| explodes. Measured on the first
-pass: all twelve of the most extreme cells were outcome-homogeneous, and against a binomial on
-the same cell the t overstated the evidence by **five to thirty orders of magnitude** --
-
-    cfb full_game_winner dec 0.2   n=12  k=0    p from t 3.9e-12   p binomial 6.3e-02
-    nfl 1q_spread        dec 0.0   n=68  k=0    p from t 7.9e-33   p binomial 6.1e-02
-    cfb 2q_total         dec 0.8   n=46  k=44   p from t 1.2e-25   p binomial 4.7e-02
-
-Those cells are not wrong -- 12 of 12 losing a 25c bet is p=0.03 and worth noticing -- but
-Var(t)=18.6 was built almost entirely out of that gap. **Second appearance of this defect: the
-extreme-hold study needed the same correction (a 7/7 cell reading +1.68 [+1.41,+1.96] whose
-binomial lower bound was 65.2% against a 98.3% break-even). Twice is a property of the
-substrate, not a one-off**: binary outcomes at small G make homogeneous cells common.
-
-So every cell is scored BOTH ways and both print. The binomial needs no exclusion. The sandwich
-statistics run only on cells with genuine outcome variation, and every excluded cell prints.
-
-## ★ AND THE PERMUTATION NULL IS BIASED FOR THIS FAILURE MODE
-
-Shuffling settlements within games **breaks** the homogeneity that creates the degeneracy, so
-the null's Var(t) comes out small and the observed excess reads as signal. The reference
-registered as "the only valid one" confirms this artifact rather than catching it. Pre- and
-post-exclusion figures are NOT comparable and must never be quoted beside each other.
-
-## THE THREE t-STATISTICS, all from one pass, none chosen after its value was seen
+## THE THREE STATISTICS, all from one pass, none chosen after its value was seen
 
 1. **Var(t)** -- dense alternative (many small effects). PRINTED BESIDE ITS G-IMPLIED NULL
    BASELINE, which is NOT 1: a cell's t is ~ t with nu = G-1, and Var(t_nu) = nu/(nu-2), so
@@ -83,10 +56,10 @@ RUN prod read-only, one pass (the box carries sweeps), env flags INSIDE docker r
   scripts/prod_weekend_read.sh V=() with the API image and the checkout mounted.
 Nothing is placed. Nothing here decides anything.
 """
-import datetime as dt, json, math, os, sys
+import datetime as dt, json, math, os, re, sys
 from collections import defaultdict
 
-from scipy.stats import binomtest, t as tdist
+from scipy.stats import t as tdist
 from sqlalchemy import create_engine, event, text
 
 from core import settlements
@@ -104,16 +77,74 @@ eng = create_engine(os.environ["DATABASE_URL"])
 def _np(c, _r):
     cur = c.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); c.commit()
 
-CLOSE = """
+#: Opt-in lower bound on `captured_at`. **NO DEFAULT, DELIBERATELY.** The scan
+#: reads every partition of a 62M-row table TWICE per league pattern -- once for
+#: the kickoff CTE, once for the close -- because `market_slug LIKE '%-cfb-%'`
+#: has a leading wildcard no btree can serve and `captured_at` is constrained
+#: only RELATIVE to `g.ko`, which the planner cannot push down. A floor prunes
+#: partitions and is worth a third of the run. But the floor cannot be DERIVED
+#: without the aggregate it is avoiding, so it has to come from the caller --
+#: and a default would be a silent narrowing of the population, which is the
+#: one defect this programme exists to avoid. Absent, nothing is excluded.
+SINCE = (os.environ.get("SCAN_SINCE") or "").strip() or None
+
+#: The clause is OMITTED rather than neutralised when there is no floor. A
+#: `(:since IS NULL OR captured_at >= :since)` form does in fact prune on
+#: postgres 16 -- verified -- but only while the planner substitutes the
+#: parameter and builds a CUSTOM plan; after five executions it may switch to a
+#: generic plan, and a generic plan cannot fold `$1 IS NULL`, so pruning would
+#: disappear silently and the scan would just get slow again. Two literal
+#: strings depend on nothing.
+_FLOOR = "\n    AND {a}captured_at >= :since::timestamptz"
+CLOSE_SQL = """
 WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
-  WHERE market_slug LIKE :pat AND game_start_time IS NOT NULL GROUP BY 1)
+  WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL{floor_g} GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug slug, s.sports_market_type mt, s.game_id gid,
        s.best_bid::float bid, s.best_ask::float ask
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
-WHERE s.market_slug LIKE :pat AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
+WHERE s.market_slug LIKE ANY(:pats) AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
   AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL AND s.best_ask >= s.best_bid
-  AND g.ko < now() - interval '4 hours'          -- STARTED and long finished, never an open board
+  AND g.ko < now() - interval '4 hours'          -- STARTED and long finished, never an open board{floor_s}
 ORDER BY s.market_slug, s.captured_at DESC"""
+CLOSE = CLOSE_SQL.format(floor_g=_FLOOR.format(a="") if SINCE else "",
+                         floor_s=_FLOOR.format(a="s.") if SINCE else "")
+
+
+def partition_floors(conn, table="market_snapshots"):
+    """Every partition's LOWER bound, asked of the catalogue rather than assumed.
+
+    The scheme is monthly today. A check that hardcoded "the first of a month"
+    would keep passing and silently stop pruning if retention ever moved to
+    weekly partitions, so the boundaries are read from `relpartbound`.
+    """
+    rows = conn.execute(text(
+        "SELECT pg_get_expr(c.relpartbound, c.oid) b FROM pg_class c "
+        "JOIN pg_inherits i ON i.inhrelid = c.oid WHERE i.inhparent = :t::regclass"),
+        {"t": table}).all()
+    out = set()
+    for (b,) in rows:
+        m = re.search(r"FROM \('([^']+)'", b or "")     # DEFAULT has no FROM; skipped
+        if m: out.add(m.group(1)[:10])
+    return out
+
+
+def check_since(conn, since):
+    """Refuse a floor that is not ON a partition boundary.
+
+    A floor inside a partition cannot prune it -- postgres still reads the whole
+    thing to filter rows -- so such a value is BOTH narrower and slower than no
+    floor at all. Measured 2026-09-14 with the scan's own
+    `max_parallel_workers_per_gather = 0`: no floor 7,023,098; `2026-09-01`
+    (a boundary) 4,671,180, a 33.5% cut; `2026-08-25` (inside August)
+    6,349,000-odd, i.e. MORE than no floor. A parameter whose wrong values are
+    both slower and narrower must reject them, not accept them quietly.
+    """
+    floors = partition_floors(conn)
+    if since[:10] not in floors:
+        raise SystemExit(
+            f"SCAN_SINCE={since} is not a market_snapshots partition boundary.\n"
+            f"  A floor inside a partition prunes NOTHING and is slower than no floor,\n"
+            f"  while still narrowing the population. Boundaries: {sorted(floors)}")
 
 
 def fee(p, k=FEE_PM): return k * p * (1 - p)
@@ -123,25 +154,28 @@ def mid(bid, ask): return round((bid + ask) / 2, 4)
 def poisson_binomial_p(trials):
     """Exact two-sided p for k wins among independent Bernoullis with DIFFERENT p0.
 
-    ONE TRIAL PER GAME. A cell holds several rungs of the same game -- measured on the
-    first pass, 305 of 324 cells have n > G, median 1.66 rungs per game and up to 14.6 --
-    and those rungs are driven by ONE game outcome. A Poisson-binomial over all n bets
-    would treat them as independent and understate p by roughly the clustering factor,
-    which is the very dependence the sandwich existed to handle. Swapping t ->
-    Poisson-binomial fixes the degeneracy and would REINTRODUCE the clustering, so trials
-    are taken one per game (first by slug, deterministic) and dropped rungs are counted.
+    ONE TRIAL PER GAME. A cell holds several rungs of the same game -- 305 of 324 cells
+    have n > G, median 1.66 rungs per game, max 14.58 -- and those rungs are functions of
+    ONE game outcome. A Poisson-binomial over all n bets treats them as independent and
+    understates p by roughly the clustering factor, which is the dependence the sandwich
+    existed to handle: swapping t -> Poisson-binomial fixes degeneracy and would silently
+    RE-IMPORT clustering. So trials are one per game.
 
-    Break-even varies per trial -- a decile spans a 0.1 band and on one measured cell a
-    single midpoint-derived break-even was wrong by 3.4c -- so each trial carries its own
-    ask_i + fee(ask_i).
+    AND THE PICK IS THE RUNG NEAREST THE DECILE CENTRE, not the first by slug. Slugs sort
+    by side then by line as a STRING, so first-by-slug systematically selects one corner
+    of the decile -- which would bias the very break-even variation the Poisson-binomial
+    was adopted to respect. Nearest-to-centre is deterministic and unbiased with respect
+    to price within the band.
+
+    Break-even varies per trial (a single midpoint-derived break-even was wrong by 3.4c
+    on one measured cell), so each trial carries its own ask_i + fee(ask_i).
 
     TWO-SIDED BY THE SMALL-p METHOD: the total probability of every outcome AT MOST AS
-    LIKELY as the observed one. That is scipy.binomtest's convention, so this function
-    reduces to it EXACTLY when the p0 are equal (asserted in the smoke test), and the
-    numbers in docs/math/scan-preregistration.md stay on one convention. "Twice the
-    smaller tail" is the other defensible choice and gives materially different answers
-    at these n -- 0.0122 against 0.0131 on the 46/46 cell, 0.0634 against 0.0459 on the
-    12/0 one -- so the convention is named rather than assumed.
+    LIKELY as the observed one -- scipy.binomtest's convention, so this reduces EXACTLY
+    to it when the p0 are equal (asserted in cfb/test_scan_statistic.py) and the numbers
+    in the pre-registration stay on one convention. Twice-the-smaller-tail is the other
+    defensible choice and differs materially here: 0.0122 vs 0.0131 on the 46/46 cell,
+    0.0634 vs 0.0459 on the 12/0 one. Named rather than assumed.
     """
     ps = [q for q, _ in trials]
     k = sum(w for _, w in trials)
@@ -165,26 +199,140 @@ def clustered(vals, keys):                        # verbatim from cfb/run_paper_
     return m, se, n, G, ge
 
 
+# Fail fast: a bad floor is caught before the first 62M-row scan, not after it.
+if SINCE:
+    with eng.connect() as _c: check_since(_c, SINCE)
+
+#: (league, pattern) in the order the per-league loop used to visit them, so the
+#: printed coverage lines keep their old order and are diffable against old runs.
+PATS = [(lg, pat) for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis")
+        if lg in LEAGUES for pat in venue_patterns(lg)]
+
+
+def like_to_needle(pat: str) -> str:
+    """`%-cfb-%` -> `-cfb-`, and REFUSES anything more complicated.
+
+    ★ Attribution must use the SAME pattern strings the query used, never
+    `league_of_slug`. Two attribution routes that can disagree would silently
+    move rows between cells or drop them -- a population change to a registered
+    result, wearing the costume of a faster scan. So this converts the LIKE to
+    its exact Python equivalent and refuses any pattern whose equivalent is not
+    a plain substring test, rather than quietly mis-handling `_`, a trailing
+    anchor, or an escape.
+    """
+    if not (pat.startswith("%") and pat.endswith("%") and len(pat) > 2):
+        raise SystemExit(f"pattern {pat!r} is not of the form %needle% -- "
+                         "attribution by substring would not match the SQL")
+    body = pat[1:-1]
+    if "%" in body or "_" in body:
+        raise SystemExit(f"pattern {pat!r} has a wildcard inside it -- "
+                         "a substring test is not its equivalent")
+    return body
+
+
+NEEDLES = [(lg, pat, like_to_needle(pat)) for lg, pat in PATS]
+
+
+def attribute(slug: str) -> tuple[str, str]:
+    """The one (league, pattern) this slug belongs to. Exactly one, or the run dies.
+
+    Zero means the query returned something no pattern asked for; two means a
+    row would be counted in both leagues and its cell assignment is a coin
+    flip. `nfl-cfb-osu-mich-...` is a real slug shape I produced by accident
+    while writing a test an hour before this was written, and it matches
+    `%-cfb-%` -- the overlap risk is not hypothetical. Fatal rather than a
+    warning: a warning in a two-hour batch job is a line nobody reads.
+    """
+    hit = [(lg, pat) for lg, pat, needle in NEEDLES if needle in slug]
+    if len(hit) != 1:
+        raise SystemExit(
+            f"slug {slug!r} matched {len(hit)} patterns ({[p for _, p in hit]}) -- "
+            "attribution is ambiguous and the cell assignment would be arbitrary")
+    return hit[0]
+
+
+#: Opt-in equivalence check for the one-query rewrite: per-pattern counts from a
+#: KNOWN reference run, as `pat=count` pairs, PLUS the floor that run used.
+#: `SCAN_EXPECT='since=NONE,%-cfb-%=111,%-nfl-%=222'`   <- fake counts: an
+#: example carrying a real run's numbers is the thing someone copies.
+#:
+#: ★ THE `since=` TERM IS MANDATORY AND IT IS THE WHOLE POINT. Row counts are a
+#: fact about one tape window AND one floor, not an invariant. The reference for
+#: the 13-query-to-1-query change is the 05:28Z run of 2026-09-14, taken with NO
+#: floor -- and cfb, nfl and wnba all have pre-September tape, so a FLOORED run
+#: legitimately returns fewer rows for them. Comparing across floors would fire
+#: this check on a correct change, which is the worst kind of guard: one that
+#: trains people to ignore it. A floor mismatch is therefore a REFUSAL to
+#: compare, reported as such, not a count mismatch.
+_EXP = dict((k, v) for k, _, v in
+            (e.partition("=") for e in (os.environ.get("SCAN_EXPECT") or "").split(",") if e))
+EXPECT_SINCE = _EXP.pop("since", None)
+EXPECT = {k: int(v) for k, v in _EXP.items()}
+if EXPECT and EXPECT_SINCE is None:
+    raise SystemExit(
+        "SCAN_EXPECT is missing its `since=` term. Row counts depend on the floor, "
+        "so a reference without one cannot be compared. Use `since=NONE` for a "
+        "reference taken with no floor.")
+if EXPECT:
+    _ref = None if EXPECT_SINCE.upper() == "NONE" else EXPECT_SINCE
+    if _ref != SINCE:
+        raise SystemExit(
+            f"SCAN_EXPECT was taken with since={EXPECT_SINCE} and this run uses "
+            f"since={SINCE or 'NONE'}. Row counts are not comparable across floors "
+            "-- a floored run legitimately returns fewer rows wherever a pattern "
+            "has tape before the floor. Compare floored against floored.")
+
 CELLS, STOCK, DROP = defaultdict(list), defaultdict(lambda: [0, 0, set()]), defaultdict(int)
 calls = 0
 for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis"):
-    if lg not in LEAGUES: DROP[f"{lg}: not in core.leagues"] += 1; continue
-    for pat in venue_patterns(lg):
-        with eng.connect() as c:
-            rows = [dict(r._mapping) for r in c.execute(text(CLOSE), {"pat": pat})]
-        for r in rows:
-            mt = (r["mt"] or "?")
-            STOCK[(lg, mt)][0] += 1
-            if calls >= MAXCALLS: DROP["settlement calls hit MAXCALLS"] += 1; continue
-            y = settle(r["slug"]); calls += 1
-            if y is None: STOCK[(lg, mt)][1] += 1; continue
-            m = mid(r["bid"], r["ask"])
-            for lo, hi in DECILES:
-                if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
-                a = r["ask"]
-                CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y, r["slug"]))
-                STOCK[(lg, mt)][2].add(r["gid"])
-        print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls")
+    if lg not in LEAGUES: DROP[f"{lg}: not in core.leagues"] += 1
+
+# ★ ONE QUERY FOR ALL THIRTEEN PATTERNS. It used to be one per pattern, and the
+# table is read TWICE per query (the kickoff CTE and the close), so that was 26
+# full passes over a 57 GB table -- ~1.1 TB of disk reads per run on a box with
+# 7 GB of RAM and 128 MB of shared_buffers, where nothing can be cached. Nine of
+# the thirteen patterns returned fifteen rows or fewer and each still paid two
+# full scans. `LIKE ANY` scans once and tests every row against all of them:
+# planner cost 5,630,712 against 13 x 4,671,180 = 60.7M, so 2 passes and ~84 GB.
+with eng.connect() as c:
+    args = {"pats": [p for _, p in PATS]} | ({"since": SINCE} if SINCE else {})
+    allrows = [dict(r._mapping) for r in c.execute(text(CLOSE), args)]
+
+BY_PAT: dict = defaultdict(list)
+for r in allrows:
+    lg, pat = attribute(r["slug"])
+    BY_PAT[pat].append((lg, r))
+
+for lg, pat in PATS:
+    rows = BY_PAT.get(pat, [])
+    for _lg, r in rows:
+        mt = (r["mt"] or "?")
+        STOCK[(lg, mt)][0] += 1
+        if calls >= MAXCALLS: DROP["settlement calls hit MAXCALLS"] += 1; continue
+        y = settle(r["slug"]); calls += 1
+        if y is None: STOCK[(lg, mt)][1] += 1; continue
+        m = mid(r["bid"], r["ask"])
+        for lo, hi in DECILES:
+            if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
+            a = r["ask"]
+            CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y,
+                                        abs(m - (lo + 0.05))))   # |mid - decile centre|
+            STOCK[(lg, mt)][2].add(r["gid"])
+    # The floor rides on the SAME LINE as the count it produced. A reader
+    # cannot see "22,870 closes" without seeing what was excluded to get it.
+    # Per-pattern counts survive the rewrite on purpose: they are the only
+    # resolution at which the one-query form can be compared to the old one.
+    print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls"
+          f", since={SINCE or 'ALL (no floor)'}")
+
+if EXPECT:
+    # Same tape, same floor, or this means nothing -- see EXPECT.
+    off = {p: (len(BY_PAT.get(p, [])), n) for p, n in EXPECT.items()
+           if len(BY_PAT.get(p, [])) != n}
+    if off:
+        raise SystemExit("SCAN_EXPECT mismatch (got, expected): "
+                         + ", ".join(f"{p} {g} != {e}" for p, (g, e) in sorted(off.items())))
+    print(f"  equivalence: {len(EXPECT)} pattern counts reproduce the reference run exactly")
 settlements.save(CACHE)
 if not CELLS:
     raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")
@@ -194,10 +342,12 @@ scored, excluded, pb_rows = [], [], []
 for key, bets in sorted(CELLS.items()):
     m, se, n, G, ge = clustered([100 * b[0] for b in bets], [b[1] for b in bets])
     # PRIMARY, and it needs no exclusion: a degenerate cell gets a legitimate p here.
-    one_per_game = {}
-    for b in sorted(bets, key=lambda x: x[5]): one_per_game.setdefault(b[1], b)
-    tr = [(min(max(b[3] + fee(b[3]), 1e-9), 1 - 1e-9), 1 if b[4] == 1 else 0)
-          for b in one_per_game.values() if b[4] in (0, 1)]
+    # one trial per GAME, and within a game the rung NEAREST THE DECILE CENTRE (index 5).
+    best = {}
+    for bb in bets:
+        if bb[1] not in best or bb[5] < best[bb[1]][5]: best[bb[1]] = bb
+    tr = [(min(max(bb[3] + fee(bb[3]), 1e-9), 1 - 1e-9), 1 if bb[4] == 1 else 0)
+          for bb in best.values() if bb[4] in (0, 1)]
     if tr:
         pv, kk, gt = poisson_binomial_p(tr)
         pb_rows.append(dict(key=key, p=pv, k=kk, G=gt, n=n, dropped=n - gt, mean=m,
@@ -229,25 +379,21 @@ print(f"  {'league':12} {'market type':40} {'closes':>7} {'unsettled':>10} {'gam
 for (lg, mt), (tot, uns, gs) in sorted(STOCK.items(), key=lambda x: -len(x[1][2])):
     if tot >= 10: print(f"  {lg:12} {mt[:40]:40} {tot:>7,} {uns:>10,} {len(gs):>6}")
 
+m_eff = len(scored)
 print(f"\n{'='*100}\nPRIMARY: POISSON-BINOMIAL, ONE TRIAL PER GAME (no exclusion needed)\n{'='*100}")
 bp = sorted(r["p"] for r in pb_rows)
 if bp:
-    print(f"  cells scored {len(bp)}   p<0.05: {sum(x < 0.05 for x in bp)}"
-          f" (null {0.05*len(bp):.1f})   p<0.01: {sum(x < 0.01 for x in bp)}"
-          f" (null {0.01*len(bp):.1f})   min p {bp[0]:.2e}")
-    print(f"  Bonferroni at m_eff={len(bp)} needs p < {0.05/len(bp):.2e};"
+    print(f"  cells {len(bp)}   p<0.05: {sum(x < 0.05 for x in bp)} (null {0.05*len(bp):.1f})"
+          f"   p<0.01: {sum(x < 0.01 for x in bp)} (null {0.01*len(bp):.1f})   min p {bp[0]:.2e}")
+    print(f"  Bonferroni at m={len(bp)} needs p < {0.05/len(bp):.2e};"
           f" cells clearing it: {sum(x < 0.05/len(bp) for x in bp)}")
-    print(f"  {'cell':50} {'k/G':>8} {'rate':>7} {'b/e':>7} {'p':>10} {'rungs':>6}")
-    print(f"  {'':50} {'':>8} {'':>7} {'':>7} {'':>10} {'dropped':>6}")
+    print(f"  {'cell':50} {'k/G':>8} {'rate':>7} {'b/e':>7} {'p':>10} {'rungs':>7}")
     for r in sorted(pb_rows, key=lambda x: x["p"])[:10]:
-        lg, mt, lo = r["key"]
-        print(f"  {lg + ' ' + mt[:32] + ' ' + format(lo, '.1f'):50} "
+        lg2, mt2, lo2 = r["key"]
+        print(f"  {lg2 + ' ' + mt2[:32] + ' ' + format(lo2, '.1f'):50} "
               f"{str(r['k'])+'/'+str(r['G']):>8} {r['k']/r['G']:7.1%} {r['be']:7.1%} "
-              f"{r['p']:10.2e} {r['dropped']:>6}")
-
-m_eff = len(scored)
-print(f"\n{'='*100}\nSECONDARY: THE t DISTRIBUTION, degenerate cells EXCLUDED FIRST\n{'='*100}")
-print("  pre-exclusion figures are NOT comparable to these and must not be quoted beside them")
+              f"{r['p']:10.2e} {r['dropped']:>7}")
+print(f"\n{'='*100}\nTHE PRIMARY RESULT: THE DISTRIBUTION\n{'='*100}")
 print(f"  m_eff = {m_eff} scored cells (YES side only; the NO twin is -t by identity, so the")
 print(f"          cell count is NOT the multiplicity -- see the module docstring)")
 if m_eff < 2: raise SystemExit("NO DATA: fewer than two scorable cells")
@@ -284,15 +430,52 @@ for key, n, G, why in excluded: print(f"  {str(key):58} n={n:<5} G={G:<4} {why}"
 print(f"  excluded {len(excluded)} of {len(CELLS)} cells")
 for k in sorted(DROP): print(f"  NOTE {k}: {DROP[k]}")
 
+def _plain(o):
+    """numpy/scipy scalars -> python, and NOTHING else silently.
+
+    ★ THE 05:28Z RUN OF 2026-09-14 DIED HERE. `p_lt_01` is
+    `sum(p < 0.01 for p in ps)` over scipy p-values, which is a numpy int64,
+    and `json.dump` raised `Object of type int64 is not JSON serializable`
+    after 225 bytes -- so CELLS_JSON was left as TRUNCATED, UNPARSEABLE JSON
+    that still had a plausible size and a fresh mtime. The scan exited 1 as its
+    contract promises, but the artifact it left behind was worse than no file.
+    Narrow on purpose: anything without `.item()` still raises, so a genuine
+    unserialisable object is not swallowed.
+    """
+    if hasattr(o, "item"):
+        return o.item()
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
+def _write_json(path: str, payload) -> None:
+    """Write via a temp file and rename, so a crash leaves the OLD file.
+
+    The idiom is lifted from `core/settlements.py`, which has had it for weeks --
+    a partial artifact that looks complete is the failure mode both of these
+    guard against, and only one of them was doing it.
+    """
+    import tempfile
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(payload, fh, default=_plain)
+        os.replace(tmp, path)
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
+
+
 if os.environ.get("ROWS_JSON"):                 # the permutation null consumes the INPUTS
-    with open(os.environ["ROWS_JSON"], "w") as fh:
-        json.dump([{"lg": k[0], "mt": k[1], "dec": k[2], "game": b[1], "bid": b[2],
-                    "ask": b[3], "y": b[4]} for k, bs in CELLS.items() for b in bs], fh)
+    _write_json(os.environ["ROWS_JSON"],
+                [{"lg": k[0], "mt": k[1], "dec": k[2], "game": b[1], "bid": b[2],
+                  "ask": b[3], "y": b[4]} for k, bs in CELLS.items() for b in bs])
     print(f"\n  wrote ROWS_JSON {os.environ['ROWS_JSON']}"
           f" ({sum(len(v) for v in CELLS.values()):,} bet inputs)")
 if os.environ.get("CELLS_JSON"):
-    with open(os.environ["CELLS_JSON"], "w") as fh:
-        json.dump({"run": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%dT%H:%MZ}", "m_eff": m_eff,
+    _write_json(os.environ["CELLS_JSON"], {"run": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%dT%H:%MZ}", "m_eff": m_eff,
                    "var_t": vt, "var_t_null_baseline": base, "hc": hc, "max_abs_t": mx,
                    "null_expected_max": enull, "p_lt_01": sum(p < 0.01 for p in ps),
                    "p_lt_01_expected": 0.01 * m_eff, "cells_excl_zero": nz,
@@ -301,7 +484,7 @@ if os.environ.get("CELLS_JSON"):
                                 for k, n, G, w in excluded],
                    "cells": [{"lg": s2["key"][0], "mt": s2["key"][1], "dec": s2["key"][2],
                               "mean_cents": s2["mean"], "t": s2["t"], "p": s2["p"],
-                              "n": s2["n"], "G": s2["G"], "g_eff": s2["ge"]} for s2 in scored]}, fh)
+                              "n": s2["n"], "G": s2["G"], "g_eff": s2["ge"]} for s2 in scored]})
     print(f"  wrote CELLS_JSON {os.environ['CELLS_JSON']} ({m_eff} scored cells)")
 
 print(f"\n{'='*100}\nAPPENDIX: every cell, never the best one. Statistics above ran on the")
