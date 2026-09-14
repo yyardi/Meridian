@@ -133,6 +133,13 @@ def check_containers() -> list[Check]:
         # Cricket signal side (core.feeds.espn_cricket_recorder): toss,
         # innings, result of every match ESPN lists, change-detected rows.
         "meridian-cricket-espn-recorder": "cricket ESPN feed (toss/innings/result)",
+        # Kalshi's NON-SPORTS board (2026-09-14): tennis challengers, crypto
+        # ladders, weather. A SIBLING of meridian-kalshi-recorder, not a
+        # replacement — that one records the nine sports series and cannot
+        # reach these (kalshi_games needs a team pair and a Polymarket twin).
+        # Beats as kalshi_events_recorder.
+        "meridian-kalshi-events-recorder": "Kalshi non-sports board "
+                                           "(tennis/crypto/weather, recording only)",
     }
     try:
         out = subprocess.run(
