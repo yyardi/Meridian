@@ -92,24 +92,52 @@ def _engine():
         cur = dbapi_conn.cursor(); cur.execute("SET max_parallel_workers_per_gather = 0"); cur.close(); dbapi_conn.commit()
     return eng
 
-# Settled games with a venue id: finals from backfill (CFB) or the last live
-# game_state row (CFB live-only + NFL); kickoff from the first play if any.
+# Settled games with a venue id: finals from backfill (CFB) or the live
+# game_state table (CFB live-only + NFL); kickoff from the first play if any.
+#
+# `period >= 4` WAS THROWING AWAY THE FINAL. ESPN drops `period` on the final
+# row: of 107 CFB games observed at `post`, 101 carry period NULL, and 9 of 10
+# NFL. So `WHERE period >= 4` excluded the post row for ~94% of games that had
+# one, and DISTINCT ON then took the last IN-GAME row instead — a pre-whistle
+# score for a game whose true final was sitting in the same table. Measured
+# 2026-09-14 on the games reaching this query by the live route: 89 CFB and 8
+# NFL games had reached `post` and were being read from an `in` row anyway.
+#
+# A pre-whistle score is too LOW, which settles a total UNDER when the real
+# total may have cleared, and `cfb_total_under_all` is a registered strategy
+# this flatters. So the ordering now PREFERS `state = 'post'` and, among post
+# rows, takes the LAST — the rule on CfbGameState's own docstring — and falls
+# back to a period>=4 row only when no post row exists.
+#
+# `src` says which route each final came from so the caller can count them.
+# Whether an unconfirmed game should be settled from the proxy AT ALL is a
+# strategy decision and is NOT taken here; `collect_mlb` in this same file
+# already skips-and-counts rather than guessing, which is the precedent.
+#: The live-table final, extracted so it can be TESTED. GAMES_SQL as a whole
+#: cannot be: it reads `espn_cfb_backfill_games`, which has no Alembic
+#: migration and no model — it is created by `archive/cfb/backfill_cfb.py`
+#: and exists only where that was run, so a migrated schema does not have it.
+LIVE_FINALS_SQL = """
+  SELECT DISTINCT ON (game_id) game_id eg, home_score h, away_score a, league lg,
+         CASE WHEN state = 'post' THEN 'post' ELSE 'proxy' END src
+  FROM espn_cfb_game_state WHERE home_score IS NOT NULL AND league IN ('cfb','nfl')
+    AND (state = 'post' OR period >= 4)
+  ORDER BY game_id, (state = 'post') DESC, first_seen_at DESC
+"""
+
 GAMES_SQL = """
 WITH bf AS (
-  SELECT g.game_id eg, g.home_score h, g.away_score a, 'cfb' lg
+  SELECT g.game_id eg, g.home_score h, g.away_score a, 'cfb' lg, 'backfill' src
   FROM espn_cfb_backfill_games g WHERE g.home_score IS NOT NULL AND g.away_score IS NOT NULL),
-lv AS (
-  SELECT DISTINCT ON (game_id) game_id eg, home_score h, away_score a, league lg
-  FROM espn_cfb_game_state WHERE home_score IS NOT NULL AND league IN ('cfb','nfl')
-    AND period >= 4
-  ORDER BY game_id, first_seen_at DESC),
+lv AS (""" + LIVE_FINALS_SQL + """),
 fin AS (SELECT * FROM bf UNION ALL SELECT * FROM lv WHERE eg NOT IN (SELECT eg FROM bf)),
 ko AS (
   SELECT game_id eg, min(wall_clock) ko FROM espn_cfb_backfill_plays WHERE wall_clock IS NOT NULL GROUP BY 1
   UNION ALL
   SELECT game_id, min(wall_clock) FROM espn_cfb_live_plays WHERE wall_clock IS NOT NULL
     AND game_id NOT IN (SELECT game_id FROM espn_cfb_backfill_plays WHERE wall_clock IS NOT NULL) GROUP BY 1)
-SELECT m.venue_game_id vg, m.espn_game_id eg, m.event_slug, f.h, f.a, f.lg, k.ko
+SELECT m.venue_game_id vg, m.espn_game_id eg, m.event_slug, f.h, f.a, f.lg,
+       f.src, k.ko
 FROM cfb_game_map m JOIN fin f ON f.eg = m.espn_game_id
 LEFT JOIN ko k ON k.eg = m.espn_game_id
 WHERE m.venue_game_id IS NOT NULL
@@ -315,7 +343,7 @@ def main_football():
                 if y is None:
                     continue
                 r.update(vg=g["vg"], lg=g["lg"], y=y, ttk_min=(ko - r["captured_at"]).total_seconds() / 60,
-                         event_slug=g["event_slug"])
+                         event_slug=g["event_slug"], final_src=g["src"])
                 rows.append(r)
 
     print(f"settled mapped games {len(games)}  (kickoff from plays for {len(games) - no_ko - no_start}, "
@@ -324,7 +352,22 @@ def main_football():
         ko_gap.sort()
         print(f"ESPN first play vs venue game_start_time, minutes: median {ko_gap[len(ko_gap)//2]:.0f}  "
               f"p90 {ko_gap[int(len(ko_gap)*0.9)]:.0f}  max {ko_gap[-1]:.0f}")
+    # WHERE EACH FINAL CAME FROM. 'proxy' is a pre-whistle score: the game
+    # never reached `post`, so the total is a lower bound and a totals market
+    # settles UNDER more often than the truth. PRINTED, not excluded --
+    # excluding is a strategy decision (see the GAMES_SQL note). Whoever reads
+    # a verdict off this run should read this line first.
+    src_games = defaultdict(set)
+    for g in games: src_games[g["src"]].add(g["vg"])
+    print("  finals by route: " + "  ".join(
+        f"{k} {len(v)}" for k, v in sorted(src_games.items()))
+        + ("   <-- 'proxy' is PRE-WHISTLE, biased toward UNDER"
+           if src_games.get("proxy") else ""))
     print(f"markets with a pregame close and a derived settlement: {len(rows):,}")
+    src_rows = defaultdict(int)
+    for r in rows: src_rows[r["final_src"]] += 1
+    print("  markets by route: " + "  ".join(
+        f"{k} {v:,}" for k, v in sorted(src_rows.items())))
     by_lg = defaultdict(set)
     for r in rows: by_lg[r["lg"]].add(r["vg"])
     print("  games by league: " + "  ".join(f"{k} {len(v)}" for k, v in sorted(by_lg.items())))
