@@ -47,7 +47,14 @@ DIST=$(grep -A5 "=== DISTRIBUTION" "$F" | grep -E "cells excluding|Var\(t\)|max\
 # exists to break -- the numbers win that fight against a caveat in the same 480 chars.
 # What goes in this slot is the only per-cell fact that means anything before stage 2:
 # how many cleared the nomination bar. Usually 0. When it is not, THAT is worth a push.
-NOM=$(grep -cE "NOMINATED" "$F" 2>/dev/null || echo 0)
+# ★ NO `|| echo 0` HERE. `grep -c` PRINTS "0" AND RETURNS 1 when nothing
+# matches, so the fallback appended a SECOND zero and this expanded to
+# "0\n0", rendering the push as:
+#     0
+#     0 cells cleared the nomination bar
+# on every healthy null night. `grep -c` always prints a count, so the only
+# case needing a default is a missing file, which gives an empty string.
+NOM=$(grep -cE "NOMINATED" "$F" 2>/dev/null); NOM=${NOM:-0}
 COV=$(grep -E "^markets with a pregame close|^settled |^cells scored" "$F" | tr '\n' ' ' | cut -c1-120)
 
 # ★ THE 05:28Z RUN OF 2026-09-14 EXITED 1 (a json.dump TypeError) and this block
@@ -56,10 +63,34 @@ COV=$(grep -E "^markets with a pregame close|^settled |^cells scored" "$F" | tr 
 # the operator actually looks. A count over a table that was never written is not
 # zero, it is absent, so on a non-zero exit the body says so and carries the last
 # line of the traceback. The nomination line is only earned by a completed run.
+# ★ TWO MORE SHAPES, FOUND BY RUNNING THIS BLOCK AGAINST SIX ARTIFACTS.
+#
+# 1. `raise SystemExit("msg")` PRINTS NO EXCEPTION NAME. Python writes the bare
+#    message, so `^...(Error|Exception):` never matches and the push said "no
+#    exception line in the artifact" while the artifact's last line stated the
+#    reason in plain English. Every guard in run_scan.py exits that way -- NO
+#    DATA, the SCAN_SINCE boundary refusal, the SCAN_EXPECT mismatch,
+#    like_to_needle, the ambiguous-slug check -- so the SIX most likely failures
+#    all threw their reason away. Falls back to the artifact's last real line.
+#
+# 2. EXIT 0 HAVING WRITTEN NOTHING read as a healthy null night: blank coverage,
+#    blank distribution, then "0 cells cleared the nomination bar" and the null
+#    caveat -- the exact sentence this block was changed to stop printing.
+#    Reachable: `python - < cfb/run_scan.py` on an EMPTY or truncated file reads
+#    nothing, runs nothing and exits 0. A count over a table that was never
+#    written is not zero whether the exit code is 1 or 0, so the nomination line
+#    is earned by the CELL TABLE being present, not by the exit code.
+DONE=$(grep -c "=== DISTRIBUTION" "$F" 2>/dev/null); DONE=${DONE:-0}
+LAST=$(grep -vE "^exit [0-9]+$" "$F" 2>/dev/null | grep -vE "^[[:space:]]*$" | tail -1 | cut -c1-140)
 if [ "$RC" -ne 0 ]; then
   ERR=$(grep -E "^[A-Za-z_.]*(Error|Exception):" "$F" | tail -1 | cut -c1-140)
   BODY="SCAN FAILED exit $RC -- no cell table, no nomination count
-${ERR:-no exception line in the artifact}
+${ERR:-${LAST:-no exception line in the artifact}}
+$COV
+full table: $F"
+elif [ "$DONE" -eq 0 ]; then
+  BODY="SCAN INCOMPLETE exit 0 -- it wrote no cell table, so there is no count
+${LAST:-the artifact is empty}
 $COV
 full table: $F"
 else
