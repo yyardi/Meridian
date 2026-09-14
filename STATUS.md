@@ -21,6 +21,15 @@ SQL
 and future rows cluster together rather than separately. Skip it if you would rather not:
 it recovers one sweep, not a dataset.
 
+**Pre-rebuild check, verified 2026-09-14 00:05Z: the migrations are safe.** Every
+container in the paste runs `alembic upgrade head` on start, so a split migration
+graph would have failed the rebuild itself. Asked alembic directly against the prod
+database: **one head** (`b6e4d2f7a913`), prod currently stamped `e7b2c48f91d3`, so the
+rebuild applies tonight's two new tables (`paper_scalps`, `espn_cricket_events`) along a
+single path. (I raised this as an alarm off my own script, which reported three heads by
+regex-matching `down_revision` and missing the merge revisions that join them. The tool
+that owns the graph is the one to ask; my parser was not it.)
+
 ## 1. Commands you need to run — ON THE BOX (paste from the laptop; the 20:00Z run built everything on the laptop instead)
 
 ```bash
