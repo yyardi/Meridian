@@ -531,3 +531,36 @@ def test_a_named_bankroll_failure_is_a_503_with_its_reason(monkeypatch, exc_name
         f"{exc_name} gave {r.status_code}; a named condition must not arrive as "
         "an unhandled 500 with no reason")
     assert want in r.json()["detail"]
+
+
+def test_current_funnels_every_failure_into_bankroll_unavailable(monkeypatch):
+    """★ THIS FUNNEL IS WHAT PROTECTS FIVE CALL SITES, SO IT IS PINNED HERE.
+
+    `MissingCredentialsError` is a sibling of `BankrollUnavailable`, not a
+    subclass, so a handler naming only the latter cannot catch it. Five callers
+    do exactly that -- api.py's stake cap and bankroll block, pulse/live's
+    sizing read, shadow_run's refusal -- and they are all safe because they go
+    through `current()`, which ends in
+    `except Exception as exc: raise BankrollUnavailable(...)`.
+
+    Only `/api/bankroll?refresh=true` called `refresh()` directly, bypassing the
+    funnel, and that was the one site that returned a bare 500.
+
+    So the defect was correctly ONE site, established by tracing the funnel
+    rather than by pattern-matching sibling exceptions -- a sweep for "handler
+    catches one class sharing a base with others" returned 25 candidates and was
+    almost all noise, because RuntimeError is Python's generic base and not a
+    family. If this funnel is ever narrowed, those five callers break at once
+    and this test is the warning."""
+    from core import bankroll as B
+    from core.polymarket.client import MissingCredentialsError
+
+    def _boom(*a, **k):
+        raise MissingCredentialsError(["POLYMARKET_KEY_ID"])
+
+    monkeypatch.setattr(B, "refresh", _boom)
+    monkeypatch.setattr(B, "_stored_snapshot", lambda *a, **k: None, raising=False)
+    with pytest.raises(B.BankrollUnavailable) as e:
+        B.current(allow_fetch=True, max_age_seconds=0.0)
+    assert "POLYMARKET_KEY_ID" in str(e.value), (
+        "the funnel swallowed the reason as well as the type")
