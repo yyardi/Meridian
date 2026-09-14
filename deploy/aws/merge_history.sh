@@ -39,6 +39,36 @@ DC() { sudo -H -u meridian docker compose "$@"; }   # -H: without it HOME=/root
 SRC() { DC exec -T postgres psql -U meridian -d "$SRC_DB" -v ON_ERROR_STOP=1 "$@"; }
 DST() { DC exec -T postgres psql -U meridian -d "$DST_DB" -v ON_ERROR_STOP=1 "$@"; }
 
+# ★ "COULD NOT ASK" IS NOT "NOT THERE", and in a migration script that
+# distinction decides whether data moves. Five sites read table existence as
+# `DST -At -c "select to_regclass(...) is not null" | grep -q t` and then mapped
+# the result onto absent/present with `&&`, `||` or `if`. `set -o pipefail` is
+# on, so the STATUS correctly reflects a psql failure -- and the surrounding
+# logic still turned that failure into "the table is not there":
+#
+#   build_remap()  a psql blip made an EXISTING remap look absent (rebuild) and
+#                  a present parent look absent (silently return 1, remap
+#                  skipped) -- a partial migration that reports success.
+#   line 370       `|| continue` skipped a table.
+#   405 / 443      the `if` took the else branch.
+#
+# So the check is asked once, here, and a failure to ASK aborts instead of
+# answering. `exit` rather than `return`, because `set -e` is suspended for
+# commands in a condition context and a `return 1` would be read as "absent"
+# by the very caller this is protecting.
+table_exists() {   # $1 = schema-qualified table name
+  local out
+  if ! out=$(DST -At -c "select to_regclass('$1') is not null"); then
+    echo "FATAL: cannot query the database while checking whether $1 exists." >&2
+    echo "  Refusing to treat an unreachable database as an absent table --" >&2
+    echo "  that is how a migration silently skips data and reports success." >&2
+    exit 1
+  fi
+  [ "$out" = "t" ]
+}
+
+
+
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mFAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -285,8 +315,8 @@ FAIL=0
 
 build_remap() {   # $1 parent table  $2 parent natural key cols
   local parent="$1" pkeys="$2" name="remap_$1" on=""
-  DST -At -c "select to_regclass('$STAGE.$name') is not null" | grep -q t && return 0
-  DST -At -c "select to_regclass('$STAGE.$parent') is not null" | grep -q t || return 1
+  table_exists "$STAGE.$name" && return 0
+  table_exists "$STAGE.$parent" || return 1
   local IFS_SAVE="$IFS"; IFS=','
   # PLAIN EQUALITY, not IS NOT DISTINCT FROM. The NULL-safe operator cannot use
   # an index, so this join fell back to a nested loop: 121k staged predictions
@@ -367,7 +397,7 @@ log "3/6  merge everything except book_levels"
 for spec in "${TABLES[@]}"; do
   IFS='|' read -r tbl keys link parent <<< "$spec"
   [[ -n "$link" ]] && continue          # book_levels: needs the remap first
-  DST -At -c "select to_regclass('$STAGE.$tbl') is not null" | grep -q t || continue
+  table_exists "$STAGE.$tbl" || continue
   # FK columns are rewritten HERE, inside the INSERT's SELECT — not by an
   # UPDATE afterwards. A post-insert remap cannot work for a column with a
   # declared foreign key: the insert is refused before the fix can run.
@@ -402,7 +432,7 @@ log "4/6  remap book_levels.snapshot_id — AFTER the parent merge, not before"
 #
 # The 33-minute lesson: this join is millions of rows on both sides and is
 # unusable without indexes. Build, index, ANALYZE, then join.
-if DST -At -c "select to_regclass('$STAGE.book_levels') is not null" | grep -q t; then
+if table_exists "$STAGE.book_levels"; then
   DST -c "CREATE TABLE $STAGE.snap_map (old_id bigint, market_slug text, captured_at timestamptz);" >/dev/null
   DC exec -T postgres sh -c \
     "psql -U meridian -d $SRC_DB -c \"COPY (SELECT id, market_slug, captured_at FROM public.market_snapshots) TO STDOUT\" | psql -U meridian -d $DST_DB -c \"COPY $STAGE.snap_map FROM STDIN\"" >/dev/null
@@ -440,7 +470,7 @@ fi
 # --------------------------------------------------------------------------- #
 log "5/6  merge book_levels through the remap"
 # --------------------------------------------------------------------------- #
-if DST -At -c "select to_regclass('$STAGE.snap_remap') is not null" | grep -q t; then
+if table_exists "$STAGE.snap_remap"; then
   sel=$(DST -At -c "select string_agg(
                         case when column_name='snapshot_id' then 'r.new_id'
                              else 's.'||quote_ident(column_name) end,
