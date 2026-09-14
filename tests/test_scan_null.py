@@ -334,3 +334,69 @@ def test_higher_criticism_is_not_dead_on_ordinary_null_data():
             for _ in range(60)}
     assert len(vals) > 5, f"HC took only {len(vals)} distinct values: {vals}"
     assert max(vals) > 0.0, "HC is identically zero on null data"
+
+
+# --------------------------------------------------------------------- #
+# The m that every statistic is read against.
+# --------------------------------------------------------------------- #
+def test_the_reported_m_is_the_m_actually_scored():
+    """★ THE BUG THAT COST A STATISTIC ITS PROMOTION.
+
+    `score_cells` drops any cell with fewer than two bets, so on a tape
+    covering one league most of the registry never scores. The header reported
+    `len(select(rows))` — 29 — while the statistics were computed on 7. At
+    m=7, `int(0.25 * m) == 1`, so HC examined a SINGLE term, barely moved, and
+    I reported it as a dead statistic and asked for its promotion to be
+    stopped. The statistic was fine. The m was a fiction.
+
+    Every number in the report is read against m, so m has to be the one that
+    was used.
+    """
+    rows = _rows(n_games=60, seed=41)           # mlb only: most cells cannot score
+    null = N.null_distribution(rows, reps=20, seed=1)
+    assert null["cells_scored"] <= null["cells_selected"]
+    assert null["cells_scored"] == len(N.score_cells(rows, [r["y"] for r in rows])), (
+        "the reported m is not the number of cells actually scored")
+    assert not null["cells_scored_varied"], (
+        "the scored cell count moved between replicates, so a single m does "
+        "not describe this run")
+
+
+def test_higher_criticism_examines_more_than_one_term_at_small_m():
+    """int() truncation left exactly one term below m=8, which is how HC came
+    to look like a point mass. With one term it cannot respond to the COUNT of
+    small p-values, which is the only thing it is for."""
+    strong = [4.0, 3.5] + [0.1] * 5            # m=7, two clearly small p's
+    weak = [4.0] + [0.1] * 6                   # m=7, one
+    assert N.higher_criticism(strong) > N.higher_criticism(weak), (
+        "HC did not respond to a second small p-value at m=7 — it is still "
+        "reading a single term")
+
+
+def test_empirical_hc_has_no_ceiling_to_sit_on():
+    """★ The whole failure family, removed at the source. Empirical p-values
+    are bounded below by 1/(reps+1) BY CONSTRUCTION, so nothing explodes,
+    nothing is skipped, and no denominator is clamped — which is what gave the
+    clamped version a ceiling at alpha0*m that the permutation sat on."""
+    rows = _rows(n_games=120, seed=42)
+    null = N.null_distribution(rows, reps=60, seed=9)
+    observed = N.score_cells(rows, [r["y"] for r in rows])
+    hc = N.empirical_hc(observed, null)
+    m = null["cells_scored"]
+    ceiling = (m ** 0.5) * (max(2, int(0.25 * m)) / m) / ((1 / m) * (1 - 1 / m)) ** 0.5
+    assert hc < ceiling, f"empirical HC {hc:.2f} reached the clamped ceiling {ceiling:.2f}"
+    assert hc == hc
+
+
+def test_empirical_hc_moves_across_null_draws():
+    """A statistic with no spread cannot separate anything; that is the tell I
+    had on screen twice before computing the ceiling."""
+    rows = _rows(n_games=120, seed=43)
+    null = N.null_distribution(rows, reps=80, seed=10)
+    rng = random.Random(3)
+    chosen = N.select(rows)
+    vals = set()
+    for _ in range(30):
+        ys, _ = N.permute_settlements(rows, rng)
+        vals.add(round(N.empirical_hc(N.score_cells(rows, ys, chosen), null), 6))
+    assert len(vals) > 5, f"empirical HC took only {len(vals)} distinct values"
