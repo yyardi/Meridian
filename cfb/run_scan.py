@@ -130,6 +130,19 @@ if not CELLS:
 scored, excluded = [], []
 for key, bets in sorted(CELLS.items()):
     m, se, n, G, ge = clustered([100 * b[0] for b in bets], [b[1] for b in bets])
+    # DEGENERACY GUARD, before the G floor. A cell in which every bet settled the SAME
+    # WAY has no outcome variation, so the sandwich measures the cell's price dispersion
+    # rather than its risk, and the interval collapses toward zero width while the mean
+    # stays large. Measured 2026-09-14 on 22,870 closes: 16 of 324 cells were degenerate
+    # and they were ALL TWELVE of the top twelve by |t| -- max|t| 30.01 and Var(t) 17.282
+    # as printed, against 5.87 and 1.308 once removed. A sandwich cannot express this;
+    # the honest instrument is a binomial bound on the win count, so these are excluded
+    # from every distributional statistic and reported separately.
+    # the bet tuple is (pnl, game_id, bid, ask, y) -- the SETTLEMENT is index 4.
+    ys = {b[4] for b in bets}
+    if len(ys) < 2:
+        excluded.append((key, n, G, f"DEGENERATE: all {n} bets settled {next(iter(ys))} -- no outcome variation"))
+        continue
     if G < G_FLOOR or se in (0.0, float("inf")) or not math.isfinite(se):
         excluded.append((key, n, G, "G < 6 (power floor)" if G < G_FLOOR else "degenerate se"))
         continue
