@@ -694,6 +694,26 @@ the 2-second cycle that is roughly 73,000 evaluations across the slate and about
 it, ~13 per game. Clearing the gate is necessary and not sufficient; a trigger still has to fire
 inside that window.
 
+**0.23% is a CEILING, not an estimate.** I asked whether a replay reproduces on a live slate,
+since a replay knows what arrived and a live run does not. 7d found five ways the two differ and
+**all five make the replay optimistic**: a row is visible at COMMIT rather than at its stamp, the
+engine calls `now()` after its fetch rather than at the instant, a 2-second cycle can miss a
+sub-2-second window entirely, the replay contains only rows that were recorded so recorder
+downtime is invisible to it, and the dead time after a game's last play leaves the denominator and
+inflates the percentage. So the live rate can only come in **under** 0.23%.
+
+**The mechanism is the arrival process, not the polling.** A play's 30-second freshness window
+opens at its own wall clock, and it arrives a median 53 seconds later, so `[w, w+30)` is **already
+entirely in the past** when we first see it. A window only opens at all for the **6.3%** of NFL
+plays that arrive with a lag under 30 seconds, and is then 30-minus-lag seconds wide. The gate is
+not sampling a fresh stream too slowly; it is asking for a freshness this feed almost never
+produces.
+
+*(One figure did not reproduce: 7d reports 2,238 arrival stamps at a median gap of 1.6s, and my
+query over the same date gives 9,270 at 0.7s. The play-spacing figure matches exactly at 43.0s
+median, so this is a population difference -- almost certainly NFL-only against all leagues -- and
+not arithmetic. The mechanism rests on the lag distribution, which both of us measured the same.)*
+
 **Two things that fix does not reach tonight.** It needs a rebuild, and rebuilding this container
 runs `alembic upgrade head`, which advances the database and strands the containers built earlier
 today. **I am not rebuilding for tonight, because nothing is lost by waiting:** the plays and the
