@@ -694,6 +694,20 @@ the 2-second cycle that is roughly 73,000 evaluations across the slate and about
 it, ~13 per game. Clearing the gate is necessary and not sufficient; a trigger still has to fire
 inside that window.
 
+**The replay is now an instrument, not a query.** `cfb/run_gate_replay.py --league --since --until`
+reports **per game**, the only grouping the engine ever sees, and reads `MAX_AGE_S` from the
+engine's own `params_from_env` so it cannot drift from the thing it measures. Run against the
+baseline on prod at 21:20Z it reproduces exactly: 13 games, 40.62 live hours, **0.23%**, per game
+0.09% to 0.40%. It exists because comparing a fresh slate to a baseline only means anything if the
+population is built identically, and three false descriptions today came from re-deriving a query
+and quietly changing its grouping.
+
+7d verified it by a **second implementation** rather than by derivation: python interval arithmetic
+in age space against the SQL in timestamp space, identical to the decimal, and capable of
+disagreeing. And a mutation run caught a clamp they had written minutes earlier that **could not
+bind** -- the proof is now a comment where the clamp was, and the aggregate is unchanged at 0.23%
+after removing it, which is what establishes it was never doing anything.
+
 **0.23% is a CEILING, not an estimate.** I asked whether a replay reproduces on a live slate,
 since a replay knows what arrived and a live run does not. 7d found five ways the two differ and
 **all five make the replay optimistic**: a row is visible at COMMIT rather than at its stamp, the
