@@ -91,3 +91,55 @@ the inconsistent one.
 Which also corrects one thing worth correcting: `mlb_total_under_all` is
 **not** flattered by this defect. MLB settles from the venue and skips what
 the venue has not settled. Only the CFB/NFL side was ever exposed.
+
+---
+
+# Decided and implemented, 2026-09-14
+
+**Exclude and count, never settle from a proxy.** `usable_games()` drops
+finals whose route is `proxy` and returns the count; the run prints
+`EXCLUDED, no confirmed final (state != 'post'): N games`. The summary
+denominator moves with it — an exclusion that does not reach the line that
+reports it is how a summary starts lying.
+
+Why exclusion and not repair, stated where it will be read: on the eight
+unconfirmed games where a backfill final also exists the proxy was exact
+**8 of 8** — and **eight is the whole overlap population, not a sample of
+it.** The backfill is 55 games imported on one day against a live tape
+spanning ten, so the overlap is what exists rather than what was drawn. A
+complete population of eight cannot be extrapolated to the 42 games being
+dropped. That distinction is the reason the policy is exclusion.
+
+Five tests, each dead under its own mutation, including one that fires in
+the *other* direction: excluding on a slate where every final is confirmed
+must drop nothing.
+
+# Should the backfill dependency be retired? No — measure first
+
+| backfill games | also have a `post` row | **backfill ONLY** | totals disagree | all with a venue id |
+|---|---|---|---|---|
+| 55 | 11 | **44** | 1 | 55 |
+
+**44 of 55 games have no `post` row at all**, so a correct post-row filter
+does not supersede the backfill — it would lose 80% of what the table
+supplies. Those 44 are games that finished before the live recorder existed,
+which the live table can never acquire retrospectively.
+
+And the calibration is not its only consumer: every one of the 55 rows
+carries a DraftKings closing `spread`, which `cfb/run_making_touch.py` reads.
+Retiring the table would take a second consumer's input with it.
+
+So the recommendation inverts: **give it a model and a migration**, rather
+than retire it. Today it exists only where `archive/cfb/backfill_cfb.py` was
+run, it is absent from a migrated schema, and if it were lost nothing in the
+live tree could recreate it — 44 games and 55 closing spreads with no path
+back.
+
+One thing left undecided rather than quietly taken: **which source wins on
+the 11 games that have both.** `fin` still prefers backfill. The single
+disagreement (401856660: backfill 3-31, live 10-51 at period 4 with 0:15
+left) has the live row HIGHER, which truncation cannot explain, so the
+backfill is the wrong one there — 1 of 11. Preferring `post` over `backfill`
+for the overlap would resolve it in post's favour and change one game's
+settlement. That is a data-source decision, not a filter fix, and it is
+routed.
