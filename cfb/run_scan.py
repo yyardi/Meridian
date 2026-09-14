@@ -44,11 +44,19 @@ from its own pass, and the decile detail is only opened where the stock supports
 G FLOOR = 6, the registered value, for POWER not validity. **Every excluded cell is printed
 with its reason** -- silent exclusion is how a family shrinks without anyone deciding to.
 
+NIGHTLY CONTRACT (scripts/nightly_scan.sh runs this at 04:40Z):
+  * exits NON-ZERO on any failure, so a silent empty night is impossible;
+  * writes CELLS_JSON (the scored cells) and ROWS_JSON (the per-bet INPUTS, not
+    outputs -- slug, game, bid, ask, y -- so the permutation null can reshuffle
+    settlements within games and recompute, rather than trusting our pnl);
+  * needs NO warm settlement cache: it builds the cache as it goes and saves it,
+    so the first run on a cold cache is slow but complete, never partial.
+
 RUN prod read-only, one pass (the box carries sweeps), env flags INSIDE docker run:
   scripts/prod_weekend_read.sh V=() with the API image and the checkout mounted.
 Nothing is placed. Nothing here decides anything.
 """
-import datetime as dt, math, os, sys
+import datetime as dt, json, math, os, sys
 from collections import defaultdict
 
 from scipy.stats import t as tdist
@@ -115,6 +123,8 @@ for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis"):
                 STOCK[(lg, mt)][2].add(r["gid"])
         print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls")
 settlements.save(CACHE)
+if not CELLS:
+    raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")
 
 # ---- cells, then the distribution -------------------------------------------------------
 scored, excluded = [], []
@@ -171,6 +181,26 @@ print(f"\n{'='*100}\nEXCLUDED CELLS, every one with its reason (silent exclusion
 for key, n, G, why in excluded: print(f"  {str(key):58} n={n:<5} G={G:<4} {why}")
 print(f"  excluded {len(excluded)} of {len(CELLS)} cells")
 for k in sorted(DROP): print(f"  NOTE {k}: {DROP[k]}")
+
+if os.environ.get("ROWS_JSON"):                 # the permutation null consumes the INPUTS
+    with open(os.environ["ROWS_JSON"], "w") as fh:
+        json.dump([{"lg": k[0], "mt": k[1], "dec": k[2], "game": b[1], "bid": b[2],
+                    "ask": b[3], "y": b[4]} for k, bs in CELLS.items() for b in bs], fh)
+    print(f"\n  wrote ROWS_JSON {os.environ['ROWS_JSON']}"
+          f" ({sum(len(v) for v in CELLS.values()):,} bet inputs)")
+if os.environ.get("CELLS_JSON"):
+    with open(os.environ["CELLS_JSON"], "w") as fh:
+        json.dump({"run": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%dT%H:%MZ}", "m_eff": m_eff,
+                   "var_t": vt, "var_t_null_baseline": base, "hc": hc, "max_abs_t": mx,
+                   "null_expected_max": enull, "p_lt_01": sum(p < 0.01 for p in ps),
+                   "p_lt_01_expected": 0.01 * m_eff, "cells_excl_zero": nz,
+                   "cells_excl_zero_expected": 0.05 * m_eff, "pair_sd": sd_pair,
+                   "excluded": [{"key": list(map(str, k)), "n": n, "G": G, "why": w}
+                                for k, n, G, w in excluded],
+                   "cells": [{"lg": s2["key"][0], "mt": s2["key"][1], "dec": s2["key"][2],
+                              "mean_cents": s2["mean"], "t": s2["t"], "p": s2["p"],
+                              "n": s2["n"], "G": s2["G"], "g_eff": s2["ge"]} for s2 in scored]}, fh)
+    print(f"  wrote CELLS_JSON {os.environ['CELLS_JSON']} ({m_eff} scored cells)")
 
 print(f"\n{'='*100}\nAPPENDIX: every cell, never the best one. Statistics above ran on the")
 print(f"deduplicated YES set; the NO twin of each row is -t by identity.\n{'='*100}")
