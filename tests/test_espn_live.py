@@ -175,19 +175,43 @@ def test_one_cycle_writes_all_five_tables():
     assert seen is not None and seen >= NOW - dt.timedelta(minutes=5)
 
 
+#: Tables a re-poll must NOT grow, and the count one cycle produces.
+_IDEMPOTENT = {"espn_live_plays": 40, "espn_live_win_probability": 10,
+               "espn_live_injury_observations": 8, "espn_live_player_snapshots": 12}
+
+
 def test_repolling_is_idempotent_where_it_must_be():
-    """Plays, win probability and injuries never duplicate; box snapshots
-    grow one per poll BECAUSE the cadence is the data; players respect the
-    slow cadence."""
+    """Plays, win probability and injuries never duplicate; box snapshots grow
+    one per poll BECAUSE the cadence is the data; players respect the slow
+    cadence.
+
+    ★ COMPARED ACROSS CYCLES, NOT PINNED AFTER TWO. The injury line used to read
+    `_count(x) == _count(x)` -- the same call on both sides, always true, so the
+    "injuries never duplicate" half of this test's own docstring was untested.
+    Repairing it to `== 8` would have been the smaller fix and still the wrong
+    one: a total after two cycles cannot tell idempotent from duplicating, since
+    8 written once and 4 written twice both land on 8. The invariant is that the
+    SECOND cycle adds nothing, so both counts are taken and compared. The
+    absolute numbers stay beside them, because they are what catches a
+    FakeESPN fixture drifting out from under the test -- a separate failure that
+    the cross-cycle check alone would not notice.
+    """
     r = _recorder(FakeESPN())
     r.cycle()
+    one = {t: _count(t) for t in _IDEMPOTENT} | {"box": _count("espn_live_box_snapshots")}
     r.cycle()
-    assert _count("espn_live_plays") == 40                 # append-only
-    assert _count("espn_live_win_probability") == 10
-    assert _count("espn_live_injury_observations") == _count(
-        "espn_live_injury_observations")
-    assert _count("espn_live_box_snapshots") == 2          # one per poll
-    assert _count("espn_live_player_snapshots") == 12      # 60s cadence held
+
+    for table, expected in _IDEMPOTENT.items():
+        assert one[table] == expected, f"{table}: fixture drift, one cycle gave {one[table]}"
+        assert _count(table) == one[table], (
+            f"{table} grew {one[table]} -> {_count(table)} on a re-poll: "
+            "the second cycle duplicated rows it should have recognised")
+
+    # Box snapshots are the exception and must GROW -- one per poll, because
+    # here the cadence IS the data. Asserted as growth, so a recorder that
+    # started deduplicating them would fail rather than look tidier.
+    assert one["box"] == 1
+    assert _count("espn_live_box_snapshots") == 2
 
 
 def test_a_game_leaving_the_live_set_gets_one_final_sweep():

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import math
 import random
 import sys
 
@@ -333,7 +334,7 @@ def test_higher_criticism_does_not_explode_on_a_tiny_p_value():
     ts = [rng.gauss(0, 1) for _ in range(199)] + [12.0]
     hc = N.higher_criticism(ts)
     assert hc < 50.0, f"HC exploded to {hc:.1f} on one extreme cell"
-    assert hc == hc, "HC is NaN"
+    assert not math.isnan(hc), "HC is NaN"
 
 
 def test_higher_criticism_still_moves_when_it_should():
@@ -407,7 +408,7 @@ def test_empirical_hc_has_no_ceiling_to_sit_on():
     m = null["cells_scored"]
     ceiling = (m ** 0.5) * (max(2, int(0.25 * m)) / m) / ((1 / m) * (1 - 1 / m)) ** 0.5
     assert hc < ceiling, f"empirical HC {hc:.2f} reached the clamped ceiling {ceiling:.2f}"
-    assert hc == hc
+    assert not math.isnan(hc)
 
 
 def test_empirical_hc_moves_across_null_draws():
