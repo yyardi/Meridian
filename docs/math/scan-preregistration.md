@@ -43,6 +43,11 @@ level.** And table tennis, the only one close, is **dyadic**: its effective
 sample caps at `P/(2ρ)`, giving a best-ever MDE of **4.1¢ at ρ=0.05 and 10.1¢ at
 ρ=0.30 — never below its 2.72¢ hurdle** unless the player pool grows.
 
+**Rate is not stock.** The 109 cell-G/week for table tennis is an **accrual
+rate**; the **settled stock is ~35**, because 91–100% of listed TT markets have
+not started at any moment. **A scan run this week gets the stock, not the rate.**
+Weight the grid on settled counts, never on a projection.
+
 > **This must be stated in every write-up: after eight weeks the programme can
 > rule out edges above roughly 5–15¢ depending on family. It cannot rule out
 > edges between the hurdle and that bound. "We found nothing" and "nothing is
@@ -109,16 +114,55 @@ smallest p and record how many were dropped.
 **This is where the programme has real power**, because it pools across cells
 what the per-cell tests divide.
 
-Under "a fraction ε of cells carry non-centrality μ", `Var(t) = 1 + ε·μ²`:
+### ⚠ Var(t) has NO fixed null baseline — the baseline is a function of G
+
+**A cluster-robust t is referenced to t(G−1), whose variance under the pure null
+is `(G−1)/(G−3)`, not 1.** At the cell sizes this scan actually produces:
+
+| G | null Var(t) |
+|---:|---:|
+| 10 | **1.286** |
+| 12 | 1.222 |
+| 25 | 1.091 |
+| 30 | **1.074** |
+| 79 | 1.026 |
+
+**Week-one cell G is CFB spread 30, NFL spread 11, MLB winner 10** (§0). So a
+scan with **no edge anywhere** produces Var(t) ≈ **1.07–1.29** depending on the
+family mix. An uncorrected reading of "Var = 1.18 means ten real cells" is
+**indistinguishable from the null's own output.**
+
+> **REGISTERED: Var(t) is never reported alone. It is always printed beside
+> `baseline = mean over cells of (G−1)/(G−3)`, and only the EXCESS
+> `Var(t) − baseline` is interpretable.** The increments below are excesses over
+> that baseline, not absolute values.
 
 | real cells (of 500) | μ=2 | μ=3 | μ=4 |
 |---:|---:|---:|---:|
-| 5 | 1.040 | 1.090 | 1.160 |
-| **10** | 1.080 | **1.180** | 1.320 |
-| 25 | 1.200 | 1.450 | 1.800 |
+| 5 | +0.040 | +0.090 | +0.160 |
+| **10** | +0.080 | **+0.180** | +0.320 |
+| 25 | +0.200 | +0.450 | +0.800 |
 
-> **Ten cells at μ=3 give Var(t)=1.18 — detectable — while not one of those
-> cells clears the m=500 bar of 3.89. The pool sees what the parts cannot.**
+> **Ten cells at μ=3 give an excess of +0.18 — detectable — while not one of
+> those cells clears the m=500 bar of 3.89. The pool sees what the parts
+> cannot.** That claim survives the correction; only its baseline moves.
+
+### Two further consequences of the same fact
+
+**Var(t) is undefined below G=6.** The sampling variance of a variance needs a
+finite fourth moment, and t(ν) has one only for **ν > 4**. A cell with **G ≤ 5
+makes the statistic infinite-variance, not merely noisy** — so the G floor of §3
+is required by the *distributional* statistic, not only by per-cell power.
+
+**And its SE is inflated by t's heavy tails**, by `√((κ−1)/2)` — **1.26× at
+G=10**, 1.06× at G=30. Another reason the permutation null, not theory, sets the
+reference.
+
+> **Because of all this, HIGHER CRITICISM is promoted to the PRIMARY statistic
+> and Var(t) demoted to secondary.** HC operates on p-values, which are uniform
+> under the null **regardless of G** provided each cell's p is computed against
+> its own t(G−1). **HC is automatically calibrated across a ragged-G scan where
+> Var(t) is not.**
 
 ### The statistic
 
@@ -173,17 +217,40 @@ reported first every week.**
 A cell is **reported** but **not scored, not counted in m, and not eligible for
 nomination** if any of the following holds.
 
-1. **Exact complement.** Its row set is identical to another cell's with the
-   opposite side. `pnl_A + pnl_B = −(spread + both fees)`, a constant, so the
-   pair is one statistic. **Five such pairs are already labelled.** Detect by
-   probing the rules over a price grid and comparing selected row sets — a
-   complement is invisible in source and obvious in its selection.
+1. **Exact complement — and this collapses the SIDE AXIS of the whole grid.**
+   `net_YES = y − a − f(a)` and `net_NO = b − y − f(b)`, so
+   **`net_NO = −net_YES + c`** with `c = −(spread + both fees)`, a per-market
+   constant. A YES cell and its NO cell are **the same markets**, so
+   **`t_NO ≈ −t_YES`**, every deviation is counted twice, and Higher Criticism
+   sees each real cell as a matched `p` and `1−p`.
+
+   > **REGISTERED: score ONE side per (market, bucket); print the twin by
+   > identity. `m_eff ≈ 250`, not 500, which hands back 0.17σ on the threshold
+   > for free.**
+
+   The count-excluding-zero null band widens by **√2, not 2**: 250 pairs each
+   contributing 0 or 2 gives sd **6.89** against the naive **4.87**
+   (95%: 25 ± 13.5 versus 25 ± 9.6). **√2 is an upper bound** — the constant `c`
+   shifts `t_NO` off exactly `−t_YES`, so some pairs split one-and-one and the
+   real inflation is less. One more reason to read the band off the permutation
+   null rather than a formula.
+
+   **This is the third appearance of one property in a day** — five complement
+   pairs in the paper-book registry, ten-distinct-of-twenty printed cells in the
+   decomposition grid, and now the scan's side axis. **It is a structural
+   property of this venue's two-sided markets, not three coincidences.** Any new
+   grid must be checked for it before m is counted: probe the rules over a price
+   grid and compare selected row sets — a complement is invisible in source and
+   obvious in its selection.
 2. **Twin-is-the-same-rows.** Any grid printing a cell once as a "main" and once
    as a mirror's "twin" — count **distinct statistics**, never printed cells.
    (The decomposition grid prints 20 and computes 10.)
-3. **Below the G floor.** The floor is **not arbitrary**: it is the G at which
-   the cell *could* clear its nomination threshold at a plausible effect size.
-   A cell that cannot produce a nomination under any outcome only adds to m.
+3. **Below the G floor.** Two binding constraints, neither arbitrary:
+   **(a) G ≥ 6 absolutely** — below that `t(G−1)` has no finite fourth moment and
+   the Var(t) statistic has infinite sampling variance;
+   **(b)** the G at which the cell *could* clear its nomination threshold at a
+   plausible effect size. A cell that cannot produce a nomination under any
+   achievable outcome only adds to m.
 4. **Sampling shares a cause with the hypothesis.** Anything on hand-swept tape
    where capture probability and the tested effect have a common driver — e.g.
    within-day sequence effects on a board where schedule slippage governs both
