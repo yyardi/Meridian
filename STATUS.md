@@ -319,7 +319,39 @@ Fix is a per-market floor on `captured_at`. Not made; `test_an_observation_is_ev
 `xfail(strict=True)` and XPASSes when the watermark lands. Write-up in
 `docs/math/one-observation-twice.md`.
 
-## 0j. The test suite is order-dependent, so a green run proves less than it looks
+## 0j. The suite was only fast enough, and my own verification command opted out of the fix
+
+**The mechanism is time, not leftover state.** Eleven test modules pin `NOW` at import, which
+happens once at collection, then insert snapshots at `NOW - 30s`. The engine's predicate is
+`captured_at > now() - 60s`, evaluated at execution. So each module has a budget of elapsed time
+before its own fixtures age out of the window it is testing, and whether it passes depends on its
+position in the run. Measured budgets: daily_budget 2 tests at +30s, reprice 1 at +20s,
+shadow_min_bankroll 1 at +30s, the other eight at 60s or more. Four tests in three files, which is
+the "4 before the merge" I saw, reached from the other direction. Bisecting 113 predecessors found
+nothing, and that negative is the tell: nothing is being left behind.
+
+Verified independently: with the fix active and `MERIDIAN_TEST_NOW_SHIFT=32`, daily_budget fails
+exactly 2 tests, matching its measured +30s budget.
+
+**My "6 after" was a control failing in the flattering direction.** The strict xfail XPASSed in my
+run because the market had aged out, so the third cycle wrote no row and the assertion passed.
+A test reporting "fixed" when the data merely expired. It is gone, replaced by two real tests.
+
+**And the standing verification command opts out of the fix.** It is `--noconftest`, and the fix
+is a conftest fixture, so none of my runs get it. Same file, same machine:
+
+| | result | wall |
+|---|---|---:|
+| with conftest | 7 passed | 0.84s |
+| `--noconftest` | 3 failed, 4 errors | 48.06s |
+
+Fifty-seven times slower, against the shared development database instead of a per-run one, which
+maximises exactly the elapsed-time exposure the fix addresses. `--noconftest` is not simply wrong:
+with local Docker down it is the only way to run the tests that need no database, and 209 of those
+pass right now. But it is a different regime and nobody had written that down, so every "green"
+I have reported today was from the regime without the fix.
+
+
 
 `tests/test_pulse_live.py` fails 4 tests before this merge and 6 after, and **every one of them
 passes in isolation**. The two new tests pass and xfail exactly as designed when run alone. The
