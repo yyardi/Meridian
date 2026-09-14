@@ -774,3 +774,124 @@ def test_the_permutation_is_no_longer_the_null():
     assert "permute_settlements(" not in fn, (
         "null_distribution is permuting again — that removes calibration, not "
         "the edge")
+
+
+# --------------------------------------------------------------------------- #
+# Outcome-homogeneity must occur at the rate the PRICES imply, not less.
+# --------------------------------------------------------------------------- #
+def _homogeneity_prediction(rows, chosen, *, clustered: bool):
+    """Exact P(a cell settles all-one-way), per cell, under `draw_under_h0`.
+
+    Clustered: one uniform u per game, y_i = (u < p_i). So all-zero needs
+    u >= max(p) in every game and all-one needs u < min(p) in every game; a u
+    between min and max makes that game mixed. Independent: the plain
+    prod(1-p) + prod(p) over bets.
+    """
+    idx = {r["market_slug"]: i for i, r in enumerate(rows)}
+    out = {}
+    for name, bets in chosen.items():
+        by_game: dict = {}
+        for b in bets:
+            i = idx[b.market_slug]
+            by_game.setdefault(rows[i]["game_id"], []).append(N.break_even(rows[i]["ask"]))
+        if sum(len(v) for v in by_game.values()) < 2:
+            continue            # reaches no statistic; homogeneous by definition
+        lo = hi = 1.0
+        if clustered:
+            for v in by_game.values():
+                hi *= (1.0 - max(v))
+                lo *= min(v)
+        else:
+            for v in by_game.values():
+                for p in v:
+                    hi *= (1.0 - p)
+                    lo *= p
+        out[name] = hi + lo
+    return out
+
+
+def _cell_members(rows, chosen):
+    idx = {r["market_slug"]: i for i, r in enumerate(rows)}
+    out = {}
+    for name, bets in chosen.items():
+        mem = [idx[b.market_slug] for b in bets]
+        if len(mem) >= 2:
+            out[name] = mem
+    return out
+
+
+def test_the_h0_draw_makes_cells_homogeneous_as_often_as_the_prices_imply():
+    """★ THE SECOND, INDEPENDENT REASON THE PERMUTATION WAS WRONG -- and it is
+    about min-p specifically rather than about Var(t).
+
+    Outcome-homogeneous cells are common under H0 at these n: 12 bets at a
+    break-even of 0.25 settle all-one-way 3.2% of the time, 6 bets at 0.70 do it
+    11.8%. A homogeneous cell gives the most extreme p a cell can give, so the
+    null's min-p depends on reproducing that rate. A shuffle DESTROYS
+    homogeneity, undershoots the rate, and makes every replicate's min-p less
+    extreme than it should be -- so the observed min-p reads as too significant.
+
+    Drawing y ~ Bernoulli(break_even(ask)) should reproduce it for free. That is
+    a prediction about the generator, not a fact about it, so it is measured
+    here. On the canonical artifact, 362 scored cells, five seeds x 2000
+    replicates: predicted 41.080 homogeneous cells per replicate, observed
+    41.325 / 41.068 / 41.455 / 40.915 / 41.020 -- ratios 1.0060, 0.9997, 1.0091,
+    0.9960, 0.9985.
+    """
+    rows = _rows_every_cell()
+    chosen = N.select(rows)
+    pred = _homogeneity_prediction(rows, chosen, clustered=True)
+    mem = _cell_members(rows, chosen)
+    assert pred and mem, "fixture produced no scorable cells"
+    expected = sum(pred[k] for k in mem if k in pred)
+    assert expected > 0.5, (
+        f"fixture predicts only {expected:.3f} homogeneous cells per replicate — "
+        "too few for this test to be able to fail")
+
+    reps, rng, hits = 300, random.Random(31337), 0
+    for _ in range(reps):
+        ys = N.draw_under_h0(rows, rng)
+        hits += sum(len({ys[i] for i in v}) < 2 for v in mem.values())
+    got = hits / reps
+    sd = math.sqrt(sum(p * (1 - p) for k, p in pred.items() if k in mem) / reps)
+    assert abs(got - expected) < 4 * sd + 0.05, (
+        f"H0 draw made {got:.3f} cells homogeneous per replicate where the "
+        f"prices imply {expected:.3f} (sd {sd:.3f}) — the generator is not "
+        "reproducing homogeneity at its natural rate, so min-p's reference is "
+        "biased")
+
+
+def test_a_shuffle_undershoots_homogeneity_which_is_why_it_is_not_the_null():
+    """★ THE SAME CHECK POINTED AT THE OLD GENERATOR, SO THE TEST ABOVE IS
+    DEMONSTRABLY CAPABLE OF FAILING. A permutation moves existing settlements
+    between games, which breaks the all-one-way runs that prices produce
+    naturally. It therefore yields FEWER homogeneous cells than H0 implies, and
+    min-p's null is shifted away from the extreme -- a second, independent
+    reason for the retraction, and the one that bites the statistic now
+    carrying the result."""
+    rows = _rows_every_cell()
+    chosen = N.select(rows)
+    pred = _homogeneity_prediction(rows, chosen, clustered=True)
+    mem = _cell_members(rows, chosen)
+    expected = sum(pred[k] for k in mem if k in pred)
+
+    # ONE permutation per replicate, not one per cell. The first version called
+    # `permute_settlements` inside the cell comprehension -- reps x cells times --
+    # and took 6m18s in a suite that runs in 26s.
+    reps, rng = 300, random.Random(31337)
+    shuf = h0 = 0
+    for _ in range(reps):
+        ys = N.permute_settlements(rows, rng)[0]
+        shuf += sum(len({ys[i] for i in v}) < 2 for v in mem.values())
+    rng = random.Random(31337)
+    for _ in range(reps):
+        ys = N.draw_under_h0(rows, rng)
+        h0 += sum(len({ys[i] for i in v}) < 2 for v in mem.values())
+
+    assert h0 / reps > shuf / reps, (
+        f"the shuffle produced MORE homogeneous cells ({shuf/reps:.3f}) than the "
+        f"H0 draw ({h0/reps:.3f}) — the premise of the retraction does not hold "
+        "on this fixture, so neither does this test")
+    assert shuf / reps < expected, (
+        f"the shuffle hit {shuf/reps:.3f} where prices imply {expected:.3f}; if "
+        "it matched, the homogeneity argument for replacing it would be wrong")
