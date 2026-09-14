@@ -32,14 +32,19 @@ echo "exit $RC" >> "$F"
 # --- the push: distribution first, then the nominations, then the coverage ---
 DIST=$(grep -A5 "=== DISTRIBUTION" "$F" | grep -E "cells excluding|Var\(t\)|max\|t\|" \
        | sed 's/^ *//' | tr '\n' ' ' | cut -c1-220)
-TOP=$(grep -A4 "TOP 12" "$F" | tail -3 | awk '{printf "%s %s %s ", $1, $4, $NF}' | cut -c1-140)
+# NOT a top-three leaderboard. The best of ~250 cells is large by construction, and a
+# nightly leaderboard of noise draws would train exactly the habit the pre-registration
+# exists to break -- the numbers win that fight against a caveat in the same 480 chars.
+# What goes in this slot is the only per-cell fact that means anything before stage 2:
+# how many cleared the nomination bar. Usually 0. When it is not, THAT is worth a push.
+NOM=$(grep -cE "NOMINATED" "$F" 2>/dev/null || echo 0)
 COV=$(grep -E "^markets with a pregame close|^settled |^cells scored" "$F" | tr '\n' ' ' | cut -c1-120)
 MSG="SCAN $TS
 $COV
 $DIST
-top: $TOP
-null: best |t|~3.2, P(any>3)=.74 -- read the spread, not the max
-$F"
+$NOM cells cleared the nomination bar
+null: best of ~250 cells shows |t|~3.2 by chance -- the spread is the result, not the max
+full table: $F"
 MSG=$(printf '%s' "$MSG" | cut -c1-480)
 
 TOPIC=$(grep -E '^MERIDIAN_NTFY_TOPIC=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
