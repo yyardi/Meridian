@@ -50,36 +50,55 @@ Two independent routes agree: our sensitivity is 10–15¢ per bet, and we are b
 One route is pooled algebra, the other a planted-edge recovery curve, and they share no
 implementation. An edge smaller than 5¢ exists or does not; we cannot tell from this tape.
 
-## 0d. OPEN INCIDENT: the venue board has been empty since 09:30Z
+## 0d. The venue board has been empty since 09:35Z. I called this an incident; that was too strong.
 
-Every recorder is up, every log is clean, every heartbeat is green, and nothing has been
-recorded for two hours.
+**Correction, before the table.** I read a zero row-count at 10Z and 11Z against last Monday's
+7,973 and 7,974 and called it an incident. meridian-7f measured the right population, all 44.5
+days of history, and zero-hours *peak* at exactly these hours: 8 of 44 days at 10Z and 9 of 44
+at 11Z, against 2 of 44 overnight. An empty 10-11Z is the **most common zero-hour we have**,
+roughly one day in five. My last-Monday check was one draw from a distribution I had not looked at.
 
-| check | today | last Monday, same hours |
-|---|---|---|
-| market rows at 10Z | 0 | 7,973 |
-| market rows at 11Z | 0 | 7,974 |
-| venue events endpoint, per league | 0 for cricket x5, table tennis, NFL, MLB | — |
-| venue sports listing | one active event, a Europa Conference League match | — |
+**And neither figure settles it, for the reason that is the whole problem: a row count cannot
+tell an empty board from a full and quiet one.** A sweep that sees 450 markets and writes
+nothing because no price moved produces a zero-row hour on a perfectly healthy board. So those
+8 days are not evidence the board was empty then, and we cannot find out, because board content
+was never stored.
 
-Compared against last Monday on purpose. Thursday to Sunday carried six to twenty-three
-thousand rows in these hours, but those are game days and comparing a Monday to them would
-have manufactured the answer. The last full cycle was MLB at 09:29Z with 450 markets.
+| what is actually measured | value |
+|---|---|
+| newest market row, any league | 2026-09-14 09:35:26Z |
+| venue events endpoint, asked directly per league | 0 for cricket x5, table tennis, NFL, MLB |
+| venue sports listing | one active event across the whole venue |
+| zero-hours at 10Z / 11Z in 44 days of history | 8 / 44 and 9 / 44 |
+| Kalshi | unaffected, still writing |
 
-**It is the venue, not our access.** `/v2/sports` and `/v2/leagues/<lg>/events` both
-require API key headers -- an unauthenticated request returns `Missing required API key
-headers`, so an expired or wrong key cannot present as an empty board. Our authenticated
-call returns a well-formed sports list naming every league and reporting one active event
-across the venue. Kalshi is unaffected and still writing.
+The board **is** empty right now; that is a direct read of venue content, not a row count. What
+is unresolved is whether an empty board at this hour is normal, and that question is currently
+unanswerable from our own data.
 
-Newest row in `market_snapshots` for ANY league: **2026-09-14 09:35:26Z**. Nothing recorded
-anywhere since. MLB stands at 6,081 rows, latest 09:29:43Z.
+**It is the venue, not our access.** Both endpoints require API key headers -- an
+unauthenticated request returns `Missing required API key headers` -- so a wrong or expired key
+cannot present as an empty board. Our authenticated call returns a well-formed sports list
+naming every league.
 
-**There is no alarm anywhere in this system whose value differs between "the board is empty"
-and "the board is full and quiet."** Every freshness check we own measures what arrived.
-Writing the one that would have caught this is assigned to the researcher; the naive version,
-alert on zero rows, fires every night and is ignored within a week, so it has to compare this
-hour against the same hour on the same weekday.
+**Why no alarm fired, and why the obvious one cannot be it.** `board_coverage` takes its
+`expected` from the sports listing, a different endpoint on the *same venue*. When the board
+empties both sides go to zero together and `swept_nothing = (exp > 0 and obs == 0)` is false by
+construction. It was built to catch a wrong slug, which is our error; it cannot catch the venue
+going empty, which is theirs. An expected-versus-observed check only works when the expectation
+is independent of what is observed.
+
+**Shipped the missing quantity** (`dc2f676`): `service_heartbeats.markets_seen`, what the sweep
+saw rather than what it wrote. The alarm is then "a completed sweep returned zero markets while
+our own last 24 hours held markets whose start time is still in the future" -- expectation from
+our past tape, observation from now, no threshold to tune, no weekday cells. It is
+forward-looking only: the expectation side can be reconstructed from history, the observation
+side starts empty on deploy.
+
+**The weekday rule is right in principle and not buildable yet.** 6.4 weeks of history gives
+about 6 same-weekday-and-hour priors, so a rank rule false-alarms 14.3% per check, 3.4 times a
+day. Two-hour persistence needs about 19 weeks, which is mid-January. Three-hour persistence
+works today at the cost of three hours of latency.
 
 ## 1. What I need from you (everything else I now run myself)
 
@@ -103,8 +122,9 @@ classifier, which I think is the right line for an action this size, so it is yo
 ssh -i ~/.ssh/meridian-aws.pem ubuntu@$(cat ~/.meridian-server) 'cd /opt/meridian && sudo docker compose up -d --build && for f in nfl cfb-live espn-live quote pulse scalp mlb cricket cricket-espn; do sudo docker compose -f docker-compose.yml -f docker-compose.$f.yml up -d --build; done; sudo docker ps --format "{{.Names}} {{.Status}}" | wc -l'
 ```
 
-Expect 30. Best run now or any time the venue board is empty; it is empty between slates,
-which is most of a Monday morning.
+Expect 30. Best run now or any time the venue board is empty.
+
+**It now also carries a schema migration** (`a1c7e35b9d20`, adding `service_heartbeats.markets_seen`). That makes a PARTIAL rebuild worse than none: the first rebuilt container to start advances the database, and any container still on an older image then cannot pass migration either. Run the whole loop or none of it.
 
 **2. Is the Kalshi account a direct member, or an FCM/broker customer?** This gates every
 making strategy on Kalshi and I cannot find it out from the API. One sentence.
