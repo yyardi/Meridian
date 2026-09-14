@@ -852,6 +852,11 @@ that extra innings push later. **Expect the morning push to report roughly 8 of 
 counted-not-scored, which is the correct behaviour rather than a shortfall. The daily MLB read at
 10:40Z catches all ten.
 
+**All ten games carry all five market types with live quotes**, checked at 23:22Z: full-game
+winner, full-game spread, full-game total, first-five spread and first-five total, 10 games each.
+So every one of the fourteen registered MLB strategies gets tape tonight, including the six
+registered at 15:00Z while a single game had settled.
+
 **So tonight takes MLB from 1 settled game to about 11.** At roughly 10-15 a night it clears the
 paper book's G ≥ 25 floor around **Wednesday** and reaches 100 games inside a week. Nothing else
 in the programme accrues at that rate: CFB gives ~117 games a week but only on Saturdays, NFL gives
