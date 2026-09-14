@@ -444,6 +444,46 @@ the run rather than warning: a cell with no outcome variation is excluded with
 its reason printed, a non-boundary floor is refused, and a row matching two
 patterns aborts.
 
+★★ **THE FIRST REAL ANSWER TO "DOES TAKING WORK": THE VENUE IS WELL CALIBRATED
+AND BUYING AT THE ASK IS NEGATIVE-EV AT EVERY PRICE.** Measured across 20,019
+settled bets, 258 games, by decile of the YES price:
+
+| decile | bets | mean ask | observed win rate | break-even |
+|---|---:|---:|---:|---:|
+| 0.0 | 2,900 | 0.056 | **0.039** | 0.059 |
+| 0.1 | 1,860 | 0.172 | **0.158** | 0.181 |
+| 0.5 | 2,450 | 0.580 | **0.541** | 0.595 |
+| 0.9 | 941 | 0.958 | **0.935** | 0.961 |
+
+Observed tracks price almost exactly — the venue prices these markets well — and
+sits just BELOW break-even in every band once the fee is in. **That is the same
+conclusion the momentum scalp, the extreme-price hold and the paper book each
+reached separately, now visible directly in the calibration rather than inferred
+from a P&L.** It is the strongest negative result this project has produced and
+it is about the venue, not about one strategy: **there is no price region where
+crossing the spread pays.**
+
+★ **AND THE INSTRUMENT BUILT TO JUDGE THE SCAN WAS RETRACTED BY ITS OWN AUTHOR,
+BECAUSE THE SPECIFICATION WAS MINE AND IT WAS WRONG.** I briefed "permute
+settlements within games". The strata span every price decile, so a shuffle
+hands a 5¢ longshot the outcome of a favourite: decile 0 goes 0.039 → 0.140,
+decile 9 goes 0.935 → 0.766, everything flattened toward the pooled 0.439. That
+manufactures about +8¢ per contract at the cheap end and −19¢ at the expensive
+end. **The null was not "the scan with the edge removed", it was "the scan with
+CALIBRATION removed"** — an artifact larger than any edge we could be hunting,
+against which nothing can clear. Six statistics all landing BELOW the null median
+was the tell, and `cells excluding zero` at 95 where a correct null gives ~16 is
+unmissable. It also explains the planted-edge control never recovering: the
+reference was saturated, not the tape underpowered.
+
+**There is no repair by re-stratifying.** Permuting across deciles destroys
+calibration; permuting within a decile holds the win count fixed and gives zero
+variance; the scan's cells ARE the price strata. Wrong instrument, not a
+mis-tuned one. Replacement is parametric: draw `y ~ Bernoulli(break_even(ask))`
+within game clusters, so calibration is preserved by construction. It does not
+enter the pre-registration until its control recovers a planted edge — the bar
+the permutation version never cleared.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
