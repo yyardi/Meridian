@@ -207,6 +207,39 @@ So the fifty-strategies-a-week cadence budgets against **query cost in steady st
 **venue calls and rate limits for the first run of any new league**. 7d withdrew an earlier
 reading of this and so did I; the table above is the resolved version.
 
+## 0g. MLB is not missing 40% of its board. I was wrong, and the guard that told me so is broken twice.
+
+**Retraction.** I reported that MLB was recording 49 of 81 listed events and that 40% of the
+operator's daily-volume league was missing. I raised `MERIDIAN_EVENT_LIMIT` to 500 and wrote the
+falsifiable test into the commit: if observed does not move off 49, the limit was not the cause.
+**It swept at 12:31Z with `limit: 500` and observed 49.** The test failed, which is the only
+reason I looked further.
+
+Asked the venue directly, with an explicit limit of 500 so truncation cannot be the answer:
+
+| league | sports listing `activeEventCount` | events the events endpoint returns | parsed |
+|---|---:|---:|---:|
+| mlb | 81 | 49 | 49 |
+| nfl | 316 | 33 | 33 |
+| cfb | 263 | 211 | 211 |
+
+Parsing drops nothing: raw and parsed agree exactly in all three. **`activeEventCount` and "events
+the board returns" are different quantities**, and NFL shows it starkly at 316 against 33. So
+`board_coverage`'s `shortfall` is not a measure of missing data, and MLB's 32 was never data loss.
+
+**That is the second structural defect in the same guard today.** meridian-7f found the first: its
+`expected` comes from a different endpoint on the *same venue*, so when the board empties both
+sides go to zero together and `swept_nothing` is false by construction. This is the second: the
+two sides are not the same unit, so `shortfall` is a difference between incomparable numbers and
+has presumably been non-zero on every league every cycle since it was written.
+
+**What I am not claiming.** I cannot show nothing is missing. I can show the events endpoint
+returns 49 when asked for up to 500, so our limit is not truncating, and that the 81 is a
+different quantity from the 49. Establishing what `activeEventCount` counts is open work.
+
+**The `EVENT_LIMIT` change stays.** It was a fix for a problem I had not established, but the
+default of 50 against a board that returns 49 is a margin of one, and it costs nothing.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
