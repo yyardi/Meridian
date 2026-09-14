@@ -113,3 +113,57 @@ row involved.
 The replay figure is also what makes `stale_skips` worth logging rather than
 merely present: 0.23% predicts skipped in the tens of thousands against fired
 in single digits, and those two numbers are the whole content of the run.
+
+
+---
+
+# Does 0.23% reproduce live? It is a CEILING, and every gap points one way
+
+The objection is the right one — a replay knows what arrived and a live run
+does not — so the answer should be a direction rather than a hope. I looked
+for the ways the replay and the live path differ, and **all five make the
+replay optimistic.** The live figure cannot exceed 0.23% except by the
+recorder arriving faster than it did on 09-13.
+
+**1. Commit is not the stamp.** `first_seen_at` is
+`server_default=func.now()`, which in Postgres is the TRANSACTION's start.
+A row stamped at T becomes visible to another session at COMMIT ≥ T. The
+replay treats T as the visibility instant, so live ages are at least replay
+ages. The term is small here — 2,102 of 2,239 stamps carry exactly one row,
+so the recorder commits roughly per play rather than per batch — but it is
+not zero and it is not measured. (This project has already had a freshness
+check false-alarm on a writer holding a transaction open 196–259 seconds;
+the lesson is that no timestamp column can settle visibility.)
+
+**2. Query latency.** The engine fetches rows and then calls
+`is_stale(now=datetime.now(UTC))`, so `now` is after the fetch. The replay
+uses the instant itself.
+
+**3. Discrete sampling.** The replay integrates continuous time; the engine
+samples every 2 seconds. A pass window narrower than 2s can be missed
+entirely. Windows are `30 - lag` seconds wide and only open when a play
+arrives with lag under 30s, so most that open are wide — but the narrow ones
+are lost.
+
+**4. Recorder uptime.** The replay contains only rows that were recorded. If
+the poller was down, live sees nothing and skips, while the replay has no gap
+to notice. This is the objection in its purest form, and it too makes the
+replay generous.
+
+**5. The trailing dead time is excluded.** Segment endpoints are arrival
+stamps, so the interval after a game's final play has no segment and leaves
+the denominator. A smaller denominator raises the percentage.
+
+## And the arrival process is bursty, which is the mechanism
+
+Distinct arrival stamps for the 09-13 NFL slate: **2,238**, with a median gap
+of **1.6 seconds** and p90 **40.3 seconds** — against a median gap of 43
+seconds between the plays' own `wall_clock` values. So ESPN publishes several
+plays at once and then nothing for half a minute.
+
+That is why the passing time is so small rather than merely small. Each burst
+arrives with its newest play already ~50s old, so `[w, w+30)` is **entirely
+in the past** and contributes zero passing time. A window only opens when a
+play happens to arrive with a lag under 30 seconds — 6.3% of NFL plays — and
+then it is `30 - lag` seconds wide. The gate is not sampling a stream too
+slowly; it is asking for a freshness the arrival process almost never has.
