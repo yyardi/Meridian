@@ -517,35 +517,63 @@ morning's two-hour gap happens.
 used that word after a merge. For the six rows above marked yes it happened to be true by another
 route; for the three marked no it was not.
 
-## 0p. Kalshi can have a paper book today: it settles itself in our own tape
+## 0p. Kalshi: I said CFB was testable today. It is not, and using it would have manufactured edge.
 
-The operator asked months of work ago for Kalshi to be treated as an equal venue. The blocker
-everyone assumed was settlement, because the Polymarket paper book settles through a venue client
-and no such client exists for Kalshi. **That assumption is wrong.** `kalshi_snapshots` carries
-`result` and `status` columns, so the settlement is already recorded by our own recorder.
+**Retracted.** I reported 525 settled college-football totals over 81 games as "a testable
+population right now, no waiting". meridian-7d ran the coverage table I asked for before building
+anything, and the population is selected in the direction of the answer.
 
-Measured:
+**Only 6.1% of CFB markets ever settle in our tape, and the 6.1% is not random.** Verified here by
+a second route, on the strike ladder within each game:
 
-| | |
-|---|---|
-| settled tickers (`result` in yes/no) | **610** |
-| of those, with at least one two-sided quote | **610** |
-| with five or more quotes | 609 |
-| distinct games | **85** |
+| outcome in our tape | markets | mean strike | mean rank within its game |
+|---|---:|---:|---:|
+| never settled | 3,742 | 55.8 | 0.536 |
+| settled **yes** | 493 | 45.7 | **0.222** |
+| settled **no** | 32 | 59.6 | 0.603 |
 
-By series: `KXNCAAFTOTAL` 525 settled over 81 games, `KXNCAAFSPREAD` 71 over 4,
-`KXNCAAFGAME` 14 over 7.
+93.9% of settlements are YES, and they sit in the bottom quarter of each game's ladder.
 
-**So college football totals on Kalshi are a testable population right now**: 81 games is above the
-G ≥ 25 power floor the paper book already uses, and every settled market has a price history. No
-new feed, no venue client, no waiting.
+**The mechanism is in the contract text.** `yes_sub_title` reads "Over 29.5 points scored", so an
+Over market is **determined the moment the running total passes the strike, mid-game**, while a NO
+cannot be determined before the final whistle. Our recorder stops before the whistle, so we capture
+the first kind and miss the second: settlement seen a median 26.1 minutes before our last row for
+that game, against 0.0 minutes for the 32 NO settlements, caught only on a final poll.
 
-**Two cautions before anyone builds on it.** The 525 markets sit on 81 games, about 6.5 strike
-levels per game, so they are heavily clustered and **G is 81, not 525** -- the same mistake that
-made a cell count look like a sample size earlier today. And NFL is entirely absent from the
-settled set despite 216,000 `KXNFLSPREAD` rows, which means our recorder is not capturing NFL
-settlement; that is a separate question and should be answered before anyone concludes NFL cannot
-be tested on Kalshi.
+**So "settled in our tape" MEANS "the over hit early".** Price those at a pre-game close, settle
+from `result`, and the number that comes out is not edge, it is the selection. Same shape as the
+withdrawn-order arm that always flattered, which this project has already been caught by once.
+
+**And the pre-game close is not definable for CFB regardless.** Of 492 CFB rows in `kalshi_games`,
+zero carry a game start time, an ESPN id, or a Polymarket slug. `close_time` is not a boundary
+either -- it is rewritten at settlement, so one ladder shows strikes 30/33/36 carrying their
+settlement instant while strike 39 still holds the original placeholder.
+
+**NFL is the clean population, and my guess about the sweep window was right in mechanism and
+backwards in consequence.** The recorder stops **at kickoff** -- last row 16:59:28 for a 17:00
+kickoff -- which is not a gap, it is exactly the boundary a pre-game book needs. 648 markets on 14
+games, every one with a pre-game two-sided quote, 533 quotes each on a uniform poll, last quote a
+median **32 seconds** before kickoff, and 547 inside the 0.10-0.90 band at spreads of 1.0-1.5¢.
+30 of 32 NFL games carry both a start time and an ESPN id, which CFB has neither of.
+
+What NFL lacks is Kalshi's `result` -- but for a total or a spread that is a function of the final
+score, which the ESPN ids supply. **Deriving the outcome from the score removes the selection bias
+and can be validated against the 610 CFB results**, which settling from `result` cannot.
+
+**No verdict either way today.** G = 14 against the book's floor of 25, and the clustering caution
+binds hardest here: 547 band markets on 14 games is ~39 each, and a totals ladder and a spread
+ladder move with the same score, so the effective sample is at most 14 and realistically fewer.
+About 14 games a week puts G = 25 near 2026-09-20.
+
+**Two corrections to my brief.** The fee cannot be read from the tape: `kalshi_events` and
+`kalshi_event_snapshots` are both empty, so the columns exist and carry nothing. The substitution
+is to keep the quadratic shape, keep 0.07 marked unverified since it was never venue-declared in
+anything we read, and make the multiplier a per-series input. And the frame question comes back
+clean and better than the other venue's: `yes_sub_title` names the side on every contract with
+`strike_type` agreeing, 4,792 of 4,792 on CFB totals and 266 of 266 on NFL, zero blanks anywhere.
+
+**One thing worth keeping beyond Kalshi:** the local database mirror holds 98 settled rows against
+production's 13,097, so this same analysis run locally concludes the population is empty.
 
 ## 1. What I need from you (everything else I now run myself)
 
