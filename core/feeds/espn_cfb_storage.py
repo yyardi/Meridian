@@ -154,6 +154,28 @@ class CfbGameState(Base):
 
     Carries what is game-level rather than play-level: timeouts, the live
     betting line, and ESPN's own win probability — the external benchmark.
+
+    READING A FINAL SCORE OUT OF THIS TABLE: take the LAST row with
+    `state = 'post'`. Never an aggregate across rows.
+
+    The shape invites `max(home_score), max(away_score)` and that is wrong.
+    Measured 2026-09-14: 12 of 105 CFB post games carry a post score BELOW a
+    score seen earlier in the game, and in 9 of those 12 the maximum home
+    score and the maximum away score NEVER CO-EXISTED IN ANY SINGLE ROW — so
+    the "in-game maximum" is not a scoreline that ever happened. ESPN
+    publishes a score and corrects it DOWNWARD; the post row carries the
+    corrected value. `max()` would overstate those twelve totals by 2 to 7
+    points, which on a totals market pushes Over toward YES.
+
+    A row at `state = 'in'` is not a final score even when the clock reads
+    0:00 — the flag is the terminal signal and the clock is not (it reads
+    "15:00" on a game already 21-0). 81 of 186 CFB games in the 14-day census
+    never reached `post` at all, so a query that ignores `state` is reading
+    truncated games, which biases a total DOWNWARD. Treat them as unsettled,
+    not as low-scoring.
+
+    A non-monotone score history is a flag to inspect, not a reason to reach
+    for an aggregate. See docs/infra/espn-post-is-not-a-final-score.md.
     """
 
     __tablename__ = "espn_cfb_game_state"
