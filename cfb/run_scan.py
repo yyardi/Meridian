@@ -213,19 +213,35 @@ def attribute(slug: str) -> tuple[str, str]:
 
 
 #: Opt-in equivalence check for the one-query rewrite: per-pattern counts from a
-#: KNOWN reference run, as `pat=count` pairs. Compared exactly.
-#: `SCAN_EXPECT='%-cfb-%=111,%-nfl-%=222'`  <- deliberately fake numbers: an
-#: example carrying a real run's counts is the thing someone copies.
+#: KNOWN reference run, as `pat=count` pairs, PLUS the floor that run used.
+#: `SCAN_EXPECT='since=NONE,%-cfb-%=111,%-nfl-%=222'`   <- fake counts: an
+#: example carrying a real run's numbers is the thing someone copies.
 #:
-#: ★ VALID ONLY AGAINST A RUN OVER THE SAME TAPE AND THE SAME FLOOR. The tape
-#: grows every minute, so these counts are a fact about one window, not an
-#: invariant -- which is exactly why it is opt-in and never hardcoded. The
-#: reference for the 13-query-to-1-query change was the 05:28Z run of
-#: 2026-09-14 with no floor.
-EXPECT = dict(
-    (k, int(v)) for k, _, v in
-    (e.partition("=") for e in (os.environ.get("SCAN_EXPECT") or "").split(",") if e)
-)
+#: ★ THE `since=` TERM IS MANDATORY AND IT IS THE WHOLE POINT. Row counts are a
+#: fact about one tape window AND one floor, not an invariant. The reference for
+#: the 13-query-to-1-query change is the 05:28Z run of 2026-09-14, taken with NO
+#: floor -- and cfb, nfl and wnba all have pre-September tape, so a FLOORED run
+#: legitimately returns fewer rows for them. Comparing across floors would fire
+#: this check on a correct change, which is the worst kind of guard: one that
+#: trains people to ignore it. A floor mismatch is therefore a REFUSAL to
+#: compare, reported as such, not a count mismatch.
+_EXP = dict((k, v) for k, _, v in
+            (e.partition("=") for e in (os.environ.get("SCAN_EXPECT") or "").split(",") if e))
+EXPECT_SINCE = _EXP.pop("since", None)
+EXPECT = {k: int(v) for k, v in _EXP.items()}
+if EXPECT and EXPECT_SINCE is None:
+    raise SystemExit(
+        "SCAN_EXPECT is missing its `since=` term. Row counts depend on the floor, "
+        "so a reference without one cannot be compared. Use `since=NONE` for a "
+        "reference taken with no floor.")
+if EXPECT:
+    _ref = None if EXPECT_SINCE.upper() == "NONE" else EXPECT_SINCE
+    if _ref != SINCE:
+        raise SystemExit(
+            f"SCAN_EXPECT was taken with since={EXPECT_SINCE} and this run uses "
+            f"since={SINCE or 'NONE'}. Row counts are not comparable across floors "
+            "-- a floored run legitimately returns fewer rows wherever a pattern "
+            "has tape before the floor. Compare floored against floored.")
 
 CELLS, STOCK, DROP = defaultdict(list), defaultdict(lambda: [0, 0, set()]), defaultdict(int)
 calls = 0
@@ -350,15 +366,52 @@ for key, n, G, why in excluded: print(f"  {str(key):58} n={n:<5} G={G:<4} {why}"
 print(f"  excluded {len(excluded)} of {len(CELLS)} cells")
 for k in sorted(DROP): print(f"  NOTE {k}: {DROP[k]}")
 
+def _plain(o):
+    """numpy/scipy scalars -> python, and NOTHING else silently.
+
+    ★ THE 05:28Z RUN OF 2026-09-14 DIED HERE. `p_lt_01` is
+    `sum(p < 0.01 for p in ps)` over scipy p-values, which is a numpy int64,
+    and `json.dump` raised `Object of type int64 is not JSON serializable`
+    after 225 bytes -- so CELLS_JSON was left as TRUNCATED, UNPARSEABLE JSON
+    that still had a plausible size and a fresh mtime. The scan exited 1 as its
+    contract promises, but the artifact it left behind was worse than no file.
+    Narrow on purpose: anything without `.item()` still raises, so a genuine
+    unserialisable object is not swallowed.
+    """
+    if hasattr(o, "item"):
+        return o.item()
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
+def _write_json(path: str, payload) -> None:
+    """Write via a temp file and rename, so a crash leaves the OLD file.
+
+    The idiom is lifted from `core/settlements.py`, which has had it for weeks --
+    a partial artifact that looks complete is the failure mode both of these
+    guard against, and only one of them was doing it.
+    """
+    import tempfile
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(payload, fh, default=_plain)
+        os.replace(tmp, path)
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
+
+
 if os.environ.get("ROWS_JSON"):                 # the permutation null consumes the INPUTS
-    with open(os.environ["ROWS_JSON"], "w") as fh:
-        json.dump([{"lg": k[0], "mt": k[1], "dec": k[2], "game": b[1], "bid": b[2],
-                    "ask": b[3], "y": b[4]} for k, bs in CELLS.items() for b in bs], fh)
+    _write_json(os.environ["ROWS_JSON"],
+                [{"lg": k[0], "mt": k[1], "dec": k[2], "game": b[1], "bid": b[2],
+                  "ask": b[3], "y": b[4]} for k, bs in CELLS.items() for b in bs])
     print(f"\n  wrote ROWS_JSON {os.environ['ROWS_JSON']}"
           f" ({sum(len(v) for v in CELLS.values()):,} bet inputs)")
 if os.environ.get("CELLS_JSON"):
-    with open(os.environ["CELLS_JSON"], "w") as fh:
-        json.dump({"run": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%dT%H:%MZ}", "m_eff": m_eff,
+    _write_json(os.environ["CELLS_JSON"], {"run": f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%dT%H:%MZ}", "m_eff": m_eff,
                    "var_t": vt, "var_t_null_baseline": base, "hc": hc, "max_abs_t": mx,
                    "null_expected_max": enull, "p_lt_01": sum(p < 0.01 for p in ps),
                    "p_lt_01_expected": 0.01 * m_eff, "cells_excl_zero": nz,
@@ -367,7 +420,7 @@ if os.environ.get("CELLS_JSON"):
                                 for k, n, G, w in excluded],
                    "cells": [{"lg": s2["key"][0], "mt": s2["key"][1], "dec": s2["key"][2],
                               "mean_cents": s2["mean"], "t": s2["t"], "p": s2["p"],
-                              "n": s2["n"], "G": s2["G"], "g_eff": s2["ge"]} for s2 in scored]}, fh)
+                              "n": s2["n"], "G": s2["G"], "g_eff": s2["ge"]} for s2 in scored]})
     print(f"  wrote CELLS_JSON {os.environ['CELLS_JSON']} ({m_eff} scored cells)")
 
 print(f"\n{'='*100}\nAPPENDIX: every cell, never the best one. Statistics above ran on the")
