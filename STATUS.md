@@ -259,6 +259,36 @@ settlement cache was warm.
 | cricket-recorder / tt-recorder | venue boards, event limit 500; cricket 60s within 8h of start, TT 300s | cricket, table tennis |
 | cricket-espn-recorder | ESPN toss time, innings state, result | cricket |
 
+## 2b. The paper book's only positive line is the away-team confound again
+
+Read of 2026-09-14T1107Z, 24 strategies, up from 7. **One line excludes zero. Its
+home-referenced twin does not carry the sign.**
+
+| arm | what it buys | mean bet | 95% CI | n | G |
+|---|---|---:|---|---:|---:|
+| `wnba_spread_yes_80_100` | away team, spread mid ≥ 0.80 | **+5.78¢** | [+2.96, +8.60] | 101 | 40 |
+| `wnba_spread_no_00_20` | home team, same price band | −2.05¢ | [−8.27, +4.16] | 150 | 53 |
+
+The registry names the pairing itself -- `wnba_spread_no_00_20` is commented "the home-favourite
+twin of yes_80_100" -- so this is not my inference about which two lines mirror each other.
+
+Backing a heavy favourite makes 5.78¢ when it is the away team and loses 2.05¢ when it is the
+home team. **That is side-dependence, not a favourite effect**, and it is the third time this
+confound has produced an "excludes 0" headline.
+
+**What I have NOT established.** A difference of +7.83¢ with an independence-assumed SE of 3.48
+gives z = 2.25, but independence is the wrong assumption: both arms are drawn from the same WNBA
+games on opposite sides, so they are negatively correlated and the true SE is larger. **That z is
+an upper bound, not an estimate.** The honest test is the difference computed on the per-bet rows
+with game clustering, which the summary table cannot give me and which I will not fake from CI
+half-widths.
+
+**And the gate that should have caught this cannot fire.** The paper book's own footer records
+that the twin-contradiction clause requires the twin to be significantly negative, which on this
+tape is an 11.6¢ swing from where it sits -- it passed on every achievable outcome and tested
+nothing. So "POSITIVE, excludes 0" on the away arm is printed without the twin ever having been
+able to object. WNBA's season also ended 08-31, so nothing here is actionable either way.
+
 ## 3. Strategies and paper P&L (nothing has ever been placed)
 
 | strategy | status | paper result |
