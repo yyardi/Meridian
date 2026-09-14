@@ -98,11 +98,11 @@ SINCE = (os.environ.get("SCAN_SINCE") or "").strip() or None
 _FLOOR = "\n    AND {a}captured_at >= :since::timestamptz"
 CLOSE_SQL = """
 WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
-  WHERE market_slug LIKE :pat AND game_start_time IS NOT NULL{floor_g} GROUP BY 1)
+  WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL{floor_g} GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug slug, s.sports_market_type mt, s.game_id gid,
        s.best_bid::float bid, s.best_ask::float ask
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
-WHERE s.market_slug LIKE :pat AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
+WHERE s.market_slug LIKE ANY(:pats) AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
   AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL AND s.best_ask >= s.best_bid
   AND g.ko < now() - interval '4 hours'          -- STARTED and long finished, never an open board{floor_s}
 ORDER BY s.market_slug, s.captured_at DESC"""
@@ -164,30 +164,119 @@ def clustered(vals, keys):                        # verbatim from cfb/run_paper_
 if SINCE:
     with eng.connect() as _c: check_since(_c, SINCE)
 
+#: (league, pattern) in the order the per-league loop used to visit them, so the
+#: printed coverage lines keep their old order and are diffable against old runs.
+PATS = [(lg, pat) for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis")
+        if lg in LEAGUES for pat in venue_patterns(lg)]
+
+
+def like_to_needle(pat: str) -> str:
+    """`%-cfb-%` -> `-cfb-`, and REFUSES anything more complicated.
+
+    ★ Attribution must use the SAME pattern strings the query used, never
+    `league_of_slug`. Two attribution routes that can disagree would silently
+    move rows between cells or drop them -- a population change to a registered
+    result, wearing the costume of a faster scan. So this converts the LIKE to
+    its exact Python equivalent and refuses any pattern whose equivalent is not
+    a plain substring test, rather than quietly mis-handling `_`, a trailing
+    anchor, or an escape.
+    """
+    if not (pat.startswith("%") and pat.endswith("%") and len(pat) > 2):
+        raise SystemExit(f"pattern {pat!r} is not of the form %needle% -- "
+                         "attribution by substring would not match the SQL")
+    body = pat[1:-1]
+    if "%" in body or "_" in body:
+        raise SystemExit(f"pattern {pat!r} has a wildcard inside it -- "
+                         "a substring test is not its equivalent")
+    return body
+
+
+NEEDLES = [(lg, pat, like_to_needle(pat)) for lg, pat in PATS]
+
+
+def attribute(slug: str) -> tuple[str, str]:
+    """The one (league, pattern) this slug belongs to. Exactly one, or the run dies.
+
+    Zero means the query returned something no pattern asked for; two means a
+    row would be counted in both leagues and its cell assignment is a coin
+    flip. `nfl-cfb-osu-mich-...` is a real slug shape I produced by accident
+    while writing a test an hour before this was written, and it matches
+    `%-cfb-%` -- the overlap risk is not hypothetical. Fatal rather than a
+    warning: a warning in a two-hour batch job is a line nobody reads.
+    """
+    hit = [(lg, pat) for lg, pat, needle in NEEDLES if needle in slug]
+    if len(hit) != 1:
+        raise SystemExit(
+            f"slug {slug!r} matched {len(hit)} patterns ({[p for _, p in hit]}) -- "
+            "attribution is ambiguous and the cell assignment would be arbitrary")
+    return hit[0]
+
+
+#: Opt-in equivalence check for the one-query rewrite: per-pattern counts from a
+#: KNOWN reference run, as `pat=count` pairs. Compared exactly.
+#: `SCAN_EXPECT='%-cfb-%=111,%-nfl-%=222'`  <- deliberately fake numbers: an
+#: example carrying a real run's counts is the thing someone copies.
+#:
+#: ★ VALID ONLY AGAINST A RUN OVER THE SAME TAPE AND THE SAME FLOOR. The tape
+#: grows every minute, so these counts are a fact about one window, not an
+#: invariant -- which is exactly why it is opt-in and never hardcoded. The
+#: reference for the 13-query-to-1-query change was the 05:28Z run of
+#: 2026-09-14 with no floor.
+EXPECT = dict(
+    (k, int(v)) for k, _, v in
+    (e.partition("=") for e in (os.environ.get("SCAN_EXPECT") or "").split(",") if e)
+)
+
 CELLS, STOCK, DROP = defaultdict(list), defaultdict(lambda: [0, 0, set()]), defaultdict(int)
 calls = 0
 for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis"):
-    if lg not in LEAGUES: DROP[f"{lg}: not in core.leagues"] += 1; continue
-    for pat in venue_patterns(lg):
-        with eng.connect() as c:
-            args = {"pat": pat} | ({"since": SINCE} if SINCE else {})
-            rows = [dict(r._mapping) for r in c.execute(text(CLOSE), args)]
-        for r in rows:
-            mt = (r["mt"] or "?")
-            STOCK[(lg, mt)][0] += 1
-            if calls >= MAXCALLS: DROP["settlement calls hit MAXCALLS"] += 1; continue
-            y = settle(r["slug"]); calls += 1
-            if y is None: STOCK[(lg, mt)][1] += 1; continue
-            m = mid(r["bid"], r["ask"])
-            for lo, hi in DECILES:
-                if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
-                a = r["ask"]
-                CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y))
-                STOCK[(lg, mt)][2].add(r["gid"])
-        # The floor rides on the SAME LINE as the count it produced. A reader
-        # cannot see "22,870 closes" without seeing what was excluded to get it.
-        print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls"
-              f", since={SINCE or 'ALL (no floor)'}")
+    if lg not in LEAGUES: DROP[f"{lg}: not in core.leagues"] += 1
+
+# ★ ONE QUERY FOR ALL THIRTEEN PATTERNS. It used to be one per pattern, and the
+# table is read TWICE per query (the kickoff CTE and the close), so that was 26
+# full passes over a 57 GB table -- ~1.1 TB of disk reads per run on a box with
+# 7 GB of RAM and 128 MB of shared_buffers, where nothing can be cached. Nine of
+# the thirteen patterns returned fifteen rows or fewer and each still paid two
+# full scans. `LIKE ANY` scans once and tests every row against all of them:
+# planner cost 5,630,712 against 13 x 4,671,180 = 60.7M, so 2 passes and ~84 GB.
+with eng.connect() as c:
+    args = {"pats": [p for _, p in PATS]} | ({"since": SINCE} if SINCE else {})
+    allrows = [dict(r._mapping) for r in c.execute(text(CLOSE), args)]
+
+BY_PAT: dict = defaultdict(list)
+for r in allrows:
+    lg, pat = attribute(r["slug"])
+    BY_PAT[pat].append((lg, r))
+
+for lg, pat in PATS:
+    rows = BY_PAT.get(pat, [])
+    for _lg, r in rows:
+        mt = (r["mt"] or "?")
+        STOCK[(lg, mt)][0] += 1
+        if calls >= MAXCALLS: DROP["settlement calls hit MAXCALLS"] += 1; continue
+        y = settle(r["slug"]); calls += 1
+        if y is None: STOCK[(lg, mt)][1] += 1; continue
+        m = mid(r["bid"], r["ask"])
+        for lo, hi in DECILES:
+            if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
+            a = r["ask"]
+            CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y))
+            STOCK[(lg, mt)][2].add(r["gid"])
+    # The floor rides on the SAME LINE as the count it produced. A reader
+    # cannot see "22,870 closes" without seeing what was excluded to get it.
+    # Per-pattern counts survive the rewrite on purpose: they are the only
+    # resolution at which the one-query form can be compared to the old one.
+    print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls"
+          f", since={SINCE or 'ALL (no floor)'}")
+
+if EXPECT:
+    # Same tape, same floor, or this means nothing -- see EXPECT.
+    off = {p: (len(BY_PAT.get(p, [])), n) for p, n in EXPECT.items()
+           if len(BY_PAT.get(p, [])) != n}
+    if off:
+        raise SystemExit("SCAN_EXPECT mismatch (got, expected): "
+                         + ", ".join(f"{p} {g} != {e}" for p, (g, e) in sorted(off.items())))
+    print(f"  equivalence: {len(EXPECT)} pattern counts reproduce the reference run exactly")
 settlements.save(CACHE)
 if not CELLS:
     raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")

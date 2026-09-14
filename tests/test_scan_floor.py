@@ -178,3 +178,105 @@ def test_the_guard_runs_before_the_first_scan_not_after_it():
     for c in calls:
         assert not any(lo < c <= hi for lo, hi in loops), \
             f"check_since at line {c} is inside a loop"
+
+
+# --------------------------------------------------------------------------- #
+# One query for thirteen patterns, and the attribution that makes it safe.
+# --------------------------------------------------------------------------- #
+def _attrib(needles):
+    """`attribute` lifted with a chosen NEEDLES table."""
+    tree = ast.parse(SRC)
+    fns = [n for n in tree.body
+           if isinstance(n, ast.FunctionDef) and n.name in {"attribute", "like_to_needle"}]
+    ns: dict = {"re": re, "NEEDLES": needles, "SystemExit": SystemExit}
+    exec(compile(ast.Module(body=fns, type_ignores=[]), "<scan>", "exec"), ns)  # noqa: S102
+    return ns
+
+
+def test_one_query_reads_the_table_twice_not_twenty_six_times():
+    """★ THE WHOLE POINT. The table is read once per query for the kickoff CTE
+    and once for the close, so one query per pattern was 26 passes over 57 GB --
+    ~1.1 TB per run on a box with 7 GB of RAM, where nothing can be cached, and
+    nine of thirteen patterns returned fifteen rows or fewer while still paying
+    two full scans. Asserted on the SQL and on the absence of the old loop,
+    because a rewrite that left one `LIKE :pat` behind would still work and
+    still be slow."""
+    assert SRC.count("LIKE ANY(:pats)") == 2
+    assert "LIKE :pat " not in SRC and "LIKE :pat\n" not in SRC
+    # exactly one execute of the close query, not one per pattern
+    tree = ast.parse(SRC)
+    execs = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("execute")
+             and "CLOSE" in ast.unparse(n)]
+    assert len(execs) == 1, f"{len(execs)} executions of the close query"
+
+
+def test_attribution_uses_the_query_patterns_not_league_of_slug():
+    """Two attribution routes that can disagree would silently move rows between
+    cells -- a population change to a registered result, wearing the costume of
+    a faster scan. Asserted at the source: `league_of_slug` must not appear in
+    the attribution path."""
+    fn = SRC[SRC.index("def attribute("):SRC.index("#: Opt-in equivalence")]
+    assert "league_of_slug" not in fn
+    assert "NEEDLES" in fn
+
+
+def test_a_slug_matching_two_patterns_kills_the_run():
+    """★ AND THE OVERLAP IS NOT HYPOTHETICAL. `nfl-cfb-osu-mich-...` is a slug
+    shape I produced by accident writing a board test an hour earlier; it
+    contains `-cfb-` and would be counted under cfb while looking like an NFL
+    slug to a human. If a slug ever matched two patterns its cell assignment
+    would be whichever the loop saw first."""
+    ns = _attrib([("cfb", "%-cfb-%", "-cfb-"), ("nfl", "%-nfl-%", "-nfl-")])
+    assert ns["attribute"]("asc-cfb-osu-mich-2026-09-13") == ("cfb", "%-cfb-%")
+    with pytest.raises(SystemExit) as e:
+        ns["attribute"]("x-cfb-y-nfl-z")
+    assert "matched 2 patterns" in str(e.value)
+
+
+def test_a_slug_matching_no_pattern_kills_the_run():
+    """Zero means the query returned something no pattern asked for -- either the
+    SQL and the needles have drifted apart, or the LIKE conversion is wrong.
+    Silently dropping it would shrink the population invisibly."""
+    ns = _attrib([("cfb", "%-cfb-%", "-cfb-")])
+    with pytest.raises(SystemExit) as e:
+        ns["attribute"]("aec-wnba-conn-dal-2026-08-02")
+    assert "matched 0 patterns" in str(e.value)
+
+
+def test_the_like_conversion_refuses_a_pattern_it_cannot_reproduce():
+    """A substring test is only equivalent to `%needle%` when the needle has no
+    wildcards and the pattern is anchored at neither end. Anything else is
+    refused rather than silently mis-matched -- the conversion is the join
+    between the SQL population and the Python one."""
+    ns = _attrib([])
+    assert ns["like_to_needle"]("%-cfb-%") == "-cfb-"
+    for bad in ("-cfb-%", "%-cfb-", "-cfb-", "%%", "%a%b%", "%a_b%"):
+        with pytest.raises(SystemExit):
+            ns["like_to_needle"](bad)
+
+
+def test_the_real_patterns_all_convert():
+    """The control: the refusal above must not reject the thirteen patterns the
+    scan actually uses, or the program cannot start."""
+    from core.leagues import LEAGUES, venue_patterns
+
+    ns = _attrib([])
+    pats = [p for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis")
+            if lg in LEAGUES for p in venue_patterns(lg)]
+    assert len(pats) == 13, f"{len(pats)} patterns, expected 13"
+    assert all(ns["like_to_needle"](p) for p in pats)
+    # and no two of the real patterns can both match one slug
+    needles = [ns["like_to_needle"](p) for p in pats]
+    assert len(set(needles)) == len(needles)
+
+
+def test_the_equivalence_check_is_opt_in_and_not_hardcoded():
+    """Per-pattern counts are a fact about ONE tape window, not an invariant --
+    the tape grows every minute. So the reference is passed in and compared
+    exactly, never baked into the source where it would rot into a false
+    failure."""
+    assert 'os.environ.get("SCAN_EXPECT")' in SRC
+    assert "SCAN_EXPECT mismatch" in SRC
+    # no hardcoded reference counts anywhere in the file
+    assert "15818" not in SRC and "15,818" not in SRC
