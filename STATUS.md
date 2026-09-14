@@ -568,13 +568,28 @@ not zero**, and "the mean excludes zero" says only that the cost is real.
 
 | population | own mean cost | pooled pnl | **excess over −cost** | 95% CI | bound vs hurdle |
 |---|---:|---:|---:|---|---|
-| pregame | **4.101¢** | −3.743¢ | **+0.357¢** (z +0.28) | [−2.159, +2.874] | 2.56 ≤ 4.10 **CONCLUSIVE** |
-| in-play | **6.905¢** | −4.851¢ | **+2.055¢** (z +0.79) | [−3.041, +7.150] | 5.12 ≤ 6.91 **CONCLUSIVE** |
+| pregame | **4.101¢** | −3.743¢ | **+0.357¢** | [−2.160, **+2.874**] | CI EXCLUDES 4.101 → **CONCLUSIVE**, z 2.92, p 0.0018 |
+| in-play | **6.905¢** | −4.851¢ | **+2.055¢** | [−3.041, **+7.151**] | CI INCLUDES 6.905 → **NOT conclusive**, z 1.87, p 0.031 |
 
-**The board is priced at cost within measurement error, and the design could have
-detected an edge the size of the cost itself.** That is the result: not "we found
-nothing", but "across 20,024 pregame bets on 263 games and 33,815 in-play ticks
-on 140 games, the excess over cost is +0.36¢ and +2.06¢ and both span zero".
+**Corrected again: `bound ≤ hurdle` compares a HALF-WIDTH to a threshold and
+silently assumes the point estimate sits at zero.** The correct test is whether
+the interval excludes the hurdle. In-play's estimate sits +2.055, a shift of 79%
+of its own SE, pushing the upper end to 7.151 — past the 6.905 hurdle. The
+shortcut cannot see that because it never looks at where the estimate is.
+
+**And the programme's own multiplicity applies: two populations, so m=2.** At
+z ≥ 1.960 pregame clears comfortably (it clears even m=10) and **in-play fails**.
+Reporting both as conclusive would have been the first claim tonight surviving
+only by not being corrected for multiplicity — in a programme whose entire
+subject is multiplicity.
+
+**PREGAME is the result and it is strong:** across 20,024 bets on 263 games the
+gross edge is +0.357¢ [−2.160, +2.874] against a population cost of 4.101¢, so a
+tradeable edge is **excluded at p = 0.0018**. The pregame board is priced at cost
+within measurement error and the design could have seen an edge the size of the
+cost itself. **IN-PLAY is directionally the same and not yet decisive** (p = 0.031
+one-sided, fails at m=2). That is 140 game-clusters, not a flaw in the method —
+**the fix is Saturday, not a rewrite.**
 
 **And the 2.1¢ hurdle I had been carrying was a CFB-spread figure applied to a
 population spanning table tennis, MLB, quarter markets and cricket.** The
