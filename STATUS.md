@@ -258,37 +258,34 @@ kept.
 **The `EVENT_LIMIT` change stays.** It was a fix for a problem I had not established, but the
 default of 50 against a board that returns 49 is a margin of one, and it costs nothing.
 
-## 0h. A migration defect with a possible footprint in prod data. Not established.
+## 0h. The migration defect is real. The prod anomaly I attached to it was not.
 
-7d swept for the pipeline-status shape and found five real sites in
-`deploy/aws/merge_history.sh`, a data migration. The defect is not the one the sweep was aimed
-at: `set -o pipefail` was already on, so a psql failure was reported correctly. **The logic then
-mapped that failure onto "the table is not there."** An existing remap looked absent and was
-rebuilt; a present parent looked absent and its remap was silently skipped. A partial migration
-that reports success. All five now go through one `table_exists` that aborts when it cannot ask.
+7d fixed five sites in `deploy/aws/merge_history.sh` where a failing database query was read as
+"the table does not exist": an existing lookup rebuilt, a present parent skipped, a partial
+migration reporting success. `set -e` protects none of them, verified directly here -- a failing
+function inside an `if` takes the else branch and execution continues, while `V=$(f)` aborts.
 
-`set -e` protects none of them, and I verified that directly rather than accepting it: a failing
-function inside an `if` condition takes the else branch and execution continues, while `V=$(f)`
-does abort. That is why the defect clustered in `&&`, `||` and `if`.
+**I then attached a prod anomaly to it that does not belong to it, on a premise that was wrong.**
+I read `remap_pulse_decisions` at 0 rows against "a parent holding 19,333". The 19,333 is the
+**live** table. The migration's **staged** parent holds 280. I compared the lookup against the
+wrong side of the thing being merged.
 
-**The possible footprint, which I am recording as a question and not a finding.** The remap tables
-exist on prod with data:
+**And it is not that defect's signature either.** The skip path returns before the CREATE, so it
+leaves **no table at all**; an empty table means the CREATE ran and its inner join matched
+nothing. 7d dated the run from relation filenodes inside the container, 16:14 to 16:20 on
+2026-08-21, sequential and therefore one run, with `remap_pulse_decisions` written at 16:18:46 in
+the middle of it. So my date caveat resolved in the direction that would have made it a finding,
+and it still is not one.
 
-| table | rows | parent rows |
-|---|---:|---:|
-| `remap_predictions` | 121,185 | 121,185 |
-| `remap_shadow_orders` | 14,315 | 14,315 |
-| `remap_pulse_decisions` | **0** | 19,333 |
+Confirmed non-circularly: zero duplicate natural keys in the staged range, so nothing was
+double-inserted. 7d's first test was the circular one -- re-running the join against live rows the
+migration itself created -- and they caught it before sending. **Recorded as explained, not
+observed:** nothing logged the join result at run time.
 
-Two remaps match their parent exactly. The third is empty against a parent with 19,333 rows whose
-oldest is 2026-08-18, three days before the migration script's own file date. That is the shape
-the skip defect would leave.
-
-**What stops it being a finding:** the file's date is when it was written, not when it ran. If the
-migration ran before 2026-08-18 the empty remap is correct and there is nothing here. Nothing in
-the repository reads `remap_pulse_decisions` by name, so the consequence, if any, is unremapped
-ids inside merged PULSE history rather than a live breakage, and PULSE has been paused since
-08-31. Handed to 7d with that framing.
+**One genuinely separate thing this turned up, open and unexamined.** 84 duplicate natural keys in
+live `pulse_decisions`, all outside the staged range: same `market_slug`, `decided_at` and
+`action` recorded more than once. That is the live recorder, not the migration, and it means the
+triple is not unique in practice while this script uses it as a key. Nobody has looked.
 
 ## 1. What I need from you (everything else I now run myself)
 
