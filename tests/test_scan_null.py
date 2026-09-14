@@ -501,3 +501,168 @@ def test_p_values_use_the_scans_t_distribution_not_the_normal():
     p-values, so the convention has to match."""
     assert N._p_two_sided(3.0, 5) > 8 * N._p_two_sided(3.0, None)
     assert N._p_two_sided(3.0, None) < 0.01
+
+
+# --------------------------------------------------------------------- #
+# The binomial branch: exact on the win count, honest about clustering.
+# --------------------------------------------------------------------- #
+def test_the_poisson_binomial_reduces_to_the_binomial_when_prices_agree():
+    """The control on the exact test. If every break-even is the same, the
+    Poisson-binomial must BE the binomial — otherwise the convolution is wrong
+    and every p downstream of it is wrong."""
+    pmf = N.poisson_binomial_pmf([0.3] * 12)
+    assert abs(sum(pmf) - 1.0) < 1e-12
+    assert abs(pmf[0] - 0.7 ** 12) < 1e-12
+    from math import comb
+    assert abs(pmf[4] - comb(12, 4) * 0.3 ** 4 * 0.7 ** 8) < 1e-12
+
+
+def test_a_decile_band_makes_the_single_p_binomial_wrong():
+    """★ A decile spans a 0.1 PRICE BAND, so break-even varies within the cell
+    and the exact null is Poisson-binomial. Collapsing to one p mis-states the
+    tail — the same class of approximation as the sandwich it replaces, milder
+    but not free."""
+    spread = [0.20 + 0.01 * i for i in range(11)]      # 0.20 .. 0.30
+    flat = [sum(spread) / len(spread)] * len(spread)
+    assert N.poisson_binomial_pmf(spread)[0] != N.poisson_binomial_pmf(flat)[0]
+    # and the exact version is not merely different, it is the one that sums
+    assert abs(sum(N.poisson_binomial_pmf(spread)) - 1.0) < 1e-12
+
+
+def test_break_even_includes_the_fee():
+    """EV = p - ask - fee = 0, so break-even is ABOVE the ask. A break-even
+    that forgot the fee would make every cell look better than it is."""
+    assert N.break_even(0.50) > 0.50
+    assert abs(N.break_even(0.50) - (0.50 + 0.06 * 0.25)) < 1e-12
+    assert N.break_even(1.0) == 1.0          # no fee at the boundary
+
+
+def test_clustering_the_win_count_is_not_optional():
+    """★ A BINOMIAL ASSUMES INDEPENDENT BETS AND BETS IN ONE GAME ARE NOT —
+    which is the entire reason the sandwich clustered. Replacing one with the
+    other trades a homogeneity failure for a clustering failure.
+
+    Measured on the real tape, nfl first-quarter spread decile 0: 68 bets over
+    15 games, n/G = 4.5. Per-bet Poisson-binomial p = 5.11e-02; collapsed to
+    one observation per game it is p = 1.00. The cell is not evidence at all,
+    and the per-bet test said borderline.
+    """
+    from strategies.base import Bet
+
+    rows, ys = [], []
+    for g in range(15):
+        for k in range(4):                    # 4 bets per game, all agreeing
+            rows.append({"market_slug": f"m{g}-{k}", "game_id": f"g{g}",
+                         "league": "nfl", "mtype": "x_spread",
+                         "bid": 0.04, "ask": 0.06, "y": 0.0})
+            ys.append(0.0)
+    chosen = {"cell": [Bet(market_slug=r["market_slug"], side="yes",
+                           price=r["ask"], stake=r["ask"],
+                           game_id=r["game_id"]) for r in rows]}
+    per_bet = N.binomial_cells(rows, ys, chosen, cluster=False)["cell"]
+    per_game = N.binomial_cells(rows, ys, chosen, cluster=True)["cell"]
+    assert per_bet["unit_n"] == 60 and per_game["unit_n"] == 15
+    assert abs(per_bet["n_over_g"] - 4.0) < 1e-9
+    assert per_game["p"] > per_bet["p"], (
+        "clustering did not weaken the evidence — the reduction is not being "
+        "applied and the p is overstated by roughly sqrt(n/G)")
+
+
+def test_min_p_is_the_across_cell_statistic_not_the_per_cell_one():
+    """Per cell the binomial is exact and needs no permutation — and the
+    permutation would ABSORB it, since shuffling existing settlements holds the
+    marginal win count fixed, which is what that hypothesis is about. What needs
+    a reference is the minimum over correlated cells."""
+    assert N.min_p({"a": {"p": 0.3}, "b": {"p": 0.02}, "c": {"p": 0.9}}) == 0.02
+    assert N.min_p({}) == 1.0
+
+
+def test_the_cached_price_table_is_the_same_test_it_replaces():
+    """★ THE CONTROL ON THE OPTIMISATION, AND IT HAD TO BE REWRITTEN. My first
+    version compared `binomial_cells(table=tbl)` against `binomial_cells(table=None)`
+    — but table=None just calls `cell_price_table` itself, so both sides shared
+    the premise under test and the check could not fail. The reference has to be
+    built in the test, from the definition: group by game, mean break-even per
+    game, majority outcome, exact Poisson-binomial p.
+    """
+    from strategies.base import Bet
+    rows, ys = [], []
+    for g in range(9):
+        for j in range(2):
+            rows.append({"market_slug": f"m{g}-{j}", "game_id": f"g{g}",
+                         "league": "cfb", "mtype": "full_game_winner",
+                         "bid": 0.30 + 0.01 * j, "ask": 0.32 + 0.01 * j,
+                         "y": float((g + j) % 3 == 0)})
+            ys.append(rows[-1]["y"])
+    chosen = {"c": [Bet(market_slug=r["market_slug"], side="yes", price=r["ask"],
+                        stake=r["ask"], game_id=r["game_id"]) for r in rows]}
+    got = N.binomial_cells(rows, ys, chosen, cluster=True,
+                           table=N.cell_price_table(rows, chosen, cluster=True))["c"]
+
+    # --- the independent reference, written out longhand ---
+    ref_ps, ref_k = [], 0
+    for g in range(9):
+        mem = [i for i, r in enumerate(rows) if r["game_id"] == f"g{g}"]
+        ref_ps.append(sum(N.break_even(rows[i]["ask"]) for i in mem) / len(mem))
+        ref_k += int(sum(ys[i] for i in mem) / len(mem) >= 0.5)
+    assert got["k"] == ref_k
+    assert got["unit_n"] == 9
+    assert abs(got["p"] - N.poisson_binomial_p(ref_k, ref_ps)) < 1e-12
+    # the table answers for EVERY achievable k, not only the observed one
+    tbl = N.cell_price_table(rows, chosen, cluster=True)["c"]
+    assert len(tbl["pval"]) == 10
+    for k in range(10):
+        assert abs(tbl["pval"][k] - N.poisson_binomial_p(k, ref_ps)) < 1e-12
+
+
+def test_games_per_cell_do_not_move_under_permutation():
+    """★ WHY MIXED GAMES ARE KEPT BY MAJORITY. G is a property of the price/game
+    structure, so it must be identical in every replicate. Dropping disagreeing
+    games would shrink G in the NULL only — the permutation manufactures
+    disagreement — and a smaller-G null cannot reach as far into the tail, which
+    biases toward my own hypothesis."""
+    rows = _rows_every_cell()
+    chosen = N.select(rows)
+    tbl = N.cell_price_table(rows, chosen, cluster=True)
+    rng = random.Random(5)
+    seen = set()
+    for _ in range(25):
+        ys, _f = N.permute_settlements(rows, rng)
+        bc = N.binomial_cells(rows, ys, chosen, cluster=True, rng=rng, table=tbl)
+        seen.add(tuple(sorted((k, v["unit_n"]) for k, v in bc.items())))
+    assert len(seen) == 1, "G moved under permutation — the null is not comparable"
+
+
+def test_an_exact_tie_is_not_silently_a_win():
+    """A 1-1 game has no direction. A fixed `>= 0.5` would call every such game a
+    win and lift the null's k on both tails, which is a bias with no argument
+    behind it."""
+    from strategies.base import Bet
+    rows = [{"market_slug": f"m{j}", "game_id": "g0", "league": "cfb",
+             "mtype": "full_game_winner", "bid": 0.48, "ask": 0.50,
+             "y": float(j == 0)} for j in range(2)]
+    rows.append({"market_slug": "m2", "game_id": "g1", "league": "cfb",
+                 "mtype": "full_game_winner", "bid": 0.48, "ask": 0.50, "y": 0.0})
+    ys = [r["y"] for r in rows]
+    chosen = {"c": [Bet(market_slug=r["market_slug"], side="yes", price=r["ask"],
+                        stake=r["ask"], game_id=r["game_id"]) for r in rows]}
+    tbl = N.cell_price_table(rows, chosen, cluster=True)
+    ks = {N.binomial_cells(rows, ys, chosen, cluster=True,
+                           rng=random.Random(s), table=tbl)["c"]["k"]
+          for s in range(40)}
+    assert ks == {0, 1}, f"tie-break is deterministic, saw k in {ks}"
+    assert N.binomial_cells(rows, ys, chosen, cluster=True,
+                            table=tbl)["c"]["mixed_games"] == 1
+
+
+def test_min_p_is_drawn_in_the_null_and_has_a_spread():
+    """A null with no spread is not a null. min-p must vary across replicates —
+    if it were constant the multiplicity reference would be a single number
+    dressed as a distribution."""
+    rows = _rows_every_cell()
+    null = N.null_distribution(rows, reps=40, seed=3)
+    assert "min_p" in null["draws"]
+    assert len(null["draws"]["min_p"]) == 40
+    assert len(set(null["draws"]["min_p"])) > 1, "min-p is degenerate"
+    assert null["binomial_cells"] > 0
+    assert null["mixed_games_per_rep"] is not None
