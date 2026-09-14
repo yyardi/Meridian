@@ -165,3 +165,39 @@ def test_a_confirmed_only_slate_excludes_nothing():
     kept, excluded = usable_games(
         [{"vg": "a", "src": "post"}, {"vg": "b", "src": "backfill"}])
     assert excluded == 0 and len(kept) == 2
+
+
+def test_a_game_with_no_score_source_is_excluded_and_counted():
+    """The fourth category. A mapped game with NO final anywhere — no post
+    row, no backfill row, not even a proxy — used to vanish from the result
+    entirely, because GAMES_SQL inner-joined the finals. The printed route mix
+    then summed to LESS than the mapped games and nothing said so. One such
+    game exists today (401872931, nfl-den-kc-2026-09-14, zero state rows: it
+    has not been played).
+
+    It must be counted, not dropped. An exclusion nobody can see is how a
+    shrinking sample becomes an invisible one.
+    """
+    from cfb.run_ladder_calibration import usable_games
+
+    games = [{"vg": "a", "src": "post"}, {"vg": "b", "src": "none"},
+             {"vg": "c", "src": "proxy"}]
+    kept, excluded = usable_games(games)
+
+    assert [g["vg"] for g in kept] == ["a"]
+    assert excluded == 2, "the no-source game was dropped without being counted"
+    assert len(kept) + excluded == len(games)
+
+
+def test_an_unvetted_route_is_excluded_rather_than_trusted():
+    """CONFIRMED_ROUTES is an allowlist, not a blocklist. A route nobody has
+    vetted should cost a smaller sample — visible in the excluded count —
+    rather than a biased one, which is invisible. 'none' is exactly the
+    category that fell through when the rule was `!= "proxy"`.
+    """
+    from cfb.run_ladder_calibration import CONFIRMED_ROUTES, usable_games
+
+    kept, excluded = usable_games([{"vg": "x", "src": "some_new_feed"}])
+    assert kept == [] and excluded == 1, (
+        "an unrecognised route was trusted by default")
+    assert "proxy" not in CONFIRMED_ROUTES and "none" not in CONFIRMED_ROUTES
