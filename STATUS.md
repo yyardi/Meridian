@@ -467,6 +467,43 @@ known-broken version.
 section 1 and has not been run. If only one service is rebuilt before Thursday, this is the one,
 though a partial rebuild leaves the rest on stale images reporting healthy.
 
+## 0o. "Staged on prod" is not "deployed". No container mounts the checkout.
+
+Checked all 28 services: **not one of them mounts `/app/core`.** Every long-running container runs
+the code baked into its image, so `git checkout origin/main -- <files>` on the box, which I have
+done after every merge today and reported as "staged", changes nothing for any of them.
+
+It is not useless. It is exactly how two other paths get current code, and both matter:
+
+* **cron shell scripts run from the host filesystem**, so `scripts/nightly_scan.sh` and
+  `prod_weekend_read.sh` do track git. Verified: the new paper-book block is on the box.
+* **one-off `docker run` containers that pass `-v` explicitly** -- the nightly scan and the paper
+  book mount `core/` and `strategies/` and pipe the script over stdin, which is why that path was
+  built this way in the first place.
+
+Verified by asking the running images, not by reading the checkout:
+
+| today's fix | live now? | why |
+|---|---|---|
+| cricket ESPN upsert | **yes** | that container was rebuilt at 10:55Z |
+| cricket and TT cadence | **yes** | rebuilt 11:10Z |
+| MLB event limit | **yes** | rebuilt 10:28Z |
+| nightly push, strategy line, paper book in the nightly | **yes** | host script, cron reads from disk |
+| scan fixes: SQL bind, atomic JSON, partition floor | **yes** | mounted into the one-off container |
+| six MLB strategy registrations | **yes** | same mount |
+| `service_heartbeats.markets_seen` and its writer | **no** | `grep` in the running recorder returns 0 |
+| `board_coverage` rename and limit logging | **no** | same, returns 0 |
+| PULSE observation watermark | **no** | image built 2026-09-02 |
+
+**So the rebuild is not housekeeping.** Three of today's fixes are inert until it runs, including
+the PULSE watermark, which has a Thursday deadline, and `markets_seen`, which is the only
+instrument that would distinguish an empty venue board from a quiet one the next time this
+morning's two-hour gap happens.
+
+**And I should stop saying "staged" as if it means deployed.** Every report I have written today
+used that word after a merge. For the six rows above marked yes it happened to be true by another
+route; for the three marked no it was not.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
