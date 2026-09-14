@@ -540,6 +540,16 @@ programme — and a test asserts the code cannot silently go back to it.
 3. **`shared_buffers` is 128 MB** against a 57 GB table on a 7 GB box — measure
    before changing, and it needs a postgres restart that drops every recorder.
 
+**Suite: 1,791 → 1,958 passing, 0 failing, verified on the MERGED main rather
+than on any branch** — a green branch and a green merge are different claims, and
+every branch tonight was merged into a main that had moved underneath it.
+
+**Three things to check on the 04:40Z nightly, because each is currently believed
+on an EXPLAIN or a unit test rather than on a real unattended run:** does
+`since=2026-09-01` print on the coverage line (the floor), does the run come in
+materially under tonight's two hours (the single-pass query), and does CELLS_JSON
+parse (the int64 fix).
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
