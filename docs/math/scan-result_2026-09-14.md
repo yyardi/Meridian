@@ -1,5 +1,10 @@
 # The first scan — result, 2026-09-14
 
+> **Replicated in-game: see `docs/math/scan-result-live_2026-09-14.md`.** The same conclusion
+> holds on 296,964 sampled live ticks — a population 790× larger, with continuously moving
+> prices rather than one close per market. These are one finding and neither file should be
+> read without the other.
+
 `cfb/run_scan.py`, prod read-only, venue-settled through `core/settlements.py`. Registered in
 `docs/math/scan-preregistration.md` (+ Amendment 1). A **screen**: it nominates, it never
 decides. Nothing was traded.
