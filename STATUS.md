@@ -710,6 +710,35 @@ model. It is created by `archive/cfb/backfill_cfb.py`, in `archive/`. **The dail
 primary settlement source is a one-shot import from an archived script**, and its query cannot run
 against a migrated schema at all.
 
+## 0t. DECISION: the confirmed final wins over the backfill, and the backfill is not retired
+
+Two questions routed to me, both decided, both measured first.
+
+**Which source wins where both exist.** The confirmed post row. Measured on the 11 overlapping
+games: **1 disagrees on the total, 0 on the winner.** The disagreement is game 401856660, where the
+backfill holds 31-3 for a total of 34 and the confirmed final holds 51-10 for a total of **61**.
+That is 27 points, and it is not truncation, because the higher number is the post row -- the
+backfill import is simply wrong there. Winner settlement is untouched, so the change is confined to
+totals, and the backfill's error runs **low**, which would settle totals UNDER. Third defect today
+pointing the same way.
+
+**Whether to retire the backfill. No, and the measurement inverted my expectation and 7d's.** Of
+its 55 games, 11 also have a post row and **44 do not**. Those 44 finished before the live recorder
+existed and the live table can never acquire them retrospectively, so a correct post-row filter
+does not supersede the table -- it would lose 80% of what the table supplies. It is also not the
+calibration's table alone: all 55 rows carry a DraftKings closing spread that
+`cfb/run_making_touch.py` reads.
+
+**So the exposure is the opposite of retirement.** `espn_cfb_backfill_games` has no model and no
+migration; it exists only where `archive/cfb/backfill_cfb.py` was once run. A migrated schema does
+not have it, and if it were lost, nothing in the live tree could recreate 44 finals and 55 closing
+spreads. **It needs a model and a migration, not deletion.**
+
+**Our two period counts reconcile by a transform, not a choice.** I had 99 of 105 games, 7d had 101
+of 107. Two games carry both a NULL-period post row and a period-4 one, so they landed in both of
+their buckets; a period-4 post row survives the filter, so those two are not excluded. 99 answers
+the question actually asked. The row-level figures agree exactly at 136 of 142.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
