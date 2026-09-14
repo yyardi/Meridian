@@ -221,9 +221,9 @@ def test_a_finished_game_is_not_in_play_however_the_flag_reads():
 
     now = dt.datetime.now(UTC)
 
-    def snap(started_hours_ago, age_minutes, is_live):
+    def snap(started_hours_ago, age_minutes, is_live, slug="x"):
         return MarketSnapshot(
-            market_slug="x", captured_at=now - dt.timedelta(minutes=age_minutes),
+            market_slug=slug, captured_at=now - dt.timedelta(minutes=age_minutes),
             game_start_time=now - dt.timedelta(hours=started_hours_ago),
             is_live=is_live,
         )
@@ -234,8 +234,23 @@ def test_a_finished_game_is_not_in_play_however_the_flag_reads():
     assert market_state(snap(1.0, 0.1, True), as_of=now) == IN_PLAY
     # Started but the stream went quiet — the game ended.
     assert market_state(snap(1.0, 30, True), as_of=now) == FINISHED
-    # Past any plausible game length, whatever the flag says.
-    assert market_state(snap(5.0, 0.1, True), as_of=now) == FINISHED
+
+    # ★ "PAST ANY PLAUSIBLE GAME LENGTH" IS NOT LEAGUE-FREE, AND THIS TEST USED
+    # TO ASSERT IT WAS. Five hours past tip-off with a six-second-old stream was
+    # asserted FINISHED on a slug with no league in it, which took the WNBA
+    # value (3.5h, and the constant's own comment said so) and applied it to
+    # football. ESPN's state field puts a real CFB game at 5.11h, so that case
+    # is a long game in progress, not a frozen flag. Both directions are now
+    # pinned to a league.
+    # Real slug shapes, taken from prod. My first attempt invented
+    # "nfl-cfb-osu-mich-..." and `league_of_slug` read it as NFL off the leading
+    # token, so the cfb case silently asserted the NFL cap.
+    wnba = "aec-wnba-conn-dal-2026-08-02"
+    cfb = "asc-cfb-cencon-toledo-2026-09-12-4q-pos-4pt5"
+    assert market_state(snap(5.0, 0.1, True, wnba), as_of=now) == FINISHED
+    assert market_state(snap(5.0, 0.1, True, cfb), as_of=now) == IN_PLAY
+    # and the backstop still exists for football, past anything ESPN has seen
+    assert market_state(snap(7.0, 0.1, True, cfb), as_of=now) == FINISHED
 
 
 def test_a_game_not_yet_started_is_pregame_even_if_flagged_live():
@@ -268,3 +283,71 @@ def test_shadow_orders_are_hidden_for_market_types_the_executor_refuses(seeded):
     for m in seeded.get("/api/board").json()["markets"]:
         if m["type"] == "winner":
             assert m["shadow"] is None
+
+
+# --------------------------------------------------------------------------- #
+# The wall clock is per league because one number was measured on one league.
+# --------------------------------------------------------------------------- #
+#: league -> longest game ESPN's `state` field actually observed, hours.
+#: `espn_cfb_game_state`, `in` -> `post`, the 2026-09-12/13 slate.
+#: CFB: 72 games, mean 3.37, p95 4.19, p99 4.64, max 5.11.
+#: NFL: 9 games, mean 3.09, max 3.64.
+_OBSERVED_MAX_HOURS = {"cfb": 5.11, "nfl": 3.64}
+
+
+def test_every_cap_clears_the_longest_game_its_league_has_played():
+    """★ THE REGRESSION THIS EXISTS TO CATCH. The cap was a single 3.5, and its
+    own comment named the population: "a WNBA game is 40 minutes of clock and
+    roughly two hours of wall time". Applied to college football, 3.5h is barely
+    the MEAN, and 18 of 72 measured games exceeded it -- costing 491 live-minutes
+    in one weekend, a mean of 27 per affected game, and it is the last 27
+    minutes.
+
+    Pinned to the measurement rather than to the values, so tightening a cap
+    below a game its league has actually played fails here."""
+    from core.board import _WALL_HOURS
+
+    for league, observed in _OBSERVED_MAX_HOURS.items():
+        cap = _WALL_HOURS[league]
+        assert cap > observed, (
+            f"{league} cap {cap}h is below the longest game ESPN observed "
+            f"({observed}h) -- games would read FINISHED while still in play")
+
+
+def test_the_caps_are_not_all_the_same_number():
+    """A per-league map whose values are identical is the single constant again
+    wearing a dict. WNBA (~2h wall) and CFB (max 5.11h) must differ."""
+    from core.board import _WALL_HOURS
+
+    assert _WALL_HOURS["cfb"] > _WALL_HOURS["wnba"]
+    assert len(set(_WALL_HOURS.values())) > 1
+
+
+def test_an_unknown_league_gets_the_generous_default_not_the_wnba_value():
+    """An unrecognised slug must not inherit the tightest cap. The backstop that
+    matters is stream staleness; being generous here costs little, being tight
+    costs the end of games."""
+    from core.board import DEFAULT_WALL_HOURS, _WALL_HOURS, wall_hours_for
+
+    assert wall_hours_for("no-league-in-this-slug") == DEFAULT_WALL_HOURS
+    assert wall_hours_for(None) == DEFAULT_WALL_HOURS
+    assert DEFAULT_WALL_HOURS >= max(_OBSERVED_MAX_HOURS.values())
+    assert DEFAULT_WALL_HOURS > _WALL_HOURS["wnba"]
+
+
+def test_stream_staleness_still_ends_a_game_inside_every_cap():
+    """The caps got looser, so this is the check that they did not become the
+    only thing standing between a stale quote and the board. A quiet stream must
+    finish a game well before any cap, in the league with the loosest one."""
+    from core.board import FINISHED, _WALL_HOURS, market_state
+
+    now = dt.datetime.now(UTC)
+    loosest = max(_WALL_HOURS, key=lambda k: _WALL_HOURS[k])
+    slug = {"cricket": "aec-county-x-y-2026-09-13",
+            "cfb": "asc-cfb-cencon-toledo-2026-09-12-2h-27pt5",
+            "mlb": "aec-mlb-nyy-bos-2026-09-13"}.get(loosest, "x")
+    quiet = MarketSnapshot(
+        market_slug=slug, captured_at=now - dt.timedelta(minutes=20),
+        game_start_time=now - dt.timedelta(hours=1), is_live=True,
+    )
+    assert market_state(quiet, as_of=now) == FINISHED

@@ -168,8 +168,17 @@ def backfill(start_season: int, end_season: int, limit: int | None = None) -> tu
             result = session.execute(
                 stmt.on_conflict_do_nothing(constraint="uq_player_game")
             )
-            # psycopg reports -1 for a multi-VALUES insert; fall back to the
-            # attempted count rather than logging a negative total.
+            # EVERY SQLAlchemy Core insert() reports -1, not just a multi-VALUES
+            # one and not only under ON CONFLICT -- measured 2026-09-14, see
+            # `core/feeds/espn_live_recorder._inserted`, which had the same bug
+            # unguarded for three inserts and reported rows_written=-2.
+            #
+            # This site keeps the attempted count on purpose: it backfills
+            # finished games once, so attempted and written differ only on a
+            # re-run. A LIVE feed must not do this -- attempted rows make a
+            # frozen feed look healthy -- and `_inserted` counts RETURNING
+            # instead. Two sites, two answers, and the reason is which question
+            # the number is asked for.
             rows += result.rowcount if (result.rowcount or 0) >= 0 else len(values)
             games += 1
             if i % 100 == 0:
