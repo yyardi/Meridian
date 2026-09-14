@@ -130,7 +130,22 @@ WITH bf AS (
   SELECT g.game_id eg, g.home_score h, g.away_score a, 'cfb' lg, 'backfill' src
   FROM espn_cfb_backfill_games g WHERE g.home_score IS NOT NULL AND g.away_score IS NOT NULL),
 lv AS (""" + LIVE_FINALS_SQL + """),
-fin AS (SELECT * FROM bf UNION ALL SELECT * FROM lv WHERE eg NOT IN (SELECT eg FROM bf)),
+-- PRECEDENCE: a CONFIRMED post row beats the backfill (decision 2026-09-14).
+-- The two sources overlap on 11 games and disagree on 1 total and 0 winners.
+-- Game 401856660 holds 31-3 (total 34) in the backfill against 51-10 (61) in
+-- the post row, and truncation settles which is wrong: a game cut short
+-- cannot score MORE than its final, and the higher number here is the POST
+-- row rather than an in-game one, so the backfill is low by 27 points. The
+-- error direction matters as much as the fix -- a low total settles a totals
+-- market UNDER, and `cfb_total_under_all` is registered.
+-- `lv` is DISTINCT ON (game_id), so it holds exactly one row per game and
+-- these three arms are disjoint by construction.
+fin AS (
+  SELECT * FROM lv WHERE src = 'post'
+  UNION ALL
+  SELECT * FROM bf WHERE eg NOT IN (SELECT eg FROM lv WHERE src = 'post')
+  UNION ALL
+  SELECT * FROM lv WHERE src = 'proxy' AND eg NOT IN (SELECT eg FROM bf)),
 ko AS (
   SELECT game_id eg, min(wall_clock) ko FROM espn_cfb_backfill_plays WHERE wall_clock IS NOT NULL GROUP BY 1
   UNION ALL
