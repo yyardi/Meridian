@@ -46,7 +46,10 @@ def test_nothing_is_defined_below_the_main_guard():
     bad = _offenders()
     assert not bad, (
         "definitions below `if __name__ == \"__main__\"` are unreachable when the "
-        "file runs as a script, and invisible to any test that imports it:\n  "
+        "file runs as a script, and invisible to any test that imports it.\n"
+        "  CAUSE, four times on 2026-09-14 including twice by this checker's own "
+        "author: `cat >> file.py` appends BELOW a trailing __main__ block.\n"
+        "  FIX: move the guard back to the end of the file.\n  "
         + "\n  ".join(f"{f} (guard at line {ln}): {', '.join(names)}"
                       for f, ln, names in bad))
 
