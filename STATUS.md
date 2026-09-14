@@ -572,6 +572,18 @@ pregame tight cells ran 10/1 losing. Two of 52 against 2.6 expected is noise, an
 it is the one place the two populations' directional signatures differ. Worth a
 look only if it recurs on independent tape.
 
+★ **THE LIMIT ON THIS RESULT, WHICH MATTERS MORE THAN THE RESULT: the two scans
+agree, and they share a codebase, an author and a settlement source.**
+`run_scan_live.py` was derived from `run_scan.py` — same `clustered`, same
+`poisson_binomial_p`, same fee constant, same venue endpoint. **So the
+replication is strong on POPULATION and weak on IMPLEMENTATION: a defect in the
+shared statistic would reproduce identically in both and read as confirmation.**
+The pregame degeneracy was caught only because a second, independently written
+implementation existed to disagree. **If the in-play result ever has to carry
+weight on its own, it needs the same treatment — a second implementation by
+someone who did not write the first.** Recorded now rather than discovered when
+the number matters.
+
 ★ **The diagnostic that made this readable:** in-play a cell carries a **median
 11× and up to 91× ticks per effective cluster** (pregame: 1.66 rungs per game).
 A cell reading n=2,715 holds about 30 independent observations. Printing
