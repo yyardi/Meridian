@@ -79,7 +79,10 @@ SINCE = (os.environ.get("SCAN_SINCE") or "").strip() or None
 #: generic plan, and a generic plan cannot fold `$1 IS NULL`, so pruning would
 #: disappear silently and the scan would just get slow again. Two literal
 #: strings depend on nothing.
-_FLOOR = "\n    AND {a}captured_at >= :since::timestamptz"
+#: CAST(...), not `::` -- SQLAlchemy will not bind a parameter followed by a
+#: colon, so `:since::timestamptz` bound nothing and postgres got the
+#: literal. Inherited by copy from cfb/run_scan.py; see the note there.
+_FLOOR = "\n    AND {a}captured_at >= CAST(:since AS timestamptz)"
 CLOSE_SQL = """
 WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
   WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL GROUP BY 1)
@@ -107,7 +110,8 @@ def partition_floors(conn, table="market_snapshots"):
     """
     rows = conn.execute(text(
         "SELECT pg_get_expr(c.relpartbound, c.oid) b FROM pg_class c "
-        "JOIN pg_inherits i ON i.inhrelid = c.oid WHERE i.inhparent = :t::regclass"),
+        "JOIN pg_inherits i ON i.inhrelid = c.oid "
+        "WHERE i.inhparent = CAST(:t AS regclass)"),   # not :t::regclass
         {"t": table}).all()
     out = set()
     for (b,) in rows:

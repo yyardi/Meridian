@@ -95,7 +95,14 @@ SINCE = (os.environ.get("SCAN_SINCE") or "").strip() or None
 #: generic plan, and a generic plan cannot fold `$1 IS NULL`, so pruning would
 #: disappear silently and the scan would just get slow again. Two literal
 #: strings depend on nothing.
-_FLOOR = "\n    AND {a}captured_at >= :since::timestamptz"
+#: ★ `CAST(:since AS timestamptz)`, NOT `:since::timestamptz` -- the SAME
+#: defect as in `partition_floors`, and this is the one that would have
+#: killed the scan even if the guard had passed. SQLAlchemy will not bind a
+#: parameter that is immediately followed by a colon, so `:since::timestamptz`
+#: bound nothing and postgres got the literal. Neither unit tests nor EXPLAIN
+#: could see it: the tests counted occurrences of this clause in the rendered
+#: string, and EXPLAIN was run with literals typed by hand.
+_FLOOR = "\n    AND {a}captured_at >= CAST(:since AS timestamptz)"
 CLOSE_SQL = """
 WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
   WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL{floor_g} GROUP BY 1)
@@ -118,8 +125,18 @@ def partition_floors(conn, table="market_snapshots"):
     weekly partitions, so the boundaries are read from `relpartbound`.
     """
     rows = conn.execute(text(
+        # ★ `CAST(:t AS regclass)`, NOT `:t::regclass`. SQLAlchemy's
+        # bind-param regex is `(?<![:\w\\]):(\w+)(?!:)` -- the trailing
+        # `(?!:)` means A PARAMETER FOLLOWED BY A COLON IS NOT RECOGNISED,
+        # because `::` is assumed to be a cast. So `:t::regclass` bound
+        # ZERO parameters and postgres received the literal `:t`:
+        #   psycopg.errors.SyntaxError: syntax error at or near ":"
+        # The 09:52Z run of 2026-09-14 -- the FIRST scan ever to run with
+        # SCAN_SINCE set -- died here in under two minutes, before reading a
+        # single row.
         "SELECT pg_get_expr(c.relpartbound, c.oid) b FROM pg_class c "
-        "JOIN pg_inherits i ON i.inhrelid = c.oid WHERE i.inhparent = :t::regclass"),
+        "JOIN pg_inherits i ON i.inhrelid = c.oid "
+        "WHERE i.inhparent = CAST(:t AS regclass)"),
         {"t": table}).all()
     out = set()
     for (b,) in rows:
