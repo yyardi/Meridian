@@ -837,6 +837,21 @@ First pitch tonight **22:40Z**. Measured at 21:52Z:
 | MLB rows on tape | 16,377, from 6,081 this morning |
 | settled MLB games to date | **1** |
 
+**Tonight's ten, and what the 04:40Z nightly will actually see.**
+
+| first pitch | games | typical end |
+|---|---:|---|
+| 22:40Z | 2 | 01:40Z |
+| 23:07Z | 5 | 02:07Z |
+| 00:40Z | 1 | 03:40Z |
+| 01:38Z | **2** | **04:38Z** |
+
+The nightly runs at **04:40Z**, so eight of the ten finish comfortably before it and **two end two
+minutes prior** -- those will almost certainly not be settled in time, and three hours is a median
+that extra innings push later. **Expect the morning push to report roughly 8 of 10**, with the rest
+counted-not-scored, which is the correct behaviour rather than a shortfall. The daily MLB read at
+10:40Z catches all ten.
+
 **So tonight takes MLB from 1 settled game to about 11.** At roughly 10-15 a night it clears the
 paper book's G ≥ 25 floor around **Wednesday** and reaches 100 games inside a week. Nothing else
 in the programme accrues at that rate: CFB gives ~117 games a week but only on Saturdays, NFL gives
