@@ -26,6 +26,8 @@ the run is under main() and executes only when the file is the script.
 """
 import datetime as dt
 import json
+
+from core.jsonio import write_json
 import os
 import tempfile
 from collections import defaultdict
@@ -89,12 +91,11 @@ def dump_json(preamble, weekly_rows, all_rows, footer, path=None):
            "file": os.path.basename(path), "preamble": preamble, "footer": footer,
            "unparsed": [], "weekly": {"rows": weekly_rows},
            "all_weeks": {"rows": all_rows}}
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(doc, fh, separators=(",", ":"))
-    os.replace(tmp, path)          # the page never sees a half-written book
-    return path
+    # core.jsonio, not a local dump: this line raised `Object of type datetime is
+    # not JSON serializable` at 10:16Z on 2026-09-14 and the day had no paper
+    # book, while the scan two hours earlier had already been fixed for the same
+    # failure with a different type. One writer, three callers.
+    return write_json(path, doc, separators=(",", ":"))
 # side: 'yes' = buy YES at ask; 'no' = buy NO at 1-bid. rule(r) -> bool on the priced row.
 
 CLOSE_SQL = """
