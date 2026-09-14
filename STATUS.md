@@ -709,10 +709,30 @@ plays that arrive with a lag under 30 seconds, and is then 30-minus-lag seconds 
 not sampling a fresh stream too slowly; it is asking for a freshness this feed almost never
 produces.
 
-*(One figure did not reproduce: 7d reports 2,238 arrival stamps at a median gap of 1.6s, and my
-query over the same date gives 9,270 at 0.7s. The play-spacing figure matches exactly at 43.0s
-median, so this is a population difference -- almost certainly NFL-only against all leagues -- and
-not arithmetic. The mechanism rests on the lag distribution, which both of us measured the same.)*
+**RETRACTED: "ESPN publishes several plays at once and then nothing."** Nothing is bursty. Both of
+us pooled a per-game quantity and neither noticed:
+
+| what was measured | median gap |
+|---|---:|
+| arrival stamps, NFL, 13 games **interleaved** (7d) | 1.6s |
+| arrival stamps, **every league** interleaved (me) | 0.7s |
+| **arrival gaps WITHIN one game -- what the engine sees** | **44.1s** |
+
+Verified here: 2,226 within-game gaps, p50 44.1s, p90 154.6s. `LIVE_SQL` filters by league and
+takes `DISTINCT ON (game_id)`, so the engine never sees a pooled stream, and 44.1s is essentially
+identical to the plays' own 43.0s spacing. My 0.7s was the same artifact as 7d's 1.6s, one level
+further out.
+
+**The conclusion never moved, which is exactly why the wrong description survived.** The tell was
+sitting there: a per-game quantity (43s play spacing) next to a pooled one (1.6s arrival spacing),
+and the difference read as a finding about ESPN instead of as a difference in what had been grouped
+by. Third time today a pooled statistic produced a false description while the headline number
+stayed right.
+
+**The mechanism is unaffected because it rests on the LAG, not the spacing.** A play's window opens
+at its own wall clock, it arrives a median 53 seconds later, so the window is already entirely past
+on arrival for 93.7% of plays. Per-game spacing only adds that nothing rescues the gap: the next
+row for that game is another 44 seconds away.
 
 **Two things that fix does not reach tonight.** It needs a rebuild, and rebuilding this container
 runs `alembic upgrade head`, which advances the database and strands the containers built earlier
