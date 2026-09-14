@@ -39,6 +39,41 @@ docker run --rm -i --network meridian_default \
 RC=$?
 echo "exit $RC" >> "$F"
 
+# --- THE PAPER BOOK, every registered strategy, priced at the pregame close and
+# settled by the venue. The operator asked for nightly numbers on the strategies,
+# and the scan reports CELLS, which are a different object: a cell is a price
+# decile inside a market type, a strategy is a rule somebody registered. Until now
+# the strategy table ran only in the Monday and daily reads and never reached the
+# push, so the one surface the operator reads carried the object they did not ask
+# about. Runs off the api image because settlement needs the venue client; a warm
+# settlement cache makes it minutes, not the two hours a cold one costs.
+PB="$OUT/paper_book_$TS.txt"
+docker run --rm -i --network meridian_default \
+  -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian \
+  -e SETTLE_CACHE="$OUT/settlements.json" \
+  -e PB_JSON="$OUT/paper_book_$TS.json" \
+  -v /opt/meridian/core:/app/core -v /opt/meridian/strategies:/app/strategies \
+  -v /opt/meridian/artifacts:/opt/meridian/artifacts -w /app \
+  "$IMG" python - < cfb/run_paper_book.py > "$PB" 2>&1
+PB_RC=$?
+echo "paper book: $PB (exit $PB_RC)" >> "$F"
+
+# The strategy line. Counted from the ALL WEEKS table, which is the one with a
+# verdict per strategy. `grep -c` prints its count and RETURNS 1 on no match, so
+# it is never given a `|| echo` fallback here -- that is the defect that put a
+# stray bare zero above the nomination count on every healthy night.
+if [ "$PB_RC" -eq 0 ] && grep -q "strategy, ALL WEEKS" "$PB" 2>/dev/null; then
+  PB_N=$(sed -n '/strategy, ALL WEEKS/,$p' "$PB" | grep -cE "spans 0|excludes 0|UNDERPOWERED")
+  PB_POS=$(grep -cE "POSITIVE, excludes 0" "$PB")
+  PB_LINE="strategies $PB_N tested, $PB_POS excluding zero"
+  # A line that excludes zero is the only per-strategy fact worth 480 characters,
+  # and it is named rather than counted so the operator can check its twin.
+  [ "$PB_POS" -gt 0 ] && PB_LINE="$PB_LINE: $(grep -E "POSITIVE, excludes 0" "$PB" | awk '{print $1}' | tr '\n' ' ')"
+else
+  # Absent, not zero -- the same distinction the scan half of this script makes.
+  PB_LINE="strategies NOT COUNTED: paper book exit $PB_RC, no ALL WEEKS table"
+fi
+
 # --- the push: distribution first, then the nominations, then the coverage ---
 DIST=$(grep -A5 "=== DISTRIBUTION" "$F" | grep -E "cells excluding|Var\(t\)|max\|t\|" \
        | sed 's/^ *//' | tr '\n' ' ' | cut -c1-220)
@@ -85,6 +120,7 @@ LAST=$(grep -vE "^exit [0-9]+$" "$F" 2>/dev/null | grep -vE "^[[:space:]]*$" | t
 if [ "$RC" -ne 0 ]; then
   ERR=$(grep -E "^[A-Za-z_.]*(Error|Exception):" "$F" | tail -1 | cut -c1-140)
   BODY="SCAN FAILED exit $RC -- no cell table, no nomination count
+$PB_LINE
 ${ERR:-${LAST:-no exception line in the artifact}}
 $COV
 full table: $F"
@@ -94,7 +130,8 @@ ${LAST:-the artifact is empty}
 $COV
 full table: $F"
 else
-  BODY="$COV
+  BODY="$PB_LINE
+$COV
 $DIST
 $NOM cells cleared the nomination bar
 null: best of ~250 cells shows |t|~3.2 by chance -- the spread is the result, not the max

@@ -41,7 +41,15 @@ def _push_body(tmp_path, artifact: str, rc: int) -> str:
     block = TEXT[TEXT.index("# --- the push:"):TEXT.index("TOPIC=")]
     f = tmp_path / "scan.txt"
     f.write_text(artifact, encoding="utf-8")
-    script = f'set -u\nF={f}\nTS=2026-09-14T0528Z\nRC={rc}\n{block}\nprintf "%s" "$MSG"\n'
+    # PB_LINE is an INPUT to the push block, like F, TS and RC: it is computed
+    # earlier in the script from the paper book, and the block renders it. Stubbed
+    # here so these tests stay about the push, with its own tests below covering
+    # how the line is built. A previous version of this harness did not set it and
+    # `set -u` failed every test at once, which is the correct failure -- the block
+    # really does depend on it.
+    script = (f'set -u\nF={f}\nTS=2026-09-14T0528Z\nRC={rc}\n'
+              f'PB_LINE="strategies 24 tested, 0 excluding zero"\n{block}\n'
+              'printf "%s" "$MSG"\n')
     out = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     return out.stdout
@@ -65,6 +73,15 @@ def test_a_crash_does_not_report_a_nomination_count(tmp_path):
     msg = _push_body(tmp_path, BAD, 1)
     assert not re.search(r"\d+ cells cleared", msg), msg
     assert "no nomination count" in msg
+
+
+def test_the_strategy_line_reaches_the_push_on_both_paths(tmp_path):
+    """The operator asked for nightly numbers on the STRATEGIES. The scan reports
+    cells, which are a different object, and the strategy table never reached the
+    push until now. It has to survive the failure path too: a scan that dies does
+    not stop the paper book from having run."""
+    for artifact, rc in ((GOOD, 0), (BAD, 1)):
+        assert "strategies 24 tested" in _push_body(tmp_path, artifact, rc)
 
 
 def test_a_completed_run_still_reports_the_count_and_the_distribution(tmp_path):
@@ -171,3 +188,62 @@ def test_a_crash_before_the_coverage_line_still_says_failed(tmp_path):
     assert "SCAN FAILED exit 1" in body
     assert "cleared the nomination bar" not in body
     assert "ProgrammingError" in body
+
+
+# --------------------------------------------------------------------------- #
+# The strategy line. The operator asked for nightly numbers on the strategies;
+# the scan reports CELLS, which are a different object -- a cell is a price
+# decile inside a market type, a strategy is a rule somebody registered. The
+# paper book produced the strategy table all along and never reached the push.
+# --------------------------------------------------------------------------- #
+BOOK_OK = """cfb: 15,818 markets with a pregame close, 117 games
+
+strategy, ALL WEEKS         bets games  staked $    P&L $   net/$1   verdict
+cfb_spread_no_20_30          290   107       221   +15.91   +0.072   spans 0
+wnba_spread_yes_80_100       101    40        93    +5.84   +0.063   POSITIVE, excludes 0
+tt_home_dog_yes_40            17    17         6    -0.03   -0.004   UNDERPOWERED (G<25)
+"""
+BOOK_NO_POSITIVE = BOOK_OK.replace("POSITIVE, excludes 0", "spans 0")
+
+
+def _strategy_line(tmp_path, book: str, pb_rc: int) -> str:
+    """Run the script's real strategy-line block against a fixture paper book."""
+    start = TEXT.index("# The strategy line.")
+    block = TEXT[start:TEXT.index("# --- the push:", start)]
+    pb = tmp_path / "book.txt"
+    pb.write_text(book, encoding="utf-8")
+    script = f'set -u\nPB={pb}\nPB_RC={pb_rc}\n{block}\nprintf "%s" "$PB_LINE"\n'
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    return out.stdout
+
+
+def test_the_strategy_count_is_the_all_weeks_table(tmp_path):
+    line = _strategy_line(tmp_path, BOOK_OK, 0)
+    assert "strategies 3 tested, 1 excluding zero" in line
+
+
+def test_a_line_excluding_zero_is_named_not_just_counted(tmp_path):
+    """Named so the operator can check its home/away twin. Every excludes-zero
+    headline this project has produced was the away-team confound."""
+    assert "wnba_spread_yes_80_100" in _strategy_line(tmp_path, BOOK_OK, 0)
+
+
+def test_no_positive_line_names_nothing(tmp_path):
+    line = _strategy_line(tmp_path, BOOK_NO_POSITIVE, 0)
+    assert "strategies 3 tested, 0 excluding zero" in line
+    assert "wnba_spread_yes_80_100" not in line
+
+
+def test_a_failed_paper_book_says_absent_not_zero(tmp_path):
+    """The same distinction the scan half makes: a count over a table that was
+    never written is absent, not zero."""
+    line = _strategy_line(tmp_path, "", 1)
+    assert "NOT COUNTED" in line
+    assert not re.search(r"strategies \d+ tested", line)
+
+
+def test_exit_zero_with_no_table_also_says_absent(tmp_path):
+    """Exit 0 having written nothing is reachable and was the shape that fooled
+    this script once already."""
+    assert "NOT COUNTED" in _strategy_line(tmp_path, "nothing useful here\n", 0)
