@@ -145,15 +145,19 @@ print("★ EXCURSIONS: the fraction of triggers whose mid TOUCHED +/-x cents ins
 print("  horizon, which is what a take-profit or a stop-loss actually fires on. The")
 print("  operator remembers a case that worked; if fav and adv are close to equal, the")
 print("  memorable cases exist in BOTH directions and only one kind gets recalled.\n")
-print(f"  {'arm':9} {'h':>5} " + " ".join(f"{'+'+str(int(x))+'c':>7} {'-'+str(int(x))+'c':>7} {'ratio':>6}"
-                                          for x in EXCURSIONS) + f" {'n':>6}")
+print("  counts are fav/adv, then the same as percentages, then the ratio. READ THE COUNTS:")
+print(f"  {'arm':9} {'h':>5} " + " ".join(f"{'+/-'+str(int(x))+'c  n  /  n':^28}"
+                                          for x in EXCURSIONS) + f" {'anchors':>8}")
 for arm in ("MIDFIELD", "OWN HALF", "SCORING"):
     for h in HORIZONS:
         d = ARMS[(arm, h)][0]
         if len(d) < 5: continue
         n = len(d); cells = []
         for x in EXCURSIONS:
-            fav = sum(1 for _, _, mfe, _ in d if mfe >= x) / n
-            adv = sum(1 for _, _, _, mae in d if mae <= -x) / n
-            cells.append(f"{fav:>6.1%} {adv:>7.1%} {(fav/adv if adv else float('inf')):>6.2f}")
+            kf = sum(1 for _, _, mfe, _ in d if mfe >= x)
+            ka = sum(1 for _, _, _, mae in d if mae <= -x)
+            # RAW COUNTS beside the percentages: a ratio of two small counts is the least
+            # stable statistic here, and I once read a 3.33 off 10 events against 3.
+            cells.append(f"{kf:>4}/{ka:<4}{kf/n:>6.1%}/{ka/n:<6.1%}"
+                         f"{(kf/ka if ka else float('inf')):>6.2f}")
         print(f"  {arm:9} {h:>4}s " + " ".join(cells) + f" {n:>6,}")
