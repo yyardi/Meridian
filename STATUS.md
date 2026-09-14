@@ -442,6 +442,31 @@ between knowing the path is bad and waiting ten minutes to learn nothing.
 **Current counts, 17:30Z:** MLB 8,781 rows over 62 games. Cricket toss records 474, of which 456
 carry a toss time. Table tennis, cricket and MLB all recording, no container down.
 
+## 0n. The PULSE fix is on the box and not running, and WNBA returns Thursday
+
+`meridian-pulse-engine` runs an image built **2026-09-02** and mounts nothing, so it executes the
+code it was built with. Checked directly:
+
+| | |
+|---|---|
+| watermark in the running image | **absent** |
+| watermark in the staged checkout | present, `core/pulse/live.py` |
+| WNBA games listed | **5, Thursday 2026-09-17** |
+| last WNBA tape before that | 2026-08-31 |
+
+So the one-observation-priced-twice defect is fixed on disk and live in the process. On Thursday
+PULSE gets its first games in seventeen days and will record decisions using the twelve-day-old
+image, which re-prices a snapshot it has already acted on: 23.7% of hold rows were priced off data
+more than ten seconds old, and fair value moved up to 9.75¢ on a book that had not changed.
+
+Nothing is placed -- PULSE is shadow-only -- but the decisions it writes are the thing we measure,
+so a rebuild after Thursday means the first live WNBA tape in three weeks was recorded by the
+known-broken version.
+
+**This is the abstract fleet-rebuild exposure with a date on it.** The rebuild command is in
+section 1 and has not been run. If only one service is rebuilt before Thursday, this is the one,
+though a partial rebuild leaves the rest on stale images reporting healthy.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
