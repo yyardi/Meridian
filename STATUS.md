@@ -211,6 +211,28 @@ this project is waiting on is waiting on games. The registered CFB lines need
 first structural route to the operator's number that is not "wait for more
 football". Requires the recorder to actually run.
 
+**First table-tennis numbers, and the honest reading is "the pipeline works, the
+gate does not yet".** Ran the pre-registration's frame gate (`cfb/run_tt_frame_gate.py`)
+at 00:20Z on the 17 matches with a pregame close that started more than 45 minutes ago:
+
+| | |
+|---|---|
+| settled by the venue | **17 of 17, zero failures** |
+| mean YES price | 0.5588 |
+| realized YES rate | 0.5294 (gap −0.029) |
+| favourites won | 6 of 11 = 54.5% |
+
+Gate 2 does not fail. **It also could not have.** P(≥6 wins of 11 | a true rate of 0.50)
+is 0.500 — exactly a coin — and the 95% lower bound on the true rate is 27%. A flipped
+frame would show ~45%, and separating 55% from 45% needs a few hundred matches. So this is
+**not** "the frame is verified"; it is a check that has run and has no power yet, which is
+the same shape as the decision-rule clause retired earlier tonight and must not be quoted
+as corroboration.
+
+What IS established, and it is worth having: the venue settles Setka Cup markets and our
+settlement path reads them — 17 for 17 through `core/settlements.py`. The end-to-end route
+from board sweep to settled outcome works on this family.
+
 ## 3b. Open defects found tonight (none is a strategy question)
 
 | defect | measurement | state |
