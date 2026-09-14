@@ -11,8 +11,10 @@ What is defended:
 * a resting entry whose edge is gone stands down with `withdrawn_at` set;
 * a fill and a stop born on ONE observation collide on the natural key, and
   `withdrawn_at` — never row order — names which price governs;
-* one observation is evaluated once (xfail: the engine has no watermark and
-  re-prices a snapshot it has already acted on);
+* the stop does not fire on a snapshot already priced — it is the one
+  decision whose answer can change with no market information — and a new
+  tick lets it through, so the decision is delayed and not deleted;
+* a market that has not ticked is not swept away as "stream gone";
 * no bankroll reading means no entries — never a default;
 * decision rows carry the full game context (score, margin, period, clock,
   tempo, book, fair value, edge, size, bankroll) and the tape's join keys,
@@ -695,29 +697,74 @@ def test_fill_and_stop_on_one_observation_name_the_governing_price():
     assert float(target.limit_price) != float(stop.limit_price)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "no watermark on the observation: `_observations` serves the newest "
-    "snapshot under MAX_OBSERVATION_AGE_SECONDS every cycle, whether or not "
-    "it is new, so the engine re-prices data it has already acted on. "
-    "Measured on the live tape 2026-09-14: 7 of the 60 duplicate exit pairs "
-    "were written 13-28s apart in separate transactions against ONE "
-    "unchanged snapshot, fair value moving up to 9.1c because the venue "
-    "clock and the v4 availability flags are re-read every cycle while the "
-    "book stands still. 23.7% of hold rows priced a snapshot >10s old. The "
-    "fix is a per-market floor on captured_at; this test then XPASSes."))
-def test_an_observation_is_evaluated_once():
-    """A cycle that sees no new snapshot must decide nothing. The hold trail
-    is the visible witness (throttle off here so a repeat evaluation shows
-    up as a row); the consequential one is the stop, which fires on a price
-    that no longer exists.
+def test_the_stop_does_not_fire_on_a_snapshot_already_priced(monkeypatch):
+    """The stop is the one decision here that can change its answer with NO
+    market information. It compares a moving fair value against a FIXED
+    entry price, so on an unchanged book every cent of movement comes from
+    `_estimate`'s other inputs — the venue clock and the v4 availability
+    flags, both rebuilt from the database every cycle. `_observations` serves
+    the newest snapshot under the age window every cycle whether or not it
+    is new, and the interval is 1s against cadences measured at 0.2s AND
+    30.0s in one game, so a slow market's snapshot is re-read up to thirty
+    times.
+
+    Measured on the live tape 2026-09-14: 7 of the 60 duplicate exit pairs
+    were two cycles 13–28s apart against ONE snapshot, fair value moving a
+    mean 5.05c, and one stop resting at 0.7600 when the next snapshot's ask
+    was 0.7400. An order can only rest at a price the venue is showing.
+
+    The second half is the point: the decision is DELAYED, not deleted. A
+    new snapshot — even with an identical book — lets the stop fire.
     """
+    import dataclasses
+
     with _Session() as s:
         _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=10))
-    eng = _engine(hold_log_seconds=0.0)
-    eng.cycle()
+    eng = _engine()
+    eng.cycle()                                      # entry rests at the bid
     with _Session() as s:
         _snap(s, bid=0.59, ask=0.61, at=NOW - dt.timedelta(seconds=6))
-    eng.cycle()                                      # entry fills, holds open
-    before = len(_rows())
-    eng.cycle()                                      # same snapshot, again
-    assert len(_rows()) == before
+    eng.cycle()                                      # fills; the target rests
+    assert [r.reason for r in _rows(EXIT)] == ["profit_target"]
+
+    # The clock advances while the book stands still: same observation, fv
+    # now through the entry. This is the production mechanism, injected.
+    real = eng._estimate
+    monkeypatch.setattr(eng, "_estimate",
+                        lambda ob: dataclasses.replace(real(ob),
+                                                       fair_value=0.30))
+
+    again = eng.cycle()                              # the SAME snapshot
+    assert again.observations_repeated == 1          # counted, not silent
+    assert [r.reason for r in _rows(EXIT)] == ["profit_target"]
+
+    with _Session() as s:                            # a new tick, same book
+        _snap(s, bid=0.59, ask=0.61, at=NOW - dt.timedelta(seconds=2))
+    eng.cycle()
+    assert [r.reason for r in _rows(EXIT)] == ["profit_target", "ev_stop"]
+    stop = _rows(EXIT)[1]
+    assert float(stop.limit_price) == pytest.approx(0.61)    # the fresh ask
+
+
+def test_a_market_that_has_not_ticked_is_not_swept_away(monkeypatch):
+    """The floor must not make a quiet market look gone. `_sweep_unseen`
+    withdraws a resting entry once a market has been missing for
+    ENTRY_UNSEEN_WITHDRAW_SECONDS, and a 30s-cadence feed leaves the engine
+    looking at one snapshot for thirty cycles. `seen` and
+    `last_seen_monotonic` are therefore updated BEFORE the floor is applied.
+    """
+    # The real grace is 120s and forty fast cycles take under a second, so
+    # the test would pass no matter what the code did. Zero makes it bite.
+    monkeypatch.setattr(pl, "ENTRY_UNSEEN_WITHDRAW_SECONDS", 0.0)
+    with _Session() as s:
+        _snap(s, bid=0.60, ask=0.62, at=NOW - dt.timedelta(seconds=10))
+    eng = _engine()
+    eng.cycle()
+    entry = _rows(ENTER)[0]
+    assert entry.withdrawn_at is None                # resting
+    for _ in range(40):                              # forty cycles, one snapshot
+        eng.cycle()
+    with _Session() as s:
+        still = s.query(PulseDecision).filter(PulseDecision.id == entry.id).one()
+        assert still.withdrawn_at is None            # not "stream gone"
+    assert eng._markets[SLUG].entry_order is not None

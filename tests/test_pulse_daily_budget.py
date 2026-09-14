@@ -51,6 +51,12 @@ _Session = get_sessionmaker(get_engine())
 
 NOW = dt.datetime.now(UTC)
 
+
+#: Re-pinned per test by conftest's `module_now_is_per_test`: these
+#: offsets mean "N seconds ago", not "N seconds before collection".
+#: Without it this file had a 30s budget of suite elapsed time
+#: before its own snapshots aged out of the engine's 60s window.
+NOW_PER_TEST = True
 #: Daily room = 20% × 25 = $5.00; each entry sizes to 5% × 25 = $1.25 (the
 #: position cap binds first), so exhausting the budget takes four entries —
 #: Wednesday's game took nine. Tests reach the cap with one REAL entry plus a
