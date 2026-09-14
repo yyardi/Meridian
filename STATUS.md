@@ -786,6 +786,46 @@ crontab line I had read hours earlier for a different reason, and I repeated it 
 adjacent to work I trusted. The standing note about verifying the clock exists because of exactly
 this, twice before.
 
+## 0x. DECISION: the hand-trade audit must raise, not return a partial list
+
+7d swept for instruments carrying their own copy of a production threshold. Keyed on **value** the
+sweep was useless -- 383 pairs, almost all unrelated constants that happen to both be 30 or 120,
+which is a coincidence detector and the same error as pooling. Keyed on **name** it is 4, and one
+has already drifted.
+
+| | `core/audit/hand_trades.py` | `scripts/export_wnba_trades.py` |
+|---|---|---|
+| `MAX_PAGES` | **50** | **200** |
+| `PAGE_LIMIT` | 100 | 100 |
+| at the cap | logs a warning, **returns a partial list** | **raises** |
+
+Same endpoint, same loop, same pause. They disagree about both *where* the cap is and *what
+hitting it means*, and production is the permissive one. Neither binds today at 681 events and
+seven pages, which is exactly why both look right.
+
+**Decision: `hand_trades` raises, and both caps go to 200.** Four reasons, in order.
+
+Its own docstring says "Walk the whole feed to eof". Returning a partial list breaks the contract
+the function states about itself, and a docstring nobody can rely on is worse than none.
+
+A partial reconciliation **looks complete**. The warning goes to a log; the caller receives a list
+indistinguishable from a whole one. That is the defining failure of this entire day, and it has
+appeared in a nightly push, a coverage guard, a refusal counter and a settlement filter.
+
+The stricter sibling already exists, which is the argument that decided the MLB exclusion too:
+consistency with a policy already in the tree beats a principle argued from scratch, because it
+means the audit is the inconsistent one rather than the case needing a new rule.
+
+And it costs nothing today. Seven pages of fifty. The stricter choice is free now and its benefit
+arrives precisely when the failure would otherwise be invisible.
+
+**The guard cannot see the case that motivated it, and that is stated rather than papered over.**
+`core/gridiron/scalp.py` has no module-level `MAX_AGE_S` -- the threshold is a string default
+inside `params_from_env` -- so there was never a named constant for the replay's copy to collide
+with. 7d widened the matcher to walk locals, re-ran the mutation, found it still passed, and
+reverted the widening as dead complexity. Second guard they wrote today that could not fire, and
+both times the mutation noticed and reading did not.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
