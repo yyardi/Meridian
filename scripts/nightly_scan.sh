@@ -49,17 +49,33 @@ DIST=$(grep -A5 "=== DISTRIBUTION" "$F" | grep -E "cells excluding|Var\(t\)|max\
 # how many cleared the nomination bar. Usually 0. When it is not, THAT is worth a push.
 NOM=$(grep -cE "NOMINATED" "$F" 2>/dev/null || echo 0)
 COV=$(grep -E "^markets with a pregame close|^settled |^cells scored" "$F" | tr '\n' ' ' | cut -c1-120)
-MSG="SCAN $TS
+
+# ★ THE 05:28Z RUN OF 2026-09-14 EXITED 1 (a json.dump TypeError) and this block
+# still pushed "0 cells cleared the nomination bar" -- the SAME sentence a healthy
+# null night prints. The push was indistinguishable from success at the only place
+# the operator actually looks. A count over a table that was never written is not
+# zero, it is absent, so on a non-zero exit the body says so and carries the last
+# line of the traceback. The nomination line is only earned by a completed run.
+if [ "$RC" -ne 0 ]; then
+  ERR=$(grep -E "^[A-Za-z_.]*(Error|Exception):" "$F" | tail -1 | cut -c1-140)
+  BODY="SCAN FAILED exit $RC -- no cell table, no nomination count
+${ERR:-no exception line in the artifact}
 $COV
+full table: $F"
+else
+  BODY="$COV
 $DIST
 $NOM cells cleared the nomination bar
 null: best of ~250 cells shows |t|~3.2 by chance -- the spread is the result, not the max
 full table: $F"
+fi
+MSG="SCAN $TS
+$BODY"
 MSG=$(printf '%s' "$MSG" | cut -c1-480)
 
 TOPIC=$(grep -E '^MERIDIAN_NTFY_TOPIC=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
 if [ -n "$TOPIC" ]; then
-  curl -s -m 20 -H "Title: Meridian nightly scan" -d "$MSG" "https://ntfy.sh/$TOPIC" >/dev/null 2>&1 \
+  curl -s -m 20 -H "Title: Meridian nightly scan$([ "$RC" -ne 0 ] && echo ' FAILED')" -d "$MSG" "https://ntfy.sh/$TOPIC" >/dev/null 2>&1 \
     && echo "pushed" >> "$F" || echo "push failed" >> "$F"
 else
   echo "no ntfy topic in .env; not pushed" >> "$F"
