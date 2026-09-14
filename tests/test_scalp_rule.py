@@ -251,3 +251,37 @@ def test_the_engine_cannot_reach_the_venue():
     for banned in ("polymarket", "PolymarketGatewayClient", "requests", "httpx",
                    "urllib", "place_order", "aiohttp"):
         assert not re.search(rf"\b{banned}\b", src, re.I), f"scalp.py references {banned}"
+
+
+def test_a_timestamp_from_the_future_is_stale_not_fresh():
+    """★ The gate was admitting exactly the corrupt rows.
+
+    `age > max_age_s` alone treats a NEGATIVE age as perfectly fresh, so a
+    play stamped in the future passes the one check meant to stop it.
+    Measured 2026-09-14: 85 of 2,727 NFL plays recorded 09-10..14 carry a
+    wall_clock 24 hours ahead (min lag -86,378s = -86,400 plus the usual
+    lag), while 93.7% of GOOD plays were refused for being a median 52.8s
+    old at first sight. The gate refused the real ones and let the broken
+    ones through.
+    """
+    import datetime as dt
+
+    from core.gridiron.scalp import is_stale
+
+    utc = dt.timezone.utc
+    now = dt.datetime(2026, 9, 14, 12, 0, tzinfo=utc)
+    fresh = now - dt.timedelta(seconds=5)
+    tomorrow = now + dt.timedelta(days=1)
+
+    assert is_stale(now, play_at=tomorrow, tick_at=fresh, max_age_s=30.0), (
+        "a play stamped 24 hours in the future passed the freshness gate")
+    assert is_stale(now, play_at=fresh, tick_at=tomorrow, max_age_s=30.0), (
+        "the tick side does not check the future either")
+    # And the ordinary case still works in both directions.
+    assert not is_stale(now, play_at=fresh, tick_at=fresh, max_age_s=30.0)
+    assert is_stale(now, play_at=now - dt.timedelta(seconds=31),
+                    tick_at=fresh, max_age_s=30.0)
+    # A second of clock skew between the feed's clock and ours is tolerated;
+    # a day is not skew.
+    assert not is_stale(now, play_at=now + dt.timedelta(milliseconds=500),
+                        tick_at=fresh, max_age_s=30.0)

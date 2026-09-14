@@ -108,7 +108,21 @@ def is_stale(now, *, play_at, tick_at, max_age_s):
     opened on one fresh input and one dead one is priced off a fiction.
     """
     for t in (play_at, tick_at):
-        if t is None or (now - t).total_seconds() > max_age_s:
+        if t is None:
+            return True
+        age = (now - t).total_seconds()
+        # A TIMESTAMP IN THE FUTURE IS NOT FRESH, IT IS WRONG. `age > max_age`
+        # alone treats a negative age as perfectly fresh, so a corrupt row
+        # sails through the one gate meant to stop it -- and this is not
+        # hypothetical: 85 of 2,727 NFL plays recorded 2026-09-10..14 carry a
+        # wall_clock 24 hours ahead (min lag -86,378s, i.e. -86,400 plus the
+        # usual lag). Under the old test those 85 were the ONLY rows that
+        # passed while 93.7% of good plays were refused for being 52.8s old
+        # at first sight. The gate was admitting exactly the corrupt ones.
+        #
+        # One second of tolerance for ordinary clock skew between the feed's
+        # clock and ours; a day is not skew.
+        if age > max_age_s or age < -1.0:
             return True
     return False
 
