@@ -282,10 +282,51 @@ double-inserted. 7d's first test was the circular one -- re-running the join aga
 migration itself created -- and they caught it before sending. **Recorded as explained, not
 observed:** nothing logged the join result at run time.
 
-**One genuinely separate thing this turned up, open and unexamined.** 84 duplicate natural keys in
-live `pulse_decisions`, all outside the staged range: same `market_slug`, `decided_at` and
-`action` recorded more than once. That is the live recorder, not the migration, and it means the
-triple is not unique in practice while this script uses it as a key. Nobody has looked.
+## 0i. PULSE writes the same exit twice, at two different prices
+
+84 duplicate natural keys in live `pulse_decisions`, 0.44% of 19,333 rows, no exact copies. Two
+causes, and only one is a defect. Characterised by 7d; the exit half is corrected here because my
+independent check disagreed with theirs.
+
+**24 `enter` groups are not a defect.** All 24 differ in both side and limit price: a YES and a NO
+entry on the same market in the same microsecond, each with its own price and stake. Two
+legitimately distinct decisions the key failed to name.
+
+**60 `exit` groups are the defect, and it is worse than "one decision written twice".** `ev_stop`
+and `profit_target` co-fire on one tick and the exit path emits a row per satisfied condition
+rather than per decision.
+
+| across the 60 exit groups | |
+|---|---|
+| differ in side | 0 |
+| differ in contracts | 0 |
+| **differ in limit price** | **52** |
+| mean price gap | **3.67¢** |
+| max price gap | **9.00¢** |
+
+Same side, same size, same microsecond, **two different limit prices up to nine cents apart, and
+nothing records which one governs.** 7d characterised these as identical in price and differing
+only in reason; that holds for 8 of 60. For the other 52 the two rows would place different
+orders. Sample: one WNBA market at 0.5600 for `profit_target` against 0.6100 for `ev_stop`.
+
+**The trigger is none of the obvious ones.** `decided_at` is microsecond-precision and no group
+shares a whole-second timestamp, so it is one writer in one tick, not a retry, a restart or two
+writers. Strategy, phase, line, market type, entry id and score differ in zero groups. Spread over
+seven days, 08-23 to 08-31, peaking at 29 on 08-29. There is no unique constraint on the table
+beyond its id, so nothing could ever have caught it.
+
+**Downstream, already measurable.** `core/pulse/diagnostics.py` counts `exit_rows` as `count(*)`
+while `entries_with_exit_row` is `count(distinct entry_id)`, so `exit_rows` is over by 60, 2.24%,
+and any ratio between the two mixes units -- the same shape as the coverage `shortfall` deleted
+this morning. Flagged, not changed.
+
+**The natural key is extended to include side and limit price**, which resolves 75 of 84 with no
+nullable column. 7d refused to add `reason` and the refusal is right: `reason` is NULL on all
+2,974 `enter` rows, verified here independently, and the script joins with plain equality, so
+adding it would trade 84 collisions for 2,974 unmappable rows. There is a mutation pinning that
+refusal because it is the wrong fix a future reader will reach for.
+
+
 
 ## 1. What I need from you (everything else I now run myself)
 
