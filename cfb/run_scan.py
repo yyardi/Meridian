@@ -120,6 +120,42 @@ def fee(p, k=FEE_PM): return k * p * (1 - p)
 def mid(bid, ask): return round((bid + ask) / 2, 4)
 
 
+def poisson_binomial_p(trials):
+    """Exact two-sided p for k wins among independent Bernoullis with DIFFERENT p0.
+
+    ONE TRIAL PER GAME. A cell holds several rungs of the same game -- measured on the
+    first pass, 305 of 324 cells have n > G, median 1.66 rungs per game and up to 14.6 --
+    and those rungs are driven by ONE game outcome. A Poisson-binomial over all n bets
+    would treat them as independent and understate p by roughly the clustering factor,
+    which is the very dependence the sandwich existed to handle. Swapping t ->
+    Poisson-binomial fixes the degeneracy and would REINTRODUCE the clustering, so trials
+    are taken one per game (first by slug, deterministic) and dropped rungs are counted.
+
+    Break-even varies per trial -- a decile spans a 0.1 band and on one measured cell a
+    single midpoint-derived break-even was wrong by 3.4c -- so each trial carries its own
+    ask_i + fee(ask_i).
+
+    TWO-SIDED BY THE SMALL-p METHOD: the total probability of every outcome AT MOST AS
+    LIKELY as the observed one. That is scipy.binomtest's convention, so this function
+    reduces to it EXACTLY when the p0 are equal (asserted in the smoke test), and the
+    numbers in docs/math/scan-preregistration.md stay on one convention. "Twice the
+    smaller tail" is the other defensible choice and gives materially different answers
+    at these n -- 0.0122 against 0.0131 on the 46/46 cell, 0.0634 against 0.0459 on the
+    12/0 one -- so the convention is named rather than assumed.
+    """
+    ps = [q for q, _ in trials]
+    k = sum(w for _, w in trials)
+    pmf = [1.0]
+    for q in ps:                                    # O(G^2) DP, trivial at these G
+        nxt = [0.0] * (len(pmf) + 1)
+        for i, v in enumerate(pmf):
+            nxt[i] += v * (1 - q)
+            nxt[i + 1] += v * q
+        pmf = nxt
+    tol = pmf[k] * (1 + 1e-9)
+    return min(1.0, sum(v for v in pmf if v <= tol)), k, len(ps)
+
+
 def clustered(vals, keys):                        # verbatim from cfb/run_paper_book.py
     n = len(vals); m = sum(vals) / n
     res, size = defaultdict(float), defaultdict(int)
@@ -146,7 +182,7 @@ for lg in ("cfb", "nfl", "wnba", "mlb", "cricket", "tabletennis"):
             for lo, hi in DECILES:
                 if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
                 a = r["ask"]
-                CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y))
+                CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y, r["slug"]))
                 STOCK[(lg, mt)][2].add(r["gid"])
         print(f"  ... {pat} {len(rows):,} closes, {calls:,} settlement calls")
 settlements.save(CACHE)
@@ -154,9 +190,18 @@ if not CELLS:
     raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")
 
 # ---- cells, then the distribution -------------------------------------------------------
-scored, excluded = [], []
+scored, excluded, pb_rows = [], [], []
 for key, bets in sorted(CELLS.items()):
     m, se, n, G, ge = clustered([100 * b[0] for b in bets], [b[1] for b in bets])
+    # PRIMARY, and it needs no exclusion: a degenerate cell gets a legitimate p here.
+    one_per_game = {}
+    for b in sorted(bets, key=lambda x: x[5]): one_per_game.setdefault(b[1], b)
+    tr = [(min(max(b[3] + fee(b[3]), 1e-9), 1 - 1e-9), 1 if b[4] == 1 else 0)
+          for b in one_per_game.values() if b[4] in (0, 1)]
+    if tr:
+        pv, kk, gt = poisson_binomial_p(tr)
+        pb_rows.append(dict(key=key, p=pv, k=kk, G=gt, n=n, dropped=n - gt, mean=m,
+                            be=sum(q for q, _ in tr) / gt))
     # DEGENERACY GUARD, before the G floor. A cell in which every bet settled the SAME
     # WAY has no outcome variation, so the sandwich measures the cell's price dispersion
     # rather than its risk, and the interval collapses toward zero width while the mean
@@ -184,19 +229,21 @@ print(f"  {'league':12} {'market type':40} {'closes':>7} {'unsettled':>10} {'gam
 for (lg, mt), (tot, uns, gs) in sorted(STOCK.items(), key=lambda x: -len(x[1][2])):
     if tot >= 10: print(f"  {lg:12} {mt[:40]:40} {tot:>7,} {uns:>10,} {len(gs):>6}")
 
-print(f"\n{'='*100}\nPRIMARY: BINOMIAL ON THE WIN COUNT (no exclusion needed)\n{'='*100}")
-bp = sorted(r["p"] for r in binom_rows if r["p"] == r["p"])
+print(f"\n{'='*100}\nPRIMARY: POISSON-BINOMIAL, ONE TRIAL PER GAME (no exclusion needed)\n{'='*100}")
+bp = sorted(r["p"] for r in pb_rows)
 if bp:
     print(f"  cells scored {len(bp)}   p<0.05: {sum(x < 0.05 for x in bp)}"
           f" (null {0.05*len(bp):.1f})   p<0.01: {sum(x < 0.01 for x in bp)}"
           f" (null {0.01*len(bp):.1f})   min p {bp[0]:.2e}")
     print(f"  Bonferroni at m_eff={len(bp)} needs p < {0.05/len(bp):.2e};"
           f" cells clearing it: {sum(x < 0.05/len(bp) for x in bp)}")
-    print(f"  {'cell':52} {'k/n':>9} {'rate':>7} {'b/e':>7} {'p':>10}")
-    for r in sorted(binom_rows, key=lambda x: x["p"])[:10]:
+    print(f"  {'cell':50} {'k/G':>8} {'rate':>7} {'b/e':>7} {'p':>10} {'rungs':>6}")
+    print(f"  {'':50} {'':>8} {'':>7} {'':>7} {'':>10} {'dropped':>6}")
+    for r in sorted(pb_rows, key=lambda x: x["p"])[:10]:
         lg, mt, lo = r["key"]
-        print(f"  {lg + ' ' + mt[:34] + ' ' + format(lo, '.1f'):52} {str(r['k'])+'/'+str(r['n']):>9}"
-              f" {r['rate']:7.1%} {r['p0']:7.1%} {r['p']:10.2e}")
+        print(f"  {lg + ' ' + mt[:32] + ' ' + format(lo, '.1f'):50} "
+              f"{str(r['k'])+'/'+str(r['G']):>8} {r['k']/r['G']:7.1%} {r['be']:7.1%} "
+              f"{r['p']:10.2e} {r['dropped']:>6}")
 
 m_eff = len(scored)
 print(f"\n{'='*100}\nSECONDARY: THE t DISTRIBUTION, degenerate cells EXCLUDED FIRST\n{'='*100}")
