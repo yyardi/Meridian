@@ -211,7 +211,49 @@ this project is waiting on is waiting on games. The registered CFB lines need
 first structural route to the operator's number that is not "wait for more
 football". Requires the recorder to actually run.
 
-★ **FRAME QUESTION RESOLVED BY LOOKUP: THE FRAME IS CORRECT (30 of 30).**
+★ **FRAME VERIFIED END TO END — BUT MY FIRST CLAIM OF IT WAS ONE LINK SHORT,
+AND THE AUDIT CAUGHT THAT.** The chain that has to hold is:
+
+    bestBidQuote  --[A]-->  marketSides[0] (YES)  --[B]-->  /settlement
+
+I verified B and announced the frame was correct. **Every price we record comes
+from `bestBidQuote`, and A was assumed.** It mattered: if `bestBidQuote` were the
+NO book, `p_fav = max(m, 1−m)` is unchanged in VALUE (it is symmetric, so nothing
+would look wrong) but WHICH player we call the favourite flips, and the measured
+favourite win rate becomes 1 − 0.615 = 0.385. **Observed was 0.476, sitting
+between the two** — the exact signature, invisible to the check I had run.
+
+Both links are now measured:
+
+| link | check | result |
+|---|---|---|
+| A | `bestBidQuote.value` vs `marketSides[0].price` on live markets | **identical to the cent, 10 of 10** (and `bestAskQuote` == `marketSides[1].price`) |
+| B | resolved `marketSides[0].price` vs `/settlement` | **30 of 30 agree, 0 disagree** |
+| A+B together | calibration slope of settled outcome on recorded price | **+0.899**, positive as a point estimate |
+
+**So the frame is sound and inversion is ruled out by direct field identity, not
+by inference.** It also dissolves an apparent contradiction in our own notes:
+`marketSides[]` is not two books, it is the two sides of ONE (YES) book — side0's
+price is the YES BID and side1's is the YES ASK, which is why side1 carries the
+NO team's name while holding a YES price. Both prior notes were right about
+different things.
+
+**`cfb/run_tt_frame_lookup.py`.** Secondary: `outcomes[]` order disagreed with
+`marketSides[]` on 3 of 30, so anything reading outcomes would be wrong ~10% of
+the time. We read sides.
+
+### What is left is a mispricing question, and it is not yet readable
+
+Calibration slope, n=35: **+0.8990 (se 0.5813), 95% [−0.2404, +2.0384]**, price
+sd 0.1431 over a 0.195–0.795 range, intercept +0.0866, realized rate 0.5714
+against a mean price of 0.5393. Positive and near +1 as a point estimate, and it
+**spans zero** — prices are not yet shown to carry information at this n, so
+nothing here is readable as an edge in either direction. The slope reaches a 1.5%
+wrong-call rate at n=61; we have 35. **No table-tennis edge number until then.**
+
+### Superseded: the shortfall that prompted all of this
+
+**Table-tennis favourites underperformed their price early on.**
 `cfb/run_tt_frame_lookup.py`. A RESOLVED market states its own outcome — its
 `marketSides[]` prices become 1 and 0 — so the settlement label can be checked
 against a DIFFERENT field written by a different part of the venue. On every
