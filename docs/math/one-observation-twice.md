@@ -92,10 +92,70 @@ Consequences beyond the seven rows:
   had 26 (median gap **30.0s**) — two writers, two cadences, same game. A
   sub-30s cycle re-prices the slow markets several times per snapshot.
 
-The fix is a per-market floor: remember the last `captured_at` acted upon
-and skip an observation that is not newer. `tests/test_pulse_live.py::
-test_an_observation_is_evaluated_once` is `xfail(strict=True)` and XPASSes
-when it lands. Routed to the engine's owner — it changes when stops fire.
+## The fix, and why it is narrower than it started
+
+A per-market floor, `MarketState.acted_captured_at`. Per market and not per
+cycle because the cadences differ by 150x inside one game: a global floor
+would starve the fast market or leave the slow one unprotected.
+
+What it gates is ONE decision: **the stop may not fire on a snapshot already
+priced.** The stop compares a moving fair value against a FIXED entry price,
+so it is the only decision here whose answer can change with no market
+information at all.
+
+It started as "skip the market entirely", which is the obvious reading of
+"one observation, one evaluation" — and that broke
+`test_pulse_daily_budget`'s Wednesday shape, correctly. A market blocked by
+the daily cap must still enter when ANOTHER market's fill releases the
+budget in the same cycle: that is a change in the ENGINE's state, not in the
+book, and the released budget reaching game B is money. So the general rule
+was wrong and the test found it.
+
+`_manage_entry` and `_maybe_enter` compare the same moving fair value and
+carry the same exposure. Neither has produced an instance in the tape, and
+both are deliberately left alone. The honest general fix is an age bound
+tied to each market's MEASURED cadence rather than a repeat test — a
+30s-cadence market should probably not price an order off a 45s-old book at
+all — and that is a strategy decision, written down here rather than taken.
+
+`observations_repeated` counts the repeats per cycle so the blindness is
+measured instead of assumed.
+
+One thing found and deliberately not changed: `_manage_reprice_arms` advances
+every arm every cycle, so `reprice_cycles` counts CYCLES and not
+OBSERVATIONS — on a 30s-cadence market at a 1s interval it overstates by up
+to 30x. The arms are annotation-only (no order, no position), so this is a
+measurement defect in a diagnostic column rather than money, and widening
+this change to touch it silently would be worse than naming it. Guarded by
+`test_the_stop_does_not_fire_on_a_snapshot_already_priced` (the estimate is
+moved on a frozen snapshot, the production mechanism injected) and
+`test_a_market_that_has_not_ticked_is_not_swept_away` (the floor must not
+make a quiet market look gone to `_sweep_unseen`, which would withdraw its
+resting entry as "stream gone"). Both die under mutation.
+
+## What the row already says, with no migration
+
+The ask was for the row to record WHICH observation it acted on. It already
+does, in two columns that were never read together:
+
+* `decided_at` is `ob.captured_at` — the DATA's time;
+* `created_at` defaults to `now()`, which in Postgres is the TRANSACTION's
+  start — the DECISION's time.
+
+So the staleness of every decision ever taken is already on disk, and no
+schema change is needed to see it:
+
+```sql
+SELECT action, reason,
+       round(extract(epoch FROM (created_at - decided_at))::numeric, 1) AS stale_s
+FROM pulse_decisions
+WHERE created_at - decided_at > interval '10 seconds'
+ORDER BY 3 DESC;
+```
+
+That is how the two cycles were separated from the one (`count(DISTINCT
+created_at)` per group), and it is what makes the 7 visible at all. The
+column that was missing was never a column — it was the query.
 
 ## What the 24 enter pairs are
 
