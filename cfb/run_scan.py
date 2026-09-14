@@ -338,7 +338,7 @@ if not CELLS:
     raise SystemExit("NO DATA: no cell collected -- check the league patterns and the close window")
 
 # ---- cells, then the distribution -------------------------------------------------------
-scored, excluded, pb_rows = [], [], []
+scored, excluded, pb_rows, pb_excluded = [], [], [], []
 for key, bets in sorted(CELLS.items()):
     m, se, n, G, ge = clustered([100 * b[0] for b in bets], [b[1] for b in bets])
     # PRIMARY, and it needs no exclusion: a degenerate cell gets a legitimate p here.
@@ -348,10 +348,17 @@ for key, bets in sorted(CELLS.items()):
         if bb[1] not in best or bb[5] < best[bb[1]][5]: best[bb[1]] = bb
     tr = [(min(max(bb[3] + fee(bb[3]), 1e-9), 1 - 1e-9), 1 if bb[4] == 1 else 0)
           for bb in best.values() if bb[4] in (0, 1)]
-    if tr:
+    # THE G FLOOR GATES THIS PATH TOO. It used to gate only the sandwich, so a TWO-GAME
+    # cell ranked in the top ten at p=8.9e-04 -- and a two-game cell cannot nominate
+    # anything, which is what the floor is for. Excluded primary cells print below.
+    hs = sorted((bb[3] - (bb[3] + bb[2]) / 2) * 100 for bb in bets)   # half-spread, cents
+    med_hs = hs[len(hs) // 2]
+    if tr and len(tr) >= G_FLOOR:
         pv, kk, gt = poisson_binomial_p(tr)
         pb_rows.append(dict(key=key, p=pv, k=kk, G=gt, n=n, dropped=n - gt, mean=m,
-                            be=sum(q for q, _ in tr) / gt))
+                            be=sum(q for q, _ in tr) / gt, hs=med_hs))
+    elif tr:
+        pb_excluded.append((key, len(tr), f"G={len(tr)} < {G_FLOOR} floor: cannot nominate"))
     # DEGENERACY GUARD, before the G floor. A cell in which every bet settled the SAME
     # WAY has no outcome variation, so the sandwich measures the cell's price dispersion
     # rather than its risk, and the interval collapses toward zero width while the mean
@@ -387,12 +394,36 @@ if bp:
           f"   p<0.01: {sum(x < 0.01 for x in bp)} (null {0.01*len(bp):.1f})   min p {bp[0]:.2e}")
     print(f"  Bonferroni at m={len(bp)} needs p < {0.05/len(bp):.2e};"
           f" cells clearing it: {sum(x < 0.05/len(bp) for x in bp)}")
-    print(f"  {'cell':50} {'k/G':>8} {'rate':>7} {'b/e':>7} {'p':>10} {'rungs':>7}")
+    print(f"  {'cell':50} {'k/G':>8} {'rate':>7} {'b/e':>7} {'p':>10} {'rungs':>7} {'half-sp':>8}")
     for r in sorted(pb_rows, key=lambda x: x["p"])[:10]:
         lg2, mt2, lo2 = r["key"]
         print(f"  {lg2 + ' ' + mt2[:32] + ' ' + format(lo2, '.1f'):50} "
               f"{str(r['k'])+'/'+str(r['G']):>8} {r['k']/r['G']:7.1%} {r['be']:7.1%} "
-              f"{r['p']:10.2e} {r['dropped']:>7}")
+              f"{r['p']:10.2e} {r['dropped']:>7} {r['hs']:7.1f}c")
+if pb_excluded:
+    print(f"\n  PRIMARY cells excluded by the G floor ({len(pb_excluded)}), printed not dropped:")
+    for k2, g2, why in pb_excluded[:12]: print(f"    {str(k2):58} {why}")
+
+# ---- CONDITIONING ON COST. The top cells lose because the ASK is 7-14c above the MID
+# on thin market types, which is the venue's spread and not an edge: nobody crosses a
+# 14c spread, and selling into it is the making study, already negative with power. So
+# the question is whether anything survives once cost is held roughly constant.
+print(f"\n{'='*100}\nCONDITIONED ON COST: the same primary, restricted by median half-spread")
+print(f"{'='*100}")
+print(f"  {'max half-spread':>16} {'cells':>6} {'p<0.05':>7} {'null':>6} {'p<0.01':>7} "
+      f"{'null':>6} {'min p':>10}  losing/winning among p<0.05")
+for cap in (1.0, 2.0, 3.0, 5.0, 1e9):
+    sub = [r for r in pb_rows if r["hs"] <= cap]
+    if len(sub) < 5: continue
+    ps2 = sorted(r["p"] for r in sub)
+    sig = [r for r in sub if r["p"] < 0.05]
+    lose = sum(1 for r in sig if r["k"] / r["G"] < r["be"])
+    lab = "all" if cap > 100 else f"<= {cap:.0f}c"
+    print(f"  {lab:>16} {len(sub):>6} {sum(x < 0.05 for x in ps2):>7} {0.05*len(sub):>6.1f} "
+          f"{sum(x < 0.01 for x in ps2):>7} {0.01*len(sub):>6.1f} {ps2[0]:10.2e}  "
+          f"{lose}/{len(sig)-lose}")
+print("  a cost effect shrinks toward the null as the cap tightens; an EDGE would not.")
+
 print(f"\n{'='*100}\nTHE PRIMARY RESULT: THE DISTRIBUTION\n{'='*100}")
 print(f"  m_eff = {m_eff} scored cells (YES side only; the NO twin is -t by identity, so the")
 print(f"          cell count is NOT the multiplicity -- see the module docstring)")
