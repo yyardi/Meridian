@@ -2270,6 +2270,49 @@ excludes a 2.39¢ effect. At 2.26¢ it is 1,813; at 3.73¢ it is 666. The floor 
 effect, so it must be stated as *"to detect a net edge of X¢ takes n = (1.96·49.1/X)²"* with X named —
 not as a bare match count that looks measured.
 
+## 0be. The money arm was registered, tested, green — and had no caller
+
+Ninety minutes after registering the money criterion "before the sample exists", I checked whether it
+would actually run. **It would not.** `core/tt/money.py` shipped with 20 passing tests and **nothing
+calling it**: `cfb/run_tt_elo.py` imported `elo, rule`, and its `PRICE_SQL` selected only the mid, so
+the arm had neither an entry point nor the bid/ask it needs. Grepping the repo, the only importer
+outside the module was its own test file.
+
+**The suite was green throughout — 2,326 tests — because the tests exercise the module directly.** A
+library with thorough tests and no caller passes everything and does nothing. I merged it, approved
+it, and told the operator the criterion was registered; that was true of the code and false of the
+behaviour, which is the only sense that matters for something whose whole purpose is to fire
+automatically in ~19 days when nobody is watching.
+
+**Fixed and verified live.** `PRICE_SQL` now carries `best_bid`/`best_ask` — you buy YES at the ask
+and NO at `1 − bid`, so a mid understates the bar by exactly the half-spread, which is the quantity
+§0bd spent three revisions pinning down. `report()` prints a MONEY line per competition on every run.
+On prod now:
+
+```
+setkameua   256  113  0  NOT YET  0 predicted matches < 200
+    MONEY   NOT YET  0 eligible predictions
+```
+
+**It prints in all four states rather than skipping any**: no book loaded, no eligible predictions,
+eligible but nothing clears its own price, and a scored result. Silence at zero is precisely how a
+criterion goes a month without anyone noticing it never ran — which is the defect this section exists
+to record. It is **not gated on the signal verdict** (conditioning on a signal PASS selects on the
+same outcomes the signal was read from) and is reported as a separate verdict, never collapsed into
+it. Realised cost — mean and median of what the bet matches actually paid — is on the line, because a
+model that prefers wide-quoted matches pays the tail and neither published bar would describe it.
+
+**Five tests assert the WIRING, which is the only thing that was ever missing**, with four mutations
+each verified to have *landed* before its result was believed: dropping the import, reverting the SQL
+to mid-only, not printing, and gating on the signal verdict. Suite 2,331.
+
+**The general form, and it is the sharpest instance of tonight's family.** Every other instrument
+failure tonight produced a *wrong* answer that looked clean. This one produced **no answer at all**,
+and looked cleanest of the lot: a module, a test file, twenty green tests, a registered criterion in a
+pre-registration document, and a commit message describing it working. Nothing in the suite can
+distinguish "this runs and is correct" from "this is correct and never runs" — only asking *what
+calls it* can, and that question is not one any test we own asks by default.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
