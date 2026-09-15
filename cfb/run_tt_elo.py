@@ -101,7 +101,47 @@ def load_db(settlements: str, since: str = "2026-09-01") -> list[elo.Match]:
     return out
 
 
-def report(matches: list[elo.Match]) -> int:
+def load_state(path: str | None) -> dict[str, str] | None:
+    """Last run's verdict per competition, or None when there is no state yet.
+
+    None and {} are DIFFERENT and the difference is the whole point: on the
+    first run there is no previous verdict, so nothing is a transition and
+    nothing is pushed. A missing file read as "everything changed" would push
+    four NOT YETs the first night, which is how a channel earns being ignored
+    before it ever carries the one message that matters.
+    """
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path) as fh:
+            got = json.load(fh)
+        return {str(k): str(v) for k, v in got.get("verdicts", {}).items()}
+    except (json.JSONDecodeError, OSError, AttributeError) as exc:
+        print(f"  state file unreadable ({exc}); treating as FIRST RUN, so no "
+              "transition is reported this time")
+        return None
+
+
+def save_state(path: str, verdicts: dict[str, str]) -> None:
+    """Temp file plus os.replace: a run killed mid-write leaves the old state,
+    never a truncated file that the next run reads as a first run."""
+    tmp = f"{path}.tmp.{os.getpid()}"
+    with open(tmp, "w") as fh:
+        json.dump({"at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                   "verdicts": verdicts}, fh, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def transitions(previous: dict[str, str] | None, now: dict[str, str]
+                ) -> list[str]:
+    """One line per competition whose verdict CHANGED. Empty on a first run."""
+    if previous is None:
+        return []
+    return [f"{c}: {previous[c]} -> {v}" for c, v in sorted(now.items())
+            if c in previous and previous[c] != v]
+
+
+def report(matches: list[elo.Match], state_path: str | None = None) -> int:
     cross = elo.cross_competition_tokens(matches)
     if cross:
         print("  TOKEN IN MORE THAN ONE COMPETITION -- identity already treats "
@@ -112,6 +152,7 @@ def report(matches: list[elo.Match]) -> int:
         print("  no token appears in more than one competition (the two "
               "prior-match definitions remain indistinguishable)")
 
+    verdicts: dict[str, str] = {}
     by_comp: dict[str, list[elo.Match]] = defaultdict(list)
     for m in matches:
         by_comp[m.competition].append(m)
@@ -153,16 +194,34 @@ def report(matches: list[elo.Match]) -> int:
                     % (len(players), rule.MIN_PLAYERS))
         print(f"  {comp:12s} {len(ms):7d} {len(players):7d} {len(ok):8d} "
               f"{v:>8s}  {why}{note}{extra}")
-        worst = max(worst, 0 if v != rule.PASS else 0)
+        verdicts[comp] = v
     print("\n  NOT YET is not a FAIL. It means a floor is unmet; the counts "
           "above are the report the registered spec asks for.")
-    return worst
+
+    # THE WHOLE POINT OF BUILDING THREE DAYS EARLY: nobody has to be watching.
+    # Every night prints the counts; only a CHANGED verdict is worth waking
+    # someone for, so the transition line is what the wrapper greps for.
+    if state_path:
+        previous = load_state(state_path)
+        moved = transitions(previous, verdicts)
+        if previous is None:
+            print(f"  state recorded for the first time in {state_path}; "
+                  "no transition by definition")
+        elif moved:
+            for line in moved:
+                print(f"  TT ELO TRANSITION {line}")
+        else:
+            print("  no verdict changed since the last run")
+        save_state(state_path, verdicts)
+    return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--settlements")
     ap.add_argument("--tsv")
+    ap.add_argument("--state", help="JSON of the last run's verdicts; a CHANGED "
+                                    "verdict prints a TT ELO TRANSITION line")
     ap.add_argument("--since", default="2026-09-01",
                     help="month boundary; a mid-month floor filters without pruning")
     a = ap.parse_args()
@@ -175,7 +234,7 @@ def main() -> int:
     print(f"table-tennis Elo, K={elo.K_DEFAULT:g}, start {elo.START_RATING:g}, "
           f">={elo.MIN_PRIOR_MATCHES} prior in the same competition")
     print(f"  {len(matches)} settled matches parsed")
-    return report(matches)
+    return report(matches, a.state)
 
 
 if __name__ == "__main__":
