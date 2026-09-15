@@ -2385,6 +2385,15 @@ that must fire unattended in ~19 days with nobody watching. 7d's own sweep produ
 caught itself: a regex that missed `from core.tt import elo, money, rule` and so called the arm unwired
 *after* it was wired, and a second pass that counted `.pytest_cache` node ids as callers.
 
+**STANDING RULE, because the scope is deliberate and the trigger will otherwise be forgotten.** The
+callerless guard covers `core/tt/` only. The other 21 uncalled `core/` modules are outside it on
+purpose — a guard that is read beats a guard that is complete, and 22 lines a reader learns to skip is
+the same failure as an alarm that always fires. **The moment any of those 21 acquires a schedule — a
+cron line, a compose service, a step inside one of the nightly scripts — it must come inside the
+fence.** Inertness only matters for code that is supposed to fire unattended; adding a schedule is
+exactly the event that converts a harmless hand-run module into the defect this section records.
+Whoever adds that schedule owns bringing it in, and this is the line that says so.
+
 **Sixth mechanism, now in the catalogue: the instrument that is not connected to anything.** It breaks
 the document's own opening claim that every instance produced tidy output — this class produces *no*
 output, and the intro said otherwise until mechanism 6 contradicted it from below. Suite 2,334.
