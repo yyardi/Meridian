@@ -2313,6 +2313,37 @@ pre-registration document, and a commit message describing it working. Nothing i
 distinguish "this runs and is correct" from "this is correct and never runs" — only asking *what
 calls it* can, and that question is not one any test we own asks by default.
 
+
+**7d's review, 09-15 — three of the four decisions stand; one had a sign error.**
+
+1. Printing in all four states: keep. Silence at zero is how the defect survived a merge and a review.
+2. Not gated on the signal verdict: keep, for the reason it was written.
+3. **The X choice was the smaller problem. The line did not call the registered rule at all** — it
+   decided inline, and `"PASS" if (lo > 0 or hi < 0)` returns **PASS on an interval entirely below
+   zero**, i.e. a strategy that reliably loses, printed as a pass. It also tested "excludes zero"
+   BEFORE the sample-size gate, so a degenerate interval at n=5 could PASS. So `rule.money_verdict`
+   was itself callerless one level down, and its 28 tests protected the copy that never ran. The line
+   now reads the registered rule and prints BOTH ends of the bar range. On the X itself: `BAR_MEDIAN`
+   is the **stricter** gate, not the optimistic end — in `money_verdict` X plays only the resolution
+   role (the cost is inside each bet's P&L), and the tighter bar demands a narrower interval, so it
+   needs ~1,814 matches against ~667. The instinct to flag an unstated choice was right; the
+   direction was inverted.
+4. Entry at ask / 1−bid: keep, verified charged once.
+
+**And the same defect was already on disk, earlier the same night, in my own build.** `core/drift.py`
+was never imported either: the nightly cron runs `scripts/code_drift.sh`, which carries its own
+complete classification, and `docs/infra/what-is-actually-running.md` credited the Python module with
+pinning "UNKNOWN is not a pass". The guarantee belonged to the implementation that never executed.
+The duplicate is deleted, its two rules are now comments at the branches that implement them, and the
+doc is corrected — with a test that drives the SHELL script named as the open option, since a test of
+a parallel implementation asserts a guarantee about code that does not run.
+
+**Swept the family: 22 of 111 `core/` modules have no caller in code, compose, shell or cron.** Most
+are legitimately hand-run, so the registered guard is scoped to `core/tt/` — the package that must
+fire unattended at 09:00Z. Two defects in that sweep were mine and both are in the catalogue: a regex
+that missed `from core.tt import elo, money, rule`, and a second pass that counted
+`.pytest_cache/v/cache/nodeids` as an external caller. Catalogue now carries mechanism 6, "the
+instrument is not connected to anything", 25 rows. Suite 2,334.
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**

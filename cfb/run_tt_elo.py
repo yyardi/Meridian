@@ -175,15 +175,34 @@ def _money_line(preds) -> str:
         return (f"NOT YET  0 of {len(preds)} eligible cleared their own price "
                 f"(book on {sum(1 for pr in preds if pr.slug in BOOKS)})")
     r = money.summarise(bets, a, b)
-    need = money.required_n(resolution=money.BAR_MEDIAN)
-    lo, hi = r.lo, r.hi
-    verdict = "PASS" if (lo > 0 or hi < 0) else (
-        "NOT YET" if len(bets) < need else "FAIL")
+
+    # The verdict comes from the REGISTERED rule, not from an expression here.
+    # The inline version this replaces returned PASS on `hi < 0` -- an interval
+    # entirely BELOW zero, which is a strategy that reliably loses, printed as a
+    # pass. It also tested "excludes zero" BEFORE the sample-size gate, so a
+    # degenerate interval at n=5 could PASS, which is exactly the protection
+    # §7's achievable image exists to provide.
+    #
+    # Both ends of the bar range are reported because the gate's X is a choice:
+    # BAR_MEDIAN is the STRICTER gate (a narrower interval is demanded, so
+    # ~1,814 matches) and BAR_MEAN the looser (~667). The verdict is read from
+    # the strict end; the loose end is printed so the choice is visible rather
+    # than implied by whichever constant the caller happened to pass.
+    strict = money.required_n(resolution=money.BAR_MEDIAN)
+    loose = money.required_n(resolution=money.BAR_MEAN)
+    verdict, why = rule.money_verdict(
+        n=len(bets), lo=r.lo, hi=r.hi,
+        resolution=money.BAR_MEDIAN, required=strict)
+    at_loose, _ = rule.money_verdict(
+        n=len(bets), lo=r.lo, hi=r.hi,
+        resolution=money.BAR_MEAN, required=loose)
+    both = "" if at_loose == verdict else f"  ({at_loose} at the mean bar)"
     return (f"{verdict}  n={len(bets)} net {r.mean * 100:+.2f}c "
-            f"player-clustered [{lo * 100:+.2f},{hi * 100:+.2f}]  "
+            f"player-clustered [{r.lo * 100:+.2f},{r.hi * 100:+.2f}]  "
             f"realised cost mean {r.cost_mean * 100:.2f}c "
             f"median {r.cost_median * 100:.2f}c  "
-            f"(need ~{need} at the {money.BAR_MEDIAN * 100:.2f}c bar)")
+            f"({why}; need ~{strict} at the {money.BAR_MEDIAN * 100:.2f}c bar, "
+            f"~{loose} at {money.BAR_MEAN * 100:.2f}c){both}")
 
 
 def report(matches: list[elo.Match], state_path: str | None = None) -> int:

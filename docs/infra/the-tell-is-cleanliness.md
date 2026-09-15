@@ -1,19 +1,26 @@
 # The tell is cleanliness
 
-Twenty-two rows below: 21 from one night across two sessions, one added on
-2026-09-15. Not one announced itself as an error. Every one produced a tidy,
-well-formed, confident output — a count, a mean, a hash, a "passed", a "still
-running" — and that is the common feature. **A broken instrument does not
-usually return garbage. It returns something clean.**
+Twenty-five rows below: 21 from one night across two sessions, four added on
+2026-09-15. Not one announced itself as an error. Almost every one produced a
+tidy, well-formed, confident output — a count, a mean, a hash, a "passed", a
+"still running" — and that is the common feature. **A broken instrument does
+not usually return garbage. It returns something clean.** Mechanism 6 is the
+limiting case and was added last: it returns nothing at all, and a suite of
+2,326 passing tests could not tell.
+
+*(That sentence said "every one" until mechanism 6 was written into the
+document beneath it — the sixth mechanism contradicted the intro's universal
+claim, in the file about claims that survive because nobody re-reads them.)*
 
 Written because the failures kept arriving in different costumes and we kept
-diagnosing each one locally. They are five mechanisms, and naming them is
-cheaper than re-deriving the diagnosis twenty-two times.
+diagnosing each one locally. They are six mechanisms, and naming them is
+cheaper than re-deriving the diagnosis twenty-five times.
 
 The count in this paragraph said "nineteen" in the file's first commit, when
 its own tables already carried 21 rows, and the row added on 2026-09-15 was
 labelled "instance 20" by incrementing that number rather than counting the
-tables. Both are corrected here. The unit is table rows, which is checkable
+tables. Both were corrected, and every count since has been produced by
+counting the rows. The unit is table rows, which is checkable
 by eye; note that the two rows in section 1 are one instrument in two
 sessions, so an "instruments" count would be lower and would require a
 judgement about what collapses. That judgement is why the original number was
@@ -76,11 +83,42 @@ the class.
 | a source-grep asserting `'g["src"] == "proxy"' in inspect.getsource(...)` | that a policy is implemented | a contract on TEXT, not behaviour |
 | a batched mutation runner | that the tests catch a mutation | the mutation was never applied; "18 passed" meant nothing. Grepping the file flipped it to 5 failures |
 
+## 6. The instrument is not connected to anything
+
+Every mechanism above produces a WRONG answer that looks clean. This one
+produces NO answer and looks cleanest of all.
+
+| instance | what looked clean | what caught it |
+|---|---|---|
+| `core/tt/money.py` | 20 passing tests, a registered criterion in a pre-registration doc, and a commit message describing it working | nothing imported it outside its own test file; `PRICE_SQL` selected only the mid, so it had neither an entry point nor the bid/ask it needs. **A peer asking what calls it** |
+| `rule.money_verdict` | 28 passing tests on the registered decision rule | the runner decided inline instead — and its expression returned **PASS on an interval entirely below zero**, a strategy that reliably loses. The registered rule was callerless one level down, and the tests protected the copy that never ran |
+| `core/drift.py` | a tested classification, and a doc crediting it with pinning "UNKNOWN is not a pass" | the nightly cron runs `scripts/code_drift.sh`, which carries its own complete classification. The Python duplicate was never imported, so the guarantee belonged to the implementation that never executed |
+
+**The suite cannot see this class.** A green suite is consistent with every
+module in it being inert, because the tests import what they test. Nothing in
+2,326 passing tests distinguishes *runs and is correct* from *is correct and
+never runs* — only the import graph does, and no test asks it by default.
+
+Swept across `core/`: **22 of 111 modules have no caller in code, compose,
+shell or cron.** Most are legitimately run by hand, which is why the registered
+guard is scoped to `core/tt/` — the package that has to fire unattended at
+09:00Z with nobody watching. A repo-wide version would be 22 lines of noise,
+and a guard its reader learns to skip is worse than none.
+
+**Two defects in that sweep, both mine, both the shape of this document.** The
+first regex — `tt import money` — missed `from core.tt import elo, money,
+rule`, so it reported the module unwired *after* it had been wired: the matcher
+was narrower than the measurement. The second pass then counted
+`.pytest_cache/v/cache/nodeids` as an external caller, because a test cache
+contains the names of the things under test; three modules were cleared by the
+instrument's own leftovers.
+
 ## What actually caught them
 
 Tallied, because it decides where to spend effort:
 
 * **an implausible number** — 5
+* **a peer asking what calls it** — 3 (an uncalled module, an uncalled decision rule, and a doc crediting the uncalled copy — no test in 2,326 could see any of them)
 * **a peer re-measuring a number that was glossed rather than counted** — 1
 * **re-reading the source string a correction was built on** — 2 (the correction above said git never printed two equal numbers; against the tip it was written on, it did — the count moves with main, the insertions do not)
 * **an independent second route** (a different table, a grep, a recompute) — 5
@@ -91,7 +129,7 @@ Tallied, because it decides where to spend effort:
 
 Nothing here was found by review. That is the practical content of the note.
 
-## The five habits that follow
+## The six habits that follow
 
 1. **Ask what the instrument would say if it were measuring itself.** If the
    answer is "the same thing", the instrument cannot answer the question.
@@ -102,10 +140,14 @@ Nothing here was found by review. That is the practical content of the note.
 3. **Mutate in both directions.** One direction proves the test CAN fail; the
    other proves it fails for the RIGHT REASON. A test that fails on both the
    bug and the fix is worse than no test, because it trains you to ignore it.
-4. **Suspect the tidy answer.** Zero hits, all passed, 383 matches, "still
+4. **Ask what calls it.** A module, a test file, green tests and a commit
+   message describing it working are all properties of code that may never
+   execute. The question no suite asks is which non-test file imports this,
+   and the answer took one AST sweep.
+5. **Suspect the tidy answer.** Zero hits, all passed, 383 matches, "still
    running", a reference of 414 entries, a mean over 2,000 draws. Friction is
    evidence that something real was touched.
-5. **Ask which members of the denominator could have entered the numerator.**
+6. **Ask which members of the denominator could have entered the numerator.**
    Git printed `141 files changed, 141 insertions(+), 20840 deletions(-)` at the
    tip the gloss was read on, and against today's main the same diff reads
    `142 files changed, 141 insertions(+), 20985 deletions(-)`. I read it as

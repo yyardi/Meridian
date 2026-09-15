@@ -87,6 +87,10 @@ for c in $TARGETS; do
   # "OCI" instead of UNKNOWN. A pipeline's status is its LAST command's, and I
   # reintroduced that while fixing the sort-order bug above.
   RAW="$GOT.raw"
+  # THE RULE: a probe that could not run must not report agreement. UNKNOWN is
+  # not a pass. Read as MATCHES, a container with no python would get a clean
+  # bill of health from a tool that never looked at it -- which is the failure
+  # this script exists to catch, committed by the script itself.
   if ! docker exec -i "$c" python - < "$PROBE" > "$RAW" 2>/dev/null; then
     printf '%-30s %-8s %s\n' "$c" "UNKNOWN" "no python in the image, or exec refused"
     UNK=$((UNK+1)); rm -f "$GOT" "$RAW"; continue
@@ -117,6 +121,9 @@ for c in $TARGETS; do
 done
 
 echo
+# THE OTHER RULE: three counts, never two. "20 of 21 up to date" lets an
+# UNKNOWN read as a pass; an unexamined container is its own category and has
+# to be printed as one.
 echo "$MATCH match, $DIFF DIFFER, $UNK UNKNOWN"
 [ "$UNK" -gt 0 ] && echo "UNKNOWN is not a pass: the probe could not read those containers."
 exit 0
