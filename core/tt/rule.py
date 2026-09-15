@@ -33,6 +33,45 @@ def verdict(*, predicted: int, players: int, interval_excludes_zero: bool
     return FAIL, "floors met and the interval includes zero"
 
 
+def money_verdict(*, n: int, lo: float, hi: float, resolution: float,
+                  required: int) -> tuple[str, str]:
+    """The SECOND registered criterion: does the disagreement make money.
+
+    Separate from `verdict` and never collapsed with it. The registered spec
+    ran this only on a signal PASS; it runs always, because conditioning the
+    P&L on a favourable coefficient draw selects on the same outcomes it then
+    measures.
+
+    NOT YET fires when the interval is wider than the bar it is being compared
+    against — at that width the arm cannot tell "loses the cost" from "makes
+    the cost", so a negative point estimate is not evidence of anything. This
+    module stays dependency-free, so the caller supplies the bar and the count
+    from `core.tt.money` rather than this file importing them.
+    """
+    if n <= 0:
+        return NOT_YET, "no bet cleared its own entry price plus fee"
+    half = (hi - lo) / 2.0
+    if not (half == half):
+        return NOT_YET, f"interval not estimable on {n} bets"
+    if half > resolution:
+        return NOT_YET, (f"interval ±{half * 100:.2f}c is wider than the "
+                         f"{resolution * 100:.2f}c bar it is compared against; "
+                         f"needs ≥{required} matches")
+    if lo > 0.0:
+        return PASS, f"net +{lo * 100:.2f}c/contract at the interval's floor"
+    return FAIL, "interval is narrow enough to resolve the bar and includes zero"
+
+
+def report(signal: tuple[str, str], money: tuple[str, str]) -> str:
+    """The two verdicts, side by side, in the only form they may be read in.
+
+    `materiality-is-question-relative`: a label must not say what the result
+    means if it comes out as expected. SIGNAL yes / MONEY not yet is the
+    expected outcome at these sample sizes and is a finding, not a failure.
+    """
+    return f"SIGNAL {signal[0]} ({signal[1]}) | MONEY {money[0]} ({money[1]})"
+
+
 def reachable(*, max_predicted: int, max_players: int) -> set[str]:
     """Which verdicts this competition could EVER return, at its ceiling.
 

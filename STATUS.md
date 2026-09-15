@@ -1376,8 +1376,8 @@ cost nothing because nothing was ever placed on it.
 
 > **CORRECTED by §0bc: the cost figure below is wrong.** Table tennis does not quote ~8¢ wide at the
 > point you would trade it. At the LAST pregame quote in the tradeable range (724 markets, median 8.3
-> minutes before start) the median spread is **2¢**, giving a total cost of **2.22¢** — half-spread
-> 1.00 plus taker fee 1.22. So −3.60¢ was *larger* than the cost, not smaller, and the sentence below
+> minutes before start) the median spread is **2¢**, giving a total cost of **2.39¢** — half-spread
+> 1.00 plus taker fee 1.39 (§0bc's 1.22 corrected there). So −3.60¢ was *larger* than the cost, and the sentence below
 > argues against the conclusion it supports. **The result is unchanged and dead on its interval alone**
 > ([−8.67, +1.47] spans zero); only my reason for it was wrong.
 
@@ -2156,7 +2156,7 @@ correctly refuses it — the gate requires `G >= 25 AND excludes 0`, and prints 
 than gating on it. **Recorded here so it is not rediscovered as a finding in a week when G crosses 25;
 at that point the twin split is what decides it, not the interval.**
 
-## 0bc. The table-tennis cost bar is 2.22¢, not the ~5.4¢ I published — and that changes the Elo outlook
+## 0bc. The table-tennis cost bar is ~2.4¢ (not 2.22¢, corrected below), not the ~5.4¢ I published
 
 Before waiting two more days for the Elo to become fittable, I sized the bar it has to clear. I had
 written in §0al that *"table tennis quotes ~8¢ wide, so the half-spread alone is ~4¢ before the
@@ -2180,23 +2180,37 @@ eye: 0.45/0.46, 0.43/0.44, 0.47/0.48, 0.34/0.35, 0.49/0.50. Most are **one cent 
 | | ¢ |
 |---|---:|
 | median half-spread at the last pregame quote | 1.00 |
-| median taker fee `0.06·p·(1−p)` at that mid | 1.22 |
-| **median total cost per contract** | **2.22** |
+| ~~median taker fee `0.06·p·(1−p)` at that mid~~ **1.22 is not reproducible — see below** | ~~1.22~~ 1.41 |
+| **total cost per contract** | **2.39–2.41** |
+
+> **CORRECTED 09-15 by 7d, at the table rather than below it.** The 724 markets and the 2.00¢ median
+> spread reproduce exactly. The fee term does not: on that same population the mean is 1.411¢ at the mid
+> and 1.388¢ at the ask, the median 1.462¢ and 1.451¢. The median mid is 0.500 and the mean 0.504, so
+> p(1−p) ≈ 0.25 and ~1.5¢ is what the formula must give — **1.22¢ is not reproducible there by either
+> statistic at either price.** The nearest figure 7d could produce is 1.266¢, the mean at the ask over
+> the 42,485 all-quotes population, printed as the nearest candidate and NOT as a diagnosis (7d first
+> published that reading as the explanation and this table refuted it). Bar: **2.39¢** at the ask,
+> **2.41¢** at the mid. Registered in `docs/math/tabletennis-elo-harness.md` §7, where it is a sizing
+> constant only — every bet is charged `fee_per_contract` at its own entry price.
 
 **What this does and does not change.** It does **not** revive §0al's price-bucket result: that pooled
 −3.60¢ with an interval of [−8.67, +1.47] spanning zero, and an effect that does not exclude zero is
 dead regardless of what it would have cost to trade. But *the reason I gave was wrong.* I wrote that
-"the mispricing is smaller than the cost of acting on it" — 3.60¢ against a real cost of 2.22¢, the
+"the mispricing is smaller than the cost of acting on it" — 3.60¢ against a real cost of 2.39¢, the
 mispricing was **larger** than the cost. I offered a supporting figure that argued against the
 conclusion it was attached to, which is worse than offering none. The conclusion stands on its
 interval alone.
 
 **What it changes is the Elo outlook, materially.** A rating model must beat the venue price by more
-than **2.22pp per contract**, not the ~5.4pp my §0al figure implied. For reference, 7d's measured
+than **2.39pp per contract**, not the ~5.4pp my §0al figure implied. For reference, 7d's measured
 pooled gap between price and realised outcome across 357 settled matches is **−4.36pp** (|t| ≈ 1.7,
 not significant on its own). If even half of that is systematic and a model can capture it, that is
-~2pp against a 2.22pp bar — **marginal, not hopeless**, which is a different thing from what §0al
-implied and worth knowing before the sample lands rather than after.
+~2pp against a **2.39pp** bar — **negative, not marginal.** The word turned on the 0.17¢ of fee
+corrected above, which is less than one tick: the sign of the programme's last live path currently rests
+on a difference smaller than the grid it trades on, which argues for measuring the money arm rather than
+for believing either word. Registered with its own floor (≥1,618 matches, ~19 days at setkameua's rate)
+in `docs/math/tabletennis-elo-harness.md` §7, because at the 200-match signal floor the money arm's
+interval is ±6.79¢ against a 2.39¢ bar and NOT YET is its only reachable verdict.
 
 **The trap, recorded because I nearly fell in it twice in one hour.** My first query returned a 2¢
 median and looked wrong against my published 8¢; my second returned 17¢ and looked like it confirmed
