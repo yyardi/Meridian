@@ -1019,6 +1019,34 @@ script would stamp every row with a commit that is not the code. Checked before 
 tree differs from `origin/main` in **two files**, both prod-generated softness CSVs, so `46573e7`
 is a truthful stamp and `a5fa9cf` is not.
 
+## 0ac. MEASURED LIVE: the gate refused 1,608 plays and opened nothing
+
+The rebuild landed, the three engines are up with the correct stamp, and the counter that shipped
+with it answered the question the same night.
+
+| | |
+|---|---|
+| live football window | 00:28:05Z to 01:22:03Z, **54 minutes** |
+| plays refused for staleness | **1,608** |
+| positions opened | **0** |
+| rows written | **0** |
+| gate limit in force | 30.0s |
+| live pass rate | **0 of 1,608** |
+
+**This is the whole point of the counter.** Without it tonight reads "the strategy found no
+opportunities". With it, tonight reads "the gate refused every play and never opened one". Those
+are opposite conclusions from an identical empty table, and the number separating them was being
+computed and thrown away until this afternoon.
+
+**It confirms the replay and the ceiling.** The replay put the pass rate at 0.23% of live time and
+7d showed five reasons that figure is a **ceiling** rather than an estimate. Live it came in at
+**zero**, which is under the ceiling, in the direction all five gaps predicted.
+
+**And it settles the operator's strategy as an executable rule, separately from whether it has
+edge.** The drift study says the price does not move at the trigger. This says that even if it did,
+the engine cannot act on it at 30 seconds, because ESPN publishes a play a median 53 seconds after
+it happens. Two independent reasons, one about the market and one about the plumbing.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
