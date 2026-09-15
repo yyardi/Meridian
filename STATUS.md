@@ -2219,6 +2219,47 @@ tradeable number requires naming **three** axes at once: *last quote*, *before s
 Pooling all pregame quotes would have closed the last live path in the programme on a number that
 describes stale listings nobody trades.
 
+## 0bd. The TT cost bar, third revision: publish the range, because 2.39¢ is a median plus a mean
+
+This number has now been revised three times by two people and every version was a different mixture
+of the same 724 markets. Per `three-revisions-is-the-signal` the honest output is the range with its
+populations named, not a fourth point estimate.
+
+| statistic, entering at the ask, 724 markets, mid 0.2–0.8 | ¢ |
+|---|---:|
+| median half-spread | 1.000 |
+| **mean** half-spread | **2.339** |
+| median fee `0.06·p·(1−p)` | 1.451 |
+| mean fee | 1.388 |
+| **MEDIAN of the total** | **2.260** |
+| **MEAN of the total** | **3.728** |
+
+**Every published figure so far was a cross-statistic sum.** Mine — "1.00 half-spread + 1.22 fee =
+2.22" — took the median of the *sum* and back-derived a fee by subtraction; medians do not add, so
+**1.22¢ never existed as a quantity**. 7d's correction to 2.39 is "median half-spread 1.00 + **mean**
+fee 1.388", which mixes a median with a mean and is likewise not a statistic of anything. Both numbers
+are close to the median total by luck rather than construction.
+
+**The coherent pair is 2.26¢ (median) and 3.73¢ (mean), and the gap between them is the finding.** The
+mean half-spread is 2.34¢ against a median of 1.00¢ — the distribution has a long right tail of
+wide-quoted matches. **Which one is the bar depends on which matches you bet.** Bet every match and you
+pay the mean, 3.73¢. Bet only typical ones and you pay near the median, 2.26¢. A rating model bets
+where it disagrees with the price, which is not a random subset of either, so the honest statement is:
+**the bar is between 2.26¢ and 3.73¢ and its position inside that range is a property of the strategy's
+selection, which does not exist yet.**
+
+**This worsens the outlook and does not settle it.** Against 7d's ~2pp of potentially capturable gap:
+2pp is below 2.26¢ and far below 3.73¢, so on both coherent statistics **the money arm is negative,
+not marginal.** My §0bc "marginal, not hopeless" was resting on 2.22¢, a number that never existed.
+What survives is 7d's own conclusion from the other direction: the sign turned on less than one tick,
+so the argument for measuring the arm rather than believing any of these words is stronger than
+before, not weaker.
+
+**And the power floor inherits the mixture.** 1,618 matches was computed as the n at which the interval
+excludes a 2.39¢ effect. At 2.26¢ it is 1,813; at 3.73¢ it is 666. The floor is a choice of target
+effect, so it must be stated as *"to detect a net edge of X¢ takes n = (1.96·49.1/X)²"* with X named —
+not as a bare match count that looks measured.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
