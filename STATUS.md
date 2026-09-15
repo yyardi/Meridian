@@ -25,6 +25,22 @@ stopped responding. Same structure: the control fires, the trigger does not.
 | scoring play (control) | 30s | 127 | 15 | +1.467¢ | [+0.327, **+2.606**] excludes zero |
 | scoring play (control) | 300s | 126 | 15 | +1.973¢ | [+0.733, **+3.212**] excludes zero |
 
+**Split by side, which my own standing rule requires and I had not done:**
+
+| arm | side | horizon | n | G | mean | 95% CI |
+|---|---|---|---:|---:|---:|---|
+| midfield | away offense | 300s | 78 | 15 | +0.765¢ | [−1.091, +2.620] |
+| midfield | home offense | 300s | 103 | 15 | +0.819¢ | [−0.626, +2.265] |
+| scoring | away offense | 300s | 66 | 15 | +1.404¢ | [−0.152, +2.961] **spans zero** |
+| scoring | home offense | 300s | 60 | 14 | +1.990¢ | [+0.471, +3.509] excludes zero |
+
+**The trigger is clean: both sides span zero and agree with each other** (+0.765 against +0.819),
+so the null is not the away-team confound in disguise. **The control is weaker than the pooled
+number suggested:** pooled it excludes zero at both horizons, but split it does so only on the
+home-offense side. Each side carries roughly half the sample, so this is underpowered rather than
+contradictory -- but "the control fires" is a pooled claim and I reported it without checking
+whether it survived the split.
+
 Median move 0.00¢ in every arm at every horizon, as on CFB. **Two leagues, two implementations,
 same answer.** The honest limit: at 300s the trigger's interval reaches +2.07¢ and a round trip
 costs about 3¢, so this does not clear costs -- but with 15 clusters it cannot exclude a 2¢ effect
