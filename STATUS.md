@@ -1771,6 +1771,16 @@ be reconstructed by any code we could write, because the games finished before t
 7d also named the failure mode that would have caused it: an agreed task that keeps losing to newer,
 more interesting ones, which is precisely how the meridian-7f rescue nearly went wrong four hours ago.
 
+**Merged and staged, deliberately NOT applied.** `b4e9f1c73d85_cfb_backfill_tables` is on prod's
+disk; prod's `alembic_version` is still `a1c7e35b9d20`. I am leaving it that way until the next
+rebuild, and the reason is the standing restart trap rather than caution: **advancing the DB head
+past what the running images contain is what makes a container crash-loop on restart** with
+`Can't locate revision`. Every container on the box was built before this migration existed. On prod
+the migration is a pure no-op for data — the tables are already there with their 55 and 9,537 rows
+and it is `CREATE TABLE IF NOT EXISTS` — so its *only* effect on this box would be to move
+`alembic_version` forward and widen the blast radius of the next restart for nothing. It lands with
+the images, or not at all.
+
 **It also retires an honesty caveat.** The post-beats-backfill precedence is currently "verified on
 prod, not tested," because the query reads a table a migrated schema does not have. The migration makes
 that test writable.
