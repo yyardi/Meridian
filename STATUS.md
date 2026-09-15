@@ -1833,6 +1833,39 @@ restart would otherwise push. Six tests, three mutations each verified to have *
 result was believed and checked in both directions. Verified end to end on prod: first run records
 state and stays silent, second run says no change and stays silent. Suite 2281.
 
+## 0av. Prod is a two-core box, and I have been running analysis on it as if it were not
+
+Checked while chasing a load spike: **`nproc` = 2**, 7.8 GB RAM. Load average went 1.24 → 2.81 →
+5.65 → 9.04 over about half an hour, which is **4.5× oversubscription** on two cores.
+
+**Nothing is being lost, and I checked rather than assuming.** The live recorders are keeping up —
+`live_recorder` cycling in 0.3s and `live_recorder_cfb` in 1.5s against 120s intervals. Memory is
+fine (4.3 GB available). The thing that looked alarming, *MLB having written nothing for an hour*,
+is `pregame_recorder_mlb` on a **3600s interval** with its last beat 3467s ago: the hourly cadence,
+not a fault. I nearly reported that as a stall.
+
+What the box is actually spending itself on is structural rather than anomalous:
+
+| service | interval | measured cycle | duty |
+|---|---:|---:|---:|
+| pregame_recorder_cfb | 3600s | **2331s** | 65% |
+| pregame_recorder_nfl | 3600s | **1850s** | 51% |
+| pregame_recorder_mlb | 3600s | 173s | 5% |
+| live_recorder | 120s | 0.3s | — |
+
+Two pregame sweeps each occupy a core for more than half of every hour, on a two-core machine that
+also runs 28 containers and a 0.5s feed. **The headroom for anything else is roughly one core,
+intermittently.**
+
+**This is a constraint on how I have been working, not just a fact about the host.** Tonight I ran a
+`market_slug ~ 'setka'` regex over a partitioned 62M-row table with no month boundary; it spawned
+three parallel workers, timed out on my side, and kept running on prod after I had stopped waiting
+for it — I only noticed because I went looking for the load. Every heavy read I have issued, and the
+wide-spread maker analysis I just assigned, competes directly with the recorders. The rule that
+follows: **bound every analysis read by a month boundary so the partition prunes, and expect one
+core, not two.** `partition-pruning-needs-a-boundary` already says the first half; the second half
+is new and is why it matters.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
