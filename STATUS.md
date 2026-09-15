@@ -960,6 +960,40 @@ graph -- is not the thing, and the moment the two can differ is exactly the mome
 the shared `.git` rather than in their `/private/tmp` worktree. Committed work survives the session;
 uncommitted work would not. They hold none. The exposure was 7f's alone and it is closed.
 
+## 0ab. The rebuild ran. 28 of 28 on today's images, and three engines refuse to start — my omission.
+
+Operator ran it at about 00:50Z. **All 28 containers are on 2026-09-15 images**, so the six inert
+fixes are live. Three containers are in a restart loop:
+
+```
+meridian-quote-engine        Restarting (1)
+meridian-gridiron-engine     Restarting (1)
+meridian-gridiron-cfb-engine Restarting (1)
+```
+
+**The cause is in the command I gave, not in the rebuild.** All three fail closed on purpose:
+
+```
+RuntimeError: MERIDIAN_ENGINE_COMMIT is absent — the quote engine refuses to start
+(amendment 12: every fill/observation row stamps its binary; build the image with
+--build-arg GIT_COMMIT=$(git rev-parse HEAD))
+```
+
+They stamp every row they write with the binary that wrote it, and they will not run unstamped.
+My command omitted the build argument. **This is a guard working exactly as designed** -- it would
+rather not run than write rows whose provenance is unknown, which is the opposite of every defect
+found today.
+
+**Cost of being down is paper tape, not money.** All three are shadow systems; nothing places an
+order. What is lost is quote-engine fills and gridiron observations for as long as they are stopped.
+
+**And there is a provenance trap in the obvious fix.** `scripts/deploy_engine.sh` exists for this
+and takes the stamp from `git rev-parse HEAD`, but prod's HEAD is `a5fa9cf` while the code on disk
+is `origin/main` at `46573e7`, because files are staged by checkout without moving HEAD. Using the
+script would stamp every row with a commit that is not the code. Checked before recommending: the
+tree differs from `origin/main` in **two files**, both prod-generated softness CSVs, so `46573e7`
+is a truthful stamp and `a5fa9cf` is not.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
