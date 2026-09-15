@@ -82,7 +82,7 @@ Tallied, because it decides where to spend effort:
 
 * **an implausible number** — 5
 * **a peer re-measuring a number that was glossed rather than counted** — 1
-* **re-reading the source string a correction was built on** — 1 (the correction above quoted git as printing two equal numbers; it printed 142 and 141)
+* **re-reading the source string a correction was built on** — 2 (the correction above said git never printed two equal numbers; against the tip it was written on, it did — the count moves with main, the insertions do not)
 * **an independent second route** (a different table, a grep, a recompute) — 5
 * **stderr that was already printed** — 2 (`comm: file 1 is not in sorted order`; git's ownership refusal)
 * **mutating in both directions** — 3
@@ -110,10 +110,22 @@ Nothing here was found by review. That is the practical content of the note.
    I read it as "about one line per file". 113 of those 142 files contain
    only deletions — structurally incapable of carrying an insertion — so the
    mean over files that gained anything is 4.86, and ten files carry 105 of
-   the 141. I then corrected this instance by quoting the two numbers as
-   equal, which they never were: the near-match of a ratio to 1.0 was itself
-   the tidy output, and it survived one round of correction because agreeing
-   with a fix feels like checking it.
+   the 141. I then corrected this instance by saying the two
+   numbers were never equal. **They were** — against main at `022eed3`, the tip
+   when the gloss was written, git printed `141 files changed, 141
+   insertions(+)`. The count reads 140, 141, then 142 against three successive
+   tips, because *files changed* grows as main advances while *insertions* is a
+   fixed property of the branch. So the coincidence was real and **transient**,
+   which makes the habit stronger rather than weaker: the ratio was near 1.0 by
+   an accident of timing that will never reproduce, and **dividing a moving
+   number by a fixed one is worse than dividing two unrelated fixed ones.**
+
+   Three revisions of one number, by two people, each locally sound: 141 lines
+   → "one line per file, whitespace" → "never equal". Per
+   `three-revisions-is-the-signal`, the honest output is the range and its
+   breaking bound, not the latest point. **The stable facts are: 141 insertions,
+   29 files gaining any, mean 4.86, ten files carrying 105. The unstable one is
+   any count of *files changed*, which is a property of when you looked.**
 
 ## The guard I tried to write, and why it is not here
 
