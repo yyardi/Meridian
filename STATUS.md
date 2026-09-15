@@ -1336,6 +1336,47 @@ thing by different routes.
 losing row would read as "the strategy traded once and lost". With it: 5,600 refusals, one fill,
 forced out in two seconds by the same rule that let it in.
 
+## 0al. Table tennis at 5× the sample: the lead is dead, and it died the way flukes die
+
+I did not wait for the nightly. I settled the whole table-tennis backlog by hand out of the
+api container (`core.settlements.settler` + `PolymarketGatewayClient`): **350 markets found,
+342 settled**, settlement cache 21,542 → 21,752. Tonight's 04:40Z run gets all 342 for free.
+
+The lead under test was §0ag's: buy YES in the 0.50–0.60 band, measured at −22.93¢ per
+contract on 68 bets (t = −2.32), i.e. fade it. Here it is on 342.
+
+| band | n | G | implied | realised | gross ¢ | t |
+|---|---:|---:|---:|---:|---:|---:|
+| 0.3–0.4 | 43 | 43 | 0.351 | 0.326 | −2.53 | −0.35 |
+| 0.4–0.5 | 91 | 91 | 0.443 | 0.385 | −5.86 | −1.14 |
+| **0.5–0.6** | **97** | **97** | **0.545** | **0.469** | **−7.60** | **−1.53** |
+| 0.6–0.7 | 66 | 66 | 0.643 | 0.652 | +0.83 | +0.14 |
+| 0.7–0.8 | 26 | 26 | 0.739 | 0.692 | −4.67 | −0.52 |
+
+POOLED n=342 G=342 gross **−3.60¢ [−8.67, +1.47]**. Seven band tests, Bonferroni |t| = 2.69,
+max observed 1.53. Nothing clears. G = n on every row: one bet per game, so there is no
+clustering to deflate this — the sample is as effective as it looks.
+
+**The manner of death is the finding.** The effect went −22.93¢ → −7.60¢ while the sample
+went 68 → 342. It shrank by two thirds as the data grew five-fold, and |t| *fell* (2.32 →
+1.53) even though n rose 5×. A real effect holds its magnitude and gains significance as
+n grows; a fluke shrinks toward zero at rate 1/√n, which is what this did. This is the
+cleanest example the programme has produced of why the pre-registered bar exists, and it
+cost nothing because nothing was ever placed on it.
+
+**Even the residue is untradeable.** −3.60¢ is the whole pooled tilt, and it does not exclude
+zero. Table tennis quotes ~8¢ wide, so the half-spread alone is ~4¢ before the 0.06·p·(1−p)
+taker fee. The mispricing is smaller than the cost of acting on it — the same wall as every
+other market in §0: *both sides of the book are priced.*
+
+**What this does not close.** §0ag's capacity finding stands: the venue runs ~345 TT games a
+day against a closed pool of ~275 players who each play several times a week. That is the
+one substrate here with enough independent clusters per week to test a model that knows
+something about the sport, and the Elo pre-registration (`docs/math/tabletennis-rating-preregistration.md`,
+K=24, ≥10 prior matches, primary quantity = the Elo coefficient against venue implied
+probability) is registered and waiting on sample. A dead price-bucket lead says nothing
+about a rating model; they are different hypotheses on the same tape.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
