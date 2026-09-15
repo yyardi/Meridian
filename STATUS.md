@@ -2432,6 +2432,38 @@ prettier.
 *Offsets pinned by test: I counted the awk columns by hand first and was off by one, which would have
 printed the interval and the word POSITIVE in place of the mean.* Suite 2,340.
 
+## 0bh. The MLB arm killed on its own four-way split, before it could nominate
+
+The operator read §0bg's flagged arm as a finding, which is the correct reading of a `+15.51¢` with a
+clean interval if you have not seen the split. So here is the split, on the 44 settled MLB spread
+markets with a pregame close, entering at the executable side with the taker fee charged:
+
+| bet | games | price paid | won | net |
+|---|---:|---:|---:|---:|
+| **away** team as heavy favourite (YES ≥ 0.70) | 15 | 0.768 | 0.933 | **+15.51¢** |
+| **home** team as heavy favourite (NO ≥ 0.70) | 8 | 0.762 | 0.750 | −2.27¢ |
+| away underdog | 8 | 0.244 | 0.250 | −0.54¢ |
+| **home** underdog (NO ≤ 0.30) | 15 | 0.239 | 0.067 | **−18.27¢** |
+
+**Same bet, same price, opposite sign by side of the field.** Backing a heavy favourite pays only when
+it is the away team. That is side-dependence, not a favourite effect, and it is the fourth time this
+confound has produced a clean-looking interval.
+
+**Rows 1 and 4 are the same 15 games counted twice.** +15.51 and −18.27 sum to **−2.76¢**, which is the
+round-trip cost — the identity from `a-fade-is-not-a-new-hypothesis`. There is one bet in that table,
+not two, and its two faces differ by exactly what it costs to trade.
+
+**Sized as what it is:** away favourites covered **14 of 15** against a price implying 11.5 — a surplus
+of 2.5 games. One-sided `P(≥14 | n=15, p=0.768) = 0.105`, before any multiplicity, against 35
+registered strategies of which ~1.8 are expected to clear 95% by chance. **Two and a half lucky games
+in fifteen.**
+
+**Why this is recorded now rather than when it trips.** MLB crosses `G ≥ 25` tonight. When the paper
+book prints `POSITIVE, excludes 0` for this arm, the split above is the answer, already written, with
+its sample size and its binomial attached. A confound explained after it has been broadcast is a
+retraction; explained before, it is a gate. The gate itself is still untouched — the arm will nominate
+and the push will carry its number and the YES-side caution (§0bg), which is the design.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
