@@ -1220,7 +1220,26 @@ combined taker cost of about 3.25¢ (Kalshi 0.07·p(1−p) plus Polymarket 0.06�
 liquid winner market on the game everybody is watching is **half a cent wide**. The spread is not
 uniformly enormous; it is enormous where nobody trades.
 
-*Full 14-game scan still running; this is one game over one hour.*
+**Full scan, all 14 joinable games, 165 aligned samples:**
+
+| | |
+|---|---:|
+| mean absolute gap between the two mids | **0.40¢** |
+| p90 gap | 0.75¢ |
+| samples where one venue's bid exceeded the other's ask | **5 of 165** |
+| largest crossing ever observed | **1.50¢** |
+| combined taker cost at mid prices | **~3.25¢** |
+
+**No arbitrage exists.** The venues track each other to under half a cent on average, the book
+crossed at all in 5 samples of 165, and the best crossing in the entire sample is less than half
+the cost of executing it. All five crossings ran the same way, buy Kalshi and sell Polymarket, so
+there is not even a two-sided pattern to exploit.
+
+**What this does not cover, stated so nobody reads it as broader than it is.** The winner market
+only, NFL only, 14 games, sampled every ten minutes. A transient dislocation inside a ten-minute
+window would not appear. And the illiquid market types -- spreads, totals, quarters -- are
+untested, which matters because that is precisely where a gap is most likely and where Kalshi
+holds 900,000 CFB rows we cannot join.
 
 ## 1. What I need from you (everything else I now run myself)
 
