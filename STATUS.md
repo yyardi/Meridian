@@ -1076,6 +1076,41 @@ interval spans zero on both leagues.
 move is too small to pay for the trade" is true. Only the second one is a reason not to trade, and
 it has nothing to do with speed.
 
+## 0ae. Table tennis is now running 345 games a day. The scan has seen 68 of them.
+
+The operator asked for edge in table tennis. The blocker was never the market -- it was that we
+could barely measure it. That changed today.
+
+| date | TT games on tape | with a pre-game close |
+|---|---:|---:|
+| 2026-09-13 | 14 | 8 |
+| **2026-09-14** | **349** | **342** |
+| 2026-09-15 (partial) | 345 | 85 so far |
+
+**345 games a day, 98% of them with a two-sided pre-game close.** That is the event-limit fix at
+10:28Z and the cadence fix at 11:10Z landing. Before today the recorder was capped at 50 events per
+competition and sweeping hourly.
+
+**The scan's 68 settled table-tennis bets are not a defect.** It ran at 10:07Z, before most of
+09-14's matches had finished, and its own filter only scores games finished four hours earlier.
+**Tonight's 04:40Z run sees the whole of 09-14: roughly 342 games instead of 68, a five-fold jump,
+growing by ~345 a day.**
+
+**For scale against everything else we have:** MLB gives 10-15 settled games a night and clears the
+power floor on Wednesday. CFB gives ~117 but only on Saturdays. NFL gives 15 a week. **Table tennis
+gives 345 a day.** It is, by a wide margin, the fastest-accruing market in the programme, and it is
+the one the operator picked out.
+
+**What the first 68 bets hint at, stated as a hint and not a finding.** Buying YES in the 0.50-0.60
+band lost 22.9¢ per contract, interval [−42.3, −3.5], on 22 games. Max |t| across the 12
+non-degenerate tests is 2.32 against a Bonferroni threshold of 2.87, so **it does not clear
+multiplicity on 68 bets.** With 342 it is testable properly, and with a week of tape it is
+testable per competition, which matters because the four Setka competitions are different leagues
+in different countries.
+
+**The open question is settlement, not tape.** 342 games have a close; the settlement cache holds
+138 table-tennis entries. Whether the venue settles all 342 is unknown and tonight's run answers it.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
