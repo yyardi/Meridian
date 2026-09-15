@@ -101,6 +101,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import math
 from collections import defaultdict
 from dataclasses import dataclass
@@ -134,7 +135,21 @@ MIN_MID, MAX_MID = 0.20, 0.80
 
 #: A spread wider than this is not a market-making opportunity, it is an empty
 #: book with two stale orders in it.
-MAX_SPREAD = 0.15
+#:
+#: CAVEAT 2026-09-15: that sentence is a claim, and its strong form is false.
+#: The premise above ("deep rungs ... do not trade") was checked against
+#: market_trade_stats for the first time on 2026-09-15: CFB observations quoted
+#: 25c or wider carry a MEDIAN 131 shares traded and mean open interest 1,430,
+#: and only 30.5% of them have zero volume. They are ~55x thinner than the
+#: sub-2c book by open interest -- the comment is right about thin -- but they
+#: are not empty, and 32% of CFB quoted observations sit above this cap. Every
+#: adverse-selection number we have (223,303 fills, "the spread IS the
+#: adverse-selection premium") is therefore measured ONLY on spreads <= 15c,
+#: because this constant excluded the rest before the question was asked.
+#: Whether 131 shares can fill a shadow quote is NOT answered; raising the cap
+#: is how we would find out. Override to accrue that data; the default is
+#: unchanged so nothing moves until someone decides it should.
+MAX_SPREAD = float(os.getenv("MERIDIAN_QUOTE_MAX_SPREAD", "0.15"))
 
 #: Below this there is no spread to capture and the tick dominates.
 MIN_SPREAD = 0.01

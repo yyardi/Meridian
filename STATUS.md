@@ -1478,6 +1478,64 @@ is not a conservative setting of a dial, it is an off switch dressed as a dial. 
 `MAX_AGE_S` to 60. The decision is still the operator's; what has changed is that it is now a
 decision with numbers under it.
 
+## 0ao. A hardcoded 15¢ cap decided what "the spread IS the adverse-selection premium" could see
+
+§0ag is the most structural result the programme has, and tonight I found the boundary it was
+measured inside. `core/quote/adverse_selection.py` carries `MAX_SPREAD = 0.15` with this comment:
+
+> *A spread wider than this is not a market-making opportunity, it is an empty book with two stale
+> orders in it.* … *Deep rungs carry measured 22-26¢ spreads and do not trade.*
+
+That is not a preference, it is an empirical claim, and nobody had checked it. `shadow_quote_fills`
+confirms the reach: 227,275 fills, **maximum `spread_at_quote` = 0.1500**, p99 = 0.14. Every maker
+number we have ever published is conditioned on spread ≤ 15¢.
+
+**The premise is false in its strong form.** CFB snapshots joined to `market_trade_stats`,
+month-boundary floor, since 09-01:
+
+| quoted spread | observations | median shares traded | % with zero volume | mean open interest |
+|---|---:|---:|---:|---:|
+| < 2¢ | 96,402 | 2,682 | 17.1% | 78,599 |
+| 2–4¢ | 40,297 | 2,923 | 12.7% | 17,481 |
+| 4–8¢ | 43,744 | 2,444 | 10.8% | 13,102 |
+| 8–15¢ *(cap)* | 40,425 | 1,546 | 15.7% | 8,618 |
+| 15–25¢ | 36,511 | 391 | 21.6% | 3,536 |
+| **25¢+** | **65,751** | **131** | **30.5%** | **1,430** |
+
+The comment is right that these books are thin — 55× less open interest than the sub-2¢ book. It is
+wrong that they do not trade: median 131 shares at 25¢+, and **69.5% of those observations have
+non-zero volume**. And this is not a fringe: **32% of CFB quoted observations sit above the cap.**
+
+**What I tried first, and why I threw it away.** I computed a "maker upper bound" per spread band
+from the scan's settled rows — rest on both sides, average the two outcomes. It printed +16.73¢ at
+25¢+ with a per-game t of 88. It is worthless: `((ask − y) + (y − bid))/2` cancels `y` exactly, so
+the column is half the spread minus fees and contains no settlement information whatsoever. The
+t-statistics measure how precisely we know the spread. This is the sixth instrument in this
+programme to cut by spread and then recover its own algebra (`forced-gradients`), and the tell was
+the same as always: a t in the dozens where the substrate cannot support one.
+
+**So the question stays open, and it is open in the honest direction.** A maker's P&L is the spread
+minus adverse selection, and adverse selection is *which* side gets hit, which no identity gives
+you — it has to be observed. The observed trend argues against the wide book: earned rose
+0.50→5.29¢ across the four measured buckets while adverse rose 3.65→9.97¢, a ratio of about 1.88,
+and at 12.5¢ earned that ratio predicts a 23.5¢ loss. But that is extrapolation past the last data
+point, and the mechanism need not be constant — adverse selection scales with how *informed* the
+flow is, and whoever crosses 25¢ in a dead quarter-total market is not obviously informed. The scan
+says takers on **both** sides of those books lose (−17.65¢ and −20.08¢ at 25¢+, summing to the
+width), so the width is genuinely being paid to someone.
+
+**What I changed, and what I deliberately did not.** `MAX_SPREAD` now reads
+`MERIDIAN_QUOTE_MAX_SPREAD` with the default **unchanged at 0.15**, so no live behaviour moves until
+someone decides it should, and three tests pin it — including one asserting the *gate* admits a 30¢
+quote once raised, not merely that the constant changed. All three were mutation-checked against a
+re-hardcoded constant; two fail, as they must. I did not raise the default: that is a live-behaviour
+change to four modules that share this constant, and it belongs to the operator, not to a caveat.
+
+**The registered hypothesis, before any data.** Quoting at the touch in books wider than 15¢ earns
+more than the adverse selection it attracts. Falsifier: net P&L per contract ≤ 0 on ≥100 game
+clusters. It cannot be tested on anything we currently hold, because the cap prevented the fills
+from ever being recorded.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
