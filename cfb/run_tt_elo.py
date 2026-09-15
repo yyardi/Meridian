@@ -34,16 +34,23 @@ import os
 import sys
 from collections import defaultdict
 
-from core.tt import elo, rule
+from core.tt import elo, money, rule
 
 COMPETITIONS = ("setkameua", "setkamecz", "setkamemd", "setkawoua")
 
 #: Prices and start times for the settled slugs. Equality on market_slug uses
 #: the unique (market_slug, captured_at) index, and the month-boundary floor
 #: prunes partitions -- an unbounded version of this seq-scans 62M rows.
+#: slug -> (best_bid, best_ask) at the LAST pregame quote. The money arm needs
+#: the EXECUTABLE sides, not the mid: you buy YES at the ask and NO at 1-bid,
+#: and charging a mid would understate the bar by the half-spread. Populated by
+#: load_db only -- load_tsv has no book, which is why the money arm reports
+#: "no book" rather than silently scoring zero bets.
+BOOKS: dict[str, tuple[float, float]] = {}
+
 PRICE_SQL = """
 SELECT DISTINCT ON (market_slug) market_slug,
-       (best_bid + best_ask) / 2.0 AS mid, game_start_time
+       (best_bid + best_ask) / 2.0 AS mid, best_bid, best_ask, game_start_time
 FROM market_snapshots
 WHERE market_slug = ANY(:slugs)
   AND captured_at >= CAST(:since AS timestamptz)
@@ -96,6 +103,8 @@ def load_db(settlements: str, since: str = "2026-09-01") -> list[elo.Match]:
         out.append(elo.Match(slug, comp, p1, p2, y,
                              r["game_start_time"] if r else None,
                              float(r["mid"]) if r else None))
+        if r is not None and r["best_bid"] is not None and r["best_ask"] is not None:
+            BOOKS[slug] = (float(r["best_bid"]), float(r["best_ask"]))
     if unparsed:
         print(f"  UNPARSED (counted, not dropped): {unparsed}")
     return out
@@ -139,6 +148,42 @@ def transitions(previous: dict[str, str] | None, now: dict[str, str]
         return []
     return [f"{c}: {previous[c]} -> {v}" for c, v in sorted(now.items())
             if c in previous and previous[c] != v]
+
+
+def _money_line(preds) -> str:
+    """One line for the money arm, whatever state it is in.
+
+    Four states, all printed rather than skipped: no book loaded (a --tsv run),
+    no eligible predictions yet, eligible but nothing clears its own price, and
+    a scored result. The first three are NOT YET and say why.
+    """
+    if not BOOKS:
+        return "NOT YET  no book loaded (--tsv run has no bid/ask)"
+    if not preds:
+        return "NOT YET  0 eligible predictions"
+    bets, a, b = [], [], []
+    for pr in preds:
+        bk = BOOKS.get(pr.slug)
+        if bk is None:
+            continue
+        bet = money.bet(pr.slug, pr.elo_p, bk[0], bk[1], pr.y)
+        if bet is not None:
+            bets.append(bet)
+            a.append(pr.p1)
+            b.append(pr.p2)
+    if not bets:
+        return (f"NOT YET  0 of {len(preds)} eligible cleared their own price "
+                f"(book on {sum(1 for pr in preds if pr.slug in BOOKS)})")
+    r = money.summarise(bets, a, b)
+    need = money.required_n(resolution=money.BAR_MEDIAN)
+    lo, hi = r.lo, r.hi
+    verdict = "PASS" if (lo > 0 or hi < 0) else (
+        "NOT YET" if len(bets) < need else "FAIL")
+    return (f"{verdict}  n={len(bets)} net {r.mean * 100:+.2f}c "
+            f"player-clustered [{lo * 100:+.2f},{hi * 100:+.2f}]  "
+            f"realised cost mean {r.cost_mean * 100:.2f}c "
+            f"median {r.cost_median * 100:.2f}c  "
+            f"(need ~{need} at the {money.BAR_MEDIAN * 100:.2f}c bar)")
 
 
 def report(matches: list[elo.Match], state_path: str | None = None) -> int:
@@ -195,6 +240,15 @@ def report(matches: list[elo.Match], state_path: str | None = None) -> int:
         print(f"  {comp:12s} {len(ms):7d} {len(players):7d} {len(ok):8d} "
               f"{v:>8s}  {why}{note}{extra}")
         verdicts[comp] = v
+
+        # THE MONEY ARM. Runs ALWAYS, never gated on the signal verdict:
+        # conditioning it on a signal PASS would select on the same outcomes
+        # the signal was read from. It is a SEPARATE verdict and is never
+        # collapsed into the one above -- a SIGNAL-yes MONEY-no result is a
+        # real finding, not a failure. Printed on every run even at zero bets,
+        # because a registered criterion that prints nothing is registered in
+        # name only (it was library-only and uncalled until 2026-09-15).
+        print(f"      MONEY  {_money_line(ok)}")
     print("\n  NOT YET is not a FAIL. It means a floor is unmet; the counts "
           "above are the report the registered spec asks for.")
 
