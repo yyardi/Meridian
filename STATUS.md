@@ -2031,6 +2031,32 @@ it was traced to a web search rather than the venue. **Merging `debugger/bounds`
 re-published a retracted falsehood** into the document that exists to record the fee facts — and it
 would have arrived wearing a commit message about query-parameter bounds.
 
+> **CORRECTED by 7d, same night — I had the mechanism backwards.** I wrote above that merging
+> `debugger/bounds` *would have* re-published a retracted falsehood. It would not have introduced
+> anything: **`origin/main` has been asserting the maker rebate for eleven days.** `docs/math/the-rebate.md`
+> opens, on main, with *"Polymarket US PAYS makers … the rebate is roughly the size of our whole loss"*,
+> sourced to *"the venue's published schedule (docs.polymarket.us/fees), not an estimate and not inferred
+> from our own fills"* — the strongest possible provenance framing, for the fact later traced to exactly
+> that web page and retracted. The branch carried the text **because main does**, not the other way round.
+> Neither of us grepped main for the string, because the branch was the suspect.
+>
+> **The real defect is worse than the one I reported, and it is live.** The retraction reached every
+> *consumer* — `core/backtest/fills.py` sets `THETA_MAKER = 0.0` with the rebate behind an explicit
+> `assume_rebate` flag, `core/quote/wallet.py` and `core/pulse/tight_game_reversion.py` both document
+> θ_maker = 0, and STATUS says "no maker rebate on this venue" — and **never reached the record**, the one
+> document whose job is to hold the fee facts. Nothing downstream disagreed with it loudly enough for
+> anyone to look. Fixed in 5f25872: the retraction is now the first thing a reader meets, the episode is
+> kept verbatim beneath it, and a guard mutated in three directions enforces **placement**, not just
+> presence — moving the retraction below the claim fails two tests.
+>
+> *One thing in that correction does not hold.* 7d glossed the branch's 141 insertions as "about one line
+> per file, a whitespace artefact". The count is 141 insertions across 141 files, but they are
+> concentrated — the top ten files carry 105 of them, only nine files have exactly one, and seven of the
+> eight lines in `the-rebate.md` contain prose. My "141 lines" was right; "whitespace" is not. That
+> matters for the standing instruction below, which is unchanged and now rests on 7d's own better reason:
+> **not that the branch adds nothing, but that nobody has audited the other 140 files of old world it
+> would carry.**
+
 So the branch is not merely a no-op, it is one that must stay unmerged, and the rule from
 `a-cherry-pick-can-be-a-revert` needs a second clause: **on a stale branch the "additions" are the old
 world, and the older it is the more of your corrections it carries backwards.** Check what a merge
