@@ -2068,6 +2068,32 @@ So the branch is not merely a no-op, it is one that must stay unmerged, and the 
 world, and the older it is the more of your corrections it carries backwards.** Check what a merge
 *re-adds*, not only what it removes.
 
+## 0az. The three unmerged branches, and why none of them should be merged as-is
+
+Every branch from tonight is an ancestor of main at 73f8822. Three remain unmerged, all predating
+tonight, and the stale-branch lesson from §0ay applies to each:
+
+| branch | commits ahead | last commit | disposition |
+|---|---:|---|---|
+| `debugger/bounds` | 1 | 2026-09-13 | **never merge** — its content is already on main, and it carries 141 insertions of superseded prose across 29 files, eight in the retracted rebate document |
+| `debugger/green-the-suite` | 22 | 2026-09-06 | **audit, do not merge** — nine days stale |
+| `debugger/recorder-plays-regression` | 2 | 2026-09-06 | **audit, do not merge** — nine days stale |
+
+The two from 09-06 may hold work worth having; nobody has looked. What tonight established is that the
+way to find out is **not** a merge. A branch that old carries the whole world as it stood nine days
+ago, and its *additions* are that old world — including any claim corrected since. `debugger/bounds`
+is the worked example: a single commit, an honest message about query-parameter bounds, and eight lines
+of a retracted fee claim riding along underneath it.
+
+**So the disposition is: cherry-pick what a diff shows is genuinely new, after reading it, or leave
+them.** `git diff --shortstat` before touching either — and per §0ay, note that a count of *files
+changed* moves with main and is not quotable later; the insertion count is the branch's own property.
+
+**One instrument note, since it is the same family.** My first sweep for this printed blank commit
+counts rather than zeros, because the branch names did not resolve against local refs — a blank that
+reads exactly like "nothing there". Re-run against `origin/` refs it gave 1, 22 and 2. A count that
+comes back empty is not a count of zero.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
