@@ -1427,6 +1427,57 @@ the *pattern*, which is what is being claimed; I am not claiming the magnitudes 
 that falls to ≈1.7 once clustered, against a Bonferroni bar of 4.30 at m_eff = 299. It goes on
 the held-out list, not into a strategy.
 
+## 0an. The 30-second gate is not a threshold, it is a wall: measured on 200 games
+
+The engine's only trade lasted one cycle. 7d read it as structural rather than unlucky and
+argued the mechanism: a pass window is `MAX_AGE_S` minus lag seconds wide, so entries admitted
+near the boundary are stale on the next cycle by construction. That is a claim about the shape
+of the lag density below 30s, and it was made from one trade in one game. I measured the
+density directly.
+
+Play arrival lag = `first_seen_at − wall_clock` on `espn_cfb_live_plays`, **35,521 plays across
+200 games since 2026-09-01** (month-boundary floor so the partition prunes):
+
+| MAX_AGE_S | plays that clear the gate | window left to hold them |
+|---:|---:|---:|
+| 20 | 0.5% (and ~half of that is clock junk) | ≤ 0s |
+| **30 (live today)** | **3.0%** | **≤ 6s = 3 cycles** |
+| 45 | 21.7% | ≤ 21s |
+| 60 | 54.8% | ≤ 36s |
+| 75 | 77.6% | ≤ 51s |
+| 90 | 84.8% | ≤ 66s |
+
+Median lag **57.7s**. First percentile **24.0s**. Minimum honest lag ~20s; the 85 rows with
+negative lag (0.24%) are clock artifacts, and they are most of what sits under 20s.
+
+**7d's mechanism is confirmed, and it is worse than argued.** It is not that admitted plays
+*tend* to sit near the boundary. At 30s the entire admissible set lives between 24s and 30s,
+because p01 is 24.0s — **no play in 200 games arrived with more than six seconds of gate life
+remaining.** Last night's single game showed it exactly: of 171 plays, 0 arrived under 20s,
+0 under 20–30 except 5, and the one trade the engine opened was evicted by the same gate that
+admitted it, two seconds later, for a $1.20 loss of which $1.01 was the fee. The engine is not
+refusing trades it narrowly dislikes. It is admitting only from a sliver where an immediate
+stop-out is arithmetically forced.
+
+**The floor is the feed, not our configuration.** p01 = 24.0s across 200 games means no setting
+of `MAX_AGE_S`, no faster poll, and no code change on our side buys sub-20s information. That
+is ESPN's publish delay. Any plan premised on beating the market to a play is dead on this
+substrate, and it is dead for a reason we cannot engineer around.
+
+**What raising the gate buys, stated honestly: sample, not profit.** §0 already establishes
+that taking loses because the half-spread exceeds every signal we have measured, and nothing
+here contradicts that. What 30s does is prevent the question from being *asked* — 1,608 plays
+refused and zero opened over 54 minutes of football, then one admission that could not survive
+a cycle. At 60s the same engine sees 54.8% of plays with 36 seconds to hold them, which is the
+first configuration under which the in-game scalp produces a measurable number instead of a
+count of refusals. Nothing is ever placed with real money, so the cost of finding out is zero.
+
+**My recommendation, reversed from earlier in the programme.** I argued for caution on raising
+this. The caution was not supported: I had not measured the density, and the density says 30s
+is not a conservative setting of a dial, it is an off switch dressed as a dial. Raise
+`MAX_AGE_S` to 60. The decision is still the operator's; what has changed is that it is now a
+decision with numbers under it.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
