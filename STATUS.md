@@ -1308,6 +1308,34 @@ map rows: their mean match confidence is **0.898** against **0.884** for the 72 
 map's own score is slightly *higher* on the bad ones. Something else is wrong with those four and
 it needs a per-game look rather than a threshold.
 
+## 0ak. The first paper scalp ever placed: opened, forced out 2 seconds later, lost the fee
+
+`paper_scalps` row 1, the operator's own strategy, live, on Denver at Kansas City:
+
+| | |
+|---|---|
+| entered | 01:33:19.712, NO side (home), at **0.6650** |
+| exited | 01:33:21.712, at **0.6600** |
+| **holding time** | **2.0 seconds** |
+| exit reason | **stale** |
+| P&L on $25 | **−$1.20**, of which **$1.01 is fee** |
+| refusals that night | **5,600**, for this one fill |
+
+**The gate does not only block entry. When it permits one, it forces an immediate exit.** A play
+reaches us a median 53 seconds old; this one arrived just inside the 30-second limit, the engine
+entered, and two seconds later the same play was 32 seconds old and the position was closed for
+staleness. **The holding time is bounded by 30 seconds minus the play's age at entry**, which is a
+second or two, and a round trip costs about 4.8% of the stake at these prices.
+
+**So the strategy as configured cannot hold a position at all.** That is a mechanical fact about
+the pipeline, independent of whether the price moves. Combined with the drift result -- no
+detectable move at the trigger on either league -- the live path and the market both say the same
+thing by different routes.
+
+**This is exactly what the refusal counter was built for.** Without it, `paper_scalps` holding one
+losing row would read as "the strategy traded once and lost". With it: 5,600 refusals, one fill,
+forced out in two seconds by the same rule that let it in.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
