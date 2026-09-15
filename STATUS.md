@@ -1638,6 +1638,55 @@ caught" without evidence the mutation applied is measuring its own plumbing. Sam
 `grep -v " Up "` that matched nothing because the separator was a tab, and my `pgrep -f nightly_scan`
 that matched my own command line and reported the job still running after it had finished.
 
+## 0ar. Close age against both populations, and a ratio in our own comment that cannot be re-derived
+
+7d ran the close-age table on both populations — every close with `ko < now()`, and the stricter
+`ko < now() − 4h` that the scan actually scores.
+
+| league | population | closes | median | p90 | frac > 1h |
+|---|---|---:|---:|---:|---:|
+| cfb | both identical | 15,818 | 0.1m | 56.3m | 0.095 |
+| nfl | both identical | 5,441 | 0.2m | 0.4m | 0.002 |
+| mlb | both identical | 165 | 11.5m | 16.5m | 0.000 |
+| tabletennis | `ko < now()` | 413 | 7.5m | 61.7m | 0.107 |
+| **tabletennis** | **`ko < now() − 4h`** | **372** | **7.5m** | **66.6m** | **0.118** |
+| cricket | both (n=2) | 2 | 63.7m | 110.7m | 0.500 |
+
+**The two populations are identical everywhere except table tennis**, because a four-hour lag can
+only drop games that started inside the last four hours and only Setka Cup runs densely enough for
+that to bite. **And the stricter population is the worse one, 0.107 → 0.118.** That is the result
+rather than the table: had the looser population been the pessimistic one, TT staleness could have
+been dismissed as a boundary artifact of counting just-started matches. It is not an artifact — the
+looser population was *understating* it.
+
+**A close is stale in units of the thing being priced.** There is no end-of-match signal for TT, so
+7d bounded match duration from the data: across same-player consecutive matches the minimum gap is
+30 minutes, since a player cannot start a second match before the first ends. **I re-derived this
+independently over the full 750-match board (1,225 gaps, against their 534): minimum exactly 30.0m,
+zero gaps below it.** On that bound a median TT close is 0.25 matches stale and the p90 is over two
+whole matches before the one being priced — and 30m is the generous end, so at a true 15–20m every
+figure roughly doubles.
+
+*I nearly filed a correction here and it would have been wrong.* Minimum 30.0, p01 30.0, p05 30.0,
+median 90.0 are suspiciously round, and my first reading was that TT is scheduled on a 30-minute
+grid, which would make the minimum a scheduling artifact carrying no information about duration.
+The check refutes that: all 750 start times sit on a **5-minute** grid (every start is a
+5-minute boundary, all 750 with zero seconds), so gaps of 10, 15, 20 and 25 minutes are perfectly
+schedulable and **not one occurs**. The 30-minute floor is empirical, not structural. Their number
+survives a test I expected it to fail.
+
+**And the scan's own ratio is not reproducible — it is my comment and it is wrong.** `cfb/run_scan.py`
+carries `tabletennis 0.405 / 5.852` in a comment with **no duration constant anywhere in the file**,
+and the two figures are not consistent with any single duration: 0.405 against a 7.5m median implies
+~18.5m, 5.852 against a 61.7m p90 implies ~10.5m. One of them is wrong and neither can be
+re-derived. A ratio living in a comment, with no constant and no test behind it, is a claim nothing
+can falsify — the `a-description-has-no-test` failure in its purest form, written by me.
+
+**Against the 0.10 bar:** cfb sits at 0.095 on both populations — the scan's rounded "10%" is this
+number — TT is above on both, nfl and mlb are nowhere near. The threshold currently separates
+exactly the league the cadence work was about, and cfb is close enough that a small regression
+crosses it.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
