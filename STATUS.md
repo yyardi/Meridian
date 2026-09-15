@@ -1166,6 +1166,16 @@ result of the session. 223,303 settled shadow maker fills, ~160 games per bucket
 | 4-8¢ | 42,895 | 157 | +2.56¢ | −6.26¢ | **−0.73¢** |
 | 8¢ and wider | 23,239 | 155 | **+5.29¢** | **−9.97¢** | **−1.02¢** |
 
+> **QUALIFIED by §0aw, same night.** Two things below are weaker than they read. (1) `edge earned`
+> is the band's own half-spread and `adverse move` is the mark-to-mid move; a resting quote fills iff
+> the move exceeds the half-spread, so that *decomposition* is largely an identity. Only the **net**
+> column is a measurement (it marks to settlement, which I verified). Any argument from the
+> earned-to-adverse *ratio* — including my own "1.88× implies a 23.5¢ loss at 12.5¢ earned" — is
+> built on algebra and is withdrawn. (2) **The flatness is estimator-dependent.** This table is
+> fills-weighted. Equal-weight game means give −2.65, −1.53, −1.11, −0.78 — not flat, monotonically
+> improving, and the widest band no longer excludes zero. Making still loses on both. "The spread is
+> *exactly* the adverse-selection premium" does not survive the change of estimator.
+
 **The edge you earn rises ten-fold with the spread. The adverse move rises faster. The net is flat
 at about −1¢ in every bucket.** That flatness is the finding: the spread is not a gift, it is
 priced compensation for trading with someone who knows something. Quote into an 8¢ spread and you
@@ -1865,6 +1875,65 @@ wide-spread maker analysis I just assigned, competes directly with the recorders
 follows: **bound every analysis read by a month boundary so the partition prunes, and expect one
 core, not two.** `partition-pruning-needs-a-boundary` already says the first half; the second half
 is new and is why it matters.
+
+## 0aw. §0ag's "flat at −1¢" is an artefact of the estimator, and the per-game version is not flat
+
+7d, working the wide-spread question, derived that the adverse-selection module's arithmetic is an
+identity: a resting bid at half-spread `h` fills iff the mid move `d ≤ −h`, and the mark-to-mid P&L is
+then `d + h`. So **net = h − |d| conditioned on |d| ≥ h, which is ≤ 0 in every band by construction** —
+the fill rule and the P&L mark are the same variable. That raised a serious question about §0ag, the
+programme's headline negative: *is "the spread IS the adverse-selection premium" measuring anything?*
+
+**It is. I checked, and the concern was unfounded.** §0ag's net is marked to **settlement**, not to mid.
+Recomputing from `shadow_quote_fills` reproduces its published columns to the cent:
+
+| band | fills | earned | adverse | §0ag published net | net to **mid** |
+|---|---:|---:|---:|---:|---:|
+| < 2¢ | 102,144 | +0.50 | −3.65 | −1.56 | −3.15 |
+| 2–4¢ | 58,118 | +1.18 | −4.42 | −1.07 | −3.24 |
+| 4–8¢ | 43,474 | +2.56 | −6.26 | −0.73 | −3.70 |
+| 8¢+ | 23,536 | +5.29 | −9.98 | −1.02 | −4.69 |
+
+Earned and adverse match exactly; the net column tracks settlement, not the mid. **But note what the
+identity does implicate: `earned` is `h`, which is the band's own definition, and `adverse` is the
+mark-to-mid move. The earned/adverse *decomposition* is largely algebra. Only the settlement net is a
+measurement**, and any argument built on the earned-to-adverse *ratio* — including my own
+extrapolation that 1.88× predicts a 23.5¢ loss at 12.5¢ earned — is built on the algebra. **I withdraw
+that extrapolation.**
+
+**And the headline does not survive the estimator.** §0ag is fills-weighted. Equal-weight game means,
+which is the estimator this clustered design calls for:
+
+| band | G | net per **fill** (§0ag) | net per **game** | t (per game) |
+|---|---:|---:|---:|---:|
+| < 2¢ | 164 | −1.66 | **−2.65** | −3.86 |
+| 2–4¢ | 159 | −1.17 | **−1.53** | −1.90 |
+| 4–8¢ | 158 | −0.82 | **−1.11** | −1.64 |
+| **8¢+** | 156 | −1.07 | **−0.78** | **−0.98** |
+
+Per fill it is flat at about −1¢, which is what §0ag says and what the phrase "the spread is *exactly*
+the adverse-selection premium" rests on. **Per game it is not flat: it improves monotonically, −2.65 →
+−0.78, and the widest band no longer excludes zero (t = −0.98).** The divergence is the usual one — the
+sub-2¢ band carries 623 fills per game against 151 in the widest, so fills-weighting lets the
+heavily-traded games dominate.
+
+**What survives and what does not.** *Making still loses* — every band is negative on both estimators,
+and these are gross, before fees, with no maker rebate on this venue. What does **not** survive is the
+stronger claim that the net is *flat*, i.e. that the spread is priced to exactly offset adverse
+selection at every width. On the per-game estimator the loss shrinks by a factor of three as the
+spread widens and the widest band is statistically indistinguishable from break-even. That is a
+different statement with a different implication: it points the wide-spread question (§0ao) toward
+"possibly break-even above 8¢" rather than "ruinous", and the 15¢ cap means we have never looked past
+the point where the trend is heading.
+
+**Neither estimator is a result yet, because the null is unmeasured.** 7d's other finding is that a
+geometry-only null — one pooled move distribution, bands differing only through `h` — produces
+*opposite* gradients depending on the tail: on 200,000 draws, a normal move distribution gives net
+*improving* with width (−3.65 → −1.09¢) and a fat-tailed one gives net *collapsing* (−5.27 → −26.02¢).
+So a net-versus-spread gradient read without its null is uninterpretable **in principle**, not merely
+underpowered: the same picture supports opposite operational decisions. The monotone improvement in my
+per-game column is exactly the shape a thin-tailed geometry null produces on its own. **It is a
+hypothesis, not a finding, until it is measured against the null on this tape.**
 
 ## 1. What I need from you (everything else I now run myself)
 
