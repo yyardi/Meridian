@@ -1590,6 +1590,54 @@ tradeable this season regardless. Nothing about tonight's run updates it in eith
 −28.88¢ [−55.85, −1.92] is the declared-complement pair behaving exactly as a complement pair must;
 neither is evidence. MLB clears the power floor later this week, not tonight.
 
+## 0aq. The Elo harness runs today and correctly returns nothing; eligibility is closer than the settled set shows
+
+7d built the fit harness (`core/tt/{elo,fit,rule}.py`, `cfb/run_tt_elo.py`, 18 tests, suite 2249)
+against the registered spec, and the deliverable is that **it runs on today's real data and produces
+zero eligible matches without crashing** — `NOT YET` distinguished from `FAIL` inside the rule rather
+than in prose. A harness you first execute on the day the data arrives is a harness you debug then.
+
+**I verified it by parsing the slugs myself**, independent of their code, over all 750 TT board slugs
+(not just the 356 settled), zero unparsed:
+
+| competition | players | max matches, any player | settled (7d) |
+|---|---:|---:|---:|
+| setkameua | 171 | 14 | 256 |
+| setkamecz | 50 | 7 | 48 |
+| setkamemd | 48 | 7 | 39 |
+| setkawoua | **6** | 5 | 14 |
+| **total** | **275** | — | 357 |
+
+Three things this settles. The pool is **exactly 275** — the capacity figure in §0ae was a board
+count and it is confirmed to the unit. **Zero tokens appear in more than one competition**, which 7d
+measured as 0-of-180 on the settled set and I now confirm as 0-of-275 on the full board, so the
+closed-pool-per-competition assumption the whole capacity argument rests on holds on the larger
+population too. And **`setkawoua` has a six-player pool**, so it can never meet the ≥25-cluster
+floor — permanently `NOT YET`, which the runner prints rather than leaving it looking pending.
+
+**One thing my route sees that the settled view cannot: 34 tokens already carry ≥10 matches on the
+board.** Eligibility is bounded by settlement, not by play. The settled max is 9 (hence zero
+eligible today), but the matches that make 34 players eligible have already been *scheduled or
+played* — they simply have not settled yet. That is consistent with 7d's +1/+2/+3-day curve and
+tightens the expectation rather than loosening it.
+
+**A correction to me, which I accept.** I told 7d that "a large Elo coefficient with a small design
+effect is a defect signature." Their positive control has β = +1.09 with deff 1.17, where the effect
+is real by construction — so my rule would have flagged a true result. `deff` tracks the *imbalance*
+of appearances, not the presence of an effect: with balanced pairing the player clusters do not
+concentrate residuals and deff sits near 1 either way. The settled set is balanced (180 tokens, 712
+appearances, max 9), so the heuristic as I stated it would probably have fired on a genuine finding
+and cost us an argument about a number that was never evidence. Narrowed: the signature is a large
+coefficient with deff ≈ 1 on an **unbalanced** panel. `deff` is reported next to the appearance
+distribution and is **not** a verdict input.
+
+**And a fourth proxy error today, theirs, caught by them.** Their batched mutation runner reported
+"18 passed" for an Elo sign flip — a false negative from the runner, not a gap in the tests; grepping
+to confirm the mutation had landed turned it into 5 failures. A mutation runner that reports "not
+caught" without evidence the mutation applied is measuring its own plumbing. Same family as my
+`grep -v " Up "` that matched nothing because the separator was a tab, and my `pgrep -f nightly_scan`
+that matched my own command line and reported the job still running after it had finished.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
