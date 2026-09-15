@@ -1154,6 +1154,37 @@ the entire in-play CFB sample and it arrives once a week.
 table tennis is currently 320 rows across 194 games, because the live recorder does not cover it.
 That is the single highest-value thing left to build.
 
+## 0ag. The spread IS the adverse-selection premium. Measured on 223,303 maker fills.
+
+Every analysis tonight was about **taking**. This is the other side, and it is the most structural
+result of the session. 223,303 settled shadow maker fills, ~160 games per bucket:
+
+| quoted spread | fills | G | edge earned | adverse move | **net P&L** |
+|---|---:|---:|---:|---:|---:|
+| under 2¢ | 99,879 | 163 | +0.50¢ | −3.65¢ | **−1.56¢** |
+| 2-4¢ | 57,290 | 158 | +1.18¢ | −4.42¢ | **−1.07¢** |
+| 4-8¢ | 42,895 | 157 | +2.56¢ | −6.26¢ | **−0.73¢** |
+| 8¢ and wider | 23,239 | 155 | **+5.29¢** | **−9.97¢** | **−1.02¢** |
+
+**The edge you earn rises ten-fold with the spread. The adverse move rises faster. The net is flat
+at about −1¢ in every bucket.** That flatness is the finding: the spread is not a gift, it is
+priced compensation for trading with someone who knows something. Quote into an 8¢ spread and you
+collect 5.29¢ and lose 9.97¢ to the market moving against you before settlement.
+
+**This closes the loop on why nothing works.** Taking loses because the half-spread is 2.5-7.5¢
+and no directional signal we have measured exceeds it. Making loses because the spread is exactly
+the adverse-selection premium. **Both sides of the book are priced**, and that is a real answer
+rather than an absence of one.
+
+**What it implies about where edge could exist.** Not in the prices -- they are internally
+consistent. It would have to come from information the venue does not have: a better model of the
+sport, or genuinely faster data. We are **53 seconds slow** on plays, so not faster. That leaves
+the model, which is where the operator's cricket thesis lives and where a table-tennis model at 345
+games a day would be testable.
+
+*Caveat named: these are gross figures, before any maker fee. If makers pay the taker schedule the
+numbers are worse; there has never been an observed maker rebate on this venue.*
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
