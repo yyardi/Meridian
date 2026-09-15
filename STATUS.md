@@ -1785,6 +1785,54 @@ the images, or not at all.
 prod, not tested," because the query reads a table a migrated schema does not have. The migration makes
 that test writable.
 
+## 0au. The drift detector works, and its first answer retires the belief that justified building it
+
+I asked 7d to build an instrument reporting where the **running** code differs from `origin/main`,
+because that class cost us five times today. Its first run says the fleet is current.
+
+| | |
+|---|---|
+| containers scored | 28, plus 1 UNKNOWN (`meridian-postgres`, no python in the image) |
+| drift | **exactly 1 of 214 files**, on all 28 |
+| the file | `core/quote/adverse_selection.py` — my `MERIDIAN_QUOTE_MAX_SPREAD` change |
+| merged | 05:36Z, against images built **00:25–00:27Z** — five hours earlier |
+
+**So "six fixes written and inert" was true when I said it and had expired by the time it was
+measured.** I verified that independently rather than taking it: images built 00:25–00:27Z, and my
+own `markets_seen` fix is present inside the *running* recorder. The four fixes we both believed were
+inert are all live.
+
+**And the detector's only finding is the evidence for the one deployment decision still open.** The
+single drifting file is the wide-spread maker experiment (§0ao). It is staged, it is not running, and
+it cannot be until a rebuild — which is exactly what the instrument now says, in one line, instead of
+me asserting it.
+
+**Why hashing file contents was forced, not chosen.** `MERIDIAN_ENGINE_COMMIT` is empty in **all 28**
+containers, the image tags carry no version, and — the fact neither of us had — **no container
+bind-mounts its code**. Every service runs its image's own copy, so `/opt/meridian` is never what
+runs. That is why "the checkout looked right" was actively misleading rather than merely unhelpful.
+Stamp, tag and mount all carry nothing; content is the only thing left that can answer.
+
+**Three bugs inside the instrument, each producing clean confident wrong output**, and what caught
+each is the useful part: *stderr* ("file 1 is not in sorted order" — two files sorted on different
+keys, reporting 210 of 214 drifted everywhere); *an independent grep* (`/opt/meridian` is root-owned,
+so `git cat-file` wrote nothing for `ubuntu` while `sha256sum` cheerfully hashed empty input — every
+entry became `sha256("")`, everything looked 100% drifted, and the header still printed a confident
+reference line); and *an implausible row* (a pipeline's exit status is its last command's, so `if !`
+tested `sort` rather than `docker`, and postgres came back `DIFFERS` with a file called `OCI`). None
+would have been caught by reading the code. The script now refuses to run against a reference it
+cannot validate — exit 2, cause named — and I confirmed that fires.
+
+**Deployment, my decision: nightly at 09:30Z, not the deploy path.** A post-rebuild check confirms a
+rebuild worked; it cannot see the failure this exists for, which is a fix merged and then *not*
+deployed while everyone believes it is live. Only something that looks when nobody is deploying sees
+that. `scripts/nightly_code_drift.sh` wraps it and **pushes only when the drifting file set changes** —
+steady-state "N files inert" is true every night and is not news; a merge making something inert, or a
+rebuild clearing it, is. Keyed on files rather than containers, since all 28 share one set and a
+restart would otherwise push. Six tests, three mutations each verified to have *landed* before its
+result was believed and checked in both directions. Verified end to end on prod: first run records
+state and stays silent, second run says no change and stays silent. Suite 2281.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
