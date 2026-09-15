@@ -2000,6 +2000,42 @@ and it failed on a degenerate sample rather than on any tail. The same bug was i
 asserted — but the story I repeated about how they were obtained was not true, and it was load-bearing
 in the way I quoted it.
 
+## 0ay. The instrument catalogue, and a stale branch that would have re-published a retraction
+
+7d's closing artefact is `docs/infra/the-tell-is-cleanliness.md`: **nineteen instrument failures from
+tonight, mine and theirs, grouped into five mechanisms** — the instrument appearing in its own
+measurement; a failure producing a valid-looking value; a proxy standing in for the thing; the status
+measured not being the status that matters; and a control testing something adjacent to its name.
+
+The tally is the part worth acting on. What caught them: **an implausible number 5, an independent
+second route 5, mutating in both directions 3, stderr already printed 2, verifying the intervention
+landed 2 — and reading the code, 0.** Nothing tonight was found by review. That is not an argument
+against review; it is an argument about where the next hour goes.
+
+**And clearing the branch list turned up a live hazard.** 7d reported `debugger/bounds` as a no-op
+whose content had reached main by another route, and asked for nothing. I checked before letting it go
+and the first check *disagreed*: `git diff --stat main...debugger/bounds` showed 1,778 insertions. That
+is the wrong comparison — three-dot diffs against the merge base, so a stale branch's own history still
+shows. The two-dot tip-to-tip diff is the right one, and it confirmed their claim: all nine test files
+byte-identical on main, all five `Query(..., ge=, le=)` bounds present, `Query` imported.
+
+But the two-dot diff also showed **141 lines the branch has and main lacks**, which is not what a no-op
+looks like, so I went and read them. They are **superseded text** — thinly spread across files main has
+since rewritten — and among them is this, in `docs/math/the-rebate.md`:
+
+> *"Polymarket US pays a maker 0.31¢… Switching venues would be the most expensive decision available
+> to us."*
+
+**There is no maker rebate on this venue.** θ_maker = 0, never observed; that claim was retracted after
+it was traced to a web search rather than the venue. **Merging `debugger/bounds` would have silently
+re-published a retracted falsehood** into the document that exists to record the fee facts — and it
+would have arrived wearing a commit message about query-parameter bounds.
+
+So the branch is not merely a no-op, it is one that must stay unmerged, and the rule from
+`a-cherry-pick-can-be-a-revert` needs a second clause: **on a stale branch the "additions" are the old
+world, and the older it is the more of your corrections it carries backwards.** Check what a merge
+*re-adds*, not only what it removes.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
