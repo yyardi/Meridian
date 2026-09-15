@@ -1047,6 +1047,35 @@ edge.** The drift study says the price does not move at the trigger. This says t
 the engine cannot act on it at 30 seconds, because ESPN publishes a play a median 53 seconds after
 it happens. Two independent reasons, one about the market and one about the plumbing.
 
+## 0ad. Being 53 seconds late does NOT cost us the move — so raise the limit
+
+The operator asked why I was lukewarm about raising the freshness limit, and the honest answer is
+that I had not measured the thing that decides it. Now I have. NFL midfield triggers, 185 of them
+across 16 games, splitting the price move around the moment the play reaches us:
+
+| | ¢ |
+|---|---:|
+| move **before** we see the play (play happens → we receive it) | +0.291 |
+| move **after** we see it (we receive it → +5 min) | **+0.776** |
+| total | +1.066 |
+
+**73% of the move is still ahead of us when the play arrives.** We are late, but we are not
+structurally too late -- the market has not already absorbed it. That refutes the reason I had for
+hesitating, and the operator's instinct was the right one.
+
+**So raise it.** A 30-second limit the feed can never satisfy means the engine never trades at all,
+which is not caution, it is a permanent refusal dressed as one. 60-75 seconds matches what ESPN
+actually delivers.
+
+**And the real blocker is elsewhere, which is why raising it will not make money.** The whole move
+is about **1¢** and a taker round trip costs roughly **3¢**. Capturing 73% of 1.066¢ is 0.78¢
+against a 3¢ cost. The drift study said the same thing from the other direction: the trigger's
+interval spans zero on both leagues.
+
+**Two different claims, and I had been running them together.** "We are too late" is false. "The
+move is too small to pay for the trade" is true. Only the second one is a reason not to trade, and
+it has nothing to do with speed.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
