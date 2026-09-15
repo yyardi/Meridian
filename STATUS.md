@@ -2344,6 +2344,51 @@ fire unattended at 09:00Z. Two defects in that sweep were mine and both are in t
 that missed `from core.tt import elo, money, rule`, and a second pass that counted
 `.pytest_cache/v/cache/nodeids` as an external caller. Catalogue now carries mechanism 6, "the
 instrument is not connected to anything", 25 rows. Suite 2,334.
+## 0bf. Fixing the callerless arm, I wrote a callerless rule with a sign error in it
+
+7d reviewed §0be's fix and found three more instances of the same defect, one of them mine and serious.
+
+**My verdict line returned PASS on a reliably losing strategy.** I wrote
+`"PASS" if (lo > 0 or hi < 0)` — which fires on an interval lying entirely *below* zero. An arm losing
+a confident 3–5¢ per contract would have printed **PASS**:
+
+| interval | n | my line | corrected |
+|---|---:|---|---|
+| [−0.050, −0.030] reliably losing | 3,000 | **PASS** | FAIL |
+| [+0.030, +0.050] reliably winning | 3,000 | PASS | PASS |
+| [−0.50, +0.50] degenerate | 5 | **PASS** (width untested first) | NOT YET |
+| [−0.020, −0.020] zero width | 3,000 | **PASS** | NOT YET |
+
+**And the deeper fault is that I wrote the rule at all.** `rule.money_verdict` already existed —
+registered, documented, 28 tests — and I did not call it. I inlined my own logic instead. **So while
+fixing a module that had no caller, I created a registered function with no caller one level down, and
+put a sign error in the copy that ran.** Its 28 tests protected the version nobody executed. That is
+§0be's mechanism reproduced by the fix for §0be, inside ninety minutes.
+
+**A third instance was already on disk, 7d's:** `core/drift.py` was never imported either — the nightly
+runs `scripts/code_drift.sh`, which carries its own complete classification — while
+`what-is-actually-running.md` credited the Python module with guaranteeing "UNKNOWN is not a pass". The
+guarantee belonged to an implementation that never ran. Deleted, its two rules moved into the shell at
+the branches that implement them.
+
+**And my characterisation of the bar choice was inverted.** I flagged that I had picked `BAR_MEDIAN`
+"to get a printable line" and called it the optimistic end. In `money_verdict` the bar plays the
+*resolution* role: a **tighter** bar demands a **narrower** interval, so `BAR_MEDIAN` (2.26¢) requires
+**1,814** matches against `BAR_MEAN`'s (3.73¢) **667**. It is the stricter gate, not the looser one.
+Flagging an unstated choice was right; the direction I gave it was backwards. The line now prints both
+ends.
+
+**The sweep, and why the guard is narrow.** 22 of 111 `core/` modules have no caller in code, compose,
+shell or cron. Most are legitimately hand-run analysis, so a repo-wide guard would emit 22 lines its
+reader learns to skip — the alarm-that-always-fires failure. It is scoped to `core/tt/`, the package
+that must fire unattended in ~19 days with nobody watching. 7d's own sweep produced two defects it
+caught itself: a regex that missed `from core.tt import elo, money, rule` and so called the arm unwired
+*after* it was wired, and a second pass that counted `.pytest_cache` node ids as callers.
+
+**Sixth mechanism, now in the catalogue: the instrument that is not connected to anything.** It breaks
+the document's own opening claim that every instance produced tidy output — this class produces *no*
+output, and the intro said otherwise until mechanism 6 contradicted it from below. Suite 2,334.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
