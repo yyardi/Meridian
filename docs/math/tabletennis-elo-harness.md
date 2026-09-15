@@ -106,7 +106,7 @@ spec except where noted.
 | interval used for the verdict | game-clustered | registered |
 | **money arm: net P&L per contract** | **interval must exclude 0, null at ZERO net** | **registered 09-15** |
 | money arm: entry | **last pregame quote, executable side** | registered 09-15 |
-| money arm: minimum matches | **≥ 1,618** (`money.required_n()`, see §7) | registered 09-15 |
+| money arm: minimum matches | **n = (1.96·49.1/X)², X named** — 1,814 at 2.260c, 667 at 3.728c (see §7) | registered 09-15 |
 
 **PASS** — ≥200 predicted matches, ≥25 distinct players, and the Elo
 coefficient's game-clustered 95% interval excludes zero.
@@ -180,28 +180,38 @@ different populations, and the 17c row describes listings nobody trades.
 Pooling them would have closed the last live path in the programme on a number
 about listings. The 724 and the 2.00c reproduce §0bc exactly.
 
-**The fee term does not.** §0bc gives 1.22c as the "median taker fee
-0.06·p·(1−p) at that mid" over the 724. On that population every version of
-that statistic is higher:
+**The fee term does not, and neither does my own first correction of it.**
+§0bc gave 1.22c as the "median taker fee 0.06·p·(1−p) at that mid" over the
+724, and no statistic of that population produces it — mean 1.411c at the mid
+and 1.388c at the ask, median 1.462c and 1.451c, against a median mid of 0.500
+where the formula must give ~1.5c. Its actual origin, from its author: the
+median of the SUM (2.248c) with the median half-spread subtracted out.
+**Medians do not add, so 1.22c never existed as a quantity.**
 
-| statistic over the 724 | at the mid | at the ask |
+I then published **2.39c = median half-spread 1.000 + mean fee 1.388**, which
+is the same error in a new costume. The coherent statistics are the two TOTAL
+columns, and nothing else in this table may be added across:
+
+| over the 724, at the ask | median | mean |
 |---|---|---|
-| mean | 1.411c | 1.388c |
-| median | 1.462c | 1.451c |
+| half-spread | 1.000c | **2.339c** |
+| fee | 1.451c | 1.388c |
+| **TOTAL** | **2.260c** | **3.728c** |
 
-The median mid is 0.500 and the mean 0.504, so p(1−p) ≈ 0.25 and ~1.5c is what
-the formula has to give. **1.22c is not reproducible on the stated population
-by either statistic at either price.** The nearest thing to it I could produce
-is 1.266c, the mean at the ask over the 42,485 all-quotes population — printed
-as the nearest candidate and not as a diagnosis, because a number that merely
-lands close is a proxy for provenance rather than provenance
-(`provenance-by-recompute`; I first published that all-quotes reading AS the
-explanation and it was refuted by this table).
+*(p25 1.962c, p90 4.923c.)* **The mean half-spread is 2.34× the median**: there
+is a long right tail of wide-quoted matches and that tail is the entire
+difference between the two totals. Three revisions of one number by two people,
+every version a different mixture of the same 724 rows, so per
+`three-revisions-is-the-signal` what is registered is the **range 2.26c to
+3.73c** rather than a fourth point.
 
-**So the bar is 1.00 + 1.39 = 2.39c at the ask, 2.41c at the mid — not 2.22c.**
-Which of the two hardly matters; that it is not 2.22c does. And it is only a
-SIZING constant: no bet is charged it, each pays `fee_per_contract` at its own
-entry price.
+**Where a strategy sits inside that range is a property of its selection, which
+does not exist yet.** Bet every match and you pay the mean; bet typical ones and
+you pay near the median; a model bets where it disagrees with the price, which
+is neither. So the realised cost of the matches actually bet is a first-class
+output of the arm (`MoneyResult.cost_mean`), not a footnote — and if the model
+preferentially bets wide quotes it pays the tail, which makes even 3.73c
+optimistic. There is a test for exactly that selection.
 
 **The power, stated before any fit.** Per-contract P&L noise is the binary
 outcome's and therefore irreducible. Measured two ways, one decimal apart: the
@@ -209,40 +219,51 @@ outcome's and therefore irreducible. Measured two ways, one decimal apart: the
 0.026, so sd = 0.026·√357 = **0.491**; √(p(1−p)) at the observed mean price
 0.5226 is 0.4995.
 
-| n | SE | 95% half-width | MDE at 80% power |
-|---|---|---|---|
-| 200 (the signal floor) | 3.46c | **±6.79c** | 9.71c |
-| 724 | 1.82c | ±3.57c | 5.10c |
-| **1,618** | 1.22c | **±2.39c** | 3.42c |
-| 3,295 | 0.85c | ±1.67c | 2.39c |
-| 9,224 | 0.36c | ±0.70c | 1.00c |
+| n | SE | 95% half-width | MDE at 80% power | what this n is |
+|---|---|---|---|---|
+| 200 | 3.47c | ±6.80c | 9.73c | the signal floor |
+| 667 | 1.90c | ±3.73c | 5.33c | resolves the MEAN bar |
+| 724 | 1.82c | ±3.58c | 5.11c | today's whole last-quote population |
+| 1,814 | 1.15c | ±2.26c | 3.23c | resolves the MEDIAN bar |
+| 9,261 | 0.51c | ±1.00c | 1.43c | resolves 1c |
 
 **At the registered 200-match floor the money arm has exactly ONE reachable
-verdict.** Its interval is ±6.79c around a bar of 2.39c, so every achievable
-mean — −50c through +50c — returns NOT YET. That is the same dead-branch
+verdict.** Its interval is ±6.80c against a bar of 2.26c–3.73c — wider than
+the bar by 1.8× even at the bar's generous end — so every achievable mean,
+−50c through +50c, returns NOT YET. That is the same dead-branch
 finding §6 records for setkawoua, one arm over, and there is a test that fails
 if any mean at n=200 returns anything else.
 
-The registered money floor is therefore **1,618 matches**: the smallest n whose
-95% interval is narrower than the bar it is compared against. It is not a hand
-number — `money.required_n()` computes it from the measured sd and the measured
-bar, so re-measuring either moves the floor with it rather than leaving a stale
-constant behind (`configured-is-not-measured`). Below it the arm
-cannot tell "loses the cost" from "makes the cost", so a negative point
-estimate is not evidence. All of these ignore clustering and are **lower
+**The registered money floor is a FORMULA, not a count**:
+
+    n = (1.96 · 49.1 / X)²      X named, in cents
+
+| X | n | what X is |
+|---|---|---|
+| 2.260c | **1,814** | median total cost |
+| 3.728c | **667** | mean total cost |
+
+A factor of 2.7 from one unstated word, which is why `money.required_n` has no
+default for it and raises a `TypeError` instead. A bare "1,618 matches" — my
+own first version — reads as a property of the data and is a choice of target;
+that is the shape which survives review.
+
+The sd's own precision is the smaller worry and worth stating so it is not
+chased: 0.026 is published to two significant figures, so 0.49 / 0.491 / 0.4913
+move the floor by 3 and then 1 match, against the 1,147 that choosing X moves
+it. Quote ~1,810, never 1,814. All of these ignore clustering and are **lower
 bounds** — players recur, so n_eff < n (`dyadic-power-saturates`).
 
-At setkameua's ~85 settled matches a day (§6: 256 in three days) 1,618 is about
-**19 days**, and it is the only competition with the volume to get there.
-Resolving 1c would take ~109 days.
+At setkameua's ~85 settled matches a day (§6: 256 in three days) that is about
+**21 days** against the median bar and **8** against the mean, and it is the
+only competition with the volume to get there either way.
 
 **The most likely outcome is SIGNAL yes / MONEY not yet, and that is a
 finding.** On the reference numbers it is also the honest expectation that
 MONEY, once powered, comes back negative: the measured pooled price-vs-realised
 gap is −4.36pp at |t| ≈ 1.7, so if half of it were systematic and capturable
-that is ~2pp against a 2.39c bar — **negative, not marginal**. §0bc's
-"marginal, not hopeless" rested on the 2.22c fee term, and 0.17c of bar is the
-whole distance between those two words. Note what that means: the sign of the
-programme's last live path currently turns on a difference smaller than one
-tick, which is an argument for measuring the money arm rather than for
-believing either word.
+that is ~2pp against a bar of 2.26c–3.73c — **below both coherent statistics,
+so negative rather than marginal**. §0bc's "marginal, not hopeless" rested on
+2.22c, a number that never existed. But the sign turned on less than one tick
+across three revisions, which argues for measuring the arm rather than
+believing any of the words — mine included.
