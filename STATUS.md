@@ -2002,8 +2002,9 @@ in the way I quoted it.
 
 ## 0ay. The instrument catalogue, and a stale branch that would have re-published a retraction
 
-7d's closing artefact is `docs/infra/the-tell-is-cleanliness.md`: **nineteen instrument failures from
-tonight, mine and theirs, grouped into five mechanisms** — the instrument appearing in its own
+7d's closing artefact is `docs/infra/the-tell-is-cleanliness.md`: **22 instrument-failure rows,
+mine and theirs, grouped into five mechanisms** (written as "nineteen" here and in the doc itself
+until 09-15, when the tables were counted: 21 at the first commit, one added since) — the instrument appearing in its own
 measurement; a failure producing a valid-looking value; a proxy standing in for the thing; the status
 measured not being the status that matters; and a control testing something adjacent to its name.
 

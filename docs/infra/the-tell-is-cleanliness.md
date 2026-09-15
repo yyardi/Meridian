@@ -1,14 +1,23 @@
 # The tell is cleanliness
 
-Nineteen instances from one night, across two sessions. Not one announced
-itself as an error. Every one produced a tidy, well-formed, confident output —
-a count, a mean, a hash, a "passed", a "still running" — and that is the
-common feature. **A broken instrument does not usually return garbage. It
-returns something clean.**
+Twenty-two rows below: 21 from one night across two sessions, one added on
+2026-09-15. Not one announced itself as an error. Every one produced a tidy,
+well-formed, confident output — a count, a mean, a hash, a "passed", a "still
+running" — and that is the common feature. **A broken instrument does not
+usually return garbage. It returns something clean.**
 
 Written because the failures kept arriving in different costumes and we kept
 diagnosing each one locally. They are five mechanisms, and naming them is
-cheaper than re-deriving the diagnosis nineteen times.
+cheaper than re-deriving the diagnosis twenty-two times.
+
+The count in this paragraph said "nineteen" in the file's first commit, when
+its own tables already carried 21 rows, and the row added on 2026-09-15 was
+labelled "instance 20" by incrementing that number rather than counting the
+tables. Both are corrected here. The unit is table rows, which is checkable
+by eye; note that the two rows in section 1 are one instrument in two
+sessions, so an "instruments" count would be lower and would require a
+judgement about what collapses. That judgement is why the original number was
+unverifiable in the first place.
 
 ## 1. The instrument appears in its own measurement
 
@@ -41,7 +50,7 @@ This is the largest group and the most dangerous: the failure mode has a
 | `git rev-list --count` (reachability) | whether the content is on main | one apparently-unmerged commit; every file was byte-identical on main and the one that "differed" had moved on for unrelated reasons |
 | a filename from `grep -rln` | a code path | escalated to the operator as "worse than data loss, an availability problem". The only hit under `core/` was a COMMENT, written by the other session that morning |
 | a grep for one's own summary | the amendment's actual wording | a rescued file reported missing when it was present |
-| "141 files changed, 141 insertions" read as one line per file | the per-file distribution | I called a stale branch's additions "about one line per file, a whitespace artefact". Measured: only 29 files have ANY insertion, the top ten carry 105 of the 141, three carry 14 each, and 8 land in the retracted rebate document. The gloss made a branch carrying 141 lines of old prose sound harmless. **Caught by a peer re-measuring a number I had glossed rather than counted** |
+| "142 files changed, 141 insertions" read as one line per file | the per-file distribution | I called a stale branch's additions "about one line per file, a whitespace artefact". Measured: only 29 files have ANY insertion, the top ten carry 105 of the 141, three carry 14 each, and 8 land in the retracted rebate document. The gloss made a branch carrying 141 lines of old prose sound harmless. **Caught by a peer re-measuring a number I had glossed rather than counted.** CORRECTION (this row was wrong when first written): I quoted the two numbers as EQUAL. Git printed `142 files changed, 141 insertions(+), 20985 deletions(-)` — never a coincidence. 113 of those 142 files carry only deletions, so most of the denominator I divided by could not hold an insertion at all; no rename, mode-only or binary row explains the gap |
 | an image tag, a commit stamp, a checkout on disk | the code inside the container | five separate confusions in one day. All three carry nothing on this fleet: the stamp is empty in all 28 containers, no container bind-mounts its code, and every image is tagged after its own container |
 
 ## 4. The status measured is not the status that matters
@@ -73,6 +82,7 @@ Tallied, because it decides where to spend effort:
 
 * **an implausible number** — 5
 * **a peer re-measuring a number that was glossed rather than counted** — 1
+* **re-reading the source string a correction was built on** — 1 (the correction above quoted git as printing two equal numbers; it printed 142 and 141)
 * **an independent second route** (a different table, a grep, a recompute) — 5
 * **stderr that was already printed** — 2 (`comm: file 1 is not in sorted order`; git's ownership refusal)
 * **mutating in both directions** — 3
@@ -81,7 +91,7 @@ Tallied, because it decides where to spend effort:
 
 Nothing here was found by review. That is the practical content of the note.
 
-## The four habits that follow
+## The five habits that follow
 
 1. **Ask what the instrument would say if it were measuring itself.** If the
    answer is "the same thing", the instrument cannot answer the question.
@@ -95,11 +105,27 @@ Nothing here was found by review. That is the practical content of the note.
 4. **Suspect the tidy answer.** Zero hits, all passed, 383 matches, "still
    running", a reference of 414 entries, a mean over 2,000 draws. Friction is
    evidence that something real was touched.
-5. **Two numbers that happen to be equal are not a distribution.** "141 files
-   changed, 141 insertions" invites "one per file" and means nothing of the
-   kind — 29 files carried all of them and ten carried 105. A coincidence of
-   two totals is the cleanest possible output, and dividing one by the other
-   is not a measurement.
+5. **Ask which members of the denominator could have entered the numerator.**
+   Git printed `142 files changed, 141 insertions(+), 20985 deletions(-)` and
+   I read it as "about one line per file". 113 of those 142 files contain
+   only deletions — structurally incapable of carrying an insertion — so the
+   mean over files that gained anything is 4.86, and ten files carry 105 of
+   the 141. I then corrected this instance by quoting the two numbers as
+   equal, which they never were: the near-match of a ratio to 1.0 was itself
+   the tidy output, and it survived one round of correction because agreeing
+   with a fix feels like checking it.
+
+## The guard I tried to write, and why it is not here
+
+The heading above said "four habits" over a list of five for one commit — my
+own. The obvious guard is: a heading claiming a count, immediately above an
+ordered list, must match the list. Written and run over `docs/`, it finds
+exactly 9 qualifying headings and reports 1 mismatch — `## What the two days
+say`, above a four-item list, where "two" counts DAYS OF DATA and not list
+items. A 1-in-9 false positive rate, semantic and not fixable by tightening
+the regex, on a check nobody would investigate twice. So it is not registered.
+The class stays on the reading list instead: **a numeral in a heading binds to
+some noun, and only sometimes to the list beneath it.**
 
 ## And the corollary that is harder to act on
 
