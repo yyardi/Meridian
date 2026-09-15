@@ -1241,6 +1241,39 @@ window would not appear. And the illiquid market types -- spreads, totals, quart
 untested, which matters because that is precisely where a gap is most likely and where Kalshi
 holds 900,000 CFB rows we cannot join.
 
+## 0ai. The Kalshi CFB join is buildable: 93 games, zero ambiguous
+
+Followed the blocker to the end. The names differ by mascot -- Kalshi says **"Arizona vs BYU"**,
+the map says **"Arizona Wildcats @ BYU Cougars"** -- so a Kalshi name is a *prefix* of an ESPN
+name. **That is precisely the containment trap that once produced a fake 20¢ Kalshi edge here,
+where "Washington" is a prefix of "Washington State".**
+
+**The safe rule is to require BOTH teams on the same date and demand a unique hit.** Measured:
+
+| | |
+|---|---:|
+| Kalshi CFB games | 492 |
+| join uniquely, away-home | **93** |
+| join in the reversed orientation | **0** |
+| **ambiguous, rejected** | **0** |
+| no match | 399 |
+
+**Zero ambiguous is the safety result.** One team is ambiguous; two teams on one date is not. The
+prefix trap cannot fire under this rule, and that should be an assertion in the implementation
+rather than a happy observation -- if an ambiguous pair ever appears, reject it and count it.
+
+**Zero reversed confirms the frame**: Kalshi's first-named team is the away team, consistently,
+which is the same convention the NFL side showed.
+
+**Why 399 miss.** Only 253 of the 492 fall on dates the map covers at all, so 93 of 253 is the real
+rate, 37%. The rest are name variants -- "Miami" against "Miami (OH)", "UL Monroe" against
+"Louisiana-Monroe" -- and each one fixed is another comparable game.
+
+**What it unlocks.** 93 college-football games against 14 NFL, in the league where Kalshi holds
+**900,000 rows** of spread and total quotes. The NFL arbitrage test found the venues 0.40¢ apart on
+the liquid winner market; the untested case is the illiquid spread and total ladders, and this is
+the population that makes testing them possible.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
