@@ -27,6 +27,13 @@ OUT=/opt/meridian/artifacts/reads; mkdir -p "$OUT"
 TS=$(date -u +%Y-%m-%dT%H%MZ)
 F="$OUT/tt_elo_$TS.txt"
 STATE="$OUT/tt_elo_state.json"
+# The container mounts /opt/meridian at /app, so a HOST path handed to the
+# container resolves to nothing inside it. The first real run died exactly here
+# -- FileNotFoundError on /opt/meridian/artifacts/reads/settlements.json with
+# the file present on the box -- so the in-container spelling is separate and
+# named, not the host path reused.
+COUT=/app/artifacts/reads
+CSTATE="$COUT/tt_elo_state.json"
 IMG=$(docker inspect meridian-api --format "{{.Config.Image}}" 2>/dev/null || echo meridian-api)
 
 # The api IMAGE with the checkout mounted, never `docker exec` into the running
@@ -35,7 +42,7 @@ docker run --rm --network host \
   -v /opt/meridian:/app -w /app --env-file /opt/meridian/.env \
   -e PYTHONPATH=/app \
   "$IMG" python cfb/run_tt_elo.py \
-    --settlements "$OUT/settlements.json" --state "$STATE" \
+    --settlements "$COUT/settlements.json" --state "$CSTATE" \
   > "$F" 2>&1
 RC=$?
 
