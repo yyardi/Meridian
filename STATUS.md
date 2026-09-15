@@ -1564,6 +1564,13 @@ quote once raised, not merely that the constant changed. All three were mutation
 re-hardcoded constant; two fail, as they must. I did not raise the default: that is a live-behaviour
 change to four modules that share this constant, and it belongs to the operator, not to a caveat.
 
+> **ANSWERED by §0ax, same night: NO, and not for the reason expected.** The fill rate in the widest
+> band is **0.44%** against 10.0% in the tightest — 145 fills in a whole Saturday — while 0.25–0.50 is
+> the *second most quoted* band in the sample. The wide book is heavily quoted and almost never trades
+> with you. Observed net also tracks a geometry-only null within about a cent in nearly every band, so
+> the mark-to-mid instrument adds little beyond its own algebra. The hypothesis is closed on
+> tradability rather than on the sign of a P&L.
+
 **The registered hypothesis, before any data.** Quoting at the touch in books wider than 15¢ earns
 more than the adverse selection it attracts. Falsifier: net P&L per contract ≤ 0 on ≥100 game
 clusters. It cannot be tested on anything we currently hold, because the cap prevented the fills
@@ -1934,6 +1941,64 @@ So a net-versus-spread gradient read without its null is uninterpretable **in pr
 underpowered: the same picture supports opposite operational decisions. The monotone improvement in my
 per-game column is exactly the shape a thin-tailed geometry null produces on its own. **It is a
 hypothesis, not a finding, until it is measured against the null on this tape.**
+
+## 0ax. The wide book closes — not on edge, but because it never comes to you
+
+7d ran the measurement §0ao asked for. Two Saturdays of CFB, the module's own bounds, cap raised to
+0.50, 94,752 windows on 09-13 across 39 games.
+
+**First, the threat to my §0aw column is refuted.** The worry was that my monotone-improving per-game
+net was just a thin-tailed geometry null. **The CFB tail is heavy**: e(h) = E[|d| − h | |d| ≥ h] *rises*
+with width on both Saturdays (5.00 → 7.03¢ on 09-13, 3.03 → 6.92¢ on 09-06). A heavy tail makes pure
+geometry produce net *collapsing* with width, the opposite of −2.65 → −0.78. So that specific artefact
+is not what my column is.
+
+**Second, and it supersedes the first: the instrument carries almost no information anyway.**
+
+| spread band | windows | fills | fill rate | net/game | **geometry null** |
+|---|---:|---:|---:|---:|---:|
+| 0.01–0.02 | 26,865 | 2,687 | **10.0%** | −4.74 | −4.10 |
+| 0.02–0.05 | 11,781 | 1,839 | 15.6% | −4.83 | −4.76 |
+| 0.05–0.10 | 7,717 | 938 | 12.2% | −5.87 | −5.62 |
+| 0.10–0.15 | 5,739 | 366 | 6.4% | −6.82 | −6.26 |
+| 0.15–0.25 | 8,058 | 272 | 3.4% | −5.59 | −6.41 |
+| **0.25–0.50** | **32,828** | **145** | **0.44%** | −9.09 | −6.89 |
+
+**Observed net tracks the null within about a cent in almost every band.** One pooled move distribution
+reproduces the entire net-versus-width shape, so the mark-to-mid instrument is measuring its own
+geometry. Only the widest band is meaningfully worse than its null — and in the losing direction.
+
+**Third, the operational answer, which is not about edge at all.** The fill rate falls **10.0% → 0.44%**,
+a 23-fold collapse, while 0.25–0.50 is the **second most quoted band in the sample** — 32,828 windows,
+more than any band except the tightest. The wide book is not neglected. It is heavily quoted and it
+almost never comes to you. On top of that, **85–90% of all windows show a mid that did not move at all
+in 30 seconds**, and a still window never fills.
+
+**That is confirmed by a route neither of us designed for it.** §0ao measured traded volume from
+`market_trade_stats`: median 2,682 shares in sub-2¢ markets against 131 at 25¢+, a ratio of **20.5×**.
+7d's fill-rate ratio, from mid-move windows in a different table by a different method, is **22.7×**.
+Two independent instruments agreeing to within 10% on how much less the wide book trades.
+
+**So §0ao closes, and on a firmer basis than a P&L sign.** The hypothesis was that quoting above 15¢
+earns more than the adverse selection it attracts. The answer is that you cannot be filled often enough
+for the question to matter: 145 fills in a full Saturday's widest band, against 2,687 in the tightest.
+An edge you touch twice a week is not a strategy, whatever its sign. **This is a better reason than the
+one I expected to find**, because it does not depend on the estimator, the mark, or the tail — all three
+of which moved under us tonight.
+
+**Three limits carried deliberately, all 7d's.** §0ag marks to **settlement** and this run marks to
+**mid** — different instruments on different populations, so this tests my hypothesis rather than
+validating my §0aw column by a second route. A tail heavy at 30 seconds need not be heavy at a
+settlement horizon; the tail belongs to the horizon as much as to the market. And 09-06 carries **G = 3**
+— three numbers wearing a mean — printed only as a sign check on the gradient, never as an estimate.
+
+**And a correction to §0aw's provenance.** I wrote there that 7d's null direction came from a test that
+failed and whose failure was the finding. That account was wrong, and they withdrew it: the test built
+its sample with a fresh `random.Random(1)` inside the comprehension, so all 2,000 draws were identical,
+and it failed on a degenerate sample rather than on any tail. The same bug was in the file twice. The
+*numbers* are unaffected and now re-verified on 400,000 draws per distribution with distinctness
+asserted — but the story I repeated about how they were obtained was not true, and it was load-bearing
+in the way I quoted it.
 
 ## 1. What I need from you (everything else I now run myself)
 
