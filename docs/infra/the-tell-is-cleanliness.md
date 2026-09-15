@@ -1,6 +1,6 @@
 # The tell is cleanliness
 
-Twenty-five rows below: 21 from one night across two sessions, four added on
+Twenty-seven rows below: 21 from one night across two sessions, six added on
 2026-09-15. Not one announced itself as an error. Almost every one produced a
 tidy, well-formed, confident output — a count, a mean, a hash, a "passed", a
 "still running" — and that is the common feature. **A broken instrument does
@@ -14,14 +14,14 @@ claim, in the file about claims that survive because nobody re-reads them.)*
 
 Written because the failures kept arriving in different costumes and we kept
 diagnosing each one locally. They are six mechanisms, and naming them is
-cheaper than re-deriving the diagnosis twenty-five times.
+cheaper than re-deriving the diagnosis twenty-seven times.
 
 The count in this paragraph said "nineteen" in the file's first commit, when
 its own tables already carried 21 rows, and the row added on 2026-09-15 was
 labelled "instance 20" by incrementing that number rather than counting the
 tables. Both were corrected, and every count since has been produced by
 counting the rows. The unit is table rows, which is checkable
-by eye; note that the two rows in section 1 are one instrument in two
+by eye; note that section 1's first two rows are one instrument in two
 sessions, so an "instruments" count would be lower and would require a
 judgement about what collapses. That judgement is why the original number was
 unverifiable in the first place.
@@ -32,6 +32,8 @@ unverifiable in the first place.
 |---|---|---|
 | `pgrep -f nightly_scan` | its own command line | an implausible duration: "still running at 2h21m" when the true time was 9m15s |
 | `pgrep -f nightly_scan` (again, other session, same night) | its own command line | the scan's artifact already existed |
+| a caller sweep's second pass, grepping non-Python files | `.pytest_cache/v/cache/nodeids`, whose contents are the names of the things under test | three modules were cleared of being callerless by the test cache's own leftovers. The sweep built for mechanism 6, failing by mechanism 1 |
+| that sweep's first regex, `tt import money` | a spelling, not the import | it misses `from core.tt import elo, money, rule`, which is how the real caller is written, so it reported the arm unwired AFTER it had been wired. The matcher was narrower than the measurement |
 
 The cheap handle for a process is a string, and the searching process is also
 a string. Nothing about the output says which one you matched.
@@ -105,13 +107,11 @@ guard is scoped to `core/tt/` — the package that has to fire unattended at
 09:00Z with nobody watching. A repo-wide version would be 22 lines of noise,
 and a guard its reader learns to skip is worse than none.
 
-**Two defects in that sweep, both mine, both the shape of this document.** The
-first regex — `tt import money` — missed `from core.tt import elo, money,
-rule`, so it reported the module unwired *after* it had been wired: the matcher
-was narrower than the measurement. The second pass then counted
-`.pytest_cache/v/cache/nodeids` as an external caller, because a test cache
-contains the names of the things under test; three modules were cleared by the
-instrument's own leftovers.
+**The sweep built for this mechanism failed twice by mechanism 1**, and both
+are filed there rather than here: a regex that missed the three-name import
+form and so called the arm unwired after it was wired, and a pass that counted
+`.pytest_cache` node ids as callers. Classification matters because the fix
+differs — one needs a parser, the other needs an exclusion.
 
 ## What actually caught them
 
@@ -119,6 +119,7 @@ Tallied, because it decides where to spend effort:
 
 * **an implausible number** — 5
 * **a peer asking what calls it** — 3 (an uncalled module, an uncalled decision rule, and a doc crediting the uncalled copy — no test in 2,326 could see any of them)
+* **driving the thing rather than reading it** — 2 (the inline verdict that returned PASS on three of four cases including a confident loss; and the zero-width interval, found only by feeding the runner 40 identical bets)
 * **a peer re-measuring a number that was glossed rather than counted** — 1
 * **re-reading the source string a correction was built on** — 2 (the correction above said git never printed two equal numbers; against the tip it was written on, it did — the count moves with main, the insertions do not)
 * **an independent second route** (a different table, a grep, a recompute) — 5
