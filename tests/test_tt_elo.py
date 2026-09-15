@@ -327,3 +327,68 @@ def test_a_small_design_effect_is_not_by_itself_a_defect_signature():
         "the control's pairing is no longer balanced, so its small deff no "
         "longer demonstrates that balance and not absence-of-effect is what "
         "produces one")
+
+
+# ------------------------------------------- firing without a human watching #
+
+def test_the_first_run_reports_no_transition(tmp_path):
+    """★ A missing state file means FIRST RUN, not "everything changed". Read
+    the other way it would push four NOT YETs the first night, which is how a
+    channel earns being ignored before it carries the one message that
+    matters."""
+    from cfb.run_tt_elo import load_state, transitions
+
+    p = str(tmp_path / "state.json")
+    assert load_state(p) is None
+    assert transitions(None, {"setkameua": rule.NOT_YET}) == []
+
+
+def test_a_changed_verdict_is_the_only_thing_reported(tmp_path):
+    from cfb.run_tt_elo import load_state, save_state, transitions
+
+    p = str(tmp_path / "state.json")
+    save_state(p, {"setkameua": rule.NOT_YET, "setkamecz": rule.NOT_YET})
+    prev = load_state(p)
+    assert prev == {"setkameua": rule.NOT_YET, "setkamecz": rule.NOT_YET}
+
+    same = transitions(prev, {"setkameua": rule.NOT_YET, "setkamecz": rule.NOT_YET})
+    assert same == [], "an unchanged verdict was reported as news"
+
+    moved = transitions(prev, {"setkameua": rule.PASS, "setkamecz": rule.NOT_YET})
+    assert moved == ["setkameua: NOT YET -> PASS"]
+
+
+def test_a_new_competition_is_not_a_transition(tmp_path):
+    """A competition absent from the previous state has not CHANGED — it has
+    appeared. Reporting it as a transition would fire on the first night a new
+    league shows up on the board."""
+    from cfb.run_tt_elo import transitions
+
+    prev = {"setkameua": rule.NOT_YET}
+    assert transitions(prev, {"setkameua": rule.NOT_YET,
+                              "setkawoua": rule.NOT_YET}) == []
+
+
+def test_a_truncated_state_file_is_treated_as_a_first_run(tmp_path):
+    """A run killed mid-write must not make the next run push everything. The
+    writer uses os.replace so this should be unreachable; the reader is
+    defensive anyway because the failure is silent and the cost is a false
+    push."""
+    from cfb.run_tt_elo import load_state
+
+    p = tmp_path / "state.json"
+    p.write_text('{"verdicts": {"setkameua":')     # truncated JSON
+    assert load_state(str(p)) is None
+
+
+def test_the_state_write_is_atomic(tmp_path):
+    """os.replace, not open-and-write: the old state survives a kill."""
+    import os as _os
+
+    from cfb.run_tt_elo import save_state
+
+    p = str(tmp_path / "state.json")
+    save_state(p, {"a": rule.NOT_YET})
+    save_state(p, {"a": rule.PASS})
+    assert not [f for f in _os.listdir(tmp_path) if ".tmp." in f], (
+        "a temp file was left behind, so a crash could strand one")
