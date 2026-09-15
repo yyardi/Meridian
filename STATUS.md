@@ -1726,6 +1726,40 @@ now mutation-verified: 6 pass on the fix, 2 fail on the bug. Suite 2260.
 State recorded, nothing pushed, which is correct: a first run has no transition by definition. Nobody
 has to watch this now. It will say `PASS` or `FAIL` on setkameua the night the floors are met.
 
+## 0at. Two tables live code depends on exist only because a script was once run by hand
+
+`espn_cfb_backfill_games` (55 rows) and `espn_cfb_backfill_plays` (9,537 rows) have **no Alembic
+migration and no model**. They exist solely because `archive/cfb/backfill_cfb.py` was executed on that
+box once. A database rebuilt from migrations would not have them — and `core/feeds/espn_cfb_recorder.py`,
+which is **live code**, reads them. So this is not only a data-durability question: a clean rebuild
+breaks a running recorder.
+
+7d flagged it and put the loss at 44 games. **I doubted the number and I was wrong.** My first check
+asked whether each backfill game exists in the live table at all, which gave 36 and looked like an
+overstatement. That is the wrong decomposition — the live table can hold a game it never saw finish
+(§ESPN recorder stops before post):
+
+| backfill game | n | final score recoverable from live? |
+|---|---:|---|
+| no live state row at all | 36 | no — predates the recorder |
+| live rows, never reached `post` | 8 | no — live has the game but not its end |
+| reached `post` in live | 11 | yes |
+| **irrecoverable finals** | **44** | — |
+| carrying a DraftKings closing spread | **55** | not held anywhere else |
+
+44 and 55, exactly as 7d stated. The refinement that mattered was theirs, not mine.
+
+**Why this outranks everything else queued.** It is the only outstanding item whose loss is
+*irreversible*. The other open work — the deployment-drift detector, the close-age follow-ups,
+the wide-spread maker question — costs time if delayed. These 44 finals and 55 closing spreads cannot
+be reconstructed by any code we could write, because the games finished before the recorder existed.
+7d also named the failure mode that would have caused it: an agreed task that keeps losing to newer,
+more interesting ones, which is precisely how the meridian-7f rescue nearly went wrong four hours ago.
+
+**It also retires an honesty caveat.** The post-beats-backfill precedence is currently "verified on
+prod, not tested," because the query reads a table a migrated schema does not have. The migration makes
+that test writable.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
