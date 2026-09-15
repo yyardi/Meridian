@@ -1536,6 +1536,37 @@ more than the adverse selection it attracts. Falsifier: net P&L per contract ≤
 clusters. It cannot be tested on anything we currently hold, because the cap prevented the fills
 from ever being recorded.
 
+## 0ap. The paper book's first run with table tennis in it agrees with §0al, from a route I did not choose
+
+The 04:40Z book scored **35 registered strategies** (up from 24) against the venue's own
+settlements, 22,270 of them served from the cache I warmed by hand last night — 1 live fetch for
+the whole run.
+
+**Table tennis, now scored by strategies registered before I looked at any of this:**
+
+| arm | bets | G | mean bet | 95% CI | verdict |
+|---|---:|---:|---:|---|---|
+| `tt_home_fav_yes_60` | 101 | 101 | −2.92¢ | [−11.96, +6.12] | spans 0 |
+| `tt_home_dog_yes_40` | 63 | 63 | −3.15¢ | [−14.80, +8.50] | spans 0 |
+
+That matters more than another band table of mine would. §0al killed the 0.50–0.60 lead using bands
+I chose after seeing the tape; these two arms were registered in the ladder beforehand, are scored
+by a different code path, and land in the same place — slightly negative, interval spanning zero.
+G = n on both, so no clustering is hiding in them. Two independent routes, one of which could not
+have been tuned by me, now say table tennis prices are not exploitable by price-bucket rules.
+
+**The one line that excludes zero is the same one as §2b, unchanged.** `wnba_spread_yes_80_100`
+still reads +5.78¢ [+2.96, +8.60] on n=101 G=40, with its home-referenced twin
+`wnba_spread_no_00_20` at −2.05¢ [−8.27, +4.16]. Identical to the 09-14 read because the WNBA
+season is over — tonight's coverage line says *0 closes, 1,582 excluded by since* — so no new games
+entered it. It is the away-team confound for the third time, it is not new evidence, and it is not
+tradeable this season regardless. Nothing about tonight's run updates it in either direction.
+
+**MLB: six arms registered on one settled game are now scored on nine, and all six are still
+`UNDERPOWERED (G<25)`.** `mlb_winner_away_all` +25.51¢ [−1.47, +52.49] against `mlb_winner_home_all`
+−28.88¢ [−55.85, −1.92] is the declared-complement pair behaving exactly as a complement pair must;
+neither is evidence. MLB clears the power floor later this week, not tonight.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
