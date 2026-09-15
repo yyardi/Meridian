@@ -234,3 +234,26 @@ class TestRealisedCost:
         assert r.required(r.cost_mean) == money.required_n(resolution=r.cost_mean)
         with pytest.raises(TypeError):
             r.required()
+
+
+class TestCollapsedVariance:
+    """A zero-width interval is no information wearing perfect precision.
+
+    Found by driving the runner with 40 identical losing bets: the variance is
+    genuinely zero, the interval half-width is 0, and every width gate lets
+    that through as if the estimate were exact. `a-rescue-you-did-not-design`
+    -- ask what a statistic prints when nothing is true.
+    """
+
+    def test_zero_width_interval_is_not_yet(self):
+        for point in (-0.515, 0.0, +0.515):
+            v, why = rule.money_verdict(n=40, lo=point, hi=point,
+                                        resolution=money.BAR_MEDIAN,
+                                        required=1814)
+            assert v == rule.NOT_YET
+            assert "collapsed" in why
+
+    def test_a_real_narrow_interval_still_decides(self):
+        v, _ = rule.money_verdict(n=1814, lo=0.001, hi=0.02,
+                                  resolution=money.BAR_MEDIAN, required=1814)
+        assert v == rule.PASS

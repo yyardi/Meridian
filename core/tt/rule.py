@@ -53,6 +53,10 @@ def money_verdict(*, n: int, lo: float, hi: float, resolution: float,
     half = (hi - lo) / 2.0
     if not (half == half):
         return NOT_YET, f"interval not estimable on {n} bets"
+    if half <= 0.0:
+        return NOT_YET, (f"interval has zero width on {n} bets: the outcomes "
+                         f"are homogeneous, so the variance collapsed rather "
+                         f"than the estimate becoming precise")
     if half > resolution:
         return NOT_YET, (f"interval ±{half * 100:.2f}c is wider than the "
                          f"{resolution * 100:.2f}c bar it is compared against; "

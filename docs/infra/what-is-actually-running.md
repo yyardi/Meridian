@@ -91,6 +91,15 @@ sudo -n /opt/meridian/scripts/code_drift.sh meridian-api    # one
 ```
 
 `sudo` is not optional: without it the reference cannot be built and the script
-exits 2 rather than guessing. The classification logic is `core/drift.py` with
-tests, so the rule that UNKNOWN is not a pass is pinned rather than trusted to
-the shell.
+exits 2 rather than guessing.
+
+**CORRECTED 09-15: this paragraph credited `core/drift.py` with tests for
+pinning "UNKNOWN is not a pass". It never ran.** The script carries its own
+complete classification — the two UNKNOWN branches, `comm -23` for the
+asymmetry, and three separate counts — and nothing imported the Python module,
+so the tested implementation and the running one were different code and the
+guarantee belonged to the one that never executed. The duplicate is deleted;
+the two rules are now comments at the branches that implement them. **Pinning
+them with a test that drives THIS script (stubbing `docker exec`) is the open
+option, and it is the only version of that test worth having — a test of a
+parallel implementation asserts a guarantee about code that does not run.**
