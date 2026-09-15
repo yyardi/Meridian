@@ -2094,6 +2094,41 @@ counts rather than zeros, because the branch names did not resolve against local
 reads exactly like "nothing there". Re-run against `origin/` refs it gave 1, 22 and 2. A count that
 comes back empty is not a count of zero.
 
+## 0ba. My own check-in monitor cries wolf on the two heaviest recorders, by construction
+
+A heartbeat came up overdue this cycle. It was not an outage: `meridian-nfl-recorder` was mid-sweep,
+having woken at 07:22:23 after a clean `sleeping 3600` at 06:22:19, on a sweep that takes ~31 minutes.
+Healthy, and the alarm was mine.
+
+**`interval_seconds` is the SLEEP, not the PERIOD.** A recorder beats at the end of a cycle, then
+sleeps `interval_seconds`, so its true period is `interval + cycle`. The rule I have been running in
+these check-ins — `age > interval_seconds * 1.5` — therefore fires on any service whose sweep exceeds
+half its sleep:
+
+| service | sleep | cycle | true period | my alarm at | |
+|---|---:|---:|---:|---:|---|
+| pregame_recorder_cfb | 3600 | 2331 | **5931** | 5400 | **fires every cycle** |
+| pregame_recorder_nfl | 3600 | 1850 | **5450** | 5400 | **fires every cycle** |
+| pregame_recorder_mlb | 3600 | 208 | 3808 | 5400 | ok |
+| pregame_recorder_tabletennis | 600 | 147 | 747 | 900 | ok |
+| live_odds_recorder | 300 | 4 | 304 | 450 | ok |
+
+It is guaranteed to alarm, forever, on exactly the two recorders whose real failure would cost the
+most — which after a few nights is how a channel earns being ignored before it carries the one message
+that matters.
+
+**The shipped rule is sound and I checked before writing any of this.** `core/heartbeat.py`
+`stale_after_seconds()` uses **`3.0 × interval`** with a 30s floor: 10,800s for these two against true
+periods of 5,931 and 5,450, so roughly 2× headroom. No code change is needed and none was made. The
+defect was in an ad-hoc query I invented for these check-ins and never validated against the services'
+measured periods — `configured-is-not-measured` applied to my own monitor, and the fourth time tonight
+that the instrument rather than the subject was the thing at fault.
+
+**Correct form, for whoever runs this next:** compare against `interval_seconds + cycle_seconds`, both
+of which the heartbeat table already stores, plus a margin — never a multiple of the interval alone.
+And the latent bound worth knowing: the shipped 3× rule breaks if a sweep ever exceeds **2× its sleep**
+(7,200s here). CFB is the closest at 2,331s and has been growing; it is the one to watch.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
