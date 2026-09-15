@@ -104,15 +104,35 @@ spec except where noted.
 | both players' prior matches | ≥ 10, same competition | registered |
 | Elo coefficient interval | must exclude 0 | registered |
 | interval used for the verdict | game-clustered | registered |
+| **money arm: net P&L per contract** | **interval must exclude 0, null at ZERO net** | **registered 09-15** |
+| money arm: entry | **last pregame quote, executable side** | registered 09-15 |
+| money arm: minimum matches | **≥ 1,618** (`money.required_n()`, see §7) | registered 09-15 |
 
 **PASS** — ≥200 predicted matches, ≥25 distinct players, and the Elo
 coefficient's game-clustered 95% interval excludes zero.
 **FAIL** — the floors are met and the interval includes zero.
 **NOT YET** — a floor is unmet. Report the counts and stop; this is not a fail.
 
-Only on PASS does the secondary run (P&L of taking the rating's side when it
-disagrees with the price by more than the half-spread plus fee, per
-competition).
+**MONEY PASS / FAIL / NOT YET** — a second verdict, reported beside the first
+and never collapsed into it. `core/tt/money.py`, `rule.money_verdict`.
+
+The registered wording said the P&L secondary runs *only on PASS*. It now runs
+ALWAYS, which is a strengthening and the reason is not stylistic: conditioning
+the P&L on a favourable coefficient draw selects on the same outcomes the P&L
+then measures, so a conditional secondary is biased upward by construction.
+
+Its wording also sized the entry filter as "disagrees with the price by more
+than the half-spread plus fee", written against a mid. Entry at the executable
+price (buy YES at the ask, NO at one minus the bid) already pays the
+half-spread, so the implemented filter is positive expected value at the price
+actually paid. Adding the half-spread on top would be the same charge twice,
+which is `anchor-is-bookkeeping`. For the same reason the null is **zero net,
+not −cost**: every bet's own fee is already inside its P&L.
+
+**Why a coefficient PASS is not a money answer.** The primary asks whether
+ratings carry information beyond price. A model with a real 0.5pp edge passes
+it and loses to the cost bar. PASS as a word implies the second question and
+delivers the first, and the moment it fires that is how it will be read.
 
 ## 6. The achievable image of that rule, checked before it runs
 
@@ -143,3 +163,86 @@ eligible — the busiest player has 9 priors against a floor of 10. A harness
 that cannot run today is a harness debugged on the day it matters, so the
 replay is required to produce zero eligible matches and exit cleanly, and
 there is a test for exactly that.
+
+## 7. The money arm's achievable image, and what it costs to cross
+
+**The cost bar, measured 09-15 on prod (read-only), `market_slug LIKE
+'aec-setka%'`, September partitions.** Three axes have to be named at once:
+
+| population | n | median spread | mean fee at ask |
+|---|---|---|---|
+| all pregame quotes, mid .2–.8 | 42,485 | 17.00c | 1.266c |
+| **LAST pregame quote, mid .2–.8** | **724** | **2.00c** | **1.388c** |
+
+The book tightens into the start — the median last quote is **8.2 minutes**
+before it and most are one cent wide. Both rows are correct computations of
+different populations, and the 17c row describes listings nobody trades.
+Pooling them would have closed the last live path in the programme on a number
+about listings. The 724 and the 2.00c reproduce §0bc exactly.
+
+**The fee term does not.** §0bc gives 1.22c as the "median taker fee
+0.06·p·(1−p) at that mid" over the 724. On that population every version of
+that statistic is higher:
+
+| statistic over the 724 | at the mid | at the ask |
+|---|---|---|
+| mean | 1.411c | 1.388c |
+| median | 1.462c | 1.451c |
+
+The median mid is 0.500 and the mean 0.504, so p(1−p) ≈ 0.25 and ~1.5c is what
+the formula has to give. **1.22c is not reproducible on the stated population
+by either statistic at either price.** The nearest thing to it I could produce
+is 1.266c, the mean at the ask over the 42,485 all-quotes population — printed
+as the nearest candidate and not as a diagnosis, because a number that merely
+lands close is a proxy for provenance rather than provenance
+(`provenance-by-recompute`; I first published that all-quotes reading AS the
+explanation and it was refuted by this table).
+
+**So the bar is 1.00 + 1.39 = 2.39c at the ask, 2.41c at the mid — not 2.22c.**
+Which of the two hardly matters; that it is not 2.22c does. And it is only a
+SIZING constant: no bet is charged it, each pays `fee_per_contract` at its own
+entry price.
+
+**The power, stated before any fit.** Per-contract P&L noise is the binary
+outcome's and therefore irreducible. Measured two ways, one decimal apart: the
+357 settled matches in `tabletennis-player-identity.md` give a per-match SE of
+0.026, so sd = 0.026·√357 = **0.491**; √(p(1−p)) at the observed mean price
+0.5226 is 0.4995.
+
+| n | SE | 95% half-width | MDE at 80% power |
+|---|---|---|---|
+| 200 (the signal floor) | 3.46c | **±6.79c** | 9.71c |
+| 724 | 1.82c | ±3.57c | 5.10c |
+| **1,618** | 1.22c | **±2.39c** | 3.42c |
+| 3,295 | 0.85c | ±1.67c | 2.39c |
+| 9,224 | 0.36c | ±0.70c | 1.00c |
+
+**At the registered 200-match floor the money arm has exactly ONE reachable
+verdict.** Its interval is ±6.79c around a bar of 2.39c, so every achievable
+mean — −50c through +50c — returns NOT YET. That is the same dead-branch
+finding §6 records for setkawoua, one arm over, and there is a test that fails
+if any mean at n=200 returns anything else.
+
+The registered money floor is therefore **1,618 matches**: the smallest n whose
+95% interval is narrower than the bar it is compared against. It is not a hand
+number — `money.required_n()` computes it from the measured sd and the measured
+bar, so re-measuring either moves the floor with it rather than leaving a stale
+constant behind (`configured-is-not-measured`). Below it the arm
+cannot tell "loses the cost" from "makes the cost", so a negative point
+estimate is not evidence. All of these ignore clustering and are **lower
+bounds** — players recur, so n_eff < n (`dyadic-power-saturates`).
+
+At setkameua's ~85 settled matches a day (§6: 256 in three days) 1,618 is about
+**19 days**, and it is the only competition with the volume to get there.
+Resolving 1c would take ~109 days.
+
+**The most likely outcome is SIGNAL yes / MONEY not yet, and that is a
+finding.** On the reference numbers it is also the honest expectation that
+MONEY, once powered, comes back negative: the measured pooled price-vs-realised
+gap is −4.36pp at |t| ≈ 1.7, so if half of it were systematic and capturable
+that is ~2pp against a 2.39c bar — **negative, not marginal**. §0bc's
+"marginal, not hopeless" rested on the 2.22c fee term, and 0.17c of bar is the
+whole distance between those two words. Note what that means: the sign of the
+programme's last live path currently turns on a difference smaller than one
+tick, which is an argument for measuring the money arm rather than for
+believing either word.
