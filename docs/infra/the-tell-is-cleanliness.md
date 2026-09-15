@@ -41,6 +41,7 @@ This is the largest group and the most dangerous: the failure mode has a
 | `git rev-list --count` (reachability) | whether the content is on main | one apparently-unmerged commit; every file was byte-identical on main and the one that "differed" had moved on for unrelated reasons |
 | a filename from `grep -rln` | a code path | escalated to the operator as "worse than data loss, an availability problem". The only hit under `core/` was a COMMENT, written by the other session that morning |
 | a grep for one's own summary | the amendment's actual wording | a rescued file reported missing when it was present |
+| "141 files changed, 141 insertions" read as one line per file | the per-file distribution | I called a stale branch's additions "about one line per file, a whitespace artefact". Measured: only 29 files have ANY insertion, the top ten carry 105 of the 141, three carry 14 each, and 8 land in the retracted rebate document. The gloss made a branch carrying 141 lines of old prose sound harmless. **Caught by a peer re-measuring a number I had glossed rather than counted** |
 | an image tag, a commit stamp, a checkout on disk | the code inside the container | five separate confusions in one day. All three carry nothing on this fleet: the stamp is empty in all 28 containers, no container bind-mounts its code, and every image is tagged after its own container |
 
 ## 4. The status measured is not the status that matters
@@ -71,6 +72,7 @@ the class.
 Tallied, because it decides where to spend effort:
 
 * **an implausible number** — 5
+* **a peer re-measuring a number that was glossed rather than counted** — 1
 * **an independent second route** (a different table, a grep, a recompute) — 5
 * **stderr that was already printed** — 2 (`comm: file 1 is not in sorted order`; git's ownership refusal)
 * **mutating in both directions** — 3
@@ -93,6 +95,11 @@ Nothing here was found by review. That is the practical content of the note.
 4. **Suspect the tidy answer.** Zero hits, all passed, 383 matches, "still
    running", a reference of 414 entries, a mean over 2,000 draws. Friction is
    evidence that something real was touched.
+5. **Two numbers that happen to be equal are not a distribution.** "141 files
+   changed, 141 insertions" invites "one per file" and means nothing of the
+   kind — 29 files carried all of them and ten carried 105. A coincidence of
+   two totals is the cleanest possible output, and dividing one by the other
+   is not a measurement.
 
 ## And the corollary that is harder to act on
 
