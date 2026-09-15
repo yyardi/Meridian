@@ -2398,6 +2398,40 @@ Whoever adds that schedule owns bringing it in, and this is the line that says s
 the document's own opening claim that every instance produced tidy output — this class produces *no*
 output, and the intro said otherwise until mechanism 6 contradicted it from below. Suite 2,334.
 
+## 0bg. MLB crosses the nomination gate tonight, and the push will carry a number instead of a name
+
+MLB stands at **23 settled games** against the paper book's `G >= 25` floor. Tonight's slate (first
+pitch 22:40Z) crosses it. The arm closest to nominating is the one §0bb flagged:
+
+| arm | mean bet | 95% CI | G |
+|---|---:|---|---:|
+| `mlb_spread_yes_70_100` | **+15.51¢** | [+2.65, +28.38] | 11 |
+| `mlb_spread_no_00_30` (home twin) | −2.27¢ | [−45.61, +41.06] | 7 |
+
+**YES is the AWAY side on this venue**, so a YES-side price-bucket nomination is the away-team
+confound until its home twin says otherwise — and three "excludes 0" headlines have already been
+exactly this. **The push named the arm and nothing else**, so the first thing to arrive would have been
+a strategy name with no number and no warning.
+
+It now reads, simulated against the real paper book:
+
+```
+strategies 35 tested, 1 excluding zero: wnba_spread_yes_80_100 +5.78
+[+2.96,+8.60] [YES-side = AWAY: read the home twin before believing]
+```
+
+137 of the 480-character cap.
+
+**The caution keys on the shape (`_yes_`), never on a named arm**, so it fires for arms that do not
+exist yet; a caution listing today's suspects silently stops applying. **The gate itself is untouched** —
+nomination remains `G >= 25 AND excludes 0`, with the twin printed beside rather than gated on. Tuning
+a decision rule around the arm you can watch approaching it is how a rule stops being pre-registered,
+and the twin-gating question is a decision for the operator, not a patch to make tonight's output
+prettier.
+
+*Offsets pinned by test: I counted the awk columns by hand first and was off by one, which would have
+printed the interval and the word POSITIVE in place of the mean.* Suite 2,340.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
