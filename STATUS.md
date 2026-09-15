@@ -1377,6 +1377,56 @@ K=24, ≥10 prior matches, primary quantity = the Elo coefficient against venue 
 probability) is registered and waiting on sample. A dead price-bucket lead says nothing
 about a rating model; they are different hypotheses on the same tape.
 
+## 0am. The nightly scan found four significant cells, and all four are the spread
+
+The 04:40Z scan tested 315 cells (league × market type × price decile) and 4 cleared
+Bonferroni at p < 1.59e-04. That is 4 more than chance expects. Before nominating anything
+I recomputed them by a second route — per-fill from `scan_rows.json` (19,866 rows) with the
+0.06·p·(1−p) taker fee applied at the traded price, against the scan's own per-game
+Poisson-binomial — and priced the home-referenced twin beside each one.
+
+| cell (CFB, decile) | n | mean ask | mean bid | YES wins | YES net | NO-twin net |
+|---|---:|---:|---:|---:|---:|---:|
+| team_first_quarter_spread 0.5 | 114 | 0.602 | 0.486 | 36.8% | **−24.76¢** | +10.28¢ |
+| game_third_quarter_total 0.7 | 23 | 0.843 | 0.617 | 47.8% | **−37.25¢** | +12.54¢ |
+| game_fourth_quarter_total 0.7 | 40 | 0.873 | 0.622 | 65.0% | **−22.93¢** | −4.20¢ |
+| game_first_quarter_total 0.7 | 37 | 0.899 | 0.591 | 62.2% | **−28.28¢** | −4.46¢ |
+
+Every significant cell is a large YES-side **loss**, in a market quoted 11.6¢ to 30.8¢ wide.
+And the fade does not rescue them: two of the four twins lose money too. If the YES loss were
+a mispricing, the other side would collect it in all four. It collects in two. What both sides
+are paying is the width.
+
+**The population says the same thing, monotonically.** Sign of every cell with |t| > 1.96,
+cut by median half-spread:
+
+| half-spread | cells | \|t\|>1.96 | YES wins | YES loses | NO-twin wins |
+|---|---:|---:|---:|---:|---:|
+| ≤ 1¢ | 139 | 28 | 10 | 18 | 17 |
+| 1–2¢ | 60 | 11 | 1 | 10 | 8 |
+| 2–3¢ | 17 | 5 | 0 | 5 | 3 |
+| 3–5¢ | 18 | 6 | 1 | 5 | 3 |
+| **> 5¢** | 66 | **35** | **1** | **34** | 11 |
+| ALL | 300 | 85 | 13 | 72 | 42 |
+
+In the cheap markets, significant cells split 10 winning / 18 losing — near enough even, which
+is what noise looks like. In the wide markets they split **1 winning / 34 losing**. The
+one-sidedness is not a property of the sport or the market type; it is a monotone function of
+how wide the quote is. A cost effect does exactly this. An edge could not: an edge has no
+reason to be found only where trading is most expensive, and no reason to point the same way
+every time. The scan's own cost-conditioned table reaches the identical conclusion from the
+per-game side — 8 significant cells at ≤1¢ against a null of 6.8, i.e. **zero excess** once
+the expensive markets are excluded.
+
+**Estimator label.** My table is per-fill and unclustered, so these |t| are upper bounds —
+cell 1 is 114 fills over 63 games, so its true t is roughly t/√1.8. The scan's clustered
+per-game version is the one to quote for any nomination. The agreement between the two is on
+the *pattern*, which is what is being claimed; I am not claiming the magnitudes to a cent.
+
+**Nothing nominates.** The best fade in the table, +10.28¢, carries an unclustered t of 2.31
+that falls to ≈1.7 once clustered, against a Bonferroni bar of 4.30 at m_eff = 299. It goes on
+the held-out list, not into a strategy.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
