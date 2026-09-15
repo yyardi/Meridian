@@ -1,3 +1,28 @@
+> # RETRACTED — THERE IS NO MAKER REBATE ON THIS VENUE
+>
+> **θ_maker = 0. A maker rebate has never been observed in our own fills, and
+> this document's central claim is false.** It was traced to a web search
+> (`docs.polymarket.us/fees`) rather than to the venue itself, which is the
+> error the standing note `verify-against-the-venue` exists to record.
+>
+> The retraction reached the CODE — `core/backtest/fills.py` sets
+> `THETA_MAKER = 0.0` and uses `THETA_MAKER_REBATE` only behind an explicit
+> `assume_rebate` flag; `core/quote/wallet.py` documents "theta_maker=0
+> (V9/C7)"; `core/pulse/tight_game_reversion.py` says the rebate "has never
+> been observed on this venue"; and STATUS records "no maker rebate on this
+> venue". **It never reached this file**, which is the one document whose job
+> is to record the fee facts. Found 2026-09-15, eleven days after the claim
+> was written.
+>
+> Placement is the point, not wording. A retraction below the table it
+> retracts is not a retraction — see `put-the-retraction-at-the-table`, a
+> rule I wrote and then broke here by leaving this document alone while
+> correcting everything downstream of it.
+>
+> **Everything below is kept as the record of the episode. Read none of it as
+> current.** The verified fee facts are: taker 0.06 (measured), maker 0 (no
+> rebate, never observed).
+
 # The maker rebate we were never counting — 2026-09-04
 
 **Polymarket US PAYS makers. We modelled a fee of zero and a rebate of zero,
