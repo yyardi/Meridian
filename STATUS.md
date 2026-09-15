@@ -1185,6 +1185,43 @@ games a day would be testable.
 *Caveat named: these are gross figures, before any maker fee. If makers pay the taker schedule the
 numbers are worse; there has never been an observed maker rebate on this venue.*
 
+## 0ah. Kalshi vs Polymarket arbitrage: the venues agree to half a cent, and 492 CFB games cannot be compared at all
+
+The operator asked to look deeply at cross-venue arbitrage. Two findings, one negative and one
+actionable.
+
+**The join exists and is mostly unpopulated.** `kalshi_games` carries `polymarket_event_slug`,
+`espn_game_id` and team codes:
+
+| league | Kalshi games | with a PM slug | with an ESPN id | **joinable to Polymarket** |
+|---|---:|---:|---:|---:|
+| cfb | 492 | 0 | 0 | **0** |
+| wnba | 78 | 78 | 0 | 0 |
+| nfl | 32 | 0 | 30 | **14** |
+
+**CFB is where Kalshi has the most tape -- 500,483 `KXNCAAFSPREAD` rows and 394,793
+`KXNCAAFTOTAL` -- and not one of its 492 games can be matched to a Polymarket game.** No ESPN id,
+no slug. That is the single blocker on cross-venue work and it is ours, not the venue's.
+
+**On the 14 that do join, the venues are the same price.** Tonight's Denver at Kansas City, every
+Kalshi quote for the hour before kickoff against the Polymarket quote at that instant:
+
+```
+Kalshi  DEN  bid 0.4500  ask 0.4600
+Polymkt DEN  bid 0.4550  ask 0.4600
+```
+
+**Identical asks, and Polymarket's book is the tighter of the two** at 0.5¢ against Kalshi's 1¢,
+held for an hour without moving. Buying either side and selling the other loses 0.5-1¢ before a
+combined taker cost of about 3.25¢ (Kalshi 0.07·p(1−p) plus Polymarket 0.06·p(1−p)).
+
+**And that corrects something I said earlier tonight.** I reported median spreads of 5¢ on NFL and
+15¢ on CFB. Those are dominated by illiquid market types -- quarter spreads, team totals. The
+liquid winner market on the game everybody is watching is **half a cent wide**. The spread is not
+uniformly enormous; it is enormous where nobody trades.
+
+*Full 14-game scan still running; this is one game over one hour.*
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
