@@ -2057,8 +2057,11 @@ would have arrived wearing a commit message about query-parameter bounds.
 > concentrated — the top ten files carry 105 of them, only nine files have exactly one, and seven of the
 > eight lines in `the-rebate.md` contain prose. My "141 lines" was right; "whitespace" is not. That
 > matters for the standing instruction below, which is unchanged and now rests on 7d's own better reason:
-> **not that the branch adds nothing, but that nobody has audited the other 140 files of old world it
-> would carry.**
+> **not that the branch adds nothing, but that nobody has audited the 141 insertions of superseded prose
+> across 29 files that it carries — eight of them in the retracted rebate document.** Stated that way on
+> purpose: the earlier phrasing rested on "the other 140 files", which is a count of files changed and
+> therefore a property of when you looked, three lines after this same block says so. How far behind main
+> the branch is grows with every commit and is not quotable as a fixed number.
 
 So the branch is not merely a no-op, it is one that must stay unmerged, and the rule from
 `a-cherry-pick-can-be-a-revert` needs a second clause: **on a stale branch the "additions" are the old
