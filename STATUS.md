@@ -987,6 +987,31 @@ found today.
 **Cost of being down is paper tape, not money.** All three are shadow systems; nothing places an
 order. What is lost is quote-engine fills and gridiron observations for as long as they are stopped.
 
+**Why the first fix did not take.** The image was never rebuilt -- same build time, and
+`MERIDIAN_ENGINE_COMMIT=` present but **empty**. The compose file declares the argument as
+`GIT_COMMIT: ${GIT_COMMIT:-}`, which resolves from the **environment**, and `sudo` strips the
+environment. `scripts/deploy_engine.sh` does `export GIT_COMMIT` *and* `--build-arg`; I passed only
+the second. The working command sets it for the sudo'd process:
+`sudo GIT_COMMIT=$C docker compose ... build ...`.
+
+**Why not the project's own script.** It refuses when tracked files are modified, on the correct
+reasoning that the stamp would then name a commit that does not describe the built image. On prod
+65 tracked files are modified relative to `HEAD` (a5fa9cf) purely because I have staged files from
+`origin/main` all day without moving `HEAD` -- **my staging method defeats this guard by
+construction.** After a move to origin/main, two would remain.
+
+**And a hard reset is out, measured before recommending it.** The two remaining files are the
+softness snapshot CSVs, which the daily read appends to and which the image does COPY:
+
+| file | on disk | in origin/main |
+|---|---:|---:|
+| kalshi softness snapshots | 215 lines | 97 |
+| polymarket softness snapshots | 175 lines | 93 |
+
+`git reset --hard` would destroy **200 rows of collected measurements** that exist nowhere else.
+So the stamp names the code, two data files in the image are ahead of it, and that deviation is
+recorded here rather than hidden -- no engine reads those CSVs.
+
 **And there is a provenance trap in the obvious fix.** `scripts/deploy_engine.sh` exists for this
 and takes the stamp from `git rev-parse HEAD`, but prod's HEAD is `a5fa9cf` while the code on disk
 is `origin/main` at `46573e7`, because files are staged by checkout without moving HEAD. Using the
