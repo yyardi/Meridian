@@ -1730,9 +1730,24 @@ has to watch this now. It will say `PASS` or `FAIL` on setkameua the night the f
 
 `espn_cfb_backfill_games` (55 rows) and `espn_cfb_backfill_plays` (9,537 rows) have **no Alembic
 migration and no model**. They exist solely because `archive/cfb/backfill_cfb.py` was executed on that
-box once. A database rebuilt from migrations would not have them — and `core/feeds/espn_cfb_recorder.py`,
-which is **live code**, reads them. So this is not only a data-durability question: a clean rebuild
-breaks a running recorder.
+box once. A database rebuilt from migrations would not have them.
+
+> **CORRECTED, same night, by 7d.** I first wrote here that `core/feeds/espn_cfb_recorder.py` — live
+> code — reads these tables, and told the operator a clean rebuild would break a running recorder on
+> startup. **That is wrong.** The single hit under `core/` is at
+> `core/feeds/espn_cfb_recorder.py:353` and it is a `#:` **comment**, written by 7d this morning,
+> describing what `run_making_touch` does. I ran `grep -rln`, got a filename, and promoted it to a
+> code path without opening the file — the fifth time today an instrument returned a grep hit
+> standing in for a code path, and the second time the thing measured was one of our own comments.
+> **No long-running service reads these tables and the fleet-restart argument does not apply.**
+>
+> The accurate severity sits between what each of us said. Classifying every reference myself:
+> 0 code / 1 comment under `core/`, and **13 consumer scripts under `cfb/`** (7d's count, confirmed
+> exactly). Six of those thirteen are **on a cron** — `run_ladder_calibration`, `run_making_touch`,
+> `run_ladder_rv`, `run_overshoot`, `run_kalshi_dk_lag`, `run_longshot_shadow`, all in
+> `prod_weekend_read.sh`. So a rebuilt schema breaks nothing on startup, but it breaks the **daily
+> 10:40Z MLB read and the Monday 10:20Z gate** the next time they fire. That is a real scheduled
+> dependency and it is not an availability incident.
 
 7d flagged it and put the loss at 44 games. **I doubted the number and I was wrong.** My first check
 asked whether each backfill game exists in the live table at all, which gave 36 and looked like an
