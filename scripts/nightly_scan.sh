@@ -68,7 +68,23 @@ if [ "$PB_RC" -eq 0 ] && grep -q "strategy, ALL WEEKS" "$PB" 2>/dev/null; then
   PB_LINE="strategies $PB_N tested, $PB_POS excluding zero"
   # A line that excludes zero is the only per-strategy fact worth 480 characters,
   # and it is named rather than counted so the operator can check its twin.
-  [ "$PB_POS" -gt 0 ] && PB_LINE="$PB_LINE: $(grep -E "POSITIVE, excludes 0" "$PB" | awk '{print $1}' | tr '\n' ' ')"
+  # Name, MEAN and INTERVAL, not the name alone. A bare strategy name in a push
+  # is an invitation to act on a number nobody has seen, and the arm closest to
+  # nominating (mlb_spread_yes_70_100, +15.51c, G=11 at 09-15) is the away-team
+  # confound: YES is the AWAY side on this venue, so a YES-side price-bucket
+  # nomination has a home twin that must be read beside it before it means
+  # anything -- three such headlines have already been this confound. The
+  # caution is attached to the SHAPE (`_yes_`), not to any particular arm, so it
+  # fires for arms that do not exist yet. This changes the PUSH only; the gate
+  # is untouched, because tuning a decision rule around the arm you can see
+  # about to trip it is how a rule stops being pre-registered.
+  if [ "$PB_POS" -gt 0 ]; then
+    NOM=$(grep -E "POSITIVE, excludes 0" "$PB" \
+          | awk '{printf "%s %s %s%s ", $1, $(NF-5), $(NF-4), $(NF-3)}' | cut -c1-200)
+    PB_LINE="$PB_LINE: $NOM"
+    grep -E "POSITIVE, excludes 0" "$PB" | grep -q "_yes_" \
+      && PB_LINE="$PB_LINE[YES-side = AWAY: read the home twin before believing]"
+  fi
 else
   # Absent, not zero -- the same distinction the scan half of this script makes.
   PB_LINE="strategies NOT COUNTED: paper book exit $PB_RC, no ALL WEEKS table"
