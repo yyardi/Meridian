@@ -2129,6 +2129,26 @@ of which the heartbeat table already stores, plus a margin — never a multiple 
 And the latent bound worth knowing: the shipped 3× rule breaks if a sweep ever exceeds **2× its sleep**
 (7,200s here). CFB is the closest at 2,331s and has been growing; it is the one to watch.
 
+## 0bb. The 10:40Z MLB read, and the away-confound shape turning up in baseball
+
+First fully unattended daily MLB read: both steps `exit 0`, settlement cache refreshed, 30,981 rows
+over 77 games. The scored slate is **11 games**, up from 9, and **every one of the 14 MLB arms is
+`UNDERPOWERED (G<25)`** — nothing can nominate and nothing did.
+
+One arm's interval excludes zero and it should be read with the confound in mind, not as a lead:
+
+| arm | bets | G | mean bet | 95% CI |
+|---|---:|---:|---:|---|
+| `mlb_spread_yes_70_100` | 15 | 11 | +15.51¢ | **[+2.65, +28.38]** |
+| `mlb_spread_no_00_30` (its twin) | 8 | 7 | −2.27¢ | [−45.61, +41.06] |
+
+**That is the same shape as §2b's WNBA line**: YES at a heavy-favourite price is the *away* side on
+this venue, its home-referenced twin does not carry the sign, and the pair is the away-team confound
+rather than a favourite effect. It is also at G = 11 against a floor of 25, so the paper book's gate
+correctly refuses it — the gate requires `G >= 25 AND excludes 0`, and prints the twin beside rather
+than gating on it. **Recorded here so it is not rediscovered as a finding in a week when G crosses 25;
+at that point the twin split is what decides it, not the interval.**
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
@@ -2220,7 +2240,7 @@ settlement cache was warm.
 | live-recorder / cfb-live-recorder / nfl-live-recorder | in-game book at 0.2–1s | WNBA, CFB, NFL |
 | nfl-odds-recorder / cfb-odds-recorder | DraftKings pregame line path, 7 days ahead | NFL, CFB |
 | kalshi-recorder | Kalshi boards, 72h pregame window | CFB, NFL (WNBA when listed) |
-| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 27,831 rows over 77 games at 05:53Z 09-15** (8,781/62 at 17:30Z 09-14; +18,528 rows, +15 games overnight, accruing unattended) |
+| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 30,981 rows over 77 games at 10:47Z 09-15** (8,781/62 at 17:30Z 09-14; +18,528 rows, +15 games overnight, accruing unattended) |
 | cron Sun 15:50Z / Mon 10:20Z | the pre-registered read, to /opt/meridian/artifacts/reads | — |
 | cron daily 04:40Z | nightly strategy scan, full table to artifacts/reads, terse push to ntfy | all |
 | scalp-nfl / scalp-cfb | paper taker loop, ytg40 trigger, tp 5% stop 10% | NFL, CFB |
