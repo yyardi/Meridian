@@ -1687,6 +1687,45 @@ number — TT is above on both, nfl and mlb are nowhere near. The threshold curr
 exactly the league the cadence work was about, and cfb is close enough that a small regression
 crosses it.
 
+## 0as. The Elo fit is now deployed and fires itself — after dying on its first real run
+
+Installed at **09:00Z daily**, not the 05:20Z the script's header first carried. The scan is the job
+this must not disturb and it does not finish at a fixed time: measured finishes on the last four runs
+are 05:26, 06:10, 07:24 and 10:16, so 05:20 would have landed inside its window most nights and added
+DB contention to a job that seq-scans 62M rows — the exact thing choosing a separate script was meant
+to avoid. 09:00Z clears the worst observed finish and precedes the 10:40Z MLB read. The header now
+states the deployed time and the reason, so the comment and the crontab cannot drift apart.
+
+**Then I ran it once by hand instead of trusting the install, and it failed.**
+`FileNotFoundError: /opt/meridian/artifacts/reads/settlements.json` — with the file sitting on the
+box. The container mounts `-v /opt/meridian:/app`, so a host path handed to it resolves to nothing
+inside. A cron line that has never executed is a hypothesis, and this one was false.
+
+**The failure path is what made it cheap**, and it matters more here than anywhere else in the fleet:
+this job pushes *only on a verdict transition*, so a permanently broken run is otherwise
+indistinguishable from "nothing changed" — forever, silently, on the one channel meant to carry the
+result we have been waiting three days for. It pushed `TT ELO FAILED exit 1` instead. That design was
+7d's and it earned its keep on day one.
+
+**Fixed, and the guard needed two corrections of its own.** The in-container spelling is now separate
+and named (`COUT`/`CSTATE`) rather than the host variables reused. The test I wrote to catch "the
+exact defect" grepped for a literal `/opt/meridian` and **passed on the real bug**, because the defect
+was the *variable* `$OUT`. The second version then flagged the legitimate shell redirect `> "$F"` —
+evaluated by the shell on the host — and so failed on the fix rather than the bug. Both directions are
+now mutation-verified: 6 pass on the fix, 2 fail on the bug. Suite 2260.
+
+**Running clean on prod:**
+
+| competition | settled | players | eligible | verdict |
+|---|---:|---:|---:|---|
+| setkameua | 256 | 113 | 0 | NOT YET — 0 predicted < 200 |
+| setkamecz | 48 | 32 | 0 | NOT YET |
+| setkamemd | 39 | 29 | 0 | NOT YET |
+| setkawoua | 14 | **6** | 0 | NOT YET — pool of 6 can never meet the ≥25 floor |
+
+State recorded, nothing pushed, which is correct: a first run has no transition by definition. Nobody
+has to watch this now. It will say `PASS` or `FAIL` on setkameua the night the floors are met.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
