@@ -185,3 +185,59 @@ between: the next row for that game is another 44 seconds away.
 The gate is not sampling a fresh stream too slowly. It is asking for a
 freshness the feed almost never delivers — and that conclusion is unchanged,
 which is exactly why the wrong description survived.
+
+---
+
+# The live run, 2026-09-15: 6,055 skipped, 0 opened, and one trade
+
+Measured after the fact rather than predicted. The engine's own counter, last
+line of the night:
+
+```
+scalp.stale_skips  league=nfl  max_age_s=30.0  opened=0  skipped=6055  written=1
+```
+
+And the tape-side replay of the same window (1 game, 2.95 live hours):
+
+| | live 09-15 | ceiling from the 09-13 replay |
+|---|---|---|
+| gate passes | **0.11%** | 0.23% |
+
+**Under the ceiling, as the five gaps predicted**, and 0.11% sits at the
+bottom of the 09-13 per-game band (0.09–0.40%). One game, so there is no
+spread to compare against the 4.5x.
+
+The two numbers agree: 0.11% of 10,620 seconds is about 12 seconds of passing
+time, so roughly six of the ~5,300 two-second cycles could have cleared the
+gate. `opened=0` and one row written is what six eligible cycles look like.
+
+## The single trade is the defect in one row
+
+```
+nfl 401872931  side no  trigger ytg40
+entered 01:33:19.712509Z at 0.6650
+exited  01:33:21.712703Z at 0.6600   exit_reason = stale
+pnl -1.196635   fee 1.008665
+```
+
+**It was held for 2.000194 seconds — exactly one cycle — and evicted by the
+same gate that admitted it.** Gross price move was $0.19 against it; the fee
+was $1.01. **The fee is 5.4x the adverse move, and 84% of the loss.**
+
+This is structural, not bad luck. A pass window is `30 - lag` seconds wide,
+and entries land *inside* it. A play arriving with a 28-second lag opens a
+two-second window, so an entry taken there is stale on the next cycle **by
+construction** — the strategy pays a round trip to hold a position for one
+tick. The gate does not merely refuse almost every entry; on the rare
+occasion it admits one, it guarantees an immediate stop-out at a fee.
+
+Which sharpens what the MAX_AGE_S decision is. Raising the gate is not only
+about admitting older information — at 30 seconds against a median 52.8s
+arrival lag, every admission is drawn from the tail where the remaining
+window is shortest, so the admitted trades are systematically the ones with
+the least time to live. A gate set where the mass of the lag distribution is
+would admit trades with a window to hold them in.
+
+(The game is 401872931 — the same fixture that appeared this morning as the
+one mapped game with no score source at all, because it had not been played
+yet.)
