@@ -2051,7 +2051,9 @@ would have arrived wearing a commit message about query-parameter bounds.
 > presence — moving the retraction below the claim fails two tests.
 >
 > *One thing in that correction does not hold.* 7d glossed the branch's 141 insertions as "about one line
-> per file, a whitespace artefact". The count is 141 insertions across 141 files, but they are
+> per file, a whitespace artefact". The count is 141 insertions across 141 files *against main at
+> `022eed3`* — the insertions are fixed at 141, the file count moves with main (142 by 09-15 02:38), so
+> only the insertion side of that pair is quotable later — but they are
 > concentrated — the top ten files carry 105 of them, only nine files have exactly one, and seven of the
 > eight lines in `the-rebate.md` contain prose. My "141 lines" was right; "whitespace" is not. That
 > matters for the standing instruction below, which is unchanged and now rests on 7d's own better reason:

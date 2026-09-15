@@ -50,7 +50,7 @@ This is the largest group and the most dangerous: the failure mode has a
 | `git rev-list --count` (reachability) | whether the content is on main | one apparently-unmerged commit; every file was byte-identical on main and the one that "differed" had moved on for unrelated reasons |
 | a filename from `grep -rln` | a code path | escalated to the operator as "worse than data loss, an availability problem". The only hit under `core/` was a COMMENT, written by the other session that morning |
 | a grep for one's own summary | the amendment's actual wording | a rescued file reported missing when it was present |
-| "142 files changed, 141 insertions" read as one line per file | the per-file distribution | I called a stale branch's additions "about one line per file, a whitespace artefact". Measured: only 29 files have ANY insertion, the top ten carry 105 of the 141, three carry 14 each, and 8 land in the retracted rebate document. The gloss made a branch carrying 141 lines of old prose sound harmless. **Caught by a peer re-measuring a number I had glossed rather than counted.** CORRECTION (this row was wrong when first written): I quoted the two numbers as EQUAL. Git printed `142 files changed, 141 insertions(+), 20985 deletions(-)` — never a coincidence. 113 of those 142 files carry only deletions, so most of the denominator I divided by could not hold an insertion at all; no rename, mode-only or binary row explains the gap |
+| "141 files changed, 141 insertions" read as one line per file | the per-file distribution | I called a stale branch's additions "about one line per file, a whitespace artefact". Measured: only 29 files have ANY insertion, the top ten carry 105 of the 141, three carry 14 each, and 8 land in the retracted rebate document. The gloss made a branch carrying 141 lines of old prose sound harmless. **Caught by a peer re-measuring a number I had glossed rather than counted.** TWICE-CORRECTED, both wrong before this: (1) the gloss; (2) my correction of it, which said git "never printed two equal numbers" — it did, against `022eed3`, the tip the gloss was read on. *Files changed* moves with main (140/141/142 across three successive tips); *insertions* is fixed at 141. So the two numbers were equal, transiently, and the mechanism is a moving denominator over a fixed numerator. Stable: 141 insertions, 29 files gaining any, mean 4.86. Unstable: any count of files changed. Full account in habit 5 |
 | an image tag, a commit stamp, a checkout on disk | the code inside the container | five separate confusions in one day. All three carry nothing on this fleet: the stamp is empty in all 28 containers, no container bind-mounts its code, and every image is tagged after its own container |
 
 ## 4. The status measured is not the status that matters
@@ -106,8 +106,10 @@ Nothing here was found by review. That is the practical content of the note.
    running", a reference of 414 entries, a mean over 2,000 draws. Friction is
    evidence that something real was touched.
 5. **Ask which members of the denominator could have entered the numerator.**
-   Git printed `142 files changed, 141 insertions(+), 20985 deletions(-)` and
-   I read it as "about one line per file". 113 of those 142 files contain
+   Git printed `141 files changed, 141 insertions(+), 20840 deletions(-)` at the
+   tip the gloss was read on, and against today's main the same diff reads
+   `142 files changed, 141 insertions(+), 20985 deletions(-)`. I read it as
+   "about one line per file". 113 of the 142 files contain
    only deletions — structurally incapable of carrying an insertion — so the
    mean over files that gained anything is 4.86, and ten files carry 105 of
    the 141. I then corrected this instance by saying the two
