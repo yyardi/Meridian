@@ -3,7 +3,15 @@
 # counts until eligibility is met, and produces the verdict the moment it is.
 # The point of building it three days early is that nobody has to be watching.
 #
-#   crontab (UTC):  20 5 * * *  sudo -n /opt/meridian/scripts/nightly_tt_elo.sh
+#   crontab (UTC):  0 9 * * *  sudo -n /opt/meridian/scripts/nightly_tt_elo.sh
+#
+# 09:00Z, NOT the 05:20Z this header first carried. The 04:40Z scan is the job
+# this must not disturb, and it does not finish at a fixed time: measured
+# finishes are 05:26, 06:10, 07:24 and 10:16 on the last four runs, so 05:20
+# would have landed inside its window on most nights and added DB contention to
+# the load-bearing job -- the exact thing a separate script was chosen to avoid.
+# 09:00Z clears the worst observed scan finish and still precedes the 10:40Z
+# mlb read. The verdict is not time-critical to the minute; the scan is.
 #
 # A SEPARATE SCRIPT, not a step inside nightly_scan.sh, deliberately: the scan
 # is the load-bearing job and a new step that can fail must not be able to
