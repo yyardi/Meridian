@@ -1468,7 +1468,7 @@ settlement cache was warm.
 | live-recorder / cfb-live-recorder / nfl-live-recorder | in-game book at 0.2–1s | WNBA, CFB, NFL |
 | nfl-odds-recorder / cfb-odds-recorder | DraftKings pregame line path, 7 days ahead | NFL, CFB |
 | kalshi-recorder | Kalshi boards, 72h pregame window | CFB, NFL (WNBA when listed) |
-| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 8,781 rows over 62 games at 17:30Z** |
+| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 27,309 rows over 77 games at 04:31Z 09-15** (8,781/62 at 17:30Z 09-14; +18,528 rows, +15 games overnight, accruing unattended) |
 | cron Sun 15:50Z / Mon 10:20Z | the pre-registered read, to /opt/meridian/artifacts/reads | — |
 | cron daily 04:40Z | nightly strategy scan, full table to artifacts/reads, terse push to ntfy | all |
 | scalp-nfl / scalp-cfb | paper taker loop, ytg40 trigger, tp 5% stop 10% | NFL, CFB |
