@@ -1418,6 +1418,29 @@ every time. The scan's own cost-conditioned table reaches the identical conclusi
 per-game side — 8 significant cells at ≤1¢ against a null of 6.8, i.e. **zero excess** once
 the expensive markets are excluded.
 
+**AMENDMENT, same night, game-clustered.** The table above is per-fill, which I labelled as an
+upper bound. Here it is again with one observation per game inside each cell, which is the estimator
+that should have been quoted first. Cells carry 2.52 fills per game in the cheap band, so roughly a
+√2.5 deflation is expected and is what happens:
+
+| half-spread | cells | \|t\|>1.96 per-fill | **per-game** | null expected | excess, in sd |
+|---|---:|---:|---:|---:|---:|
+| ≤ 1¢ | 139 | 28 | **14** | 7.0 | **+1.9σ** |
+| 1–2¢ | 60 | 11 | 6 | 3.0 | +1.2σ |
+| 2–5¢ | 35 | 11 | 9 | 1.8 | +4.1σ |
+| **> 5¢** | 66 | 35 | **27** | 3.3 | **+9.5σ** |
+| ALL | 300 | 85 | 56 | 15.0 | — |
+
+The σ column widens the binomial sd by √2 for the YES/NO pairing, as the scan's own module does, and
+is still an **upper bound on significance** because cells share games and are therefore positively
+correlated — a permutation null is the only honest one, and it would widen these further.
+
+**This closes the loose end and does not change the conclusion.** The cheap band's apparent excess —
+14 against 7 — is **1.9σ before any correlation correction**, which is noise. The wide band's is
+9.5σ. So the clustered estimator says the same thing as the per-fill one, more honestly: **there is
+no detectable excess of significant cells where trading is cheap, and all of the excess lives where
+it is expensive and points one way.** That is the cost, and it is not hiding an edge underneath.
+
 **Estimator label.** My table is per-fill and unclustered, so these |t| are upper bounds —
 cell 1 is 114 fills over 63 games, so its true t is roughly t/√1.8. The scan's clustered
 per-game version is the one to quote for any nomination. The agreement between the two is on
@@ -1658,7 +1681,7 @@ settlement cache was warm.
 | live-recorder / cfb-live-recorder / nfl-live-recorder | in-game book at 0.2–1s | WNBA, CFB, NFL |
 | nfl-odds-recorder / cfb-odds-recorder | DraftKings pregame line path, 7 days ahead | NFL, CFB |
 | kalshi-recorder | Kalshi boards, 72h pregame window | CFB, NFL (WNBA when listed) |
-| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 27,309 rows over 77 games at 04:31Z 09-15** (8,781/62 at 17:30Z 09-14; +18,528 rows, +15 games overnight, accruing unattended) |
+| mlb-recorder | venue boards, event limit 500 since 10:28Z | **MLB — 27,831 rows over 77 games at 05:53Z 09-15** (8,781/62 at 17:30Z 09-14; +18,528 rows, +15 games overnight, accruing unattended) |
 | cron Sun 15:50Z / Mon 10:20Z | the pre-registered read, to /opt/meridian/artifacts/reads | — |
 | cron daily 04:40Z | nightly strategy scan, full table to artifacts/reads, terse push to ntfy | all |
 | scalp-nfl / scalp-cfb | paper taker loop, ytg40 trigger, tp 5% stop 10% | NFL, CFB |
