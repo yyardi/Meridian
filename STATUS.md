@@ -1374,6 +1374,13 @@ n grows; a fluke shrinks toward zero at rate 1/√n, which is what this did. Thi
 cleanest example the programme has produced of why the pre-registered bar exists, and it
 cost nothing because nothing was ever placed on it.
 
+> **CORRECTED by §0bc: the cost figure below is wrong.** Table tennis does not quote ~8¢ wide at the
+> point you would trade it. At the LAST pregame quote in the tradeable range (724 markets, median 8.3
+> minutes before start) the median spread is **2¢**, giving a total cost of **2.22¢** — half-spread
+> 1.00 plus taker fee 1.22. So −3.60¢ was *larger* than the cost, not smaller, and the sentence below
+> argues against the conclusion it supports. **The result is unchanged and dead on its interval alone**
+> ([−8.67, +1.47] spans zero); only my reason for it was wrong.
+
 **Even the residue is untradeable.** −3.60¢ is the whole pooled tilt, and it does not exclude
 zero. Table tennis quotes ~8¢ wide, so the half-spread alone is ~4¢ before the 0.06·p·(1−p)
 taker fee. The mispricing is smaller than the cost of acting on it — the same wall as every
@@ -2148,6 +2155,55 @@ rather than a favourite effect. It is also at G = 11 against a floor of 25, so t
 correctly refuses it — the gate requires `G >= 25 AND excludes 0`, and prints the twin beside rather
 than gating on it. **Recorded here so it is not rediscovered as a finding in a week when G crosses 25;
 at that point the twin split is what decides it, not the interval.**
+
+## 0bc. The table-tennis cost bar is 2.22¢, not the ~5.4¢ I published — and that changes the Elo outlook
+
+Before waiting two more days for the Elo to become fittable, I sized the bar it has to clear. I had
+written in §0al that *"table tennis quotes ~8¢ wide, so the half-spread alone is ~4¢ before the
+0.06·p·(1−p) taker fee."* **That is wrong for the book you would actually trade**, and the error is a
+population one.
+
+| population | quotes/markets | median spread |
+|---|---:|---:|
+| **all** pregame quotes, mid 0.2–0.8 | 42,375 | **17.0¢** |
+| pregame quotes in the price tail | 447 | 1.0¢ |
+| in-play / after start | 877 | 1.0¢ |
+| **LAST pregame quote, mid 0.2–0.8** | **724 markets** | **2.0¢** |
+
+**The book tightens as the match approaches.** Pooled across all pregame quotes the median is 17¢,
+because a match listed hours early sits on a stale two-sided quote nobody is defending. At the last
+quote before start — median **8.3 minutes** before — the median is **2¢**, and raw rows confirm it by
+eye: 0.45/0.46, 0.43/0.44, 0.47/0.48, 0.34/0.35, 0.49/0.50. Most are **one cent wide**.
+
+**So the cost of a bet-and-hold entry is the half-spread plus the taker fee, and nothing else:**
+
+| | ¢ |
+|---|---:|
+| median half-spread at the last pregame quote | 1.00 |
+| median taker fee `0.06·p·(1−p)` at that mid | 1.22 |
+| **median total cost per contract** | **2.22** |
+
+**What this does and does not change.** It does **not** revive §0al's price-bucket result: that pooled
+−3.60¢ with an interval of [−8.67, +1.47] spanning zero, and an effect that does not exclude zero is
+dead regardless of what it would have cost to trade. But *the reason I gave was wrong.* I wrote that
+"the mispricing is smaller than the cost of acting on it" — 3.60¢ against a real cost of 2.22¢, the
+mispricing was **larger** than the cost. I offered a supporting figure that argued against the
+conclusion it was attached to, which is worse than offering none. The conclusion stands on its
+interval alone.
+
+**What it changes is the Elo outlook, materially.** A rating model must beat the venue price by more
+than **2.22pp per contract**, not the ~5.4pp my §0al figure implied. For reference, 7d's measured
+pooled gap between price and realised outcome across 357 settled matches is **−4.36pp** (|t| ≈ 1.7,
+not significant on its own). If even half of that is systematic and a model can capture it, that is
+~2pp against a 2.22pp bar — **marginal, not hopeless**, which is a different thing from what §0al
+implied and worth knowing before the sample lands rather than after.
+
+**The trap, recorded because I nearly fell in it twice in one hour.** My first query returned a 2¢
+median and looked wrong against my published 8¢; my second returned 17¢ and looked like it confirmed
+the 8¢. Both were correct computations of different populations, and neither is "the spread" — the
+tradeable number requires naming **three** axes at once: *last quote*, *before start*, *mid 0.2–0.8*.
+Pooling all pregame quotes would have closed the last live path in the programme on a number that
+describes stale listings nobody trades.
 
 ## 1. What I need from you (everything else I now run myself)
 
