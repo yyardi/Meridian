@@ -1111,6 +1111,49 @@ in different countries.
 **The open question is settlement, not tape.** 342 games have a close; the settlement cache holds
 138 table-tennis entries. Whether the venue settles all 342 is unknown and tonight's run answers it.
 
+## 0af. The LIVE market is not priced right — and it is not measurable either. One lead, killed.
+
+The operator's objection was correct and my pregame answer did not address it. Everything I had
+reported was **pre-game**. In-play is a different market and it is the one place efficiency has
+never been established.
+
+**In-play CFB, 33,815 settled bets across 140 games. The shape is not flat:**
+
+| price band | implied | realised | lift |
+|---|---:|---:|---:|
+| 0.0-0.3 | — | — | −1.1 to −1.4 pp |
+| **0.3-0.7** | — | — | **+6.5 to +7.4 pp** |
+| 0.7-1.0 | — | — | +3.1 to +3.9 pp |
+
+Four consecutive mid bands underpriced by about 7 points. Pregame CFB, by contrast, is calibrated
+to within 0.6pp on 117 games. **So the live book is measurably worse-behaved than the pregame
+book** -- which is what the operator said and what I had not checked.
+
+**The lead: 0.30-0.70 with a spread of 1¢ or less.** Gross **+10.87¢ [+0.16, +21.58]**, n=3,400,
+G=84. Net of the taker fee, **+8.94¢**. That excludes zero on the gross and would be the largest
+edge this programme has ever measured.
+
+**Three checks, and it does not survive.**
+
+1. **Per game: 41 of 84 games have a positive mean.** A coin flip. A real 10¢ edge shows up in most
+   games; this shows up in half. The top three games carry 24% of the absolute total, with
+   per-game extremes of ±60¢ on one to seven observations.
+2. **Spread buckets are not monotone.** Tight +10.87, medium +3.57, wide +5.47. If tightness were
+   the mechanism there would be a gradient.
+3. **Tight spread does not help elsewhere.** Outside the band it gives +2.87 and −0.20, while the
+   *widest* bucket at 0.70-0.95 gives +5.88. The story does not generalise.
+
+**So: a post-hoc region, driven by half the games, with no coherent mechanism. Dead.**
+
+**What survives is more important than the lead.** Pooled in-play is **+2.56¢ [−3.57, +8.69]** on
+114 games. That interval is ±6¢ wide. **We cannot detect anything smaller than roughly 10¢
+in-play, so "the live market is efficient" is not established — we are blind to it.** 140 games is
+the entire in-play CFB sample and it arrives once a week.
+
+**The only market that reaches in-play power quickly is table tennis at 345 games a day.** In-play
+table tennis is currently 320 rows across 194 games, because the live recorder does not cover it.
+That is the single highest-value thing left to build.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
