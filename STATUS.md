@@ -1274,6 +1274,40 @@ rate, 37%. The rest are name variants -- "Miami" against "Miami (OH)", "UL Monro
 the liquid winner market; the untested case is the illiquid spread and total ladders, and this is
 the population that makes testing them possible.
 
+## 0aj. Cross-venue CFB: no arbitrage, 72 of 76 games agree to 1.8¢, and 4 need a human look
+
+Built the join and ran it. **93 Kalshi CFB games join uniquely with zero ambiguity**, 76 carry
+aligned price samples, and the answer is the same as NFL.
+
+| | |
+|---|---:|
+| games agreeing within 10¢ | **72**, mean gap **1.80¢** |
+| games disagreeing by more | **4**, mean gap **13.50¢** |
+| overall mean absolute gap | 2.57¢ |
+| combined taker cost | ~3.25¢ |
+
+**No arbitrage.** Even including the four outliers the average gap is below the cost of executing
+both sides, and excluding them it is 1.80¢ against 3.25¢. CFB disagrees about five times more than
+NFL's 0.40¢, which is what a less-watched market should look like, and still not enough.
+
+**Two false alarms on the way, both caught before they travelled.**
+
+*A 54¢ "arbitrage"* on Oklahoma State at Tulsa: Kalshi 0.245, Polymarket 0.8225. Tulsa won 24-10
+and Kalshi had them at 75%, so Kalshi was right and the pair cannot both be the same game priced
+honestly. **Not reported as edge.**
+
+*A suspected frame inversion.* That single case looked like Polymarket's YES being the home team
+for CFB, which would have inverted every college-football number produced tonight. Tested both
+orientations across all 977 samples: as-is gives a mean absolute gap of **2.57¢**, flipped gives
+**73.36¢**. **The frame is correct** and the flipped version's tidy-looking sum of 0.991 is
+arithmetic, not evidence -- two prices averaging 0.217 will always sum to ~1 when you subtract one
+from one.
+
+**The open item is the 4 games, and the obvious explanation fails.** They are not low-confidence
+map rows: their mean match confidence is **0.898** against **0.884** for the 72 good ones, so the
+map's own score is slightly *higher* on the bad ones. Something else is wrong with those four and
+it needs a per-game look rather than a threshold.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
