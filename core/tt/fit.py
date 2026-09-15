@@ -64,7 +64,7 @@ class Fit:
 
     def g_eff(self, i: int) -> float:
         d = self.deff(i)
-        return float("nan") if d != d or d <= 0 else self.n / d
+        return float("nan") if math.isnan(d) or d <= 0 else self.n / d
 
 
 def _irls(X: np.ndarray, y: np.ndarray, iters: int = 100, tol: float = 1e-10

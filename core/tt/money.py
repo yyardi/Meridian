@@ -40,28 +40,43 @@ from dataclasses import dataclass
 
 from core.backtest.fills import fee_per_contract
 
-#: Half the median spread of the LAST pregame quote (2.00c), i.e. what crossing
-#: costs on the population this arm actually enters. NOT the 8.5c that pooling
-#: all pregame quotes implies.
-HALF_SPREAD = 0.0100
+# --- the cost bar is a RANGE, and the components must not be crossed -------- #
+#
+# On the 724 last pregame quotes, at the ask (measured 09-15, prod read-only):
+#
+#                    median     mean
+#   half-spread       1.000c    2.339c      <- mean is 2.34x the median
+#   fee               1.451c    1.388c
+#   TOTAL             2.260c    3.728c      (p25 1.962c, p90 4.923c)
+#
+# There is a long right tail of wide-quoted matches and it is the whole
+# difference between the two coherent totals. Only the two TOTAL columns are
+# quantities: medians do not add, so a median half-spread plus a mean fee is
+# not a statistic of anything. Two bars have now been published by crossing
+# them -- 2.22c (median of the sum, back-derived into a "fee" that never
+# existed) and 2.39c (median half-spread + mean fee, mine, the same error in a
+# new costume). Neither is in this file.
 
-#: Mean 0.06*p*(1-p) at the ask over that same 724-market population. Every
-#: statistic of it on that population is 1.39-1.46c (mean/median x mid/ask,
-#: harness doc §7); STATUS §0bc's 1.22c is not reproducible there, and the bar
-#: it published is 0.17c low. That 0.17c is the whole distance between
-#: "marginal" and "negative" for the programme's last live path.
-MEAN_FEE = 0.01388
+BAR_MEDIAN = 0.02260       #: median total cost per contract
+BAR_MEAN = 0.03728         #: mean total cost per contract
 
-#: The sizing constant for power only. No bet is ever charged this: each pays
-#: `fee_per_contract` at its own entry price.
-COST_BAR = HALF_SPREAD + MEAN_FEE          # 0.0239
+#: Where a strategy sits INSIDE that range is a property of its selection,
+#: which does not exist yet: bet every match and you pay the mean, bet typical
+#: ones and you pay near the median, and a model bets where it disagrees with
+#: the price, which is neither. So the arm reports the realised cost of the
+#: matches it actually bet (`MoneyResult.cost_mean`) rather than assuming one.
 
 #: Per-contract standard deviation of the P&L, which is the binary outcome's
 #: and therefore irreducible. Measured, not assumed: the 357 settled TT matches
 #: in docs/math/tabletennis-player-identity.md give a per-match SE of 0.026,
 #: so sd = 0.026*sqrt(357) = 0.491; sqrt(p(1-p)) at the observed mean price
 #: 0.5226 is 0.4995. Two routes, one decimal place apart.
-PNL_SD = 0.49
+#:
+#: Its own input, that 0.026, is published to two significant figures, so
+#: `required_n` is good to three at most: 0.49 vs 0.491 vs 0.4913 moves the
+#: answer by 3 and then by 1 match. Quote the floor as ~1,810, never as 1,814,
+#: and do not chase the last digit of a number whose input is rounded.
+PNL_SD = 0.491
 
 Z95 = 1.959964
 Z80 = 0.8416212                            # one-sided 80% power
@@ -78,6 +93,7 @@ class Bet:
     side: str                              # "YES" or "NO"
     entry: float                           # the price actually paid
     pnl: float                             # net per contract, fee charged
+    cost: float                            # half-spread paid + fee paid
 
 
 def bet(slug: str, elo_p: float, bid: float, ask: float, y: int) -> Bet | None:
@@ -89,11 +105,13 @@ def bet(slug: str, elo_p: float, bid: float, ask: float, y: int) -> Bet | None:
     """
     if not (0.0 <= bid <= ask <= 1.0):
         return None
+    half = (ask - bid) / 2.0
     if elo_p > ask + fee(ask):
-        return Bet(slug, "YES", ask, y - ask - fee(ask))
+        return Bet(slug, "YES", ask, y - ask - fee(ask), half + fee(ask))
     entry_no = 1.0 - bid
     if (1.0 - elo_p) > entry_no + fee(entry_no):
-        return Bet(slug, "NO", entry_no, (1 - y) - entry_no - fee(entry_no))
+        return Bet(slug, "NO", entry_no, (1 - y) - entry_no - fee(entry_no),
+                   half + fee(entry_no))
     return None
 
 
@@ -124,13 +142,18 @@ def _two_way_se(values: list[float], players_a: list[str], players_b: list[str]
     return math.sqrt(v) if v > 0 else float("nan")
 
 
-def required_n(*, resolution: float = COST_BAR, sd: float = PNL_SD,
+def required_n(*, resolution: float, sd: float = PNL_SD,
                z: float = Z95) -> int:
     """Matches needed for the 95% interval to be NARROWER than `resolution`.
 
-    Below this the arm cannot tell "loses the bar" from "makes the bar", which
-    is the only thing anyone will read it for. Ignores clustering, so it is a
-    LOWER bound: players recur, n_eff < n (`dyadic-power-saturates`).
+    `resolution` has NO DEFAULT on purpose. n = (z*sd/X)^2 is a choice of
+    target wearing the clothes of a measurement: across the bar's own range it
+    reads 1,813 at the median total and 666 at the mean, a factor of 2.7 from
+    one unstated word. A bare match count is the shape that survives review, so
+    the caller names X or gets a TypeError.
+
+    Ignores clustering, so every value is a LOWER bound: players recur and
+    n_eff < n (`dyadic-power-saturates`).
     """
     return math.ceil((z * sd / resolution) ** 2)
 
@@ -148,12 +171,22 @@ class MoneyResult:
     se_player: float
     lo: float
     hi: float
-    required: int
     mde: float
+    cost_mean: float               #: REALISED cost of the matches actually bet
+    cost_median: float
 
     @property
     def half_width(self) -> float:
         return (self.hi - self.lo) / 2.0
+
+    def required(self, resolution: float) -> int:
+        """Matches needed to resolve `resolution`. Name it; there is no default.
+
+        `cost_mean` is the right argument once the arm has run: it is what this
+        selection actually paid, rather than either end of a population range
+        it may not sit at.
+        """
+        return required_n(resolution=resolution)
 
 
 def summarise(bets: list[Bet], players_a: list[str], players_b: list[str]
@@ -162,17 +195,26 @@ def summarise(bets: list[Bet], players_a: list[str], players_b: list[str]
 
     The interval reported is the PLAYER-clustered one, because it is the wider
     and honest one; the iid SE travels beside it rather than in place of it.
+
+    `cost_mean` is a FIRST-CLASS output, not a footnote. The population bar
+    spans 2.260c to 3.728c because of a long tail of wide-quoted matches, and
+    which end this arm pays is decided by what the model chooses to bet: if it
+    preferentially bets wide quotes it pays the tail and even 3.728c is
+    optimistic. That is unknowable until the arm runs, so it is measured on the
+    bets placed rather than assumed from the population.
     """
     n = len(bets)
     vals = [b.pnl for b in bets]
+    nan = float("nan")
     if n == 0:
-        return MoneyResult(0, float("nan"), float("nan"), float("nan"),
-                           float("nan"), float("nan"), required_n(), mde(0))
+        return MoneyResult(0, nan, nan, nan, nan, nan, mde(0), nan, nan)
     mean = sum(vals) / n
-    var = sum((v - mean) ** 2 for v in vals) / (n - 1) if n > 1 else float("nan")
-    se_iid = math.sqrt(var / n) if var == var else float("nan")
+    var = sum((v - mean) ** 2 for v in vals) / (n - 1) if n > 1 else nan
+    se_iid = nan if math.isnan(var) else math.sqrt(var / n)
     se_p = _two_way_se(vals, players_a, players_b)
-    se = se_p if se_p == se_p else se_iid
+    se = se_iid if math.isnan(se_p) else se_p
+    costs = sorted(b.cost for b in bets)
     return MoneyResult(n, mean, se_iid, se_p,
-                       mean - Z95 * se, mean + Z95 * se,
-                       required_n(), mde(n))
+                       mean - Z95 * se, mean + Z95 * se, mde(n),
+                       sum(costs) / n, costs[n // 2] if n % 2 else
+                       (costs[n // 2 - 1] + costs[n // 2]) / 2.0)
