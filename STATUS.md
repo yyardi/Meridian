@@ -2631,6 +2631,12 @@ Completed the scan. Every ladder family on both venues, same method, fees at eac
 | **Kalshi** | **spreads** | 2,216,220 | **96.8%** | 38 | **$0.01** |
 | | **total** | **8,094,765** | | | |
 
+**Narrowed again: it is FULL-GAME spread ladders, not spreads generally.** CFB's half and quarter
+spread ladders — first/second half and all four quarters, 4,091 ladders, 41,550 rows — order at
+**90.4%** and yield **18 violations worth $0.00**. So the defect is not "spreads on Polymarket". It is
+specifically the full-game spread ladder, which is the one with the most rungs *and* the only one that
+includes the winner market as a rung. Every other family on the venue is clean.
+
 **The inefficiency is Polymarket spread ladders and nothing else.** Three independent controls now say
 so. *Totals on the same venue are clean* (94.0%, one dollar) — so it is not Polymarket generally. *Both
 Kalshi families are cleaner still* (96.8–97.4%, one cent across 4.5M pairs) — so it is not the market
