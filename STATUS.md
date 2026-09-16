@@ -2765,6 +2765,53 @@ and the same question stands — quoted size is not filled size. **What has chan
 median of $78.76 per game across 14 games worth $100 or more is a different proposition from $0.55
 pregame, and it is worth the one small order that would settle whether any of it is real.
 
+## 0bp. Every sport, every family, in-play — and the headline number was 82% one bad depth reading
+
+The operator asked for every sport scanned live with nothing missing. Done, and the first answer was
+wrong in a way worth recording.
+
+**Two sports have no in-play ladder to scan, structurally.** Table tennis quotes **one** in-play market
+type (the match winner) across 479 games, and cricket one across 9. **A single market cannot form a
+ladder**, so there is no internal inconsistency to find there — not "we looked and found nothing", but
+"the object does not exist". MLB in-play is 2,808 rows across 37 games and yields nothing.
+
+**All fourteen football spread families, in-play, since 09-13:**
+
+| league | family | rows | ordering | violations | value |
+|---|---|---:|---:|---:|---:|
+| **nfl** | **full_game_spread** | 223,079 | 77.9% | 1,769 | **$24,040 → see below** |
+| **cfb** | **full_game_spread** | 602,604 | 70.8% | 1,298 | **$4,436** |
+| nfl | second_half_spread | 220,355 | 67.6% | 1,390 | $553 |
+| nfl | first_quarter_spread | 31,656 | 69.6% | 84 | $352 |
+| nfl | first_half_spread | 96,593 | 69.9% | 424 | $293 |
+| nfl | second_quarter_spread | 75,776 | 74.6% | 177 | $238 |
+| cfb | first_half_spread | 66,343 | 69.9% | 32 | $222 |
+| nfl | third_quarter_spread | 131,928 | 72.0% | 444 | $186 |
+| nfl | fourth_quarter_spread | 173,379 | 72.8% | 688 | $110 |
+| *six remaining cfb families* | | 456,675 | 67–74% | 89 | *under $20 combined* |
+
+**In-play ordering is 67–78% everywhere**, against 85.4% pregame and 97% on Kalshi. The break is
+universal once the ball is live.
+
+**But the NFL headline was contamination and I nearly published it.** $24,040 looked like the result of
+the programme. **82% of it was a single opportunity: +2.02¢ × 978,801 contracts.** Median size in that
+family is 46. `book_levels` carries a 1% tail of implausible quantities on NFL — p99 is 104,552 and the
+max is **10,729,773**, which at $1 a contract would be a $10.7M resting order on a venue whose typical
+depth is in the hundreds. I cannot validate those, so the honest treatment is a size cap:
+
+| league | uncapped | cap 100k | **cap 10k** | cap 1k | top-game share at 10k | median/game |
+|---|---:|---:|---:|---:|---:|---:|
+| **nfl** | $24,040 | $6,269 | **$5,454** | $1,362 | **22%** (was 82%) | **$329** |
+| **cfb** | $4,436 | $4,436 | **$4,436** | $1,846 | 13% | **$75** |
+
+**CFB does not move at all until the cap bites at 1,000 — it was never contaminated.** NFL collapses
+from $24,040 to $5,454. **The defensible in-play figure is ~$9,900 per football week** across 45 games,
+median $329 a game on NFL and $75 on CFB — driven by many games rather than one reading, which is what
+makes it worth anything.
+
+**Unchanged:** executability. Depth coverage in-play is 1–7%, so this remains a floor on what was
+*observable*, not an estimate of what is *takeable*, and no order has been placed.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
