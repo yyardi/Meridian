@@ -2464,6 +2464,60 @@ its sample size and its binomial attached. A confound explained after it has bee
 retraction; explained before, it is a gate. The gate itself is still untouched — the arm will nominate
 and the push will carry its number and the YES-side caution (§0bg), which is the design.
 
+## 0bi. Ladder inconsistency: the first thing in this programme with money attached, and it is small
+
+Every test until now asked whether the venue *misprices a sport*. This one asks something the market
+cannot argue with: **are its own prices consistent with each other?** Within one game, covering −17.5
+is strictly harder than covering −10.5, and winning sits strictly between them. Buy the easier rung and
+sell the harder one and the position **cannot lose** — it pays +1 when the margin lands between the two
+lines and 0 otherwise. If you are paid to hold it, that is arbitrage, no model required.
+
+**MLB, one day, 57 ladders including the winner rung as line 0.0:**
+
+| | |
+|---|---:|
+| pairs tested | 570 |
+| free-money pairs, net of both taker fees | **4** |
+| quote gap between the two legs | **0.0 min — simultaneous** |
+| episodes / median duration | 23 / **34.5 min** |
+| **size available at those quotes** | **median 0, max 4 contracts** |
+| **total value, every opportunity taken** | **$0.23** |
+
+**The frame was validated on the population before any of this was believed**: mean YES mid rises
+0.266 → 0.358 → **0.501** → 0.638 → 0.736 across the five rungs, the winner landing on a coin flip
+exactly where it must, and 91.2% of within-game adjacent pairs correctly ordered.
+
+**And the depth is the whole story.** Median depth across *all* MLB quotes is 100 contracts; at the
+quotes that are mispriced it is **zero**. That also explains the 34-minute persistence — a price with
+no size behind it can sit at an impossible level indefinitely, which is why it survives. A funded
+arbitrage is taken in seconds.
+
+**CFB, three days, where the books are deeper** — 2,633 ladders, 1,041,685 pairs, depth present on 90%:
+
+| | |
+|---|---:|
+| free-money pairs (edge 0–15¢; above 15¢ is a stale rung, not a market) | 1,107 |
+| distinct (game, pair) opportunities | 350 |
+| $ available: median / p90 / max | **$0.01 / $3.84 / $162.38** |
+| worth ≥ $10 / ≥ $100 | 17 / 3 |
+| **total over three days if every one were taken** | **$1,024.95** |
+
+**That is roughly $340 a CFB day, and ~70% of it sits in 17 of the 350 opportunities.** The median is a
+penny. This is real and it is not a confound — but it is a handful of events, not a stream.
+
+**What is not established, and it is what matters.** Quoted size is not fillable size; none of this has
+been executed. Both legs must be hit together or you hold a naked position. Our sampling is 18-minute
+snapshots, so a live scanner is required to see these at all. **The honest status is: a measured,
+model-free, non-confounded inefficiency of about $1,000 per three CFB days in quoted terms, with
+execution entirely unproven.**
+
+*Method note.* I validated the sign convention on MLB and then applied the same parser to CFB **without
+re-validating it**, which produced an 88¢ "arbitrage" (USC −17.5 quoted above USC −10.5). Checking that
+found the convention is in fact correct for CFB too — 85.4% of within-game pairs correctly ordered — but
+the population mean *also* rises under an inverted reading, because a +34.5 line is only offered when
+the away team is a huge underdog. **The population mean cannot validate a within-game constraint; only
+the within-game ordering can.** The extremes are stale deep rungs, excluded above at 15¢.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
