@@ -2595,6 +2595,12 @@ rungs quoted per game. **Deep spread rungs are where the venue's own consistency
 same conclusion as §0bi's depth finding from a different direction: the rungs nobody trades are the
 rungs nobody keeps honest.
 
+**NFL's domination is outcome-verified too, which is what lets the $283 stand.** NFL has the worst
+ordering of the three (79.6%), so its sign convention needed the same settlements-only check CFB got —
+no prices, no parser assumptions: **16 settled NFL ladders, 9,871 pairs, zero violations.** With CFB's
+74,775 that is **84,646 settled pairs and not one case where the harder rung paid while the easier one
+did not.** The logic under both figures is sound; only executability is open.
+
 **NFL is the opposite shape to CFB and that matters for whether this is a strategy.** CFB is $414 with
 97% in five games — a few bad quotes. NFL is $283 spread across **40 of 48 games**, seven worth ≥$10.
 A recurring few-dollars-per-game inefficiency is a far better basis for a repeatable process than five
