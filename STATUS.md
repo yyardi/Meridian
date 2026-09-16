@@ -2576,6 +2576,40 @@ on one leg of one violating pair, to see whether it fills at the displayed size.
 experiment that discriminates, it is the operator's to authorise, and **I will not place it.** Until
 then the honest label on this lead is: *verified inconsistency, unverified executability.*
 
+## 0bk. The ladder scan across every family: NFL doubles it, totals are clean, and the defect is spread-specific
+
+Extended §0bi past CFB spreads. All figures are *best single trade per game, summed* — the defensible
+count that does not double-count shared legs.
+
+| family | window | pairs tested | within-game ordering | free-money pairs | value |
+|---|---|---:|---:|---:|---:|
+| MLB spread + winner | 1 day | 570 | 91.2% | 4 | **$0.23** |
+| CFB spread + winner | 3 days | 1,041,685 | 85.4% | 1,107 | **$413.90** |
+| **NFL spread + winner** | 6 days | **2,495,330** | **79.6%** | **6,517** | **$283.49** |
+| CFB game totals (1q/2q/3q/4q/1h/2h) | 3 days | 96,620 | 94.0% | 13 | **$1.01** |
+
+**The defect is specific to spread ladders and it worsens with ladder depth.** Totals ladders are the
+cleanest thing measured (94.0%, thirteen violations in 96,620 pairs, one dollar) despite being the same
+kind of object. Ordering degrades MLB 91.2% → CFB 85.4% → NFL 79.6%, in the same order as the number of
+rungs quoted per game. **Deep spread rungs are where the venue's own consistency breaks** — which is the
+same conclusion as §0bi's depth finding from a different direction: the rungs nobody trades are the
+rungs nobody keeps honest.
+
+**NFL is the opposite shape to CFB and that matters for whether this is a strategy.** CFB is $414 with
+97% in five games — a few bad quotes. NFL is $283 spread across **40 of 48 games**, seven worth ≥$10.
+A recurring few-dollars-per-game inefficiency is a far better basis for a repeatable process than five
+lucky rungs, even though the headline is smaller.
+
+**Consolidated, in quoted terms: roughly $700 per football week** (a CFB Saturday plus an NFL week),
+against the operator's $1k/week threshold. **Every caveat from §0bj still binds unchanged** — quoted
+size is not fillable size, the consumption test found no systematic take-up (23 shrank / 33 grew /
+41 flat, median +0 contracts), and nothing here has been executed.
+
+*Data note: `book_levels` holds duplicate rows at `level_index = 0` for some snapshots — worst case 27
+on NFL, 12 on CFB, mean 1.00 so it is rare. A scalar subquery errors on them; the NFL figures above use
+`max(quantity)`. The MLB and CFB numbers were computed before this surfaced and their queries succeeded,
+so those row sets contained none.*
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
