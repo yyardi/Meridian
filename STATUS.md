@@ -2500,7 +2500,17 @@ arbitrage is taken in seconds.
 | distinct (game, pair) opportunities | 350 |
 | $ available: median / p90 / max | **$0.01 / $3.84 / $162.38** |
 | worth ≥ $10 / ≥ $100 | 17 / 3 |
-| **total over three days if every one were taken** | **$1,024.95** |
+| ~~total if every pair were taken~~ **double-counts shared legs — see below** | ~~$1,024.95~~ |
+| **best single trade per game, summed — defensible lower bound** | **$413.90** |
+
+> **CORRECTED, my own double-count.** Summing 350 *pairs* counts the same mispriced rung many times.
+> In `uk-txam` one rung generated six "opportunities" by pairing against six others — they share a leg
+> and compete for the same depth, so you can take one, not six. Per game, counting only the single best
+> trade: **$413.90 across 23 games in three days**, median **$0.55**, max $162.38. **Five of 23 games
+> carry $400.70 of the $413.90 — 97%.** The truth lies between $414 and $1,025 and closer to the floor,
+> because overlapping pairs mostly cannot both be filled.
+
+
 
 **That is roughly $340 a CFB day, and ~70% of it sits in 17 of the 350 opportunities.** The median is a
 penny. This is real and it is not a confound — but it is a handful of events, not a stream.
