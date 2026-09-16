@@ -2616,6 +2616,40 @@ on NFL, 12 on CFB, mean 1.00 so it is rare. A scalar subquery errors on them; th
 `max(quantity)`. The MLB and CFB numbers were computed before this surfaced and their queries succeeded,
 so those row sets contained none.*
 
+## 0bl. Both venues, every ladder family, 8.1 million pairs: the defect is Polymarket spreads and nothing else
+
+Completed the scan. Every ladder family on both venues, same method, fees at each venue's own rate
+(0.06 Polymarket, 0.07 Kalshi). Value is *best single trade per game/event, summed*.
+
+| venue | family | pairs tested | within-ladder ordering | free-money pairs | value |
+|---|---|---:|---:|---:|---:|
+| Polymarket | MLB spread+winner | 570 | 91.2% | 4 | $0.23 |
+| Polymarket | **CFB spread+winner** | 1,041,685 | 85.4% | 1,107 | **$413.90** |
+| Polymarket | **NFL spread+winner** | 2,495,330 | **79.6%** | 6,517 | **$283.49** |
+| Polymarket | CFB game totals | 96,620 | 94.0% | 13 | $1.01 |
+| **Kalshi** | **totals** | 2,244,340 | **97.4%** | 24 | **$0.00** |
+| **Kalshi** | **spreads** | 2,216,220 | **96.8%** | 38 | **$0.01** |
+| | **total** | **8,094,765** | | | |
+
+**The inefficiency is Polymarket spread ladders and nothing else.** Three independent controls now say
+so. *Totals on the same venue are clean* (94.0%, one dollar) — so it is not Polymarket generally. *Both
+Kalshi families are cleaner still* (96.8–97.4%, one cent across 4.5M pairs) — so it is not the market
+structure, since Kalshi quotes the same object with the same arithmetic. And *ordering degrades with
+ladder depth within Polymarket* — 91.2% MLB → 85.4% CFB → 79.6% NFL, in the order of rungs quoted.
+
+**Kalshi is the control that matters most, because it fails the obvious alternative explanation.**
+Kalshi's books are one to two orders of magnitude deeper — bid sizes of 80,000 contracts against
+Polymarket's 100 — and it is *more* consistent, not less. So the defect is not "thin venues are sloppy".
+It is that **Polymarket's deep spread rungs are unpoliced because nobody trades them**, which is the
+same conclusion §0bi reached from depth and §0bj reached from non-consumption, now reached a third time
+from a cross-venue control.
+
+**What this changes about the lead.** It is narrower than it looked and better understood: not a venue
+inefficiency, not a market-structure inefficiency, but a specific dead corner of one venue's spread
+board. **It does not change the economics** — still ~$700 a football week in quoted terms, still 97%
+concentrated in five CFB games, still resting entirely on whether an unconsumed quote would fill.
+**And it closes Kalshi as a second source**: there is nothing there to find, measured on 4.5M pairs.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
