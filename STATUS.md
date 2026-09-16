@@ -2539,6 +2539,43 @@ the population mean *also* rises under an inverted reading, because a +34.5 line
 the away team is a huge underdog. **The population mean cannot validate a within-game constraint; only
 the within-game ordering can.** The extremes are stale deep rungs, excluded above at 15¢.
 
+## 0bj. The ladder quotes are never consumed — which is the limit of what observation can decide
+
+The open question on §0bi was whether quoted size is fillable. I cannot answer it by placing an order,
+so I asked the observable version: **while a violation stands, does its size get eaten?** A funded
+arbitrage is consumed within seconds; one nobody can take sits unchanged.
+
+97 violating pairs observed in three or more consecutive snapshots:
+
+| what happened to the size across the episode | pairs |
+|---|---:|
+| **shrank** (someone taking it) | 23 |
+| grew | 33 |
+| **flat — untouched** | **41** |
+| **median change** | **+0 contracts** |
+
+**No systematic consumption.** Size is flat or growing more often than shrinking, and the median change
+across an episode is exactly zero. Combined with §0bi's 95% same-pair persistence and 34-minute median
+duration: these are **standing quotes at impossible prices that nobody touches.**
+
+**Two readings, and observation cannot separate them.**
+
+1. *Nobody else is scanning for this.* Plausible — it is a small venue, the inconsistency is only visible
+   if you build the ladder across three market types, and the money is a few hundred dollars a Saturday.
+   Under this reading the size is real and we could take it.
+2. *The displayed size is not actually executable.* Equally consistent with everything measured.
+
+**Every test I can run from the tape has been run.** The domination logic is verified on 74,775 settled
+pairs with zero violations. The frame is verified three ways. The legs are simultaneous. The violations
+persist and are the same standing quote. The value is $414 over three CFB days by the defensible count,
+97% of it in five games. **The single remaining unknown is whether an order would fill, and that cannot
+be learned by looking.**
+
+**So this is a decision for the operator, not a measurement for me.** Testing it costs one small order
+on one leg of one violating pair, to see whether it fills at the displayed size. That is the only
+experiment that discriminates, it is the operator's to authorise, and **I will not place it.** Until
+then the honest label on this lead is: *verified inconsistency, unverified executability.*
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
