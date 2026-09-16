@@ -2650,6 +2650,47 @@ board. **It does not change the economics** — still ~$700 a football week in q
 concentrated in five CFB games, still resting entirely on whether an unconsumed quote would fill.
 **And it closes Kalshi as a second source**: there is nothing there to find, measured on 4.5M pairs.
 
+## 0bm. The ladder scanner, built and firing nightly — and it had no caller until I checked
+
+`core/ladder/scan.py` plus `cfb/run_ladder_scan.py` plus `scripts/nightly_ladder.sh` at **11:30Z**.
+Places nothing; that is asserted on the imports rather than promised.
+
+**Validated by independent reimplementation.** The module was written from the *reasoning*, not derived
+from the throwaway analysis script, then run against the same CFB tape: **1,089 violations,
+best-per-game total $413.90 over 23 games — identical to the ad-hoc measurement to the cent.** Two
+implementations from one spec agreeing is the check that matters; a module that merely re-runs the
+script that produced the number proves nothing.
+
+**Every knob is a defect that actually occurred, not a hypothetical.**
+
+| knob | the defect it encodes |
+|---|---|
+| `MAX_PLAUSIBLE_EDGE = 0.15` | USC −17.5 at 0.930 against −10.5 at 0.040 — an 88¢ "edge" on a rung with no size. Including these inflates the total ~2.5× |
+| fee netted at **both** legs' traded prices | without it, pairs that merely cross the spread qualify and none are tradeable |
+| size = **min** of the two legs | an arbitrage is only as large as its smaller side; Polymarket routinely shows depth on one leg and nothing on the other |
+| `best_per_game` takes **max**, never the sum | one mispriced rung violates against every rung it pairs with and they share a leg — summing overstated CFB 2.5× ($1,024.95 vs $413.90) |
+| legs keyed on `(game, captured_at)` | a ladder assembled across timestamps is not an arbitrage, it is two prices that never coexisted |
+| depth via `max(quantity)` | `book_levels` holds duplicate `level_index = 0` rows — worst 27 on NFL, 12 on CFB. A scalar subquery raises *more than one row returned*, which is how it surfaced |
+
+**It had no caller, and I caught that only because I had just written §0be about the same thing.** The
+module shipped with eight green tests and nothing importing it outside its own package — the exact
+shape of the money-arm defect from ninety minutes earlier. `tests/test_ladder_runner_is_wired.py`
+now asserts a caller exists outside `core/ladder/`, which is the check no test of a module can make
+about itself.
+
+**Why it accrues nightly and why it will almost never speak.** §0bi's $413.90 spans three CFB days;
+whether that recurs weekly or was one weekend is **unknown**, and only a record answers it — so the
+artifact is written every night regardless. The push fires only above a **$50 single-opportunity
+floor**: the median is $0.01, and a nightly "found 350 things worth a penny" is how a channel earns
+being skipped before it carries the one message that matters. Measured, 3 of 350 cleared $100 and about
+ten cleared $50, so this speaks a few times a season. A state file stops the same standing quote paging
+twice, since these persist for hours. **First live run under a cron environment: found $162, cleared
+the floor, pushed once.**
+
+**Four jobs now run unattended**: settle 04:40Z, Elo fit 09:00Z, drift 09:30Z, ladder 11:30Z — each
+silent unless it has something, each verified to run under cron's own stripped environment rather than
+only under mine.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
