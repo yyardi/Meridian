@@ -2697,6 +2697,39 @@ the floor, pushed once.**
 silent unless it has something, each verified to run under cron's own stripped environment rather than
 only under mine.
 
+## 0bn. The MLB arm I flagged collapsed before it could nominate, and the push guard worked
+
+§0bb flagged `mlb_spread_yes_70_100` at **+15.51¢ [+2.65, +28.38] on G = 11** as the away-team confound,
+recorded *before* it could trip the gate specifically so the answer would exist first. Overnight the
+sample nearly doubled:
+
+| | G | mean bet | 95% CI |
+|---|---:|---:|---|
+| 09-15 | 11 | **+15.51¢** | [+2.65, +28.38] |
+| **09-16** | **20** | **+3.33¢** | **[−15.83, +22.50]** |
+
+**It died the way flukes die** — the effect fell to a fifth of its size while the sample grew, and the
+interval now spans zero comfortably. The twin argument was never needed: the arm collapsed on its own
+numbers. `mlb_winner_away_all` / `mlb_winner_home_all` at G = 24 tell the same story from the declared
+complements (+6.53¢ and −9.89¢, both spanning zero).
+
+**My timing prediction was wrong and the direction of the error is worth keeping.** I said MLB would
+cross `G ≥ 25` on the 09-15 slate. It stands at **24 — one game short**, so it crosses tonight instead.
+I called it from a count of games with a pregame close and a start time in the past, which is not the
+same population as games the paper book can *settle*; the gap is one game and it was predictable if I
+had matched the populations rather than eyeballed the trajectory.
+
+**And the §0bg push guard fired correctly on its first real run**, against the still-standing WNBA line:
+
+```
+strategies 36 tested, 1 excluding zero: wnba_spread_yes_80_100 +5.78 [+2.96,+8.60]
+[YES-side = AWAY: read the home twin before believing]
+```
+
+Name, mean, interval and the away-side caution — which is what §0bg was built for, keyed on the shape
+rather than on any named arm. **The only nomination on the board is still §2b's WNBA line, unchanged at
++5.78¢ on n=101 G=40**, because the WNBA season is over and no new games enter it.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
