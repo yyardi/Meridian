@@ -2730,6 +2730,41 @@ Name, mean, interval and the away-side caution — which is what §0bg was built
 rather than on any named arm. **The only nomination on the board is still §2b's WNBA line, unchanged at
 +5.78¢ on n=101 G=40**, because the WNBA season is over and no new games enter it.
 
+## 0bo. IN-PLAY is where the ladder breaks: $4,480 against pregame's $414, and I had filtered it out
+
+The operator said to stop looking pregame and look live. **He was right and the gap was mine**: every
+one of the 8.1M pairs in §0bl carried `game_start_time > captured_at`. I scanned **10% of the data and
+discarded the rest** — 690,185 in-play CFB rows against 70,624 pregame.
+
+| | pregame | **in-play** |
+|---|---:|---:|
+| within-ladder ordering | 85.4% | **71.8%** |
+| violations | 1,107 | **1,415** |
+| best single trade per game, summed | $413.90 | **$4,480.45** |
+| games | 23 | 31 |
+| **median per game** | $0.55 | **$78.76** |
+| games ≥ $100 | 3 | **14** |
+| single best | $162.38 | **$562.87** |
+
+**Ordering collapses from 85.4% to 71.8% once the ball is in play**, which is the mechanism stated
+plainly: the winner market re-prices every possession while deep spread rungs sit at their last quote.
+The dislocation is not a stale-board artifact — it is the board *moving* and parts of it not keeping up.
+
+**The big ones are adjacent rungs.** The top four are `−16.5/−17.5` and `+21.5/+20.5` — lines **one
+point apart**, inverted by 9–13¢. The true probability gap between covering 17 and covering 18 is a
+couple of points, so a 13¢ inversion between neighbours is a large, unambiguous break rather than a
+deep-rung curiosity. Median edge **+3.44¢**, median size 10 contracts, max size 6,920.
+
+**And the sampling caveat runs in our favour for once.** `book_levels` recorded depth at only **1,841
+of 94,637 in-play ladder-instants — 1.9%**. The $4,480 is the best single trade *observed* in each of
+31 games, not an extrapolation; the other 98% of in-play moments were never measured. **So this is a
+lower bound on what was available, not an upper one.** I am explicitly not multiplying by 50.
+
+**What is unchanged:** executability. §0bj's consumption test was pregame; in-play take-up is unmeasured
+and the same question stands — quoted size is not filled size. **What has changed is the prize.** A
+median of $78.76 per game across 14 games worth $100 or more is a different proposition from $0.55
+pregame, and it is worth the one small order that would settle whether any of it is real.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
