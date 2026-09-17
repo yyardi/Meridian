@@ -2859,6 +2859,46 @@ honest label on this programme's only live lead is **"a real and frequent price 
 unknown size"** — which is weaker than what I have been reporting and is the version I should have been
 reporting since §0bi.
 
+## 0br. Size bounded by what actually traded: NFL holds at $11,120, and CFB/MLB cannot be bounded this way
+
+§0bq said the dollar figures rest on depth I cannot validate. I found an independent column that can:
+`market_trade_stats.shares_traded`, the lifetime volume of each market. A book cannot honestly claim
+more resting size than has ever changed hands by three orders of magnitude.
+
+**The claimed depth is fiction above 100k, and this proves it without an order:**
+
+| claimed max depth at the touch | markets | median lifetime traded | depth exceeds ALL trades ever |
+|---|---:|---:|---:|
+| ≥ 1,000,000 | 249 | 9,666 | **96%** |
+| 100k – 1M | 3,206 | **179** | **96%** |
+| 10k – 100k | 9,611 | 188 | 31% |
+| < 10k | 5,082 | 110 | 51% |
+
+3,206 markets claim between 100k and a million contracts resting while a median of **179** ever traded.
+Those readings are not a book. `MAX_PLAUSIBLE_SIZE = 10,000` was a guess; **lifetime traded volume is a
+measurement**, and it is the right bound: you cannot assume more will fill than has ever filled.
+
+**Re-run with size = min(quoted depth, lifetime traded):**
+
+| league | cap 10k (published) | **cap = lifetime traded** | cap = traded, max 1k |
+|---|---:|---:|---:|
+| **NFL** | $5,454 | **$11,120** | $1,362 |
+| CFB | $4,436 | *0 — unbounded, see below* | *0* |
+| MLB | $998 | *0 — unbounded* | *0* |
+
+**NFL goes UP.** The 10k cap was throttling markets that genuinely trade above 10k; bounded by real
+volume instead, the 14 games carry **$11,120, median $314 a game**. That is the most defensible figure in
+this programme: a verified edge times a size that is *known to have traded*.
+
+**CFB and MLB read zero, and that zero is a measurement gap, not an answer.** The live recorder writes
+`market_snapshots` but not `market_trade_stats` (the two-writers-one-table trap in my own notes), so
+in-play CFB and MLB have no volume rows at all. The bound cannot be computed there. Their 10k-capped
+figures stand as *unvalidated*, which is a weaker claim than NFL's and should be read as one.
+
+**Where this leaves the lead.** NFL in-play ladder inconsistency, size bounded by traded volume:
+**~$11,000 across one week's 14 games.** CFB and MLB: real violations, size unknown. The single-order
+test still discriminates fillability, and it is still the operator's.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
