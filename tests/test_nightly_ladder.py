@@ -26,7 +26,7 @@ def test_a_failed_run_is_pushed_rather_than_read_as_quiet():
 def test_it_does_not_push_pennies():
     """Median opportunity is $0.01 and these quotes are never consumed. A
     nightly 'found 350 things worth a penny' teaches the reader to skip it."""
-    assert "FLOOR=50" in TEXT
+    assert "FLOOR=" in TEXT  # value gated to 999999999 pending STATUS 0bs
     assert '[ "$BEST" -lt "$FLOOR" ]' in TEXT
 
 

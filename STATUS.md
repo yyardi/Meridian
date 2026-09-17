@@ -2899,6 +2899,58 @@ figures stand as *unvalidated*, which is a weaker claim than NFL's and should be
 **~$11,000 across one week's 14 games.** CFB and MLB: real violations, size unknown. The single-order
 test still discriminates fillability, and it is still the operator's.
 
+## 0bs. What the venue's live book says, what the recorder actually stores, and which of my claims survive
+
+I stopped inferring size and asked the venue. Three measurements, each read-only, each correcting
+something above.
+
+**1. The depth is real. §0br's "fiction" table was wrong.** `get_book` on `aec-nfl-det-buf-2026-09-17`:
+**6,434,186 contracts at the best bid, 4,782,331 at the offer, $114.4M traded, 2.35M open interest.**
+Our `market_trade_stats.shares_traded` for the same market reads 2.53M at 20:32Z against the venue's
+3.56M at 23:06Z — the column is cumulative and tracks the venue. §0br's inference that "depth exceeding
+lifetime volume is fiction" was simply too strong: a market maker resting 6M on a market that has traded
+3.5M is normal. **The 978,801-contract reading I capped out as an artifact was probably real.** This
+venue is far deeper than every number above assumed.
+
+**2. The recorder stores board prices with one timestamp per sweep.** `live_recorder.py:245` takes
+`best_bid/best_ask` from `get_league_events()` — the board listing — and `recorder.py:127–130` stamps
+every row in a cycle with the timestamp from the *start* of the cycle. So "simultaneous" in every ladder
+scan above meant *same sweep*, not same instant. Measured on Sunday's in-play NFL sweeps, the true
+fetch spread inside one stamp is **median 5s, p90 14s, max 110s**. Pregame that cannot move a price.
+**In-play, a scoring play re-prices the winner while the sweep is still walking the spread rungs** —
+which produces a ladder "violation" that never existed as a tradeable state, and produces more of them
+the faster the game moves. That is exactly the shape of §0bo/§0bp: 67–78% ordering live against 85.4%
+pregame.
+
+**3. Board and book agree exactly — 42 of 42 markets, zero difference at the same instant.** So the
+recorder's prices are correct *at the moment each is fetched*; the artifact is purely the timestamp.
+
+**What I have NOT established, and said I had.** Both "live" ladders I fetched tonight — DET–BUF and
+MIA–SF — showed zero violations with real depth. **Both were pregame.** DET–BUF kicks off at **00:15Z**;
+my 23:06Z fetch was seventy minutes early, and I called it in-play. The claim "the in-play ladder is
+clean when fetched simultaneously" is *unsupported*. What is supported is that the *pregame* ladder was
+clean on two games at two instants — consistent with §0bi's pregame result being small, transient and
+unfunded, since one instant on one game would rarely catch a 34-minute episode.
+
+**So, claim by claim:**
+
+| claim | status |
+|---|---|
+| ladder domination logic (84,646 settled pairs, 0 violations) | **stands** |
+| pregame violations exist, small, unconsumed (§0bi, §0bj) | **stands**, size now credible rather than "unknown" |
+| in-play violations 14× larger (§0bo, §0bp) | **contaminated** by 5–14s sweep skew of unknown share; not yet measured on truly simultaneous live data |
+| depth ≥100k is fiction (§0br) | **withdrawn** — venue confirms millions at the touch |
+| dollar figures rest on unvalidated depth (§0bq) | **withdrawn in that form** — depth is validated; the open question is skew, not size |
+| in-play ladder is clean live | **unsupported** — never observed; both fetches were pregame |
+
+**The test that decides it is running.** A read-only sampler on prod fetches the entire DET–BUF ladder
+from the venue every two minutes from kickoff through the game — ~100 genuinely simultaneous live
+instants instead of one. If violations appear there with real size, the in-play lead is real and the
+recorder was merely under-measuring it. If the live ladder stays ordered while our recorder's sweeps
+show 30% disorder for the same game, the in-play figures were the sweep artifact and the lead reverts to
+§0bi's pregame result. **Until that file exists, `nightly_ladder.sh` must not push**: its default is now
+in-play and a $50 floor on skew-contaminated data is noise wearing a number.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**

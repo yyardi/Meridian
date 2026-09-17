@@ -25,7 +25,13 @@ OUT=/opt/meridian/artifacts/reads; mkdir -p "$OUT"
 TS=$(date -u +%Y-%m-%dT%H%MZ)
 F="$OUT/ladder_$TS.txt"
 STATE="$OUT/ladder_state.txt"
-FLOOR=50
+# PUSH DISABLED PENDING STATUS 0bs. The scan now defaults to in-play, and in-play
+# ladders in our snapshots carry a 5-14s (max 110s) fetch skew inside one
+# captured_at that can manufacture a violation during a scoring play. Until the
+# live sampler has shown whether genuinely simultaneous in-play ladders break,
+# a $50 floor on skew-contaminated data is noise wearing a number. The artifact
+# is still written every night; only the push is out of reach.
+FLOOR=999999999
 
 API=$(docker inspect meridian-api --format "{{.Config.Image}}" 2>/dev/null || echo meridian-api)
 RC=0
