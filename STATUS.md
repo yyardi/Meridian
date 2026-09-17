@@ -2812,6 +2812,53 @@ makes it worth anything.
 **Unchanged:** executability. Depth coverage in-play is 1–7%, so this remains a floor on what was
 *observable*, not an estimate of what is *takeable*, and no order has been placed.
 
+## 0bq. Two corrections to my own in-play work, and the one that matters is that the dollar figures rest on depth I cannot validate
+
+**First correction: I said MLB in-play "yields nothing" and I never measured it.** My family scan looped
+over `cfb` and `nfl` only; the MLB line in §0bp was an assertion dressed as a result. Run properly, MLB
+in-play gives **$2,383.32 over 28 games** — the largest per-game figure of any league, and MLB plays
+*daily* rather than on Saturdays. The violations are structurally clean: adjacent rungs (`+0.0/−1.5`,
+`−1.5/−2.5`, `+2.5/+1.5`), edges 1–12¢, spread across eight distinct games.
+
+**Second correction, and it undercuts every dollar figure in §0bi, §0bo and §0bp.** Quoted depth is not
+credible. Measured at the touch, both phases, since 09-13:
+
+| league | phase | median depth | max |
+|---|---|---:|---:|
+| cfb | pregame | 163 | 2,607,952 |
+| cfb | **in-play** | **50** | 1,627,412 |
+| nfl | pregame | 161 | 10,729,773 |
+| nfl | **in-play** | **50** | 3,465,438 |
+| mlb | pregame | 106 | 1,338,441 |
+| mlb | **in-play** | **1,855** | 1,115,757 |
+
+**The tail is the problem and it is everywhere.** Every league, both phases, carries maxima between 1.1
+and 10.7 million contracts. At $1 a contract that is a multi-million-dollar resting order on a venue
+whose median book is 50 to 163. This is not an in-play artifact and not league-specific — it is a
+property of `book_levels`, and `MAX_PLAUSIBLE_SIZE = 10,000` hides it rather than explaining it.
+
+*I first wrote this section claiming depth jumps ~18× in-play. That is **MLB only** — CFB and NFL books
+**thin** in-play, 161→50 and 163→50. I generalised from the one league I had looked at, which is the
+same error as the paragraph above it. MLB's in-play deepening (106→1,855) is real and unexplained, and
+it is why MLB produced the largest per-game figure.*
+
+**So separate what survives from what does not.**
+
+*Solid, independent of depth:* the price violations themselves. In-play ordering is **67–78%** against
+85.4% pregame and 96.8–97.4% on Kalshi. The domination relation is verified on **84,646 settled pairs
+with zero violations**. Legs are simultaneous. Those are statements about prices and outcomes, and no
+depth figure enters them.
+
+*Not solid:* **every dollar amount I have given, including the $9,900 headline.** Each one is a verified
+edge multiplied by an unverified size. The edge is real; the multiplier is a number I have no second
+source for.
+
+**What would settle it** is the same single order as before, and now it answers two questions at once:
+whether a violating quote fills at all, and whether the displayed size means anything. Until then the
+honest label on this programme's only live lead is **"a real and frequent price inconsistency of
+unknown size"** — which is weaker than what I have been reporting and is the version I should have been
+reporting since §0bi.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
