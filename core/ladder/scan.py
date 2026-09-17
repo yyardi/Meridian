@@ -21,6 +21,17 @@ MAX_PLAUSIBLE_EDGE = 0.15
 #: Polymarket US taker. Kalshi is 0.07; callers pass their own.
 DEFAULT_FEE_RATE = 0.06
 
+#: A quoted size above this is not a book, it is a bad reading. `book_levels`
+#: carries a 1% tail of implausible NFL quantities: p99 104,552 and a max of
+#: 10,729,773, which at $1 a contract would be a $10.7M resting order on a venue
+#: whose typical depth is in the hundreds (median 110). Uncapped, ONE such
+#: reading -- +2.02c x 978,801 contracts against a median size of 46 -- was 82%
+#: of the entire NFL in-play total, turning $5,454 into $24,040. Capping is not
+#: conservatism, it is refusing to price a number the substrate cannot support.
+#: CFB is unaffected until the cap falls below 1,000, which is how we know the
+#: tail is NFL-specific rather than an artifact of the cap itself.
+MAX_PLAUSIBLE_SIZE = 10_000.0
+
 
 def fee(price: float, rate: float = DEFAULT_FEE_RATE) -> float:
     """Taker fee at the price actually paid, not at the mid."""
@@ -48,7 +59,8 @@ class Violation:
 
 def scan_ladder(game: str, rungs: dict[float, tuple[float, float, float, float]],
                 *, fee_rate: float = DEFAULT_FEE_RATE,
-                max_edge: float = MAX_PLAUSIBLE_EDGE) -> list[Violation]:
+                max_edge: float = MAX_PLAUSIBLE_EDGE,
+                max_size: float = MAX_PLAUSIBLE_SIZE) -> list[Violation]:
     """`rungs` maps line -> (bid, ask, bid_size, ask_size), all from ONE
     snapshot so the legs are simultaneous. A ladder assembled across timestamps
     is not an arbitrage, it is two prices that never coexisted.
@@ -65,7 +77,7 @@ def scan_ladder(game: str, rungs: dict[float, tuple[float, float, float, float]]
             edge = sell - buy - fee(buy, fee_rate) - fee(sell, fee_rate)
             if 0.0 < edge <= max_edge:
                 out.append(Violation(game, lo, hi, buy, sell, edge,
-                                     min(rungs[hi][3], rungs[lo][2])))
+                                     min(rungs[hi][3], rungs[lo][2], max_size)))
     return out
 
 

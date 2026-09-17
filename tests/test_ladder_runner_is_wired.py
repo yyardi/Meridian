@@ -56,3 +56,20 @@ def test_the_runner_cannot_place_an_order():
 def test_it_says_the_size_is_quoted_rather_than_filled():
     """The one thing a reader must not assume. §0bj measured no consumption."""
     assert "QUOTED, NOT FILLED" in SRC
+
+
+def test_the_default_phase_is_INPLAY():
+    """It shipped pregame-only: $414 measured there against $9,900 in-play, and
+    ordering 85.4% against 67-78%. The default was watching the quiet half."""
+    assert 'ap.add_argument("--phase", default="inplay"' in SRC
+
+
+def test_all_three_phases_are_reachable_and_distinct():
+    for p in ("inplay", "pregame", "both"):
+        assert f'"{p}":' in SRC
+    assert "ms.captured_at > ms.game_start_time" in SRC
+    assert "ms.game_start_time > ms.captured_at" in SRC
+
+
+def test_the_phase_is_printed_so_a_reader_knows_which_half_ran():
+    assert "phase={a.phase}" in SRC

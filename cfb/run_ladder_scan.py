@@ -36,7 +36,7 @@ WHERE ms.captured_at >= CAST(:since AS timestamptz)
   AND ms.market_slug LIKE :pat
   AND ms.sports_market_type IN (:winner, :spread)
   AND ms.best_bid IS NOT NULL AND ms.best_ask > ms.best_bid
-  AND ms.game_start_time > ms.captured_at
+  AND ms.game_start_time IS NOT NULL AND {phase}
 """
 # max(quantity), not a bare subquery: book_levels holds DUPLICATE level_index=0
 # rows for some snapshots -- worst seen 27 on NFL, 12 on CFB, mean 1.00. A
@@ -62,14 +62,26 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--since", default="2026-09-13")
     ap.add_argument("--league", default="cfb", choices=sorted(SPORT))
+    # IN-PLAY IS THE DEFAULT, and this flag exists because it was not. The job
+    # shipped scanning pregame only -- where the measured value is $414 -- while
+    # the same scan run in-play is $9,900 (STATUS 0bp). Ordering falls from 85.4%
+    # pregame to 67-78% live: the winner market re-prices every possession while
+    # deep spread rungs sit at their last quote, so the dislocation IS the game
+    # being played. Scanning pregame by default was watching the quiet half.
+    ap.add_argument("--phase", default="inplay",
+                    choices=("inplay", "pregame", "both"))
     a = ap.parse_args()
     from sqlalchemy import create_engine, text
 
     win, spr = SPORT[a.league]
     eng = create_engine(os.environ["DATABASE_URL"])
     with eng.connect() as c:
-        rows = c.execute(text(SQL), {"since": a.since, "pat": f"%-{a.league}-%",
-                                     "winner": win, "spread": spr}).all()
+        phase = {"inplay": "ms.captured_at > ms.game_start_time",
+                 "pregame": "ms.game_start_time > ms.captured_at",
+                 "both": "TRUE"}[a.phase]
+        rows = c.execute(text(SQL.format(phase=phase)),
+                         {"since": a.since, "pat": f"%-{a.league}-%",
+                          "winner": win, "spread": spr}).all()
 
     snaps: dict[tuple, dict[float, tuple]] = defaultdict(dict)
     for gid, mt, slug, bid, ask, ts, qb, qo in rows:
@@ -85,7 +97,7 @@ def main() -> int:
         found += scan.scan_ladder(gid, rungs)
 
     best = scan.best_per_game(found)
-    print(f"ladder scan  league={a.league}  since={a.since}")
+    print(f"ladder scan  league={a.league}  phase={a.phase}  since={a.since}")
     print(f"  {len(snaps):,} simultaneous ladders, {len(found):,} self-contradictions")
     if not found:
         print("  no violations -- the board is internally consistent")
