@@ -2951,6 +2951,42 @@ show 30% disorder for the same game, the in-play figures were the sweep artifact
 §0bi's pregame result. **Until that file exists, `nightly_ladder.sh` must not push**: its default is now
 in-play and a $50 floor on skew-contaminated data is noise wearing a number.
 
+## 0bt. The skew artifact explains some of the in-play disorder, not most of it
+
+§0bs raised the possibility that in-play ladder violations were manufactured by the recorder's 5–14s
+fetch skew inside one `captured_at`. That is testable on Sunday's tape without waiting: if skew makes
+violations, sweeps with a larger span should show more of them.
+
+788 in-play NFL sweeps (2026-09-14/15) with at least five rungs carrying a per-fetch depth timestamp,
+sizes set to 1 so this is a **price** question only:
+
+| fetch span inside one stamp | sweeps | mean disorder | share with a fee-netted violation |
+|---|---:|---:|---:|
+| **< 2s** | 65 | **16.9%** | **58%** |
+| 2–5s | 299 | 18.3% | 45% |
+| 5–10s | 263 | 22.7% | 47% |
+| 10–30s | 122 | 22.1% | 70% |
+| ≥ 30s | 39 | 22.9% | 69% |
+
+**The trend exists and is weak.** Disorder rises about six points from the tightest sweeps to the
+loosest, so skew contributes. **But sweeps captured inside two seconds are disordered 16.9% of the time
+and carry a violation 58% of the time.** If skew were the whole mechanism, those would look like the
+two live pregame fetches — zero violations. They do not. Most of the in-play disorder is present even
+when the fetch is nearly instantaneous.
+
+**Caveat that cuts against this, stated at the table.** "Span" is measured only over the rungs that
+received a `book_levels` row — 14% of in-play snapshots have one — so a sweep can read "< 2s" among its
+depth-bearing rungs while the rungs without depth were fetched later. The < 2s bucket is a lower bound
+on true span, and 65 sweeps is thin. This narrows the artifact; it does not settle the question.
+
+**What is now the state of the in-play lead.** Depth is real and large (§0bs). Prices are right at fetch
+time (§0bs). The skew artifact is real but accounts for a minority of the disorder (this section). The
+remainder — the majority — is either genuine in-play inconsistency, or a skew larger than the
+depth-bearing subset can see. **Only a genuinely simultaneous live fetch separates those**, and one is
+running: the DET–BUF sampler from 00:15Z, ~100 instants over the game, every rung inside ~4 seconds.
+If it shows violations with size, the in-play lead is real and our recorder under-measured it. If it
+stays ordered while the recorder's sweeps for the same game do not, the remainder was skew after all.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
