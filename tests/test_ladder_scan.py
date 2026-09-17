@@ -88,3 +88,20 @@ def test_the_module_cannot_place_an_order():
     src = pathlib.Path(scan.__file__).read_text(encoding="utf-8")
     for bad in ("import requests", "httpx", "PolymarketGateway", "place_order", "urllib"):
         assert bad not in src
+
+
+def test_an_implausible_quoted_size_is_capped():
+    """book_levels carries a 1% NFL tail to 10,729,773 contracts. Uncapped, ONE
+    reading (+2.02c x 978,801 against a median size of 46) was 82% of the whole
+    NFL in-play total, turning $5,454 into $24,040."""
+    r = {0.0: (0.62, 0.63, 978_801, 978_801), 1.5: (0.48, 0.49, 978_801, 978_801)}
+    v = scan.scan_ladder("g", r)
+    assert v[0].size == scan.MAX_PLAUSIBLE_SIZE
+    assert v[0].dollars < 0.15 * scan.MAX_PLAUSIBLE_SIZE
+
+
+def test_the_cap_does_not_touch_a_plausible_book():
+    """CFB is unaffected until the cap falls below 1,000 -- that is how we know
+    the tail is NFL-specific rather than an artifact of capping."""
+    r = {0.0: (0.62, 0.63, 900, 900), 1.5: (0.48, 0.49, 900, 900)}
+    assert scan.scan_ladder("g", r)[0].size == 900
