@@ -8,7 +8,14 @@ consumed (23 shrank / 33 grew / 41 flat, median +0 contracts), so whether one
 would fill is unknown and cannot be learned by looking. Nothing here decides to
 trade; it makes the state visible so a human can.
 
-Prices for the two legs come from ONE snapshot timestamp. A ladder assembled
+Prices for the two legs come from ONE snapshot timestamp -- which means ONE
+SWEEP, not one instant. recorder.py stamps every row in a cycle with the time
+the cycle STARTED; measured fetch spread inside a stamp is median 5s, p90 14s,
+max 110s (STATUS 0bs). Pregame that is nothing. In-play a scoring play can
+re-price the winner while the sweep is still walking the spread rungs, so an
+in-play "violation" here may be two prices that never coexisted. Only a
+genuinely simultaneous fetch (one get_book per rung inside a few seconds, or
+the venue's board in one call) can say whether a live violation is real. A ladder assembled
 across timestamps is not an arbitrage, it is two prices that never coexisted --
 which is why the query keys on (game, captured_at) rather than taking each
 market's own latest row.
