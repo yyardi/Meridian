@@ -68,13 +68,37 @@ def test_alert_never_prints_the_topic_and_places_nothing():
     assert "MERIDIAN_NTFY_TOPIC" in body
     assert 'print(' not in body, "alert() must not print (the topic is in scope there)"
     assert "place_order" not in body and "orders" not in body.lower()
-    assert 'ntfy.sh/{topic}' in body
+    # The POST itself lives in core.notify (kind "tickets"); the raw ntfy URL
+    # no longer appears here, and tests/test_notify_scope.py sweeps for that.
+    assert 'notify.push("tickets"' in body
 
 
 def test_alert_is_off_by_default_and_deduped_per_pair():
     assert 'default=0.0' in SRC and 'alert_floor > 0' in SRC
     body = SRC[SRC.index("def alert("):SRC.index("def main(")]
     assert "cooldown_min * 60" in body and "sent[key] = now" in body
+
+
+def test_a_muted_alert_arms_the_cooldown_like_a_sent_one(monkeypatch):
+    """Under a scope without tickets the door returns MUTED after writing the
+    line to the muted log. That is the record; the cooldown must arm on it,
+    or the same violation is appended on every sample instead of once per
+    cooldown. The return stays False: nothing reached the phone."""
+    import cfb.run_live_ladder as L
+    from types import SimpleNamespace as NS
+    monkeypatch.setenv("MERIDIAN_NTFY_TOPIC", "t")
+    calls = []
+    monkeypatch.setattr(L.notify, "push", lambda *a, **k: (calls.append(a), L.notify.MUTED)[1])
+    v = NS(high_line=3.5, low_line=-3.5, buy_price=0.40, sell_price=0.45, edge=0.03, size=100.0)
+    sent = {}
+    assert L.alert(v, "g", "2026-09-18T00:00:00", sent, 10.0) is False
+    assert (3.5, -3.5) in sent and len(calls) == 1
+    assert L.alert(v, "g", "2026-09-18T00:00:00", sent, 10.0) is False
+    assert len(calls) == 1, "muted once per cooldown, not once per sample"
+    monkeypatch.setattr(L.notify, "push", lambda *a, **k: (calls.append(a), L.notify.FAILED)[1])
+    assert L.alert(v, "g", "2026-09-18T00:00:00", {}, 10.0) is False and len(calls) == 2
+    monkeypatch.setattr(L.notify, "push", lambda *a, **k: (calls.append(a), L.notify.SENT)[1])
+    assert L.alert(v, "g", "2026-09-18T00:00:00", {}, 10.0) is True
 
 
 def test_an_alert_failure_cannot_stop_sampling():

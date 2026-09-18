@@ -28,11 +28,13 @@ from core.ladder import scan  # noqa: E402
 # whose image carries core/ and not cfb/, can run the same code. Re-exported
 # under the names this script always had; the tests import them from here.
 from core.ladder.live import LINE, line_of, sample, slugs_for  # noqa: E402,F401
+# The one door to the phone (docs/ops/notifications.md): kind "tickets".
+from core import notify
 
 
 def alert(v, game_key: str, when: str, sent: dict, cooldown_min: float) -> bool:
     """Push one line for a violation; dedup per pair. Returns True if sent."""
-    import os as _os, urllib.request
+    import os as _os
     key = (v.high_line, v.low_line)
     last = sent.get(key)
     now = time.time()
@@ -54,11 +56,13 @@ def alert(v, game_key: str, when: str, sent: dict, cooldown_min: float) -> bool:
            f"{n} contracts each costs ${cost:,.2f}; pays $1 x {n} = ${n:.2f} at settlement, "
            f"any score. Do not chase leg 2 past 60s. Manual only; Meridian places nothing.")[:480]
     try:
-        req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
-                                     headers={"Title": "Meridian ladder episode"})
-        urllib.request.urlopen(req, timeout=10).read()
-        sent[key] = now
-        return True
+        status = notify.push("tickets", "Meridian ladder episode", msg, timeout=10)
+        if status in (notify.SENT, notify.MUTED):
+            # MUTED arms the cooldown too: the door already wrote the line to
+            # the muted log, and one line per cooldown is the record; one per
+            # sample would make that log a tick log of the same violation.
+            sent[key] = now
+        return status == notify.SENT
     except Exception:  # noqa: BLE001 -- an alert failure must not stop sampling
         return False
 

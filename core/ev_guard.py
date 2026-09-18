@@ -64,15 +64,14 @@ that saw "edge gone" is not left believing it forever).
 from __future__ import annotations
 
 import datetime as dt
-import os
 import threading
 import time
 from dataclasses import dataclass
 from decimal import Decimal
 
-import httpx
 import structlog
 
+from core import notify
 from core.live_fv import build_live_fv
 from core.live_totals_fv import build_live_totals_fv
 from core.storage import PlacedOrder
@@ -274,23 +273,20 @@ def build_guard_rows(session) -> list[GuardRow]:
 
 def _push_ntfy(topic: str, title: str, body: str, *, priority: int,
                tags: str, server: str | None = None) -> bool:
-    """One ntfy JSON publish. Self-contained on purpose: `core.alerter` is a
-    separate service with its own lifecycle, and this in-process guard must
-    not couple the API's import graph to it. JSON publish, not headers —
-    headers are ascii-only and titles here carry ≤/¢."""
-    base = (server or os.environ.get("MERIDIAN_NTFY_SERVER")
-            or "https://ntfy.sh").rstrip("/")
-    try:
-        r = httpx.post(base, json={
-            "topic": topic, "title": title, "message": body,
-            "priority": priority, "tags": tags.split(",") if tags else [],
-        }, timeout=20)
-        r.raise_for_status()
+    """One push under kind "ev" through `core.notify` (stdlib only, so this
+    in-process guard still does not couple the API's import graph to
+    `core.alerter`). Under the default scope (tickets only) it lands in the
+    muted log, not on the phone. `topic` stays in the signature for the
+    test doubles; the door reads MERIDIAN_NTFY_TOPIC itself."""
+    status = notify.push("ev", title, body, priority=priority, tags=tags, server=server)
+    if status == notify.SENT:
         log.info("ev_guard_push_sent", title=title)
         return True
-    except Exception as exc:
-        log.error("ev_guard_push_failed", title=title, error=str(exc)[:200])
-        return False
+    if status == notify.MUTED:
+        log.info("ev_guard_push_muted", title=title)
+        return True
+    log.error("ev_guard_push_failed", title=title, status=status)
+    return False
 
 
 class EVGuard:

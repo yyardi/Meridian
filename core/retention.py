@@ -635,19 +635,19 @@ def _pg_remote(cmd: list[str], **kw) -> subprocess.CompletedProcess:
 
 
 def _push_alert(title: str, body: str) -> None:
-    """Immediate phone push on verification failure — approval condition #2."""
-    import os
+    """Immediate phone push on verification failure — approval condition #2.
 
-    topic = (os.environ.get("MERIDIAN_NTFY_TOPIC") or "").strip()
-    if not topic:
+    Through `core.notify.push` under kind "retention": muted to disk unless
+    MERIDIAN_NTFY_SCOPE names it (docs/ops/notifications.md)."""
+    from core import notify
+
+    status = notify.push("retention", title, body, priority=5, tags="rotating_light")
+    if status == notify.NO_TOPIC:
         log.error("rolling_alert_no_topic", title=title)
-        return
-    try:
-        from core.alerter import Notifier
-
-        Notifier(topic).push(title, body, priority="urgent", tags="rotating_light")
-    except Exception as exc:
-        log.error("rolling_alert_push_failed", error=str(exc)[:200])
+    elif status == notify.FAILED:
+        log.error("rolling_alert_push_failed", title=title)
+    elif status == notify.MUTED:
+        log.warning("rolling_alert_muted", title=title, muted_log=str(notify.muted_log_path()))
 
 
 def rolling_due(engine, now: dt.datetime | None = None) -> bool:

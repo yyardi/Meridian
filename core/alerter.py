@@ -26,9 +26,16 @@ Design rules, each earned:
 ntfy.sh: topic from MERIDIAN_NTFY_TOPIC (treat it like a password — anyone who
 knows it can read the alerts), server override via MERIDIAN_NTFY_SERVER.
 
+Every push goes through `core.notify.push` under kind "health". The default
+scope (`MERIDIAN_NTFY_SCOPE=tickets`) MUTES health pushes to the muted log
+instead of the phone — the operator asked for tickets only after a run of
+DEAD/recovered flaps. The transition logic here is unchanged; widening the
+scope to `tickets,health` restores the phone (docs/ops/notifications.md).
+
     python -m core.alerter            # run forever (the container entrypoint)
     python -m core.alerter --once     # one evaluation, one push decision pass
-    python -m core.alerter --test     # send a test push and exit
+    python -m core.alerter --test     # push under kind "health"; exit 0 only if SENT
+                                      # (1 when muted by the scope, no topic, or failed)
 """
 
 from __future__ import annotations
@@ -41,11 +48,11 @@ import sys
 import time
 from zoneinfo import ZoneInfo
 
-import httpx
 import structlog
 from sqlalchemy import text
 
 from core import heartbeat as hb
+from core import notify
 from core.healthchecks import (
     DEAD,
     OK,
@@ -74,48 +81,48 @@ DIGEST_HOUR_CT = 9
 class Notifier:
     """One ntfy topic. Failures are logged and swallowed — the alerter must
     keep evaluating even when the push channel is down, and the missed digest
-    is what tells the operator the channel broke."""
+    is what tells the operator the channel broke.
+
+    The POST itself lives in `core.notify` (kind "health"); this class keeps
+    the counters and the log lines the alerter's tests and /api/status read."""
 
     def __init__(self, topic: str, server: str | None = None):
         self.topic = topic
         self.server = (server or os.environ.get("MERIDIAN_NTFY_SERVER")
-                       or "https://ntfy.sh").rstrip("/")
+                       or notify.DEFAULT_SERVER).rstrip("/")
         self.pushes_sent = 0
         self.push_failures = 0
+        self.pushes_muted = 0
 
-    #: ntfy's numeric priorities. Strings in headers would also work, but this
-    #: module uses the JSON publish endpoint throughout — see `push`.
+    #: ntfy's numeric priorities, passed through to `core.notify.push`.
     _PRIORITY = {"min": 1, "low": 2, "default": 3, "high": 4, "urgent": 5}
-
-    def payload(self, title: str, body: str, priority: str, tags: str) -> dict:
-        return {
-            "topic": self.topic,
-            "title": title,
-            "message": body,
-            "priority": self._PRIORITY.get(priority, 3),
-            "tags": [t for t in tags.split(",") if t],
-        }
 
     def push(self, title: str, body: str, *, priority: str = "default",
              tags: str = "") -> bool:
-        # JSON publish (POST to the server root), NOT the header style: HTTP
-        # headers are ascii-only, and the first real digest title carried an
-        # em dash — the push failed on encoding while the code marked the
-        # digest sent. JSON bodies are UTF-8 and immune to that class of bug.
+        # The em-dash lesson (the first real digest title was lost to an
+        # ascii-only header) is honoured inside core.notify: title/priority/
+        # tags travel percent-encoded, the body as UTF-8 bytes.
         try:
-            r = httpx.post(
-                self.server,
-                json=self.payload(title, body, priority, tags),
-                timeout=20,
-            )
-            r.raise_for_status()
+            status = notify.push("health", title, body,
+                                 priority=self._PRIORITY.get(priority, 3),
+                                 tags=tags, server=self.server)
+        except Exception as exc:  # noqa: BLE001 -- notify never raises; belt and braces
+            status = notify.FAILED
+            log.error("push_failed", title=title, error=str(exc))
+        if status == notify.SENT:
             self.pushes_sent += 1
             log.info("push_sent", title=title, priority=priority)
             return True
-        except Exception as exc:
-            self.push_failures += 1
-            log.error("push_failed", title=title, error=str(exc))
-            return False
+        if status == notify.MUTED:
+            # Muted is delivered-to-disk, not lost: the transition machine
+            # moves on (a muted digest must not be re-owed every 5 minutes).
+            self.pushes_muted += 1
+            log.info("push_muted", title=title, priority=priority,
+                     muted_log=str(notify.muted_log_path()))
+            return True
+        self.push_failures += 1
+        log.error("push_failed", title=title, status=status)
+        return False
 
 
 class Alerter:
@@ -421,10 +428,20 @@ def main() -> int:
 
     notifier = Notifier(topic)
     if args.test:
-        ok = notifier.push("Meridian test push",
-                           "If you can read this, alerts reach your phone.",
-                           tags="bell")
-        return 0 if ok else 1
+        # Straight to the door, not Notifier.push: that method counts MUTED
+        # as handled, which is right for the transition machine and wrong
+        # for a channel check -- the phone received something only on SENT.
+        status = notify.push("health", "Meridian test push",
+                             "If you can read this, alerts reach your phone.",
+                             tags="bell", server=notifier.server)
+        print(f"test push: {status}", file=sys.stderr)
+        if status == notify.MUTED:
+            print("muted: MERIDIAN_NTFY_SCOPE does not include 'health' (the "
+                  "default is tickets only), so the push went to "
+                  f"{notify.muted_log_path()} and the phone got nothing. Widen "
+                  "the scope (docs/ops/notifications.md) to test the channel.",
+                  file=sys.stderr)
+        return 0 if status == notify.SENT else 1
 
     alerter = Alerter(notifier)
     if args.once:

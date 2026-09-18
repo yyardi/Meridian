@@ -5,7 +5,10 @@ has had was caught by a human happening to look; the alerter is the looking,
 containerized (`meridian-alerter`), evaluating **the same checks as
 `scripts/health.py`** every 5 minutes and pushing to the phone via
 [ntfy.sh](https://ntfy.sh) (`MERIDIAN_NTFY_TOPIC` in `.env` — the topic is the
-auth, treat it like a password).
+auth, treat it like a password). Since 2026-09-18 every push below is issued
+under kind `health` and reaches the phone only when `MERIDIAN_NTFY_SCOPE`
+includes it (the default, `tickets`, sends them to the muted log instead):
+`docs/ops/notifications.md`.
 
 ## When it pushes
 

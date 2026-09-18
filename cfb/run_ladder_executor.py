@@ -40,6 +40,11 @@ from core.ladder.live import book_age_s, sample, slugs_for  # noqa: E402,F401
 # dashboard previews the same ticket this file writes; re-exported here
 # because the tests and cfb/ read them from this module.
 from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for  # noqa: E402,F401
+# The one door to the phone. Kind "tickets" is the default scope, so these
+# pushes reach the operator while summaries and health flaps are muted to disk
+# (docs/ops/notifications.md). core.notify is stdlib-only, by the same test
+# that pins this file carries no HTTP client library.
+from core import notify
 
 
 def gate(locked: bool, cands: list) -> list:
@@ -74,7 +79,6 @@ def spent_so_far(path: str) -> float:
 
 def push(intent: dict) -> bool:
     """Phone alert with the two buttons. Topic from env, never printed."""
-    import urllib.request
     topic = os.environ.get("MERIDIAN_NTFY_TOPIC", "").strip().strip('"').strip("'")
     if not topic:
         return False
@@ -86,10 +90,7 @@ def push(intent: dict) -> bool:
            f"books last updated {intent.get('leg1_book_age_s')}s / {intent.get('leg2_book_age_s')}s ago. "
            f"You place it; Meridian did not.")[:480]
     try:
-        req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
-                                     headers={"Title": "Meridian order intent"})
-        urllib.request.urlopen(req, timeout=10).read()
-        return True
+        return notify.push("tickets", "Meridian order intent", msg, timeout=10) == notify.SENT
     except Exception:  # noqa: BLE001
         return False
 

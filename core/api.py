@@ -2043,7 +2043,11 @@ _ev_guard = None
 @app.on_event("startup")
 def _maybe_start_ev_guard() -> None:
     """Alert loop only — and only when there is a phone to alert. The rows
-    are always served by the endpoint; the thread exists for the pushes."""
+    are always served by the endpoint; the thread exists for the pushes.
+
+    The pushes themselves go through core.notify.push under kind "ev", so
+    with the default MERIDIAN_NTFY_SCOPE=tickets they are written to the
+    muted log rather than the phone (docs/ops/notifications.md)."""
     global _ev_guard
     if os.environ.get("MERIDIAN_EV_GUARD", "1") != "1":
         return
@@ -3818,13 +3822,23 @@ def _arb_mark_unsent(ticket_id: str, row_ids: list[int], error: str) -> None:
     """Nothing reached the venue: say so on both rows and take them out of
     the "already sent" gate's match, so the ticket stays sendable once the
     environment is fixed. Only for a definitive failure (no credentials);
-    a transport error is ambiguous and keeps its rows in the gate."""
+    a transport error is ambiguous and keeps its rows in the gate.
+
+    **The idempotency key is released too, and that is the whole point.**
+    The key claims "this exact order was submitted once"; a row whose order
+    never left the process makes no such claim, and leaving the key on it
+    made the row's own UNIQUE constraint refuse the retry — the notes gate
+    would pass, the INSERT would collide, and the ticket was unsendable at
+    that price for good. Suffixing keeps the row readable (and unique)
+    while freeing the key the retry needs.
+    """
     with _Session() as s:
         for n, row_id in enumerate(row_ids, start=1):
             stored = s.get(PlacedOrder, row_id)
             if stored is not None:
                 stored.error = error[:1000] if n == 1 else f"leg 1 not sent: {error}"[:1000]
                 stored.notes = f"arb ticket {ticket_id} leg {n} unsent"
+                stored.idempotency_key = f"{stored.idempotency_key}-unsent-{stored.id}"[:120]
         s.commit()
 
 
