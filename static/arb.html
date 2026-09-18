@@ -118,7 +118,34 @@
     /* .dom .hd is sticky at top:26px for the pane's own header, which is
        static here; left sticky it slides under the page header. */
     .dom .hd{position:static}
-    .statusrow{overflow-x:auto;flex-wrap:nowrap}
+
+    /* ── Phone: the ticket is the page. ──────────────────────────────────
+       On a phone this is not a terminal being read, it is a person with 30
+       seconds deciding whether to tap SEND. So the ticket comes first, the
+       ladder second, and the desk's own configuration last -- it is
+       reference, and on a 375px screen it was three scrolls of it before
+       the first number that changes.
+
+       The status row wrapped to 1439px inside a 375px viewport and became a
+       horizontal scroller whose right-hand half (bankroll, pair cap) nobody
+       would ever find. It wraps now: two short lines beat one hidden one. */
+    .statusrow{flex-wrap:wrap;overflow-x:visible;row-gap:4px}
+    .term{display:flex;flex-direction:column}
+    #pane-ticket{order:1}
+    #pane-ladder{order:2}
+    #pane-games{order:3}
+    /* The nav is three rows of links on a phone and only two of them lead
+       anywhere from here. Keep the strategy group (ARB, P&L) and the league
+       tabs; the books group is a desktop errand. */
+    .navgrp:last-of-type{display:none}
+    .hsep{display:none}
+    .lg{margin:2px 0}
+    /* Tap targets: a SEND a thumb misses is a leg that does not fill. */
+    .go,.danger,.dimc{min-height:38px;padding-inline:14px}
+    /* The writer tails are diagnostics. They are three nowrap lines per file
+       and on a phone they were most of the scroll; capped, they stay
+       available without burying the ticket. */
+    #pane-games .tailbox{max-height:74px;overflow:auto}
   }
 
   /* ── Left: games and the desk's status. ── */
