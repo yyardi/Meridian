@@ -2987,6 +2987,63 @@ running: the DET–BUF sampler from 00:15Z, ~100 instants over the game, every r
 If it shows violations with size, the in-play lead is real and our recorder under-measured it. If it
 stays ordered while the recorder's sweeps for the same game do not, the remainder was skew after all.
 
+## 0bu. LIVE, SIMULTANEOUS, VENUE-FETCHED: the in-play ladder is real, Polymarket-specific, and worth hundreds per game
+
+Detroit at Buffalo, 2026-09-18 00:15Z. A read-only sampler fetched all 42 rungs of the full-game
+ladder **from the venue, every two minutes, each rung inside ~4 seconds** — genuinely simultaneous, the
+thing every earlier section lacked. Read at 01:16Z, 21–7, Q2.
+
+| venue's own simultaneous book, first hour | |
+|---|---:|
+| in-play samples | 32 |
+| **with a fee-netted violation** | **25 (78%)** |
+| onset | **00:24Z**, before the first score at 00:26 (the four 00:16–00:22 samples were clean) |
+| distinct pair-episodes | 65 — median one sample, p90 8 min, max 16 min |
+| best $ per episode: median / max / **sum** | $3.11 / $494.96 / **$1,466.94** |
+| episodes ≥ $10 / ≥ $100 | 20 / **3** |
+| violations with **both legs within 3.5 pts of the line** | **63 of 136** |
+| most frequent pairs | +0.0/−1.5 ×11, +1.5/−1.5 ×10, +2.5/+1.5 ×7 |
+
+**It breaks on the liquid rungs, at scoring plays, on the venue's own simultaneous book.** The three
+episodes over $100:
+
+| $ | edge × size | pair | when | score |
+|---:|---|---|---|---|
+| **494.96** | +7.81¢ × 6,336 | buy +17.5 @ 0.6000, sell +16.5 @ 0.7050 | 00:40–00:42 | 13-0 → 14-0 |
+| **189.09** | +2.30¢ × 8,215 | buy **winner** @ 0.2200, sell −2.5 @ 0.2650 | 00:26–00:28 | 6-0 → 7-0 |
+| **146.05** | +3.70¢ × 3,945 | buy +5.5 @ 0.2300, sell +3.5 @ 0.2900 | 00:40–00:42 | 13-0 → 14-0 |
+
+A harder rung bid *above* an easier rung's ask by 10.5¢ on adjacent lines, with 6,336 contracts at the
+touch, is not a deep-rung curiosity. The $189 is the winner market against −2.5 — the two most liquid
+markets on the board. **The mechanism is the score: the winner re-prices, the spread rungs lag.**
+
+**How long it lasts, at 5-second resolution.** The recorder's fast writer sweeps the winner, ±1.5 and
+±2.5 every 5.6s. Since kickoff: 609 sweeps, **89% with a fee-netted liquid-pair violation, 34 episodes,
+duration median 23s, p90 294s, max 699s.** Tens of seconds to minutes — long enough for a two-leg order
+from a scanner that runs at seconds, not our 2-minute sampler.
+
+**Kalshi is the control, and it is clean.** Same Sunday, Kalshi's in-play NFL spread ladders, 430
+ladders in 1-minute bins: **100.0% ordered, zero fee-netted violations.** Looser binning than
+Polymarket's fetch could only *add* apparent violations, and there are none. This is not "in-play NFL is
+chaotic". It is **Polymarket's in-play spread ladder failing to keep up with its own winner market.**
+
+**What this settles from the sections above.** §0bs's fear that in-play violations were a timestamp
+artifact is **refuted on the venue's own simultaneous book** — and §0bt was right that skew was a
+minority. Our recorder *under*-measured it (12 full-ladder sweeps in the hour, 2 violations, against the
+venue's 25 of 32). The pregame ladder (§0bi) was small and unfunded; the in-play ladder is neither.
+
+**What it does not settle, stated at the table.** One game, one hour, Thursday night. The episode count
+is a **floor** (the sampler prints five violations per instant). Size is *touch* size on both legs.
+**No order has been placed, so fillability is still the one untested link**, and at 2-minute sampling a
+"2-minute" episode may be 5 seconds or 3:59 — the 5-second duration figures are from the recorder's
+liquid-pair subset only. The $1,467 is best-per-episode over top-5-per-sample, on one hour of one game;
+it is not a weekly number and I am not multiplying it.
+
+**The nightly ladder push stays gated.** The recorder-based scan is the wrong instrument for this — it
+measures a 2-minute-to-30-second sweep against a phenomenon that lives at seconds. The instrument that
+found this is the live sampler, and the next build is that sampler running at seconds on every live
+game, still placing nothing.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
