@@ -152,8 +152,7 @@ def _live_table(live: list[dict]) -> str:
             "<th>samples</th><th>with a pair</th><th>&ge; $25</th><th>best $ seen</th>"
             "<th>tickets</th><th>issued</th><th class='l'>last sample</th></tr>"]
     if not live:
-        rows.append("<tr><td colspan='10' class='muted' style='padding:8px'>No game files touched in the last six "
-                    "hours. The executor and the stream instrument each write one file per live game.</td></tr>")
+        rows.append("<tr><td colspan='10' class='muted' style='padding:8px'>no live game</td></tr>")
     for g in live:
         share = "" if not g.get("samples") else f"{100 * (g.get('share') or 0):.0f}%"
         floor = "" if not g.get("samples") else f"{100 * (g.get('share_over_floor') or 0):.0f}%"
@@ -183,12 +182,12 @@ def index() -> str:
     tickets = load_tickets()
     t = tally(tickets)
     live = pnl.game_status(OUT)
+    # The surface carries numbers; the words live at /instructions. Every
+    # sentence here was read once and then read past every refresh for the
+    # rest of the night (operator, 2026-09-18: "what is this UI or an essay").
     parts = [f"<style>{CSS}</style><div class='wrap'>"
-             f"<h1>Ladder desk</h1> <span class='muted'>MERIDIAN &middot; FILL TEST &middot; "
-             f"{dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d %H:%M')}Z &middot; "
-             + ("ARMED: tickets are written under the budget and pushed to your phone; you place them, leg 1 first."
-                if is_armed else "LOCKED: observe only. The executor keeps sampling; it writes and pushes nothing.")
-             + " Takes effect on the executor's next cycle (&le; 20 s).</span>",
+             f"<h1>Ladder desk</h1> <span class='muted'>"
+             f"{dt.datetime.now(dt.timezone.utc).strftime('%H:%M')}Z</span>",
              _status_bar(is_armed, t, live),
              # Trades first, games second (operator, 2026-09-18: "make it like
              # the trades we are taking ... having the ladder is nice i guess").
@@ -199,8 +198,7 @@ def index() -> str:
         # The condition is the executor's, word for word: two spread rungs over
         # the floor. Naming the mid ladder here would tell the operator on a
         # WNBA night that a +/-2.5 pair cannot produce a ticket, when it does.
-        parts.append("<div class='muted'>No tickets yet. A ticket appears here and on your phone when a pair of "
-                     "spread rungs clears the floor &mdash; on any line, in either sport.</div>")
+        parts.append("<div class='muted'>none yet</div>")
     for tk in tickets:
         game, st = str(tk.get("game")), tk["status"]
         parts.append(f"<div class='ticket'><div><b>{html.escape(game)}</b> <span class='muted'>{html.escape(str(tk.get('ts')))}Z &middot; edge {tk.get('edge_c')}&cent; &middot; displayed {tk.get('displayed_size')}</span> <span class='chip {st}'>{st}</span></div>")
@@ -227,14 +225,14 @@ def index() -> str:
         parts.append("</div>")
     parts.append("<h2>Games</h2>")
     parts.append(_live_table(live))
-    parts.append(f"<h2>Decision rule (registered)</h2><div class='ticket'>recorded {t['recorded']} &middot; both legs &ge; 80 % filled: <b>{t['both']}</b> &middot; leg 1 unfilled: <b>{t['none']}</b> &middot; <b>{html.escape(t['verdict'])}</b>"
+    parts.append(f"<h2>Rule</h2><div class='ticket'>recorded {t['recorded']} &middot; both filled <b>{t['both']}</b> &middot; leg 1 unfilled <b>{t['none']}</b> &middot; <b>{html.escape(t['verdict'])}</b>"
                  " <a href='/pnl'>money and the tape &rarr;</a></div>")
-    parts.append("<h2>Executor and stream, latest lines</h2>")
+    parts.append("<h2>Writers</h2>")
     for p in desk.log_files(OUT, "executor") + desk.log_files(OUT, "freshness"):
         lines = tail(p)
         if lines:
             parts.append(f"<div class='muted'>{html.escape(os.path.basename(p))}</div><pre>{html.escape(chr(10).join(lines))}</pre>")
-    parts.append("<div class='foot'>Lock = a file the executor re-reads every cycle. Tickets = the executor's intent files. Your records = ladder_attempts.jsonl.</div></div>")
+    parts.append("</div>")
     # This is the page carrying the writer heartbeats, whose whole purpose is to
     # go stale, and it re-rendered only on a manual reload while /ladder and
     # /pnl refreshed themselves. It reloads on the same 15 s -- except while a
