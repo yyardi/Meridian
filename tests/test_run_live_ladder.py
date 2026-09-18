@@ -51,3 +51,18 @@ def test_alert_is_off_by_default_and_deduped_per_pair():
 def test_an_alert_failure_cannot_stop_sampling():
     body = SRC[SRC.index("def alert("):SRC.index("def main(")]
     assert "except Exception" in body and "return False" in body
+
+
+def test_sample_fills_meta_with_the_venue_transact_time():
+    from types import SimpleNamespace as NS
+    import cfb.run_live_ladder as L
+    lvl = lambda px, qty: NS(px=NS(value=str(px)), qty=str(qty))
+    class Client:
+        def get_book(self, slug):
+            md = NS(bids=[lvl(0.40, 100)], offers=[lvl(0.42, 50)])
+            return NS(market_data=md), {"marketData": {"transactTime": "2026-09-18T13:17:58.280016334Z"}}
+    meta = {}
+    rungs, _ = L.sample(Client(), ["aec-x-2026-09-18-pos-3pt5"], "aec-x-2026-09-18", meta)
+    assert rungs and list(meta) == list(rungs) and meta[next(iter(rungs))] == "2026-09-18T13:17:58.280016334Z"
+    rungs2, _ = L.sample(Client(), ["aec-x-2026-09-18-pos-3pt5"], "aec-x-2026-09-18")   # old call shape still works
+    assert rungs2 == rungs
