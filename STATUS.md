@@ -3210,6 +3210,51 @@ the strategy does not exist there. The scanner is venue-agnostic; what it needs 
 other US sports exchanges have none here. MLB and NFL in-play on Polymarket US already show the same
 shape (§0bp) and are the next scheduler targets, after fill.
 
+## 0bz. The venue's screen is not the slug: every ticket now names the row and the button; the desk moves onto the host
+
+**The trap, found before the first ticket.** The operator asked whether "DET +13.5" was just the No on
+"BUF −13.5" — yes — and then said the site never shows a "+" line. It doesn't. The venue's board for
+tonight's MIA–WAKE ladder: `asc-cfb-mia-wake-2026-09-18-pos-10pt5` carries `title` "Demon Deacons wins by
+over 10.5 points", `titleShort` "WAKE -10.5", `description` "settles to Yes if Wake Forest wins by more
+than 10.5" — **and** `question` "Will the Miami (FL) cover 10.5", `marketSides[0].description` "+10.50",
+best bid 0.98. A 0.98 contract on a 93 % favourite's opponent winning by 11 is impossible; the priced YES
+is Miami +10.5. Settlement agrees: `asc-nfl-det-buf-2026-09-17-pos-13pt5` settled **1** with Detroit
+losing by 10 (`pos-9pt5` 0, `neg-2pt5` 0, winner 0). So the slug frame stands (YES = first team + line
+covers, as §0bk's 84,646 pairs already said), while the venue's title, short title and description all
+describe the *other* side.
+
+**On the screen** (polymarket.us game page, read live): one row per game, `MIA to win by over [N]
+points`, a line picker with **42 entries** — 34.5 → 0.5, then 0.5 → 34.5 again — and picking the second
+10.5 turns the row into `WAKE to win by over 10.5 points` with its own Yes/No. Every rung is presented
+from the side laying the points. So "buy DET +13.5" is `BUF to win by over 13.5 points → No`, and the
+protocol's "clicking the wrong side" failure was one ticket away.
+
+**Built.** `core/ladder/ui.py` — slug frame → screen frame (`ui_wording(game, line, side)` → row,
+button); neg line → the first team's row, our YES = Yes; pos line → the second team's row, our YES =
+No. `run_ladder_executor.py` puts `screen_row` / `screen_button` on every leg and the phone push says
+them ("1) BUF to win by over 13.5 points -> tap No, limit 0.410 x 1 <- FIRST"). Screen words are
+best-effort: a game slug the parser cannot read never blocks a ticket.
+
+**The desk moves onto the host.** `cfb/ladder_desk_app.py`, served by a `ladder-desk` container off
+the api image with the checkout mounted, **http://meridian-aws:8011** (same tailscale path as the
+dashboard on :8008; the api container publishes 8008 on all interfaces, tailscale is up on the box,
+ufw is inactive — the AWS security group decides public reach and I cannot read it from the host).
+ARM / LOCK writes or removes `/out/ladder_lock`, which the executor re-reads every cycle — no manager
+in the loop. Tickets are read straight from the intents files; placed / skipped / fills go to
+`ladder_attempts.jsonl`; the registered decision rule is tallied on the page. No venue call, no order
+path, no new dependency (the form is parsed by hand; the image has no python-multipart). The claude.ai
+desk is superseded. 39 tests green (0e9caa3, staged; container up, HTTP 200, "Meridian is ARMED").
+
+**Report v5.** §6 now leads with the ratio — 1 − E in, $1.00 out, 2–8 % per pair if both legs fill —
+and walks one real episode (DET +5.5 @ 0.23 / +3.5 bid 0.29, 00:40Z) from slug to screen row to
+settlement (Buffalo by 10 → $1.00 per pair on $0.94), with the "hold to settlement" risks stated: the
+danger is the seconds between legs, not the hours after; postponement (LFMP) and NFL ties are the two
+rule exceptions and the winner market is no longer a leg.
+
+**Operator's other asks, open.** "A lot on the website still not working" — needs three named items; a
+first pass over :8008 found it serving, no console errors, WNBA pregame picks rendering. PDF export —
+the only route is headless Chrome, which the operator told me not to run; waiting on a yes.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
