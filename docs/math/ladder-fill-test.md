@@ -16,11 +16,30 @@ f(p) = 0.06·p·(1−p):
     E = B_lo − A_hi − f(A_hi) − f(B_lo)        violation iff E > 0
 
 * **Leg 1 — BUY YES on the easier line ℓ_hi at its ask A_hi.**
-* **Leg 2 — SELL YES on the harder line ℓ_lo at its bid B_lo.**
+* **Leg 2 — BUY NO on the harder line ℓ_lo at (1 − B_lo).** This is the UI's
+  form of "sell YES at B_lo" and is the identical position.
 
-Settlement is 0, +1, or 0 across the three margin regions; it is never
-negative. Entry receives E per contract. Size = min(displayed ask at ℓ_hi,
-displayed bid at ℓ_lo), and the test uses far less than that.
+Why it cannot lose, in the buy-NO form. The pair costs A_hi + (1 − B_lo) per
+contract and pays at settlement:
+
+| margin region | YES(ℓ_hi) | NO(ℓ_lo) | paid |
+|---|---:|---:|---:|
+| harder line covers | 1 | 0 | 1 |
+| only the easier covers | 1 | 1 | **2** |
+| neither | 0 | 1 | 1 |
+
+Paid is ≥ 1 in every region; cost is 1 − (B_lo − A_hi). So the guaranteed
+profit is B_lo − A_hi − fees = E > 0, with a bonus of +1 if the margin lands
+between the lines. **The only ways to lose money:** (a) leg 1 fills and leg 2
+does not — you then hold a small directional bet worth at most what you paid
+for it; (b) clicking the wrong side. The alert names the button.
+
+**Funding.** At the $189-shape prices (YES 0.22, NO 0.735) 15 contracts each
+cost about $14.30 and pay $15.00 plus $15 more if the margin lands between the
+lines. **$15 funds one attempt of ~15 contracts.** The registered 5-attempt
+rule at 50 contracts needs roughly $50–100 depending on prices. One attempt
+still answers the binary question — *does displayed size fill at all* — which
+is the question; five attempts answer *how reliably*.
 
 **Order of legs.** Take the *stale* side first — the one the maker has not
 re-quoted (usually the mid-rung resting order) — because it is the one that
@@ -30,7 +49,7 @@ disappears when the maker wakes up. The other side is normal liquidity.
 
 | | |
 |---|---|
-| test size | **50 contracts** (≈ $10–35 of notional per leg) |
+| test size | **15 contracts** with the current $15 balance (≈ $14 for both legs); 50 once funded |
 | alert floor | episodes with E × min-size ≥ **$25** |
 | rung filter | prefer mid-ladder pairs (+3.5 … +20.5) — where 0bv found the money and the minutes |
 | if leg 1 fills and leg 2 does not within 60s | do NOT chase; you hold 50 YES on ℓ_hi — record it, let it settle or close at market |
