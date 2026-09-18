@@ -486,13 +486,24 @@ def should_page(streak: dict | None) -> bool:
     return span >= MIN_SPAN_MIN * 0.9      # tolerance for cron jitter
 
 
-def page(topic: str, title: str, body: str) -> None:
-    req = urllib.request.Request(
-        f"https://ntfy.sh/{topic}",
-        data=body.encode(),
-        headers={"Title": title, "Priority": "urgent", "Tags": "rotating_light"},
-    )
-    urllib.request.urlopen(req, timeout=15).read()
+def page(topic: str, title: str, body: str) -> str:
+    """One urgent push under kind "alarm" through core.notify (muted to disk
+    unless MERIDIAN_NTFY_SCOPE names it). Returns notify's status word; the
+    door reads the topic itself, `topic` is kept so the call site's gate
+    (no topic -> print, never page) stays where it is.
+
+    Run as `python3 scripts/alarm_v5.py`, sys.path[0] is scripts/, so the
+    repo root is added here before the import (the guard test imports this
+    file the same way)."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from core import notify
+
+    status = notify.push("alarm", title, body, priority=5, tags="rotating_light", timeout=15)
+    if status == notify.FAILED:
+        raise RuntimeError("ntfy push failed")
+    return status
 
 
 def _anchored(sql: str, anchor: str | None) -> str:
@@ -594,9 +605,9 @@ def main() -> int:
                 print(f"  [would page] {body}")
             else:
                 try:
-                    page(topic, f"MERIDIAN: {league.upper()} "
-                               f"{'RECORDER SILENT' if verdict == ABSENT else 'PRICE FREEZE'}", body)
-                    print("  [paged]")
+                    status = page(topic, f"MERIDIAN: {league.upper()} "
+                                  f"{'RECORDER SILENT' if verdict == ABSENT else 'PRICE FREEZE'}", body)
+                    print("  [paged]" if status == "sent" else f"  [page {status}]")
                 except Exception as exc:  # noqa: BLE001 — never let paging kill the sweep
                     print(f"  [PAGE FAILED] {type(exc).__name__}: {exc}", file=sys.stderr)
 

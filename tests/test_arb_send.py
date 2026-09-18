@@ -234,7 +234,7 @@ def test_full_fill_sends_both_legs_and_the_reply_is_the_rows_record(client, read
 
     # The desk's record: the attempt the tally counts, marked as sent from here.
     rec = _records(reads)[-1]
-    assert rec["id"] == TICKET_ID and rec["status"] == "recorded" and rec["via"] == "dashboard"
+    assert rec["id"] == TICKET_ID and rec["status"] == "recorded" and rec["via"] == "send"
     assert rec["l1q"] == 2.0 and rec["l2q"] == 2.0 and rec["l1p"] == 0.41
     assert rec["venue_order_ids"] == ["v-1", "v-2"] and rec["outcome"] == "both legs filled"
     assert rec["order_ids"] == [rows[1].id, rows[2].id]
@@ -395,6 +395,9 @@ def test_missing_credentials_are_503_with_both_rows_marked(client, reads, desk_r
     assert rows[2].error.startswith("leg 1 not sent")
     assert FakeOrderClient.PAYLOADS == []
     assert _rows()[1] is None, "the unsent rows leave the 'already sent' gate's match"
+    assert rows[1].idempotency_key.endswith(f"-unsent-{rows[1].id}"), (
+        "the key is released as well as the note: leaving it made the row's own "
+        "UNIQUE constraint refuse the retry below, which the notes gate cannot see")
     # Nothing reached the venue, so the ticket is still open and still
     # sendable: with credentials the same click goes through, not 409.
     assert _records(reads) == [] and desk.load_tickets(str(reads))[0]["status"] == "open"

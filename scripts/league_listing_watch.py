@@ -20,9 +20,8 @@ from __future__ import annotations
 import argparse
 import collections
 import json
-import os
-import urllib.request
 
+from core import notify as _notify
 from core.polymarket.client import PolymarketAuthedClient, USCredentials
 
 #: One page is 500; the venue exposes no cursor on /v1/markets, so we walk
@@ -49,13 +48,10 @@ def open_markets_by_league(client) -> collections.Counter:
     return counts
 
 
-def notify(title: str, body: str) -> int:
-    topic = os.environ["MERIDIAN_NTFY_TOPIC"]
-    server = os.environ.get("MERIDIAN_NTFY_SERVER", "https://ntfy.sh")
-    req = urllib.request.Request(
-        f"{server}/{topic}", data=body.encode(),
-        headers={"Title": title, "Priority": "high", "Tags": "basketball"})
-    return urllib.request.urlopen(req, timeout=20).status
+def notify(title: str, body: str) -> str:
+    """Kind "listing" through core.notify: muted to disk unless
+    MERIDIAN_NTFY_SCOPE names it. Returns the status word."""
+    return _notify.push("listing", title, body, priority=4, tags="basketball")
 
 
 def main() -> int:

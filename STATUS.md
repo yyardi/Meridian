@@ -3347,6 +3347,41 @@ apply `c7d2e9f14b60` (and `b4e9f1c73d85`) and strand every old-image container o
 **Tonight is unchanged**: :8011 desk, phone pushes, hand placement, three CFB executors, three
 WNBA read-only samplers.
 
+## 0cc. The DB suite caught a real send defect; the tab is a terminal; the phone goes quiet except tickets
+
+**The defect, found by running the 19 DB-backed send tests on the box** (`deploy/aws/run_suite.sh`,
+throwaway Postgres at head — 17 passed, 2 failed). When a send fails **before** anything reaches the
+venue (credentials missing or rotated), both `orders` rows were marked "unsent" so the notes gate
+would let a retry through — **but they kept their `idempotency_key`**, and that column is UNIQUE. The
+retry passed the gate, collided on the INSERT, and came back 409 "this ticket was already sent". That
+ticket was unsendable at that price **for good**, with a message saying the opposite of what happened.
+`_arb_mark_unsent` now releases the key (suffixes it with the row id) as well as the note, and the
+retry is pinned by an assertion that says why. The second failure was a stale test string (`via`
+"dashboard" → "send"). Neither could have been caught without a real Postgres: the DB-free suite was
+green through both.
+
+**The tab is now a terminal, not a document** (operator: "this UI looks sped"). Three panes — games +
+status | the depth ladder | the ticket — collapsing to one column under 900px with the ladder as its
+own scroll container. The ladder is a DOM: `bid size | bid | LINE | ask | ask size | age | lo–hi`,
+sizes as log-scaled bars behind the numbers, the winner rung dim, violated cells lit, the pair the
+executor would ticket outlined and tagged L1/L2, the screen words small under each line. Monospace
+tabular figures, hairline grid, no cards, no shadows, no emoji; one accent for violations, blue for
+the stream, green/red only for fill states. Every route, id, function name and the two-click SEND/
+UNWIND flow are untouched and every pin still holds. **Not yet seen in a browser** — a visual pass is
+owed after the rebuild.
+
+**One switch for the phone.** `core/notify.py` is now the only door: `MERIDIAN_NTFY_SCOPE`, default
+**`tickets`**, with kinds `tickets|health|nightly|ev|retention|listing|alarm` (`all` opens everything).
+Seven Python senders and the five cron shell scripts (via `scripts/ntfy_allowed.py`, exit 0/1) go
+through it; anything out of scope is appended to `artifacts/reads/ntfy_muted.log` rather than dropped,
+so widening the scope later loses no history. The topic is never printed. Measured default:
+`tickets: True, health: False, nightly: False`. **The cron scripts take effect as soon as this is
+staged on prod** (they run from the host), so tomorrow's 04:40Z scan, 09:00Z Elo, 09:30Z drift, 10:40Z
+weekend read and 11:30Z ladder are silent; the alerter's 5-minute health pushes stop at the fleet
+rebuild, because that one runs from the image. Doc: `docs/ops/notifications.md`.
+
+**Tests.** 269 DB-free passed; the DB-backed send/unwind suite goes back to the box after this lands.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**

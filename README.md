@@ -107,10 +107,13 @@ watcher lives inside that container and starts with it.
 
 **So is the phone alerter** (`meridian-alerter`): the health checks below,
 evaluated every 5 minutes, pushed to `ntfy.sh/$MERIDIAN_NTFY_TOPIC` on any
-transition to DEAD, plus a 9:00 CT daily digest that always sends — a missing
-digest means the alerter itself is dead. Subscribe to the topic in the ntfy
-app before leaving the machine alone; test the channel with
-`docker compose exec alerter python -m core.alerter --test`.
+transition to DEAD, plus a 9:00 CT daily digest that is always issued — a
+missing digest means the alerter itself is dead. Since 2026-09-18 what reaches
+the phone is `MERIDIAN_NTFY_SCOPE` (default: order tickets only; health pushes
+go to the muted log) — see `docs/ops/notifications.md`. Subscribe to the topic
+in the ntfy app before leaving the machine alone; test the channel with
+`docker compose exec alerter python -m core.alerter --test` (exit 1 and a
+stderr line when the scope mutes it).
 
 ### Tab 3 — checks and live data
 

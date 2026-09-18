@@ -5,63 +5,58 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Algo — ARB</title>
 <style>
+  /* ── A trading terminal, not a document. The same dark ground as every
+     other page; one accent (#D07A52) for a violated rung and the pair the
+     executor would ticket; blue (#3F8ED0) for the stream series; green and
+     red ONLY for a filled / unfilled leg. No radius, no gradient, no shadow.
+     The words live at the desk's /instructions and in the confirm modal. ── */
   :root{
-    --bg:#0a0c10; --panel:#11141b; --line:#1e2430; --txt:#d7dde8;
-    --dim:#7c879b; --faint:#4a5568; --pos:#26d07c; --neg:#ff5c62;
-    --warn:#ffb020; --accent:#4c8dff;
+    --bg:#0a0c10; --panel:#11141b; --panel2:#0d1015; --line:#1e2430; --line2:#151a24;
+    --txt:#d7dde8; --dim:#8a95a8; --faint:#4a5568;
+    --pos:#26d07c; --neg:#ff5c62;
+    --acc:#D07A52; --acc-bg:#241610; --blue:#3F8ED0; --blue-bg:#0f1b28;
+    --warn:#D07A52; --accent:#3F8ED0;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --hh:70px;
   }
   *{box-sizing:border-box}
+  html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--txt);
-       font:12px/1.5 var(--mono);font-variant-numeric:tabular-nums}
-  .stat{display:flex;gap:6px;align-items:baseline}
+       font:12px/1.45 var(--mono);font-variant-numeric:tabular-nums}
+  button,input,select{font:inherit;font-variant-numeric:tabular-nums}
+  .stat{display:flex;gap:6px;align-items:baseline;white-space:nowrap}
   .stat .k{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em}
   .stat .v{font-size:11.5px}
-  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
-  .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
-  .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
+  .dot{width:6px;height:6px;display:inline-block;margin-right:5px;vertical-align:1px}
+  .dot.ok{background:var(--txt)}
+  .dot.bad{background:var(--acc)}
   /* --- league tabs (core/leagues.py) ------------------------------------ */
   .lg{display:flex;gap:2px;margin-left:10px}
-  .lgt{font:inherit;font-size:10px;letter-spacing:.09em;padding:3px 9px;border-radius:3px;
+  .lgt{font:inherit;font-size:10px;letter-spacing:.09em;padding:3px 9px;
        background:transparent;color:var(--faint);border:1px solid transparent;cursor:pointer}
   .lgt:hover{color:var(--txt)}
   .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
   .lgt.empty{color:var(--faint);opacity:.75}
-  .wrap{padding:14px;max-width:1500px}
-  h2{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);
-     margin:18px 0 8px;font-weight:600}
-  .banner{border:1px solid #3d2a17;background:#221708;color:var(--warn);
-          padding:9px 12px;border-radius:4px;margin-bottom:14px;font-size:11px}
-  .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--warn)}
-  .tbl{overflow-x:auto}
-  table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:18px}
-  th{text-align:right;color:var(--faint);font-size:9.5px;letter-spacing:.08em;
-     text-transform:uppercase;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-  th.l,td.l{text-align:left}
-  td{text-align:right;padding:4px 8px;border-bottom:1px solid #131720;white-space:nowrap}
-  tr:hover{background:#12161e}
-  tr.dim td{color:var(--faint)}
-  tr.flag td{background:#1e1414}
-  .note{color:var(--faint);font-size:10.5px;margin-top:9px;line-height:1.5;
-        border-left:2px solid var(--line);padding-left:9px}
-  .meta{color:var(--dim);font-size:11px;margin-bottom:10px}
-  .meta b{color:var(--txt)}
-  .empty{padding:24px;color:var(--faint);text-align:center}
-  footer{padding:6px 14px;font-size:10px;color:var(--faint);
-         border-top:1px solid var(--line);background:var(--panel)}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--acc)}
+  .accc{color:var(--acc)}.bluec{color:var(--blue)}
+  .ok{color:var(--pos);font-weight:700}.bad{color:var(--neg);font-weight:700}
+  .empty{padding:14px 10px;color:var(--faint);font-size:11px}
+  footer{height:23px;padding:4px 12px;font-size:10px;line-height:14px;color:var(--faint);
+         border-top:1px solid var(--line);background:var(--panel);white-space:nowrap;
+         overflow:hidden;text-overflow:ellipsis}
 
   /* ── Header, same bar as every other page: book, then the leagues inside
-     it; nav and health on separate rows. The token box is the landing page's,
-     because this page CAN place an order. ── */
+     it; nav on the first row. The token box is the landing page's, because
+     this page CAN place an order. The second row is the desk's status bar. ── */
   header{background:var(--panel);border-bottom:1px solid var(--line);
          position:sticky;top:0;z-index:9;display:block;padding:0}
-  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px}
+  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:7px 12px}
   .hrow+.hrow{border-top:1px solid var(--line)}
   .hsep{width:1px;height:15px;background:var(--line);flex:none}
   .brand{font-weight:700;letter-spacing:.18em;font-size:13px}
   .bookgrp{display:flex;gap:3px}
   .book{font:inherit;font-size:11px;font-weight:700;letter-spacing:.07em;
-        padding:4px 10px;border-radius:3px;background:transparent;
+        padding:4px 10px;background:transparent;
         border:1px solid transparent;color:var(--faint);cursor:pointer}
   .book:hover{color:var(--txt)}
   .book.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
@@ -69,79 +64,190 @@
   .grplbl{color:var(--faint);font-size:8.5px;letter-spacing:.13em;
           text-transform:uppercase;margin-right:3px}
   .navgrp a{color:var(--faint);text-decoration:none;font-size:11px;
-            letter-spacing:.05em;padding:4px 9px;border-radius:3px}
+            letter-spacing:.05em;padding:4px 9px}
   .navgrp a:hover{color:var(--txt)}
   .navgrp a.on{color:var(--txt);background:#1a1f2b}
-  .statusrow{gap:16px;padding:6px 14px;background:#0c0f15}
   #tokwrap{margin-left:auto}
   #tok{font:inherit;font-size:11px;background:#0c0f15;color:var(--txt);border:1px solid var(--line);
-       border-radius:3px;padding:4px 8px;width:150px}
+       padding:4px 8px;width:150px}
 
-  /* ── Controls: the lock and the game. The lock chip is the executor's
-     truth (the file), re-read every poll; the buttons only ask. ── */
-  .ctl{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:6px 0 14px}
-  .chip{font-weight:700;letter-spacing:.1em;padding:4px 10px;border-radius:3px;font-size:11px}
-  .chip.armed{background:#0f2a1c;color:var(--pos);border:1px solid #1e4a30}
-  .chip.locked{background:#2a1414;color:var(--neg);border:1px solid #4d2020}
-  .chip.unknown{background:#1a1f2b;color:var(--faint);border:1px solid var(--line)}
-  button{font:inherit;font-size:11px;padding:4px 10px;border-radius:3px;cursor:pointer;
-         background:#1a1f2b;color:var(--txt);border:1px solid var(--line)}
+  /* ── Status bar: one-line chips. The lock chip is the executor's truth
+     (the file), re-read every poll; the buttons only ask. ── */
+  .statusrow{gap:0;padding:0;background:var(--panel2);flex-wrap:wrap}
+  .sb{display:flex;align-items:center;gap:7px;padding:5px 10px;border-right:1px solid var(--line);
+      white-space:nowrap;font-size:11px;min-height:28px}
+  .sb .k{color:var(--faint);font-size:9px;letter-spacing:.1em;text-transform:uppercase}
+  .sb .v{color:var(--txt)}
+  .sb .age{color:var(--faint);font-size:10px}
+  .sb .tl{color:var(--dim);max-width:34ch;overflow:hidden;text-overflow:ellipsis}
+  .sb.blue .k,.sb.blue .age{color:var(--blue)}
+  .chip{font-weight:700;letter-spacing:.1em;padding:2px 8px;font-size:10.5px;border:1px solid var(--line)}
+  .chip.armed{color:var(--txt);border-color:var(--dim)}
+  .chip.locked{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+  .chip.unknown{color:var(--faint)}
+  button{font:inherit;font-size:10.5px;padding:3px 9px;cursor:pointer;letter-spacing:.06em;
+         background:#151a24;color:var(--txt);border:1px solid var(--line)}
   button:hover{border-color:var(--dim)}
-  button:disabled{opacity:.45;cursor:default}
-  button.danger{background:#2a1414;color:#ff9a9e;border-color:#4d2020}
-  button.go{background:#0f2a1c;color:var(--pos);border-color:#1e4a30}
+  button:disabled{opacity:.4;cursor:default}
+  button.danger{color:var(--acc);border-color:#5a3322}
+  button.go{color:var(--txt);border-color:var(--dim);background:#1b2230}
+  button.sm{padding:2px 7px;font-size:10px}
   select,input[type=number]{font:inherit;font-size:11px;background:#0c0f15;color:var(--txt);
-         border:1px solid var(--line);border-radius:3px;padding:3px 6px}
-  input[type=number]{width:72px}
+         border:1px solid var(--line);padding:2px 6px}
+  input[type=number]{width:70px}
 
-  /* ── Tickets: one card per intent, the two legs as the phone push says
-     them (row, button, price, size), status chip, and the actions. ── */
-  .tickets{display:grid;grid-template-columns:repeat(auto-fill,minmax(430px,1fr));gap:10px}
-  .tk{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:10px 12px}
-  .tk.done{opacity:.7}
-  .tk .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
-  .tk .game{font-weight:700;letter-spacing:.04em}
-  .tk .st{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;
-          border-radius:3px;border:1px solid var(--line);color:var(--faint)}
-  .tk .st.open{color:var(--pos);border-color:#1e4a30}
-  .tk .st.placed,.tk .st.recorded{color:var(--warn);border-color:#3d2a17}
-  .tk .st.skipped{color:var(--faint)}
-  .leg{display:grid;grid-template-columns:18px 1fr auto;gap:8px;padding:5px 0;
-       border-top:1px solid #131720;align-items:baseline}
-  .leg .n{color:var(--faint);font-weight:700}
-  .leg .row{color:var(--txt)}
-  .leg .btn{font-weight:700;letter-spacing:.06em}
-  .leg .terms{color:var(--dim);white-space:nowrap}
-  .tk .sum{display:flex;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:10.5px;margin:6px 0}
-  .tk .sum b{color:var(--txt)}
-  .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
-  .fills{display:none;grid-template-columns:repeat(3,auto);gap:6px 10px;align-items:center;
-         margin-top:8px;padding-top:8px;border-top:1px solid #131720;font-size:10.5px;color:var(--dim)}
+  /* ── Three panes on a hairline grid: games + status | the depth ladder |
+     the ticket. One column under 900px. ── */
+  .term{display:grid;grid-template-columns:250px minmax(0,1fr) 400px;gap:1px;
+        background:var(--line);height:calc(100vh - var(--hh) - 23px);min-height:420px}
+  .pane{background:var(--bg);overflow:auto;min-width:0}
+  .ph{display:flex;align-items:baseline;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line);
+      background:var(--panel2);position:sticky;top:0;z-index:2;font-size:10px;letter-spacing:.12em;
+      text-transform:uppercase;color:var(--faint);font-weight:600;white-space:nowrap;overflow:hidden}
+  .ph .sub{letter-spacing:0;text-transform:none;font-weight:400;color:var(--faint);
+           overflow:hidden;text-overflow:ellipsis}
+  .ph .r{margin-left:auto;letter-spacing:0;text-transform:none;font-weight:400}
+  @media (max-width:900px){
+    .term{grid-template-columns:1fr;height:auto;min-height:0}
+    .pane{overflow:visible;max-height:none}
+    /* The DOM (574px of fixed columns) and the violations table (~720px)
+       are wider than a phone. The pane stays their scroll container so the
+       overflow is a swipe inside the ladder, not a page-wide scrollbar. */
+    #pane-ladder{overflow-x:auto}
+    .ph{position:static}
+    /* .dom .hd is sticky at top:26px for the pane's own header, which is
+       static here; left sticky it slides under the page header. */
+    .dom .hd{position:static}
+    .statusrow{overflow-x:auto;flex-wrap:nowrap}
+  }
+
+  /* ── Left: games and the desk's status. ── */
+  .grow{display:grid;grid-template-columns:1fr auto;gap:8px;width:100%;text-align:left;
+        padding:5px 10px;border:0;border-bottom:1px solid var(--line2);background:transparent;
+        color:var(--dim);cursor:pointer;letter-spacing:0;font-size:11.5px}
+  .grow:hover{color:var(--txt);background:#10141b}
+  .grow.on{color:var(--txt);background:#141924;border-left:2px solid var(--txt);padding-left:8px}
+  .grow .n{color:var(--faint);font-size:10px}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:6px 10px;font-size:10.5px;
+      border-bottom:1px solid var(--line2)}
+  .kv .k{color:var(--faint);letter-spacing:.06em;text-transform:uppercase;font-size:9px;align-self:baseline}
+  .kv .v{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv .v b{color:var(--txt);font-weight:600}
+  .tailbox{padding:4px 10px 6px;border-bottom:1px solid var(--line2)}
+  .tailbox .f{color:var(--faint);font-size:9.5px;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tailbox .ln{color:var(--dim);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tailbox.blue .f{color:var(--blue)}
+
+  /* ── Centre: the depth ladder as a DOM. One row per line; size drawn as a
+     bar behind the number, bids growing left from the line, asks growing
+     right; the winner row dim; a violated rung lit in the accent; the pair
+     the executor would ticket outlined and tagged L1/L2. ── */
+  .dom{display:grid;grid-template-columns:minmax(70px,1fr) 58px 170px 58px minmax(70px,1fr) 52px 96px;
+       font-size:12.5px}
+  .dom>div{padding:0 8px;border-bottom:1px solid var(--line2);white-space:nowrap;min-height:34px;
+           display:flex;align-items:center;position:relative}
+  .dom .hd{min-height:22px;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+           border-bottom:1px solid var(--line);background:var(--panel2);position:sticky;top:26px;z-index:1}
+  .dom .rt{justify-content:flex-end}
+  .dom .ct{justify-content:center;flex-direction:column;line-height:1.2;border-left:1px solid var(--line2);border-right:1px solid var(--line2)}
+  .dom .ct b{font-size:13px;font-weight:700;letter-spacing:.02em}
+  .dom .ct small{font-size:9.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:154px}
+  .dom .bar{position:absolute;top:4px;bottom:4px;z-index:0;background:var(--blue);opacity:.16}
+  .dom .bs .bar{right:0}
+  .dom .as .bar{left:0;background:#c9d1de}
+  .dom .num{position:relative;z-index:1;color:var(--dim)}
+  .dom .px{font-weight:600}
+  .dom .dim>*,.dom .dim{color:var(--faint)}
+  .dom .dim .bar{opacity:.06}
+  .dom .dim .px{font-weight:400}
+  .dom .lit{color:var(--acc);font-weight:700}
+  .dom .viol{background:#130e0b}
+  .dom .viol.ct{border-left:2px solid var(--acc)}
+  .dom .tkp{border-top:1px solid var(--acc);border-bottom:1px solid var(--acc)}
+  .dom .bs.tkp{border-left:1px solid var(--acc)}
+  .dom .bd.tkp{border-right:1px solid var(--acc)}
+  .dom .tag{font-size:9px;letter-spacing:.08em;padding:0 4px;border:1px solid var(--acc);color:var(--acc);
+            margin-left:6px;line-height:13px}
+  .dom .bd{color:var(--faint);font-size:11px}
+  .dom .old{color:var(--acc)}
+
+  /* Violations under the ladder: every fee-netted pair from the executor's
+     own scan, the candidate on top. */
+  .vt{width:100%;border-collapse:collapse;font-size:11px}
+  .vt th{text-align:right;color:var(--faint);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+         padding:4px 8px;border-bottom:1px solid var(--line);white-space:nowrap;font-weight:600}
+  .vt th.l,.vt td.l{text-align:left}
+  .vt td{text-align:right;padding:4px 8px;border-bottom:1px solid var(--line2);white-space:nowrap}
+  .vt tr.cand td{color:var(--txt)}
+  .vt tr.cand td.l:first-child{border-left:2px solid var(--acc);padding-left:6px}
+  .vt tr.dim td{color:var(--faint)}
+  .vt .w{white-space:normal;min-width:220px;line-height:1.35;font-size:10.5px;color:var(--dim)}
+  .vt .w b{color:var(--txt)}
+
+  /* ── Right: the tickets. A one-line list, the selected one in full. ── */
+  .tkr{display:grid;grid-template-columns:62px 1fr 52px 56px 64px;gap:6px;width:100%;text-align:left;
+       padding:4px 10px;border:0;border-bottom:1px solid var(--line2);background:transparent;
+       color:var(--dim);cursor:pointer;letter-spacing:0;font-size:11px}
+  .tkr>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tkr .r{text-align:right}
+  .tkr:hover{color:var(--txt);background:#10141b}
+  .tkr.on{color:var(--txt);background:#141924;border-left:2px solid var(--txt);padding-left:8px}
+  .tkr.done{opacity:.55}
+  .st{font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:1px 5px;
+      border:1px solid var(--line);color:var(--faint);display:inline-block;line-height:13px}
+  .st.open{color:var(--txt);border-color:var(--dim)}
+  .st.placed,.st.recorded{color:var(--acc);border-color:#5a3322}
+  .st.skipped{color:var(--faint)}
+  .tk{padding:0 0 6px}
+  .tk .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 10px;
+          border-bottom:1px solid var(--line2)}
+  .tk .game{font-weight:700;letter-spacing:.03em}
+  .leg{display:grid;grid-template-columns:22px 1fr;gap:2px 6px;padding:6px 10px;
+       border-bottom:1px solid var(--line2);align-items:baseline}
+  .leg .n{color:var(--faint);font-weight:700;grid-row:span 3}
+  .leg .row{color:var(--txt);font-size:12px}
+  .leg .btn{font-weight:700;letter-spacing:.06em;padding:0 5px;border:1px solid var(--dim)}
+  .leg .terms{color:var(--dim);font-size:11px}
+  .leg .frame{color:var(--faint);font-size:10px}
+  .leg .first{color:var(--acc);font-size:9px;letter-spacing:.1em;margin-left:6px}
+  .sum{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line2);
+       border-bottom:1px solid var(--line2)}
+  .sum>div{background:var(--bg);padding:5px 10px}
+  .sum .k{color:var(--faint);font-size:9px;letter-spacing:.08em;text-transform:uppercase;display:block}
+  .sum .v{font-size:13px;color:var(--txt)}
+  .sum .v small{font-size:10px;color:var(--faint)}
+  .rec{display:flex;gap:12px;flex-wrap:wrap;padding:5px 10px;border-bottom:1px solid var(--line2);
+       font-size:10.5px;color:var(--dim)}
+  .rec b{color:var(--txt)}
+  .acts{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line2)}
+  .fills{display:none;grid-template-columns:auto auto 1fr;gap:4px 8px;align-items:center;
+         padding:7px 10px;border-bottom:1px solid var(--line2);font-size:10.5px;color:var(--dim)}
   .fills.on{display:grid}
-  .tk .res{font-size:10.5px;margin-top:6px;line-height:1.5}
-  .ok{color:var(--pos);font-weight:700}.bad{color:var(--neg);font-weight:700}
+  .tk .res{font-size:10.5px;padding:5px 10px;line-height:1.5}
+  .tk .res:empty{display:none}
+  .tally{width:100%;border-collapse:collapse;font-size:11px}
+  .tally td{padding:3px 10px;border-bottom:1px solid var(--line2);text-align:right}
+  .tally td.k{text-align:left;color:var(--faint);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase}
+  .tally td.v{color:var(--txt);font-weight:600}
+  .verdict{padding:6px 10px;font-size:10.5px;color:var(--dim);border-bottom:1px solid var(--line2)}
 
-  /* ── The confirmation ticket. The card button opens this; only the button
+  /* ── The confirmation ticket. A ticket button opens this; only the button
      inside it sends anything. Two clicks, two different elements, and the
      second one shows the whole order in words first. ── */
-  #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:20;
+  #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.76);z-index:20;
          align-items:center;justify-content:center}
   #modal.on{display:flex}
-  .ticket{background:var(--panel);border:1px solid var(--line);border-radius:6px;
-          width:min(640px,94vw);max-height:92vh;overflow:auto;padding:16px 18px}
-  .ticket h3{margin:0 0 10px;font-size:13px;letter-spacing:.06em}
+  .ticket{background:var(--panel);border:1px solid var(--dim);
+          width:min(640px,94vw);max-height:92vh;overflow:auto;padding:14px 16px}
+  .ticket h3{margin:0 0 10px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--acc)}
   .trow{display:flex;justify-content:space-between;gap:12px;padding:5px 0;
-        border-bottom:1px solid #131720;font-size:11.5px}
+        border-bottom:1px solid var(--line2);font-size:11.5px}
   .trow .k{color:var(--faint)}
   .trow.big b{font-size:14px}
-  .twarn{margin:10px 0;padding:8px 10px;border-radius:4px;font-size:11px;line-height:1.55;
-         border:1px solid #3d2a17;background:#221708;color:var(--warn)}
+  .twarn{margin:10px 0;padding:8px 10px;font-size:11px;line-height:1.55;
+         border:1px solid #5a3322;background:var(--acc-bg);color:var(--acc)}
   .tacts{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
   #tresult{display:none;margin-top:10px;font-size:11px;line-height:1.55}
-  .tally{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px}
-  .tally .stat .v{font-size:13px;font-weight:700}
-  pre.tail{margin:0 0 10px;font:10.5px/1.45 var(--mono);color:var(--dim);white-space:pre-wrap;
-           background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
 </style>
 </head>
 <body>
@@ -169,16 +275,22 @@
   </div>
  </div>
  <div class="hrow statusrow">
-  <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
-  <div class="stat" title="How old the pregame recorder's newest data is. Stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
-  <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
-  <div class="stat" title="Account balance from Polymarket US. The pair cap on a send is the smaller of this and MERIDIAN_ARB_MAX_PAIR_USD."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
-  <div class="stat" title="The executor's lock file, re-read every poll. LOCKED: the executor issues nothing, SEND is not offered and the server refuses every send. ARMED: tickets are issued and SEND is offered. UNWIND is exempt from the lock: locking the desk must not lock you into a half-filled pair."><span class="k">desk</span><span class="v" id="s-desk">—</span></div>
+  <div class="sb" title="The executor's lock file, re-read every poll. LOCKED: the executor issues nothing, SEND is not offered and the server refuses every send. ARMED: tickets are issued and SEND is offered. UNWIND is exempt from the lock: locking the desk must not lock you into a half-filled pair.">
+    <span class="k">desk</span><span class="chip unknown" id="lockchip">—</span>
+    <button id="lockBtn" class="danger sm" title="Write the executor's lock file: it keeps sampling and issues nothing; SEND is refused.">LOCK</button>
+    <button id="armBtn" class="go sm" title="Remove the executor's lock file: tickets are issued again.">ARM</button>
+  </div>
+  <div class="sb" title="Budget for the picked game: the sum of ticket cost on file for it (the executor's own spent_so_far, every intent whatever its status) against LADDER_BUDGET_USD per game."><span class="k">budget</span><span class="v" id="s-budget">—</span></div>
+  <div class="sb" title="Account balance from Polymarket US. The pair cap on a send is the smaller of this and MERIDIAN_ARB_MAX_PAIR_USD."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
+  <div class="sb" title="Overall recorder health — pregame freshness plus every writer's heartbeat; then the pregame and live (200ms) data ages. Live age legitimately grows between games."><span class="k">recorder</span><span class="v" id="s-health">—</span><span class="age" id="s-pregame">—</span><span class="age" id="s-live">—</span></div>
+  <div class="sb" title="The executor's freshest cycle line by its clock across the last three live_ladder_aec-*.txt logs (hover for which), and how long ago it was stamped."><span class="k">executor</span><span class="tl" id="s-exec">—</span><span class="age" id="s-exec-age"></span></div>
+  <div class="sb blue" title="The stream-vs-REST instrument's freshest cycle line by its clock across the last three ws_freshness_aec-*.txt logs (hover for which), and how long ago it was stamped."><span class="k">stream</span><span class="tl" id="s-stream">—</span><span class="age" id="s-stream-age"></span></div>
+  <div class="sb" title="The api's own ladder sampler: how long the last sample of the picked game took, and its age."><span class="k">sample</span><span class="v" id="s-sample">—</span></div>
  </div>
 </header>
 
 <!-- The confirmation ticket: every term in words, then the one button that
-     posts. Rebuilt per open; nothing in it is reachable from a card. -->
+     posts. Rebuilt per open; nothing in it is reachable from a ticket row. -->
 <div id="modal" role="dialog" aria-modal="true">
   <div class="ticket">
     <h3 id="mtitle">Confirm — this sends real money</h3>
@@ -192,45 +304,38 @@
   </div>
 </div>
 
-<div class="wrap">
-  <h2 style="font-size:13px;letter-spacing:.12em;margin:4px 0 8px">ARB
-    <span class="dimc" style="font-size:10.5px;letter-spacing:0;text-transform:none">
-    · the ladder desk · a spread ladder that contradicts itself, bought on both legs, held to settlement
-    (<code>docs/math/ladder-fill-test.md</code>)</span></h2>
-  <div class="banner" id="legend">both legs pay ≥ $1.00 per pair at settlement whatever the score;
-    the pair costs 1 − E. The one way to lose money: leg 1 fills and leg 2 does not — then UNWIND or
-    hold, never chase. Meridian sends nothing without the two clicks below.</div>
+<main class="term">
+  <section class="pane" id="pane-games">
+    <div class="ph">games <span class="sub" id="gamenote"></span></div>
+    <div id="game"></div>
+    <div class="ph">desk</div>
+    <div class="kv" id="meta"><span class="k">state</span><span class="v">loading…</span></div>
+    <div class="kv" id="filters"></div>
+    <div class="ph">executor <span class="sub">last cycles</span></div>
+    <div id="tail-executor"><div class="empty">—</div></div>
+    <div class="ph" style="color:var(--blue)">stream <span class="sub">last cycles</span></div>
+    <div id="tail-freshness"><div class="empty">—</div></div>
+  </section>
 
-  <div class="ctl">
-    <span class="chip unknown" id="lockchip">—</span>
-    <button id="lockBtn" class="danger" title="Write the executor's lock file: it keeps sampling and issues nothing; SEND is refused.">LOCK</button>
-    <button id="armBtn" class="go" title="Remove the executor's lock file: tickets are issued again.">ARM</button>
-    <span class="hsep"></span>
-    <label class="dimc">game <select id="game"><option value="">— pick a game —</option></select></label>
-    <span class="dimc" id="gamenote"></span>
-    <span class="hsep"></span>
-    <span class="dimc" id="filters">filters: —</span>
-  </div>
-  <div class="meta" id="meta">loading…</div>
+  <section class="pane" id="pane-ladder">
+    <div class="ph">depth ladder <span class="sub" id="ladmeta"></span><span class="r dimc" id="ladframe">slug frame · first team's YES</span></div>
+    <div id="ladder"><div class="empty">pick a game</div></div>
+    <div class="ph">violations <span class="sub">fee-netted, the executor's own scan</span></div>
+    <div id="violations"><div class="empty">—</div></div>
+  </section>
 
-  <h2>Live ladder <span class="dimc" id="ladmeta" style="font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
-  <div id="ladder"><div class="empty">pick a game</div></div>
-
-  <h2>Violations now <span class="dimc" style="font-weight:400;text-transform:none;letter-spacing:0">· fee-netted, from the same scan the executor runs</span></h2>
-  <div id="violations"><div class="empty">—</div></div>
-
-  <h2>Tickets <span class="dimc" style="font-weight:400;text-transform:none;letter-spacing:0">· every intent the executor wrote, newest first</span></h2>
-  <div id="tickets"><div class="empty">—</div></div>
-
-  <h2>Decision rule <span class="dimc" style="font-weight:400;text-transform:none;letter-spacing:0">· registered, over the first five placed attempts</span></h2>
-  <div class="tally" id="tally"></div>
-  <div class="note" id="verdict">—</div>
-
-  <h2>Executor</h2>
-  <div id="tail-executor"><div class="empty">—</div></div>
-  <h2>Freshness</h2>
-  <div id="tail-freshness"><div class="empty">—</div></div>
-</div>
+  <section class="pane" id="pane-ticket">
+    <div id="tickets">
+      <div class="ph">tickets <span class="sub" id="tknote"></span></div>
+      <div id="tklist"><div class="empty">—</div></div>
+      <div class="ph">ticket</div>
+      <div id="tkdetail"><div class="empty">—</div></div>
+    </div>
+    <div class="ph">decision rule <span class="sub">first five placed attempts</span></div>
+    <table class="tally" id="tally"></table>
+    <div class="verdict" id="verdict">—</div>
+  </section>
+</main>
 
 <footer id="foot">connecting…</footer>
 
@@ -244,8 +349,9 @@ let LEAGUE_NAMES = {};
 let STATE = null;
 let LADDER = null;
 let GAME = "";                       // the aec- prefix the ladder is polled for
-//: Every ticket by id, for the modal.
+//: Every ticket by id, for the modal; SEL is the one shown in full.
 const TICKETS = {};
+let SEL = null;
 //: What the modal is about: {kind:"send"|"unwind", t, ...}. Null when closed.
 let PENDING = null;
 
@@ -256,11 +362,19 @@ const agef = sec => sec == null ? "—"
   : sec < 172800 ? Math.round(sec/3600) + "h"
   : Math.round(sec/86400) + "d";
 const num = (v, d=2) => v == null || !isFinite(v) ? "—" : Number(v).toFixed(d);
-const money = v => v == null ? "—" : (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
+const money = v => v == null || !isFinite(v) ? "—" : (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
 const signed = (v, d) => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d);
 const lineTxt = l => l == null ? "—" : (l === 0 ? "winner" : (l > 0 ? "+" : "") + Number(l).toFixed(1));
 const leagueOf = game => String(game || "").replace(/^aec-/, "").split("-")[0];
 const plainGame = game => String(game || "").replace(/^aec-/, "");
+const shortGame = game => plainGame(game).replace(/-\d{4}-\d{2}-\d{2}$/, "").replace(/^[a-z0-9]+-/, "").toUpperCase();
+
+/* The header's height feeds the pane grid so the terminal fills the viewport
+   without a page scroll at desktop width. */
+const HEADER = document.querySelector("header");
+const fitPanes = () => document.documentElement.style.setProperty("--hh", HEADER.offsetHeight + "px");
+new ResizeObserver(fitPanes).observe(HEADER);
+fitPanes();
 
 /* Slug frame -> screen frame, a port of core.ladder.ui.ui_wording. The API
    fills screen_row/screen_button on every ticket and rung already; this is
@@ -280,6 +394,14 @@ function screen(leg, game){
   if(leg.screen_row) return [leg.screen_row, leg.screen_button];
   return wording(game, leg.market_line, leg.side);
 }
+/* A rung's screen words: the api's row/our_yes_is, else the same port. */
+function rungWords(r, game){
+  if(r.row && r.line !== 0) return [r.row, r.our_yes_is];
+  if(r.line === 0) return ["winner", null];
+  return wording(game, r.line, "BUY YES");
+}
+/* "WAKE to win by over 10.5 points" -> "WAKE +10.5", the ladder's small print. */
+const shortRow = row => String(row || "").replace(/^(\S+) to win by over ([\d.]+) points$/, "$1 +$2");
 /* The venue's slug for a line, as the recorder lists it: the winner is the
    aec- event slug, a spread is asc-<game>-(neg|pos)-<N>pt<tenths>. The server
    rebuilds the same slug from its own listing and refuses a mismatch. */
@@ -296,9 +418,9 @@ async function loadHeader(){
     const d = await (await fetch("/api/status")).json();
     $("#s-health").innerHTML =
       `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
-    $("#s-pregame").textContent = agef(d.pregame_age_seconds);
-    $("#s-pregame").className = "v " + (d.healthy ? "pos" : "neg");
-    $("#s-live").textContent = agef(d.live_age_seconds);
+    $("#s-pregame").textContent = "pre " + agef(d.pregame_age_seconds);
+    $("#s-pregame").className = "age " + (d.healthy ? "" : "accc");
+    $("#s-live").textContent = "live " + agef(d.live_age_seconds);
     const br = d.bankroll;
     $("#s-bankroll").textContent =
       br && br.bankroll != null ? "$" + br.bankroll.toFixed(2) : "?";
@@ -353,7 +475,7 @@ function selectLeague(slug, remember){
   LEAGUE = slug;
   if(remember) localStorage.setItem(LG_KEY, LEAGUE);
   paintTabs();
-  renderGames(); renderTickets();
+  renderGames(); renderBudget(); renderTickets();
 }
 let FOLLOWED = false;
 function followDesk(){
@@ -373,58 +495,85 @@ async function loadState(){
   }
   followDesk();
   renderState();
-  $("#foot").textContent = "the desk's files are read fresh on every poll; the ladder is the api's own 10s sampler; "
-    + "every POST needs the order token; SEND is two clicks and IOC on both legs";
+  $("#foot").textContent = "desk files read fresh every 10s · ladder from the api's own sampler every 5s · "
+    + "every POST carries the order token · SEND is two clicks, IOC both legs · words: /instructions";
 }
 loadState();
 setInterval(loadState, 10000);
+
+const kv = (k, v, title) => `<span class="k" title="${esc(title||"")}">${k}</span><span class="v" title="${esc(title||"")}">${v}</span>`;
 
 function renderState(){
   const s = STATE;
   if(!s) return;
   if(s.available === false){
-    $("#meta").innerHTML = `<span class="warnc">${esc(s.note || "desk unavailable")}</span>`;
+    $("#meta").innerHTML = kv("state", `<span class="warnc">${esc(s.note || "desk unavailable")}</span>`);
+    $("#filters").innerHTML = "";
     $("#lockchip").className = "chip unknown"; $("#lockchip").textContent = "NO DESK";
-    $("#s-desk").textContent = "—";
     $("#lockBtn").disabled = $("#armBtn").disabled = true;
-    ["#tickets", "#violations", "#tail-executor", "#tail-freshness"].forEach(id =>
+    $("#s-budget").textContent = "—";
+    ["#tklist", "#tkdetail", "#violations", "#tail-executor", "#tail-freshness"].forEach(id =>
       $(id).innerHTML = `<div class="empty">${esc(s.note || "unavailable")}</div>`);
+    $("#s-exec").textContent = $("#s-stream").textContent = "—";
+    $("#s-exec-age").textContent = $("#s-stream-age").textContent = "";
     return;
   }
   const armed = s.armed === true;
   $("#lockchip").className = "chip " + (armed ? "armed" : "locked");
   $("#lockchip").textContent = armed ? "ARMED" : "LOCKED";
-  $("#s-desk").innerHTML = `<span class="${armed?"pos":"neg"}">${armed?"ARMED":"LOCKED"}</span>`;
   $("#lockBtn").disabled = !armed; $("#armBtn").disabled = armed;
   const f = s.filters || {};
-  $("#filters").textContent = `ticket filters: floor $${num(f.floor_usd, 0)} · spread-only`
-    + ` · mid-ladder first (${(f.mid_ladder||[]).map(x=>"+"+x).join("…")}) · pair cap $${num(s.max_pair_usd, 0)}`
-    + (s.allow_size_up ? " · size-up allowed" : " · size ≤ ticket");
-  $("#meta").innerHTML = `<b>${esc(s.dir)}</b> · budget $${num(s.budget_usd, 0)}/game`
-    + ` · sampler every ${num(s.sample_seconds, 0)}s · watching ${(s.watching||[]).length}`
-    + ` · ${(s.tickets||[]).length} tickets on file`;
+  $("#filters").innerHTML =
+      kv("floor", `$${num(f.floor_usd, 0)}`, "a ticket needs edge × displayed size over this")
+    + kv("pairs", "spread-only", "a winner-market leg is never ticketed")
+    + kv("mid", `${(f.mid_ladder||[]).map(x=>"+"+x).join("…")} first`, "mid-ladder pairs are issued first")
+    + kv("attempt", `$${num(f.attempt_usd, 0)}`, "the executor's size per ticket")
+    + kv("pair cap", `$${num(s.max_pair_usd, 0)}`, "MERIDIAN_ARB_MAX_PAIR_USD; the account balance caps it lower")
+    + kv("size", s.allow_size_up ? "up to displayed" : "≤ ticket", "MERIDIAN_ARB_ALLOW_SIZE_UP");
+  $("#meta").innerHTML =
+      kv("dir", `<b>${esc(s.dir)}</b>`, s.dir)
+    + kv("budget", `$${num(s.budget_usd, 0)} / game`, "LADDER_BUDGET_USD")
+    + kv("sampler", `every ${num(s.sample_seconds, 0)}s`, "MERIDIAN_ARB_SAMPLE_SECONDS")
+    + kv("watching", `${(s.watching||[]).length}`, (s.watching||[]).join(", ") || "no game is being sampled")
+    + kv("tickets", `${(s.tickets||[]).length} on file`, "every intent the executor wrote, any league");
   renderGames();
+  renderBudget();
   renderTickets();
   renderTally();
   renderTails();
 }
 
+/* Budget for the picked game, the executor's own arithmetic (spent_so_far:
+   every intent's cost_usd in the game's file, whatever its status). */
+function renderBudget(){
+  const s = STATE;
+  if(!s || !GAME){ $("#s-budget").textContent = s ? `— / $${num(s.budget_usd, 2)}` : "—"; return; }
+  const used = (s.tickets || []).filter(t => plainGame(t.game) === plainGame(GAME))
+                                .reduce((a, t) => a + Number(t.cost_usd || 0), 0);
+  const cap = Number(s.budget_usd || 0);
+  $("#s-budget").innerHTML = `<span class="${used >= cap ? "accc" : ""}">${money(used)}</span> <span class="dimc">/ ${money(cap)}</span>`;
+}
+
 function renderGames(){
-  const sel = $("#game");
+  const el = $("#game");
   const all = (STATE && STATE.games) || [];
   const mine = all.filter(g => leagueOf(g) === LEAGUE);
-  const cur = sel.value;
-  sel.innerHTML = `<option value="">— pick a game —</option>` + mine.map(g =>
-    `<option value="${esc(g)}">${esc(plainGame(g))}</option>`).join("");
-  if(mine.includes(cur)) sel.value = cur;
-  else if(mine.length && !cur) { sel.value = mine[0]; }
+  if(!mine.includes(GAME)) GAME = mine.length ? mine[0] : "";
+  el.innerHTML = mine.length ? mine.map(g => {
+    const n = (STATE.tickets || []).filter(t => plainGame(t.game) === plainGame(g)).length;
+    return `<button class="grow ${g === GAME ? "on" : ""}" data-game="${esc(g)}" title="${esc(plainGame(g))}">
+      <span>${esc(shortGame(g))} <span class="n">${esc(plainGame(g).slice(-10))}</span></span>
+      <span class="n">${n ? n + " tkt" : ""}</span></button>`; }).join("")
+    : `<div class="empty">no game in this league in the last 6h</div>`;
   const hidden = all.length - mine.length;
-  $("#gamenote").textContent = `${mine.length} game${mine.length===1?"":"s"} in the last 6h`
-    + (hidden ? ` (${hidden} in other leagues)` : "");
-  if(sel.value !== GAME){ GAME = sel.value; LADDER = null; renderLadder(); loadLadder(); }
+  $("#gamenote").textContent = `${mine.length} in 6h` + (hidden ? ` · ${hidden} other leagues` : "");
+  if(el.dataset.game !== GAME){ el.dataset.game = GAME; LADDER = null; renderLadder(); loadLadder(); }
 }
-$("#game").addEventListener("change", () => {
-  GAME = $("#game").value; LADDER = null; renderLadder(); loadLadder();
+$("#game").addEventListener("click", e => {
+  const b = e.target.closest("button[data-game]");
+  if(!b || b.dataset.game === GAME) return;
+  GAME = b.dataset.game;
+  renderGames(); renderBudget();          // renderGames reloads the ladder on a change
 });
 
 /* ── LADDER: the api's cache for the picked game, every 5s. The handler
@@ -444,79 +593,106 @@ async function loadLadder(){
 }
 setInterval(loadLadder, 5000);
 
-function flagCell(r){
-  if(!r.flags || !r.flags.length) return "";
-  return `<span class="neg" title="${esc(r.flags.join("; "))}">${r.flags.length === 1 ? "✗" : "✗✗"}</span>`;
+/* Size bars. Presentation only: the largest displayed size on the ladder
+   sets 100 % and every bar is log-scaled against it (log10(1 + size)), so a
+   966-lot and a 20-lot are both visible on one row. Nothing here is a bound
+   or a flag; those are the server's and renderLadder only reads them. */
+function barMax(rungs){
+  let m = 0;
+  for(const r of rungs){ for(const v of [r.bid_sz, r.ask_sz]) if(v != null && v > m) m = v; }
+  return m;
 }
+function barPct(sz, max){
+  if(!(sz > 0) || !(max > 0)) return 0;
+  return 100 * Math.log10(1 + sz) / Math.log10(1 + max);
+}
+const flagShort = f => /^ask/.test(f) ? "ASK<LO" : /^bid/.test(f) ? "BID>HI" : "FLAG";
 
 function renderLadder(){
   const el = $("#ladder"), vel = $("#violations");
+  $("#s-sample").textContent = "—";
   if(!GAME){ el.innerHTML = `<div class="empty">pick a game</div>`; vel.innerHTML = `<div class="empty">—</div>`;
              $("#ladmeta").textContent = ""; return; }
   if(!LADDER){ el.innerHTML = `<div class="empty">asking…</div>`; return; }
   if(LADDER.available === false){
-    $("#ladmeta").textContent = "";
+    $("#ladmeta").textContent = esc(plainGame(GAME));
     el.innerHTML = `<div class="empty">${esc(LADDER.reason || "unavailable")}</div>`;
     vel.innerHTML = `<div class="empty">—</div>`;
     return;
   }
   const L = LADDER;
-  $("#ladmeta").textContent = `· ${plainGame(L.game)} · sampled ${agef(L.age_s)} ago in ${num(L.took_s,1)}s`
-    + ` · ${L.n_rungs} rungs · every ${num(L.sample_seconds,0)}s`;
+  $("#ladmeta").textContent = `${plainGame(L.game)} · ${L.n_rungs} rungs · every ${num(L.sample_seconds,0)}s`;
+  $("#s-sample").textContent = `${num(L.took_s,1)}s · ${agef(L.age_s)} ago`;
   const rungs = Object.values(L.rungs || {}).sort((a,b) => a.line - b.line);
-  el.innerHTML = `<div class="tbl"><table><thead><tr>
-    <th class="l">line</th><th class="l" title="The row as the venue's screen shows it, and that row's Yes bid / ask. On a pos rung the row is the second team's and our YES is its No, so the screen pair is 1 − ask / 1 − bid.">screen row · its Yes bid / ask</th>
-    <th title="slug frame: the first team's YES at this line, as the executor reads it">YES bid</th><th>size</th><th title="slug frame: the first team's YES at this line">YES ask</th><th>size</th><th title="seconds since the book's last update stamp">age</th>
-    <th title="max bid over harder rungs: this rung's ask must not sit below it">lo</th>
-    <th title="min ask over easier rungs: this rung's bid must not sit above it">hi</th><th>flag</th>
-    </tr></thead><tbody>${rungs.map(r => `<tr class="${r.flags && r.flags.length ? "flag" : (r.line === 0 ? "dim" : "")}">
-      <td class="l">${lineTxt(r.line)}</td><td class="l">${esc(r.row || "—")}${r.screen_bid != null ? ` <span class="dimc">Yes ${num(r.screen_bid)} / ${num(r.screen_ask)}${r.our_yes_is ? ` · our YES = ${esc(r.our_yes_is)}` : ""}</span>` : ""}</td>
-      <td>${num(r.bid)}</td><td class="dimc">${num(r.bid_sz, 0)}</td>
-      <td>${num(r.ask)}</td><td class="dimc">${num(r.ask_sz, 0)}</td>
-      <td class="${r.age_s != null && r.age_s > 120 ? "warnc" : ""}">${agef(r.age_s)}</td>
-      <td class="dimc">${num(r.lo)}</td><td class="dimc">${num(r.hi)}</td><td>${flagCell(r)}</td></tr>`).join("")}
-  </tbody></table></div>
-  <div class="note">YES bid/ask are the slug frame (first team + line), the frame the executor reads and the tickets price in; the
-    screen pair beside each row is what the venue's own row shows (its Yes), which on a pos rung is our NO. Bounds from the settled ordering (STATUS 0bk): covering a higher line is easier, so a rung's
-    price sits at or above every harder rung's bid and at or below every easier rung's ask. A flag is the gross
-    term; the fee-netted pairs are below.</div>`;
-
+  const max = barMax(rungs);
+  /* The pair the executor would ticket: the first violation is the sort's
+     candidate-first, mid-first, biggest choice — the executor's own order. */
   const vs = L.violations || [];
+  const tkt = vs.length && vs[0].candidate ? vs[0] : null;
+  const tagOf = line => !tkt ? "" : line === tkt.high_line ? `<span class="tag">L1</span>`
+                        : line === tkt.low_line ? `<span class="tag">L2</span>` : "";
+  el.innerHTML = `<div class="dom">
+    <div class="hd rt" title="displayed size at the YES bid">bid sz</div>
+    <div class="hd rt" title="slug frame: the first team's YES bid at this line, as the executor reads it">bid</div>
+    <div class="hd ct" title="the line; below it, the venue's row and its own Yes bid / ask (on a pos rung our YES is that row's No)">line</div>
+    <div class="hd" title="slug frame: the first team's YES ask at this line">ask</div>
+    <div class="hd" title="displayed size at the YES ask">ask sz</div>
+    <div class="hd rt" title="seconds since the book's last update stamp">age</div>
+    <div class="hd rt" title="lo = max bid over harder rungs (this ask must not sit below it); hi = min ask over easier rungs (this bid must not sit above it)">lo – hi</div>
+    ${rungs.map(r => {
+      const flags = r.flags || [];
+      const viol = flags.length > 0;
+      const askLit = flags.some(f => /^ask/.test(f)), bidLit = flags.some(f => /^bid/.test(f));
+      const inTkt = tkt && (r.line === tkt.high_line || r.line === tkt.low_line);
+      const cls = (r.line === 0 ? " dim" : "") + (viol ? " viol" : "") + (inTkt ? " tkp" : "");
+      const [row, yesIs] = rungWords(r, L.game);
+      const small = r.line === 0 ? "winner market"
+        : `${esc(shortRow(row))}${r.screen_bid != null ? ` · Yes ${num(r.screen_bid)}/${num(r.screen_ask)}` : ""}${r.our_yes_is || yesIs ? ` · YES=${esc(r.our_yes_is || yesIs)}` : ""}`;
+      const old = r.age_s != null && r.age_s > 120;
+      return `<div class="bs rt${cls}"><i class="bar" style="width:${barPct(r.bid_sz, max).toFixed(1)}%"></i><span class="num">${num(r.bid_sz, 0)}</span></div>
+      <div class="rt${cls}"><span class="px ${bidLit ? "lit" : ""}" title="${esc(flags.join("; "))}">${num(r.bid)}</span></div>
+      <div class="ct${cls}"><b title="${esc(row || "")}">${lineTxt(r.line)}${tagOf(r.line)}${viol ? `<span class="tag" title="${esc(flags.join("; "))}">${flags.map(flagShort).join(" ")}</span>` : ""}</b><small title="${esc(row || "")}${r.screen_bid != null ? " — the row's own Yes bid / ask" : ""}">${small}</small></div>
+      <div class="${cls}"><span class="px ${askLit ? "lit" : ""}" title="${esc(flags.join("; "))}">${num(r.ask)}</span></div>
+      <div class="as${cls}"><i class="bar" style="width:${barPct(r.ask_sz, max).toFixed(1)}%"></i><span class="num">${num(r.ask_sz, 0)}</span></div>
+      <div class="rt${cls} ${old ? "old" : ""}">${agef(r.age_s)}</div>
+      <div class="rt bd${cls}">${num(r.lo)} – ${num(r.hi)}</div>`; }).join("")}
+  </div>`;
+
   if(!vs.length){ vel.innerHTML = `<div class="empty">no fee-netted violation in this sample</div>`; return; }
-  vel.innerHTML = `<div class="tbl"><table><thead><tr>
-    <th class="l">pair</th><th>buy YES @</th><th>sell YES @</th><th>edge ¢</th><th>size</th><th>$ at size</th>
-    <th class="l">ticket the executor would write</th><th class="l">filters</th></tr></thead><tbody>
+  const floor = (L.filters||{}).floor_usd, attempt = (L.filters||{}).attempt_usd;
+  vel.innerHTML = `<table class="vt"><thead><tr>
+    <th class="l">pair</th><th>buy YES</th><th>sell YES</th><th>edge ¢</th><th>size</th><th>$ at size</th>
+    <th class="l" title="the ticket the executor would write, sized at its $${num(attempt,0)} attempt so this preview and the intents file agree">ticket</th><th class="l">rule</th></tr></thead><tbody>
     ${vs.map(v => { const t = v.ticket || {}; const l1 = t.leg1 || {}, l2 = t.leg2 || {};
-      const why = [v.spread_pair ? "" : "winner leg", v.dollars < (L.filters||{}).floor_usd ? `under $${num((L.filters||{}).floor_usd,0)}` : "",
+      const why = [v.spread_pair ? "" : "winner leg", v.dollars < floor ? `under $${num(floor,0)}` : "",
                    v.mid_ladder ? "" : "off mid-ladder"].filter(Boolean);
-      return `<tr class="${v.candidate ? "" : "dim"}">
+      return `<tr class="${v.candidate ? "cand" : "dim"}">
       <td class="l">${lineTxt(v.high_line)} / ${lineTxt(v.low_line)}</td>
-      <td>${num(v.buy_price)}</td><td>${num(v.sell_price)}</td><td class="pos">${signed(v.edge_c, 2)}</td>
+      <td>${num(v.buy_price)}</td><td>${num(v.sell_price)}</td><td class="accc">${signed(v.edge_c, 2)}</td>
       <td>${num(v.size, 0)}</td><td><b>${money(v.dollars)}</b></td>
-      <td class="l">1) ${esc(l1.screen_row || "—")} → <b>${esc(l1.screen_button || "?")}</b> ${num(l1.price)} × ${l1.qty ?? "—"}
-        &nbsp; 2) ${esc(l2.screen_row || "—")} → <b>${esc(l2.screen_button || "?")}</b> ${num(l2.price)} × ${l2.qty ?? "—"}</td>
-      <td class="l">${v.candidate ? '<span class="pos">candidate</span>' : `<span class="dimc">${esc(why.join(", ") || "not a candidate")}</span>`}</td></tr>`; }).join("")}
-  </tbody></table></div>
-  <div class="note">a ticket needs a spread-vs-spread pair clearing the $${num((L.filters||{}).floor_usd,0)} floor at
-    displayed size; mid-ladder pairs are issued first. Sized at the executor's $${num((L.filters||{}).attempt_usd,0)}
-    attempt so this preview and the intents file agree.</div>`;
+      <td class="l w">1 ${esc(l1.screen_row || "—")} <b>${esc(l1.screen_button || "?")}</b> ${num(l1.price)} × ${l1.qty ?? "—"}<br>2 ${esc(l2.screen_row || "—")} <b>${esc(l2.screen_button || "?")}</b> ${num(l2.price)} × ${l2.qty ?? "—"}</td>
+      <td class="l">${v.candidate ? '<span class="accc">candidate</span>' : `<span class="dimc">${esc(why.join(", ") || "not a candidate")}</span>`}</td></tr>`; }).join("")}
+  </tbody></table>`;
 }
 
 /* ── TICKETS ── */
 function legLine(n, leg, game, first){
+  /* leg.book_age_s is supplied by ticketCard from the ticket's ROOT
+     leg{n}_book_age_s (where cfb/run_ladder_executor.py stamps it); the
+     intent's own leg objects carry no age. */
   const [row, btn] = screen(leg, game);
   /* The ticket's price is a COST (what a contract of the bought side costs).
      The venue's price.value is always the YES side, so a BUY NO leg goes
-     over as 1 − cost; both are printed so the card and the ladder agree. */
+     over as 1 − cost; both are printed so the ticket and the ladder agree. */
   const yes = String(leg.side || "").toUpperCase().endsWith("YES") ? Number(leg.price) : 1 - Number(leg.price);
-  return `<div class="leg"><span class="n">${n})</span>
-    <span class="row">${esc(row || ("line " + lineTxt(leg.market_line)))} → <span class="btn">${esc(btn || "?")}</span>
-      <span class="dimc">(${esc(leg.side)} ${lineTxt(leg.market_line)})</span>${first ? ' <span class="warnc">← FIRST</span>' : ""}</span>
-    <span class="terms">cost ${num(leg.price, 3)} × ${leg.qty} <span class="dimc">(YES frame ${num(yes, 2)})</span></span></div>`;
+  return `<div class="leg"><span class="n">${n}</span>
+    <span class="row">${esc(row || ("line " + lineTxt(leg.market_line)))} <span class="btn">${esc(btn || "?")}</span>${first ? '<span class="first">FIRST</span>' : ""}</span>
+    <span class="terms">cost ${num(leg.price, 3)} × ${leg.qty}${leg.book_age_s != null ? ` <span class="dimc">· book ${agef(leg.book_age_s)}</span>` : ""}</span>
+    <span class="frame">${esc(leg.side)} ${lineTxt(leg.market_line)} · YES frame ${num(yes, 2)} · ${esc(slugOf(game, leg.market_line))}</span></div>`;
 }
 
 function ticketActions(t){
-  /* The card's buttons open things or write the desk's record. NONE of them
+  /* The ticket's buttons open things or write the desk's record. NONE of them
      sends: the send lives behind the modal's confirm, a second click on a
      different element. */
   const rec = t.record || {};
@@ -528,13 +704,13 @@ function ticketActions(t){
   else if(t.sendable)
     acts.push(`<span class="dimc" title="The desk is LOCKED; arm it to be offered SEND.">SEND (locked)</span>`);
   if(t.status === "open"){
-    acts.push(`<button data-act="placed" data-id="${esc(t.id)}" title="Record that you placed it by hand.">I placed it</button>`);
-    acts.push(`<button data-act="skipped" data-id="${esc(t.id)}">Skipped</button>`);
+    acts.push(`<button data-act="placed" data-id="${esc(t.id)}" title="Record that you placed it by hand.">placed by hand</button>`);
+    acts.push(`<button data-act="skipped" data-id="${esc(t.id)}">skip</button>`);
   } else {
-    acts.push(`<button data-act="reopen" data-id="${esc(t.id)}" title="Put the ticket back to open.">Reopen</button>`);
+    acts.push(`<button data-act="reopen" data-id="${esc(t.id)}" title="Put the ticket back to open.">reopen</button>`);
   }
   if(t.status === "placed" || t.status === "recorded")
-    acts.push(`<button data-act="fills" data-id="${esc(t.id)}" title="Record what the venue filled, per leg.">Fills…</button>`);
+    acts.push(`<button data-act="fills" data-id="${esc(t.id)}" title="Record what the venue filled, per leg.">fills…</button>`);
   /* Only a ticket SENT from this page has rows to sell from; a hand order
      recorded here (via "desk") has nothing the unwind could find. */
   if(rec.via === "send" && ((rec.l1q || 0) > 0 || /pending|unknown/.test(rec.outcome || "")))
@@ -546,13 +722,13 @@ function fillsForm(t){
   const r = t.record || {};
   const cell = (k, v, step) => `<input type="number" step="${step}" min="0" data-f="${k}" value="${v == null ? "" : v}">`;
   return `<div class="fills" id="fills-${cssId(t.id)}">
-    <span>leg 1: filled</span>${cell("l1q", r.l1q, "0.01")}<span class="dimc">contracts</span>
+    <span>leg 1 filled</span>${cell("l1q", r.l1q, "0.01")}<span class="dimc">contracts</span>
     <span>at</span>${cell("l1p", r.l1p, "0.001")}<span class="dimc">cost price</span>
     <span>after</span>${cell("l1s", r.l1s, "0.1")}<span class="dimc">seconds</span>
-    <span>leg 2: filled</span>${cell("l2q", r.l2q, "0.01")}<span class="dimc">contracts (0 = did not fill)</span>
+    <span>leg 2 filled</span>${cell("l2q", r.l2q, "0.01")}<span class="dimc">contracts (0 = did not fill)</span>
     <span>at</span>${cell("l2p", r.l2p, "0.001")}<span class="dimc">cost price</span>
     <span>after</span>${cell("l2s", r.l2s, "0.1")}<span class="dimc">seconds</span>
-    <span></span><button data-act="record" data-id="${esc(t.id)}">Record fills</button><span></span>
+    <span></span><button data-act="record" data-id="${esc(t.id)}">record fills</button><span></span>
   </div>`;
 }
 const cssId = s => String(s).replace(/[^a-z0-9]/gi, "_");
@@ -560,24 +736,32 @@ const cssId = s => String(s).replace(/[^a-z0-9]/gi, "_");
 function ticketCard(t){
   const rec = t.record || {};
   const via = rec.via === "send" ? " · sent from this page" : "";
+  /* Per pair at settlement, both legs filled: $1.00 per contract whatever
+     the score. cost is the ticket's; pays is qty × 1.00; net is qty × the
+     ticket's own fee-netted edge. Nothing here is re-derived from the book. */
+  const q0 = Math.min(Number((t.leg1||{}).qty), Number((t.leg2||{}).qty));
+  const q = isFinite(q0) ? q0 : null;
   const recLine = t.status === "recorded"
-    ? `<div class="sum"><span>recorded: leg 1 <b>${num(rec.l1q, 2)}</b> @ ${num(rec.l1p, 3)}</span>
+    ? `<div class="rec"><span>recorded: leg 1 <b>${num(rec.l1q, 2)}</b> @ ${num(rec.l1p, 3)}</span>
        <span>leg 2 <b>${num(rec.l2q, 2)}</b> @ ${num(rec.l2p, 3)}</span>${rec.outcome ? `<span class="${/unfilled|unsent|rejected|pending|unknown/.test(rec.outcome)?"neg":"pos"}">${esc(rec.outcome)}</span>` : ""}
        ${(rec.venue_order_ids||[]).filter(Boolean).length ? `<span class="dimc">venue ${esc((rec.venue_order_ids||[]).filter(Boolean).join(", "))}</span>` : ""}</div>`
     : (t.status === "placed" && rec.via === "send"
-        ? `<div class="sum"><span class="warnc">${esc(rec.outcome || "sent; fill not observed")}</span>
-           <span class="dimc">not a fill observation — check the rows, then Fills… to record by hand</span>
+        ? `<div class="rec"><span class="warnc">${esc(rec.outcome || "sent; fill not observed")}</span>
+           <span class="dimc">not a fill observation — check the rows, then fills… to record by hand</span>
            ${rec.error ? `<span class="dimc">${esc(String(rec.error)).slice(0,160)}</span>` : ""}</div>`
         : "");
-  return `<div class="tk ${t.status === "open" ? "" : "done"}" id="tk-${cssId(t.id)}">
+  return `<div class="tk" id="tk-${cssId(t.id)}">
     <div class="hd"><span class="game">${esc(plainGame(t.game))} <span class="dimc">${esc(t.ts)}Z</span></span>
       <span class="st ${esc(t.status)}">${esc(t.status)}${via}</span></div>
-    ${legLine(1, t.leg1, t.game, true)}${legLine(2, t.leg2, t.game, false)}
-    <div class="sum"><span>edge <b class="pos">${signed(t.edge_c, 2)}¢</b></span>
-      <span>pair cost <b>${money(t.cost_usd)}</b></span>
-      <span>displayed size <b>${num(t.displayed_size, 0)}</b></span>
-      ${t.leg1 && t.leg1.book_age_s != null ? `<span>book age ${agef(t.leg1.book_age_s)} / ${agef((t.leg2||{}).book_age_s)}</span>` : ""}
-      ${t.spread_pair ? "" : '<span class="neg">winner leg — not sendable</span>'}</div>
+    ${legLine(1, {...(t.leg1 || {}), book_age_s: t.leg1_book_age_s}, t.game, true)}${legLine(2, {...(t.leg2 || {}), book_age_s: t.leg2_book_age_s}, t.game, false)}
+    <div class="sum">
+      <div title="the ticket's pair cost: qty × (cost 1 + cost 2)"><span class="k">cost</span><span class="v">${money(t.cost_usd)}</span></div>
+      <div title="both legs filled: $1.00 per pair at settlement whatever the score"><span class="k">pays</span><span class="v">${money(q == null ? null : q * 1)}</span></div>
+      <div title="qty × the ticket's fee-netted edge, as ticketed"><span class="k">net</span><span class="v accc">${money(q == null ? null : q * Number(t.edge_c || 0) / 100)} <small>${signed(t.edge_c, 2)}¢</small></span></div>
+      <div title="displayed size on the thinner side when ticketed"><span class="k">size</span><span class="v">${num(t.displayed_size, 0)}</span></div>
+      <div title="seconds since each rung's book stamp when ticketed (leg1_book_age_s / leg2_book_age_s on the intent; — when the intent carries none)"><span class="k">book age</span><span class="v">${t.leg1_book_age_s != null || t.leg2_book_age_s != null ? `${t.leg1_book_age_s != null ? agef(t.leg1_book_age_s) : "—"} / ${t.leg2_book_age_s != null ? agef(t.leg2_book_age_s) : "—"}` : "—"}</span></div>
+      <div><span class="k">pair</span><span class="v ${t.spread_pair ? "" : "neg"}">${t.spread_pair ? "spread / spread" : "winner leg"}</span></div>
+    </div>
     ${recLine}
     <div class="acts">${ticketActions(t)}</div>
     ${fillsForm(t)}
@@ -585,21 +769,38 @@ function ticketCard(t){
   </div>`;
 }
 
+function ticketRow(t){
+  return `<button class="tkr ${t.id === SEL ? "on" : ""} ${t.status === "open" ? "" : "done"}" data-sel="${esc(t.id)}" title="${esc(plainGame(t.game))} · ${esc(t.id)}">
+    <span>${esc(t.ts)}</span>
+    <span>${esc(shortGame(t.game))} ${lineTxt((t.leg1||{}).market_line)}/${lineTxt((t.leg2||{}).market_line)}</span>
+    <span class="r accc">${signed(t.edge_c, 2)}¢</span>
+    <span class="r">${money(t.cost_usd)}</span>
+    <span class="r"><span class="st ${esc(t.status)}">${esc(t.status)}</span></span></button>`;
+}
+
 function renderTickets(){
-  const el = $("#tickets");
   const all = (STATE && STATE.tickets) || [];
   all.forEach(t => { TICKETS[t.id] = t; });
   const mine = all.filter(t => leagueOf(t.game) === LEAGUE);
   const hidden = all.length - mine.length;
-  const scope = `<div class="note">showing ${esc(LEAGUE_NAMES[LEAGUE] || LEAGUE.toUpperCase())}: ${mine.length} of ${all.length}
-    tickets — one desk across every league; the tab filters it${hidden ? ` (${hidden} hidden)` : ""}.</div>`;
-  if(!mine.length){ el.innerHTML = scope + `<div class="empty">no ticket for this league</div>`; return; }
-  const open = new Set([...el.querySelectorAll(".fills.on")].map(x => x.id));
-  el.innerHTML = scope + `<div class="tickets">${mine.map(ticketCard).join("")}</div>`;
+  $("#tknote").textContent = `${mine.length} of ${all.length}` + (hidden ? ` · ${hidden} other leagues` : "");
+  const list = $("#tklist"), det = $("#tkdetail");
+  if(!mine.length){ list.innerHTML = `<div class="empty">no ticket for this league</div>`; det.innerHTML = `<div class="empty">—</div>`; SEL = null; return; }
+  /* The selection follows the operator; failing one, the newest sendable
+     ticket, then the newest. */
+  if(!mine.some(t => t.id === SEL)) SEL = (mine.find(t => t.sendable) || mine[0]).id;
+  list.innerHTML = mine.map(ticketRow).join("");
+  const open = new Set([...det.querySelectorAll(".fills.on")].map(x => x.id));
+  const keep = {};
+  det.querySelectorAll(".res").forEach(x => { if(x.innerHTML) keep[x.id] = x.innerHTML; });
+  det.innerHTML = ticketCard(TICKETS[SEL]);
   open.forEach(id => { const x = document.getElementById(id); if(x) x.classList.add("on"); });
+  Object.entries(keep).forEach(([id, html]) => { const x = document.getElementById(id); if(x) x.innerHTML = html; });
 }
 
 $("#tickets").addEventListener("click", async e => {
+  const sel = e.target.closest("button[data-sel]");
+  if(sel){ SEL = sel.dataset.sel; renderTickets(); return; }
   const b = e.target.closest("button[data-act]");
   if(!b) return;
   const t = TICKETS[b.dataset.id];
@@ -637,7 +838,7 @@ $("#lockBtn").addEventListener("click", () => lockArm("lock"));
 $("#armBtn").addEventListener("click", () => lockArm("arm"));
 async function lockArm(which){
   const r = await post("/api/arb/" + which);
-  if(!r.ok) $("#meta").innerHTML = `<span class="bad">${which.toUpperCase()} refused</span> · HTTP ${r.status} <span class="dimc">${detail(r.d)}</span>`;
+  if(!r.ok) $("#meta").innerHTML = kv("state", `<span class="bad">${which.toUpperCase()} refused</span> · HTTP ${r.status} <span class="dimc">${detail(r.d)}</span>`);
   loadState();
 }
 
@@ -688,7 +889,7 @@ function openSend(t){
        server refuses it too; this only stops the click. */
     const fees = 0.06 * p1 * (1 - p1) + 0.06 * p2 * (1 - p2);
     $("#pairc").innerHTML = `${pc.toFixed(2)} <span class="dimc">= ${p1.toFixed(2)} + ${p2.toFixed(2)}; fees ≈ ${fees.toFixed(4)}</span>`;
-    $("#guar").innerHTML = `<b class="${pc + fees < 1 ? "pos" : "neg"}">${money(qty * (1 - pc))}</b> <span class="dimc">= ${qty} × (1 − ${pc.toFixed(2)}), before fees; edge as ticketed ${signed(t.edge_c, 2)}¢</span>`;
+    $("#guar").innerHTML = `<b class="${pc + fees < 1 ? "" : "neg"}">${money(qty * (1 - pc))}</b> <span class="dimc">= ${qty} × (1 − ${pc.toFixed(2)}), before fees; edge as ticketed ${signed(t.edge_c, 2)}¢</span>`;
     if(pc + fees >= 1) return bad(`pair cost ${pc.toFixed(2)} + fees ${fees.toFixed(4)} is not under $1.00 — a locked loss, the server will refuse`);
     const stake = qty * pc;
     const pairCap = STATE ? Number(STATE.max_pair_usd) : 25;
@@ -721,15 +922,22 @@ function legResult(l){
     + (l.error ? `<br><span class="dimc">${esc(l.error).slice(0,300)}</span>` : "");
 }
 
+/* The venue's reply, in the modal and inline on the ticket panel. */
+function showResult(t, html){
+  const out = $("#tresult");
+  out.style.display = "block";
+  out.innerHTML = html;
+  const inline = $("#res-" + cssId(t.id));
+  if(inline) inline.innerHTML = html;
+}
+
 async function sendPair(){
   if(!PENDING || PENDING.kind !== "send") return;
   const t = PENDING.t;
   const btn = $("#confirmBtn");
   btn.disabled = true;                      // no double-send from a double-click
   btn.textContent = "Sending…";
-  const out = $("#tresult");
-  out.style.display = "block";
-  out.innerHTML = '<span class="dimc">submitting leg 1, then leg 2 for what fills…</span>';
+  showResult(t, '<span class="dimc">submitting leg 1, then leg 2 for what fills…</span>');
   const qty = parseFloat($("#qty").value);
   try{
     const r = await post("/api/arb/send", {
@@ -746,16 +954,16 @@ async function sendPair(){
     const d = r.d;
     if(r.ok && d.legs){
       const lost = /unfilled|unsent|rejected|pending|unknown/.test(d.outcome || "");
-      out.innerHTML = `<span class="${lost ? "bad" : "ok"}">${esc(d.outcome).toUpperCase()}</span><br>`
+      showResult(t, `<span class="${lost ? "bad" : "ok"}">${esc(d.outcome).toUpperCase()}</span><br>`
         + `leg 1: ${legResult(d.legs[0])}<br>leg 2: ${legResult(d.legs[1])}<br>`
         + `<span class="dimc">cost filled ${money(d.pair.cost_usd_filled)} · guaranteed ${money(d.pair.guaranteed_usd)}</span><br>`
-        + `<span class="${lost ? "warnc" : "dimc"}">${esc(d.pair.note || "")}</span>`;
+        + `<span class="${lost ? "warnc" : "dimc"}">${esc(d.pair.note || "")}</span>`);
       loadHeader();
     } else {
-      out.innerHTML = `<span class="bad">REFUSED</span> · HTTP ${r.status}<br><span class="dimc">${detail(d)}</span>`;
+      showResult(t, `<span class="bad">REFUSED</span> · HTTP ${r.status}<br><span class="dimc">${detail(d)}</span>`);
     }
   } catch(e){
-    out.innerHTML = `<span class="bad">ERROR</span> <span class="dimc">${esc(e)}</span>`;
+    showResult(t, `<span class="bad">ERROR</span> <span class="dimc">${esc(e)}</span>`);
   }
   btn.textContent = "Close";
   btn.disabled = false;
@@ -799,9 +1007,7 @@ async function sendUnwind(){
   const btn = $("#confirmBtn");
   btn.disabled = true;
   btn.textContent = "Sending…";
-  const out = $("#tresult");
-  out.style.display = "block";
-  out.innerHTML = '<span class="dimc">submitting…</span>';
+  showResult(t, '<span class="dimc">submitting…</span>');
   const legv = $("#uleg").value;
   const px = $("#upx").value.trim();
   const body = {ticket_id: t.id, mode: "HUMAN_CONFIRM", leg: legv === "both" ? "both" : parseInt(legv, 10),
@@ -811,14 +1017,14 @@ async function sendUnwind(){
     const r = await post("/api/arb/unwind", body);
     const d = r.d;
     if(r.ok && d.legs){
-      out.innerHTML = (d.legs.length ? d.legs.map(l => `leg ${l.leg}: ${legResult(l)}`).join("<br>")
-                                     : '<span class="dimc">nothing to sell</span>');
+      showResult(t, d.legs.length ? d.legs.map(l => `unwind leg ${l.leg}: ${legResult(l)}`).join("<br>")
+                                  : '<span class="dimc">nothing to sell</span>');
       loadHeader();
     } else {
-      out.innerHTML = `<span class="bad">REFUSED</span> · HTTP ${r.status}<br><span class="dimc">${detail(d)}</span>`;
+      showResult(t, `<span class="bad">REFUSED</span> · HTTP ${r.status}<br><span class="dimc">${detail(d)}</span>`);
     }
   } catch(e){
-    out.innerHTML = `<span class="bad">ERROR</span> <span class="dimc">${esc(e)}</span>`;
+    showResult(t, `<span class="bad">ERROR</span> <span class="dimc">${esc(e)}</span>`);
   }
   btn.textContent = "Close";
   btn.disabled = false;
@@ -829,21 +1035,57 @@ async function sendUnwind(){
 /* ── TALLY and TAILS: the desk's own numbers, rendered verbatim. ── */
 function renderTally(){
   const ty = (STATE && STATE.tally) || {};
-  const cell = (k, v, title) => `<div class="stat" title="${esc(title||"")}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
-  $("#tally").innerHTML = cell("placed", ty.placed ?? "—", "first five placed or recorded attempts, in placement order")
-    + cell("recorded", ty.recorded ?? "—", "attempts with fills recorded")
-    + cell("both filled", ty.both ?? "—", "both legs ≥ 80% of size")
-    + cell("leg 1 none", ty.none ?? "—", "leg 1 filled nothing")
-    + cell("open", ty.open ?? "—", "tickets not yet placed, skipped or recorded")
-    + cell("issued", money(ty.issued), "sum of ticket cost over every intent on file");
+  const row = (k, v, title) => `<tr title="${esc(title||"")}"><td class="k">${k}</td><td class="v">${v}</td></tr>`;
+  $("#tally").innerHTML = row("placed", ty.placed ?? "—", "first five placed or recorded attempts, in placement order")
+    + row("recorded", ty.recorded ?? "—", "attempts with fills recorded")
+    + row("both filled", ty.both ?? "—", "both legs ≥ 80% of what was sent")
+    + row("leg 1 none", ty.none ?? "—", "leg 1 filled nothing")
+    + row("open", ty.open ?? "—", "tickets not yet placed, skipped or recorded")
+    + row("issued", money(ty.issued), "sum of ticket cost over every intent on file");
   $("#verdict").textContent = ty.verdict || "—";
 }
+
+/* A cycle line is "=== HH:MM:SSZ ...": its age is the clock in it against
+   now (UTC), wrapping at midnight; a line without a clock has no age. */
+function lineAge(line){
+  const m = /^===\s+(\d{2}):(\d{2}):(\d{2})Z/.exec(String(line || ""));
+  if(!m) return null;
+  const n = new Date();
+  const secs = n.getUTCHours()*3600 + n.getUTCMinutes()*60 + n.getUTCSeconds();
+  const then = (+m[1])*3600 + (+m[2])*60 + (+m[3]);
+  let d = secs - then;
+  if(d < -60) d += 86400;
+  return d < 0 ? 0 : d;
+}
 function renderTails(){
-  for(const kind of ["executor", "freshness"]){
+  for(const [kind, chip, ageEl] of [["executor", "#s-exec", "#s-exec-age"], ["freshness", "#s-stream", "#s-stream-age"]]){
     const tails = ((STATE && STATE.tails) || {})[kind] || [];
     const el = $("#tail-" + kind);
-    if(!tails.length){ el.innerHTML = `<div class="empty">no ${kind} log in the last runs</div>`; continue; }
-    el.innerHTML = tails.map(t => `<div class="meta"><b>${esc(t.file)}</b></div><pre class="tail">${esc((t.lines||[]).join("\n") || "(no cycle line yet)")}</pre>`).join("");
+    if(!tails.length){
+      el.innerHTML = `<div class="empty">no ${kind} log in the last runs</div>`;
+      $(chip).textContent = "no log"; $(ageEl).textContent = "";
+      continue;
+    }
+    el.innerHTML = tails.map(t => `<div class="tailbox ${kind === "freshness" ? "blue" : ""}"><div class="f" title="${esc(t.file)}">${esc(t.file)}</div>${
+      (t.lines || []).length ? t.lines.map(l => `<div class="ln" title="${esc(l)}">${esc(l.replace(/^===\s*/, ""))}</div>`).join("")
+                             : `<div class="ln dimc">(no cycle line yet)</div>`}</div>`).join("");
+    /* The chip: the FRESHEST cycle line across the tails, by the clock in
+       the line, not the last file by name (log_files sorts by name, which is
+       date then game: with two games on one date the last file can be a
+       finished game whose stale line would paint the age red while the live
+       game is fine). A tail without a clocked line has no age and loses to
+       any that has one; with none clocked the last file stands. */
+    let last = tails[tails.length - 1], line = "", age = null;
+    for(const t of tails){
+      const l = (t.lines || [])[ (t.lines || []).length - 1 ] || "";
+      const a = lineAge(l);
+      if(a != null && (age == null || a < age)){ last = t; line = l; age = a; }
+    }
+    if(age == null) line = (last.lines || [])[ (last.lines || []).length - 1 ] || "";
+    $(chip).textContent = line ? line.replace(/^===\s*\d{2}:\d{2}:\d{2}Z\s*/, "") : "(no cycle line yet)";
+    $(chip).title = `${last.file} (freshest of ${tails.length} log${tails.length === 1 ? "" : "s"})\n${line}`;
+    $(ageEl).textContent = age == null ? "" : agef(age) + " ago";
+    $(ageEl).className = "age " + (age != null && age > 180 ? "accc" : "");
   }
 }
 

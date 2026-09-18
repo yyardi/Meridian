@@ -243,6 +243,12 @@ services:
       # the model performance page said "run `python -m core.analytics` first"
       # no matter how many times the operator ran it.
       MERIDIAN_DATA_DIR: /data
+      # Pushes outside MERIDIAN_NTFY_SCOPE (EV guard, retention) are appended
+      # here; the path is the ./artifacts/reads mount below so the lines
+      # survive a recreate and `tail` on the host finds them
+      # (docs/ops/notifications.md). Without it core/notify.py's default is
+      # /app/artifacts/reads inside the image.
+      MERIDIAN_NTFY_MUTED_LOG: /opt/meridian/artifacts/reads/ntfy_muted.log
     volumes:
       # reports/ ONLY, not the whole root. The api reads exactly one artifact
       # (analytics.json) and every file it serves otherwise comes from the
@@ -266,9 +272,11 @@ services:
     container_name: meridian-alerter
     # Evaluates core/healthchecks.py — the same set scripts/health.py prints —
     # every 5 minutes and pushes transitions to the phone via ntfy. The 9:00 CT
-    # digest ALWAYS sends, green or not: it is this container's own liveness
-    # proof, so a silent phone always means something (B11, applied to the
-    # alarm itself). Its startup push doubles as the reboot notification.
+    # digest is always ISSUED, green or not: it is this container's own
+    # liveness proof (B11, applied to the alarm itself). Whether it reaches
+    # the phone is MERIDIAN_NTFY_SCOPE's call: the default (tickets only)
+    # writes health pushes to the muted log instead, so a silent phone means
+    # "muted" until the scope includes health — docs/ops/notifications.md.
     restart: unless-stopped
     depends_on:
       postgres:
@@ -282,6 +290,9 @@ services:
       # password. The alerter exits loudly if this is unset.
       MERIDIAN_NTFY_TOPIC: ${MERIDIAN_NTFY_TOPIC:-}
       MERIDIAN_NTFY_SERVER: ${MERIDIAN_NTFY_SERVER:-https://ntfy.sh}
+      # Muted health pushes (the default scope) go to the host-mounted log
+      # below, not the image's /app (which a recreate discards).
+      MERIDIAN_NTFY_MUTED_LOG: /opt/meridian/artifacts/reads/ntfy_muted.log
       # statvfs on a bind-mounted host directory reports the HOST disk —
       # the one that actually fills — not the Docker VM's overlay filesystem.
       MERIDIAN_DISK_PATH: /hostdisk
@@ -289,6 +300,8 @@ services:
       # Any host directory works for the statvfs disk check; the artifact
       # root is the natural one (core/paths.py).
       - ${MERIDIAN_DATA_DIR:-./backups}:/hostdisk:ro
+      # the muted log (MERIDIAN_NTFY_MUTED_LOG above); same mount as the api's
+      - ./artifacts/reads:/opt/meridian/artifacts/reads
     command: ["sh", "-c", "alembic upgrade head && python -m core.alerter"]
 
 volumes:

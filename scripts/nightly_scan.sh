@@ -159,8 +159,20 @@ MSG=$(printf '%s' "$MSG" | cut -c1-480)
 
 TOPIC=$(grep -E '^MERIDIAN_NTFY_TOPIC=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ')
 if [ -n "$TOPIC" ]; then
-  curl -s -m 20 -H "Title: Meridian nightly scan$([ "$RC" -ne 0 ] && echo ' FAILED')" -d "$MSG" "https://ntfy.sh/$TOPIC" >/dev/null 2>&1 \
-    && echo "pushed" >> "$F" || echo "push failed" >> "$F"
+  # Scope switch (docs/ops/notifications.md): default is tickets only.
+  # rc 0 allowed, 1 muted; anything else (2 bad kind, 127 no python3, an
+  # ImportError from a stale checkout) is a broken gate, not a choice.
+  RC_GATE=0; python3 "$(dirname "$0")/ntfy_allowed.py" nightly || RC_GATE=$?
+  if [ "$RC_GATE" -eq 0 ]; then
+    curl -s -m 20 -H "Title: Meridian nightly scan$([ "$RC" -ne 0 ] && echo ' FAILED')" -d "$MSG" "https://ntfy.sh/$TOPIC" >/dev/null 2>&1 \
+      && echo "pushed" >> "$F" || echo "push failed" >> "$F"
+  elif [ "$RC_GATE" -eq 1 ]; then
+    printf '%s\tnightly\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$MSG" | tr '\n' ' ')" \
+      >> /opt/meridian/artifacts/reads/ntfy_muted.log
+    echo "push muted by MERIDIAN_NTFY_SCOPE (kept in ntfy_muted.log)" >> "$F"
+  else
+    echo "ntfy gate failed rc=$RC_GATE; not pushed" >> "$F"
+  fi
 else
   echo "no ntfy topic in .env; not pushed" >> "$F"
 fi

@@ -109,7 +109,11 @@ whose rows the pre-registered venue-gap gate counts):
 
 Any verification failure aborts with nothing deleted **and pushes urgent to
 the phone** — both failure pushes observed live on 2026-08-07 behaved exactly
-so. Every run's receipts appear in the alerter's daily digest, alongside the
+so. Since 2026-09-18 that page reaches the phone only when
+`MERIDIAN_NTFY_SCOPE` includes `retention` (the default, `tickets`, writes it
+to the muted log with a `rolling_alert_muted` warning instead —
+`docs/ops/notifications.md`); approval condition #2 assumes the scope is set.
+Every run's receipts appear in the alerter's daily digest, alongside the
 `Supabase: <MB> · ~MB/day · days-to-cap` line.
 
 The scheduler runs it automatically every ~3 days (`rolling_if_due` — the

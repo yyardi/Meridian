@@ -227,32 +227,62 @@ def test_new_failed_exit_reported_once(failed_exit):
 # ------------------------------------------------------------------ #
 
 
-def test_push_uses_json_publish_and_survives_an_em_dash(monkeypatch):
+def test_push_routes_through_core_notify_and_survives_an_em_dash(monkeypatch):
     """The first real digest title was 'Meridian daily digest — OK'. Sent as an
     HTTP header, the em dash raised on ascii encoding and the digest was lost.
-    JSON bodies are UTF-8; this pins the payload shape and the unicode."""
-    import core.alerter as alerter_mod
+    The POST now lives in core.notify (kind "health"); this pins that the
+    title reaches the wire percent-encoded, the body as UTF-8, priority as
+    ntfy's number, and that the topic is in the URL and nowhere else."""
+    from urllib.parse import parse_qs, urlsplit
+
+    from core import notify
 
     captured = {}
 
     class FakeResp:
-        def raise_for_status(self):
-            pass
+        def read(self):
+            return b""
 
-    def fake_post(url, json=None, timeout=None):
-        captured["url"] = url
-        captured["json"] = json
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["data"] = req.data
         return FakeResp()
 
-    monkeypatch.setattr(alerter_mod.httpx, "post", fake_post)
+    monkeypatch.setattr(notify, "urlopen", fake_urlopen)
+    monkeypatch.setenv("MERIDIAN_NTFY_SCOPE", "tickets,health")
+    monkeypatch.setenv("MERIDIAN_NTFY_TOPIC", "topic-x")
     n = Notifier("topic-x", server="https://ntfy.example")
     assert n.push("Meridian daily digest — OK", "läuft", priority="urgent",
                   tags="newspaper")
-    assert captured["url"] == "https://ntfy.example"
-    assert captured["json"]["topic"] == "topic-x"
-    assert "—" in captured["json"]["title"]
-    assert captured["json"]["priority"] == 5
-    assert captured["json"]["tags"] == ["newspaper"]
+    parts = urlsplit(captured["url"])
+    assert f"{parts.scheme}://{parts.netloc}{parts.path}" == "https://ntfy.example/topic-x"
+    q = parse_qs(parts.query)
+    assert q["title"] == ["Meridian daily digest — OK"]
+    assert q["priority"] == ["5"] and q["tags"] == ["newspaper"]
+    assert captured["data"].decode("utf-8") == "läuft"
+    assert n.pushes_sent == 1 and n.push_failures == 0
+
+
+def test_health_is_muted_to_disk_under_the_default_scope(tmp_path, monkeypatch):
+    """The operator asked for tickets only. A health push under the default
+    scope must not touch the network, must land in the muted log, and must
+    count as handled so the digest is not re-owed every five minutes."""
+    from core import notify
+
+    def no_network(req, timeout=None):
+        raise AssertionError("muted push reached the network")
+
+    monkeypatch.setattr(notify, "urlopen", no_network)
+    monkeypatch.delenv("MERIDIAN_NTFY_SCOPE", raising=False)
+    monkeypatch.setenv("MERIDIAN_NTFY_TOPIC", "topic-x")
+    log_path = tmp_path / "muted.log"
+    monkeypatch.setenv("MERIDIAN_NTFY_MUTED_LOG", str(log_path))
+    n = Notifier("topic-x")
+    assert n.push("Meridian daily digest — OK", "body", priority="urgent") is True
+    assert n.pushes_muted == 1 and n.pushes_sent == 0 and n.push_failures == 0
+    line = log_path.read_text(encoding="utf-8").strip()
+    assert '"kind": "health"' in line and "Meridian daily digest" in line
+    assert "topic-x" not in line, "the topic never reaches the muted log"
 
 
 def test_a_failed_digest_stays_owed():
