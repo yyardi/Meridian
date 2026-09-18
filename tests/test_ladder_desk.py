@@ -79,3 +79,11 @@ def test_desk_has_no_venue_call_and_no_order_path():
     src = pathlib.Path(importlib.import_module("cfb.ladder_desk_app").__file__).read_text(encoding="utf-8")
     for bad in ("PolymarketGatewayClient", "place_order", "create_order", "/orders", "httpx", "MERIDIAN_ORDER_TOKEN", "api.polymarket"):
         assert bad not in src
+
+
+def test_instructions_page_is_one_tap_from_the_desk_and_says_which_leg_first(desk):
+    mod, c, out = desk
+    assert "href='/instructions'" in c.get("/").text
+    page = c.get("/instructions").text
+    assert page.count("Leg 1 first") >= 1 and "within 60 seconds" in page and "cannot both lose" in page
+    assert "BUF to win by over 13.5 points" in page and "tap <b>No</b>" in page
