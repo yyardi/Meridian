@@ -28,7 +28,7 @@ from typing import Literal
 
 import structlog
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
@@ -48,6 +48,8 @@ from core.executor import (
     round_to_tick,
 )
 from core.ladder import desk as _ladder_desk
+from core.ladder import pnl as _ladder_pnl
+from core.ladder import pnl_page as _ladder_pnl_page
 from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for
 from core.ladder.live import book_age_s, line_of, sample, slugs_for
 from core.ladder.scan import best_per_game, fee, scan_ladder
@@ -4220,6 +4222,22 @@ def arb_page() -> FileResponse:
     if not page.is_file():
         raise HTTPException(status_code=404, detail="static/arb.html is not present in this build")
     return FileResponse(page)
+
+
+@app.get("/pnl", response_class=HTMLResponse)
+def arb_pnl_page() -> str:
+    """What the night committed, what a filled pair returns, and what the tape
+    showed that nobody caught.
+
+    Server-rendered rather than another JSON route plus JavaScript: it reads
+    the same files `/api/arb/state` does and every number on it is arithmetic
+    over them, so there is nothing for a client to poll and nothing that can
+    disagree with the ARB tab. It carried the operator's "i wanna see PnL"
+    on the temporary desk; that desk is gone and this is where it lives.
+    """
+    out = _ladder_desk.api_out_dir()
+    stamp = dt.datetime.now(UTC).strftime("%Y-%m-%d %H:%M") + "Z"
+    return _ladder_pnl_page.render(_ladder_pnl.session(out), _ladder_pnl.opportunity(out), out, stamp)
 
 
 @app.get("/quote")
