@@ -239,7 +239,10 @@ def test_full_fill_sends_both_legs_and_the_reply_is_the_rows_record(client, read
     assert rec["venue_order_ids"] == ["v-1", "v-2"] and rec["outcome"] == "both legs filled"
     assert rec["order_ids"] == [rows[1].id, rows[2].id]
     assert desk.load_tickets(str(reads))[0]["status"] == "recorded"
-    assert body["record"]["l1s"] == pytest.approx(0.0875)
+    # Seconds-to-fill is recorded to the MILLISECOND (core/api.py rounds
+    # latency_ms/1000 to 3dp): 87.5 ms lands on 0.087 s, and sub-millisecond
+    # precision on a network round trip would be noise in the register.
+    assert body["record"]["l1s"] == pytest.approx(0.0875, abs=1e-3)
 
 
 def test_partial_leg1_sizes_leg2_to_the_fill(client, reads, desk_ready, monkeypatch):
