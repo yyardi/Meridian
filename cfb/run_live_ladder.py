@@ -46,7 +46,8 @@ def slugs_for(prefix: str) -> list[str]:
             "SELECT DISTINCT market_slug FROM market_snapshots "
             "WHERE captured_at >= now() - interval '2 days' AND market_slug LIKE :p "
             "AND sports_market_type IN ('football_team_full_game_winner','football_team_full_game_spread',"
-            "'baseball_team_full_game_winner','baseball_team_full_game_spread')"),
+            "'baseball_team_full_game_winner','baseball_team_full_game_spread',"
+            "'basketball_team_full_game_winner','basketball_team_full_game_spread')"),
             {"p": f"%{prefix}%"}).all()
     return sorted(r[0] for r in rows)
 
