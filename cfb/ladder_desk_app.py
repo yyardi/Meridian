@@ -190,8 +190,11 @@ def index() -> str:
                 if is_armed else "LOCKED: observe only. The executor keeps sampling; it writes and pushes nothing.")
              + " Takes effect on the executor's next cycle (&le; 20 s).</span>",
              _status_bar(is_armed, t, live),
-             _live_table(live),
-             "<h2>Tickets</h2>"]
+             # Trades first, games second (operator, 2026-09-18: "make it like
+             # the trades we are taking ... having the ladder is nice i guess").
+             # What the desk is FOR is the two clicks on a ticket; the games
+             # table is context for a night with no ticket in it yet.
+             "<h2>Trades</h2>"]
     if not tickets:
         # The condition is the executor's, word for word: two spread rungs over
         # the floor. Naming the mid ladder here would tell the operator on a
@@ -222,6 +225,8 @@ def index() -> str:
         elif st == "skipped":
             parts.append(f"<form class='inline' method='post' action='/ticket' style='margin-top:8px'><input type='hidden' name='id' value='{tid}'><input type='hidden' name='action' value='reopen'><button class='act'>Reopen</button></form>")
         parts.append("</div>")
+    parts.append("<h2>Games</h2>")
+    parts.append(_live_table(live))
     parts.append(f"<h2>Decision rule (registered)</h2><div class='ticket'>recorded {t['recorded']} &middot; both legs &ge; 80 % filled: <b>{t['both']}</b> &middot; leg 1 unfilled: <b>{t['none']}</b> &middot; <b>{html.escape(t['verdict'])}</b>"
                  " <a href='/pnl'>money and the tape &rarr;</a></div>")
     parts.append("<h2>Executor and stream, latest lines</h2>")
