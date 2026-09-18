@@ -34,6 +34,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ladder import scan  # noqa: E402
 from cfb.run_live_ladder import sample, slugs_for  # noqa: E402
+from core.ladder.ui import ui_wording  # noqa: E402
 
 #: Registered in docs/math/ladder-fill-test.md: the money and the minutes are
 #: on the mid-ladder; liquid pairs break for ~30s and pennies.
@@ -80,10 +81,17 @@ def intent_for(v, game: str, when: str, attempt_usd: float) -> dict:
     pair_cost = v.buy_price + no_px               # < 1 whenever E > 0
     qty = max(1, int(attempt_usd // pair_cost))
     qty = min(qty, int(v.size))                   # never more than the smaller displayed side
+    try:                                          # screen words are best-effort; a ticket is never blocked by them
+        row1, btn1 = ui_wording(game, v.high_line, "BUY YES")
+        row2, btn2 = ui_wording(game, v.low_line, "BUY NO")
+    except ValueError:
+        row1 = btn1 = row2 = btn2 = None
     return {
         "ts": when, "game": game,
-        "leg1": {"market_line": v.high_line, "side": "BUY YES", "price": round(v.buy_price, 4), "qty": qty},
-        "leg2": {"market_line": v.low_line, "side": "BUY NO", "price": no_px, "qty": qty},
+        "leg1": {"market_line": v.high_line, "side": "BUY YES", "price": round(v.buy_price, 4), "qty": qty,
+                 "screen_row": row1, "screen_button": btn1},
+        "leg2": {"market_line": v.low_line, "side": "BUY NO", "price": no_px, "qty": qty,
+                 "screen_row": row2, "screen_button": btn2},
         "displayed_size": v.size, "edge_c": round(v.edge * 100, 2),
         "cost_usd": round(qty * pair_cost, 4),
         "guaranteed_usd": round(qty * (1.0 - pair_cost), 4),   # = qty * (B - A), gross
@@ -113,8 +121,8 @@ def push(intent: dict) -> bool:
         return False
     l1, l2 = intent["leg1"], intent["leg2"]
     msg = (f"LADDER INTENT {intent['game']} {intent['ts']}Z  edge {intent['edge_c']:+.2f}c\n"
-           f"1) line {l1['market_line']:+.1f}: {l1['side']} @ {l1['price']:.3f} x {l1['qty']}  <- FIRST\n"
-           f"2) line {l2['market_line']:+.1f}: {l2['side']} @ {l2['price']:.3f} x {l2['qty']}\n"
+           f"1) {l1.get('screen_row') or ('line %+.1f' % l1['market_line'])} -> tap {l1.get('screen_button') or l1['side']}, limit {l1['price']:.3f} x {l1['qty']}  <- FIRST\n"
+           f"2) {l2.get('screen_row') or ('line %+.1f' % l2['market_line'])} -> tap {l2.get('screen_button') or l2['side']}, limit {l2['price']:.3f} x {l2['qty']}\n"
            f"cost ${intent['cost_usd']:.2f}, pays ${l1['qty']:.2f} at settlement any score. "
            f"books last updated {intent.get('leg1_book_age_s')}s / {intent.get('leg2_book_age_s')}s ago. "
            f"You place it; Meridian did not.")[:480]

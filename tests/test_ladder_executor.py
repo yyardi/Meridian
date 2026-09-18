@@ -74,3 +74,12 @@ def test_book_age_parses_nanosecond_stamps_and_rides_on_the_ticket():
     assert "leg1_book_age_s" in SRC and "leg2_book_age_s" in SRC
     body = SRC[SRC.index("def push("):SRC.index("def main(")]
     assert "leg1_book_age_s" in body, "the phone message says how stale each book is"
+
+
+def test_intent_and_push_speak_the_screen_language():
+    v = Violation("cfb-mia-wake-2026-09-18", 7.5, 10.5, 0.41, 0.47, 0.05, 966)
+    it = EX.intent_for(v, "cfb-mia-wake-2026-09-18", "23:41:07", 1.0)
+    assert it["leg1"]["screen_row"] == "WAKE to win by over 10.5 points" and it["leg1"]["screen_button"] == "No"
+    assert it["leg2"]["screen_row"] == "WAKE to win by over 7.5 points" and it["leg2"]["screen_button"] == "Yes"
+    body = SRC[SRC.index("def push("):SRC.index("def main(")]
+    assert "screen_row" in body and "screen_button" in body, "the phone message names the row and the button"
