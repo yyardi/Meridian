@@ -71,12 +71,44 @@ def sample(client, slugs: list[str], winner_prefix: str):
     return rungs, time.time() - t0
 
 
+def alert(v, game_key: str, when: str, sent: dict, cooldown_min: float) -> bool:
+    """Push one line for a violation; dedup per pair. Returns True if sent."""
+    import os as _os, urllib.request
+    key = (v.high_line, v.low_line)
+    last = sent.get(key)
+    now = time.time()
+    if last is not None and now - last < cooldown_min * 60:
+        return False
+    topic = _os.environ.get("MERIDIAN_NTFY_TOPIC", "").strip().strip('"').strip("'")
+    if not topic:
+        return False
+    msg = (f"LADDER {game_key} {when}Z  ${v.dollars:,.0f} = {v.edge*100:+.2f}c x {v.size:,.0f}\n"
+           f"BUY  YES line {v.high_line:+.1f} @ {v.buy_price:.4f}  (easier; take this FIRST if it is the resting side)\n"
+           f"SELL YES line {v.low_line:+.1f} @ {v.sell_price:.4f}\n"
+           f"size = min touch size. Manual test only; nothing placed by Meridian.")[:480]
+    try:
+        req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
+                                     headers={"Title": "Meridian ladder episode"})
+        urllib.request.urlopen(req, timeout=10).read()
+        sent[key] = now
+        return True
+    except Exception:  # noqa: BLE001 -- an alert failure must not stop sampling
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prefix", required=True, help="e.g. aec-nfl-det-buf-2026-09-17 (winner slug)")
     ap.add_argument("--every", type=float, default=30.0, help="seconds between samples")
     ap.add_argument("--minutes", type=float, default=120.0)
     ap.add_argument("--max-size", type=float, default=1e12, help="no cap: venue depth is real (0bs)")
+    # THE ALERT. This script still places nothing. When an episode opens whose
+    # edge x min(touch size) clears --alert-floor dollars, it pushes ONE message
+    # per pair per --alert-cooldown minutes with the exact two legs, so a human
+    # can place the fill test by hand. The topic is read from the environment
+    # and never printed; the message carries prices and sizes, never secrets.
+    ap.add_argument("--alert-floor", type=float, default=0.0, help="dollars; 0 = no alerts")
+    ap.add_argument("--alert-cooldown", type=float, default=10.0, help="minutes per pair")
     a = ap.parse_args()
     from core.polymarket.client import PolymarketGatewayClient
 
@@ -84,6 +116,7 @@ def main() -> int:
     slugs = slugs_for(game_key)
     print(f"live ladder  prefix={a.prefix}  rungs={len(slugs)}  every={a.every:g}s  for {a.minutes:g} min")
     end = time.time() + a.minutes * 60
+    sent: dict = {}
     with PolymarketGatewayClient() as c:
         while time.time() < end:
             rungs, took = sample(c, slugs, a.prefix)
@@ -93,6 +126,12 @@ def main() -> int:
             for x in sorted(v, key=lambda x: -x.dollars)[:8]:
                 print(f"  ${x.dollars:9,.2f} = {x.edge*100:+5.2f}c x {x.size:9,.0f}  "
                       f"buy {x.high_line:+.1f}@{x.buy_price:.4f} sell {x.low_line:+.1f}@{x.sell_price:.4f}")
+            if a.alert_floor > 0:
+                for x in sorted(v, key=lambda x: -x.dollars):
+                    if x.dollars < a.alert_floor:
+                        break
+                    if alert(x, game_key, now, sent, a.alert_cooldown):
+                        print(f"  ALERTED {x.high_line:+.1f}/{x.low_line:+.1f} ${x.dollars:,.0f}")
             sys.stdout.flush()
             time.sleep(max(0.0, a.every - took))
     return 0
