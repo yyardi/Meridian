@@ -3044,6 +3044,53 @@ measures a 2-minute-to-30-second sweep against a phenomenon that lives at second
 found this is the live sampler, and the next build is that sampler running at seconds on every live
 game, still placing nothing.
 
+## 0bv. Full game, two cadences: ~$4,000 per game at touch size, and the money is on the mid-ladder
+
+Detroit–Buffalo finished 41–31. Two read-only samplers ran against the venue's own book: the 2-minute
+one for the whole game, the reusable 30-second one (`cfb/run_live_ladder.py`) for the last 110 minutes.
+
+| | 2-min, whole game | 30s, 01:22→03:11 |
+|---|---:|---:|
+| samples | 106 | 220 |
+| **with a fee-netted violation** | **88 (83%)** | **213 (97%)** |
+| distinct pair-episodes | 170 | 180 |
+| episode duration median / p90 / max | 2 min / 8 / 28 | **90s** / 450s / 1,771s |
+| best per episode: median / max | $2.71 / $1,222 | $0.80 / $1,222 |
+| **sum of best-per-episode** | **$4,047** | **$4,333** |
+| episodes ≥ $10 / ≥ $100 | 47 / **6** | 38 / **6** |
+
+Two independent cadences over overlapping windows land on the same magnitude: **about $4,000 per game,
+six episodes over $100, violations present at 83–97% of instants from 00:24Z to the final whistle.**
+
+**Correction to §0bu's emphasis: the money is not on the liquid rungs.** At 30s resolution the
+liquid-rung episodes (both legs within 3.5 pts of the line) number 59, **median $0.33, max $48.75, sum
+$398, median duration 30 seconds** — they break constantly and for pennies. The six $100+ episodes are
+all mid-ladder:
+
+| $ | pair | duration |
+|---:|---|---|
+| **1,222** | +13.5 / +10.5 | **540s** |
+| 665 | +9.5 / +6.5 | one sample |
+| 374 | +8.5 / +6.5 | 60s |
+| **369** | +4.5 / +3.5 | **780s** |
+| 347 | +19.5 / +17.5 | one sample |
+
+**A maker rests hundreds to thousands of contracts on the mid rungs and does not re-quote them for
+minutes after a score.** That is the structure: not the winner market being wrong, but the +4.5…+13.5
+rungs being *slow*. It is why §0bt found disorder surviving a two-second fetch, and why Kalshi — whose
+makers re-quote the whole ladder together — is clean.
+
+**Unchanged and load-bearing.** Size is *touch* size on both legs; no order has been placed; this is one
+Thursday game. The most frequent pairs (+5.5/+3.5 ×91, +5.5/+4.5 ×68, +16.5/+14.5 ×67) are also where the
+top-8-per-sample print cuts off, so the episode count is a floor. The sum is a *best-per-episode* figure
+— what one perfectly-timed two-leg order per episode would have captured at displayed size — not a
+strategy P&L.
+
+**What comes next is an instrument, not a trade.** The sampler runs from a slug prefix on any live game;
+the next build schedules it from kickoff times across every live football and baseball game, still
+read-only, so the per-game figure stops being n=1. The temporary cron is removed; the 220-sample and
+106-sample files are in `artifacts/reads/`.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
