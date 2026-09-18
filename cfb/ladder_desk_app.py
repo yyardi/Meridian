@@ -29,6 +29,7 @@ from urllib.parse import parse_qs
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from cfb.ladder_instructions import HTML as INSTRUCTIONS_HTML
 from core.ladder.ui import ui_wording
 
 OUT = os.environ.get("LADDER_OUT") or ("/out" if os.path.isdir("/out") else "artifacts/reads")
@@ -145,7 +146,7 @@ def index() -> str:
     tickets = load_tickets()
     t = tally(tickets)
     parts = [f"<style>{CSS}</style><div class='wrap'><div class='muted'>MERIDIAN &middot; FILL TEST &middot; {dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d %H:%M')}Z</div>",
-             "<h1>Ladder desk</h1><div class='muted'>The executor finds and sizes the trade and writes a ticket here. You decide. The venue's button places it; nothing on this page does.</div>",
+             "<h1>Ladder desk</h1><div class='muted'>The executor finds and sizes the trade and writes a ticket here. You decide. The venue's button places it; nothing on this page does. <a href='/instructions' style='color:#3F8ED0'>How to place a ticket &rarr;</a></div>",
              f"<div class='lock {'armed' if is_armed else ''}'><form method='post' action='{'/lock' if is_armed else '/arm'}'>"
              f"<button type='submit'>{'Armed' if is_armed else 'Locked'}<br><span class='muted'>click to {'lock' if is_armed else 'arm'}</span></button></form>"
              f"<div><div class='state'>Meridian is {'ARMED' if is_armed else 'LOCKED'}</div><div>"
@@ -192,6 +193,11 @@ def index() -> str:
             parts.append(f"<div class='muted'>{html.escape(os.path.basename(p))}</div><pre>{html.escape(chr(10).join(lines))}</pre>")
     parts.append("<div class='foot'>Lock = a file the executor re-reads every cycle. Tickets = the executor's intent files. Your records = ladder_attempts.jsonl. Meridian never places an order.</div></div>")
     return "".join(parts)
+
+
+@app.get("/instructions", response_class=HTMLResponse)
+def instructions() -> str:
+    return INSTRUCTIONS_HTML
 
 
 @app.post("/lock")
