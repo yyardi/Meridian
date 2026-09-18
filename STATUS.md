@@ -3154,6 +3154,62 @@ that waits for the executor's intents file. polysimulator.com (operator's find) 
 for polymarket.com, not Polymarket US, and fills at displayed prices by construction — it cannot answer
 the fill question, which is the only one left.
 
+## 0by. The reviewer's five faults, answered where data could answer them; the stream instrument built, smoked live, armed
+
+The operator's researcher returned a verdict on §0bi–§0bx (2026-09-18): H5 (fee on the NO leg)
+refuted — the fee is symmetric in p ↔ 1−p; H2 (a structural reason bots leave it) — no position
+limits, no documented last-look, only a 5-second latency stopgap; persistence is capital lock plus
+thin executable depth; H3 (label inversion) avoidable; H4 (settlement asymmetry) refuted for
+spread-vs-spread completed games, **supported** for postponement (both legs settle at last fair market
+price) and for any pair carrying the winner market (an NFL tie settles it at $0.50); **H1 (the REST
+book is a stale snapshot) undeterminable from documents and the leading threat** — the venue steers
+latency-sensitive users to its stream. Magnitude anchor: the UCLA Polymarket-NBA study finds in-play
+combinatorial arbitrage at a median 101 bp on an average 14.8 executable shares. Recommendation:
+no order until a REST-vs-stream freshness test.
+
+**Answered from what we already had.**
+
+| fault | answer |
+|---|---|
+| H3 label inversion | already refuted by §0bk: the 84,646-pair check is computed on **settlement outcomes**, with no edge filter, so an inverted label would appear as "harder rung paid, easier did not" — zero cases |
+| H4 winner leg / ties | accepted. `run_ladder_executor.py` now issues **spread-vs-spread pairs only** (`is_spread_pair`, 8f61744); the winner market is never a leg of a ticket. Postponement exposure is real and not automated — a weather-flagged game is the operator's call |
+| H5 | agreed; the scanner's fee is `0.06·p·(1−p)` on both legs |
+| H2 | agreed; nothing in our tape suggests a protected maker, and minutes-long persistence at a 2–8 % locked return is exactly what capital-lock economics predicts |
+| magnitude | the 14.8-share / 101 bp anchor is now the expectation to beat; §0bv's $4,047 stays labelled displayed-size and appears in the report only next to the capital it implies |
+
+**H1 is the one that needed an instrument, and three facts were established today.** (i) The REST
+book's `transactTime` is the book's **last-update** stamp, not the snapshot time — three identical
+calls 3 s apart on a quiet market returned the identical stamp — so a frozen stamp on a mid rung cannot
+by itself separate "cache" from "maker asleep". (ii) **The venue has a markets WebSocket**
+(`wss://api.polymarket.us/v1/ws/markets`: MARKET_DATA = full book + stats + transactTime per update,
+TRADE = every print with maker/taker intents). `core/live_recorder.py`'s August note "there is no push
+feed" probed `/v1/ws` and `/ws`, not `/v1/ws/markets`; every path returns 401 unauthenticated, so that
+probe could never have found it. (iii) `market_trade_stats` holds 2–3 rows per market per game — far
+too coarse to see whether anyone traded on a stale rung during a nine-minute episode. The TRADE stream
+is the only instrument for that short of an order.
+
+**Built and smoked.** `core/polymarket/ws_min.py` (a stdlib RFC 6455 client — the api image has no
+WebSocket library and a slate night is no time to change it) and `cfb/run_ws_freshness.py`: the stream
+and the REST book side by side, one row per rung per cycle with both touches and both stamps, the
+scanner run on **both** books so the status line says whether the executor's violations are also in the
+stream, and every trade print logged. 33 tests green; no order path; the private stream is never opened.
+Live smoke on prod 13:27Z against an open pregame market: handshake and subscription accepted on the
+camelCase spelling, three messages, touch equal 1/1. One wrinkle the smoke exposed, stated here so
+tonight's file is read correctly: the **subscribe-time snapshot** carries a stamp 142.8 s newer than
+REST's for an identical book, so stamp gaps mean nothing until the stream has delivered a real update
+for that rung; `tt_equal` per row is the read after that.
+
+**Armed for tonight, per game, from the same launcher:** the shadow executor ($5 / $1 / $25 floor /
+10-min cooldown, spread-only, each ticket and push now carrying how long each leg's book has sat), and
+the freshness instrument at 20 s. The operator's decisions today: **$5 tonight, one-contract tickets,
+no more until the fill answer is in**; and a correction to "entry and exit" — this trade has no exit,
+both legs are held to settlement.
+
+**Other venues, asked and answered.** Kalshi's ladders are the control and are clean (§0bl, §0bu), so
+the strategy does not exist there. The scanner is venue-agnostic; what it needs is a recorder, and the
+other US sports exchanges have none here. MLB and NFL in-play on Polymarket US already show the same
+shape (§0bp) and are the next scheduler targets, after fill.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
