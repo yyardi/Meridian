@@ -298,8 +298,7 @@
   <div class="hsep"></div>
   <div class="navgrp">
     <span class="grplbl">strategy</span>
-    <a class="on" href="/" title="PULSE — directional. Takes a side: picks a team and holds a position.">PULSE</a>
-    <a class="" href="/quote" title="QUOTE — market making. Quotes both sides and earns the spread, without a view on the game.">QUOTE</a>
+    <a class="" href="/arb" title="ARB — the ladder desk. A live spread ladder that contradicts itself is bought on both legs and held to settlement; every send is two explicit clicks with the order token.">ARB</a>
   </div>
   <div class="hsep"></div>
   <div class="navgrp">
@@ -343,6 +342,15 @@
      banner that cannot be missed if it ever stops being 0. -->
 <div id="autoalert" style="display:none;background:#2a1414;color:#ff7b80;border-bottom:1px solid #4d2020;
      padding:8px 14px;font-weight:700"></div>
+
+<!-- ARCHIVED (operator, 2026-09-18). PULSE left the strategy nav when the
+     ladder desk (/arb) became the live work; this page, its engine and its
+     tests are untouched and keep accruing for the record. Static text, not a
+     status: nothing here polls for it. -->
+<div class="banner" id="archived" style="margin:14px 14px 0;border-radius:4px">
+  <b>ARCHIVED</b> — PULSE is no longer in the strategy nav. The picks below still render and
+  the engine still runs for the record; live work is on <a href="/arb" style="color:var(--accent)">ARB</a>.
+</div>
 
 <!-- The confirmation ticket. The row button opens this; only the button
      inside it sends anything. Two clicks, two different elements, and the

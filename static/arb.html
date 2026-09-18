@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Algo — ARB</title>
+<style>
+  :root{
+    --bg:#0a0c10; --panel:#11141b; --line:#1e2430; --txt:#d7dde8;
+    --dim:#7c879b; --faint:#4a5568; --pos:#26d07c; --neg:#ff5c62;
+    --warn:#ffb020; --accent:#4c8dff;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:12px/1.5 var(--mono);font-variant-numeric:tabular-nums}
+  .stat{display:flex;gap:6px;align-items:baseline}
+  .stat .k{color:var(--faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em}
+  .stat .v{font-size:11.5px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+  .dot.ok{background:var(--pos);box-shadow:0 0 7px var(--pos)}
+  .dot.bad{background:var(--neg);box-shadow:0 0 7px var(--neg)}
+  /* --- league tabs (core/leagues.py) ------------------------------------ */
+  .lg{display:flex;gap:2px;margin-left:10px}
+  .lgt{font:inherit;font-size:10px;letter-spacing:.09em;padding:3px 9px;border-radius:3px;
+       background:transparent;color:var(--faint);border:1px solid transparent;cursor:pointer}
+  .lgt:hover{color:var(--txt)}
+  .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .lgt.empty{color:var(--faint);opacity:.75}
+  .wrap{padding:14px;max-width:1500px}
+  h2{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);
+     margin:18px 0 8px;font-weight:600}
+  .banner{border:1px solid #3d2a17;background:#221708;color:var(--warn);
+          padding:9px 12px;border-radius:4px;margin-bottom:14px;font-size:11px}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--warn)}
+  .tbl{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:18px}
+  th{text-align:right;color:var(--faint);font-size:9.5px;letter-spacing:.08em;
+     text-transform:uppercase;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th.l,td.l{text-align:left}
+  td{text-align:right;padding:4px 8px;border-bottom:1px solid #131720;white-space:nowrap}
+  tr:hover{background:#12161e}
+  tr.dim td{color:var(--faint)}
+  tr.flag td{background:#1e1414}
+  .note{color:var(--faint);font-size:10.5px;margin-top:9px;line-height:1.5;
+        border-left:2px solid var(--line);padding-left:9px}
+  .meta{color:var(--dim);font-size:11px;margin-bottom:10px}
+  .meta b{color:var(--txt)}
+  .empty{padding:24px;color:var(--faint);text-align:center}
+  footer{padding:6px 14px;font-size:10px;color:var(--faint);
+         border-top:1px solid var(--line);background:var(--panel)}
+
+  /* ── Header, same bar as every other page: book, then the leagues inside
+     it; nav and health on separate rows. The token box is the landing page's,
+     because this page CAN place an order. ── */
+  header{background:var(--panel);border-bottom:1px solid var(--line);
+         position:sticky;top:0;z-index:9;display:block;padding:0}
+  .hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px}
+  .hrow+.hrow{border-top:1px solid var(--line)}
+  .hsep{width:1px;height:15px;background:var(--line);flex:none}
+  .brand{font-weight:700;letter-spacing:.18em;font-size:13px}
+  .bookgrp{display:flex;gap:3px}
+  .book{font:inherit;font-size:11px;font-weight:700;letter-spacing:.07em;
+        padding:4px 10px;border-radius:3px;background:transparent;
+        border:1px solid transparent;color:var(--faint);cursor:pointer}
+  .book:hover{color:var(--txt)}
+  .book.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
+  .navgrp{display:flex;align-items:center;gap:3px}
+  .grplbl{color:var(--faint);font-size:8.5px;letter-spacing:.13em;
+          text-transform:uppercase;margin-right:3px}
+  .navgrp a{color:var(--faint);text-decoration:none;font-size:11px;
+            letter-spacing:.05em;padding:4px 9px;border-radius:3px}
+  .navgrp a:hover{color:var(--txt)}
+  .navgrp a.on{color:var(--txt);background:#1a1f2b}
+  .statusrow{gap:16px;padding:6px 14px;background:#0c0f15}
+  #tokwrap{margin-left:auto}
+  #tok{font:inherit;font-size:11px;background:#0c0f15;color:var(--txt);border:1px solid var(--line);
+       border-radius:3px;padding:4px 8px;width:150px}
+
+  /* ── Controls: the lock and the game. The lock chip is the executor's
+     truth (the file), re-read every poll; the buttons only ask. ── */
+  .ctl{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:6px 0 14px}
+  .chip{font-weight:700;letter-spacing:.1em;padding:4px 10px;border-radius:3px;font-size:11px}
+  .chip.armed{background:#0f2a1c;color:var(--pos);border:1px solid #1e4a30}
+  .chip.locked{background:#2a1414;color:var(--neg);border:1px solid #4d2020}
+  .chip.unknown{background:#1a1f2b;color:var(--faint);border:1px solid var(--line)}
+  button{font:inherit;font-size:11px;padding:4px 10px;border-radius:3px;cursor:pointer;
+         background:#1a1f2b;color:var(--txt);border:1px solid var(--line)}
+  button:hover{border-color:var(--dim)}
+  button:disabled{opacity:.45;cursor:default}
+  button.danger{background:#2a1414;color:#ff9a9e;border-color:#4d2020}
+  button.go{background:#0f2a1c;color:var(--pos);border-color:#1e4a30}
+  select,input[type=number]{font:inherit;font-size:11px;background:#0c0f15;color:var(--txt);
+         border:1px solid var(--line);border-radius:3px;padding:3px 6px}
+  input[type=number]{width:72px}
+
+  /* ── Tickets: one card per intent, the two legs as the phone push says
+     them (row, button, price, size), status chip, and the actions. ── */
+  .tickets{display:grid;grid-template-columns:repeat(auto-fill,minmax(430px,1fr));gap:10px}
+  .tk{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:10px 12px}
+  .tk.done{opacity:.7}
+  .tk .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+  .tk .game{font-weight:700;letter-spacing:.04em}
+  .tk .st{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;
+          border-radius:3px;border:1px solid var(--line);color:var(--faint)}
+  .tk .st.open{color:var(--pos);border-color:#1e4a30}
+  .tk .st.placed,.tk .st.recorded{color:var(--warn);border-color:#3d2a17}
+  .tk .st.skipped{color:var(--faint)}
+  .leg{display:grid;grid-template-columns:18px 1fr auto;gap:8px;padding:5px 0;
+       border-top:1px solid #131720;align-items:baseline}
+  .leg .n{color:var(--faint);font-weight:700}
+  .leg .row{color:var(--txt)}
+  .leg .btn{font-weight:700;letter-spacing:.06em}
+  .leg .terms{color:var(--dim);white-space:nowrap}
+  .tk .sum{display:flex;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:10.5px;margin:6px 0}
+  .tk .sum b{color:var(--txt)}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+  .fills{display:none;grid-template-columns:repeat(3,auto);gap:6px 10px;align-items:center;
+         margin-top:8px;padding-top:8px;border-top:1px solid #131720;font-size:10.5px;color:var(--dim)}
+  .fills.on{display:grid}
+  .tk .res{font-size:10.5px;margin-top:6px;line-height:1.5}
+  .ok{color:var(--pos);font-weight:700}.bad{color:var(--neg);font-weight:700}
+
+  /* ── The confirmation ticket. The card button opens this; only the button
+     inside it sends anything. Two clicks, two different elements, and the
+     second one shows the whole order in words first. ── */
+  #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:20;
+         align-items:center;justify-content:center}
+  #modal.on{display:flex}
+  .ticket{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+          width:min(640px,94vw);max-height:92vh;overflow:auto;padding:16px 18px}
+  .ticket h3{margin:0 0 10px;font-size:13px;letter-spacing:.06em}
+  .trow{display:flex;justify-content:space-between;gap:12px;padding:5px 0;
+        border-bottom:1px solid #131720;font-size:11.5px}
+  .trow .k{color:var(--faint)}
+  .trow.big b{font-size:14px}
+  .twarn{margin:10px 0;padding:8px 10px;border-radius:4px;font-size:11px;line-height:1.55;
+         border:1px solid #3d2a17;background:#221708;color:var(--warn)}
+  .tacts{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+  #tresult{display:none;margin-top:10px;font-size:11px;line-height:1.55}
+  .tally{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px}
+  .tally .stat .v{font-size:13px;font-weight:700}
+  pre.tail{margin:0 0 10px;font:10.5px/1.45 var(--mono);color:var(--dim);white-space:pre-wrap;
+           background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
+</style>
+</head>
+<body>
+<header>
+ <div class="hrow">
+  <div class="brand">ALGO</div>
+  <div class="hsep"></div>
+  <div class="bookgrp" id="bookgrp"></div>
+  <div class="lg" id="lgtabs"></div>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">strategy</span>
+    <a class="on" href="/arb" title="ARB — the ladder desk. A live spread ladder that contradicts itself is bought on both legs and held to settlement; every send is two explicit clicks with the order token.">ARB</a>
+  </div>
+  <div class="hsep"></div>
+  <div class="navgrp">
+    <span class="grplbl">books</span>
+    <a class="" href="/wallet" title="The $1,000 paper scoreboard — simulated positions and running P&amp;L.">WALLET</a>
+    <a class="" href="/analytics" title="Model vs market — where our fair value disagrees with the venue price.">MODEL</a>
+    <a class="" href="/scoreboard" title="SCOREBOARD — the paper book: every registered shadow strategy, one P&amp;L line per week, venue-settled. Nothing is armed.">SCOREBOARD</a>
+  </div>
+  <div id="tokwrap">
+    <input id="tok" type="password" placeholder="order token" autocomplete="off"
+           title="Server-side token from MERIDIAN_ORDER_TOKEN. Held in this tab only (sessionStorage), never persisted to disk. Every POST on this page carries it; without it the server refuses.">
+  </div>
+ </div>
+ <div class="hrow statusrow">
+  <div class="stat" title="Overall recorder health — pregame freshness plus every writer's heartbeat."><span class="k">recorder</span><span class="v" id="s-health">—</span></div>
+  <div class="stat" title="How old the pregame recorder's newest data is. Stale past 90 min is a failure."><span class="k">pregame data age</span><span class="v" id="s-pregame">—</span></div>
+  <div class="stat" title="How old the live (200ms) recorder's newest data is. Legitimately grows between games."><span class="k">live data age</span><span class="v" id="s-live">—</span></div>
+  <div class="stat" title="Account balance from Polymarket US. The pair cap on a send is the smaller of this and MERIDIAN_ARB_MAX_PAIR_USD."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
+  <div class="stat" title="The executor's lock file, re-read every poll. LOCKED: the executor issues nothing, SEND is not offered and the server refuses every send. ARMED: tickets are issued and SEND is offered. UNWIND is exempt from the lock: locking the desk must not lock you into a half-filled pair."><span class="k">desk</span><span class="v" id="s-desk">—</span></div>
+ </div>
+</header>
+
+<!-- The confirmation ticket: every term in words, then the one button that
+     posts. Rebuilt per open; nothing in it is reachable from a card. -->
+<div id="modal" role="dialog" aria-modal="true">
+  <div class="ticket">
+    <h3 id="mtitle">Confirm — this sends real money</h3>
+    <div id="trows"></div>
+    <div class="twarn" id="twarn"></div>
+    <div id="tresult"></div>
+    <div class="tacts">
+      <button id="cancelBtn">Cancel</button>
+      <button id="confirmBtn" class="go">Confirm &amp; send</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <h2 style="font-size:13px;letter-spacing:.12em;margin:4px 0 8px">ARB
+    <span class="dimc" style="font-size:10.5px;letter-spacing:0;text-transform:none">
+    · the ladder desk · a spread ladder that contradicts itself, bought on both legs, held to settlement
+    (<code>docs/math/ladder-fill-test.md</code>)</span></h2>
+  <div class="banner" id="legend">both legs pay ≥ $1.00 per pair at settlement whatever the score;
+    the pair costs 1 − E. The one way to lose money: leg 1 fills and leg 2 does not — then UNWIND or
+    hold, never chase. Meridian sends nothing without the two clicks below.</div>
+
+  <div class="ctl">
+    <span class="chip unknown" id="lockchip">—</span>
+    <button id="lockBtn" class="danger" title="Write the executor's lock file: it keeps sampling and issues nothing; SEND is refused.">LOCK</button>
+    <button id="armBtn" class="go" title="Remove the executor's lock file: tickets are issued again.">ARM</button>
+    <span class="hsep"></span>
+    <label class="dimc">game <select id="game"><option value="">— pick a game —</option></select></label>
+    <span class="dimc" id="gamenote"></span>
+    <span class="hsep"></span>
+    <span class="dimc" id="filters">filters: —</span>
+  </div>
+  <div class="meta" id="meta">loading…</div>
+
+  <h2>Live ladder <span class="dimc" id="ladmeta" style="font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
+  <div id="ladder"><div class="empty">pick a game</div></div>
+
+  <h2>Violations now <span class="dimc" style="font-weight:400;text-transform:none;letter-spacing:0">· fee-netted, from the same scan the executor runs</span></h2>
+  <div id="violations"><div class="empty">—</div></div>
+
+  <h2>Tickets <span class="dimc" style="font-weight:400;text-transform:none;letter-spacing:0">· every intent the executor wrote, newest first</span></h2>
+  <div id="tickets"><div class="empty">—</div></div>
+
+  <h2>Decision rule <span class="dimc" style="font-weight:400;text-transform:none;letter-spacing:0">· registered, over the first five placed attempts</span></h2>
+  <div class="tally" id="tally"></div>
+  <div class="note" id="verdict">—</div>
+
+  <h2>Executor</h2>
+  <div id="tail-executor"><div class="empty">—</div></div>
+  <h2>Freshness</h2>
+  <div id="tail-freshness"><div class="empty">—</div></div>
+</div>
+
+<footer id="foot">connecting…</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const LG_KEY = "meridian.league";
+let LEAGUE = localStorage.getItem(LG_KEY) || "wnba";
+let LEAGUE_NAMES = {};
+//: The last /api/arb/state and /api/arb/ladder payloads. A tab click
+//: re-renders them; a poll refetches.
+let STATE = null;
+let LADDER = null;
+let GAME = "";                       // the aec- prefix the ladder is polled for
+//: Every ticket by id, for the modal.
+const TICKETS = {};
+//: What the modal is about: {kind:"send"|"unwind", t, ...}. Null when closed.
+let PENDING = null;
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const agef = sec => sec == null ? "—"
+  : sec < 90 ? sec.toFixed(0) + "s"
+  : sec < 5400 ? Math.round(sec/60) + "m"
+  : sec < 172800 ? Math.round(sec/3600) + "h"
+  : Math.round(sec/86400) + "d";
+const num = (v, d=2) => v == null || !isFinite(v) ? "—" : Number(v).toFixed(d);
+const money = v => v == null ? "—" : (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
+const signed = (v, d) => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d);
+const lineTxt = l => l == null ? "—" : (l === 0 ? "winner" : (l > 0 ? "+" : "") + Number(l).toFixed(1));
+const leagueOf = game => String(game || "").replace(/^aec-/, "").split("-")[0];
+const plainGame = game => String(game || "").replace(/^aec-/, "");
+
+/* Slug frame -> screen frame, a port of core.ladder.ui.ui_wording. The API
+   fills screen_row/screen_button on every ticket and rung already; this is
+   the fallback for an intent the server could not read. Same rule: a neg line
+   is the first team's row and our YES is Yes; a pos line is the second team's
+   row and our YES is No. */
+function wording(game, line, side){
+  const m = /^([a-z0-9]+)-(.+?)-([^-]+)-(\d{4}-\d{2}-\d{2})$/.exec(plainGame(game));
+  const n = Math.abs(Number(line));
+  if(!m || !(n > 0)) return [null, null];
+  const a = m[2].toUpperCase(), b = m[3].toUpperCase();
+  const wantYes = String(side).toUpperCase().endsWith("YES");
+  if(line < 0) return [`${a} to win by over ${n} points`, wantYes ? "Yes" : "No"];
+  return [`${b} to win by over ${n} points`, wantYes ? "No" : "Yes"];
+}
+function screen(leg, game){
+  if(leg.screen_row) return [leg.screen_row, leg.screen_button];
+  return wording(game, leg.market_line, leg.side);
+}
+/* The venue's slug for a line, as the recorder lists it: the winner is the
+   aec- event slug, a spread is asc-<game>-(neg|pos)-<N>pt<tenths>. The server
+   rebuilds the same slug from its own listing and refuses a mismatch. */
+function slugOf(game, line){
+  const g = plainGame(game), l = Number(line);
+  if(l === 0) return "aec-" + g;
+  const n = Math.abs(l);
+  return `asc-${g}-${l < 0 ? "neg" : "pos"}-${Math.floor(n)}pt${Math.round((n - Math.floor(n)) * 10)}`;
+}
+
+/* Header stats — the same signals and units as the landing page's header. */
+async function loadHeader(){
+  try{
+    const d = await (await fetch("/api/status")).json();
+    $("#s-health").innerHTML =
+      `<span class="dot ${d.healthy?"ok":"bad"}"></span>${d.healthy?"LIVE":"STALE"}`;
+    $("#s-pregame").textContent = agef(d.pregame_age_seconds);
+    $("#s-pregame").className = "v " + (d.healthy ? "pos" : "neg");
+    $("#s-live").textContent = agef(d.live_age_seconds);
+    const br = d.bankroll;
+    $("#s-bankroll").textContent =
+      br && br.bankroll != null ? "$" + br.bankroll.toFixed(2) : "?";
+  } catch(e){ /* informational */ }
+}
+loadHeader();
+setInterval(loadHeader, 30000);
+
+/* Token is held for this tab only. sessionStorage, not localStorage: it dies
+   with the tab rather than sitting on disk between sessions. Same key as the
+   landing page, so one paste serves both. */
+$("#tok").value = sessionStorage.getItem("meridian_order_token") || "";
+$("#tok").addEventListener("input", e =>
+  sessionStorage.setItem("meridian_order_token", e.target.value));
+const tokenHeaders = () => ({
+  "Content-Type": "application/json",
+  "X-Meridian-Order-Token": $("#tok").value.trim(),
+});
+async function post(url, body){
+  const r = await fetch(url, {method:"POST", headers: tokenHeaders(),
+                              body: body === undefined ? undefined : JSON.stringify(body)});
+  let d = null;
+  try { d = await r.json(); } catch(e){ d = {detail: "no JSON body"}; }
+  return {ok: r.ok, status: r.status, d};
+}
+const detail = d => esc((d && (d.detail || d.reason || d.note)) || JSON.stringify(d)).slice(0, 400);
+
+/* League tabs. Tickets and games are ONE desk across every league (the
+   executor writes one file per game); the tab is a filter by the game's
+   league prefix, never a separate read, and the page says how many it hid.
+   A tab with no game on it while another league has one follows the desk,
+   once, so an operator does not open on an empty WNBA tab during a CFB slate. */
+fetch("/api/leagues").then(r=>r.json()).then(d=>{
+  if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
+  LEAGUE_NAMES = Object.fromEntries(d.leagues.map(l=>[l.slug,l.name]));
+  const el = document.getElementById("lgtabs");
+  if(el) el.innerHTML = d.leagues.map(l =>
+    `<button class="lgt ${l.slug===LEAGUE?"on":""} ${l.recorded?"":"empty"}"
+             data-lg="${l.slug}">${l.name}</button>`).join("");
+  document.querySelectorAll(".lgt").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      if(b.dataset.lg === LEAGUE) return;
+      selectLeague(b.dataset.lg, true);
+    });
+  });
+  paintTabs();
+});
+function paintTabs(){
+  document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
+}
+function selectLeague(slug, remember){
+  LEAGUE = slug;
+  if(remember) localStorage.setItem(LG_KEY, LEAGUE);
+  paintTabs();
+  renderGames(); renderTickets();
+}
+let FOLLOWED = false;
+function followDesk(){
+  if(FOLLOWED || !STATE || !STATE.available) return;
+  const games = STATE.games || [];
+  if(games.some(g => leagueOf(g) === LEAGUE)) { FOLLOWED = true; return; }
+  const other = games.find(g => LEAGUE_NAMES[leagueOf(g)] !== undefined);
+  if(other){ FOLLOWED = true; selectLeague(leagueOf(other), false); }
+}
+
+/* ── STATE: the desk's files, every 10s. ── */
+async function loadState(){
+  try{
+    STATE = await (await fetch("/api/arb/state")).json();
+  } catch(e){
+    STATE = {available:false, note:"/api/arb/state unavailable"};
+  }
+  followDesk();
+  renderState();
+  $("#foot").textContent = "the desk's files are read fresh on every poll; the ladder is the api's own 10s sampler; "
+    + "every POST needs the order token; SEND is two clicks and IOC on both legs";
+}
+loadState();
+setInterval(loadState, 10000);
+
+function renderState(){
+  const s = STATE;
+  if(!s) return;
+  if(s.available === false){
+    $("#meta").innerHTML = `<span class="warnc">${esc(s.note || "desk unavailable")}</span>`;
+    $("#lockchip").className = "chip unknown"; $("#lockchip").textContent = "NO DESK";
+    $("#s-desk").textContent = "—";
+    $("#lockBtn").disabled = $("#armBtn").disabled = true;
+    ["#tickets", "#violations", "#tail-executor", "#tail-freshness"].forEach(id =>
+      $(id).innerHTML = `<div class="empty">${esc(s.note || "unavailable")}</div>`);
+    return;
+  }
+  const armed = s.armed === true;
+  $("#lockchip").className = "chip " + (armed ? "armed" : "locked");
+  $("#lockchip").textContent = armed ? "ARMED" : "LOCKED";
+  $("#s-desk").innerHTML = `<span class="${armed?"pos":"neg"}">${armed?"ARMED":"LOCKED"}</span>`;
+  $("#lockBtn").disabled = !armed; $("#armBtn").disabled = armed;
+  const f = s.filters || {};
+  $("#filters").textContent = `ticket filters: floor $${num(f.floor_usd, 0)} · spread-only`
+    + ` · mid-ladder first (${(f.mid_ladder||[]).map(x=>"+"+x).join("…")}) · pair cap $${num(s.max_pair_usd, 0)}`
+    + (s.allow_size_up ? " · size-up allowed" : " · size ≤ ticket");
+  $("#meta").innerHTML = `<b>${esc(s.dir)}</b> · budget $${num(s.budget_usd, 0)}/game`
+    + ` · sampler every ${num(s.sample_seconds, 0)}s · watching ${(s.watching||[]).length}`
+    + ` · ${(s.tickets||[]).length} tickets on file`;
+  renderGames();
+  renderTickets();
+  renderTally();
+  renderTails();
+}
+
+function renderGames(){
+  const sel = $("#game");
+  const all = (STATE && STATE.games) || [];
+  const mine = all.filter(g => leagueOf(g) === LEAGUE);
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">— pick a game —</option>` + mine.map(g =>
+    `<option value="${esc(g)}">${esc(plainGame(g))}</option>`).join("");
+  if(mine.includes(cur)) sel.value = cur;
+  else if(mine.length && !cur) { sel.value = mine[0]; }
+  const hidden = all.length - mine.length;
+  $("#gamenote").textContent = `${mine.length} game${mine.length===1?"":"s"} in the last 6h`
+    + (hidden ? ` (${hidden} in other leagues)` : "");
+  if(sel.value !== GAME){ GAME = sel.value; LADDER = null; renderLadder(); loadLadder(); }
+}
+$("#game").addEventListener("change", () => {
+  GAME = $("#game").value; LADDER = null; renderLadder(); loadLadder();
+});
+
+/* ── LADDER: the api's cache for the picked game, every 5s. The handler
+   never calls the venue; asking keeps the game sampled for 30 minutes. ── */
+async function loadLadder(){
+  if(!GAME) return;
+  const asked = GAME;
+  try{
+    const d = await (await fetch(`/api/arb/ladder?game=${encodeURIComponent(asked)}`)).json();
+    if(asked !== GAME) return;                       // the operator moved on mid-flight
+    LADDER = d;
+  } catch(e){
+    if(asked !== GAME) return;
+    LADDER = {available:false, reason:"/api/arb/ladder unavailable"};
+  }
+  renderLadder();
+}
+setInterval(loadLadder, 5000);
+
+function flagCell(r){
+  if(!r.flags || !r.flags.length) return "";
+  return `<span class="neg" title="${esc(r.flags.join("; "))}">${r.flags.length === 1 ? "✗" : "✗✗"}</span>`;
+}
+
+function renderLadder(){
+  const el = $("#ladder"), vel = $("#violations");
+  if(!GAME){ el.innerHTML = `<div class="empty">pick a game</div>`; vel.innerHTML = `<div class="empty">—</div>`;
+             $("#ladmeta").textContent = ""; return; }
+  if(!LADDER){ el.innerHTML = `<div class="empty">asking…</div>`; return; }
+  if(LADDER.available === false){
+    $("#ladmeta").textContent = "";
+    el.innerHTML = `<div class="empty">${esc(LADDER.reason || "unavailable")}</div>`;
+    vel.innerHTML = `<div class="empty">—</div>`;
+    return;
+  }
+  const L = LADDER;
+  $("#ladmeta").textContent = `· ${plainGame(L.game)} · sampled ${agef(L.age_s)} ago in ${num(L.took_s,1)}s`
+    + ` · ${L.n_rungs} rungs · every ${num(L.sample_seconds,0)}s`;
+  const rungs = Object.values(L.rungs || {}).sort((a,b) => a.line - b.line);
+  el.innerHTML = `<div class="tbl"><table><thead><tr>
+    <th class="l">line</th><th class="l" title="The row as the venue's screen shows it, and that row's Yes bid / ask. On a pos rung the row is the second team's and our YES is its No, so the screen pair is 1 − ask / 1 − bid.">screen row · its Yes bid / ask</th>
+    <th title="slug frame: the first team's YES at this line, as the executor reads it">YES bid</th><th>size</th><th title="slug frame: the first team's YES at this line">YES ask</th><th>size</th><th title="seconds since the book's last update stamp">age</th>
+    <th title="max bid over harder rungs: this rung's ask must not sit below it">lo</th>
+    <th title="min ask over easier rungs: this rung's bid must not sit above it">hi</th><th>flag</th>
+    </tr></thead><tbody>${rungs.map(r => `<tr class="${r.flags && r.flags.length ? "flag" : (r.line === 0 ? "dim" : "")}">
+      <td class="l">${lineTxt(r.line)}</td><td class="l">${esc(r.row || "—")}${r.screen_bid != null ? ` <span class="dimc">Yes ${num(r.screen_bid)} / ${num(r.screen_ask)}${r.our_yes_is ? ` · our YES = ${esc(r.our_yes_is)}` : ""}</span>` : ""}</td>
+      <td>${num(r.bid)}</td><td class="dimc">${num(r.bid_sz, 0)}</td>
+      <td>${num(r.ask)}</td><td class="dimc">${num(r.ask_sz, 0)}</td>
+      <td class="${r.age_s != null && r.age_s > 120 ? "warnc" : ""}">${agef(r.age_s)}</td>
+      <td class="dimc">${num(r.lo)}</td><td class="dimc">${num(r.hi)}</td><td>${flagCell(r)}</td></tr>`).join("")}
+  </tbody></table></div>
+  <div class="note">YES bid/ask are the slug frame (first team + line), the frame the executor reads and the tickets price in; the
+    screen pair beside each row is what the venue's own row shows (its Yes), which on a pos rung is our NO. Bounds from the settled ordering (STATUS 0bk): covering a higher line is easier, so a rung's
+    price sits at or above every harder rung's bid and at or below every easier rung's ask. A flag is the gross
+    term; the fee-netted pairs are below.</div>`;
+
+  const vs = L.violations || [];
+  if(!vs.length){ vel.innerHTML = `<div class="empty">no fee-netted violation in this sample</div>`; return; }
+  vel.innerHTML = `<div class="tbl"><table><thead><tr>
+    <th class="l">pair</th><th>buy YES @</th><th>sell YES @</th><th>edge ¢</th><th>size</th><th>$ at size</th>
+    <th class="l">ticket the executor would write</th><th class="l">filters</th></tr></thead><tbody>
+    ${vs.map(v => { const t = v.ticket || {}; const l1 = t.leg1 || {}, l2 = t.leg2 || {};
+      const why = [v.spread_pair ? "" : "winner leg", v.dollars < (L.filters||{}).floor_usd ? `under $${num((L.filters||{}).floor_usd,0)}` : "",
+                   v.mid_ladder ? "" : "off mid-ladder"].filter(Boolean);
+      return `<tr class="${v.candidate ? "" : "dim"}">
+      <td class="l">${lineTxt(v.high_line)} / ${lineTxt(v.low_line)}</td>
+      <td>${num(v.buy_price)}</td><td>${num(v.sell_price)}</td><td class="pos">${signed(v.edge_c, 2)}</td>
+      <td>${num(v.size, 0)}</td><td><b>${money(v.dollars)}</b></td>
+      <td class="l">1) ${esc(l1.screen_row || "—")} → <b>${esc(l1.screen_button || "?")}</b> ${num(l1.price)} × ${l1.qty ?? "—"}
+        &nbsp; 2) ${esc(l2.screen_row || "—")} → <b>${esc(l2.screen_button || "?")}</b> ${num(l2.price)} × ${l2.qty ?? "—"}</td>
+      <td class="l">${v.candidate ? '<span class="pos">candidate</span>' : `<span class="dimc">${esc(why.join(", ") || "not a candidate")}</span>`}</td></tr>`; }).join("")}
+  </tbody></table></div>
+  <div class="note">a ticket needs a spread-vs-spread pair clearing the $${num((L.filters||{}).floor_usd,0)} floor at
+    displayed size; mid-ladder pairs are issued first. Sized at the executor's $${num((L.filters||{}).attempt_usd,0)}
+    attempt so this preview and the intents file agree.</div>`;
+}
+
+/* ── TICKETS ── */
+function legLine(n, leg, game, first){
+  const [row, btn] = screen(leg, game);
+  /* The ticket's price is a COST (what a contract of the bought side costs).
+     The venue's price.value is always the YES side, so a BUY NO leg goes
+     over as 1 − cost; both are printed so the card and the ladder agree. */
+  const yes = String(leg.side || "").toUpperCase().endsWith("YES") ? Number(leg.price) : 1 - Number(leg.price);
+  return `<div class="leg"><span class="n">${n})</span>
+    <span class="row">${esc(row || ("line " + lineTxt(leg.market_line)))} → <span class="btn">${esc(btn || "?")}</span>
+      <span class="dimc">(${esc(leg.side)} ${lineTxt(leg.market_line)})</span>${first ? ' <span class="warnc">← FIRST</span>' : ""}</span>
+    <span class="terms">cost ${num(leg.price, 3)} × ${leg.qty} <span class="dimc">(YES frame ${num(yes, 2)})</span></span></div>`;
+}
+
+function ticketActions(t){
+  /* The card's buttons open things or write the desk's record. NONE of them
+     sends: the send lives behind the modal's confirm, a second click on a
+     different element. */
+  const rec = t.record || {};
+  const acts = [];
+  /* SEND is offered only on an ARMED desk: the server refuses a locked one
+     (409) and the page should not offer what it knows will be refused. */
+  if(t.sendable && STATE && STATE.armed === true)
+    acts.push(`<button class="go" data-act="send" data-id="${esc(t.id)}" title="Opens the confirmation ticket. Nothing is sent from this button.">SEND…</button>`);
+  else if(t.sendable)
+    acts.push(`<span class="dimc" title="The desk is LOCKED; arm it to be offered SEND.">SEND (locked)</span>`);
+  if(t.status === "open"){
+    acts.push(`<button data-act="placed" data-id="${esc(t.id)}" title="Record that you placed it by hand.">I placed it</button>`);
+    acts.push(`<button data-act="skipped" data-id="${esc(t.id)}">Skipped</button>`);
+  } else {
+    acts.push(`<button data-act="reopen" data-id="${esc(t.id)}" title="Put the ticket back to open.">Reopen</button>`);
+  }
+  if(t.status === "placed" || t.status === "recorded")
+    acts.push(`<button data-act="fills" data-id="${esc(t.id)}" title="Record what the venue filled, per leg.">Fills…</button>`);
+  /* Only a ticket SENT from this page has rows to sell from; a hand order
+     recorded here (via "desk") has nothing the unwind could find. */
+  if(rec.via === "send" && ((rec.l1q || 0) > 0 || /pending|unknown/.test(rec.outcome || "")))
+    acts.push(`<button class="danger" data-act="unwind" data-id="${esc(t.id)}" title="Opens the unwind ticket: sell what a leg filled, IOC. Nothing is sent from this button.">UNWIND…</button>`);
+  return acts.join("");
+}
+
+function fillsForm(t){
+  const r = t.record || {};
+  const cell = (k, v, step) => `<input type="number" step="${step}" min="0" data-f="${k}" value="${v == null ? "" : v}">`;
+  return `<div class="fills" id="fills-${cssId(t.id)}">
+    <span>leg 1: filled</span>${cell("l1q", r.l1q, "0.01")}<span class="dimc">contracts</span>
+    <span>at</span>${cell("l1p", r.l1p, "0.001")}<span class="dimc">cost price</span>
+    <span>after</span>${cell("l1s", r.l1s, "0.1")}<span class="dimc">seconds</span>
+    <span>leg 2: filled</span>${cell("l2q", r.l2q, "0.01")}<span class="dimc">contracts (0 = did not fill)</span>
+    <span>at</span>${cell("l2p", r.l2p, "0.001")}<span class="dimc">cost price</span>
+    <span>after</span>${cell("l2s", r.l2s, "0.1")}<span class="dimc">seconds</span>
+    <span></span><button data-act="record" data-id="${esc(t.id)}">Record fills</button><span></span>
+  </div>`;
+}
+const cssId = s => String(s).replace(/[^a-z0-9]/gi, "_");
+
+function ticketCard(t){
+  const rec = t.record || {};
+  const via = rec.via === "send" ? " · sent from this page" : "";
+  const recLine = t.status === "recorded"
+    ? `<div class="sum"><span>recorded: leg 1 <b>${num(rec.l1q, 2)}</b> @ ${num(rec.l1p, 3)}</span>
+       <span>leg 2 <b>${num(rec.l2q, 2)}</b> @ ${num(rec.l2p, 3)}</span>${rec.outcome ? `<span class="${/unfilled|unsent|rejected|pending|unknown/.test(rec.outcome)?"neg":"pos"}">${esc(rec.outcome)}</span>` : ""}
+       ${(rec.venue_order_ids||[]).filter(Boolean).length ? `<span class="dimc">venue ${esc((rec.venue_order_ids||[]).filter(Boolean).join(", "))}</span>` : ""}</div>`
+    : (t.status === "placed" && rec.via === "send"
+        ? `<div class="sum"><span class="warnc">${esc(rec.outcome || "sent; fill not observed")}</span>
+           <span class="dimc">not a fill observation — check the rows, then Fills… to record by hand</span>
+           ${rec.error ? `<span class="dimc">${esc(String(rec.error)).slice(0,160)}</span>` : ""}</div>`
+        : "");
+  return `<div class="tk ${t.status === "open" ? "" : "done"}" id="tk-${cssId(t.id)}">
+    <div class="hd"><span class="game">${esc(plainGame(t.game))} <span class="dimc">${esc(t.ts)}Z</span></span>
+      <span class="st ${esc(t.status)}">${esc(t.status)}${via}</span></div>
+    ${legLine(1, t.leg1, t.game, true)}${legLine(2, t.leg2, t.game, false)}
+    <div class="sum"><span>edge <b class="pos">${signed(t.edge_c, 2)}¢</b></span>
+      <span>pair cost <b>${money(t.cost_usd)}</b></span>
+      <span>displayed size <b>${num(t.displayed_size, 0)}</b></span>
+      ${t.leg1 && t.leg1.book_age_s != null ? `<span>book age ${agef(t.leg1.book_age_s)} / ${agef((t.leg2||{}).book_age_s)}</span>` : ""}
+      ${t.spread_pair ? "" : '<span class="neg">winner leg — not sendable</span>'}</div>
+    ${recLine}
+    <div class="acts">${ticketActions(t)}</div>
+    ${fillsForm(t)}
+    <div class="res" id="res-${cssId(t.id)}"></div>
+  </div>`;
+}
+
+function renderTickets(){
+  const el = $("#tickets");
+  const all = (STATE && STATE.tickets) || [];
+  all.forEach(t => { TICKETS[t.id] = t; });
+  const mine = all.filter(t => leagueOf(t.game) === LEAGUE);
+  const hidden = all.length - mine.length;
+  const scope = `<div class="note">showing ${esc(LEAGUE_NAMES[LEAGUE] || LEAGUE.toUpperCase())}: ${mine.length} of ${all.length}
+    tickets — one desk across every league; the tab filters it${hidden ? ` (${hidden} hidden)` : ""}.</div>`;
+  if(!mine.length){ el.innerHTML = scope + `<div class="empty">no ticket for this league</div>`; return; }
+  const open = new Set([...el.querySelectorAll(".fills.on")].map(x => x.id));
+  el.innerHTML = scope + `<div class="tickets">${mine.map(ticketCard).join("")}</div>`;
+  open.forEach(id => { const x = document.getElementById(id); if(x) x.classList.add("on"); });
+}
+
+$("#tickets").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-act]");
+  if(!b) return;
+  const t = TICKETS[b.dataset.id];
+  if(!t) return;
+  const act = b.dataset.act;
+  if(act === "send") return openSend(t);
+  if(act === "unwind") return openUnwind(t);
+  if(act === "fills") return $("#fills-" + cssId(t.id)).classList.toggle("on");
+  if(act === "record") return recordFills(t);
+  await record(t, act);            // placed / skipped / reopen: the desk's record, not an order
+});
+
+async function record(t, status, fills){
+  const out = $("#res-" + cssId(t.id));
+  out.innerHTML = '<span class="dimc">writing…</span>';
+  const body = {ticket_id: t.id, status};
+  if(fills) body.fills = fills;
+  const r = await post("/api/arb/record", body);
+  out.innerHTML = r.ok ? `<span class="ok">recorded</span> <span class="dimc">${esc(r.d.status)}</span>`
+                       : `<span class="bad">refused</span> · HTTP ${r.status} <span class="dimc">${detail(r.d)}</span>`;
+  loadState();
+}
+
+function recordFills(t){
+  const form = $("#fills-" + cssId(t.id));
+  const fills = {};
+  form.querySelectorAll("input[data-f]").forEach(i => {
+    fills[i.dataset.f] = i.value.trim() === "" ? null : parseFloat(i.value);
+  });
+  return record(t, "recorded", fills);
+}
+
+/* ── LOCK / ARM: the executor's lock file, through the api. ── */
+$("#lockBtn").addEventListener("click", () => lockArm("lock"));
+$("#armBtn").addEventListener("click", () => lockArm("arm"));
+async function lockArm(which){
+  const r = await post("/api/arb/" + which);
+  if(!r.ok) $("#meta").innerHTML = `<span class="bad">${which.toUpperCase()} refused</span> · HTTP ${r.status} <span class="dimc">${detail(r.d)}</span>`;
+  loadState();
+}
+
+/* ── The SEND modal. openSend renders every term in words; sendPair, on the
+   modal's own button, is the only function on this page that posts to
+   /api/arb/send. The server re-derives every term from the intents file and
+   refuses a leg that is not the ticket's. ── */
+function openSend(t){
+  PENDING = {kind:"send", t};
+  const [r1, b1] = screen(t.leg1, t.game), [r2, b2] = screen(t.leg2, t.game);
+  const q = Math.min(Number(t.leg1.qty), Number(t.leg2.qty));
+  $("#mtitle").textContent = "Confirm — this sends real money, two legs";
+  $("#trows").innerHTML = `
+    <div class="trow"><span class="k">Game</span><span>${esc(plainGame(t.game))} · ticket ${esc(t.ts)}Z</span></div>
+    <div class="trow"><span class="k">Leg 1 — sent first</span><span><b>${esc(t.leg1.side)}</b> line ${lineTxt(t.leg1.market_line)}
+      · screen: ${esc(r1||"—")} → <b>${esc(b1||"?")}</b></span></div>
+    <div class="trow"><span class="k">&nbsp;&nbsp;at (cost per contract)</span>
+      <span><input id="px1" type="number" step="0.01" min="0.01" max="0.99" value="${num(t.leg1.price, 2)}"> <span class="dimc">ticket ${num(t.leg1.price, 3)}; one tick of slack</span></span></div>
+    <div class="trow"><span class="k">Leg 2 — only for what leg 1 fills</span><span><b>${esc(t.leg2.side)}</b> line ${lineTxt(t.leg2.market_line)}
+      · screen: ${esc(r2||"—")} → <b>${esc(b2||"?")}</b></span></div>
+    <div class="trow"><span class="k">&nbsp;&nbsp;at (cost per contract)</span>
+      <span><input id="px2" type="number" step="0.01" min="0.01" max="0.99" value="${num(t.leg2.price, 2)}"> <span class="dimc">ticket ${num(t.leg2.price, 3)}</span></span></div>
+    <div class="trow"><span class="k">Quantity (each leg)</span>
+      <span><input id="qty" type="number" step="1" min="1" value="${q}"> contracts <span class="dimc">ticket ${q}${STATE && STATE.allow_size_up ? `, displayed ${num(t.displayed_size,0)}` : ""}</span></span></div>
+    <div class="trow"><span class="k">Order type</span><span>LIMIT · immediate-or-cancel · synchronous — fills now or not at all, rests nothing</span></div>
+    <div class="trow"><span class="k">Venue format</span><span class="dimc" id="venuepx"></span></div>
+    <div class="trow"><span class="k">Pair cost per contract</span><span id="pairc">—</span></div>
+    <div class="trow"><span class="k">Guaranteed at settlement (both fill)</span><span id="guar">—</span></div>
+    <div class="trow big"><span class="k">Maximum stake (both legs)</span><b id="stakeOut">—</b></div>
+    <div class="trow"><span class="k">Acknowledge</span><span><label><input type="checkbox" id="ackbox">
+      I understand leg 2 is sent only for the quantity leg 1 fills, and that a filled leg 1 with an unfilled leg 2 leaves a directional position I must UNWIND or hold.</label></span></div>`;
+  const recalc = () => {
+    const p1 = parseFloat($("#px1").value), p2 = parseFloat($("#px2").value), qty = parseFloat($("#qty").value);
+    const out = $("#stakeOut");
+    const bad = m => { out.innerHTML = `<span class="bad">${m}</span>`; $("#confirmBtn").disabled = true; };
+    const onTick = v => Math.abs(v*100 - Math.round(v*100)) < 1e-6;
+    if(![p1, p2].every(p => isFinite(p) && p >= 0.01 && p <= 0.99 && onTick(p))) return bad("prices must be 0.01–0.99 on the 1¢ tick");
+    if(Math.abs(p1 - t.leg1.price) > 0.0101 || Math.abs(p2 - t.leg2.price) > 0.0101) return bad("more than one tick from the ticket — the server will refuse");
+    if(!isFinite(qty) || qty < 0.01) return bad("quantity below the venue minimum");
+    const cap = STATE && STATE.allow_size_up ? Math.max(q, Number(t.displayed_size||0)) : q;
+    if(qty > cap) return bad(`quantity above the ticket's ${cap}`);
+    const y1 = t.leg1.side.endsWith("YES") ? p1 : 1 - p1, y2 = t.leg2.side.endsWith("YES") ? p2 : 1 - p2;
+    $("#venuepx").textContent = `price.value ${y1.toFixed(2)} (YES frame) then ${y2.toFixed(2)} (YES frame)`;
+    const pc = p1 + p2;
+    /* The scanner's taker fee at the price paid (0.06 · p · (1 − p) per leg):
+       a pair whose cost plus fees reaches $1.00 pays nothing at settlement,
+       and one tick of slack per leg can carry a thin ticket there. The
+       server refuses it too; this only stops the click. */
+    const fees = 0.06 * p1 * (1 - p1) + 0.06 * p2 * (1 - p2);
+    $("#pairc").innerHTML = `${pc.toFixed(2)} <span class="dimc">= ${p1.toFixed(2)} + ${p2.toFixed(2)}; fees ≈ ${fees.toFixed(4)}</span>`;
+    $("#guar").innerHTML = `<b class="${pc + fees < 1 ? "pos" : "neg"}">${money(qty * (1 - pc))}</b> <span class="dimc">= ${qty} × (1 − ${pc.toFixed(2)}), before fees; edge as ticketed ${signed(t.edge_c, 2)}¢</span>`;
+    if(pc + fees >= 1) return bad(`pair cost ${pc.toFixed(2)} + fees ${fees.toFixed(4)} is not under $1.00 — a locked loss, the server will refuse`);
+    const stake = qty * pc;
+    const pairCap = STATE ? Number(STATE.max_pair_usd) : 25;
+    if(stake > pairCap) return bad(`$${stake.toFixed(2)} — over the $${pairCap} pair cap`);
+    out.textContent = "$" + stake.toFixed(2);
+    $("#confirmBtn").disabled = !$("#ackbox").checked;
+  };
+  ["#px1", "#px2", "#qty"].forEach(s => $(s).addEventListener("input", recalc));
+  $("#ackbox").addEventListener("change", recalc);
+  recalc();
+  $("#twarn").innerHTML = `Leg 1 is the stale side and goes first; leg 2 is sent only for the quantity leg 1 filled.
+    Both legs are held to settlement — there is no exit. Every leg pays the taker fee. The server refuses the send if the
+    desk is LOCKED, the ticket is not open, or any term differs from the executor's intent.`;
+  $("#tresult").style.display = "none";
+  $("#confirmBtn").textContent = "Confirm & send both legs";
+  $("#confirmBtn").onclick = sendPair;
+  $("#modal").classList.add("on");
+}
+
+function closeTicket(){ $("#modal").classList.remove("on"); PENDING = null; }
+$("#cancelBtn").addEventListener("click", closeTicket);
+$("#modal").addEventListener("click", e => { if(e.target.id === "modal") closeTicket(); });
+
+function legResult(l){
+  if(!l.sent) return `<span class="dimc">not sent</span> ${esc(l.error||"")}`;
+  const fill = l.filled_quantity > 0 ? `<span class="ok">filled ${num(l.filled_quantity, 2)}</span>` : `<span class="bad">filled 0</span>`;
+  return `${l.accepted ? "accepted" : `<span class="bad">rejected HTTP ${l.http_status}</span>`} · ${fill}`
+    + (l.avg_cost_price != null ? ` @ ${num(l.avg_cost_price, 4)}` : "")
+    + ` · ${esc(l.state||"—")} · venue ${esc(l.venue_order_id||"—")} · ${l.latency_ms != null ? l.latency_ms + "ms" : ""}`
+    + (l.error ? `<br><span class="dimc">${esc(l.error).slice(0,300)}</span>` : "");
+}
+
+async function sendPair(){
+  if(!PENDING || PENDING.kind !== "send") return;
+  const t = PENDING.t;
+  const btn = $("#confirmBtn");
+  btn.disabled = true;                      // no double-send from a double-click
+  btn.textContent = "Sending…";
+  const out = $("#tresult");
+  out.style.display = "block";
+  out.innerHTML = '<span class="dimc">submitting leg 1, then leg 2 for what fills…</span>';
+  const qty = parseFloat($("#qty").value);
+  try{
+    const r = await post("/api/arb/send", {
+      ticket_id: t.id,
+      mode: "HUMAN_CONFIRM",          // the only value the server accepts
+      legs: [
+        {market_slug: slugOf(t.game, t.leg1.market_line), side: t.leg1.side,
+         cost_price: parseFloat($("#px1").value), quantity: qty},
+        {market_slug: slugOf(t.game, t.leg2.market_line), side: t.leg2.side,
+         cost_price: parseFloat($("#px2").value), quantity: qty},
+      ],
+      acknowledge: !!$("#ackbox").checked,
+    });
+    const d = r.d;
+    if(r.ok && d.legs){
+      const lost = /unfilled|unsent|rejected|pending|unknown/.test(d.outcome || "");
+      out.innerHTML = `<span class="${lost ? "bad" : "ok"}">${esc(d.outcome).toUpperCase()}</span><br>`
+        + `leg 1: ${legResult(d.legs[0])}<br>leg 2: ${legResult(d.legs[1])}<br>`
+        + `<span class="dimc">cost filled ${money(d.pair.cost_usd_filled)} · guaranteed ${money(d.pair.guaranteed_usd)}</span><br>`
+        + `<span class="${lost ? "warnc" : "dimc"}">${esc(d.pair.note || "")}</span>`;
+      loadHeader();
+    } else {
+      out.innerHTML = `<span class="bad">REFUSED</span> · HTTP ${r.status}<br><span class="dimc">${detail(d)}</span>`;
+    }
+  } catch(e){
+    out.innerHTML = `<span class="bad">ERROR</span> <span class="dimc">${esc(e)}</span>`;
+  }
+  btn.textContent = "Close";
+  btn.disabled = false;
+  btn.onclick = closeTicket;
+  loadState();
+}
+
+/* ── UNWIND: sell what a leg filled, IOC. Same two clicks. ── */
+function openUnwind(t){
+  PENDING = {kind:"unwind", t};
+  const rec = t.record || {};
+  const [r1, b1] = screen(t.leg1, t.game), [r2, b2] = screen(t.leg2, t.game);
+  $("#mtitle").textContent = "Confirm UNWIND — this sends real money";
+  $("#trows").innerHTML = `
+    <div class="trow"><span class="k">Game</span><span>${esc(plainGame(t.game))} · ticket ${esc(t.ts)}Z</span></div>
+    <div class="trow"><span class="k">Recorded fills</span><span>leg 1 ${num(rec.l1q,2)} · leg 2 ${num(rec.l2q,2)}</span></div>
+    <div class="trow"><span class="k">Which leg</span><span><select id="uleg">
+      <option value="1">leg 1 only — ${esc(r1||"")} (${esc(b1||"")}) ${num(rec.l1q,2)} filled</option>
+      <option value="2">leg 2 only — ${esc(r2||"")} (${esc(b2||"")}) ${num(rec.l2q,2)} filled</option>
+      <option value="both">both legs</option></select></span></div>
+    <div class="trow"><span class="k">Sell at (cost frame, optional)</span>
+      <span><input id="upx" type="number" step="0.01" min="0.01" max="0.99" placeholder="market"> <span class="dimc">blank = the cached ladder's touch for that rung</span></span></div>
+    <div class="trow"><span class="k">Order type</span><span>SELL · LIMIT · immediate-or-cancel · never more than the venue-reported fill</span></div>
+    <div class="trow"><span class="k">Acknowledge</span><span><label><input type="checkbox" id="ackbox">
+      I mean to close this position now at whatever the touch pays.</label></span></div>`;
+  $("#ackbox").addEventListener("change", () => { $("#confirmBtn").disabled = !$("#ackbox").checked; });
+  $("#confirmBtn").disabled = true;
+  $("#twarn").innerHTML = `The unwind sells the quantity the venue reported filled on the leg's own row, less anything an earlier
+    unwind already sold. An earlier unwind the venue did not answer blocks this one rather than risk selling twice.
+    UNWIND is not gated by the desk lock: a LOCKED desk must not lock you into a half-filled pair. A leg whose
+    send came back pending or unknown has no venue-reported fill yet — check its row first.`;
+  $("#tresult").style.display = "none";
+  $("#confirmBtn").textContent = "Confirm & unwind";
+  $("#confirmBtn").onclick = sendUnwind;
+  $("#modal").classList.add("on");
+}
+
+async function sendUnwind(){
+  if(!PENDING || PENDING.kind !== "unwind") return;
+  const t = PENDING.t;
+  const btn = $("#confirmBtn");
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  const out = $("#tresult");
+  out.style.display = "block";
+  out.innerHTML = '<span class="dimc">submitting…</span>';
+  const legv = $("#uleg").value;
+  const px = $("#upx").value.trim();
+  const body = {ticket_id: t.id, mode: "HUMAN_CONFIRM", leg: legv === "both" ? "both" : parseInt(legv, 10),
+                acknowledge: !!$("#ackbox").checked};
+  if(px !== "") body.limit_cost_price = parseFloat(px);
+  try{
+    const r = await post("/api/arb/unwind", body);
+    const d = r.d;
+    if(r.ok && d.legs){
+      out.innerHTML = (d.legs.length ? d.legs.map(l => `leg ${l.leg}: ${legResult(l)}`).join("<br>")
+                                     : '<span class="dimc">nothing to sell</span>');
+      loadHeader();
+    } else {
+      out.innerHTML = `<span class="bad">REFUSED</span> · HTTP ${r.status}<br><span class="dimc">${detail(d)}</span>`;
+    }
+  } catch(e){
+    out.innerHTML = `<span class="bad">ERROR</span> <span class="dimc">${esc(e)}</span>`;
+  }
+  btn.textContent = "Close";
+  btn.disabled = false;
+  btn.onclick = closeTicket;
+  loadState();
+}
+
+/* ── TALLY and TAILS: the desk's own numbers, rendered verbatim. ── */
+function renderTally(){
+  const ty = (STATE && STATE.tally) || {};
+  const cell = (k, v, title) => `<div class="stat" title="${esc(title||"")}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  $("#tally").innerHTML = cell("placed", ty.placed ?? "—", "first five placed or recorded attempts, in placement order")
+    + cell("recorded", ty.recorded ?? "—", "attempts with fills recorded")
+    + cell("both filled", ty.both ?? "—", "both legs ≥ 80% of size")
+    + cell("leg 1 none", ty.none ?? "—", "leg 1 filled nothing")
+    + cell("open", ty.open ?? "—", "tickets not yet placed, skipped or recorded")
+    + cell("issued", money(ty.issued), "sum of ticket cost over every intent on file");
+  $("#verdict").textContent = ty.verdict || "—";
+}
+function renderTails(){
+  for(const kind of ["executor", "freshness"]){
+    const tails = ((STATE && STATE.tails) || {})[kind] || [];
+    const el = $("#tail-" + kind);
+    if(!tails.length){ el.innerHTML = `<div class="empty">no ${kind} log in the last runs</div>`; continue; }
+    el.innerHTML = tails.map(t => `<div class="meta"><b>${esc(t.file)}</b></div><pre class="tail">${esc((t.lines||[]).join("\n") || "(no cycle line yet)")}</pre>`).join("");
+  }
+}
+
+/* ── BOOK grouping adapter, copied from the other pages: a book click just
+   clicks the underlying league tab, so there is exactly one code path that
+   changes leagues. ── */
+const BOOKS = [
+  {id:"meridian", label:"MERIDIAN", note:"basketball", leagues:["wnba","nba"]},
+  {id:"gridiron", label:"GRIDIRON", note:"football",   leagues:["nfl","cfb"]},
+];
+const bookOf = s => (BOOKS.find(b => b.leagues.includes(s)) || {id:"other"}).id;
+function applyBooks(){
+  const lgEl = document.getElementById("lgtabs");
+  const bkEl = document.getElementById("bookgrp");
+  if(!lgEl || !bkEl) return;
+  const tabs = [...lgEl.querySelectorAll(".lgt")];
+  if(!tabs.length) return;
+  const cur = (tabs.find(t => t.classList.contains("on")) || tabs[0]).dataset.lg;
+  const active = bookOf(cur);
+  const groups = BOOKS.map(b => ({...b, items: tabs.filter(t => b.leagues.includes(t.dataset.lg))}))
+                      .filter(b => b.items.length);
+  const orphans = tabs.filter(t => bookOf(t.dataset.lg) === "other");
+  if(orphans.length) groups.push({id:"other", label:"OTHER", note:"unmapped", items:orphans});
+
+  bkEl.innerHTML = groups.map(g =>
+    `<button class="book ${g.id===active?"on":""}" data-book="${g.id}"
+             title="${g.label} — ${g.note}: ${g.items.map(i=>i.textContent.trim()).join(", ")}"
+     >${g.label}</button>`).join("");
+  bkEl.querySelectorAll(".book").forEach(btn => btn.addEventListener("click", () => {
+    const g = groups.find(x => x.id === btn.dataset.book);
+    if(!g) return;
+    (g.items.find(i => !i.classList.contains("empty")) || g.items[0]).click();
+  }));
+  const shown = (groups.find(g => g.id === active) || {items:[]}).items;
+  tabs.forEach(t => { t.style.display = shown.includes(t) && shown.length > 1 ? "" : "none"; });
+}
+new MutationObserver(applyBooks).observe(
+  document.getElementById("lgtabs") || document.body, {childList:true, subtree:true, attributes:true, attributeFilter:["class"]});
+</script>
+</body>
+</html>

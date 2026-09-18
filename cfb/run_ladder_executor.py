@@ -27,46 +27,19 @@ import argparse
 import datetime as dt
 import json
 import os
-import re
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ladder import scan  # noqa: E402
-from cfb.run_live_ladder import sample, slugs_for  # noqa: E402
-from core.ladder.ui import ui_wording  # noqa: E402
-
-#: Registered in docs/math/ladder-fill-test.md: the money and the minutes are
-#: on the mid-ladder; liquid pairs break for ~30s and pennies.
-MID_LADDER = (3.5, 20.5)
-
-
-def is_mid(v) -> bool:
-    return all(MID_LADDER[0] <= abs(x) <= MID_LADDER[1] for x in (v.high_line, v.low_line))
-
-
-def is_spread_pair(v) -> bool:
-    """Both legs must be spread rungs. The winner market (line 0) is excluded:
-    an NFL tie settles the Winner contract at $0.50 while a spread still
-    settles 0/1, and a postponed game settles every leg at last fair market
-    price -- either breaks the >= $1 guarantee (reviewer's H4, 2026-09-18)."""
-    return 0.0 not in (float(v.high_line), float(v.low_line))
-
-
-_TT = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z?$")
-
-
-def book_age_s(transact_time: str | None, now: float) -> float | None:
-    """Seconds since the venue last updated a book. transactTime is the book's
-    last-update stamp (not the snapshot time), with nanosecond fractions."""
-    if not transact_time:
-        return None
-    m = _TT.match(transact_time.strip())
-    if not m:
-        return None
-    base = dt.datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=dt.timezone.utc)
-    frac = float("0." + m.group(2)) if m.group(2) else 0.0
-    return round(now - (base.timestamp() + frac), 1)
+# sample / slugs_for / book_age_s moved to core.ladder.live so the dashboard
+# can call them (its image has no cfb/); book_age_s is re-exported here
+# because cfb/run_ws_freshness.py and the tests import it from this module.
+from core.ladder.live import book_age_s, sample, slugs_for  # noqa: E402,F401
+# The ticket builder and the two filters moved to core.ladder.intent so the
+# dashboard previews the same ticket this file writes; re-exported here
+# because the tests and cfb/ read them from this module.
+from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for  # noqa: E402,F401
 
 
 def gate(locked: bool, cands: list) -> list:
@@ -76,28 +49,14 @@ def gate(locked: bool, cands: list) -> list:
 
 
 def intent_for(v, game: str, when: str, attempt_usd: float) -> dict:
-    """One fully-formed two-leg order, sized to the attempt budget. qty >= 1."""
-    no_px = round(1.0 - v.sell_price, 4)
-    pair_cost = v.buy_price + no_px               # < 1 whenever E > 0
-    qty = max(1, int(attempt_usd // pair_cost))
-    qty = min(qty, int(v.size))                   # never more than the smaller displayed side
-    try:                                          # screen words are best-effort; a ticket is never blocked by them
-        row1, btn1 = ui_wording(game, v.high_line, "BUY YES")
-        row2, btn2 = ui_wording(game, v.low_line, "BUY NO")
-    except ValueError:
-        row1 = btn1 = row2 = btn2 = None
-    return {
-        "ts": when, "game": game,
-        "leg1": {"market_line": v.high_line, "side": "BUY YES", "price": round(v.buy_price, 4), "qty": qty,
-                 "screen_row": row1, "screen_button": btn1},
-        "leg2": {"market_line": v.low_line, "side": "BUY NO", "price": no_px, "qty": qty,
-                 "screen_row": row2, "screen_button": btn2},
-        "displayed_size": v.size, "edge_c": round(v.edge * 100, 2),
-        "cost_usd": round(qty * pair_cost, 4),
-        "guaranteed_usd": round(qty * (1.0 - pair_cost), 4),   # = qty * (B - A), gross
-        "expected_net_usd": round(qty * v.edge, 4),             # after both fees
-        "placed_by": "operator", "meridian_placed": False,
-    }
+    """One fully-formed two-leg order, sized to the attempt budget. qty >= 1.
+
+    The legs, prices and screen words are `core.ladder.intent.ticket_for`'s;
+    this file adds the two stamps that say who places it, in its own source,
+    so the test that pins "Meridian places nothing" reads them here."""
+    it = ticket_for(v, game, when, attempt_usd)
+    it.update({"placed_by": "operator", "meridian_placed": False})
+    return it
 
 
 def spent_so_far(path: str) -> float:

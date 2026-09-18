@@ -1184,6 +1184,13 @@ class PlacedOrder(Base):
     #: size would be selling contracts we do not hold.
     filled_quantity: Mapped[Decimal | None] = mapped_column(Qty)
     fill_checked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The venue's average fill price (`avgPx.value`), **YES frame** like
+    #: `limit_price`, written by the fill watcher from the activities feed and
+    #: by the ARB send from the venue's synchronous reply. NULL means the venue
+    #: has not reported one — never "filled at zero". It exists because the
+    #: fill test's record asks "at what price?" per leg, and until 2026-09-18
+    #: the only answer this table could give was the limit we asked for.
+    avg_fill_price: Mapped[Decimal | None] = mapped_column(Price)
 
     #: The human cancel path (V21). `cancel_requested_at` is written BEFORE
     #: the venue call — an attempt that never came back must still read as an
