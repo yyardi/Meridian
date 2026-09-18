@@ -64,6 +64,9 @@ def test_compare_reports_touch_equality_and_rest_lag():
     rows = FR.compare(rungs, meta, stream, {"s-pos-3pt5": 3.5}, now)
     assert len(rows) == 1 and rows[0]["touch_equal"] is False
     assert abs(rows[0]["rest_behind_s"] - 28.0) < 0.01, "REST book is 28s older than the stream's"
+    assert rows[0]["tt_equal"] is False
+    same = FR.compare(rungs, {3.5: stamp(2)}, stream, {"s-pos-3pt5": 3.5}, now)
+    assert same[0]["tt_equal"] is True and abs(same[0]["rest_behind_s"]) < 0.01
     rows = FR.compare(rungs, meta, {}, {"s-pos-3pt5": 3.5}, now)
     assert "ws" not in rows[0], "no stream yet: rest-only row, no comparison invented"
 

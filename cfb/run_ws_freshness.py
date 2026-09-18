@@ -15,8 +15,11 @@ touches, both `transactTime`s and the gap between them, and runs the ladder
 scanner on BOTH books so the status line says whether the violations the
 executor would act on are also present in the stream. The decisive reads:
 
-* `rest_behind_s` ~ 0 and `touch_equal` on nearly every row -> REST is not
-  a stale cache; the violations are the venue's own book (H1 refuted).
+* `touch_equal` and `tt_equal` on nearly every row after live updates -> REST
+  is not a stale cache; the violations are the venue's own book (H1 refuted).
+  (Smoke 2026-09-18 13:27Z: the SUBSCRIBE-TIME snapshot carries a stamp ~143s
+  newer than REST's for an identical book, so `rest_behind_s` is only
+  meaningful once the stream has delivered a real update for that rung.)
 * the stream re-prices a rung while REST keeps an older transactTime for
   seconds -> REST is cache-backed; the recorded violations are an API
   artifact and the finding is withdrawn (H1 supported).
@@ -150,6 +153,7 @@ def compare(rungs_rest: dict, meta_rest: dict, stream: dict, line_by_slug: dict,
             row["ws"] = {"bid": wt[0], "ask": wt[1], "bsz": wt[2], "asz": wt[3], "tt": w["tt"],
                          "recv_age_s": round(now - w["recv"], 1)}
             row["touch_equal"] = (r[0], r[1]) == (wt[0], wt[1])
+            row["tt_equal"] = bool(w["tt"]) and w["tt"] == meta_rest.get(k)
             row["rest_behind_s"] = (None if rest_age is None or ws_age is None else round(rest_age - ws_age, 3))
         rows.append(row)
     return rows
@@ -193,8 +197,11 @@ def main() -> int:
             cmp_rows = [r for r in rows if "ws" in r]
             behind = [r["rest_behind_s"] for r in cmp_rows if r.get("rest_behind_s") is not None]
             eq = sum(1 for r in cmp_rows if r["touch_equal"])
+            tteq = sum(1 for r in cmp_rows if r.get("tt_equal"))
+            recv_ages = [r["ws"]["recv_age_s"] for r in cmp_rows]
             print(f"=== {now_s}Z rest {len(rungs)} rungs in {took:.1f}s | ws rungs {len(cmp_rows)} msgs {stream.msgs} "
-                  f"trades {stream.trades} reconn {stream.reconnects} {stream.last_error} | touch equal {eq}/{len(cmp_rows)} | "
+                  f"trades {stream.trades} reconn {stream.reconnects} {stream.last_error} | touch equal {eq}/{len(cmp_rows)} stamp equal {tteq}/{len(cmp_rows)} "
+                  f"ws recv age median {statistics.median(recv_ages) if recv_ages else float('nan'):.0f}s | "
                   f"rest behind median {statistics.median(behind) if behind else float('nan'):.2f}s "
                   f"max {max(behind) if behind else float('nan'):.2f}s | violations rest {len(v_rest)} ws {len(v_ws)} common {len(common)}")
             sys.stdout.flush()
