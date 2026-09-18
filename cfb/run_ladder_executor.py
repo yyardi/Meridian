@@ -27,6 +27,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 import time
 
@@ -41,6 +42,30 @@ MID_LADDER = (3.5, 20.5)
 
 def is_mid(v) -> bool:
     return all(MID_LADDER[0] <= abs(x) <= MID_LADDER[1] for x in (v.high_line, v.low_line))
+
+
+def is_spread_pair(v) -> bool:
+    """Both legs must be spread rungs. The winner market (line 0) is excluded:
+    an NFL tie settles the Winner contract at $0.50 while a spread still
+    settles 0/1, and a postponed game settles every leg at last fair market
+    price -- either breaks the >= $1 guarantee (reviewer's H4, 2026-09-18)."""
+    return 0.0 not in (float(v.high_line), float(v.low_line))
+
+
+_TT = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z?$")
+
+
+def book_age_s(transact_time: str | None, now: float) -> float | None:
+    """Seconds since the venue last updated a book. transactTime is the book's
+    last-update stamp (not the snapshot time), with nanosecond fractions."""
+    if not transact_time:
+        return None
+    m = _TT.match(transact_time.strip())
+    if not m:
+        return None
+    base = dt.datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=dt.timezone.utc)
+    frac = float("0." + m.group(2)) if m.group(2) else 0.0
+    return round(now - (base.timestamp() + frac), 1)
 
 
 def gate(locked: bool, cands: list) -> list:
@@ -91,6 +116,7 @@ def push(intent: dict) -> bool:
            f"1) line {l1['market_line']:+.1f}: {l1['side']} @ {l1['price']:.3f} x {l1['qty']}  <- FIRST\n"
            f"2) line {l2['market_line']:+.1f}: {l2['side']} @ {l2['price']:.3f} x {l2['qty']}\n"
            f"cost ${intent['cost_usd']:.2f}, pays ${l1['qty']:.2f} at settlement any score. "
+           f"books last updated {intent.get('leg1_book_age_s')}s / {intent.get('leg2_book_age_s')}s ago. "
            f"You place it; Meridian did not.")[:480]
     try:
         req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
@@ -128,10 +154,12 @@ def main() -> int:
     end = time.time() + a.minutes * 60
     with PolymarketGatewayClient() as c:
         while time.time() < end:
-            rungs, took = sample(c, slugs, a.prefix)
+            meta: dict = {}
+            rungs, took = sample(c, slugs, a.prefix, meta)
+            now_ts = time.time()
             now = dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S")
             v = scan.scan_ladder(game, rungs, max_size=1e12)
-            cands = [x for x in v if x.dollars >= a.floor_usd]
+            cands = [x for x in v if x.dollars >= a.floor_usd and is_spread_pair(x)]
             cands.sort(key=lambda x: (not is_mid(x), -x.dollars))   # mid-ladder first, then biggest
             issued = None
             locked = os.path.exists(lock)                 # the operator's lock: observe only
@@ -143,6 +171,8 @@ def main() -> int:
                     print(f"=== {now}Z  BUDGET EXHAUSTED ${spent:.2f} of ${a.budget_usd:.2f}; observing only")
                     break
                 it = intent_for(x, game, now, a.attempt_usd)
+                it["leg1_book_age_s"] = book_age_s(meta.get(x.high_line), now_ts)
+                it["leg2_book_age_s"] = book_age_s(meta.get(x.low_line), now_ts)
                 with open(out, "a", encoding="utf-8") as f:
                     f.write(json.dumps(it) + "\n")
                 spent += it["cost_usd"]; last[key] = time.time(); issued = it

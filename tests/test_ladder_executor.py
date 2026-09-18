@@ -1,6 +1,7 @@
 """The shadow executor does everything but send, and cannot send."""
 from __future__ import annotations
 
+import datetime as dt
 import importlib
 import json
 import pathlib
@@ -54,5 +55,22 @@ def test_operator_lock_gates_issuance_but_not_sampling():
     assert EX.gate(True, cands) == []
     loop = SRC[SRC.index("while time.time() < end"):]
     assert "os.path.exists(lock)" in loop and "gate(locked, cands)" in loop, "lock is re-read every cycle"
-    assert "sample(c, slugs, a.prefix)" in loop.split("gate(locked")[0], "sampling happens before the gate"
+    assert "sample(c, slugs, a.prefix" in loop.split("gate(locked")[0], "sampling happens before the gate"
     assert '"ladder_lock"' in SRC
+
+
+def test_winner_market_pairs_are_never_candidates():
+    assert EX.is_spread_pair(Violation("g", 10.5, 13.5, 0.5, 0.6, 0.05, 1000))
+    assert not EX.is_spread_pair(Violation("g", -2.5, 0.0, 0.22, 0.265, 0.023, 8215)), "winner leg excluded"
+    loop = SRC[SRC.index("while time.time() < end"):]
+    assert "is_spread_pair(x)" in loop.split("gate(locked")[0]
+
+
+def test_book_age_parses_nanosecond_stamps_and_rides_on_the_ticket():
+    now = 1_800_000_000.0
+    stamp = dt.datetime.fromtimestamp(now - 412.25, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + ".000000000Z"
+    assert abs(EX.book_age_s(stamp, now) - 412.0) < 1.0 or abs(EX.book_age_s(stamp, now) - 413.0) < 1.0
+    assert EX.book_age_s(None, now) is None and EX.book_age_s("garbage", now) is None
+    assert "leg1_book_age_s" in SRC and "leg2_book_age_s" in SRC
+    body = SRC[SRC.index("def push("):SRC.index("def main(")]
+    assert "leg1_book_age_s" in body, "the phone message says how stale each book is"

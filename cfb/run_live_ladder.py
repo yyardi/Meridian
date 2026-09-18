@@ -51,12 +51,17 @@ def slugs_for(prefix: str) -> list[str]:
     return sorted(r[0] for r in rows)
 
 
-def sample(client, slugs: list[str], winner_prefix: str):
+def sample(client, slugs: list[str], winner_prefix: str, meta: dict | None = None):
+    """Fetch every rung's touch from the venue. If ``meta`` is given it is
+    filled with each rung's ``transactTime`` -- the venue's LAST-UPDATE stamp
+    for that book (verified 2026-09-18: three identical snapshots 3s apart
+    carried the same value), so ``now - transactTime`` is how long the rung
+    has sat un-requoted."""
     rungs = {}
     t0 = time.time()
     for s in slugs:
         try:
-            book, _ = client.get_book(s)
+            book, raw = client.get_book(s)
         except Exception as e:  # noqa: BLE001 -- one bad rung must not kill the sample
             print(f"  ERR {s} {str(e)[:60]}")
             continue
@@ -68,6 +73,8 @@ def sample(client, slugs: list[str], winner_prefix: str):
             continue
         rungs[k] = (float(md.bids[0].px.value), float(md.offers[0].px.value),
                     float(md.bids[0].qty), float(md.offers[0].qty))
+        if meta is not None:
+            meta[k] = ((raw or {}).get("marketData") or {}).get("transactTime")
     return rungs, time.time() - t0
 
 
