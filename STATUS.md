@@ -3116,6 +3116,44 @@ Then Saturday's 49-game CFB slate and Sunday's NFL from 17:00Z. The per-game fig
 these are also the sampler's first runs at scale, read-only, so n stops being 1 whether or not a hand
 order is placed.
 
+## 0bx. The report, the desk, the lock — and what "$4,000 a game" is a ratio of
+
+**Two pages, both private until you share them.** The researcher's report, *Ladder Lag Review*
+(https://claude.ai/artifact/6GofUho1ZW2FNgUWd7s5HA): the domination math, the 84,646-pair settlement
+check, ordering by venue/family/phase, the skew table, the full DET–BUF live series as charts, the six
+$100+ episodes, the corrections I made on the way, the registered fill test, and the questions I want
+pressed. The operator's *Ladder Desk* (https://claude.ai/artifact/HXgxqTuKFH8BL2jQWQRbz1): one lock —
+ARMED / LOCKED — that is yours, each executor ticket as two exact button rows, "I placed it" /
+"Skipped", and a fill record that tallies itself against the registered decision rule.
+
+**The lock reaches the executor through a file.** `cfb/run_ladder_executor.py` now re-reads
+`<out dir>/ladder_lock` every cycle (9711e1d, staged on prod): while it exists the executor keeps
+sampling and issues nothing, pushes nothing. No file tonight — armed, on your instruction. **The desk
+does not write that file by itself**: I read `desk/state` at each check-in and create or remove the
+lock, and I copy new intents into the desk's tickets. Latency one check-in, or immediately when you say
+so. I was refused permission to seed the desk's state from here, so the desk reads an unset lock as
+tonight's armed default until you click.
+
+**The ratio.** $4,047 is Σ best-per-episode at displayed size, 100 % fill. The quantity underneath is
+edge per pair-dollar: median 1.79¢ on a ~95¢ pair (≈1.8 %), p90 7.42¢ (≈8 %), max 14.64¢, guaranteed at
+settlement if both legs fill. Capital that must cycle through one game to earn it, at 100 % fill:
+
+| at | $10 / game | $100 / game | $1,000 / game |
+|---|---:|---:|---:|
+| median edge 1.8 % | $556 | $5,556 | $55,556 |
+| the +5.5/+3.5 shape 3.7 % | $270 | $2,703 | $27,027 |
+| p90 edge 8 % | $125 | $1,250 | $12,500 |
+
+DET–BUF offered 25 episodes ≥ $25 worth $3,461 at displayed size and 6 ≥ $100 worth $2,591, so the
+capacity for the right column existed on one game; what does not exist is evidence that any of it
+fills. **To answer that: $15 buys one attempt of 15 contracts; $50–100 buys the registered five-attempt
+rule at 50.** Every cell above is worthless until that answer is in.
+
+**Housekeeping.** The tonight-watcher that grepped `ALERTED` (the sampler's token) is replaced by one
+that waits for the executor's intents file. polysimulator.com (operator's find) is a paper-trading front
+for polymarket.com, not Polymarket US, and fills at displayed prices by construction — it cannot answer
+the fill question, which is the only one left.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
