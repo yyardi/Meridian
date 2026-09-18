@@ -76,9 +76,36 @@ def test_ticket_is_shown_in_screen_words_and_records_the_operators_actions(desk)
 
 
 def test_desk_has_no_venue_call_and_no_order_path():
-    src = pathlib.Path(importlib.import_module("cfb.ladder_desk_app").__file__).read_text(encoding="utf-8")
-    for bad in ("PolymarketGatewayClient", "place_order", "create_order", "/orders", "httpx", "MERIDIAN_ORDER_TOKEN", "api.polymarket"):
-        assert bad not in src
+    from core.ladder import desk as core_desk
+    for mod in (importlib.import_module("cfb.ladder_desk_app"), core_desk):
+        src = pathlib.Path(mod.__file__).read_text(encoding="utf-8")
+        for bad in ("PolymarketGatewayClient", "PolymarketOrderClient", "place_order", "create_order",
+                    "/orders", "httpx", "MERIDIAN_ORDER_TOKEN", "api.polymarket"):
+            assert bad not in src
+
+
+def test_desk_routes_and_the_core_helpers_write_the_same_files(desk):
+    """The dashboard's ARB tab calls core.ladder.desk with its own directory;
+    the desk's routes call it with theirs. Lock, tickets and records must be
+    the same bytes either way, or one page would lie about the other."""
+    from core.ladder import desk as core_desk
+    mod, c, out = desk
+    assert mod.tally is core_desk.tally and mod.ticket_id is core_desk.ticket_id
+    assert mod.OUT == str(out) and core_desk.lock_path(str(out)) == mod.lock_path()
+    c.post("/lock", follow_redirects=False)
+    assert not core_desk.armed(str(out)) and "LOCKED" in c.get("/").text
+    core_desk.arm(str(out))
+    assert mod.armed() and "ARMED" in c.get("/").text
+    tid = core_desk.load_tickets(str(out))[0]["id"]
+    assert tid == mod.load_tickets()[0]["id"]
+    row = core_desk.record_attempt(str(out), tid, "recorded",
+                                   {"l1q": 2, "l1p": 0.41, "l1s": 4, "l2q": 0, "l2p": None, "l2s": None},
+                                   via="dashboard", venue_order_ids=["o1", None])
+    assert row["l2q"] == 0.0 and row["via"] == "dashboard" and row["venue_order_ids"] == ["o1", None]
+    t = mod.load_tickets()[0]
+    assert t["status"] == "recorded" and t["record"]["via"] == "dashboard"
+    assert mod.tally(mod.load_tickets())["none"] == 0 and mod.tally(mod.load_tickets())["both"] == 0
+    assert "leg 1 filled 2 @ 0.41" in c.get("/").text
 
 
 def test_instructions_page_is_one_tap_from_the_desk_and_says_which_leg_first(desk):

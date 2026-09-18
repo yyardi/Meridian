@@ -3302,6 +3302,51 @@ IOC in ~100–200 ms misses the 20-second penny episodes and catches the minutes
 automatic sender is worth having is a question for after the fill answer, put to the operator with
 numbers; it is not something I arm.
 
+## 0cb. The ARB tab is built and staged in my worktree; committing it is the operator's click
+
+**What it is.** One tab on the dashboard, `/arb`, replacing the desk on :8011 and the phone-and-app
+routine: a live depth ladder for the selected game (every rung's bid/ask/size, book age, the
+dominance bound each rung must satisfy, violating rungs lit, the pair the executor would ticket
+outlined), the ticket in the venue's screen words, **SEND** (two clicks, the order token, a confirm
+that spells every term), **UNWIND**, the operator's records and the registered tally, executor and
+stream heartbeats. PULSE and QUOTE leave the nav (routes and engines untouched, an ARCHIVED banner on
+each page); the wallet's CFB heading and the missing `quote_engine_cfb` overlay are fixed on the way.
+
+**How SEND is gated, in order.** Order token (fail-closed when unset) → the literal mode
+`HUMAN_CONFIRM` → the ticket must be one the executor wrote (matched by id, slugs rebuilt from
+game + line, sides, prices within one tick, quantity ≤ the ticket's) → both legs spread rungs → tick
+and bounds → per-leg and pair caps (`MERIDIAN_ARB_MAX_PAIR_USD`, default $25, and the live bankroll)
+→ the ticket still open → the lock file absent. Then two `orders` rows are written before any venue
+call; leg 1 goes as `IMMEDIATE_OR_CANCEL` with `synchronousExecution`, its reply is parsed
+(`executions[].order.state/cumQuantity`, `avgPx`, VWAP fallback), and leg 2 goes only for the
+quantity leg 1 filled. A zero fill on leg 1 ends the ticket; "leg 1 filled, leg 2 unfilled" is a
+first-class outcome. UNWIND sells at most the venue-reported filled quantity, IOC, and is deliberately
+not gated by the lock — it is the way out. The venue's synchronous reply shape comes from its docs and
+has not been seen live; the first send logs the whole body.
+
+**What the reviewers found and what was fixed.** Five adversarial passes: eight major findings, all
+applied and pinned — leg-2 sizing from the venue's Decimal, quantity string normalisation, terminal
+vs pending zero fills, the record written as "placed" rather than "recorded" when the reply is not
+terminal, a pair-cost sanity refusal (cost ≥ $1 can never be the ticket), screen bid/ask on every rung,
+`via=send|desk` on records, and the doc amendment matched to the code. Minor items left as decisions:
+UNWIND exempt from the lock (stated); :8011's lock/arm are unauthenticated as before (the tab's are
+token-gated); a per-ticket advisory lock against double clicks is a follow-up.
+
+**Tests.** DB-free: 233 passed (ladder, arb core, arb tab, page pins, sweeps, landing, quote).
+DB-backed (`tests/test_arb_send.py`, 19 cases with a scripted fake venue: full, partial, zero, leg-2
+transport error, rejection, duplicate, six unwind cases) need a Postgres at head — the additive
+migration `c7d2e9f14b60` adds `orders.avg_fill_price`. They run on the box with
+`deploy/aws/run_suite.sh tests/test_arb_send.py` once the files are staged there.
+
+**Where it is.** 24 files, +4,774/−223, **staged in my worktree's index and not committed**: the
+permission classifier refuses a commit that adds order-sending code, and I am not routing around
+that. The operator commits it (one command, given in the chat) and I stage it on prod and run the
+DB suite there. It reaches :8008 with the §1 fleet rebuild in one pass — an api-only rebuild would
+apply `c7d2e9f14b60` (and `b4e9f1c73d85`) and strand every old-image container on restart (§0at).
+
+**Tonight is unchanged**: :8011 desk, phone pushes, hand placement, three CFB executors, three
+WNBA read-only samplers.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**

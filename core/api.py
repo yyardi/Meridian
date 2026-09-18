@@ -19,9 +19,12 @@ import datetime as dt
 import hmac
 import json
 import os
+import re
+import threading
 import time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Literal
 
 import structlog
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -34,6 +37,7 @@ from core import heartbeat
 from core.board import FINISHED, IN_PLAY, latest_snapshot_per_market, market_state
 from core.game_detail import build_game_detail, list_games
 from core.executor import (
+    ARB_TIF,
     VENUE_MAX_PRICE,
     VENUE_MIN_PRICE,
     ExecutionMode,
@@ -43,9 +47,15 @@ from core.executor import (
     build_order,
     round_to_tick,
 )
+from core.ladder import desk as _ladder_desk
+from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for
+from core.ladder.live import book_age_s, line_of, sample, slugs_for
+from core.ladder.scan import best_per_game, fee, scan_ladder
+from core.ladder.ui import ui_wording
 from core.polymarket.client import (
     MissingCredentialsError,
     OrderSubmissionError,
+    PolymarketGatewayClient,
     PolymarketOrderClient,
     USCredentials,
 )
@@ -93,9 +103,11 @@ VENUE_MIN_QTY = Decimal("0.01")
 MAX_ORDER_STAKE_USD = Decimal(os.environ.get("MERIDIAN_MAX_ORDER_STAKE_USD", "25"))
 
 
-def _stake_cap(allow_fetch: bool = True) -> Decimal:
+def _stake_cap(allow_fetch: bool = True, cap: Decimal | None = None) -> Decimal:
     """The most one order may stake: the fat-finger cap **or the account**,
-    whichever is smaller.
+    whichever is smaller. ``cap`` defaults to the per-order cap; the ARB tab
+    passes its own pair cap through the same rule so the two paths cannot
+    disagree about what "the account" means.
 
     The $25 cap was written when the balance was $35. The account has since
     drifted to $23.82, so the "cap" stopped capping anything — a single ticket
@@ -109,15 +121,16 @@ def _stake_cap(allow_fetch: bool = True) -> Decimal:
     """
     from core.bankroll import BankrollUnavailable, current
 
+    cap = MAX_ORDER_STAKE_USD if cap is None else cap
     try:
-        return min(MAX_ORDER_STAKE_USD, current(
+        return min(cap, current(
             allow_fetch=allow_fetch,
             max_age_seconds=1800.0 if allow_fetch else 86400.0,
         ).bankroll)
     except BankrollUnavailable as exc:
         log.warning("stake_cap_without_bankroll", error=str(exc)[:160],
-                    cap=float(MAX_ORDER_STAKE_USD))
-        return MAX_ORDER_STAKE_USD
+                    cap=float(cap))
+        return cap
 
 
 def _bankroll_block(allow_fetch: bool = True) -> dict | None:
@@ -248,7 +261,8 @@ BREAKEVEN_HIT_RATE = 0.524
 #: 3-connection pool exhausted itself the moment one query got slow, turning a
 #: latency problem into 500s. Safe now that app processes are on the transaction
 #: pooler, which multiplexes.
-_Session = get_sessionmaker(get_engine(pool_size=5, max_overflow=5))
+_ENGINE = get_engine(pool_size=5, max_overflow=5)
+_Session = get_sessionmaker(_ENGINE)
 
 STATIC = Path(__file__).parent.parent / "static"
 
@@ -601,9 +615,10 @@ def status() -> dict:
     # scripts/health.py had until 2026-09-02. `healthy` deliberately ignores
     # them: absence here is a fact for the header dot, not a recorder failure.
     overlays = {}
-    # quote_engine_nfl = GRIDIRON (service_quote_for('nfl')); an overlay like the
-    # others, absent until the NFL engine is deployed (before Sept 9).
-    for svc in ("pulse_engine", "quote_engine", "quote_engine_nfl"):  # SERVICE_PULSE / SERVICE_QUOTE(+nfl);
+    # quote_engine_nfl = GRIDIRON (service_quote_for('nfl')); quote_engine_cfb
+    # its CFB twin (the meridian-quote-cfb container, live since 2026-09-12 and
+    # invisible here until 2026-09-18: a running engine read as nothing at all).
+    for svc in ("pulse_engine", "quote_engine", "quote_engine_nfl", "quote_engine_cfb"):  # SERVICE_PULSE / SERVICE_QUOTE(+nfl,+cfb);
         # literals, not imports: pulling core.pulse.live in here would load the
         # whole engine module into the API process just to name a row key.
         entry = (beats or {}).get(svc)
@@ -1916,6 +1931,7 @@ def recent_orders(limit: int = Query(25, ge=1, le=100)) -> dict:
             "venue_order_id": o.venue_order_id,
             "fill_status": o.fill_status,               # null = never reconciled
             "filled_quantity": _f(o.filled_quantity),
+            "avg_fill_price": _f(o.avg_fill_price),     # YES frame; null = not reported
             "fill_checked_at": (
                 o.fill_checked_at.isoformat() if o.fill_checked_at else None
             ),
@@ -2894,6 +2910,1302 @@ def scalps(limit: int = Query(200, ge=1, le=1000)) -> dict:
             " FROM paper_scalps GROUP BY league ORDER BY league"))]
     return {"rows": rows, "totals": totals, "limit": n,
             "note": "paper only — the scalp engine reads the tape and places nothing"}
+
+
+# --------------------------------------------------------------------------- #
+# ARB tab — the ladder desk on the dashboard, and the one two-leg SEND
+# --------------------------------------------------------------------------- #
+#
+# The desk on :8011 (cfb/ladder_desk_app.py) reads the executor's intents and
+# writes the lock and the operator's records; this is the same desk served
+# from the dashboard, reading and writing the SAME files through
+# core.ladder.desk, plus the one thing the desk could not do: send the two
+# legs. The venue vocabulary is from docs.polymarket.us create-order (read
+# 2026-09-18): an IMMEDIATE_OR_CANCEL limit with synchronousExecution takes
+# what is there, rests nothing, and answers with its own fill — so a zero fill
+# in a TERMINAL state is a fact in the reply, not the invisible state the
+# activities feed leaves a cancelled order in (V19). A zero fill in a pending
+# state (PENDING_NEW, NEW, PENDING_RISK) is not that fact: no maxBlockTime is
+# sent, so whether the venue blocks until the IOC is terminal is unobserved,
+# and such a reply is "pending", never "unfilled". None of it had been
+# exercised live when this was written; the first send is the first
+# observation.
+#
+# What is defended, in order, on every send:
+#   the server token; the HUMAN_CONFIRM literal; the ticket must be one the
+#   executor wrote, and still open on the desk's record; the submitted legs
+#   must match that ticket (slug, side, price within a cent, size not above
+#   it); spread rungs only; tick and bounds; per-leg and pair stake under the
+#   pair cap AND the account; the acknowledge flag; and the lock file — locked
+#   means refused. Only then are the two idempotency rows written (refused if
+#   a leg-1 row for the ticket already exists), and only then is leg 1 sent.
+#   Leg 2 is sent only for the quantity leg 1 filled, or not at all.
+#
+# What the desk's record says after a send: `recorded` with fills only when
+#   every sent leg's fill was OBSERVED (accepted, and either filled or in a
+#   terminal state). A venue refusal, an unreadable reply, a pending state or
+#   a leg-2 transport error is protocol noise, not a fill observation, and is
+#   written as `placed` with the outcome, for the operator to record by hand
+#   once the fill watcher has reconciled the row. The tally's "leg 1 filled
+#   nothing" count must never include a 401.
+#
+# UNWIND is deliberately exempt from the lock file: it is the operator's way
+#   out of a half-filled pair, and locking the desk must not lock them in.
+#   It still needs the token, the HUMAN_CONFIRM literal and the acknowledge
+#   flag, and never sells more than the venue reported filled.
+#
+# The sampler thread reads the venue's public books through the recorder's
+# unauthenticated gateway client; the ladder handler serves its cache and
+# never calls the venue itself.
+
+#: The executor's ticket-issuing filters, shown on the page beside the live
+#: violations so the operator can see why a violation is or is not a ticket.
+_ARB_FLOOR_USD = 25.0
+#: The executor's default --attempt-usd; the previewed ticket is sized as the
+#: executor would size it, so the two screens show the same contract count.
+_ARB_TICKET_ATTEMPT_USD = 1.0
+#: How long one /api/arb/ladder?game= request keeps that game sampled.
+_ARB_WATCH_SECONDS = 30 * 60
+#: The recorder's slug listing for a game is re-read this often; rungs are
+#: listed pregame and do not change during a game.
+_ARB_SLUGS_TTL_S = 10 * 60
+#: A game prefix as the executor spells it (aec-cfb-mia-wake-2026-09-18) or
+#: as the intents file spells it (cfb-mia-wake-2026-09-18).
+_ARB_PREFIX = re.compile(r"^(?:aec-)?([a-z0-9]+-[a-z0-9-]+-\d{4}-\d{2}-\d{2})$")
+#: How far a submitted leg price may sit from the ticket's: one tick. The
+#: human may nudge; the human may not re-price.
+_ARB_PRICE_SLACK = Decimal("0.01")
+#: A cached ladder touch older than this many sample intervals is not a touch:
+#: the unwind's "at market" default must come from a book the sampler has
+#: seen recently, not from a sample taken hours ago by an expired watch.
+_ARB_STALE_TOUCH_INTERVALS = 2.0
+#: The venue's quantity precision (contracts to the cent). Every quantity
+#: this module derives from a venue-reported Decimal is spelled through
+#: `_arb_qty` so the payload reads "1", never "1.0" or "1.0000".
+_ARB_QTY_STEP = Decimal("0.01")
+#: The desk's `via` marks: what the ARB tab's SEND writes, and what a hand
+#: record through /api/arb/record writes. The page offers UNWIND only on the
+#: first, because only a sent ticket has rows to sell from.
+_ARB_VIA_SEND = "send"
+_ARB_VIA_DESK = "desk"
+
+_ARB_LADDER: dict = {"watch": {}, "cache": {}, "slugs": {}, "thread": None}
+_ARB_LOCK = threading.Lock()
+
+
+def _arb_out_dir() -> str:
+    return _ladder_desk.api_out_dir()
+
+
+def _arb_max_pair_usd() -> Decimal:
+    """Read per call, not at import: the operator's cap for the pair, and a
+    test's."""
+    try:
+        return Decimal(os.environ.get("MERIDIAN_ARB_MAX_PAIR_USD") or "25")
+    except InvalidOperation:
+        return Decimal("25")
+
+
+def _arb_allow_size_up() -> bool:
+    return (os.environ.get("MERIDIAN_ARB_ALLOW_SIZE_UP") or "").strip() == "1"
+
+
+def _arb_sample_seconds() -> float:
+    try:
+        return max(2.0, float(os.environ.get("MERIDIAN_ARB_SAMPLE_SECONDS") or 10))
+    except ValueError:
+        return 10.0
+
+
+def _arb_qty(q: Decimal) -> Decimal:
+    """A quantity as the venue has always received it: to the cent, no
+    trailing zeros, never exponent form. Decimal('2.0000') - Decimal('1.0000')
+    is '1.0000' and float(1) is '1.0'; the venue has only ever seen "1"."""
+    q = Decimal(str(q)).quantize(_ARB_QTY_STEP)
+    q = q.normalize()
+    if q == q.to_integral():
+        return q.quantize(Decimal("1"))
+    return q
+
+
+def _arb_prefix(game: str) -> tuple[str, str]:
+    """('aec-cfb-mia-wake-2026-09-18', 'cfb-mia-wake-2026-09-18') from either
+    spelling; 422 for anything that is not a game."""
+    m = _ARB_PREFIX.match((game or "").strip().lower())
+    if not m:
+        raise HTTPException(
+            status_code=422,
+            detail=f"game {game!r} must look like aec-cfb-mia-wake-2026-09-18")
+    return "aec-" + m.group(1), m.group(1)
+
+
+def _arb_filters() -> dict:
+    return {"floor_usd": _ARB_FLOOR_USD, "spread_only": True, "mid_first": True,
+            "mid_ladder": list(MID_LADDER), "attempt_usd": _ARB_TICKET_ATTEMPT_USD}
+
+
+def _arb_ticket_view(t: dict) -> dict:
+    """A ticket as the page shows it: the executor's intent plus screen words
+    for any leg that lacks them (older intents), and whether SEND applies."""
+    t = dict(t)
+    game = str(t.get("game") or "")
+    for key in ("leg1", "leg2"):
+        leg = dict(t.get(key) or {})
+        if leg and not leg.get("screen_row"):
+            try:
+                leg["screen_row"], leg["screen_button"] = ui_wording(
+                    game, float(leg["market_line"]), str(leg["side"]))
+            except (ValueError, KeyError, TypeError):
+                pass
+        t[key] = leg
+    lines = [float((t.get(k) or {}).get("market_line") or 0) for k in ("leg1", "leg2")]
+    t["spread_pair"] = 0.0 not in lines
+    t["sendable"] = t.get("status") == "open" and t["spread_pair"]
+    return t
+
+
+@app.get("/api/arb/state")
+def arb_state() -> dict:
+    """The desk's files, read fresh on every call: the lock, every ticket
+    with the operator's latest record merged in, the registered tally, the
+    executor and freshness tails, and the games seen tonight.
+
+    File-backed and never a 500: the api container sees the reads directory
+    only if compose mounts it, and "no desk here" must not look like an empty
+    desk. Nothing here touches the database or the venue.
+    """
+    out = _arb_out_dir()
+    if not os.path.isdir(out):
+        return {"available": False, "dir": out,
+                "note": f"reads directory {out} is not mounted in this container"}
+    try:
+        tickets = [_arb_ticket_view(t) for t in _ladder_desk.load_tickets(out)]
+        tails = {
+            kind: [{"file": os.path.basename(p), "lines": _ladder_desk.tail(p)}
+                   for p in _ladder_desk.log_files(out, kind)]
+            for kind in ("executor", "freshness")
+        }
+        games = _ladder_desk.recent_games(out)
+    except OSError as exc:
+        return {"available": False, "dir": out, "note": f"cannot read {out}: {exc}"}
+    return {
+        "available": True,
+        "dir": out,
+        "armed": _ladder_desk.armed(out),
+        "budget_usd": float(os.environ.get("LADDER_BUDGET_USD", "5")),
+        "max_pair_usd": float(_arb_max_pair_usd()),
+        "allow_size_up": _arb_allow_size_up(),
+        "sample_seconds": _arb_sample_seconds(),
+        "filters": _arb_filters(),
+        "tickets": tickets,
+        "tally": _ladder_desk.tally(tickets),
+        "tails": tails,
+        "games": games,
+        "watching": sorted(_arb_watched(time.time())),
+    }
+
+
+# --- the live ladder: a daemon sampler and a cache ------------------------- #
+
+
+def _arb_ladder_snapshot(game: str, rungs: dict, meta: dict, took_s: float,
+                         now: float) -> dict:
+    """One sample rendered for the page. Pure: rungs is what
+    core.ladder.live.sample returned (line -> (bid, ask, bid_sz, ask_sz)),
+    meta the venue's transactTime per line.
+
+    Bounds per rung, from the ordering the settled tape proved (84,646 pairs,
+    STATUS 0bk): covering a higher line is easier, so a rung's price must sit
+    at or above every harder rung's bid (``lo``, the max bid over lower lines)
+    and at or below every easier rung's ask (``hi``, the min ask over higher
+    lines). An ask under ``lo`` or a bid over ``hi`` is flagged; those are the
+    gross terms, and the fee-netted pairs are the ``violations``, computed by
+    the same scan_ladder the executor runs so the two never disagree.
+    """
+    lines = sorted(rungs)
+    out_rungs: dict[str, dict] = {}
+    bounds: dict[str, dict] = {}
+    for line in lines:
+        bid, ask, bid_sz, ask_sz = rungs[line]
+        harder = [rungs[k][0] for k in lines if k < line]
+        easier = [rungs[k][1] for k in lines if k > line]
+        lo = max(harder) if harder else None
+        hi = min(easier) if easier else None
+        flags = []
+        if lo is not None and ask < lo:
+            flags.append("ask below a harder rung's bid")
+        if hi is not None and bid > hi:
+            flags.append("bid above an easier rung's ask")
+        try:
+            row, our_yes_is = ui_wording(game, line, "BUY YES") if line != 0.0 else ("winner", None)
+        except ValueError:
+            row, our_yes_is = None, None
+        # bid/ask are the slug frame (the first team's YES at this line). The
+        # venue's screen prices the ROW's Yes: on a neg rung the row is the
+        # first team's, on a pos rung the second team's, whose Yes is our NO,
+        # so the screen pair there is (1 - ask, 1 - bid). Both are served so
+        # the page never pairs one team's row text with the other's prices.
+        if line < 0:
+            screen_bid, screen_ask = bid, ask
+        elif line > 0:
+            screen_bid, screen_ask = round(1.0 - ask, 4), round(1.0 - bid, 4)
+        else:
+            screen_bid = screen_ask = None
+        key = f"{line:g}"
+        bounds[key] = {"lo": lo, "hi": hi}
+        out_rungs[key] = {
+            "line": line, "row": row, "our_yes_is": our_yes_is,
+            "bid": bid, "ask": ask, "bid_sz": bid_sz, "ask_sz": ask_sz,
+            "screen_bid": screen_bid, "screen_ask": screen_ask,
+            "tt": meta.get(line), "age_s": book_age_s(meta.get(line), now),
+            "lo": lo, "hi": hi, "flags": flags,
+        }
+    when = dt.datetime.fromtimestamp(now, UTC).strftime("%H:%M:%S")
+    violations = []
+    found = scan_ladder(game, rungs, max_size=1e12)
+    for v in found:
+        spread = is_spread_pair(v)
+        violations.append({
+            "high_line": v.high_line, "low_line": v.low_line,
+            "buy_price": v.buy_price, "sell_price": v.sell_price,
+            "edge_c": round(v.edge * 100, 2), "size": v.size,
+            "dollars": round(v.dollars, 2),
+            "mid_ladder": is_mid(v), "spread_pair": spread,
+            # The executor's own rule: floor, spread-only; mid-ladder first.
+            "candidate": spread and v.dollars >= _ARB_FLOOR_USD,
+            "ticket": ticket_for(v, game, when, _ARB_TICKET_ATTEMPT_USD),
+        })
+    violations.sort(key=lambda x: (not x["candidate"], not x["mid_ladder"], -x["dollars"]))
+    return {
+        "available": True, "game": game,
+        "sampled_at": dt.datetime.fromtimestamp(now, UTC).isoformat(),
+        "sampled_ts": now, "took_s": round(took_s, 2),
+        "n_rungs": len(lines),
+        "rungs": out_rungs, "bounds": bounds, "violations": violations,
+        "best_per_game": {g: round(d, 2) for g, d in best_per_game(found).items()},
+        "filters": _arb_filters(),
+    }
+
+
+def _arb_watch(prefix: str) -> float:
+    until = time.time() + _ARB_WATCH_SECONDS
+    with _ARB_LOCK:
+        _ARB_LADDER["watch"][prefix] = until
+    return until
+
+
+def _arb_watched(now: float) -> list[str]:
+    with _ARB_LOCK:
+        watch = _ARB_LADDER["watch"]
+        for prefix in [p for p, until in watch.items() if until <= now]:
+            del watch[prefix]
+        return list(watch)
+
+
+def _arb_slugs(prefix: str, game: str, now: float) -> list[str]:
+    """The game's rungs from the recorder's listing, through the api's own
+    engine, cached for a while: the listing is a query over two days of
+    snapshots and the rungs do not change in-game."""
+    cached = _ARB_LADDER["slugs"].get(prefix)
+    if cached is not None and now - cached[0] < _ARB_SLUGS_TTL_S and cached[1]:
+        return cached[1]
+    slugs = slugs_for(game, _ENGINE)
+    _ARB_LADDER["slugs"][prefix] = (now, slugs)
+    return slugs
+
+
+def _arb_sample_one(client, prefix: str) -> None:
+    """Sample one watched game and store the rendering; a failure is stored
+    too, as the reason the page shows, and never stops the thread."""
+    game = prefix.replace("aec-", "", 1)
+    try:
+        now = time.time()
+        slugs = _arb_slugs(prefix, game, now)
+        if not slugs:
+            _ARB_LADDER["cache"][prefix] = {
+                "available": False, "game": game, "prefix": prefix,
+                "sampled_at": dt.datetime.fromtimestamp(now, UTC).isoformat(), "sampled_ts": now,
+                "reason": f"no rungs recorded for {game} in the last two days"}
+            return
+        meta: dict = {}
+        rungs, took = sample(client, slugs, prefix, meta,
+                             on_error=lambda s, e: log.warning("arb_rung_failed", slug=s, error=e))
+        now = time.time()
+        snap = _arb_ladder_snapshot(game, rungs, meta, took, now)
+        snap["prefix"] = prefix
+        snap["n_slugs"] = len(slugs)
+        _ARB_LADDER["cache"][prefix] = snap
+    except Exception as exc:  # noqa: BLE001 — one game's failure must not stop the sampler
+        log.warning("arb_sample_failed", game=prefix, error=str(exc)[:200])
+        _ARB_LADDER["cache"][prefix] = {
+            "available": False, "game": game, "prefix": prefix,
+            "sampled_at": dt.datetime.now(UTC).isoformat(), "sampled_ts": time.time(),
+            "reason": str(exc)[:200]}
+
+
+def _arb_sampler_loop() -> None:
+    """Daemon: ONE gateway client, every watched game every N seconds. Same
+    shape as the wallet refresh thread — the request never waits on the venue,
+    it reads whatever the last cycle left."""
+    with PolymarketGatewayClient() as client:
+        while True:
+            t0 = time.time()
+            for prefix in _arb_watched(t0):
+                _arb_sample_one(client, prefix)
+            time.sleep(max(0.5, _arb_sample_seconds() - (time.time() - t0)))
+
+
+def _arb_ensure_sampler() -> None:
+    with _ARB_LOCK:
+        t = _ARB_LADDER["thread"]
+        if t is not None and t.is_alive():
+            return
+        t = threading.Thread(target=_arb_sampler_loop, name="arb-ladder-sampler", daemon=True)
+        _ARB_LADDER["thread"] = t
+        t.start()
+
+
+@app.get("/api/arb/ladder")
+def arb_ladder(game: str = Query(..., min_length=8, max_length=120)) -> dict:
+    """The live ladder for one game, from the sampler's cache. Asking for a
+    game registers it for the next thirty minutes; the first answer says the
+    sample is pending. **This handler never calls the venue.**"""
+    prefix, plain = _arb_prefix(game)
+    until = _arb_watch(prefix)
+    try:
+        _arb_ensure_sampler()
+    except Exception as exc:  # noqa: BLE001 — a thread that cannot start is a reason, not a 500
+        return {"available": False, "game": plain, "prefix": prefix,
+                "reason": f"sampler could not start: {str(exc)[:160]}"}
+    snap = _ARB_LADDER["cache"].get(prefix)
+    if snap is None:
+        return {"available": False, "game": plain, "prefix": prefix,
+                "reason": "first sample pending", "watching_until": until,
+                "sample_seconds": _arb_sample_seconds()}
+    out = dict(snap)
+    out["age_s"] = round(time.time() - snap["sampled_ts"], 1)
+    out["watching_until"] = until
+    out["sample_seconds"] = _arb_sample_seconds()
+    return out
+
+
+# --- the lock and the operator's records ----------------------------------- #
+
+
+def _arb_dir_or_409() -> str:
+    out = _arb_out_dir()
+    if not os.path.isdir(out):
+        raise HTTPException(status_code=409,
+                            detail=f"reads directory {out} is not mounted; nothing to write")
+    return out
+
+
+@app.post("/api/arb/lock")
+def arb_lock(request: Request) -> dict:
+    """Create the lock file the executor re-reads every cycle, and the send
+    refuses on. Token-gated like every write here: the lock is the operator's."""
+    _require_order_token(request)
+    out = _arb_dir_or_409()
+    path = _ladder_desk.lock(out, "the dashboard")
+    log.info("arb_lock", path=path)
+    return {"armed": False, "lock": path}
+
+
+@app.post("/api/arb/arm")
+def arb_arm(request: Request) -> dict:
+    _require_order_token(request)
+    out = _arb_dir_or_409()
+    _ladder_desk.arm(out)
+    log.info("arb_arm", dir=out)
+    return {"armed": True}
+
+
+class ArbFills(BaseModel):
+    """What the operator saw, per leg: filled qty, price, seconds. A missing
+    qty is 0 -- "did not fill" is a result."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    l1q: float | None = None
+    l1p: float | None = None
+    l1s: float | None = None
+    l2q: float | None = None
+    l2p: float | None = None
+    l2s: float | None = None
+
+
+class ArbRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    status: Literal["placed", "skipped", "reopen", "recorded"]
+    fills: ArbFills | None = None
+
+
+def _arb_resolve_ticket(out: str, ticket_id: str) -> dict:
+    """The intent the executor wrote, or 404. A ticket the executor did not
+    write is not a ticket, however well-formed."""
+    for t in _ladder_desk.load_tickets(out):
+        if t.get("id") == ticket_id:
+            return t
+    raise HTTPException(status_code=404, detail=f"no ticket {ticket_id!r} in {out}")
+
+
+@app.post("/api/arb/record")
+def arb_record(req: ArbRecordRequest, request: Request) -> dict:
+    """The desk's "I placed it" / "Skipped" / fills, written to the same
+    ladder_attempts.jsonl the desk and the tally read."""
+    _require_order_token(request)
+    out = _arb_dir_or_409()
+    _arb_resolve_ticket(out, req.ticket_id)
+    status = "open" if req.status == "reopen" else req.status
+    fills = None
+    if status == "recorded":
+        if req.fills is None:
+            raise HTTPException(status_code=422, detail="a recorded attempt needs its fills")
+        fills = req.fills.model_dump()
+    row = _ladder_desk.record_attempt(out, req.ticket_id, status, fills, via=_ARB_VIA_DESK)
+    log.info("arb_record", ticket=req.ticket_id, status=status)
+    return {"ticket_id": req.ticket_id, "status": status, "record": row}
+
+
+# --- the send ------------------------------------------------------------- #
+
+
+class ArbLeg(BaseModel):
+    """One leg as the page sends it back: the ticket's own slug, side, price
+    and size, in the COST frame the ticket displays."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    market_slug: str
+    side: str
+    cost_price: Decimal
+    quantity: Decimal
+
+
+class ArbSendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    mode: str
+    legs: list[ArbLeg]
+    acknowledge: bool = False
+
+
+def _arb_require_mode(mode: str) -> None:
+    if mode != ExecutionMode.HUMAN_CONFIRM.value:
+        raise HTTPException(
+            status_code=403,
+            detail=(f"mode must be {ExecutionMode.HUMAN_CONFIRM.value}; got {mode!r}. "
+                    "No other mode may reach the venue."))
+
+
+def _arb_decided_at(intent: dict) -> dt.datetime:
+    """The ticket's instant, for the idempotency key: the game's date from
+    its slug plus the executor's HH:MM:SS stamp. Deterministic per ticket, so
+    a double-click or a second tab collides on the UNIQUE key instead of
+    sending the pair twice."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})$", str(intent.get("game") or ""))
+    day = dt.date.fromisoformat(m.group(1)) if m else dt.datetime.now(UTC).date()
+    try:
+        clock = dt.time.fromisoformat(str(intent.get("ts")))
+    except ValueError:
+        clock = dt.time(0)
+    return dt.datetime.combine(day, clock, tzinfo=UTC)
+
+
+def _arb_check_legs(intent: dict, legs: list[ArbLeg], slug_of_line: dict[float, str],
+                    *, allow_size_up: bool) -> list[dict]:
+    """The submitted legs against the ticket, leg by leg. Pure, and every
+    refusal names the term that failed. Returns the resolved terms per leg.
+
+    Slugs are rebuilt from the ticket's game and line through the recorder's
+    own listing, never taken from the caller; the caller's slug must equal
+    that. A price may differ from the ticket's by one tick; a size may not
+    exceed the ticket's (or, with MERIDIAN_ARB_ALLOW_SIZE_UP=1, the displayed
+    size). The winner market is never a leg.
+    """
+    if len(legs) != 2:
+        raise HTTPException(status_code=422, detail=f"a ticket has two legs; got {len(legs)}")
+    resolved = []
+    for n, (leg, key) in enumerate(zip(legs, ("leg1", "leg2")), start=1):
+        want = intent.get(key) or {}
+        try:
+            line = float(want["market_line"])
+            want_price = Decimal(str(want["price"]))
+            want_qty = Decimal(str(want["qty"]))
+        except (KeyError, TypeError, ValueError, InvalidOperation):
+            raise HTTPException(status_code=409, detail=f"ticket leg {n} is malformed") from None
+        if line == 0.0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"leg {n} is the winner market; only spread rungs are ticket legs")
+        want_slug = slug_of_line.get(line)
+        if want_slug is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"leg {n}: no recorded market for line {line:+g} in {intent.get('game')}")
+        if leg.market_slug.strip() != want_slug:
+            raise HTTPException(
+                status_code=422,
+                detail=f"leg {n} slug {leg.market_slug!r} is not the ticket's line "
+                       f"{line:+g} ({want_slug})")
+        side = " ".join(leg.side.upper().split())
+        if side not in ("BUY YES", "BUY NO"):
+            raise HTTPException(status_code=422, detail=f"leg {n} side must be BUY YES or BUY NO")
+        if side != " ".join(str(want.get("side", "")).upper().split()):
+            raise HTTPException(
+                status_code=422,
+                detail=f"leg {n} side {side} is not the ticket's ({want.get('side')})")
+        _validate_typed_price(leg.cost_price, what=f"leg {n} price")
+        if abs(leg.cost_price - want_price) > _ARB_PRICE_SLACK:
+            raise HTTPException(
+                status_code=422,
+                detail=f"leg {n} price {leg.cost_price} is more than {_ARB_PRICE_SLACK} "
+                       f"from the ticket's {want_price}")
+        if leg.quantity < VENUE_MIN_QTY:
+            raise HTTPException(
+                status_code=422,
+                detail=f"leg {n} quantity {leg.quantity} is below the venue minimum {VENUE_MIN_QTY}")
+        max_qty = want_qty
+        if allow_size_up:
+            try:
+                max_qty = max(max_qty, Decimal(str(intent.get("displayed_size") or 0)))
+            except InvalidOperation:
+                pass
+        if leg.quantity > max_qty:
+            raise HTTPException(
+                status_code=422,
+                detail=f"leg {n} quantity {leg.quantity} exceeds the ticket's {max_qty}"
+                       + ("" if allow_size_up else " (MERIDIAN_ARB_ALLOW_SIZE_UP is not set)"))
+        outcome = OutcomeSide.YES if side.endswith("YES") else OutcomeSide.NO
+        resolved.append({
+            "n": n, "line": line, "market_slug": want_slug, "side": side, "outcome": outcome,
+            "cost": leg.cost_price, "quantity": leg.quantity,
+            # YES-frame price.value, derived HERE from the side (V14).
+            "yes_price": (Decimal("1") - leg.cost_price) if outcome is OutcomeSide.NO else leg.cost_price,
+        })
+    return resolved
+
+
+def _arb_pair_cost_bound(costs: list[Decimal]) -> tuple[Decimal, Decimal]:
+    """(sum of costs, sum of taker fees) for a pair, with the scanner's own fee
+    model at the price paid. A pair pays $1.00 per contract at settlement, so
+    the send is refused when cost + fees >= 1: that is exactly "net edge <= 0"
+    in the scanner's algebra, re-checked here because one tick of slack per
+    leg can carry a thin ticket over the line."""
+    cost = sum(costs, Decimal("0"))
+    fees = sum((Decimal(str(fee(float(c))) ) for c in costs), Decimal("0"))
+    return cost, fees.quantize(Decimal("0.0001"))
+
+
+def _arb_check_stakes(resolved: list[dict]) -> Decimal:
+    """Per-leg stake under min(pair cap, the per-order fat-finger cap, the
+    account); pair stake under min(pair cap, the account); pair cost plus
+    fees under $1.00. Returns the pair cap.
+
+    The per-leg bound goes through `_stake_cap()` with its default so a pair
+    cap raised by env cannot let one leg stake more than /api/orders/confirm
+    would allow for the same order."""
+    cap = _stake_cap(cap=_arb_max_pair_usd())
+    leg_cap = min(cap, _stake_cap())
+    pair = Decimal("0")
+    for r in resolved:
+        stake = (r["cost"] * r["quantity"]).quantize(Decimal("0.01"))
+        r["stake"] = stake
+        pair += stake
+        if stake > leg_cap:
+            raise HTTPException(
+                status_code=422,
+                detail=f"leg {r['n']} stake ${stake} exceeds the per-leg cap ${leg_cap}"
+                       + (" (MERIDIAN_MAX_ORDER_STAKE_USD)" if leg_cap < cap else ""))
+    if pair > cap:
+        raise HTTPException(
+            status_code=422,
+            detail=f"pair stake ${pair} exceeds ${cap} — "
+                   + ("the account balance" if cap < _arb_max_pair_usd()
+                      else "the pair cap (MERIDIAN_ARB_MAX_PAIR_USD)"))
+    cost, fees = _arb_pair_cost_bound([r["cost"] for r in resolved])
+    if cost + fees >= Decimal("1"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"pair cost {cost} plus taker fees {fees} is not under $1.00: "
+                   "both legs filled at these prices would lock a loss, not a pair")
+    return cap
+
+
+def _arb_parse_sync(body_text: str) -> dict:
+    """The venue's synchronous create-order reply, read for what the two-leg
+    rule needs: the order id, its state, the filled quantity and the average
+    price. Per the create-order doc the reply carries ``executions[]``, each
+    with the embedded ``order`` (``id``, ``state``, ``cumQuantity``), the
+    execution's ``lastPx``/``lastShares`` and ``avgPx``. Filled is the MAX
+    ``cumQuantity`` across executions (the venue's own cumulative count, as
+    the fill watcher reads it), never a sum of shares. The average is
+    ``avgPx.value`` when present, else the VWAP of ``lastPx x lastShares``.
+    Prices are YES frame, as every price the venue serves is.
+
+    An unreadable body is a zero fill with no id: the row keeps the raw text
+    and the fill watcher may still reconcile it later if an id turns up."""
+    body = _parse_venue_body(body_text)
+    if not isinstance(body, dict):
+        return {"venue_id": None, "state": None, "filled": Decimal("0"),
+                "avg_yes": None, "executions": 0}
+    order_obj = body.get("order") if isinstance(body.get("order"), dict) else {}
+    execs = body.get("executions")
+    if not isinstance(execs, list):
+        execs = order_obj.get("executions") if isinstance(order_obj.get("executions"), list) else []
+    venue_id = body.get("orderId") or body.get("id") or order_obj.get("id")
+    state = body.get("status") or body.get("state") or order_obj.get("state")
+
+    def _dec(value) -> Decimal | None:
+        if value is None:
+            return None
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+
+    filled = _dec(body.get("cumQuantity")) or _dec(order_obj.get("cumQuantity")) or Decimal("0")
+    execs = [ex for ex in execs if isinstance(ex, dict)]
+    # The LATEST execution carries the order's state. By transactTime when
+    # every execution has one (the fill watcher's own rule), else list order:
+    # a newest-first list of [CANCELED cum 1, PARTIALLY_FILLED cum 1] must not
+    # read as a still-open order.
+    if execs and all(isinstance(ex.get("transactTime"), str) for ex in execs):
+        execs = sorted(execs, key=lambda ex: ex["transactTime"])
+    best = None
+    num = Decimal("0")
+    den = Decimal("0")
+    priced = 0
+    for ex in execs:
+        o = ex.get("order") if isinstance(ex.get("order"), dict) else {}
+        cum = _dec(o.get("cumQuantity"))
+        if cum is not None and (best is None or cum >= filled):
+            filled = max(filled, cum)
+            best = ex
+        venue_id = venue_id or o.get("id")
+        px = _dec((ex.get("lastPx") or {}).get("value") if isinstance(ex.get("lastPx"), dict) else None)
+        shares = _dec(ex.get("lastShares"))
+        if px is not None and shares is not None and shares > 0:
+            num += px * shares
+            den += shares
+            priced += 1
+    reported = None
+    if best is not None:
+        o = best.get("order") if isinstance(best.get("order"), dict) else {}
+        state = o.get("state") or state
+        # The embedded order's avgPx is the order's (cumulative by nature);
+        # the execution's may be its own. The doc is silent, so the order's
+        # is read first.
+        for holder in (o, best):
+            px = holder.get("avgPx")
+            reported = _dec(px.get("value") if isinstance(px, dict) else px)
+            if reported is not None:
+                break
+    vwap = (num / den).quantize(Decimal("0.0001")) if den > 0 else None
+    # Over several priced executions the VWAP of lastPx x lastShares is the
+    # one average that cannot be a single execution's; with one it is the
+    # same number and the reported figure is preferred. The caller logs a
+    # disagreement so the first live multi-execution reply settles it.
+    avg = vwap if (priced >= 2 and vwap is not None) else (reported if reported is not None else vwap)
+    return {"venue_id": str(venue_id) if venue_id else None,
+            "state": str(state) if state else None,
+            "filled": filled, "avg_yes": avg, "executions": len(execs),
+            "avg_reported": reported, "avg_vwap": vwap}
+
+
+def _arb_fill_status(parsed: dict, quantity: Decimal) -> str | None:
+    """The row's fill_status from an ACCEPTED synchronous reply, with the fill
+    watcher's own state mapping so the two writers agree. A reply with a
+    count but no readable state is judged by the count; one with neither
+    stays NULL ("never reconciled") for the watcher."""
+    from core.fill_watcher import FILLED, OPEN, PARTIAL, status_from_state
+
+    up = (parsed["state"] or "").upper()
+    if "REJECT" in up:
+        # The venue answered and refused: nothing to reconcile. The caller
+        # writes accepted=False for it; the status stays NULL as for any
+        # refusal, never a terminal fill state.
+        return None
+    if "PENDING" in up:
+        # PENDING_NEW / PENDING_RISK / PENDING_CANCEL / PENDING_REPLACE are
+        # all non-terminal: a fill may still land (or a cancel may still
+        # complete), so the watcher must keep polling. status_from_state
+        # would read PENDING_CANCEL as CANCELLED, a terminal state it is not.
+        return OPEN
+    status = status_from_state(up)
+    if status is not None:
+        return status
+    if parsed["filled"] >= quantity > 0:
+        return FILLED
+    if parsed["filled"] > 0:
+        return PARTIAL
+    return None
+
+
+def _arb_leg_unsent(n: int, r: dict, error: str | None, *, transport: bool = False) -> dict:
+    """A leg that was not sent, or -- ``transport`` -- one that was sent and
+    got no answer, which is not the same claim: that leg may exist."""
+    return {"leg": n, "market_slug": r["market_slug"], "side": r["side"],
+            "line": r["line"], "order_id": r.get("order_id"),
+            "sent": False, "accepted": False, "venue_order_id": None, "state": None,
+            "observed": False, "transport_error": transport,
+            "fill_status": None, "filled_quantity": 0.0, "avg_cost_price": None,
+            "limit_cost_price": float(r["cost"]), "quantity_sent": None,
+            "http_status": None, "latency_ms": None, "venue_latency_ms": None,
+            "error": error, "response": None}
+
+
+def _arb_persist_leg(row_id: int, r: dict, sent_qty: Decimal, result, parsed: dict) -> dict:
+    """The venue's answer onto the leg's row, and the leg's result for the
+    page. Same fields the human-confirm path records, plus the fill the
+    reply itself carries -- the whole point of asking synchronously."""
+    from core.fill_watcher import TERMINAL
+
+    ok_code = 200 <= result.status_code < 300
+    if ok_code and result.status_code not in (200, 201):
+        # Unobserved: the synchronous reply's code is the doc's, not seen.
+        # A 202 is plausible for an endpoint that may answer before the IOC
+        # completes; it must not be misread as a rejection.
+        log.warning("arb_unexpected_2xx", status=result.status_code, body=result.body_text[:600])
+    rejected = "REJECT" in (parsed["state"] or "").upper()
+    accepted = ok_code and not rejected
+    fill_status = _arb_fill_status(parsed, sent_qty) if accepted else None
+    filled = parsed["filled"] if accepted else Decimal("0")
+    # A fill OBSERVATION: the venue accepted and either filled something or
+    # ended the order. Zero filled in a pending state is not one.
+    observed = accepted and (filled > 0 or fill_status in TERMINAL)
+    avg_yes = parsed["avg_yes"]
+    avg_cost = None if avg_yes is None else (
+        (Decimal("1") - avg_yes) if r["outcome"] is OutcomeSide.NO else avg_yes)
+    now = dt.datetime.now(UTC)
+    with _Session() as s:
+        stored = s.get(PlacedOrder, row_id)
+        stored.accepted = accepted
+        stored.http_status = result.status_code
+        stored.venue_order_id = parsed["venue_id"]
+        stored.venue_status = parsed["state"]
+        stored.quantity = sent_qty
+        stored.submit_latency_ms = Decimal(str(round(result.elapsed_ms, 2)))
+        if result.server_latency_ms is not None:
+            stored.venue_latency_ms = Decimal(str(round(result.server_latency_ms, 2)))
+        if accepted:
+            stored.fill_status = fill_status
+            stored.filled_quantity = filled
+            stored.fill_checked_at = now
+            if avg_yes is not None:
+                stored.avg_fill_price = avg_yes
+        else:
+            stored.error = result.body_text[:1000]
+        s.commit()
+    return {"leg": r["n"], "market_slug": r["market_slug"], "side": r["side"],
+            "line": r["line"], "order_id": row_id,
+            "sent": True, "accepted": accepted,
+            "venue_order_id": parsed["venue_id"], "state": parsed["state"],
+            "observed": observed, "transport_error": False,
+            "fill_status": fill_status,
+            "filled_quantity": float(filled),
+            "avg_cost_price": None if avg_cost is None else float(avg_cost),
+            "limit_cost_price": float(r["cost"]), "quantity_sent": float(sent_qty),
+            "http_status": result.status_code,
+            "latency_ms": round(result.elapsed_ms, 1),
+            "venue_latency_ms": result.server_latency_ms,
+            "error": None if accepted else result.body_text[:300],
+            # The whole reply: its shape is the first live observation.
+            "response": result.body_text}
+
+
+def _arb_pair_summary(legs: list[dict]) -> dict:
+    """What the pair is now, in dollars, from the venue-reported fills. The
+    outcome "leg 1 filled, leg 2 unfilled" is first-class: it is the one way
+    the protocol says money is lost, and it must never read as a success."""
+    l1, l2 = legs
+    q1 = Decimal(str(l1["filled_quantity"]))
+    q2 = Decimal(str(l2["filled_quantity"]))
+    c1 = Decimal(str(l1["avg_cost_price"] if l1["avg_cost_price"] is not None else l1["limit_cost_price"]))
+    c2 = Decimal(str(l2["avg_cost_price"] if l2["avg_cost_price"] is not None else l2["limit_cost_price"]))
+    paired = min(q1, q2)
+    cost = q1 * c1 + q2 * c2
+    guaranteed = paired * (Decimal("1") - (c1 + c2))
+
+    def _kind(leg, q):
+        """What a sent leg's reply was: 'filled', 'unfilled' (a terminal zero,
+        the observation), 'rejected', 'pending' (accepted, zero, not
+        terminal) or 'unknown' (accepted, zero, no readable state)."""
+        if q > 0:
+            return "filled"
+        if not leg.get("accepted", True):
+            return "rejected"
+        if leg.get("observed", True):
+            return "unfilled"
+        return "pending" if leg.get("state") else "unknown"
+
+    held = (f"You hold {q1} {l1['side']} on line {l1['line']:+g} unpaired: "
+            "record it, let it settle, or UNWIND. Do not chase.")
+    pending = False
+    if not l1["sent"]:
+        outcome, note = "not sent", l1["error"] or "leg 1 was not sent"
+    elif _kind(l1, q1) == "rejected":
+        outcome = "leg 1 rejected"
+        note = (f"the venue refused leg 1 (HTTP {l1.get('http_status')}: {(l1.get('error') or '')[:120]}); "
+                "leg 2 was not sent. Nothing is held. Not a fill observation: the record says placed.")
+    elif _kind(l1, q1) in ("pending", "unknown"):
+        pending = True
+        outcome = "leg 1 pending at the venue" if _kind(l1, q1) == "pending" else "leg 1 unknown"
+        note = (f"leg 1 was accepted (state {l1.get('state') or 'unreadable'}, venue id "
+                f"{l1.get('venue_order_id') or '?'}) with no fill in the reply; leg 2 was not sent. "
+                "The fill watcher reconciles the row: check it before UNWIND or a resend. "
+                "Not a fill observation: the record says placed.")
+    elif q1 <= 0:
+        outcome, note = "leg 1 unfilled", "leg 1 filled nothing; leg 2 was not sent. A result: nothing is held."
+    elif not l2["sent"] and l2.get("transport_error"):
+        pending = True
+        outcome = "leg 1 filled, leg 2 unknown"
+        note = (f"leg 1 filled {q1}; leg 2 got no answer ({l2['error']}) and MAY exist at the venue. "
+                "Reconcile leg 2 by its row's idempotency key before unwinding leg 1. " + held)
+    elif not l2["sent"]:
+        outcome = "leg 1 filled, leg 2 unsent"
+        note = f"leg 1 filled {q1} and leg 2 could not be sent ({l2['error']}). " + held
+    elif _kind(l2, q2) == "rejected":
+        outcome = "leg 1 filled, leg 2 rejected"
+        note = (f"leg 1 filled {q1}; the venue refused leg 2 (HTTP {l2.get('http_status')}: "
+                f"{(l2.get('error') or '')[:120]}). " + held)
+    elif _kind(l2, q2) in ("pending", "unknown"):
+        pending = True
+        outcome = "leg 1 filled, leg 2 pending"
+        note = (f"leg 1 filled {q1}; leg 2 was accepted (state {l2.get('state') or 'unreadable'}) with no "
+                "fill in the reply. The fill watcher reconciles it: check the row before UNWIND. " + held)
+    elif q2 <= 0:
+        outcome = "leg 1 filled, leg 2 unfilled"
+        note = f"leg 1 filled {q1}, leg 2 filled nothing. " + held
+    elif q2 < q1:
+        outcome = "partially paired"
+        note = (f"{paired} pairs locked; {q1 - paired} {l1['side']} on line {l1['line']:+g} unpaired.")
+    else:
+        outcome = "both legs filled"
+        note = f"{paired} pairs locked at {c1 + c2} per pair; pays $1.00 per pair at settlement any score."
+    # Settled: every sent leg's fill was observed, and a leg 2 that was not
+    # sent was not sent for a definitive reason. Only a settled pair is the
+    # desk's `recorded` attempt; anything else is `placed` with the outcome.
+    settled = (l1["sent"] and l1.get("observed", q1 > 0)
+               and (l2.get("observed", q2 > 0) if l2["sent"] else not l2.get("transport_error")))
+    return {"outcome": outcome, "paired_quantity": float(paired),
+            "cost_usd_filled": float(cost.quantize(Decimal("0.0001"))),
+            "guaranteed_usd": float(guaranteed.quantize(Decimal("0.0001"))),
+            "pair_cost": float((c1 + c2).quantize(Decimal("0.0001"))), "note": note,
+            "pending": pending, "settled": bool(settled)}
+
+
+def _arb_book_at(prefix: str, line: float) -> tuple[Decimal | None, Decimal | None]:
+    """The cached ladder's touch for a rung, for the row's book-at-submission
+    fields and for the unwind's default price. (None, None) when the sampler
+    has not seen that rung."""
+    snap = _ARB_LADDER["cache"].get(prefix) or {}
+    age = time.time() - float(snap.get("sampled_ts") or 0)
+    if age > _ARB_STALE_TOUCH_INTERVALS * _arb_sample_seconds():
+        # The cache is never evicted, only the watch expires: a sample from
+        # hours ago would price a SELL below today's market.
+        return None, None
+    rung = (snap.get("rungs") or {}).get(f"{line:g}")
+    if not rung:
+        return None, None
+    return Decimal(str(rung["bid"])), Decimal(str(rung["ask"]))
+
+
+def _arb_mark_unsent(ticket_id: str, row_ids: list[int], error: str) -> None:
+    """Nothing reached the venue: say so on both rows and take them out of
+    the "already sent" gate's match, so the ticket stays sendable once the
+    environment is fixed. Only for a definitive failure (no credentials);
+    a transport error is ambiguous and keeps its rows in the gate."""
+    with _Session() as s:
+        for n, row_id in enumerate(row_ids, start=1):
+            stored = s.get(PlacedOrder, row_id)
+            if stored is not None:
+                stored.error = error[:1000] if n == 1 else f"leg 1 not sent: {error}"[:1000]
+                stored.notes = f"arb ticket {ticket_id} leg {n} unsent"
+        s.commit()
+
+
+@app.post("/api/arb/send")
+def arb_send(req: ArbSendRequest, request: Request) -> dict:
+    """SEND both legs of one executor ticket, leg 1 first, as IOC synchronous
+    limit orders at the ticket's prices. Leg 2 goes only for the quantity leg 1
+    filled; a zero fill on leg 1 ends the attempt with nothing held.
+
+    Every term is the ticket's, checked here against the intent the executor
+    wrote; the human's contribution is the two clicks and the token. The
+    gates run in the order the module comment lists, and both idempotency
+    rows exist before anything is sent.
+    """
+    _require_order_token(request)
+    _arb_require_mode(req.mode)
+    out = _arb_dir_or_409()
+    intent = _arb_resolve_ticket(out, req.ticket_id)
+    if intent.get("status", "open") != "open":
+        # The desk's own record: placed by hand, skipped, or already sent
+        # from here. A ticket leaves "open" once and only the operator's
+        # explicit reopen puts it back; SEND never argues with that.
+        raise HTTPException(
+            status_code=409,
+            detail=f"ticket {req.ticket_id} is {intent['status']!r}, not open; "
+                   "reopen it on the desk first if that record is wrong")
+    if len(req.legs) != 2:
+        raise HTTPException(status_code=422, detail=f"a ticket has two legs; got {len(req.legs)}")
+    prefix, game = _arb_prefix(str(intent.get("game") or ""))
+
+    # The recorder's own listing, through the api's engine: the slugs the
+    # caller sent are checked against these, never trusted.
+    try:
+        slug_of_line = {line_of(s_, prefix): s_ for s_ in slugs_for(game, _ENGINE)}
+    except Exception as exc:  # noqa: BLE001 — the listing is a precondition, reported as one
+        raise HTTPException(status_code=503, detail=f"cannot list {game}'s rungs: {str(exc)[:160]}") from None
+    slug_of_line.pop(None, None)
+
+    resolved = _arb_check_legs(intent, req.legs, slug_of_line, allow_size_up=_arb_allow_size_up())
+    cap = _arb_check_stakes(resolved)
+    if not req.acknowledge:
+        raise HTTPException(
+            status_code=422,
+            detail="acknowledge must be true: the page shows every term and the second click sets it")
+    if not _ladder_desk.armed(out):
+        raise HTTPException(status_code=409, detail="LOCKED: the lock file exists; arm the desk first")
+
+    decided_at = _arb_decided_at(intent)
+    orders = [build_order(market_slug=r["market_slug"], side=OrderSide.BUY,
+                          limit_price=r["yes_price"], quantity=r["quantity"],
+                          decided_at=decided_at, outcome=r["outcome"]) for r in resolved]
+
+    # Both idempotency rows BEFORE any venue call (the human-confirm rule): a
+    # double-click, a second tab or a retry collides on the UNIQUE key and
+    # becomes a 409, never a second pair. accepted=False, so an attempt that
+    # never comes back is still a row.
+    with _Session() as s:
+        # Serialise on the ticket: two clicks in two tabs with different
+        # nudges have different keys, and check-then-insert in two sessions
+        # would let both pass the SELECT below. The transaction-scoped
+        # advisory lock is released with the commit.
+        s.execute(text("SELECT pg_advisory_xact_lock(hashtext(:tid))"), {"tid": req.ticket_id})
+        # The key has no quantity or side term and a one-tick nudge changes
+        # it, so the UNIQUE key alone would let a nudged ticket go twice. The
+        # leg-1 note is the same across nudges: one row with it means sent.
+        if s.scalars(select(PlacedOrder).where(
+                PlacedOrder.notes == f"arb ticket {req.ticket_id} leg 1")).first() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="this ticket was already sent (its leg 1 row exists); "
+                       "record or unwind it, do not send it twice")
+        rows = []
+        for r, order in zip(resolved, orders):
+            bid, ask = _arb_book_at(prefix, r["line"])
+            rows.append(PlacedOrder(
+                submitted_at=dt.datetime.now(UTC),
+                idempotency_key=order.idempotency_key,
+                mode=ExecutionMode.HUMAN_CONFIRM.value,
+                market_slug=order.market_slug,
+                side=f"{order.side.value}_{order.outcome.value}".lower(),
+                order_type=order.order_type,
+                limit_price=order.limit_price,
+                quantity=order.quantity,
+                accepted=False,
+                market_bid=bid,
+                market_ask=ask,
+                would_rest=False,                 # IOC: it fills now or it is gone
+                notes=f"arb ticket {req.ticket_id} leg {r['n']}",
+            ))
+        s.add_all(rows)
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="this ticket was already sent (idempotency key exists); "
+                       "record or unwind it, do not send it twice") from None
+        for r, row in zip(resolved, rows):
+            r["order_id"] = row.id
+
+    results = [_arb_leg_unsent(r["n"], r, None) for r in resolved]
+    r1, r2 = resolved
+    order1, order2 = orders
+
+    _ORDER_BUCKET.acquire()
+    try:
+        creds = USCredentials.from_env()
+    except MissingCredentialsError as exc:
+        # Definitive: nothing was sent, so the ticket must stay sendable.
+        _arb_mark_unsent(req.ticket_id, [r1["order_id"], r2["order_id"]], str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+    qty2 = None
+    with PolymarketOrderClient(creds) as client:
+        payload1 = order1.to_payload(post_only=False, tif=ARB_TIF, synchronous=True)
+        try:
+            resp1 = client.submit_limit_order(payload1)
+        except OrderSubmissionError as exc:
+            # Ambiguous: leg 1 may exist at the venue. Its row says so; leg 2
+            # is not sent into that ambiguity, and the ticket is marked placed
+            # so it cannot be sent again without the operator looking.
+            _fail_order(r1["order_id"], error=str(exc))
+            _fail_order(r2["order_id"], error="leg 1 got no answer (transport error); leg 2 not sent")
+            _ladder_desk.record_attempt(out, req.ticket_id, "placed", via=_ARB_VIA_SEND,
+                                        outcome="leg 1 transport error", l1_sent=float(r1["quantity"]),
+                                        error=str(exc)[:200], order_ids=[r1["order_id"], r2["order_id"]])
+            log.error("arb_send", ticket=req.ticket_id, outcome="leg 1 transport error",
+                      error=str(exc)[:200])
+            raise HTTPException(status_code=502, detail=f"leg 1: {exc}; leg 2 was not sent") from None
+        parsed1 = _arb_parse_sync(resp1.body_text)
+        results[0] = _arb_persist_leg(r1["order_id"], r1, r1["quantity"], resp1, parsed1)
+        # The venue's own Decimal sizes leg 2, never a float round trip.
+        filled1 = parsed1["filled"] if results[0]["accepted"] else Decimal("0")
+
+        if filled1 <= 0:
+            # Three different facts, one action (nothing more is sent): a
+            # terminal zero is the observation; a refusal and a pending or
+            # unreadable reply are not, and the record below says placed.
+            reason = ("leg 1 unfilled" if results[0]["observed"]
+                      else "leg 1 rejected" if not results[0]["accepted"]
+                      else "leg 1 pending at the venue")
+            _fail_order(r2["order_id"], error=f"{reason}; leg 2 not sent")
+            results[1] = _arb_leg_unsent(2, r2, f"{reason}; leg 2 not sent")
+        else:
+            qty2 = _arb_qty(min(r2["quantity"], filled1))
+            if qty2 != order2.quantity:
+                # Same key (the key has no quantity term); the row's quantity
+                # becomes what is actually sent.
+                order2 = build_order(market_slug=r2["market_slug"], side=OrderSide.BUY,
+                                     limit_price=r2["yes_price"], quantity=qty2,
+                                     decided_at=decided_at, outcome=r2["outcome"])
+                with _Session() as s:
+                    s.get(PlacedOrder, r2["order_id"]).quantity = qty2
+                    s.commit()
+            _ORDER_BUCKET.acquire()
+            payload2 = order2.to_payload(post_only=False, tif=ARB_TIF, synchronous=True)
+            try:
+                resp2 = client.submit_limit_order(payload2)
+            except OrderSubmissionError as exc:
+                # Ambiguous: leg 2 may exist. Its row keeps the key the
+                # venue would match a retry on; the outcome says "unknown".
+                _fail_order(r2["order_id"], error=str(exc))
+                results[1] = _arb_leg_unsent(2, r2, f"transport error: {exc}", transport=True)
+            else:
+                parsed2 = _arb_parse_sync(resp2.body_text)
+                results[1] = _arb_persist_leg(r2["order_id"], r2, qty2, resp2, parsed2)
+                if (parsed2["avg_reported"] is not None and parsed2["avg_vwap"] is not None
+                        and parsed2["avg_reported"] != parsed2["avg_vwap"]):
+                    log.warning("arb_avg_px_disagrees", leg=2, reported=str(parsed2["avg_reported"]),
+                                vwap=str(parsed2["avg_vwap"]), executions=parsed2["executions"])
+        if (parsed1["avg_reported"] is not None and parsed1["avg_vwap"] is not None
+                and parsed1["avg_reported"] != parsed1["avg_vwap"]):
+            log.warning("arb_avg_px_disagrees", leg=1, reported=str(parsed1["avg_reported"]),
+                        vwap=str(parsed1["avg_vwap"]), executions=parsed1["executions"])
+
+    pair = _arb_pair_summary(results)
+    # The record the tally reads. `recorded` with fills only for a settled
+    # pair (every sent leg's fill observed); otherwise `placed` with the
+    # outcome, and the operator records the real fill by hand once the
+    # watcher has reconciled the rows. A 401 is not "leg 1 filled nothing".
+    fills = None
+    if pair["settled"]:
+        fills = {"l1q": results[0]["filled_quantity"], "l1p": results[0]["avg_cost_price"],
+                 "l1s": None if results[0]["latency_ms"] is None else round(results[0]["latency_ms"] / 1000, 3),
+                 "l2q": results[1]["filled_quantity"], "l2p": results[1]["avg_cost_price"],
+                 "l2s": None if results[1]["latency_ms"] is None else round(results[1]["latency_ms"] / 1000, 3)}
+    record = _ladder_desk.record_attempt(
+        out, req.ticket_id, "recorded" if pair["settled"] else "placed", fills,
+        via=_ARB_VIA_SEND, outcome=pair["outcome"],
+        # Sizes SENT, so the tally's 80% is of what went, not of the ticket.
+        l1_sent=float(r1["quantity"]), l2_sent=None if qty2 is None else float(qty2),
+        error=next((x["error"] for x in results if x["error"]), None),
+        venue_order_ids=[x["venue_order_id"] for x in results],
+        order_ids=[x["order_id"] for x in results])
+    with _Session() as s:
+        counts = _order_counts(s)
+    log.info(
+        "arb_send",
+        ticket=req.ticket_id, game=game, outcome=pair["outcome"],
+        leg1_filled=results[0]["filled_quantity"], leg2_filled=results[1]["filled_quantity"],
+        leg1_state=results[0]["state"], leg2_state=results[1]["state"],
+        leg1_latency_ms=results[0]["latency_ms"], leg2_latency_ms=results[1]["latency_ms"],
+        cap=float(cap), pending=pair["pending"], settled=pair["settled"],
+        # The first synchronous reply IS the finding: the shape was read, not
+        # seen, so the whole body is logged, both legs.
+        leg1_response=results[0]["response"] or "",
+        leg2_response=results[1]["response"] or "",
+    )
+    return {"ticket_id": req.ticket_id, "game": game, "outcome": pair["outcome"],
+            "legs": results, "pair": pair, "record": record, **counts}
+
+
+# --- the unwind ----------------------------------------------------------- #
+
+
+class ArbUnwindRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    mode: str
+    leg: Literal[1, 2, "both"] = "both"
+    #: Cost frame, as the page shows it. Absent: the cached ladder's touch
+    #: for that rung, which for an IOC is "at market".
+    limit_cost_price: Decimal | None = None
+    acknowledge: bool = False
+
+
+def _arb_sold_so_far(s, ticket_id: str, n: int) -> Decimal:
+    """Contracts already sold (or possibly sold) by earlier unwinds of this
+    leg: a terminal sell counts its fill; a sell the venue refused counts
+    nothing; a sell still unreconciled -- or one that never got an answer --
+    counts its whole quantity, because the venue may yet report it filled.
+    Never sell more than filled, across clicks as well as within one; an
+    ambiguous earlier unwind therefore blocks the button, and the hand path
+    remains."""
+    from core.fill_watcher import TERMINAL
+
+    sold = Decimal("0")
+    for row in s.scalars(select(PlacedOrder).where(
+            PlacedOrder.notes == f"arb ticket {ticket_id} leg {n} unwind")).all():
+        if not row.accepted and row.http_status is not None:
+            continue                      # the venue answered and refused: nothing sold
+        if row.fill_status in TERMINAL:
+            sold += row.filled_quantity or Decimal("0")
+        else:
+            sold += row.quantity
+    return sold
+
+
+@app.post("/api/arb/unwind")
+def arb_unwind(req: ArbUnwindRequest, request: Request) -> dict:
+    """SELL what a leg bought, for the quantity the venue reported filled,
+    IOC synchronous at the ticket's rung touch or a typed price. The protocol's
+    "leg 1 filled, leg 2 did not" remedy, on a button. Never sells more than
+    filled, and the second click on an unwound leg is refused."""
+    _require_order_token(request)
+    _arb_require_mode(req.mode)
+    if not req.acknowledge:
+        raise HTTPException(status_code=422, detail="acknowledge must be true")
+    out = _arb_dir_or_409()
+    intent = _arb_resolve_ticket(out, req.ticket_id)
+    prefix, game = _arb_prefix(str(intent.get("game") or ""))
+    if req.limit_cost_price is not None:
+        _validate_typed_price(req.limit_cost_price, what="unwind price")
+    legs = [1, 2] if req.leg == "both" else [int(req.leg)]
+
+    results = []
+    for n in legs:
+        line = float((intent.get(f"leg{n}") or {}).get("market_line") or 0)
+        # The read of what is sold so far and the insert of this sell are ONE
+        # transaction under a per-leg advisory lock: two clicks in two tabs
+        # (distinct keys, decided_at = now) must not both see the full
+        # remaining quantity. The lock is released with the commit.
+        with _Session() as s:
+            s.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+                      {"k": f"arb ticket {req.ticket_id} leg {n} unwind"})
+            buy = s.scalars(
+                select(PlacedOrder)
+                .where(PlacedOrder.notes == f"arb ticket {req.ticket_id} leg {n}",
+                       PlacedOrder.side.in_(("buy_yes", "buy_no")))
+                .order_by(PlacedOrder.submitted_at.desc())
+            ).first()
+            if buy is None or not buy.accepted or not buy.filled_quantity or buy.filled_quantity <= 0:
+                results.append({"leg": n, "sent": False, "accepted": False, "filled_quantity": 0.0,
+                                "error": "nothing filled on this leg to unwind"})
+                continue
+            sold = _arb_sold_so_far(s, req.ticket_id, n)
+            # Numeric(18, 4) comes back as Decimal('2.0000'); the venue has
+            # only ever seen "2".
+            remaining = _arb_qty(buy.filled_quantity - sold)
+            buy_id, buy_slug, buy_side = buy.id, buy.market_slug, buy.side
+            if remaining <= 0:
+                results.append({"leg": n, "sent": False, "accepted": False, "filled_quantity": 0.0,
+                                "error": f"already unwound: {sold} of {sold + remaining} sold or pending"})
+                continue
+            outcome = OutcomeSide.YES if buy_side == "buy_yes" else OutcomeSide.NO
+            bid, ask = _arb_book_at(prefix, line)
+            if req.limit_cost_price is not None:
+                cost = req.limit_cost_price
+            else:
+                # Selling YES hits the YES bid; selling NO hits the NO bid,
+                # which is 1 - the YES ask. Both in the position's cost frame.
+                touch = bid if outcome is OutcomeSide.YES else (None if ask is None else Decimal("1") - ask)
+                if touch is None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"no cached ladder touch for line {line:+g} (none, or older than "
+                               f"{_ARB_STALE_TOUCH_INTERVALS:g} sample intervals); open the game's "
+                               "ladder or pass limit_cost_price")
+                cost = round_to_tick(touch)
+                _validate_typed_price(cost, what=f"leg {n} unwind touch")
+            yes_price = (Decimal("1") - cost) if outcome is OutcomeSide.NO else cost
+            try:
+                order = build_order(market_slug=buy_slug, side=OrderSide.SELL, limit_price=yes_price,
+                                    quantity=remaining, decided_at=dt.datetime.now(UTC), outcome=outcome)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+            r = {"n": n, "line": line, "market_slug": buy_slug, "side": f"SELL {outcome.value}",
+                 "outcome": outcome, "cost": cost, "quantity": remaining, "yes_price": yes_price}
+            row = PlacedOrder(
+                submitted_at=dt.datetime.now(UTC),
+                idempotency_key=order.idempotency_key,
+                mode=ExecutionMode.HUMAN_CONFIRM.value,
+                market_slug=buy_slug,
+                side=f"sell_{outcome.value}".lower(),
+                order_type=order.order_type,
+                limit_price=order.limit_price,
+                quantity=remaining,
+                accepted=False,
+                market_bid=bid,
+                market_ask=ask,
+                would_rest=False,
+                notes=f"arb ticket {req.ticket_id} leg {n} unwind",
+            )
+            s.add(row)
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                raise HTTPException(status_code=409, detail="this unwind was already submitted") from None
+            r["order_id"] = row.id
+
+        _ORDER_BUCKET.acquire()
+        try:
+            creds = USCredentials.from_env()
+        except MissingCredentialsError as exc:
+            _fail_order(r["order_id"], error=str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        payload = order.to_payload(post_only=False, tif=ARB_TIF, synchronous=True)
+        try:
+            with PolymarketOrderClient(creds) as client:
+                resp = client.submit_limit_order(payload)
+        except OrderSubmissionError as exc:
+            _fail_order(r["order_id"], error=str(exc))
+            results.append(dict(_arb_leg_unsent(n, r, f"transport error: {exc}"),
+                                unwind_of=buy_id))
+            continue
+        parsed = _arb_parse_sync(resp.body_text)
+        results.append(dict(_arb_persist_leg(r["order_id"], r, remaining, resp, parsed),
+                            unwind_of=buy_id))
+
+    with _Session() as s:
+        counts = _order_counts(s)
+    log.info("arb_unwind", ticket=req.ticket_id, game=game,
+             legs=[(x["leg"], x.get("sent"), x.get("filled_quantity")) for x in results])
+    return {"ticket_id": req.ticket_id, "game": game, "legs": results, **counts}
+
+
+@app.get("/arb")
+def arb_page() -> FileResponse:
+    """The ARB tab: the ladder desk on the dashboard.
+
+    A build without the page answers 404, not 500: the routes and the page
+    land in separate commits, and a FileResponse on a missing file is a
+    handler crash the route smoke test rightly refuses.
+    """
+    page = STATIC / "arb.html"
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="static/arb.html is not present in this build")
+    return FileResponse(page)
 
 
 @app.get("/quote")

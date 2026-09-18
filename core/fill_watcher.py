@@ -146,7 +146,9 @@ ACTIVITY_RESOLUTION = "ACTIVITY_TYPE_POSITION_RESOLUTION"
 
 #: Venue order states -> our fill_status. Substring match on the suffix so
 #: e.g. a hypothetical ORDER_STATE_CANCELED maps sensibly if it ever appears.
-def _status_from_state(state: str) -> str | None:
+#: Public: the ARB tab's send reads the same field off the venue's synchronous
+#: reply, and the two writers of `orders.fill_status` must agree by construction.
+def status_from_state(state: str) -> str | None:
     up = (state or "").upper()
     if "PARTIALLY_FILLED" in up:
         return PARTIAL
@@ -170,6 +172,28 @@ class OrderEvent:
     cum_quantity: Decimal
     transact_time: str      # RFC3339 with Z and 9-digit nanos — lexicographic
                             # compare orders correctly within this format
+    #: The venue's `avgPx.value` on the execution (or its embedded order),
+    #: YES frame like every price it serves. None when the payload carries no
+    #: such field — an older activity, or a shape this parser has not seen —
+    #: and the row's `avg_fill_price` is then left as it was, never zeroed.
+    avg_price: Decimal | None = None
+
+
+def _avg_price_of(execution: dict, order: dict) -> Decimal | None:
+    """`avgPx.value` from the execution first, then the embedded order. A
+    missing or unparseable value is None, not an error: the fill count and
+    state above are the reconciliation; the price is a measurement we take
+    when the venue offers it."""
+    for holder in (execution, order):
+        px = holder.get("avgPx")
+        value = px.get("value") if isinstance(px, dict) else px
+        if value is None:
+            continue
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+    return None
 
 
 def extract_order_events(raw: dict) -> tuple[list[OrderEvent], str | None, bool]:
@@ -212,6 +236,7 @@ def extract_order_events(raw: dict) -> tuple[list[OrderEvent], str | None, bool]
             state=str(state),
             cum_quantity=cum_qty,
             transact_time=str(ex.get("transactTime") or ""),
+            avg_price=_avg_price_of(ex, order),
         ))
     return events, None, saw_execution
 
@@ -228,11 +253,21 @@ def reconcile_order(events: list[OrderEvent]) -> tuple[str, Decimal] | None:
     if not events:
         return None
     latest = max(events, key=lambda e: e.transact_time)
-    status = _status_from_state(latest.state)
+    status = status_from_state(latest.state)
     if status is None:
         log.warning("fill_watcher_unknown_order_state", state=latest.state)
         return None
     return status, latest.cum_quantity
+
+
+def latest_avg_price(events: list[OrderEvent]) -> Decimal | None:
+    """The average fill price the latest execution reports, or None. Kept
+    apart from `reconcile_order` so its (status, filled) contract — which the
+    exit rules and their tests read — does not grow a third member that most
+    activities cannot fill."""
+    if not events:
+        return None
+    return max(events, key=lambda e: e.transact_time).avg_price
 
 
 # --------------------------------------------------------------------------- #
@@ -396,9 +431,16 @@ class FillWatcher:
             for order in tracked:
                 row = s.get(PlacedOrder, order.id)
                 known_filled = row.filled_quantity or Decimal("0")
-                outcome = reconcile_order(by_order.get(row.venue_order_id, []))
+                own_events = by_order.get(row.venue_order_id, [])
+                outcome = reconcile_order(own_events)
                 if outcome is not None:
                     status, filled = outcome
+                    avg_price = latest_avg_price(own_events)
+                    if avg_price is not None:
+                        # The price the venue says we paid, when it says so.
+                        # Left untouched otherwise: a None here is "not
+                        # reported", never "zero".
+                        row.avg_fill_price = avg_price
                     if filled < known_filled:
                         # Fills can page out of the scanned window; venue
                         # truth never un-fills. Keep the larger count, loudly.

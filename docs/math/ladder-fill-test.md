@@ -74,3 +74,56 @@ Over the first **5 attempts**:
 **What would make me withdraw the whole finding:** the *same* rung showing
 displayed size that vanishes on contact in ≥ 3 of 5 attempts. That is the
 quote-stuffing explanation and it is the only one left that fits the tape.
+
+## Amendment 2026-09-18 — Placement via the dashboard (operator's instruction 2026-09-18)
+
+**What changes.** Legs may now be sent from the ARB tab's SEND (`/arb`, `POST /api/arb/send`)
+instead of by hand at the venue's screen. The path is: the operator's order token in the
+page, a first click on the ticket's SEND, a confirmation ticket that spells every term in
+words (row, button, side, price, quantity, pair cost, guaranteed amount, stake), an explicit
+acknowledgement, and a second click on a different element. Meridian never sends without
+that second human click; there is no path from a sampler, an executor or a poll to the venue.
+
+**How the legs go.** Both legs are `IMMEDIATE_OR_CANCEL` synchronous limit orders at the
+ticket's prices (one tick of slack, no re-pricing), not the post-only GTC every prior order
+used. Leg 1 (the stale side) is sent first and alone. Leg 2 is sent only for the quantity
+leg 1 filled, and not at all if leg 1 filled nothing. An IOC rests nothing, so "leg 1 fills
+and leg 2 does not" is the same first-class outcome as in the hand protocol, with the same
+rule: record it, let it settle or UNWIND at the touch; do not chase.
+
+**What is recorded.** Fills come from the venue's synchronous response (state, cumulative
+quantity, average price), written to the orders table per leg and to `ladder_attempts.jsonl`
+as a `recorded` attempt, so the tally below counts a dashboard send exactly as it counts a
+hand-placed one. A `recorded` attempt is written **only when every sent leg's fill was
+observed**: the venue accepted the leg and either filled something or ended the order in a
+terminal state. A venue refusal, an unreadable reply, a zero fill in a pending state
+(`PENDING_NEW`, `NEW`: no `maxBlockTime` is sent, so whether the venue blocks until an IOC is
+terminal is unobserved) or a leg-2 transport error is protocol noise, not a fill observation;
+it is written as `placed` with the outcome named, and the operator records the real fill by
+hand once the fill watcher has reconciled the rows. The tally's "leg 1 filled nothing" count
+therefore cannot contain a 401. The record carries the quantity actually sent per leg
+(`l1_sent`, `l2_sent`) and the tally's 80 % is measured against that, not the ticket, when a
+send went for less than the ticket. The decision rule above is **unchanged**: the same five
+attempts, the same 80 % / zero-fill thresholds, the same withdrawal condition.
+
+**Sizes and caps.** Quantity is at most the ticket's (any size from the venue minimum up to
+it; never above it unless the operator has set `MERIDIAN_ARB_ALLOW_SIZE_UP=1`, and then never
+above displayed size); each leg's stake is under the per-order cap (`MERIDIAN_MAX_ORDER_STAKE_USD`)
+as well; the pair stake is capped at `MERIDIAN_ARB_MAX_PAIR_USD` (default $25) or the
+last-read account balance when one is available, whichever is smaller (an unreadable balance
+falls back to the configured cap, a stated policy, never to a guessed bankroll); the pair's
+cost plus the scanner's taker fees must be under $1.00 after any one-tick nudge, or the send
+is refused as a locked loss; spread rungs only; a LOCKED desk refuses the send. UNWIND is
+deliberately exempt from the lock: it is the operator's way out of a half-filled pair, and
+locking the desk must not lock them in. It still needs the token, the literal and the
+acknowledge flag, never sells more than the venue reported filled, and prices "at market" only
+from a ladder sample younger than two sample intervals.
+
+**Not yet exercised live.** The synchronous reply shape (`executions[].order.state`,
+`cumQuantity`, `avgPx`) is the create-order document's and had not been observed on a real
+order when this was written. The first live send is the first observation of it: the whole
+reply body is logged for both legs (the `arb_send` event) and returned to the page; the row
+keeps the refusal body on a rejection. Where a reply carries several priced executions the
+VWAP of `lastPx × lastShares` is the recorded average and a disagreement with the reported
+`avgPx` is logged, because the document does not say whether a per-execution `avgPx` is
+cumulative.

@@ -18,65 +18,16 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
-import re
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ladder import scan  # noqa: E402
-
-LINE = re.compile(r"-(neg|pos)-(\d+)pt(\d)$")
-
-
-def line_of(slug: str, winner_prefix: str) -> float | None:
-    if slug.startswith(winner_prefix):
-        return 0.0
-    m = LINE.search(slug)
-    if not m:
-        return None
-    return (-1.0 if m.group(1) == "neg" else 1.0) * (float(m.group(2)) + float(m.group(3)) / 10)
-
-
-def slugs_for(prefix: str) -> list[str]:
-    """The ladder's slugs from the recorder's own listing of this game."""
-    from sqlalchemy import create_engine, text
-    eng = create_engine(os.environ["DATABASE_URL"])
-    with eng.connect() as c:
-        rows = c.execute(text(
-            "SELECT DISTINCT market_slug FROM market_snapshots "
-            "WHERE captured_at >= now() - interval '2 days' AND market_slug LIKE :p "
-            "AND sports_market_type IN ('football_team_full_game_winner','football_team_full_game_spread',"
-            "'baseball_team_full_game_winner','baseball_team_full_game_spread',"
-            "'basketball_team_full_game_winner','basketball_team_full_game_spread')"),
-            {"p": f"%{prefix}%"}).all()
-    return sorted(r[0] for r in rows)
-
-
-def sample(client, slugs: list[str], winner_prefix: str, meta: dict | None = None):
-    """Fetch every rung's touch from the venue. If ``meta`` is given it is
-    filled with each rung's ``transactTime`` -- the venue's LAST-UPDATE stamp
-    for that book (verified 2026-09-18: three identical snapshots 3s apart
-    carried the same value), so ``now - transactTime`` is how long the rung
-    has sat un-requoted."""
-    rungs = {}
-    t0 = time.time()
-    for s in slugs:
-        try:
-            book, raw = client.get_book(s)
-        except Exception as e:  # noqa: BLE001 -- one bad rung must not kill the sample
-            print(f"  ERR {s} {str(e)[:60]}")
-            continue
-        md = book.market_data
-        if not md.bids or not md.offers:
-            continue
-        k = line_of(s, winner_prefix)
-        if k is None:
-            continue
-        rungs[k] = (float(md.bids[0].px.value), float(md.offers[0].px.value),
-                    float(md.bids[0].qty), float(md.offers[0].qty))
-        if meta is not None:
-            meta[k] = ((raw or {}).get("marketData") or {}).get("transactTime")
-    return rungs, time.time() - t0
+# The sampling itself (slug -> line, the recorder's slug listing, the
+# simultaneous get_book sweep) lives in core.ladder.live so the dashboard,
+# whose image carries core/ and not cfb/, can run the same code. Re-exported
+# under the names this script always had; the tests import them from here.
+from core.ladder.live import LINE, line_of, sample, slugs_for  # noqa: E402,F401
 
 
 def alert(v, game_key: str, when: str, sent: dict, cooldown_min: float) -> bool:

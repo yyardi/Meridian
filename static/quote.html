@@ -113,8 +113,7 @@
   <div class="hsep"></div>
   <div class="navgrp">
     <span class="grplbl">strategy</span>
-    <a class="" href="/" title="PULSE — directional. Takes a side: picks a team and holds a position.">PULSE</a>
-    <a class="on" href="/quote" title="QUOTE — market making. Quotes both sides and earns the spread, without a view on the game.">QUOTE</a>
+    <a class="" href="/arb" title="ARB — the ladder desk. A live spread ladder that contradicts itself is bought on both legs and held to settlement; every send is two explicit clicks with the order token.">ARB</a>
   </div>
   <div class="hsep"></div>
   <div class="navgrp">
@@ -132,6 +131,13 @@
 </header>
 
 <div class="wrap">
+  <!-- ARCHIVED (operator, 2026-09-18). QUOTE left the strategy nav when the
+       ladder desk (/arb) became the live work; the shadow engine and the
+       measurement below keep accruing untouched. Static text, not a status. -->
+  <div class="banner" id="archived">
+    <b>ARCHIVED</b> — QUOTE is no longer in the strategy nav. The measurement below still accrues
+    and the shadow engine still runs; live work is on <a href="/arb" style="color:var(--accent)">ARB</a>.
+  </div>
   <!-- Was an eight-line paragraph the operator could not read past. The content
        is real but it is REFERENCE, not status: it belongs behind a disclosure,
        and the live numbers belong above it. -->

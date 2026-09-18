@@ -66,6 +66,16 @@ def test_winner_market_pairs_are_never_candidates():
     assert "is_spread_pair(x)" in loop.split("gate(locked")[0]
 
 
+def test_the_executor_samples_through_the_core_module_and_reexports_book_age():
+    """cfb/run_ws_freshness.py imports book_age_s from here and the dashboard
+    imports it from core.ladder.live; they must be the same function."""
+    live = importlib.import_module("core.ladder.live")
+    assert EX.book_age_s is live.book_age_s and EX.sample is live.sample and EX.slugs_for is live.slugs_for
+    for bad in ("place_order", "submit_order", "create_order", "MERIDIAN_ORDER_TOKEN",
+                "requests.post", "httpx", "/orders", "PolymarketOrderClient"):
+        assert bad not in pathlib.Path(live.__file__).read_text(encoding="utf-8")
+
+
 def test_book_age_parses_nanosecond_stamps_and_rides_on_the_ticket():
     now = 1_800_000_000.0
     stamp = dt.datetime.fromtimestamp(now - 412.25, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + ".000000000Z"

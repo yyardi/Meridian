@@ -60,6 +60,33 @@ _ORDER_TYPE = "ORDER_TYPE_LIMIT"
 #:     ORDER_INTENT_SELL_SHORT  sell NO  (close a long No position)
 _ORDER_INTENT: dict[tuple, str] = {}   # populated below, after the enums exist
 
+#: The venue's time-in-force enum, from
+#: docs.polymarket.us/api-reference/orders/create-order (read 2026-09-18).
+#: `to_payload` refuses any other string so a typo cannot reach the venue as
+#: a request the venue rejects -- or worse, silently defaults.
+VENUE_TIFS = frozenset({
+    "TIME_IN_FORCE_DAY",
+    "TIME_IN_FORCE_GOOD_TILL_CANCEL",
+    "TIME_IN_FORCE_GOOD_TILL_DATE",
+    "TIME_IN_FORCE_IMMEDIATE_OR_CANCEL",
+    "TIME_IN_FORCE_FILL_OR_KILL",
+})
+
+#: The tif every order ever sent has carried: rest until cancelled.
+DEFAULT_TIF = "TIME_IN_FORCE_GOOD_TILL_CANCEL"
+
+#: The tif for a ladder-arbitrage leg (docs/math/ladder-fill-test.md, the
+#: 2026-09-18 amendment). From the same create-order page: an IOC limit fills
+#: what it can at or better than the limit and cancels the rest, so a leg
+#: never rests on a book that has since moved. Sent with
+#: ``synchronousExecution`` so the response carries the executions and the
+#: filled quantity decides whether leg 2 is sent at all.
+#:
+#: NOT yet exercised live. Every order this system has sent to date was a
+#: post-only GTC; the first IOC will be the first time the venue's behaviour
+#: on this value is observed rather than read.
+ARB_TIF = "TIME_IN_FORCE_IMMEDIATE_OR_CANCEL"
+
 #: Venue constraints, confirmed from live market payloads.
 DEFAULT_TICK_SIZE = Decimal("0.01")
 DEFAULT_MIN_TRADE_QTY = Decimal("0.01")
@@ -180,7 +207,9 @@ class LimitOrder:
         """Total cash at risk: cost per contract × quantity."""
         return self.cost_per_contract * self.quantity
 
-    def to_payload(self, *, post_only: bool = True) -> dict:
+    def to_payload(
+        self, *, post_only: bool = True, tif: str = DEFAULT_TIF, synchronous: bool = False,
+    ) -> dict:
         """Venue payload, per docs.polymarket.us/api-reference/orders.
 
         ``type`` is ``self.order_type``, which is ``init=False`` and therefore
@@ -196,6 +225,15 @@ class LimitOrder:
         the outcome we want: a crossed limit is a mispriced decision, not a
         trade worth having.
 
+        ``tif`` and ``synchronous`` exist for the ladder-arbitrage leg, whose
+        whole point is to take a price that is wrong right now (post-only
+        False, IOC, and the venue's synchronous response saying how much
+        filled). Both are additive: with the defaults the payload is
+        byte-for-byte what it has always been, which the tests pin, and
+        ``synchronousExecution`` is only present when asked for. ``tif`` must
+        be one of :data:`VENUE_TIFS`; anything else raises here, not at the
+        venue.
+
         ``manualOrderIndicator`` is a CFTC-facing field and is truthfully
         MANUAL: every order this system sends was clicked by a human.
 
@@ -207,12 +245,14 @@ class LimitOrder:
         happens here — the inversion lives in whoever *chooses* the price, and
         :attr:`cost_per_contract` is how a human sees what they pay.
         """
-        return {
+        if tif not in VENUE_TIFS:
+            raise ValueError(f"tif {tif!r} is not one of the venue's time-in-force values")
+        payload = {
             "marketSlug": self.market_slug,
             "type": self.order_type,          # always ORDER_TYPE_LIMIT
             "price": {"value": str(self.limit_price), "currency": "USD"},
             "quantity": str(self.quantity),
-            "tif": "TIME_IN_FORCE_GOOD_TILL_CANCEL",
+            "tif": tif,
             "intent": _ORDER_INTENT[(self.side, self.outcome)],
             # The venue accepts either `intent` alone or this pair, and
             # documents that **when both are sent the pair wins**. Sending both
@@ -229,6 +269,11 @@ class LimitOrder:
             "participateDontInitiate": post_only,
             "clientOrderId": self.idempotency_key,
         }
+        if synchronous:
+            # Only when asked: the venue then answers with `executions` and
+            # the filled quantity, which the arbitrage's leg 2 depends on.
+            payload["synchronousExecution"] = True
+        return payload
 
 
 def round_to_tick(price: float | Decimal, tick: Decimal = DEFAULT_TICK_SIZE) -> Decimal:
