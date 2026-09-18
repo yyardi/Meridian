@@ -66,3 +66,10 @@ def test_sample_fills_meta_with_the_venue_transact_time():
     assert rungs and list(meta) == list(rungs) and meta[next(iter(rungs))] == "2026-09-18T13:17:58.280016334Z"
     rungs2, _ = L.sample(Client(), ["aec-x-2026-09-18-pos-3pt5"], "aec-x-2026-09-18")   # old call shape still works
     assert rungs2 == rungs
+
+
+def test_slugs_for_covers_basketball_ladders_too():
+    import cfb.run_live_ladder as L, inspect
+    src = inspect.getsource(L.slugs_for)
+    for fam in ("football", "baseball", "basketball"):
+        assert f"{fam}_team_full_game_spread" in src and f"{fam}_team_full_game_winner" in src
