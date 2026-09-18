@@ -43,6 +43,12 @@ def is_mid(v) -> bool:
     return all(MID_LADDER[0] <= abs(x) <= MID_LADDER[1] for x in (v.high_line, v.low_line))
 
 
+def gate(locked: bool, cands: list) -> list:
+    """The operator's lock. While the lock file exists nothing is issued or
+    pushed; the loop keeps sampling so the tape is still recorded."""
+    return [] if locked else cands
+
+
 def intent_for(v, game: str, when: str, attempt_usd: float) -> dict:
     """One fully-formed two-leg order, sized to the attempt budget. qty >= 1."""
     no_px = round(1.0 - v.sell_price, 4)
@@ -105,6 +111,8 @@ def main() -> int:
     ap.add_argument("--every", type=float, default=20.0)
     ap.add_argument("--minutes", type=float, default=240.0)
     ap.add_argument("--out", default=None, help="JSONL of intents; default artifacts/reads/ladder_intents_<prefix>.jsonl")
+    ap.add_argument("--lock-file", default=None,
+                    help="while this file exists: observe only, no intents, no pushes (default <out dir>/ladder_lock)")
     a = ap.parse_args()
     from core.polymarket.client import PolymarketGatewayClient
 
@@ -112,6 +120,7 @@ def main() -> int:
     out = a.out or os.path.join("/out" if os.path.isdir("/out") else "artifacts/reads",
                                 f"ladder_intents_{a.prefix}.jsonl")
     spent = spent_so_far(out)
+    lock = a.lock_file or os.path.join(os.path.dirname(out) or ".", "ladder_lock")
     slugs = slugs_for(game)
     print(f"executor (shadow) prefix={a.prefix} rungs={len(slugs)} budget=${a.budget_usd:.2f} "
           f"spent_so_far=${spent:.2f} attempt=${a.attempt_usd:.2f} floor=${a.floor_usd:.0f}")
@@ -125,7 +134,8 @@ def main() -> int:
             cands = [x for x in v if x.dollars >= a.floor_usd]
             cands.sort(key=lambda x: (not is_mid(x), -x.dollars))   # mid-ladder first, then biggest
             issued = None
-            for x in cands:
+            locked = os.path.exists(lock)                 # the operator's lock: observe only
+            for x in gate(locked, cands):
                 key = (x.high_line, x.low_line)
                 if time.time() - last.get(key, -1e9) < a.cooldown * 60:
                     continue
@@ -138,7 +148,7 @@ def main() -> int:
                 spent += it["cost_usd"]; last[key] = time.time(); issued = it
                 push(it)
                 break
-            print(f"=== {now}Z rungs {len(rungs)} in {took:.1f}s  violations {len(v)}  "
+            print(f"=== {now}Z rungs {len(rungs)} in {took:.1f}s  violations {len(v)}  {'LOCKED ' if locked else ''}"
                   f"candidates {len(cands)}  {'INTENT ' + str(issued['leg1']['market_line']) + '/' + str(issued['leg2']['market_line']) if issued else ''}  spent ${spent:.2f}")
             sys.stdout.flush()
             time.sleep(max(0.0, a.every - took))

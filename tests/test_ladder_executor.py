@@ -46,3 +46,13 @@ def test_mid_ladder_is_preferred_and_liquid_pairs_are_not_mid():
 def test_push_never_prints_and_reads_topic_from_env_only():
     body = SRC[SRC.index("def push("):SRC.index("def main(")]
     assert "MERIDIAN_NTFY_TOPIC" in body and "print(" not in body
+
+
+def test_operator_lock_gates_issuance_but_not_sampling():
+    cands = ["a", "b"]
+    assert EX.gate(False, cands) == cands
+    assert EX.gate(True, cands) == []
+    loop = SRC[SRC.index("while time.time() < end"):]
+    assert "os.path.exists(lock)" in loop and "gate(locked, cands)" in loop, "lock is re-read every cycle"
+    assert "sample(c, slugs, a.prefix)" in loop.split("gate(locked")[0], "sampling happens before the gate"
+    assert '"ladder_lock"' in SRC
