@@ -3255,6 +3255,53 @@ rule exceptions and the winner market is no longer a leg.
 first pass over :8008 found it serving, no console errors, WNBA pregame picks rendering. PDF export —
 the only route is headless Chrome, which the operator told me not to run; waiting on a yes.
 
+## 0ca. Basketball measured tonight (read-only), the venue's order vocabulary read, and the ARB tab under construction
+
+**Basketball.** The operator asked whether the ladder breaks in basketball too. The venue lists WNBA
+spread ladders (8 rungs per game on tonight's board); the sampler now reads `basketball_team_full_game_*`
+(2251bff). Three **read-only** samplers are scheduled from a new launcher
+(`artifacts/reads/launch_live_sampler.sh`: `run_live_ladder.py`, no alerts, no tickets): IND–TOR and
+NY–MIN at 23:28Z, POR–GSV at 01:58Z (venue `game_start_time`, not the dashboard's local label). No
+tickets for basketball — the fill test is registered on football only. Seven TEMP cron lines now; the
+08:00Z self-clean removes them all.
+
+**Counts, stated once because the operator read 84,646 as opportunities.** 84,646 is the number of
+settled rung *pairs* checked to prove the ordering rule (zero cases of "harder paid, easier did not").
+Opportunities are tens per game: DET–BUF ~170 episodes, 25 ≥ $25, 6 ≥ $100; pregame $414 across 23
+games in three days. Tonight's three executors make n = 4 at the $25 floor.
+
+**The venue's order vocabulary, read from docs.polymarket.us (create-order page, curl from prod; the
+browser pane was refused mid-session).** `tif` ∈ {DAY, GOOD_TILL_CANCEL, GOOD_TILL_DATE,
+**IMMEDIATE_OR_CANCEL**, FILL_OR_KILL}; `type` ∈ {LIMIT, MARKET}; `participateDontInitiate` = "order
+must rest on the book" (post-only — every order this system has ever sent was post-only GTC); optional
+`synchronousExecution`, `maxBlockTime`, `slippageTolerance`, `goodTillTime`. With `synchronousExecution`
+the reply carries `executions[]` with the order's `state` (ORDER_STATE_NEW / PARTIALLY_FILLED / FILLED /
+CANCELED / EXPIRED / REJECTED / PENDING_*), `cumQuantity`, `leavesQuantity`, `lastPx`, `lastShares`,
+`avgPx`. **An IOC synchronous leg is the fill probe the protocol wanted**: it takes what is there, rests
+nothing, and reports its own fill in the same reply — no watcher, no cancel, and a zero fill is a
+terminal state rather than an invisible one (V19's blind spot). None of this has been exercised live yet.
+
+**Why the desk is on :8011 and the ARB tab needs the fleet rebuild.** Five readers mapped the dashboard
+(one FastAPI module, five single-file pages with the nav copied into each; `static/` and `core/` are
+baked into the api image, `cfb/` is not; PULSE's SEND is keyed to a pregame `predictions` row,
+basketball-only by policy, BUY-only, post-only GTC — it cannot carry a ladder leg). The operator asked
+for one website, a send-style button for both legs, an unwind, PULSE and QUOTE archived, and the desk
+folded in. A workflow is building exactly that on top of origin/main: `core/ladder/{live,desk}.py`
+(helpers the api can import), `to_payload(tif=, synchronous=)`, `/arb` + `/api/arb/{state,ladder,lock,
+arm,record,send,unwind}` (all writes token-gated, HUMAN_CONFIRM literal, ticket must match an intent
+the executor wrote, lock refuses, pair cap, idempotency row before any venue call, leg 2 only for the
+quantity leg 1 filled), `static/arb.html`, the archive edits, a protocol amendment, and tests; five
+adversarial reviewers then a fixer. It reaches :8008 only when the operator runs the §1 fleet rebuild
+(an api-only rebuild would advance the alembic head and strand the other containers — §0at). Tonight
+runs on :8011 and the phone as armed.
+
+**Speed, answered with the tape.** The operator worries a human is too slow. Liquid-rung episodes
+(winner, ±1.5/±2.5) last a median 23 s and are worth pennies (median $0.33); the six $100+ episodes were
+mid-ladder and lasted 540 s, 780 s, 330 s, 60 s and two single samples. One click that fires both legs
+IOC in ~100–200 ms misses the 20-second penny episodes and catches the minutes-long ones. Whether an
+automatic sender is worth having is a question for after the fill answer, put to the operator with
+numbers; it is not something I arm.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**

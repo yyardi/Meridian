@@ -71,5 +71,5 @@ HTML = f"""<style>{CSS}</style><div class='wrap'>
 
 <h2>7 &middot; What the money looks like</h2>
 <p>Per pair you put in about 0.92&ndash;0.98 and get $1.00 back &mdash; roughly 2&ndash;8 % on the money, once, locked until the game settles (about 3.5 hours). Tonight's tickets are one contract each under a $5 budget: they exist to answer <b>whether displayed size fills at all</b>, not to make money. Five recorded attempts decide it: three with both legs filled &rarr; size is real; three with leg 1 unfilled &rarr; it is phantom and the idea is withdrawn.</p>
-<p class='muted'>Full write-up with the measurements, the maths and the reviewer's verdict: the Ladder Lag Review report.</p>
+<p class='muted'>Full write-up with the measurements, the maths and the reviewer's verdict: the Ladder Lag Review report. Once the ARB tab ships, SEND on the dashboard fires both legs on one click.</p>
 </div>"""
