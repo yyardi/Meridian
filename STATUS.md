@@ -3091,6 +3091,31 @@ the next build schedules it from kickoff times across every live football and ba
 read-only, so the per-game figure stops being n=1. The temporary cron is removed; the 220-sample and
 106-sample files are in `artifacts/reads/`.
 
+## 0bw. The fill test is registered and armed; Meridian still places nothing
+
+The operator has agreed to test the one unmeasured link — whether displayed size on a mispriced
+mid-rung fills. **Protocol pre-registered before any episode is seen** in `docs/math/ladder-fill-test.md`:
+50 contracts, $25 alert floor, mid-ladder pairs preferred, stale leg first, no chasing, and a decision
+rule over five attempts — including the outcome that would make me withdraw the whole finding (size that
+vanishes on contact in three of five).
+
+**What is armed.** `cfb/run_live_ladder.py` now carries `--alert-floor`: when an episode's
+edge × min(touch size) clears $25 it pushes one message per pair per ten minutes with **BUY line@ask /
+SELL line@bid / size** — enough to place by hand, and nothing else. Topic from the environment, never
+printed; `alert()` contains no `print` and cannot stop the sampler on failure. Plumbing proven with one
+labelled test push. Three kickoff-triggered launches for tonight, 20-second cadence, four hours each,
+self-cleaning at 08:00Z:
+
+| game | kickoff | launch |
+|---|---|---|
+| Miami–Wake Forest | 23:30Z | 23:28Z |
+| Houston–Texas Tech | 00:00Z | 23:58Z |
+| Portland St–Oregon | 02:30Z | 02:28Z |
+
+Then Saturday's 49-game CFB slate and Sunday's NFL from 17:00Z. The per-game figure in §0bv is n = 1;
+these are also the sampler's first runs at scale, read-only, so n stops being 1 whether or not a hand
+order is placed.
+
 ## 1. What I need from you (everything else I now run myself)
 
 **1. Rebuild the fleet. This is the only urgent item and it is not a strategy question.**
