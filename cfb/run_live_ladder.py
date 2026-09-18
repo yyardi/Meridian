@@ -82,10 +82,18 @@ def alert(v, game_key: str, when: str, sent: dict, cooldown_min: float) -> bool:
     topic = _os.environ.get("MERIDIAN_NTFY_TOPIC", "").strip().strip('"').strip("'")
     if not topic:
         return False
-    msg = (f"LADDER {game_key} {when}Z  ${v.dollars:,.0f} = {v.edge*100:+.2f}c x {v.size:,.0f}\n"
-           f"BUY  YES line {v.high_line:+.1f} @ {v.buy_price:.4f}  (easier; take this FIRST if it is the resting side)\n"
-           f"SELL YES line {v.low_line:+.1f} @ {v.sell_price:.4f}\n"
-           f"size = min touch size. Manual test only; nothing placed by Meridian.")[:480]
+    # Expressed as the two BUY buttons a person actually sees: BUY YES on the
+    # easier line at its ask, and BUY NO on the harder line at (1 - its bid).
+    # Same position as buy-YES / sell-YES: the pair settles to at least 1 in
+    # every margin region and costs A + (1 - B), so profit is B - A - fees = E.
+    no_px = 1.0 - v.sell_price
+    n = 15
+    cost = n * (v.buy_price + no_px)
+    msg = (f"LADDER {game_key} {when}Z  edge {v.edge*100:+.2f}c  displayed size {v.size:,.0f}\n"
+           f"1) market 'line {v.high_line:+.1f}': BUY YES @ {v.buy_price:.3f}   <- FIRST\n"
+           f"2) market 'line {v.low_line:+.1f}': BUY NO  @ {no_px:.3f}\n"
+           f"{n} contracts each costs ${cost:,.2f}; pays $1 x {n} = ${n:.2f} at settlement, "
+           f"any score. Do not chase leg 2 past 60s. Manual only; Meridian places nothing.")[:480]
     try:
         req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
                                      headers={"Title": "Meridian ladder episode"})
