@@ -19,7 +19,9 @@ in this file. Reachable exactly as the dashboard on :8008 is.
 from __future__ import annotations
 
 import datetime as dt
+import glob
 import html
+import json
 import os
 
 from urllib.parse import parse_qs
@@ -28,32 +30,85 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from cfb.ladder_instructions import HTML as INSTRUCTIONS_HTML
-from core.ladder import desk
-from core.ladder.desk import tally, ticket_id  # noqa: F401 -- the desk's public names, kept
 from core.ladder.ui import ui_wording
 
-# The file helpers live in core.ladder.desk so the dashboard (api image: core/,
-# not cfb/) can read the same tickets and write the same records and lock.
-# This module keeps its routes, its directory and its public names.
-OUT = desk.default_out_dir()
+OUT = os.environ.get("LADDER_OUT") or ("/out" if os.path.isdir("/out") else "artifacts/reads")
 BUDGET_USD = float(os.environ.get("LADDER_BUDGET_USD", "5"))
 app = FastAPI(title="Meridian ladder desk")
 
 
 def lock_path() -> str:
-    return desk.lock_path(OUT)
+    return os.path.join(OUT, "ladder_lock")
 
 
 def armed() -> bool:
-    return desk.armed(OUT)
+    return not os.path.exists(lock_path())
+
+
+def _jsonl(path: str) -> list[dict]:
+    rows = []
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue
+    return rows
+
+
+def ticket_id(t: dict) -> str:
+    return f"{t.get('game')}|{t.get('ts')}|{t['leg1']['market_line']}/{t['leg2']['market_line']}"
 
 
 def load_tickets() -> list[dict]:
-    return desk.load_tickets(OUT)
+    """Every intent the executor wrote, newest first, with the operator's
+    latest record for it merged in."""
+    tickets = []
+    for p in sorted(glob.glob(os.path.join(OUT, "ladder_intents_*.jsonl"))):
+        for t in _jsonl(p):
+            if "leg1" in t and "leg2" in t:
+                t = dict(t)
+                t["id"] = ticket_id(t)
+                t["status"] = "open"
+                tickets.append(t)
+    attempts = {a["id"]: a for a in _jsonl(os.path.join(OUT, "ladder_attempts.jsonl")) if "id" in a}
+    for t in tickets:
+        a = attempts.get(t["id"])
+        if a:
+            t["status"] = a.get("status", "open")
+            t["record"] = a
+    tickets.sort(key=lambda t: (str(t.get("game")), str(t.get("ts"))), reverse=True)
+    return tickets
+
+
+def tally(tickets: list[dict]) -> dict:
+    live = [t for t in tickets if t["status"] in ("placed", "recorded")]
+    live.sort(key=lambda t: t.get("record", {}).get("at", ""))
+    first5 = live[:5]
+    rec = [t for t in first5 if t["status"] == "recorded"]
+    both = [t for t in rec if (t["record"].get("l1q") or 0) >= 0.8 * t["leg1"]["qty"]
+            and (t["record"].get("l2q") or 0) >= 0.8 * t["leg2"]["qty"]]
+    none = [t for t in rec if (t["record"].get("l1q") or 0) == 0]
+    if len(both) >= 3:
+        verdict = "Displayed size is real. Next build: the multi-game scheduler."
+    elif len(none) >= 3:
+        verdict = "Resting size is phantom. The lead closes on executability."
+    elif len(rec) >= 5:
+        verdict = "Mixed -- extend to ten attempts before reading it."
+    else:
+        verdict = "Not yet -- needs five recorded attempts."
+    issued = sum(float(t.get("cost_usd") or 0) for t in tickets)
+    return {"placed": len(first5), "recorded": len(rec), "both": len(both), "none": len(none),
+            "verdict": verdict, "issued": issued, "open": sum(1 for t in tickets if t["status"] == "open")}
 
 
 def tail(path: str, n: int = 3) -> list[str]:
-    return desk.tail(path, n)
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        lines = [ln.rstrip() for ln in f if ln.startswith("===")]
+    return lines[-n:]
 
 
 def _leg_html(n: int, leg: dict, game: str, note: str) -> str:
@@ -91,7 +146,7 @@ def index() -> str:
     tickets = load_tickets()
     t = tally(tickets)
     parts = [f"<style>{CSS}</style><div class='wrap'><div class='muted'>MERIDIAN &middot; FILL TEST &middot; {dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d %H:%M')}Z</div>",
-             "<h1>Ladder desk</h1><div class='muted'>The executor finds and sizes the trade and writes a ticket here. You decide, and you place it. <a href='/instructions' style='color:#3F8ED0'>How to place a ticket &rarr;</a></div>",
+             "<h1>Ladder desk</h1><div class='muted'>The executor finds and sizes the trade and writes a ticket here. You decide. The venue's button places it; nothing on this page does. <a href='/instructions' style='color:#3F8ED0'>How to place a ticket &rarr;</a></div>",
              f"<div class='lock {'armed' if is_armed else ''}'><form method='post' action='{'/lock' if is_armed else '/arm'}'>"
              f"<button type='submit'>{'Armed' if is_armed else 'Locked'}<br><span class='muted'>click to {'lock' if is_armed else 'arm'}</span></button></form>"
              f"<div><div class='state'>Meridian is {'ARMED' if is_armed else 'LOCKED'}</div><div>"
@@ -132,11 +187,11 @@ def index() -> str:
     parts.append(f"<h2>Decision rule (registered)</h2><div class='ticket'>recorded {t['recorded']} &middot; both legs &ge; 80 % filled: <b>{t['both']}</b> &middot; leg 1 unfilled: <b>{t['none']}</b><br><b>{html.escape(t['verdict'])}</b>"
                  "<div class='muted'>&ge; 3 of 5 both filled &rarr; size is real. &ge; 3 of 5 leg 1 unfilled &rarr; phantom. Same rung vanishing on contact in 3 of 5 withdraws the finding.</div></div>")
     parts.append("<h2>Executor and stream, latest lines</h2>")
-    for p in desk.log_files(OUT, "executor") + desk.log_files(OUT, "freshness"):
+    for p in sorted(glob.glob(os.path.join(OUT, "live_ladder_aec-*.txt")))[-3:] + sorted(glob.glob(os.path.join(OUT, "ws_freshness_aec-*.txt")))[-3:]:
         lines = tail(p)
         if lines:
             parts.append(f"<div class='muted'>{html.escape(os.path.basename(p))}</div><pre>{html.escape(chr(10).join(lines))}</pre>")
-    parts.append("<div class='foot'>Lock = a file the executor re-reads every cycle. Tickets = the executor's intent files. Your records = ladder_attempts.jsonl.</div></div>")
+    parts.append("<div class='foot'>Lock = a file the executor re-reads every cycle. Tickets = the executor's intent files. Your records = ladder_attempts.jsonl. Meridian never places an order.</div></div>")
     return "".join(parts)
 
 
@@ -147,13 +202,15 @@ def instructions() -> str:
 
 @app.post("/lock")
 def lock() -> RedirectResponse:
-    desk.lock(OUT, "the desk")
+    with open(lock_path(), "a", encoding="utf-8") as f:
+        f.write(dt.datetime.now(dt.timezone.utc).isoformat() + " locked from the desk\n")
     return RedirectResponse("/", status_code=303)
 
 
 @app.post("/arm")
 def arm() -> RedirectResponse:
-    desk.arm(OUT)
+    if os.path.exists(lock_path()):
+        os.remove(lock_path())
     return RedirectResponse("/", status_code=303)
 
 
@@ -173,8 +230,10 @@ async def ticket(request: Request) -> RedirectResponse:
     status = {"placed": "placed", "skipped": "skipped", "reopen": "open", "record": "recorded"}.get(action)
     if status is None or not tid:
         return RedirectResponse("/", status_code=303)
-    fills = None
+    row = {"id": tid, "status": status, "at": dt.datetime.now(dt.timezone.utc).isoformat()}
     if action == "record":
-        fills = {k: _num(form.get(k)) for k in ("l1q", "l1p", "l1s", "l2q", "l2p", "l2s")}
-    desk.record_attempt(OUT, tid, status, fills)
+        row.update({"l1q": _num(form.get("l1q")) or 0.0, "l1p": _num(form.get("l1p")), "l1s": _num(form.get("l1s")),
+                    "l2q": _num(form.get("l2q")) or 0.0, "l2p": _num(form.get("l2p")), "l2s": _num(form.get("l2s"))})
+    with open(os.path.join(OUT, "ladder_attempts.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
     return RedirectResponse("/", status_code=303)
