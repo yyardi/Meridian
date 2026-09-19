@@ -1225,7 +1225,7 @@ def test_the_page_renders_the_live_block_and_carries_no_second_fee_model(page):
 
 
 def test_the_ticket_panel_shows_liveness_on_the_row_and_the_card(page):
-    row = _fn(page, "function ticketRow(t){")
+    row = _fn(page, "function ticketRow(t, g){")
     assert "liveChip(t)" in row and 'class="st cap"' in row and "over cap" in row
     card = _fn(page, "function ticketCard(t){")
     assert "liveBanner(t)" in card
@@ -1263,11 +1263,11 @@ def test_the_leg_colours_follow_the_easier_and_harder_line_not_the_leg_order(pag
     fn = _fn(page, "function legCls(t){")
     assert 'a > b ? ["buy", "sell"] : ["sell", "buy"]' in fn
     assert "market_line" in fn and "isFinite(a) && isFinite(b)" in fn
-    for caller in ("function ticketRow(t){", "function ticketCard(t){"):
+    for caller in ("function ticketRow(t, g){", "function ticketCard(t){"):
         assert "legCls(t)" in _fn(page, caller), caller
     # Both callers take the pair in the order legCls returns it; neither
     # hands "buy" to leg 1 by name.
-    for caller in ("function ticketRow(t){", "function ticketCard(t){"):
+    for caller in ("function ticketRow(t, g){", "function ticketCard(t){"):
         body = _fn(page, caller)
         assert "[c1, c2] = legCls(t)" in body, caller
         assert '"buy"' not in body and '"sell"' not in body, caller
@@ -1308,8 +1308,14 @@ def test_the_panel_leads_with_the_newest_and_never_opens_on_a_stale_ticket(page)
     a ticket that is both sendable and LIVE on the current sample. A ticket
     with no live block never wins it: unknown is not live."""
     body = _fn(page, "function renderTickets(){")
-    assert "const newest = [...mine].reverse()" in body
-    assert "newest.map(ticketRow)" in body and "mine.map(ticketRow)" not in body
+    # It used to `.reverse()` the server's list here, which was right only
+    # while the server handed over raw file order. The server now sorts
+    # newest-first on a real dated instant (core/ladder/desk.stamp_instants);
+    # two places ordering one list is what put Friday night at the top of a
+    # live Saturday desk. Ordering happens once, on the server.
+    assert "const newest = heads" in body
+    assert ".reverse()" not in re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+    assert "groups.map(g => ticketRow(g.head, g))" in body and "mine.map(ticketRow)" not in body
     assert 't.sendable && (t.live || {}).state === "LIVE"' in body
     assert body.index('state === "LIVE"') < body.index("newest.find(t => t.sendable) ||"), \
         "live-and-sendable is preferred to merely sendable"

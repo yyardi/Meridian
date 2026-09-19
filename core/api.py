@@ -3237,7 +3237,11 @@ def arb_state() -> dict:
         "available": True,
         "dir": out,
         "armed": _ladder_desk.armed(out),
-        "budget_usd": float(os.environ.get("LADDER_BUDGET_USD", "5")),
+        # 0 means NO cap, which is what the launcher now runs: the executor
+        # stopped taking --budget-usd on 2026-09-19 because a $2 ceiling had
+        # been silencing a game for the rest of the night. The page must not
+        # keep advertising a ceiling that is not there.
+        "budget_usd": float(os.environ.get("LADDER_BUDGET_USD", "0")),
         "max_pair_usd": float(_arb_max_pair_usd()),
         "allow_size_up": _arb_allow_size_up(),
         "sample_seconds": _arb_sample_seconds(),
