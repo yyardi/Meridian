@@ -308,7 +308,7 @@
     <button id="lockBtn" class="danger sm" title="Write the executor's lock file: it keeps sampling and issues nothing; SEND is refused.">LOCK</button>
     <button id="armBtn" class="go sm" title="Remove the executor's lock file: tickets are issued again.">ARM</button>
   </div>
-  <div class="sb" title="Budget for the picked game: the sum of ticket cost on file for it (the executor's own spent_so_far, every intent whatever its status) against LADDER_BUDGET_USD per game."><span class="k">budget</span><span class="v" id="s-budget">—</span></div>
+  <div class="sb" title="Cost of the tickets WRITTEN for the picked game (the executor's own spent_so_far, every intent whatever its status) against its per-game cap. This is proposed, not spent: no money moves until a send fills, and the placed count beside it says how many you actually sent."><span class="k">tickets</span><span class="v" id="s-budget">—</span></div>
   <div class="sb" title="Account balance from Polymarket US. The pair cap on a send is the smaller of this and MERIDIAN_ARB_MAX_PAIR_USD."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
   <div class="sb" title="Overall recorder health — pregame freshness plus every writer's heartbeat; then the pregame and live (200ms) data ages. Live age legitimately grows between games."><span class="k">recorder</span><span class="v" id="s-health">—</span><span class="age" id="s-pregame">—</span><span class="age" id="s-live">—</span></div>
   <div class="sb" title="The executor's freshest cycle line by its clock across the last three live_ladder_aec-*.txt logs (hover for which), and how long ago it was stamped."><span class="k">executor</span><span class="tl" id="s-exec">—</span><span class="age" id="s-exec-age"></span></div>
@@ -560,7 +560,7 @@ function renderState(){
     + kv("size", s.allow_size_up ? "up to displayed" : "≤ ticket", "MERIDIAN_ARB_ALLOW_SIZE_UP");
   $("#meta").innerHTML =
       kv("dir", `<b>${esc(s.dir)}</b>`, s.dir)
-    + kv("budget", `$${num(s.budget_usd, 0)} / game`, "LADDER_BUDGET_USD")
+    + kv("ticket cap", `$${num(s.budget_usd, 0)} / game`, "LADDER_BUDGET_USD — the most the executor may PROPOSE per game; it places nothing")
     + kv("sampler", `every ${num(s.sample_seconds, 0)}s`, "MERIDIAN_ARB_SAMPLE_SECONDS")
     + kv("watching", `${(s.watching||[]).length}`, (s.watching||[]).join(", ") || "no game is being sampled")
     + kv("tickets", `${(s.tickets||[]).length} on file`, "every intent the executor wrote, any league");
@@ -579,7 +579,7 @@ function renderBudget(){
   const used = (s.tickets || []).filter(t => plainGame(t.game) === plainGame(GAME))
                                 .reduce((a, t) => a + Number(t.cost_usd || 0), 0);
   const cap = Number(s.budget_usd || 0);
-  $("#s-budget").innerHTML = `<span class="${used >= cap ? "accc" : ""}">${money(used)}</span> <span class="dimc">/ ${money(cap)}</span>`;
+  $("#s-budget").innerHTML = `<span class="${used >= cap ? "accc" : ""}">${money(used)}</span> <span class="dimc">proposed / ${money(cap)} cap</span>`;
 }
 
 function renderGames(){
@@ -785,7 +785,7 @@ function ticketCard(t){
     <div class="sum">
       <div title="the ticket's pair cost: qty × (cost 1 + cost 2)"><span class="k">cost</span><span class="v">${money(t.cost_usd)}</span></div>
       <div title="both legs filled: $1.00 per pair at settlement whatever the score"><span class="k">pays</span><span class="v">${money(q == null ? null : q * 1)}</span></div>
-      <div title="qty × the ticket's fee-netted edge, as ticketed"><span class="k">net</span><span class="v accc">${money(q == null ? null : q * Number(t.edge_c || 0) / 100)} <small>${signed(t.edge_c, 2)}¢</small></span></div>
+      <div title="qty × the ticket's fee-netted edge, as ticketed"><span class="k">net</span><span class="v ${Number(t.edge_c) > 0 ? "pos" : "neg"}">${money(q == null ? null : q * Number(t.edge_c || 0) / 100)} <small>${signed(t.edge_c, 2)}¢</small></span></div>
       <div title="displayed size on the thinner side when ticketed"><span class="k">size</span><span class="v">${num(t.displayed_size, 0)}</span></div>
       <div title="seconds since each rung's book stamp when ticketed (leg1_book_age_s / leg2_book_age_s on the intent; — when the intent carries none)"><span class="k">book age</span><span class="v">${t.leg1_book_age_s != null || t.leg2_book_age_s != null ? `${t.leg1_book_age_s != null ? agef(t.leg1_book_age_s) : "—"} / ${t.leg2_book_age_s != null ? agef(t.leg2_book_age_s) : "—"}` : "—"}</span></div>
       <div><span class="k">pair</span><span class="v ${t.spread_pair ? "" : "neg"}">${t.spread_pair ? "spread / spread" : "winner leg"}</span></div>
@@ -797,11 +797,30 @@ function ticketCard(t){
   </div>`;
 }
 
+/* Seconds since the ticket was written, from its HH:MM:SS stamp against the
+   clock. Tickets carry no date, so a stamp that reads as "tomorrow" is last
+   night's file and counts as old rather than negative. */
+function ticketAge(ts){
+  const m = /^(\d{2}):(\d{2}):(\d{2})$/.exec(String(ts || ""));
+  if(!m) return null;
+  const now = new Date(), t = new Date(now);
+  t.setUTCHours(+m[1], +m[2], +m[3], 0);
+  let age = (now - t) / 1000;
+  if(age < -60) age += 86400;
+  return age;
+}
+/* fresh under a minute, going under five, cold after. */
+function freshClass(ts){
+  const a = ticketAge(ts);
+  if(a == null) return "";
+  return a < 60 ? "pos" : a < 300 ? "warnc" : "neg";
+}
+
 function ticketRow(t){
-  return `<button class="tkr ${t.id === SEL ? "on" : ""} ${t.status === "open" ? "" : "done"}" data-sel="${esc(t.id)}" title="${esc(plainGame(t.game))} · ${esc(t.id)}">
-    <span>${esc(t.ts)}</span>
+  return `<button class="tkr ${t.id === SEL ? "on" : ""} ${t.status === "open" ? "" : "done"}" data-sel="${esc(t.id)}" title="${esc(plainGame(t.game))} · ${esc(t.id)} · ${t.status === "open" ? "green under a minute old, red past five" : esc(t.status)}">
+    <span class="${t.status === "open" ? freshClass(t.ts) : "dimc"}">${esc(t.ts)}</span>
     <span>${esc(shortGame(t.game))} ${lineTxt((t.leg1||{}).market_line)}/${lineTxt((t.leg2||{}).market_line)}</span>
-    <span class="r accc">${signed(t.edge_c, 2)}¢</span>
+    <span class="r ${Number(t.edge_c) > 0 ? "pos" : "neg"}">${signed(t.edge_c, 2)}¢</span>
     <span class="r">${money(t.cost_usd)}</span>
     <span class="r"><span class="st ${esc(t.status)}">${esc(t.status)}</span></span></button>`;
 }
