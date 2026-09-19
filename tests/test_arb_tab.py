@@ -1188,7 +1188,13 @@ def test_the_ladder_lights_the_side_it_would_touch_and_keeps_the_accent(page):
     assert "tkt.high_line" in body and "tkt.low_line" in body
     assert "tkbuy" in body and "tksell" in body
     assert "actbuy" in body and "actsell" in body
-    assert 'bidLit ? "lit"' in body and 'askLit ? "lit"' in body, "the accent keeps its own meaning"
+    # The SIDE colour is on every crossed rung, not only the selected ticket's
+    # two: a ladder whose lit rungs went grey whenever the chosen ticket was
+    # dead or belonged to another game was the complaint that prompted this.
+    assert 'askLit ? "litbuy"' in body and 'bidLit ? "litsell"' in body
+    # "breaks its bound" keeps a mark of its own -- it moved from the price to
+    # the row, so the two statements stay separable.
+    assert 'viol ? " viol"' in body
     for machinery in ("Math.max(", "Math.min(", "scan"):
         assert machinery not in body, f"{machinery} is the server's job"
     # inBuy is the ask side, inSell the bid side, and not the other way round.
@@ -1198,7 +1204,7 @@ def test_the_ladder_lights_the_side_it_would_touch_and_keeps_the_accent(page):
     # and the three colours are named once, under the ladder's own header
     legend = page[page.index('<div class="legend">'):page.index('<div id="ladder">')]
     for word in ("buy · easier line · at its ask", "sell · harder line · at its bid",
-                 "breaks its bound"):
+                 "breaks its bound", "EVERY crossed rung"):
         assert word in legend, word
 
 
