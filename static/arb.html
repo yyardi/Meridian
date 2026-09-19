@@ -214,6 +214,8 @@
   .dom .dim .bar{opacity:.06}
   .dom .dim .px{font-weight:400}
   .dom .lit{color:var(--acc);font-weight:700}
+  .dom .px.litbuy{color:var(--pos);font-weight:700}
+  .dom .px.litsell{color:var(--neg);font-weight:700}
   .dom .viol{background:#130e0b}
   .dom .viol.ct{border-left:2px solid var(--acc)}
   .dom .tkp{border-top:1px solid var(--acc);border-bottom:1px solid var(--acc)}
@@ -413,9 +415,9 @@
   <section class="pane" id="pane-ladder">
     <div class="ph">depth ladder <span class="sub" id="ladmeta"></span><span class="r dimc" id="ladframe">slug frame · first team's YES</span></div>
     <div class="legend">
-      <span title="Leg 1 of the pair: the easier (higher) line. Covering a higher line is easier, so it must be dearer — we LIFT ITS ASK. The ask is underlined on that rung."><i class="b"></i>buy · easier line · at its ask</span>
-      <span title="Leg 2 of the pair: the harder (lower) line. We HIT ITS BID — on the venue that is buying the row's No. The bid is underlined on that rung."><i class="s"></i>sell · harder line · at its bid</span>
-      <span title="This rung's own price breaks the bound the rest of the ladder sets for it: an ask under a harder rung's bid, or a bid over an easier rung's ask. A different statement from the two above, and it keeps its own colour."><i class="v"></i>breaks its bound (lo – hi)</span>
+      <span title="A green ASK is offered below some harder rung's bid: it is an ask we would LIFT, the YES leg of a pair. Shown on EVERY crossed rung, not only the selected ticket's."><i class="b"></i>buy · easier line · at its ask</span>
+      <span title="A red BID sits above some easier rung's ask: it is a bid we would HIT, which on the venue is buying that row's No. Shown on every crossed rung."><i class="s"></i>sell · harder line · at its bid</span>
+      <span title="The tinted row says this rung breaks its bound (lo – hi); the underline marks the two legs of the ticket currently selected on the right."><i class="v"></i>breaks its bound (lo – hi)</span>
     </div>
     <div id="ladder"><div class="empty">pick a game</div></div>
     <div class="ph">violations <span class="sub">fee-netted, the executor's own scan</span></div>
@@ -758,9 +760,9 @@ function renderLadder(){
         : `${esc(shortRow(row))}${r.screen_bid != null ? ` · Yes ${num(r.screen_bid)}/${num(r.screen_ask)}` : ""}${r.our_yes_is || yesIs ? ` · YES=${esc(r.our_yes_is || yesIs)}` : ""}`;
       const old = r.age_s != null && r.age_s > 120;
       return `<div class="bs rt${cls}"><i class="bar" style="width:${barPct(r.bid_sz, max).toFixed(1)}%"></i><span class="num">${num(r.bid_sz, 0)}</span></div>
-      <div class="rt${cls}"><span class="px ${bidLit ? "lit" : ""}${inSell ? " act actsell" : ""}" title="${esc(flags.join("; "))}${inSell ? " — leg 2 sells at this bid" : ""}">${num(r.bid)}</span></div>
+      <div class="rt${cls}"><span class="px ${bidLit ? "litsell" : ""}${inSell ? " act actsell" : ""}" title="${esc(flags.join("; "))}${inSell ? " — leg 2 sells at this bid" : ""}">${num(r.bid)}</span></div>
       <div class="ct${cls}"><b title="${esc(row || "")}">${lineTxt(r.line)}${tagOf(r.line)}${viol ? `<span class="tag" title="${esc(flags.join("; "))}">${flags.map(flagShort).join(" ")}</span>` : ""}</b><small title="${esc(row || "")}${r.screen_bid != null ? " — the row's own Yes bid / ask" : ""}">${small}</small></div>
-      <div class="${cls}"><span class="px ${askLit ? "lit" : ""}${inBuy ? " act actbuy" : ""}" title="${esc(flags.join("; "))}${inBuy ? " — leg 1 buys at this ask" : ""}">${num(r.ask)}</span></div>
+      <div class="${cls}"><span class="px ${askLit ? "litbuy" : ""}${inBuy ? " act actbuy" : ""}" title="${esc(flags.join("; "))}${inBuy ? " — leg 1 buys at this ask" : ""}">${num(r.ask)}</span></div>
       <div class="as${cls}"><i class="bar" style="width:${barPct(r.ask_sz, max).toFixed(1)}%"></i><span class="num">${num(r.ask_sz, 0)}</span></div>
       <div class="rt${cls} ${old ? "old" : ""}">${agef(r.age_s)}</div>
       <div class="rt bd${cls}">${num(r.lo)} – ${num(r.hi)}</div>`; }).join("")}
@@ -829,15 +831,16 @@ function liveBanner(t){
     return `<div class="live unknown"><span class="lv unknown">?</span>
       <span>no current sample for this game — <b>not checked</b>. These are the prices when the ticket was written${t.ts ? " at " + esc(t.ts) + "Z" : ""}, not the book now. Pick the game on the left to sample it.</span></div>`;
   const [word] = LIVE_WORDS[lv.state];
-  const leg = n => `leg ${n} <b>${num(lv["leg" + n + "_now"], 3)}</b> <span class="dimc">vs ${num((t["leg" + n]||{}).price, 3)} ticketed${lv["leg" + n + "_delta_c"] !== 0 ? `, ${signed(lv["leg" + n + "_delta_c"], 2)}¢ ${lv["leg" + n + "_delta_c"] > 0 ? "dearer" : "cheaper"}` : ""}</span>`;
-  const edge = `edge now <b class="${lv.edge_now_c > 0 ? "pos" : "neg"}">${signed(lv.edge_now_c, 2)}¢</b> <span class="dimc">ticketed ${signed(t.edge_c, 2)}¢</span>`;
-  const moved = lv.moved_leg ? `<span class="dimc">${esc(lv.moved_leg)} moved away</span>` : "";
-  const said = lv.state === "LIVE" ? "<span>both legs still at the ticketed price or better</span>"
-             : lv.state === "MOVED" ? `<span>still clears, at other prices</span> ${moved}`
-             : `<span class="neg">no longer clears</span> ${moved}`;
-  return `<div class="live ${word}"><span class="lv ${word}">${word}</span>${said}
-    <span>${leg(1)}</span><span>${leg(2)}</span><span>${edge}</span>
-    <span class="dimc">sample ${agef(lv.age_s)} old</span></div>`;
+  // One line, not a paragraph. The operator is deciding tap-or-skip in
+  // seconds; the ticketed-vs-now detail belongs in the hover, not the panel.
+  const edge = `<b class="${lv.edge_now_c > 0 ? "pos" : "neg"}">${signed(lv.edge_now_c, 2)}¢</b> now`;
+  const detail = [1, 2].map(n => `leg ${n} ${num(lv["leg" + n + "_now"], 3)} vs ${num((t["leg" + n]||{}).price, 3)} ticketed`).join(" · ");
+  const said = lv.state === "LIVE" ? "still at the ticketed price or better"
+             : lv.state === "MOVED" ? "still clears, at other prices"
+             : "no longer clears";
+  return `<div class="live ${word}" title="${esc(detail)} · sample ${agef(lv.age_s)} old · ticketed ${signed(t.edge_c, 2)}¢">
+    <span class="lv ${word}">${word}</span><span>${said}</span><span>${edge}</span>
+    </div>`;
 }
 
 function legLine(n, leg, game, first){
