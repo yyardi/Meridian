@@ -78,3 +78,40 @@ def test_it_sends_through_the_one_door_and_never_reads_the_topic_itself():
     assert "notify.push(" in SRC
     assert "MERIDIAN_NTFY_TOPIC" not in SRC and "ntfy.sh" not in SRC
     assert '"schedule"' in SRC, "its own kind, so it can be muted without muting tickets"
+
+
+def test_a_big_league_is_listed_by_kickoff_slot_not_by_game():
+    """49 CFB games on a Saturday. Eight names and "41 more" hides the wave
+    and answers nothing; the operator asked what time things are running, so
+    the slots ARE the answer and the whole day fits in a push."""
+    games = ([_g(f"cfb-a{i}-b{i}", 120) for i in range(15)]
+             + [_g(f"cfb-c{i}-d{i}", 330, rungs=40) for i in range(12)]
+             + [_g("cfb-late-one", 480)])
+    title, body = GS.compose(games, NOW)
+    assert "CFB (28)" in body
+    assert "16:00Z  +2.0h  15 games" in body
+    assert "19:30Z  +5.5h  12 games" in body
+    assert "more" not in body, "nothing is hidden: every game is in a slot"
+    assert "22:00Z  +8.0h" in body and "cfb-late-one" in body, \
+        "a slot of one names the game -- there is nothing to summarise"
+    assert len(body) <= 1400
+
+
+def test_a_small_league_is_still_listed_game_by_game():
+    """Three MLB games is not a wave; collapsing them would throw away the
+    names for no saving."""
+    body = GS.compose([_g(f"mlb-a{i}-b{i}", 60 + i, league="mlb") for i in range(3)], NOW)[1]
+    for i in range(3):
+        assert f"mlb-a{i}-b{i}" in body
+    assert "games" not in body.split("MLB (3)")[1]
+
+
+def test_every_game_is_accounted_for_in_the_slot_counts():
+    """The counts must sum to the league total or the message quietly loses
+    games -- the exact failure the old truncation had."""
+    games = [_g(f"cfb-a{i}-b{i}", 60 * (1 + i % 5)) for i in range(23)]
+    body = GS.compose(games, NOW)[1]
+    import re
+    counted = sum(int(n) for n in re.findall(r"  (\d+) games", body))
+    singles = len(re.findall(r"\d\dZ\s+\S+\s+cfb-", body))
+    assert counted + singles == 23

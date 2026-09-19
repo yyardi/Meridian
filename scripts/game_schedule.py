@@ -37,6 +37,21 @@ from core.ladder.live import LADDER_MARKET_TYPES, _engine  # noqa: E402
 #: there are n(n-1)/2 pairs, so three rungs is three chances and thirty is 435.
 MIN_RUNGS = 4
 
+#: Above this many games in one league the message stops naming them and
+#: starts naming KICKOFF SLOTS instead. Eight names is already most of a
+#: push; forty-nine is four times the character budget.
+NAME_LIMIT = 8
+
+
+def _by_kickoff(games: list[dict]) -> list[tuple, ]:
+    """[(tip, [games])] in time order. Games that start together are one
+    entry: that is how a slate is actually read, and it is what makes a
+    49-game morning fit in a notification."""
+    slots: dict = {}
+    for g in games:
+        slots.setdefault(g["tip"], []).append(g)
+    return sorted(slots.items())
+
 SQL = """
 SELECT substring(market_slug from '^a[es]c-(.*)-[0-9]{4}-[0-9]{2}-[0-9]{2}') AS game,
        split_part(market_slug, '-', 2)                                       AS league,
@@ -75,13 +90,23 @@ def compose(games: list[dict], now: dt.datetime) -> tuple[str, str]:
         by_league.setdefault(g["league"], []).append(g)
     lines = []
     for league in sorted(by_league):
-        lines.append(f"{league.upper()} ({len(by_league[league])})")
-        for g in by_league[league][:8]:
-            tip = g["tip"]
-            when = "live" if tip <= now else f"+{(tip - now).total_seconds() / 3600:.1f}h"
-            lines.append(f"  {tip:%H:%M}Z {when:>6}  {g['game']}  {g['rungs']} rungs")
-        if len(by_league[league]) > 8:
-            lines.append(f"  … {len(by_league[league]) - 8} more")
+        group = by_league[league]
+        lines.append(f"{league.upper()} ({len(group)})")
+        if len(group) > NAME_LIMIT:
+            # A 49-game Saturday does not fit in a push and a truncated list
+            # is the worst of both: it names eight games and hides the wave.
+            # The question was what time things are running, so answer THAT --
+            # kickoff slots with a count, which is the whole day in six lines.
+            for tip, slot in _by_kickoff(group):
+                when = "live" if tip <= now else f"+{(tip - now).total_seconds() / 3600:.1f}h"
+                big = max(slot, key=lambda g: g["rungs"])
+                lines.append(f"  {tip:%H:%M}Z {when:>6}  {len(slot)} games"
+                             + (f", incl {big['game']}" if len(slot) > 1 else f"  {big['game']}"))
+        else:
+            for g in group:
+                tip = g["tip"]
+                when = "live" if tip <= now else f"+{(tip - now).total_seconds() / 3600:.1f}h"
+                lines.append(f"  {tip:%H:%M}Z {when:>6}  {g['game']}  {g['rungs']} rungs")
     thin = len(games) - len(listed)
     if thin:
         lines.append(f"({thin} thin ladders not listed)")
