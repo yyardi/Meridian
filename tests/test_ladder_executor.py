@@ -111,4 +111,17 @@ def test_over_cap_tickets_are_written_but_never_charged_to_the_budget(tmp_path):
     assert EX.spent_so_far(str(p)) == pytest.approx(1.92), "only the charged ones"
     src = SRC[SRC.index("while time.time() < end"):]
     assert 'it["over_budget"] = over' in src, "every ticket says which it is"
-    assert "if not over:" in src and "push(it)" in src, "an over-cap ticket is not pushed"
+    assert "if not over and time.time() - pushed.get(key" in src, "an over-cap ticket is not pushed"
+
+
+def test_the_phone_is_deduped_per_pair_but_the_ticket_is_not():
+    """Writing and pushing answer different questions. Every qualifying pair is
+    ticketed every cycle so the ladder shows what went past; the phone is
+    deduped, because one pair crossing for twenty minutes is one opportunity
+    and sixty identical alerts make the phone useless when it matters."""
+    src = SRC[SRC.index("def main("):]
+    assert '"--cooldown", type=float, default=0.0' in src, "no ticket cooldown by default"
+    assert '"--push-cooldown", type=float, default=5.0' in src, "the phone is deduped"
+    assert 'default=float("inf")' in src, "no cap by default"
+    loop = SRC[SRC.index("while time.time() < end"):]
+    assert "pushed[key] = time.time()" in loop and "a.push_cooldown * 60" in loop

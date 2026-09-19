@@ -18,8 +18,10 @@
          writes, but the colour follows the LINE, not the leg number;
        red (#ff5c62) — the side we SELL: the HARDER (lower) line, hit at its
          bid (bought as No). That is leg 2.
-     Liveness (LIVE / MOVED / GONE / ?) reuses green, amber and red on its own
-     chip, never on a price. A filled / unfilled leg still reads .ok / .bad. ── */
+     Liveness (LIVE / THIN / MOVED / STALE / GONE / ?) reuses green, amber and
+     red on its own chip, never on a price: green only for a pair that is at
+     the ticketed price AND has the ticket's size behind both legs, amber for
+     one that is priced but untradeable (THIN, STALE) or re-priced (MOVED). A filled / unfilled leg still reads .ok / .bad. ── */
   :root{
     --bg:#0a0c10; --panel:#11141b; --panel2:#0d1015; --line:#1e2430; --line2:#151a24;
     --txt:#d7dde8; --dim:#8a95a8; --faint:#4a5568;
@@ -55,7 +57,9 @@
   .lv{font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:1px 5px;line-height:13px;
       border:1px solid var(--line);color:var(--faint);display:inline-block}
   .lv.live{color:var(--pos);border-color:#1c5c3c;background:#0c1a14}
+  .lv.thin{color:var(--acc);border-color:#5a3322;background:var(--acc-bg)}
   .lv.moved{color:var(--acc);border-color:#5a3322;background:var(--acc-bg)}
+  .lv.stale{color:var(--acc);border-color:#5a3322;background:var(--acc-bg)}
   .lv.gone{color:var(--neg);border-color:#5c2228;background:#190d10}
   .lv.unknown{color:var(--faint)}
   .accc{color:var(--acc)}.bluec{color:var(--blue)}
@@ -286,6 +290,7 @@
         border-bottom:1px solid var(--line2);font-size:10.5px;color:var(--dim)}
   .live b{color:var(--txt)}
   .live.gone{background:#150c0e}
+  .live.thin,.live.stale{background:var(--acc-bg)}
   .live.unknown{background:#101318}
   /* In the confirm ticket the same banner is the last thing read before the
      money: no border of its own, it sits in the row. */
@@ -761,7 +766,7 @@ function renderLadder(){
       const old = r.age_s != null && r.age_s > 120;
       return `<div class="bs rt${cls}"><i class="bar" style="width:${barPct(r.bid_sz, max).toFixed(1)}%"></i><span class="num">${num(r.bid_sz, 0)}</span></div>
       <div class="rt${cls}"><span class="px ${bidLit ? "litsell" : ""}${inSell ? " act actsell" : ""}" title="${esc(flags.join("; "))}${inSell ? " — leg 2 sells at this bid" : ""}">${num(r.bid)}</span></div>
-      <div class="ct${cls}"><b title="${esc(row || "")}">${lineTxt(r.line)}${tagOf(r.line)}${viol ? `<span class="tag" title="${esc(flags.join("; "))}">${flags.map(flagShort).join(" ")}</span>` : ""}</b><small title="${esc(row || "")}${r.screen_bid != null ? " — the row's own Yes bid / ask" : ""}">${small}</small></div>
+      <div class="ct${cls}"><b title="${esc(row || "")}">${lineTxt(r.line)}${tagOf(r.line)}${viol ? flags.map(f => `<span class="tag ${/^ask/.test(f) ? "buy" : /^bid/.test(f) ? "sell" : ""}" title="${esc(f)}">${flagShort(f)}</span>`).join("") : ""}</b><small title="${esc(row || "")}${r.screen_bid != null ? " — the row's own Yes bid / ask" : ""}">${small}</small></div>
       <div class="${cls}"><span class="px ${askLit ? "litbuy" : ""}${inBuy ? " act actbuy" : ""}" title="${esc(flags.join("; "))}${inBuy ? " — leg 1 buys at this ask" : ""}">${num(r.ask)}</span></div>
       <div class="as${cls}"><i class="bar" style="width:${barPct(r.ask_sz, max).toFixed(1)}%"></i><span class="num">${num(r.ask_sz, 0)}</span></div>
       <div class="rt${cls} ${old ? "old" : ""}">${agef(r.age_s)}</div>
@@ -802,9 +807,11 @@ function renderLadder(){
    UNKNOWN — not being sampled, or the first sample has not answered — and is
    never shown as LIVE, because absence is not confirmation. ── */
 const LIVE_WORDS = {
-  LIVE:    ["live",  "Both legs are still available at the ticketed price or better on the current sample."],
+  LIVE:    ["live",  "Both legs are at the ticketed price or better AND each shows at least the ticket's quantity behind that quote."],
+  THIN:    ["thin",  "Priced at the ticket or better with less size behind it than the ticket asks for: there is a price, but nothing to trade against. The centre pane scores this pair $0.00 / not a candidate."],
   MOVED:   ["moved", "The pair still clears fee-netted, but not at the ticketed prices."],
   GONE:    ["gone",  "The pair no longer clears at the current prices."],
+  STALE:   ["stale", "The current edge is above core.ladder.scan's plausibility bound (15¢): a deep rung nobody has re-quoted, not a market. The centre pane drops these, so this is not an opportunity — it is a reading."],
 };
 /* Which leg we BUY and which we SELL is a property of the LINES, not of the
    leg order: the EASIER (higher) line is bought at its ask (green), the
@@ -821,7 +828,7 @@ function liveChip(t){
   if(!lv || !LIVE_WORDS[lv.state])
     return `<span class="lv unknown" title="UNKNOWN — no current ladder sample for this game: it is not being sampled, or the first sample has not answered, or the last one is older than two sample intervals. A ticket is never shown as live for want of data.">?</span>`;
   const [word, why] = LIVE_WORDS[lv.state];
-  const now = `leg 1 now ${num(lv.leg1_now, 3)} (ticket ${num((t.leg1||{}).price, 3)}) · leg 2 now ${num(lv.leg2_now, 3)} (ticket ${num((t.leg2||{}).price, 3)}) · edge now ${signed(lv.edge_now_c, 2)}¢ against ${signed(t.edge_c, 2)}¢ ticketed · sample ${agef(lv.age_s)} old`;
+  const now = `leg 1 now ${num(lv.leg1_now, 3)} (ticket ${num((t.leg1||{}).price, 3)}) · leg 2 now ${num(lv.leg2_now, 3)} (ticket ${num((t.leg2||{}).price, 3)}) · edge now ${signed(lv.edge_now_c, 2)}¢ against ${signed(t.edge_c, 2)}¢ ticketed · size now ${num(lv.size_now, 0)} on the thinner side (${money(lv.dollars_now)}) · sample ${agef(lv.age_s)} old`;
   return `<span class="lv ${word}" title="${esc(lv.state + " — " + why + " " + now)}">${word}</span>`;
 }
 /* The same thing in a sentence, on the card, above the legs it is about. */
@@ -834,12 +841,18 @@ function liveBanner(t){
   // One line, not a paragraph. The operator is deciding tap-or-skip in
   // seconds; the ticketed-vs-now detail belongs in the hover, not the panel.
   const edge = `<b class="${lv.edge_now_c > 0 ? "pos" : "neg"}">${signed(lv.edge_now_c, 2)}¢</b> now`;
+  /* Size is not decoration: a price with nothing behind it is not an offer,
+     and the centre pane scores that pair $0.00. The banner prints the same
+     min-of-the-two-legs size the violation row uses, so the two agree. */
+  const size = `<b class="${lv.state === "THIN" ? "neg" : ""}">${num(lv.size_now, 0)}</b> behind it`;
   const detail = [1, 2].map(n => `leg ${n} ${num(lv["leg" + n + "_now"], 3)} vs ${num((t["leg" + n]||{}).price, 3)} ticketed`).join(" · ");
   const said = lv.state === "LIVE" ? "still at the ticketed price or better"
+             : lv.state === "THIN" ? `priced, but only ${num(lv.size_now, 0)} displayed${lv.thin_leg ? " on " + esc(lv.thin_leg) : ""} — the centre pane calls this ${money(lv.dollars_now)}`
+             : lv.state === "STALE" ? "above the plausibility bound — a stale rung, not a price"
              : lv.state === "MOVED" ? "still clears, at other prices"
              : "no longer clears";
-  return `<div class="live ${word}" title="${esc(detail)} · sample ${agef(lv.age_s)} old · ticketed ${signed(t.edge_c, 2)}¢">
-    <span class="lv ${word}">${word}</span><span>${said}</span><span>${edge}</span>
+  return `<div class="live ${word}" title="${esc(detail)} · size now ${num(lv.size_now, 0)} (${money(lv.dollars_now)}) · sample ${agef(lv.age_s)} old · ticketed ${signed(t.edge_c, 2)}¢">
+    <span class="lv ${word}">${word}</span><span>${said}</span><span>${edge}</span><span>${size}</span>
     </div>`;
 }
 
@@ -876,16 +889,22 @@ function ticketActions(t){
      (409) and the page should not offer what it knows will be refused. The
      same goes for a ticket past its game's cap — the server refuses those
      too — so it is shown, named, and not offered as a button.
-     A pair that no longer clears on the CURRENT sample is a different case:
-     it is the operator's to judge, so the button stays and is de-emphasised
-     with the reason on it, rather than removed. */
+     A pair that no longer clears on the CURRENT sample, or that clears
+     against no size, or whose edge is past the scan module's plausibility
+     bound, is a different case: it is the operator's to judge, so the button
+     stays and is de-emphasised with the reason on it, rather than removed. */
   const lv = t.live || {};
-  const gone = lv.state === "GONE";
-  const why = gone
-    ? `The pair no longer clears on the current sample: leg 1 ${num(lv.leg1_now, 3)} / leg 2 ${num(lv.leg2_now, 3)} against ${num((t.leg1||{}).price, 3)} / ${num((t.leg2||{}).price, 3)} ticketed, edge now ${signed(lv.edge_now_c, 2)}¢. Offered because the choice is yours; nothing is sent from this button.`
+  const doubt = ["GONE", "THIN", "STALE"].includes(lv.state);
+  const seen = `leg 1 ${num(lv.leg1_now, 3)} / leg 2 ${num(lv.leg2_now, 3)} against ${num((t.leg1||{}).price, 3)} / ${num((t.leg2||{}).price, 3)} ticketed, edge now ${signed(lv.edge_now_c, 2)}¢, size now ${num(lv.size_now, 0)} (${money(lv.dollars_now)})`;
+  const why = lv.state === "GONE"
+    ? `The pair no longer clears on the current sample: ${seen}. Offered because the choice is yours; nothing is sent from this button.`
+    : lv.state === "THIN"
+    ? `Priced at the ticket or better, but with less size behind it than the ticket asks for: ${seen}. The centre pane does not call this a candidate. Offered because the choice is yours; nothing is sent from this button.`
+    : lv.state === "STALE"
+    ? `The current edge is past the plausibility bound the scanner trades by — a rung nobody has re-quoted rather than a market: ${seen}. The centre pane drops it. Offered because the choice is yours; nothing is sent from this button.`
     : "Opens the confirmation ticket. Nothing is sent from this button.";
   if(t.sendable && STATE && STATE.armed === true)
-    acts.push(`<button class="${gone ? "faded" : "go"}" data-act="send" data-id="${esc(t.id)}" title="${esc(why)}">SEND…</button>`);
+    acts.push(`<button class="${doubt ? "faded" : "go"}" data-act="send" data-id="${esc(t.id)}" title="${esc(why)}">SEND…</button>`);
   else if(t.sendable)
     acts.push(`<span class="dimc" title="The desk is LOCKED; arm it to be offered SEND.">SEND (locked)</span>`);
   else if(t.over_budget && t.status === "open")
@@ -1015,7 +1034,10 @@ function renderTickets(){
   /* The selection follows the operator; failing one, the newest ticket that
      is BOTH sendable and still live on the current sample, then the newest
      sendable, then the newest. Liveness is the server's word: a ticket with
-     no block is not live, so it never wins this by default. */
+     no block is not live, so it never wins this by default, and neither does
+     one that is merely priced — THIN (no size behind the quote) and STALE
+     (edge past the scanner's plausibility bound) are not LIVE, so the
+     biggest number on the page cannot select itself by being unreal. */
   if(!mine.some(t => t.id === SEL))
     SEL = (newest.find(t => t.sendable && (t.live || {}).state === "LIVE")
         || newest.find(t => t.sendable) || newest[0]).id;

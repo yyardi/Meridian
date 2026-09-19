@@ -15,11 +15,18 @@ Why the last step is a person: this is a fill test. The question is whether a
 displayed size on a mispriced rung fills at all. That is answered by one small
 order a human watches, not by an executor -- and Meridian places nothing.
 
-Budget accounting is on INTENTS ISSUED, persisted in the JSONL, so a restart
-cannot re-issue past the cap. With --attempt-usd 1 and prices near the
-$189-shape (YES 0.22 + NO 0.735 = 0.955 per pair) each intent is ONE contract:
-$5 buys five one-contract attempts across five games. One contract answers
-"is there a real order there"; it does not answer "is 8,215 real". Say so.
+By default there is NO cap and NO cooldown: every pair that clears the floor
+is ticketed every cycle, because a ticket withheld is an opportunity the
+operator never saw -- on 2026-09-18 a 10-minute cooldown and a $2 cap turned
+117 qualifying cycles into four tickets. The capital is managed at the SEND
+button, which is a person.
+
+The PHONE is deduped separately (--push-cooldown, default 5 minutes per pair):
+one pair crossing for twenty minutes is one opportunity, and sixty identical
+alerts make the phone useless exactly when it matters. Both are settable.
+
+Budget accounting, when a cap IS passed, is on intents issued and persisted in
+the JSONL, so a restart cannot re-issue past it.
 """
 from __future__ import annotations
 
@@ -115,10 +122,19 @@ def push(intent: dict) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prefix", required=True)
-    ap.add_argument("--budget-usd", type=float, default=5.0, help="HARD cap on total intent cost")
+    # No cap and no cooldown by default: the operator presses SEND, so the
+    # capital is managed there, and a ticket withheld is an opportunity the
+    # operator never saw. Both remain settable -- a run that wants a cap or
+    # a quiet phone passes one.
+    ap.add_argument("--budget-usd", type=float, default=float("inf"),
+                    help="cap on total intent cost; the default is no cap")
     ap.add_argument("--attempt-usd", type=float, default=1.0)
     ap.add_argument("--floor-usd", type=float, default=25.0, help="min edge x displayed size to act")
-    ap.add_argument("--cooldown", type=float, default=10.0, help="minutes per pair")
+    ap.add_argument("--cooldown", type=float, default=0.0,
+                    help="minutes to wait before re-ticketing the SAME pair; 0 = never wait")
+    ap.add_argument("--push-cooldown", type=float, default=5.0,
+                    help="minutes between PHONE alerts for the same pair; the ticket is "
+                         "still written every cycle. 0 = push every one")
     ap.add_argument("--every", type=float, default=20.0)
     ap.add_argument("--minutes", type=float, default=240.0)
     ap.add_argument("--out", default=None, help="JSONL of intents; default artifacts/reads/ladder_intents_<prefix>.jsonl")
@@ -133,9 +149,11 @@ def main() -> int:
     spent = spent_so_far(out)
     lock = a.lock_file or os.path.join(os.path.dirname(out) or ".", "ladder_lock")
     slugs = slugs_for(game)
-    print(f"executor (shadow) prefix={a.prefix} rungs={len(slugs)} budget=${a.budget_usd:.2f} "
+    cap_txt = "none" if a.budget_usd == float("inf") else f"${a.budget_usd:.2f}"
+    print(f"executor (shadow) prefix={a.prefix} rungs={len(slugs)} budget={cap_txt} "
           f"spent_so_far=${spent:.2f} attempt=${a.attempt_usd:.2f} floor=${a.floor_usd:.0f}")
-    last: dict = {}
+    last: dict = {}        # per pair: last time it was TICKETED
+    pushed: dict = {}      # per pair: last time it reached the PHONE
     end = time.time() + a.minutes * 60
     with PolymarketGatewayClient() as c:
         while time.time() < end:
@@ -168,7 +186,8 @@ def main() -> int:
                     f.write(json.dumps(it) + "\n")
                 spent += 0.0 if over else it["cost_usd"]
                 last[key] = time.time(); issued = it
-                if not over:
+                if not over and time.time() - pushed.get(key, -1e9) >= a.push_cooldown * 60:
+                    pushed[key] = time.time()
                     push(it)
                 break
             print(f"=== {now}Z rungs {len(rungs)} in {took:.1f}s  violations {len(v)}  {'LOCKED ' if locked else ''}"
