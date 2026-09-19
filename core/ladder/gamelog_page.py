@@ -192,7 +192,8 @@ def render(log: dict | None, slate: dict, games: list[str], out_dir: str,
     current = log["game"] if log else ""
     head = (f"<style>{CSS}</style><div class='top'><h1>Game log</h1>"
             "<span class='muted'><a href='/arb'>ARB</a> &middot; "
-            "<a href='/pnl'>P&amp;L</a></span>"
+            "<a href='/pnl'>P&amp;L</a> &middot; "
+            "<a href='/instructions'>how to place one</a></span>"
             "<span class='muted'>every opportunity the tape showed, acted on or not</span>"
             f"<span class='k'>as of</span><span>{html.escape(stamp)}Z</span></div>")
 
