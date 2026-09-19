@@ -50,6 +50,7 @@ from core.executor import (
 from core.ladder import desk as _ladder_desk
 from core.ladder import gamelog as _ladder_gamelog
 from core.ladder import gamelog_page as _ladder_gamelog_page
+from core.ladder import instructions as _ladder_instructions
 from core.ladder import pnl as _ladder_pnl
 from core.ladder import pnl_page as _ladder_pnl_page
 from core.ladder import tape as _ladder_tape
@@ -4409,6 +4410,24 @@ def arb_gamelog_page(game: str = Query("", max_length=120)) -> str:
         _ladder_gamelog.game_log(out, game or None),
         _ladder_gamelog.slate_log(out),
         _ladder_tape.games(out), out, stamp)
+
+
+@app.get("/instructions", response_class=HTMLResponse)
+def arb_instructions_page() -> str:
+    """How to place a ladder ticket, in plain words, for a person holding a
+    phone.
+
+    It answers the one question the ARB tab cannot fit on a ticket: the
+    venue prices the UNDERDOG while its row is titled after the team laying
+    the points, so "buy the easier line" reaches the screen as a tap on the
+    OTHER team's row. Getting that backwards is the way this trade loses
+    money, and it is the only way it loses money to the score.
+
+    A constant, not a file read: it is baked into the image beside the code
+    it describes, so it cannot 404 the way it did while it lived in cfb/ and
+    only the temporary desk served it.
+    """
+    return _ladder_instructions.HTML
 
 
 @app.get("/quote")
