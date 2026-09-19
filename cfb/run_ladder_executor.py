@@ -162,8 +162,14 @@ def main() -> int:
     lock = a.lock_file or os.path.join(os.path.dirname(out) or ".", "ladder_lock")
     slugs = slugs_for(game)
     cap_txt = "none" if a.budget_usd == float("inf") else f"${a.budget_usd:.2f}"
+    # The phone's floor is on the header because a run that alerts on nothing
+    # and a run with nothing to alert about read identically from the outside.
+    phone = ("off (--quiet)" if a.quiet else
+             f"every ticket, {a.push_cooldown:.0f}m dedupe" if a.push_floor_usd <= 0 else
+             f"${a.push_floor_usd:.0f}+, {a.push_cooldown:.0f}m dedupe")
     print(f"executor (shadow) prefix={a.prefix} rungs={len(slugs)} budget={cap_txt} "
-          f"spent_so_far=${spent:.2f} attempt=${a.attempt_usd:.2f} floor=${a.floor_usd:.0f}")
+          f"spent_so_far=${spent:.2f} attempt=${a.attempt_usd:.2f} floor=${a.floor_usd:.0f} "
+          f"phone={phone}")
     last: dict = {}        # per pair: last time it was TICKETED
     pushed: dict = {}      # per pair: last time it reached the PHONE
     end = time.time() + a.minutes * 60
