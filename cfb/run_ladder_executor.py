@@ -83,14 +83,21 @@ def push(intent: dict) -> bool:
     if not topic:
         return False
     l1, l2 = intent["leg1"], intent["leg2"]
-    msg = (f"LADDER INTENT {intent['game']} {intent['ts']}Z  edge {intent['edge_c']:+.2f}c\n"
+    # Loud on purpose: a ticket is worth minutes, not hours, and a
+    # notification that reads like a log line gets swiped away with the log
+    # lines. `urgent` bypasses the phone's quiet handling and the red light
+    # tag makes it distinguishable at a glance from anything else Meridian
+    # can send (which, under the default scope, is nothing).
+    msg = (f"!! LADDER TICKET {intent['game']} {intent['ts']}Z  edge {intent['edge_c']:+.2f}c\n"
            f"1) {l1.get('screen_row') or ('line %+.1f' % l1['market_line'])} -> tap {l1.get('screen_button') or l1['side']}, limit {l1['price']:.3f} x {l1['qty']}  <- FIRST\n"
            f"2) {l2.get('screen_row') or ('line %+.1f' % l2['market_line'])} -> tap {l2.get('screen_button') or l2['side']}, limit {l2['price']:.3f} x {l2['qty']}\n"
            f"cost ${intent['cost_usd']:.2f}, pays ${l1['qty']:.2f} at settlement any score. "
            f"books last updated {intent.get('leg1_book_age_s')}s / {intent.get('leg2_book_age_s')}s ago. "
            f"You place it; Meridian did not.")[:480]
     try:
-        return notify.push("tickets", "Meridian order intent", msg, timeout=10) == notify.SENT
+        return notify.push("tickets", f"TRADE NOW — {intent['game']}", msg,
+                           priority="urgent", tags="rotating_light",
+                           timeout=10) == notify.SENT
     except Exception:  # noqa: BLE001
         return False
 
