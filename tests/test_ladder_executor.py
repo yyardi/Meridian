@@ -136,6 +136,11 @@ def test_the_phone_has_its_own_floor_and_it_reads_the_same_number_as_the_page():
     write = loop[:loop.index("loud =")]
     assert "push_floor_usd" not in write, \
         "the floor must not touch the write: a ticket below it still reaches the desk"
+    head = SRC[SRC.index("executor (shadow)"):SRC.index("last: dict")]
+    assert "push_floor_usd" in SRC[SRC.index("phone = ("):SRC.index("last: dict")] \
+        and "phone=" in head, \
+        "the header states the phone's floor: a run alerting on nothing and a " \
+        "run with nothing to alert about read identically without it"
 
 
 def test_the_phone_is_deduped_per_pair_but_the_ticket_is_not():
