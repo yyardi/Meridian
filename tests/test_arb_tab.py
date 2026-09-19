@@ -1041,6 +1041,86 @@ def test_the_live_edge_is_scan_ladders_own_fee_model_not_a_second_copy():
             assert live["edge_now_c"] <= 0, "no violation means the pair does not clear"
 
 
+def _resize(rungs, line, *, bid_sz=None, ask_sz=None):
+    """One rung's displayed SIZE changed, every price untouched."""
+    out = dict(rungs)
+    b, a, bs, asz = out[line]
+    out[line] = (b, a, bs if bid_sz is None else bid_sz, asz if ask_sz is None else ask_sz)
+    return out
+
+
+def test_a_price_with_no_size_behind_it_is_thin_not_live():
+    """LIVE used to be a price-only test. With the ticketed prices intact and
+    NOTHING displayed on either side we take, the ticket panel said "live —
+    both legs still available" while the SAME snapshot's violation row said
+    $0.00 and not a candidate. The executor's own rule is size-based
+    (edge x min displayed size >= the floor), so the panel must be too."""
+    now = time.time()
+    empty = _resize(_resize(RUNGS, 10.5, ask_sz=0.0), 7.5, bid_sz=0.0)
+    snap = _snap(empty, now)
+    live = api_module._arb_live_block(INTENT, snap, now)
+    assert live["state"] == "THIN", "priced there with nothing behind it is not live"
+    assert live["thin_leg"] == "both" and live["size_now"] == 0.0
+    # Unchanged prices: this is a size finding, not a price one.
+    assert (live["leg1_now"], live["leg2_now"]) == (0.41, 0.53)
+    assert live["edge_now_c"] == pytest.approx(3.05, abs=0.01)
+    # One leg is enough, and the block names which.
+    one = api_module._arb_live_block(INTENT, _snap(_resize(RUNGS, 7.5, bid_sz=1.0), now), now)
+    assert one["state"] == "THIN" and one["thin_leg"] == "leg 2" and one["size_now"] == 1.0
+    # The ticket's own quantity is the bar, and the boundary is LIVE.
+    at = api_module._arb_live_block(INTENT, _snap(_resize(RUNGS, 7.5, bid_sz=2.0), now), now)
+    assert at["state"] == "LIVE" and at["size_now"] == 2.0
+    # A ticket written off an empty book asks for nothing; an empty book
+    # still is not an offer, so asking for nothing does not make it live.
+    nil = {**INTENT, "leg1": {**INTENT["leg1"], "qty": 0},
+           "leg2": {**INTENT["leg2"], "qty": 0}}
+    assert api_module._arb_live_block(nil, snap, now)["state"] == "THIN"
+
+
+def test_the_ticket_panels_size_is_the_centre_panes_violation_row():
+    """One number, not two: `size_now`/`dollars_now` are the MIN of the two
+    legs under scan_ladder's own cap, which is `Violation.size`/`.dollars`
+    for that pair in the same snapshot. If these ever diverge the two panes
+    are describing different trades."""
+    now = time.time()
+    for rungs in (RUNGS,
+                  _resize(RUNGS, 10.5, ask_sz=0.0),
+                  _resize(RUNGS, 10.5, ask_sz=7.0),
+                  _resize(RUNGS, 7.5, bid_sz=40_000.0)):
+        snap = _snap(rungs, now)
+        live = api_module._arb_live_block(INTENT, snap, now)
+        row = [v for v in snap["violations"]
+               if (v["high_line"], v["low_line"]) == (10.5, 7.5)]
+        assert row, "the fixture pair clears; the violation row must exist"
+        assert live["size_now"] == row[0]["size"]
+        assert live["dollars_now"] == pytest.approx(row[0]["dollars"], abs=0.01)
+        # And the floor the executor trades by is read off the same number.
+        assert (live["dollars_now"] >= api_module._ARB_FLOOR_USD) is row[0]["candidate"]
+
+
+def test_an_edge_past_the_scan_modules_bound_is_stale_not_the_best_thing_on_the_page():
+    """scan.py rejects an "edge" above MAX_PLAUSIBLE_EDGE as a deep rung
+    nobody re-quoted (USC -17.5 at 0.930 beside USC -10.5 at 0.040). The
+    ticket panel dropped that guard, so the same ladder rendered as LIVE with
+    the biggest edge on the page beside an EMPTY violations table — and the
+    page's default selection prefers a live ticket, so it selected itself."""
+    from core.ladder.scan import MAX_PLAUSIBLE_EDGE, scan_ladder
+    now = time.time()
+    stale = dict(RUNGS)
+    stale[10.5] = (0.01, 0.02, 966.0, 966.0)
+    snap = _snap(stale, now)
+    live = api_module._arb_live_block(INTENT, snap, now)
+    assert live["edge_now_c"] / 100 > MAX_PLAUSIBLE_EDGE
+    assert live["state"] == "STALE" and live["implausible"] is True
+    assert live["state"] != "LIVE", "the page selects LIVE by default"
+    # The guard is the scanner's, so the two agree on the same ladder: the
+    # centre pane shows no violation for a pair the panel must not call live.
+    assert scan_ladder(GAME, stale, max_size=1e12) == []
+    assert snap["violations"] == []
+    # And a plausible edge is untouched by the guard.
+    assert api_module._arb_live_block(INTENT, _snap(RUNGS, now), now)["implausible"] is False
+
+
 @pytest.mark.parametrize("snap, why", [
     (None, "the game is not sampled at all"),
     ({"available": False, "reason": "first sample pending"}, "the sample failed"),
@@ -1113,7 +1193,7 @@ def test_the_send_route_refuses_an_over_cap_ticket_before_the_venue(client, read
 # --------------------------------------------------------------------------- #
 
 def test_the_page_renders_the_live_block_and_carries_no_second_fee_model(page):
-    """The four states are the server's word, rendered. The fee arithmetic
+    """The states are the server's word, rendered. The fee arithmetic
     stays in core.ladder.scan: the page's only 0.06 is the confirm modal's
     own pre-existing guard, and the liveness functions have none."""
     for fn in ("function liveChip(t){", "function liveBanner(t){"):
@@ -1130,9 +1210,18 @@ def test_the_page_renders_the_live_block_and_carries_no_second_fee_model(page):
     # Every state the server can return has words on the page, and UNKNOWN is
     # the default rather than a fourth branch that could fall through to LIVE.
     words = _fn(page, "const LIVE_WORDS = {")
-    for state in ("LIVE:", "MOVED:", "GONE:"):
+    for state in ("LIVE:", "THIN:", "MOVED:", "STALE:", "GONE:"):
         assert state in words, state
     assert "UNKNOWN" not in words, "UNKNOWN is the absence of a block, not a value"
+    # A state with no words renders as UNKNOWN, so every state the server can
+    # return must be here: a missing one would read "?" on a real ticket.
+    src = inspect.getsource(api_module._arb_live_block)
+    served = set(re.findall(r'state = "([A-Z]+)"', src)) | {"LIVE", "MOVED", "GONE"}
+    assert served <= {w.strip(" :") for w in re.findall(r"\n  ([A-Z]+):", words)}
+    # Size is on the banner and in the chip's hover, so LIVE can never mean
+    # "priced there with nothing behind it" and a thin pair says so in words.
+    assert "lv.size_now" in _fn(page, "function liveBanner(t){")
+    assert "lv.size_now" in _fn(page, "function liveChip(t){")
 
 
 def test_the_ticket_panel_shows_liveness_on_the_row_and_the_card(page):
@@ -1149,12 +1238,16 @@ def test_the_ticket_panel_shows_liveness_on_the_row_and_the_card(page):
 
 
 def test_a_send_on_a_pair_that_no_longer_clears_is_offered_not_recommended(page):
-    """GONE de-emphasises the button and puts the reason on it; it does not
-    remove it — the operator may still choose, and a page that hides the
-    choice teaches nothing about why."""
+    """GONE, THIN and STALE de-emphasise the button and put the reason on it;
+    none of them removes it — the operator may still choose, and a page that
+    hides the choice teaches nothing about why."""
     acts = _fn(page, "function ticketActions(t){")
-    assert 'lv.state === "GONE"' in acts and 'gone ? "faded" : "go"' in acts
+    assert 'lv.state === "GONE"' in acts and 'doubt ? "faded" : "go"' in acts
+    assert '["GONE", "THIN", "STALE"].includes(lv.state)' in acts
     assert "no longer clears on the current sample" in acts
+    assert "less size behind it than the ticket asks for" in acts
+    assert "past the plausibility bound" in acts
+    assert "size now ${num(lv.size_now, 0)}" in acts, "the reason carries the size"
     assert 'data-act="send"' in acts, "the button is still there"
     assert "SEND (over cap)" in acts and "t.over_budget" in acts
     assert "button.faded" in page, "the de-emphasis has a style"
