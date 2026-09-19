@@ -158,3 +158,17 @@ def test_a_ticket_whose_game_left_the_board_counts_as_past():
     d = body[body.index("const dead ="):body.index("const mine")]
     assert "GONE" in d and "over_budget" in d and "onBoard" in d, \
         "all three kinds of past in one predicate"
+
+
+def test_the_row_carries_the_staler_leg_s_book_age():
+    """A pair is only as live as its older side, and that number had no column
+    while being the most decision-relevant fact on the row: on 2026-09-19,
+    across 48 games of venue stream, crossings with both legs quoted inside
+    two seconds held 19 of the 20 worth over $25, while the ones only the slow
+    REST book saw sat on legs a median 884 seconds old."""
+    assert "const legAge = t =>" in PAGE and "Math.max(...xs)" in PAGE, "the STALER leg"
+    assert "leg1_book_age_s" in PAGE and "leg2_book_age_s" in PAGE
+    row = _code("function ticketRow(")
+    assert "ageCls(legAge(t))" in row and "agef(legAge(t))" in row
+    grid = PAGE[PAGE.index(".tkr{"):PAGE.index(".tkr>span")]
+    assert grid.count("px") >= 6, "the grid gained a column for it"
