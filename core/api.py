@@ -2981,6 +2981,11 @@ _ARB_PREFIX = re.compile(r"^(?:aec-)?([a-z0-9]+-[a-z0-9-]+-\d{4}-\d{2}-\d{2})$")
 #: How far a submitted leg price may sit from the ticket's: one tick. The
 #: human may nudge; the human may not re-price.
 _ARB_PRICE_SLACK = Decimal("0.01")
+#: How near a current price must be to a ticketed one to count as the same
+#: price. A tick is 0.01 and a cost frame is round(1 - bid, 4), so this is a
+#: float-equality slack, never a price concession: at the boundary (current
+#: ask == the ticketed price) the ticket is LIVE.
+_ARB_LIVE_EPS = 1e-6
 #: A cached ladder touch older than this many sample intervals is not a touch:
 #: the unwind's "at market" default must come from a book the sampler has
 #: seen recently, not from a sample taken hours ago by an expired watch.
@@ -3066,8 +3071,83 @@ def _arb_ticket_view(t: dict) -> dict:
         t[key] = leg
     lines = [float((t.get(k) or {}).get("market_line") or 0) for k in ("leg1", "leg2")]
     t["spread_pair"] = 0.0 not in lines
-    t["sendable"] = t.get("status") == "open" and t["spread_pair"]
+    # Past the game's cap the executor keeps WRITING tickets (so the operator
+    # sees what went by) and stops pushing them; the send route refuses them.
+    # The page must not offer a SEND the server will certainly refuse.
+    t["over_budget"] = bool(t.get("over_budget"))
+    t["sendable"] = t.get("status") == "open" and t["spread_pair"] and not t["over_budget"]
     return t
+
+
+def _arb_live_block(t: dict, snap: dict | None, now: float) -> dict | None:
+    """The ticket's two legs against a CURRENT ladder sample, or None.
+
+    A ticket is a snapshot of one instant, not a standing offer. On
+    2026-09-18 a 62-minute-old ticket sat on the page under a SEND button
+    showing prices from a book that had long since moved, and nothing said
+    so. This is what the page needs to say so.
+
+    Per leg, in the ticket's own COST frame:
+      * a BUY YES leg is still available while that rung's ask is at or under
+        the ticketed cost;
+      * a BUY NO leg's ticketed cost is ``1 - that rung's YES bid``, so it is
+        still available while the bid is at or above ``1 - cost``.
+    The state is LIVE when both hold, MOVED when they do not but the pair
+    still clears fee-netted at the current prices, and GONE when it does not.
+    None is UNKNOWN: no sample, an unavailable one, one older than the
+    unwind's own staleness bound, or a rung this sample does not carry.
+    **Never LIVE for want of data — absence is not confirmation.**
+
+    The edge is ``core.ladder.scan.fee``, the one definition, never a second
+    copy in JavaScript. In the cost frame it is
+    ``1 - c1 - c2 - fee(c1) - fee(c2)``, which is scan_ladder's
+    ``sell - buy - fee(buy) - fee(sell)`` with ``sell = 1 - c2`` and the fee
+    curve's own symmetry (``0.06 p (1 - p)`` is unchanged by ``p -> 1 - p``).
+    """
+    if not snap or snap.get("available") is not True:
+        return None
+    try:
+        age_s = now - float(snap.get("sampled_ts"))
+    except (TypeError, ValueError):
+        return None
+    if age_s > _ARB_STALE_TOUCH_INTERVALS * _arb_sample_seconds():
+        return None
+    legs, costs, oks = {}, [], []
+    for key in ("leg1", "leg2"):
+        leg = t.get(key) or {}
+        try:
+            cost = float(leg["price"])
+            rung = snap["rungs"][f"{float(leg['market_line']):g}"]
+            if str(leg.get("side") or "").upper().endswith("YES"):
+                now_cost = float(rung["ask"])              # we lift the ask
+            else:
+                now_cost = round(1.0 - float(rung["bid"]), 4)   # we hit the bid
+        except (KeyError, TypeError, ValueError):
+            return None
+        legs[key] = now_cost
+        costs.append(now_cost)
+        oks.append(now_cost <= cost + _ARB_LIVE_EPS)
+    c1, c2 = costs
+    edge_now = 1.0 - c1 - c2 - fee(c1) - fee(c2)
+    moved = [n for n, ok in zip((1, 2), oks) if not ok]
+    return {
+        "state": "LIVE" if all(oks) else ("MOVED" if edge_now > 0 else "GONE"),
+        "leg1_now": legs["leg1"], "leg2_now": legs["leg2"],
+        "leg1_delta_c": round((legs["leg1"] - float((t.get("leg1") or {})["price"])) * 100, 2),
+        "leg2_delta_c": round((legs["leg2"] - float((t.get("leg2") or {})["price"])) * 100, 2),
+        "edge_now_c": round(edge_now * 100, 2),
+        "moved_leg": None if not moved else ("both" if len(moved) == 2 else f"leg {moved[0]}"),
+        "age_s": round(age_s, 1),
+    }
+
+
+def _arb_ticket_live(t: dict, now: float) -> dict | None:
+    """`_arb_live_block` against whatever the sampler last left for the
+    ticket's own game — the same cache /api/arb/ladder serves, so the centre
+    pane and the ticket panel can never disagree."""
+    game = str(t.get("game") or "")
+    prefix = game if game.startswith("aec-") else "aec-" + game
+    return _arb_live_block(t, _ARB_LADDER["cache"].get(prefix), now)
 
 
 @app.get("/api/arb/state")
@@ -3085,7 +3165,15 @@ def arb_state() -> dict:
         return {"available": False, "dir": out,
                 "note": f"reads directory {out} is not mounted in this container"}
     try:
+        now = time.time()
         tickets = [_arb_ticket_view(t) for t in _ladder_desk.load_tickets(out)]
+        for t in tickets:
+            # Only an open ticket can be sent, so only an open ticket needs
+            # its legs priced against the book the operator is looking at.
+            if t.get("status") == "open":
+                live = _arb_ticket_live(t, now)
+                if live is not None:
+                    t["live"] = live
         tails = {
             kind: [{"file": os.path.basename(p), "lines": _ladder_desk.tail(p)}
                    for p in _ladder_desk.log_files(out, kind)]
@@ -3887,6 +3975,15 @@ def arb_send(req: ArbSendRequest, request: Request) -> dict:
             detail="acknowledge must be true: the page shows every term and the second click sets it")
     if not _ladder_desk.armed(out):
         raise HTTPException(status_code=409, detail="LOCKED: the lock file exists; arm the desk first")
+    # The executor keeps ticketing after a game passes its cap so the operator
+    # can SEE what went by -- 281 pairs cleared the floor on one night and the
+    # old behaviour showed four. Those tickets carry over_budget and are the
+    # one kind the send route refuses: the cap limits what may be PLACED.
+    if intent.get("over_budget"):
+        raise HTTPException(
+            status_code=409,
+            detail="this game is past its ticket cap: the ticket is shown for the record, "
+                   "not to be placed. Raise the cap for the game if you mean to trade it.")
 
     decided_at = _arb_decided_at(intent)
     orders = [build_order(market_slug=r["market_slug"], side=OrderSide.BUY,

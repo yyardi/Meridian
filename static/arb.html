@@ -6,10 +6,20 @@
 <title>Algo — ARB</title>
 <style>
   /* ── A trading terminal, not a document. The same dark ground as every
-     other page; one accent (#D07A52) for a violated rung and the pair the
-     executor would ticket; blue (#3F8ED0) for the stream series; green and
-     red ONLY for a filled / unfilled leg. No radius, no gradient, no shadow.
-     The words live at the desk's /instructions and in the confirm modal. ── */
+     other page; blue (#3F8ED0) for the stream series. No radius, no
+     gradient, no shadow. The words live at the desk's /instructions and in
+     the confirm modal.
+
+     THREE COLOURS, THREE MEANINGS, and they must not blur into each other:
+       amber (#D07A52) — this rung breaks its bound, and the pair the
+         executor would ticket out of that;
+       green (#26d07c) — the side of a pair we BUY: the EASIER (higher) line,
+         lifted at its ask. That is leg 1 in every ticket the executor
+         writes, but the colour follows the LINE, not the leg number;
+       red (#ff5c62) — the side we SELL: the HARDER (lower) line, hit at its
+         bid (bought as No). That is leg 2.
+     Liveness (LIVE / MOVED / GONE / ?) reuses green, amber and red on its own
+     chip, never on a price. A filled / unfilled leg still reads .ok / .bad. ── */
   :root{
     --bg:#0a0c10; --panel:#11141b; --panel2:#0d1015; --line:#1e2430; --line2:#151a24;
     --txt:#d7dde8; --dim:#8a95a8; --faint:#4a5568;
@@ -38,6 +48,16 @@
   .lgt.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
   .lgt.empty{color:var(--faint);opacity:.75}
   .pos{color:var(--pos)}.neg{color:var(--neg)}.dimc{color:var(--faint)}.warnc{color:var(--acc)}
+  .buyc{color:var(--pos)}.sellc{color:var(--neg)}
+  /* Liveness of a ticket against the CURRENT ladder sample. A ticket is a
+     snapshot of one instant, not a standing offer; UNKNOWN ("?") is what a
+     missing sample says, and it is never LIVE. */
+  .lv{font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:1px 5px;line-height:13px;
+      border:1px solid var(--line);color:var(--faint);display:inline-block}
+  .lv.live{color:var(--pos);border-color:#1c5c3c;background:#0c1a14}
+  .lv.moved{color:var(--acc);border-color:#5a3322;background:var(--acc-bg)}
+  .lv.gone{color:var(--neg);border-color:#5c2228;background:#190d10}
+  .lv.unknown{color:var(--faint)}
   .accc{color:var(--acc)}.bluec{color:var(--blue)}
   .ok{color:var(--pos);font-weight:700}.bad{color:var(--neg);font-weight:700}
   .empty{padding:14px 10px;color:var(--faint);font-size:11px}
@@ -91,6 +111,9 @@
   button:disabled{opacity:.4;cursor:default}
   button.danger{color:var(--acc);border-color:#5a3322}
   button.go{color:var(--txt);border-color:var(--dim);background:#1b2230}
+  /* Offered, not recommended: the pair no longer clears on the current
+     sample. The operator may still choose it; the page will not dress it up. */
+  button.faded{color:var(--neg);border-color:#4a2126;background:#13161d;opacity:.6}
   button.sm{padding:2px 7px;font-size:10px}
   select,input[type=number]{font:inherit;font-size:11px;background:#0c0f15;color:var(--txt);
          border:1px solid var(--line);padding:2px 6px}
@@ -140,8 +163,11 @@
     .navgrp:last-of-type{display:none}
     .hsep{display:none}
     .lg{margin:2px 0}
-    /* Tap targets: a SEND a thumb misses is a leg that does not fill. */
-    .go,.danger,.dimc{min-height:38px;padding-inline:14px}
+    /* Tap targets: a SEND a thumb misses is a leg that does not fill. Only
+       the actions row's dim span stands in for a button; .dimc on its own is
+       ordinary small print (a leg's current price, a sample's age) and a
+       14px inline padding on all of it broke the terms line. */
+    .go,.danger,.acts .dimc{min-height:38px;padding-inline:14px}
     /* The writer tails are diagnostics. They are three nowrap lines per file
        and on a phone they were most of the scroll; capped, they stay
        available without burying the ticket. */
@@ -193,10 +219,31 @@
   .dom .tkp{border-top:1px solid var(--acc);border-bottom:1px solid var(--acc)}
   .dom .bs.tkp{border-left:1px solid var(--acc)}
   .dom .bd.tkp{border-right:1px solid var(--acc)}
+  .dom .tkp.tkbuy{border-top-color:var(--pos);border-bottom-color:var(--pos)}
+  .dom .bs.tkp.tkbuy{border-left-color:var(--pos)}
+  .dom .bd.tkp.tkbuy{border-right-color:var(--pos)}
+  .dom .tkp.tksell{border-top-color:var(--neg);border-bottom-color:var(--neg)}
+  .dom .bs.tkp.tksell{border-left-color:var(--neg)}
+  .dom .bd.tkp.tksell{border-right-color:var(--neg)}
   .dom .tag{font-size:9px;letter-spacing:.08em;padding:0 4px;border:1px solid var(--acc);color:var(--acc);
             margin-left:6px;line-height:13px}
+  .dom .tag.buy{border-color:var(--pos);color:var(--pos)}
+  .dom .tag.sell{border-color:var(--neg);color:var(--neg)}
+  /* The one price on the rung we would actually touch, underlined. The
+     NUMBER keeps its own colour, so "this rung breaks its bound" (amber)
+     stays readable on a rung that is also a leg of the pair. */
+  .dom .px.act{border-bottom:2px solid currentColor;padding-bottom:1px}
+  .dom .px.actbuy{border-bottom-color:var(--pos)}
+  .dom .px.actsell{border-bottom-color:var(--neg)}
   .dom .bd{color:var(--faint);font-size:11px}
   .dom .old{color:var(--acc)}
+
+  /* One line under the ladder header, because three colours on a ladder
+     with no key is a guess. */
+  .legend{display:flex;gap:14px;flex-wrap:wrap;padding:4px 10px;font-size:10px;color:var(--faint);
+          border-bottom:1px solid var(--line2);background:var(--panel2)}
+  .legend i{width:7px;height:7px;display:inline-block;margin-right:5px;vertical-align:1px;font-style:normal}
+  .legend i.b{background:var(--pos)} .legend i.s{background:var(--neg)} .legend i.v{background:var(--acc)}
 
   /* Violations under the ladder: every fee-netted pair from the executor's
      own scan, the candidate on top. */
@@ -212,7 +259,7 @@
   .vt .w b{color:var(--txt)}
 
   /* ── Right: the tickets. A one-line list, the selected one in full. ── */
-  .tkr{display:grid;grid-template-columns:62px 1fr 52px 56px 64px;gap:6px;width:100%;text-align:left;
+  .tkr{display:grid;grid-template-columns:56px minmax(0,1fr) 46px 50px 44px 58px;gap:5px;width:100%;text-align:left;
        padding:4px 10px;border:0;border-bottom:1px solid var(--line2);background:transparent;
        color:var(--dim);cursor:pointer;letter-spacing:0;font-size:11px}
   .tkr>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -224,15 +271,33 @@
       border:1px solid var(--line);color:var(--faint);display:inline-block;line-height:13px}
   .st.open{color:var(--txt);border-color:var(--dim)}
   .st.placed,.st.recorded{color:var(--acc);border-color:#5a3322}
+  .st.cap{color:var(--acc);border-color:#5a3322}
   .st.skipped{color:var(--faint)}
   .tk{padding:0 0 6px}
   .tk .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 10px;
           border-bottom:1px solid var(--line2)}
   .tk .game{font-weight:700;letter-spacing:.03em}
+  /* The liveness banner sits directly under the ticket's own header, above
+     the legs it is about: a retraction printed below the numbers it retracts
+     is read after them. */
+  .live{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;padding:5px 10px;
+        border-bottom:1px solid var(--line2);font-size:10.5px;color:var(--dim)}
+  .live b{color:var(--txt)}
+  .live.gone{background:#150c0e}
+  .live.unknown{background:#101318}
+  /* In the confirm ticket the same banner is the last thing read before the
+     money: no border of its own, it sits in the row. */
+  .livewrap .live{border:0;padding:0;max-width:44ch;justify-content:flex-end}
+  .capnote{padding:5px 10px;border-bottom:1px solid var(--line2);font-size:10.5px;
+           color:var(--acc);background:var(--acc-bg)}
   .leg{display:grid;grid-template-columns:22px 1fr;gap:2px 6px;padding:6px 10px;
        border-bottom:1px solid var(--line2);align-items:baseline}
   .leg .n{color:var(--faint);font-weight:700;grid-row:span 3}
   .leg .row{color:var(--txt);font-size:12px}
+  .leg.buy .n,.leg.buy .row{color:var(--pos)}
+  .leg.sell .n,.leg.sell .row{color:var(--neg)}
+  .leg .side{font-size:9px;letter-spacing:.09em;text-transform:uppercase;margin-left:6px;color:var(--faint)}
+  .leg .now{color:var(--txt)}
   .leg .btn{font-weight:700;letter-spacing:.06em;padding:0 5px;border:1px solid var(--dim)}
   .leg .terms{color:var(--dim);font-size:11px}
   .leg .frame{color:var(--faint);font-size:10px}
@@ -308,7 +373,7 @@
     <button id="lockBtn" class="danger sm" title="Write the executor's lock file: it keeps sampling and issues nothing; SEND is refused.">LOCK</button>
     <button id="armBtn" class="go sm" title="Remove the executor's lock file: tickets are issued again.">ARM</button>
   </div>
-  <div class="sb" title="Cost of the tickets WRITTEN for the picked game (the executor's own spent_so_far, every intent whatever its status) against its per-game cap. This is proposed, not spent: no money moves until a send fills, and the placed count beside it says how many you actually sent."><span class="k">tickets</span><span class="v" id="s-budget">—</span></div>
+  <div class="sb" title="Cost of the tickets WRITTEN for the picked game against its per-game cap, counting the ones the executor counts — a ticket flagged over the cap is written, not pushed, and not counted here; the '+N over cap' beside it says how many. This is proposed, not spent: no money moves until a send fills. The cap limits what may be PLACED; detection carries on past it."><span class="k">tickets</span><span class="v" id="s-budget">—</span></div>
   <div class="sb" title="Account balance from Polymarket US. The pair cap on a send is the smaller of this and MERIDIAN_ARB_MAX_PAIR_USD."><span class="k">bankroll</span><span class="v" id="s-bankroll">—</span></div>
   <div class="sb" title="Overall recorder health — pregame freshness plus every writer's heartbeat; then the pregame and live (200ms) data ages. Live age legitimately grows between games."><span class="k">recorder</span><span class="v" id="s-health">—</span><span class="age" id="s-pregame">—</span><span class="age" id="s-live">—</span></div>
   <div class="sb" title="The executor's freshest cycle line by its clock across the last three live_ladder_aec-*.txt logs (hover for which), and how long ago it was stamped."><span class="k">executor</span><span class="tl" id="s-exec">—</span><span class="age" id="s-exec-age"></span></div>
@@ -347,6 +412,11 @@
 
   <section class="pane" id="pane-ladder">
     <div class="ph">depth ladder <span class="sub" id="ladmeta"></span><span class="r dimc" id="ladframe">slug frame · first team's YES</span></div>
+    <div class="legend">
+      <span title="Leg 1 of the pair: the easier (higher) line. Covering a higher line is easier, so it must be dearer — we LIFT ITS ASK. The ask is underlined on that rung."><i class="b"></i>buy · easier line · at its ask</span>
+      <span title="Leg 2 of the pair: the harder (lower) line. We HIT ITS BID — on the venue that is buying the row's No. The bid is underlined on that rung."><i class="s"></i>sell · harder line · at its bid</span>
+      <span title="This rung's own price breaks the bound the rest of the ladder sets for it: an ask under a harder rung's bid, or a bid over an easier rung's ask. A different statement from the two above, and it keeps its own colour."><i class="v"></i>breaks its bound (lo – hi)</span>
+    </div>
     <div id="ladder"><div class="empty">pick a game</div></div>
     <div class="ph">violations <span class="sub">fee-netted, the executor's own scan</span></div>
     <div id="violations"><div class="empty">—</div></div>
@@ -576,10 +646,15 @@ function renderState(){
 function renderBudget(){
   const s = STATE;
   if(!s || !GAME){ $("#s-budget").textContent = s ? `— / $${num(s.budget_usd, 2)}` : "—"; return; }
-  const used = (s.tickets || []).filter(t => plainGame(t.game) === plainGame(GAME))
-                                .reduce((a, t) => a + Number(t.cost_usd || 0), 0);
+  const mine = (s.tickets || []).filter(t => plainGame(t.game) === plainGame(GAME));
+  /* The executor stops counting a ticket against the cap once it flags it
+     over_budget, so the page counts the same ones it does; the over-cap
+     tickets are reported beside the number, never folded into it. */
+  const used = mine.filter(t => !t.over_budget).reduce((a, t) => a + Number(t.cost_usd || 0), 0);
+  const over = mine.filter(t => t.over_budget).length;
   const cap = Number(s.budget_usd || 0);
-  $("#s-budget").innerHTML = `<span class="${used >= cap ? "accc" : ""}">${money(used)}</span> <span class="dimc">proposed / ${money(cap)} cap</span>`;
+  $("#s-budget").innerHTML = `<span class="${used >= cap ? "accc" : ""}">${money(used)}</span> <span class="dimc">proposed / ${money(cap)} cap</span>`
+    + (over ? ` <span class="accc" title="Detected and ticketed past the cap: shown on the right, refused by the send route. The cap limits placing, not detection.">+${over} over cap</span>` : "");
 }
 
 function renderGames(){
@@ -657,8 +732,12 @@ function renderLadder(){
      candidate-first, mid-first, biggest choice — the executor's own order. */
   const vs = L.violations || [];
   const tkt = vs.length && vs[0].candidate ? vs[0] : null;
-  const tagOf = line => !tkt ? "" : line === tkt.high_line ? `<span class="tag">L1</span>`
-                        : line === tkt.low_line ? `<span class="tag">L2</span>` : "";
+  /* high_line is the easier rung the pair BUYS at its ask (leg 1, green);
+     low_line is the harder rung it SELLS at its bid (leg 2, red). The tag,
+     the rung's outline and the underline on the one price we would touch all
+     carry that; the accent keeps meaning "breaks its bound". */
+  const tagOf = line => !tkt ? "" : line === tkt.high_line ? `<span class="tag buy" title="leg 1 — bought at this rung's ask">L1 buy</span>`
+                        : line === tkt.low_line ? `<span class="tag sell" title="leg 2 — sold at this rung's bid, as a No">L2 sell</span>` : "";
   el.innerHTML = `<div class="dom">
     <div class="hd rt" title="displayed size at the YES bid">bid sz</div>
     <div class="hd rt" title="slug frame: the first team's YES bid at this line, as the executor reads it">bid</div>
@@ -671,16 +750,17 @@ function renderLadder(){
       const flags = r.flags || [];
       const viol = flags.length > 0;
       const askLit = flags.some(f => /^ask/.test(f)), bidLit = flags.some(f => /^bid/.test(f));
-      const inTkt = tkt && (r.line === tkt.high_line || r.line === tkt.low_line);
-      const cls = (r.line === 0 ? " dim" : "") + (viol ? " viol" : "") + (inTkt ? " tkp" : "");
+      const inBuy = !!tkt && r.line === tkt.high_line, inSell = !!tkt && r.line === tkt.low_line;
+      const cls = (r.line === 0 ? " dim" : "") + (viol ? " viol" : "")
+                + (inBuy ? " tkp tkbuy" : inSell ? " tkp tksell" : "");
       const [row, yesIs] = rungWords(r, L.game);
       const small = r.line === 0 ? "winner market"
         : `${esc(shortRow(row))}${r.screen_bid != null ? ` · Yes ${num(r.screen_bid)}/${num(r.screen_ask)}` : ""}${r.our_yes_is || yesIs ? ` · YES=${esc(r.our_yes_is || yesIs)}` : ""}`;
       const old = r.age_s != null && r.age_s > 120;
       return `<div class="bs rt${cls}"><i class="bar" style="width:${barPct(r.bid_sz, max).toFixed(1)}%"></i><span class="num">${num(r.bid_sz, 0)}</span></div>
-      <div class="rt${cls}"><span class="px ${bidLit ? "lit" : ""}" title="${esc(flags.join("; "))}">${num(r.bid)}</span></div>
+      <div class="rt${cls}"><span class="px ${bidLit ? "lit" : ""}${inSell ? " act actsell" : ""}" title="${esc(flags.join("; "))}${inSell ? " — leg 2 sells at this bid" : ""}">${num(r.bid)}</span></div>
       <div class="ct${cls}"><b title="${esc(row || "")}">${lineTxt(r.line)}${tagOf(r.line)}${viol ? `<span class="tag" title="${esc(flags.join("; "))}">${flags.map(flagShort).join(" ")}</span>` : ""}</b><small title="${esc(row || "")}${r.screen_bid != null ? " — the row's own Yes bid / ask" : ""}">${small}</small></div>
-      <div class="${cls}"><span class="px ${askLit ? "lit" : ""}" title="${esc(flags.join("; "))}">${num(r.ask)}</span></div>
+      <div class="${cls}"><span class="px ${askLit ? "lit" : ""}${inBuy ? " act actbuy" : ""}" title="${esc(flags.join("; "))}${inBuy ? " — leg 1 buys at this ask" : ""}">${num(r.ask)}</span></div>
       <div class="as${cls}"><i class="bar" style="width:${barPct(r.ask_sz, max).toFixed(1)}%"></i><span class="num">${num(r.ask_sz, 0)}</span></div>
       <div class="rt${cls} ${old ? "old" : ""}">${agef(r.age_s)}</div>
       <div class="rt bd${cls}">${num(r.lo)} – ${num(r.hi)}</div>`; }).join("")}
@@ -692,18 +772,74 @@ function renderLadder(){
     <th class="l">pair</th><th>buy YES</th><th>sell YES</th><th>edge ¢</th><th>size</th><th>$ at size</th>
     <th class="l" title="the ticket the executor would write, sized at its $${num(attempt,0)} attempt so this preview and the intents file agree">ticket</th><th class="l">rule</th></tr></thead><tbody>
     ${vs.map(v => { const t = v.ticket || {}; const l1 = t.leg1 || {}, l2 = t.leg2 || {};
+      /* The same rule as the ticket panel's: the easier (higher) line is the
+         one bought, whichever leg holds it. */
+      const [vc1, vc2] = Number(l1.market_line) > Number(l2.market_line) ? ["buyc", "sellc"] : ["sellc", "buyc"];
       const why = [v.spread_pair ? "" : "winner leg", v.dollars < floor ? `under $${num(floor,0)}` : "",
                    v.mid_ladder ? "" : "off mid-ladder"].filter(Boolean);
       return `<tr class="${v.candidate ? "cand" : "dim"}">
       <td class="l">${lineTxt(v.high_line)} / ${lineTxt(v.low_line)}</td>
       <td>${num(v.buy_price)}</td><td>${num(v.sell_price)}</td><td class="accc">${signed(v.edge_c, 2)}</td>
       <td>${num(v.size, 0)}</td><td><b>${money(v.dollars)}</b></td>
-      <td class="l w">1 ${esc(l1.screen_row || "—")} <b>${esc(l1.screen_button || "?")}</b> ${num(l1.price)} × ${l1.qty ?? "—"}<br>2 ${esc(l2.screen_row || "—")} <b>${esc(l2.screen_button || "?")}</b> ${num(l2.price)} × ${l2.qty ?? "—"}</td>
+      <td class="l w"><span class="${vc1}">1</span> ${esc(l1.screen_row || "—")} <b>${esc(l1.screen_button || "?")}</b> ${num(l1.price)} × ${l1.qty ?? "—"}<br><span class="${vc2}">2</span> ${esc(l2.screen_row || "—")} <b>${esc(l2.screen_button || "?")}</b> ${num(l2.price)} × ${l2.qty ?? "—"}</td>
       <td class="l">${v.candidate ? '<span class="accc">candidate</span>' : `<span class="dimc">${esc(why.join(", ") || "not a candidate")}</span>`}</td></tr>`; }).join("")}
   </tbody></table>`;
 }
 
-/* ── TICKETS ── */
+/* ── TICKETS ──────────────────────────────────────────────────────────────
+   A ticket is a SNAPSHOT of the book at one instant, not a standing offer.
+   The centre pane refreshes every 5s; these were written minutes or an hour
+   ago, and until 2026-09-18 nothing on the page said so — one 62 minutes old
+   sat here under a SEND button showing prices from a book that had moved.
+
+   The server prices each open ticket's two legs against the same cached
+   sample /api/arb/ladder serves and attaches `live`
+   ({state, leg1_now, leg2_now, leg1_delta_c, leg2_delta_c, edge_now_c,
+   moved_leg, age_s}). The page RENDERS that block and computes no fee of its
+   own: core.ladder.scan.fee is the one definition. A missing block is
+   UNKNOWN — not being sampled, or the first sample has not answered — and is
+   never shown as LIVE, because absence is not confirmation. ── */
+const LIVE_WORDS = {
+  LIVE:    ["live",  "Both legs are still available at the ticketed price or better on the current sample."],
+  MOVED:   ["moved", "The pair still clears fee-netted, but not at the ticketed prices."],
+  GONE:    ["gone",  "The pair no longer clears at the current prices."],
+};
+/* Which leg we BUY and which we SELL is a property of the LINES, not of the
+   leg order: the EASIER (higher) line is bought at its ask (green), the
+   HARDER (lower) line is sold at its bid, as a No (red). Every ticket the
+   executor writes has them in that order; the colour does not trust that. */
+function legCls(t){
+  const a = Number((t.leg1 || {}).market_line), b = Number((t.leg2 || {}).market_line);
+  if(!(isFinite(a) && isFinite(b)) || a === b) return ["", ""];
+  return a > b ? ["buy", "sell"] : ["sell", "buy"];
+}
+/* The one-word state, for the row list and the card. */
+function liveChip(t){
+  const lv = t.live;
+  if(!lv || !LIVE_WORDS[lv.state])
+    return `<span class="lv unknown" title="UNKNOWN — no current ladder sample for this game: it is not being sampled, or the first sample has not answered, or the last one is older than two sample intervals. A ticket is never shown as live for want of data.">?</span>`;
+  const [word, why] = LIVE_WORDS[lv.state];
+  const now = `leg 1 now ${num(lv.leg1_now, 3)} (ticket ${num((t.leg1||{}).price, 3)}) · leg 2 now ${num(lv.leg2_now, 3)} (ticket ${num((t.leg2||{}).price, 3)}) · edge now ${signed(lv.edge_now_c, 2)}¢ against ${signed(t.edge_c, 2)}¢ ticketed · sample ${agef(lv.age_s)} old`;
+  return `<span class="lv ${word}" title="${esc(lv.state + " — " + why + " " + now)}">${word}</span>`;
+}
+/* The same thing in a sentence, on the card, above the legs it is about. */
+function liveBanner(t){
+  const lv = t.live;
+  if(!lv || !LIVE_WORDS[lv.state])
+    return `<div class="live unknown"><span class="lv unknown">?</span>
+      <span>no current sample for this game — <b>not checked</b>. These are the prices when the ticket was written${t.ts ? " at " + esc(t.ts) + "Z" : ""}, not the book now. Pick the game on the left to sample it.</span></div>`;
+  const [word] = LIVE_WORDS[lv.state];
+  const leg = n => `leg ${n} <b>${num(lv["leg" + n + "_now"], 3)}</b> <span class="dimc">vs ${num((t["leg" + n]||{}).price, 3)} ticketed${lv["leg" + n + "_delta_c"] !== 0 ? `, ${signed(lv["leg" + n + "_delta_c"], 2)}¢ ${lv["leg" + n + "_delta_c"] > 0 ? "dearer" : "cheaper"}` : ""}</span>`;
+  const edge = `edge now <b class="${lv.edge_now_c > 0 ? "pos" : "neg"}">${signed(lv.edge_now_c, 2)}¢</b> <span class="dimc">ticketed ${signed(t.edge_c, 2)}¢</span>`;
+  const moved = lv.moved_leg ? `<span class="dimc">${esc(lv.moved_leg)} moved away</span>` : "";
+  const said = lv.state === "LIVE" ? "<span>both legs still at the ticketed price or better</span>"
+             : lv.state === "MOVED" ? `<span>still clears, at other prices</span> ${moved}`
+             : `<span class="neg">no longer clears</span> ${moved}`;
+  return `<div class="live ${word}"><span class="lv ${word}">${word}</span>${said}
+    <span>${leg(1)}</span><span>${leg(2)}</span><span>${edge}</span>
+    <span class="dimc">sample ${agef(lv.age_s)} old</span></div>`;
+}
+
 function legLine(n, leg, game, first){
   /* leg.book_age_s is supplied by ticketCard from the ticket's ROOT
      leg{n}_book_age_s (where cfb/run_ladder_executor.py stamps it); the
@@ -713,9 +849,17 @@ function legLine(n, leg, game, first){
      The venue's price.value is always the YES side, so a BUY NO leg goes
      over as 1 − cost; both are printed so the ticket and the ladder agree. */
   const yes = String(leg.side || "").toUpperCase().endsWith("YES") ? Number(leg.price) : 1 - Number(leg.price);
-  return `<div class="leg"><span class="n">${n}</span>
-    <span class="row">${esc(row || ("line " + lineTxt(leg.market_line)))} <span class="btn">${esc(btn || "?")}</span>${first ? '<span class="first">FIRST</span>' : ""}</span>
-    <span class="terms">cost ${num(leg.price, 3)} × ${leg.qty}${leg.book_age_s != null ? ` <span class="dimc">· book ${agef(leg.book_age_s)}</span>` : ""}</span>
+  /* leg.cls and leg.now come from ticketCard: the colour is the LINE's (the
+     easier line is bought, the harder sold) and the price is the current
+     sample's, in this leg's own cost frame. Neither is on the intent. */
+  const side = leg.cls === "buy" ? '<span class="side">buy · easier line</span>'
+             : leg.cls === "sell" ? '<span class="side">sell · harder line</span>' : "";
+  const nowPx = leg.now == null ? ""
+    : ` <span class="dimc">· now</span> <span class="now">${num(leg.now, 3)}</span>`
+      + (leg.delta_c ? ` <span class="dimc">${signed(leg.delta_c, 2)}¢ ${leg.delta_c > 0 ? "dearer" : "cheaper"}</span>` : "");
+  return `<div class="leg ${esc(leg.cls || "")}"><span class="n">${n}</span>
+    <span class="row">${esc(row || ("line " + lineTxt(leg.market_line)))} <span class="btn">${esc(btn || "?")}</span>${first ? '<span class="first">FIRST</span>' : ""}${side}</span>
+    <span class="terms">cost ${num(leg.price, 3)} × ${leg.qty}${nowPx}${leg.book_age_s != null ? ` <span class="dimc">· book ${agef(leg.book_age_s)}</span>` : ""}</span>
     <span class="frame">${esc(leg.side)} ${lineTxt(leg.market_line)} · YES frame ${num(yes, 2)} · ${esc(slugOf(game, leg.market_line))}</span></div>`;
 }
 
@@ -726,11 +870,23 @@ function ticketActions(t){
   const rec = t.record || {};
   const acts = [];
   /* SEND is offered only on an ARMED desk: the server refuses a locked one
-     (409) and the page should not offer what it knows will be refused. */
+     (409) and the page should not offer what it knows will be refused. The
+     same goes for a ticket past its game's cap — the server refuses those
+     too — so it is shown, named, and not offered as a button.
+     A pair that no longer clears on the CURRENT sample is a different case:
+     it is the operator's to judge, so the button stays and is de-emphasised
+     with the reason on it, rather than removed. */
+  const lv = t.live || {};
+  const gone = lv.state === "GONE";
+  const why = gone
+    ? `The pair no longer clears on the current sample: leg 1 ${num(lv.leg1_now, 3)} / leg 2 ${num(lv.leg2_now, 3)} against ${num((t.leg1||{}).price, 3)} / ${num((t.leg2||{}).price, 3)} ticketed, edge now ${signed(lv.edge_now_c, 2)}¢. Offered because the choice is yours; nothing is sent from this button.`
+    : "Opens the confirmation ticket. Nothing is sent from this button.";
   if(t.sendable && STATE && STATE.armed === true)
-    acts.push(`<button class="go" data-act="send" data-id="${esc(t.id)}" title="Opens the confirmation ticket. Nothing is sent from this button.">SEND…</button>`);
+    acts.push(`<button class="${gone ? "faded" : "go"}" data-act="send" data-id="${esc(t.id)}" title="${esc(why)}">SEND…</button>`);
   else if(t.sendable)
     acts.push(`<span class="dimc" title="The desk is LOCKED; arm it to be offered SEND.">SEND (locked)</span>`);
+  else if(t.over_budget && t.status === "open")
+    acts.push(`<span class="dimc" title="This game is past its ticket cap. The cap limits what may be PLACED, not what the ladder may show: the server refuses a send on this ticket. Raise the cap for the game if you mean to trade it.">SEND (over cap)</span>`);
   if(t.status === "open"){
     acts.push(`<button data-act="placed" data-id="${esc(t.id)}" title="Record that you placed it by hand.">placed by hand</button>`);
     acts.push(`<button data-act="skipped" data-id="${esc(t.id)}">skip</button>`);
@@ -778,10 +934,14 @@ function ticketCard(t){
            <span class="dimc">not a fill observation — check the rows, then fills… to record by hand</span>
            ${rec.error ? `<span class="dimc">${esc(String(rec.error)).slice(0,160)}</span>` : ""}</div>`
         : "");
+  const [c1, c2] = legCls(t);
+  const lv = t.live || {};
   return `<div class="tk" id="tk-${cssId(t.id)}">
     <div class="hd"><span class="game">${esc(plainGame(t.game))} <span class="dimc">${esc(t.ts)}Z</span></span>
       <span class="st ${esc(t.status)}">${esc(t.status)}${via}</span></div>
-    ${legLine(1, {...(t.leg1 || {}), book_age_s: t.leg1_book_age_s}, t.game, true)}${legLine(2, {...(t.leg2 || {}), book_age_s: t.leg2_book_age_s}, t.game, false)}
+    ${t.status === "open" ? liveBanner(t) : ""}
+    ${t.over_budget ? `<div class="capnote">over this game's ticket cap — the cap limits what may be PLACED, not what is detected. The executor writes the ticket, does not push it, and the send route refuses it; it is here so you can see what went by.</div>` : ""}
+    ${legLine(1, {...(t.leg1 || {}), book_age_s: t.leg1_book_age_s, cls: c1, now: lv.leg1_now, delta_c: lv.leg1_delta_c}, t.game, true)}${legLine(2, {...(t.leg2 || {}), book_age_s: t.leg2_book_age_s, cls: c2, now: lv.leg2_now, delta_c: lv.leg2_delta_c}, t.game, false)}
     <div class="sum">
       <div title="the ticket's pair cost: qty × (cost 1 + cost 2)"><span class="k">cost</span><span class="v">${money(t.cost_usd)}</span></div>
       <div title="both legs filled: $1.00 per pair at settlement whatever the score"><span class="k">pays</span><span class="v">${money(q == null ? null : q * 1)}</span></div>
@@ -817,12 +977,22 @@ function freshClass(ts){
 }
 
 function ticketRow(t){
-  return `<button class="tkr ${t.id === SEL ? "on" : ""} ${t.status === "open" ? "" : "done"}" data-sel="${esc(t.id)}" title="${esc(plainGame(t.game))} · ${esc(t.id)} · ${t.status === "open" ? "green under a minute old, red past five" : esc(t.status)}">
+  /* The two lines carry the pair's colours: the easier one green (we buy
+     it), the harder one red (we sell it). The last two cells are the
+     ticket's state against the CURRENT book, then its state on the desk —
+     an open ticket past the game's cap says so there, because that is the
+     reason it cannot be sent. */
+  const [c1, c2] = legCls(t);
+  const stat = t.over_budget && t.status === "open"
+    ? `<span class="st cap" title="past this game's ticket cap: written for the record, refused by the send route">over cap</span>`
+    : `<span class="st ${esc(t.status)}">${esc(t.status)}</span>`;
+  return `<button class="tkr ${t.id === SEL ? "on" : ""} ${t.status === "open" ? "" : "done"}" data-sel="${esc(t.id)}" title="${esc(plainGame(t.game))} · ${esc(t.id)} · ${t.status === "open" ? "written " + agef(ticketAge(t.ts)) + " ago — green under a minute old, red past five; the chip beside it is the pair against the current sample" : esc(t.status)}">
     <span class="${t.status === "open" ? freshClass(t.ts) : "dimc"}">${esc(t.ts)}</span>
-    <span>${esc(shortGame(t.game))} ${lineTxt((t.leg1||{}).market_line)}/${lineTxt((t.leg2||{}).market_line)}</span>
+    <span>${esc(shortGame(t.game))} <span class="${c1 ? c1 + "c" : ""}">${lineTxt((t.leg1||{}).market_line)}</span>/<span class="${c2 ? c2 + "c" : ""}">${lineTxt((t.leg2||{}).market_line)}</span></span>
     <span class="r ${Number(t.edge_c) > 0 ? "pos" : "neg"}">${signed(t.edge_c, 2)}¢</span>
     <span class="r">${money(t.cost_usd)}</span>
-    <span class="r"><span class="st ${esc(t.status)}">${esc(t.status)}</span></span></button>`;
+    <span class="r">${t.status === "open" ? liveChip(t) : ""}</span>
+    <span class="r">${stat}</span></button>`;
 }
 
 function renderTickets(){
@@ -830,13 +1000,23 @@ function renderTickets(){
   all.forEach(t => { TICKETS[t.id] = t; });
   const mine = all.filter(t => leagueOf(t.game) === LEAGUE);
   const hidden = all.length - mine.length;
-  $("#tknote").textContent = `${mine.length} of ${all.length}` + (hidden ? ` · ${hidden} other leagues` : "");
+  $("#tknote").textContent = `${mine.length} of ${all.length}, newest first`
+    + (hidden ? ` · ${hidden} other leagues` : "");
   const list = $("#tklist"), det = $("#tkdetail");
   if(!mine.length){ list.innerHTML = `<div class="empty">no ticket for this league</div>`; det.innerHTML = `<div class="empty">—</div>`; SEL = null; return; }
-  /* The selection follows the operator; failing one, the newest sendable
-     ticket, then the newest. */
-  if(!mine.some(t => t.id === SEL)) SEL = (mine.find(t => t.sendable) || mine[0]).id;
-  list.innerHTML = mine.map(ticketRow).join("");
+  /* Newest first. The executor appends, so file order put the oldest ticket
+     at the top of the list and, through `find`, under the cursor: on
+     2026-09-18 that was a 62-minute-old pair. Past a game's cap the file is
+     hundreds of rows long and the oldest is the least useful row in it. */
+  const newest = [...mine].reverse();
+  /* The selection follows the operator; failing one, the newest ticket that
+     is BOTH sendable and still live on the current sample, then the newest
+     sendable, then the newest. Liveness is the server's word: a ticket with
+     no block is not live, so it never wins this by default. */
+  if(!mine.some(t => t.id === SEL))
+    SEL = (newest.find(t => t.sendable && (t.live || {}).state === "LIVE")
+        || newest.find(t => t.sendable) || newest[0]).id;
+  list.innerHTML = newest.map(ticketRow).join("");
   const open = new Set([...det.querySelectorAll(".fills.on")].map(x => x.id));
   const keep = {};
   det.querySelectorAll(".res").forEach(x => { if(x.innerHTML) keep[x.id] = x.innerHTML; });
@@ -910,6 +1090,7 @@ function openSend(t){
       <span><input id="px2" type="number" step="0.01" min="0.01" max="0.99" value="${num(t.leg2.price, 2)}"> <span class="dimc">ticket ${num(t.leg2.price, 3)}</span></span></div>
     <div class="trow"><span class="k">Quantity (each leg)</span>
       <span><input id="qty" type="number" step="1" min="1" value="${q}"> contracts <span class="dimc">ticket ${q}${STATE && STATE.allow_size_up ? `, displayed ${num(t.displayed_size,0)}` : ""}</span></span></div>
+    <div class="trow"><span class="k">Against the book now</span><div class="livewrap">${liveBanner(t)}</div></div>
     <div class="trow"><span class="k">Order type</span><span>LIMIT · immediate-or-cancel · synchronous — fills now or not at all, rests nothing</span></div>
     <div class="trow"><span class="k">Venue format</span><span class="dimc" id="venuepx"></span></div>
     <div class="trow"><span class="k">Pair cost per contract</span><span id="pairc">—</span></div>
