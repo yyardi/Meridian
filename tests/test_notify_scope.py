@@ -137,11 +137,13 @@ def quiet_env(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_default_scope_is_tickets_only(quiet_env):
-    assert notify.scope() == frozenset({"tickets"})
-    assert notify.allowed("tickets")
+def test_default_scope_is_tickets_and_the_schedule(quiet_env):
+    assert notify.scope() == frozenset({"tickets", "schedule"})
+    assert notify.allowed("tickets") and notify.allowed("schedule")
+    # "schedule" joined the default because it is the one message the desk
+    # cannot replace: the board shows what is running, not what is on later.
     for kind in notify.KINDS:
-        if kind != "tickets":
+        if kind not in ("tickets", "schedule"):
             assert not notify.allowed(kind), kind
 
 
@@ -161,7 +163,7 @@ def test_comma_lists_and_whitespace_and_quotes(monkeypatch, raw):
 
 def test_blank_scope_is_the_default_and_unknown_kinds_never_pass(monkeypatch):
     monkeypatch.setenv("MERIDIAN_NTFY_SCOPE", "   ")
-    assert notify.scope() == frozenset({"tickets"})
+    assert notify.scope() == frozenset({"tickets", "schedule"})
     monkeypatch.setenv("MERIDIAN_NTFY_SCOPE", "all")
     assert not notify.allowed("everything"), "a kind outside KINDS is never allowed"
 

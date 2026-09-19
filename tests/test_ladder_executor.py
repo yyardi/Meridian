@@ -111,7 +111,8 @@ def test_over_cap_tickets_are_written_but_never_charged_to_the_budget(tmp_path):
     assert EX.spent_so_far(str(p)) == pytest.approx(1.92), "only the charged ones"
     src = SRC[SRC.index("while time.time() < end"):]
     assert 'it["over_budget"] = over' in src, "every ticket says which it is"
-    assert "if not over and time.time() - pushed.get(key" in src, "an over-cap ticket is not pushed"
+    assert "if not (over or a.quiet) and time.time() - pushed.get(key" in src, \
+        "an over-cap ticket is not pushed, and --quiet silences the rest"
 
 
 def test_the_phone_is_deduped_per_pair_but_the_ticket_is_not():

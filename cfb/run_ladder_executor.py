@@ -135,6 +135,10 @@ def main() -> int:
     ap.add_argument("--push-cooldown", type=float, default=5.0,
                     help="minutes between PHONE alerts for the same pair; the ticket is "
                          "still written every cycle. 0 = push every one")
+    ap.add_argument("--quiet", action="store_true",
+                    help="write tickets but send no phone alert at all -- the desk shows "
+                         "every one with its own liveness, so the phone is redundant once "
+                         "the operator is watching the board")
     ap.add_argument("--every", type=float, default=20.0)
     ap.add_argument("--minutes", type=float, default=240.0)
     ap.add_argument("--out", default=None, help="JSONL of intents; default artifacts/reads/ladder_intents_<prefix>.jsonl")
@@ -186,7 +190,7 @@ def main() -> int:
                     f.write(json.dumps(it) + "\n")
                 spent += 0.0 if over else it["cost_usd"]
                 last[key] = time.time(); issued = it
-                if not over and time.time() - pushed.get(key, -1e9) >= a.push_cooldown * 60:
+                if not (over or a.quiet) and time.time() - pushed.get(key, -1e9) >= a.push_cooldown * 60:
                     pushed[key] = time.time()
                     push(it)
                 break

@@ -48,9 +48,12 @@ from urllib.request import Request, urlopen
 
 #: Every kind a sender may name. `push` refuses (mutes) anything else, so a
 #: typo in a caller cannot silently become an always-on channel.
-KINDS = ("tickets", "health", "nightly", "ev", "retention", "listing", "alarm")
+KINDS = ("tickets", "schedule", "health", "nightly", "ev", "retention", "listing", "alarm")
 
-DEFAULT_SCOPE = "tickets"
+#: "schedule" rides with "tickets" by default: it is one message a day
+#: naming the slate, which is the thing the dashboard cannot tell the
+#: operator because it only knows what is already running.
+DEFAULT_SCOPE = "tickets,schedule"
 DEFAULT_SERVER = "https://ntfy.sh"
 #: Absolute on purpose (see the module docstring): `Path("artifacts/...")`
 #: would put the line wherever the sender happened to be started from.
