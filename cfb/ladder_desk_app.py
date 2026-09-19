@@ -35,7 +35,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from cfb import ladder_pnl_page, ladder_tape_page
-from cfb.ladder_instructions import HTML as INSTRUCTIONS_HTML
+from core.ladder.instructions import HTML as INSTRUCTIONS_HTML
 from core.ladder import desk, pnl, tape
 from core.ladder.desk import tally, ticket_id  # noqa: F401 -- the desk's public names, kept
 from core.ladder.ui import teams_of, ui_wording

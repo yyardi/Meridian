@@ -1,8 +1,15 @@
-"""The operator's instructions page, served by the desk at /instructions.
+"""The operator's instructions page, served at /instructions.
 
 Plain words for a person at a phone: what the signal is, which contract to
 buy and which to sell, how to read a ticket, the steps on the venue, the
 rules, how to record, and why the two legs cannot both lose.
+
+It lives in core/ so the api image carries it. It was written for the
+temporary desk on :8011; that desk is gone, everything is on :8008, and the
+page 404'd in between -- which is exactly the page an operator reaches for
+when a ticket is in front of them and they are not sure which button it
+means. There is no state here and nothing to poll: the module is one HTML
+constant and the route returns it.
 """
 from __future__ import annotations
 
@@ -18,7 +25,7 @@ th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8C93A1} t
 """
 
 HTML = f"""<style>{CSS}</style><div class='wrap'>
-<div class='muted'><a href='/'>&larr; back to the desk</a></div>
+<div class='muted'><a href='/arb'>&larr; ARB desk</a> &middot; <a href='/log'>game log</a> &middot; <a href='/pnl'>P&amp;L</a></div>
 <h1>How to place a ladder ticket</h1>
 <p class='muted'>Read once before the first ticket. Two minutes.</p>
 
@@ -56,7 +63,7 @@ HTML = f"""<style>{CSS}</style><div class='wrap'>
 <p><b>Never chase leg 2 past 60 seconds.</b> If leg 1 filled and leg 2 did not, you hold one ordinary one-sided contract worth at most what you paid for it (a few dollars at test size). Record it and let it settle.</p>
 <p><b>Never the winner market.</b> Tickets are spread-vs-spread only; an NFL tie settles the winner contract at $0.50 and would break the guarantee.</p>
 <p><b>Skip a game with weather or postponement risk.</b> A postponed game settles every contract at "last fair market price", not $0/$1.</p>
-<p><b>The lock is yours.</b> One click on the desk stops the executor writing or pushing anything; it keeps watching.</p>
+<p><b>The lock is yours.</b> One click on the ARB tab stops the executor writing or pushing anything; it keeps watching.</p>
 </div>
 
 <h2>6 &middot; Why the two legs cannot both lose</h2>
@@ -70,6 +77,7 @@ HTML = f"""<style>{CSS}</style><div class='wrap'>
 <p>Real example: Buffalo won 41&ndash;31, Detroit lost by 10. Leg 1 paid $0, leg 2 paid $1: $1.00 back on $0.94. Where money can still be lost: only one leg fills; the wrong button; a postponed game. Not the score.</p>
 
 <h2>7 &middot; What the money looks like</h2>
-<p>Per pair you put in about 0.92&ndash;0.98 and get $1.00 back &mdash; roughly 2&ndash;8 % on the money, once, locked until the game settles (about 3.5 hours). Tonight's tickets are one contract each under a $5 budget: they exist to answer <b>whether displayed size fills at all</b>, not to make money. Five recorded attempts decide it: three with both legs filled &rarr; size is real; three with leg 1 unfilled &rarr; it is phantom and the idea is withdrawn.</p>
-<p class='muted'>Full write-up with the measurements, the maths and the reviewer's verdict: the Ladder Lag Review report. Once the ARB tab ships, SEND on the dashboard fires both legs on one click.</p>
+<p>Per pair you put in about 0.92&ndash;0.98 and get $1.00 back &mdash; roughly 2&ndash;8 % on the money, once, locked until the game settles (about 3.5 hours). There is no budget cap in the executor: it writes a ticket for every crossing it sees, and the capital decision is the <b>SEND</b> click, which is yours. Size on a ticket is the smaller of the two quoted sizes, so it is what the book claims it will fill, not what anyone hopes.</p>
+<p><b>Nothing has been placed yet.</b> Not one order, on any game. Every ticket the desk has ever written is an observation, so the question these instructions exist for &mdash; <b>does displayed size actually fill?</b> &mdash; has zero recorded attempts against it. Three pairs with both legs filled says the size is real; three with leg 1 unfilled says it is phantom and the idea is withdrawn. Until then the dollar figures on /log and /pnl are what the tape <i>offered</i>, never what anything earned.</p>
+<p class='muted'>Full write-up with the measurements, the maths and the reviewer's verdict: the Ladder Lag Review report. <b>SEND</b> on the ARB tab fires both legs on one click; <a href='/log'>the game log</a> lists every crossing the tape showed, ticketed or not.</p>
 </div>"""
