@@ -100,3 +100,21 @@ def test_it_says_plainly_that_nothing_has_been_placed():
     what the tape OFFERED. The page that teaches them to read those figures
     is where that has to be said, not a footnote elsewhere."""
     assert "Nothing has been placed yet" in PAGE
+
+
+def test_the_dashboard_links_to_both_pages_so_they_can_be_found():
+    """A page nobody can reach is the same as a 404. /instructions was
+    unreachable for a day, and /log shipped with no link at all: the
+    operator was told it existed and had to type the path."""
+    nav = pathlib.Path(__file__).resolve().parents[1] / "static" / "arb.html"
+    html = nav.read_text(encoding="utf-8")
+    for route in ('href="/log"', 'href="/instructions"', 'href="/pnl"'):
+        assert route in html, route
+
+
+def test_the_log_page_links_to_the_instructions():
+    """The log is where an operator sees a crossing they did not take; the
+    next question is how to take one."""
+    from core.ladder import gamelog_page
+    page = gamelog_page.render(None, {"games": []}, [], "/nonexistent")
+    assert "/instructions" in page
