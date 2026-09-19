@@ -221,11 +221,26 @@ def tail(path: str, n: int = 3) -> list[str]:
 
 
 def log_files(out_dir: str, kind: str, last: int = 3) -> list[str]:
-    """The newest ``last`` logs of one kind: 'executor' -> live_ladder_aec-*.txt,
-    'freshness' -> ws_freshness_aec-*.txt. Sorted by name, which for these
-    files is by date then game."""
+    """The ``last`` most recently WRITTEN logs of one kind:
+    'executor' -> live_ladder_aec-*.txt, 'freshness' -> ws_freshness_aec-*.txt.
+
+    By mtime, not by name. The name is
+    ``<kind>_aec-<league>-<teams>-<date>.txt``, so sorting it sorts by LEAGUE
+    first: `wnba` beat `cfb` whatever the date, and the desk spent a live
+    Saturday showing the stream tail of a basketball game that had finished
+    twelve hours earlier. `recent_games` below already used mtime; this is the
+    same question and now gets the same answer.
+    """
     pattern = {"executor": "live_ladder_aec-*.txt", "freshness": "ws_freshness_aec-*.txt"}[kind]
-    return sorted(glob.glob(os.path.join(out_dir, pattern)))[-last:]
+    paths = glob.glob(os.path.join(out_dir, pattern))
+
+    def when(p: str) -> float:
+        try:
+            return os.path.getmtime(p)
+        except OSError:          # vanished between the glob and the stat
+            return 0.0
+
+    return sorted(paths, key=when)[-last:]
 
 
 def recent_games(out_dir: str, within_s: float = 6 * 3600, now: float | None = None) -> list[str]:

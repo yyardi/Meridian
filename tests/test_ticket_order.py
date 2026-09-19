@@ -121,3 +121,26 @@ def test_the_age_comes_from_the_stamped_instant_not_a_bare_clock():
     fn = fn[:fn.index("\n}")]
     assert "t.at" in fn, "prefer the server's dated instant"
     assert "86400" in fn, "the bare-clock fallback stays for older files"
+
+
+def test_the_tails_follow_the_clock_not_the_league_name(tmp_path):
+    """`ws_freshness_aec-<league>-...` sorts by LEAGUE first, so `wnba` beat
+    `cfb` whatever the date and the desk showed the stream tail of a
+    basketball game that had ended twelve hours earlier."""
+    old = tmp_path / "ws_freshness_aec-wnba-por-gsv-2026-09-18.txt"
+    new = tmp_path / "ws_freshness_aec-cfb-ga-ark-2026-09-19.txt"
+    for f in (old, new):
+        f.write_text("x\n", encoding="utf-8")
+    os.utime(old, (1_000, 1_000))
+    os.utime(new, (2_000, 2_000))
+    got = desk.log_files(str(tmp_path), "freshness", last=1)
+    assert [os.path.basename(g) for g in got] == [new.name], \
+        "the newest WRITTEN tail, not the one whose league sorts last"
+    both = desk.log_files(str(tmp_path), "freshness", last=2)
+    assert [os.path.basename(g) for g in both] == [old.name, new.name], "oldest first, newest last"
+
+
+def test_a_tail_that_vanishes_between_the_glob_and_the_stat_is_not_an_error(tmp_path):
+    (tmp_path / "live_ladder_aec-cfb-a-b-2026-09-19.txt").write_text("x\n", encoding="utf-8")
+    assert len(desk.log_files(str(tmp_path), "executor")) == 1
+    assert desk.log_files(str(tmp_path / "gone"), "executor") == []
