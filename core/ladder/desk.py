@@ -93,24 +93,72 @@ def ticket_id(t: dict) -> str:
     return f"{t.get('game')}|{t.get('ts')}|{t['leg1']['market_line']}/{t['leg2']['market_line']}"
 
 
+def stamp_instants(rows: list[dict], mtime: float | None) -> None:
+    """Give each ticket in ONE file a real sortable instant, in place.
+
+    A ticket's `ts` is HH:MM:SS with no date, and a game that kicks off at
+    23:00 writes tickets on both sides of midnight. Sorting those strings puts
+    yesterday's 00:17 above today's 16:19, which is how the desk spent a live
+    Saturday showing Friday night's tickets.
+
+    The anchor is the FILE's last-modified time, not the date in the game slug:
+    a game listed under 2026-09-18 that kicks off at 23:58 writes every one of
+    its tickets on the 19th, so the slug's date is wrong for all of them. The
+    executor only appends, so walk backwards from the end and drop a day each
+    time the clock jumps UP going back -- that is a midnight crossing.
+    """
+    if not rows:
+        return
+    if mtime is None:
+        for r in rows:
+            r["at"] = str(r.get("ts") or "")
+        return
+    end = dt.datetime.fromtimestamp(mtime, dt.timezone.utc)
+    day = end.date()
+    last = str(rows[-1].get("ts") or "")
+    # A final ticket stamped later in the day than the file's own mtime can
+    # only be yesterday's.
+    if last and last > end.strftime("%H:%M:%S"):
+        day -= dt.timedelta(days=1)
+    prev = None
+    for r in reversed(rows):
+        ts = str(r.get("ts") or "")
+        if prev is not None and ts > prev:
+            day -= dt.timedelta(days=1)
+        prev = ts
+        r["at"] = f"{day.isoformat()}T{ts}"
+
+
 def load_tickets(out_dir: str) -> list[dict]:
     """Every intent the executor wrote, newest first, with the operator's
     latest record for it merged in."""
     tickets = []
     for p in sorted(glob.glob(os.path.join(out_dir, "ladder_intents_*.jsonl"))):
+        rows = []
         for t in read_jsonl(p):
             if "leg1" in t and "leg2" in t:
                 t = dict(t)
                 t["id"] = ticket_id(t)
                 t["status"] = "open"
-                tickets.append(t)
+                rows.append(t)
+        try:
+            mtime = os.path.getmtime(p)
+        except OSError:
+            mtime = None
+        stamp_instants(rows, mtime)
+        tickets += rows
     attempts = {a["id"]: a for a in read_jsonl(os.path.join(out_dir, ATTEMPTS_FILE)) if "id" in a}
     for t in tickets:
         a = attempts.get(t["id"])
         if a:
             t["status"] = a.get("status", "open")
             t["record"] = a
-    tickets.sort(key=lambda t: (str(t.get("game")), str(t.get("ts"))), reverse=True)
+    # Newest first, by the INSTANT. The old key was (game, ts) reversed, which
+    # ordered the list alphabetically by opponent and only then by clock -- so
+    # the top of the list was whichever game sorted last in the alphabet, and
+    # the page's own `.reverse()` turned that into the oldest ticket of the
+    # alphabetically-first game. Two places ordering one list, neither right.
+    tickets.sort(key=lambda t: str(t.get("at") or t.get("ts") or ""), reverse=True)
     return tickets
 
 

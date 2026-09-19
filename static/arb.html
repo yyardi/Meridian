@@ -270,6 +270,7 @@
        color:var(--dim);cursor:pointer;letter-spacing:0;font-size:11px}
   .tkr>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tkr .r{text-align:right}
+  .tkr .reps{margin-left:5px;padding:0 3px;border-radius:3px;background:#1e2733;color:var(--dim);font-size:10px}
   .tkr:hover{color:var(--txt);background:#10141b}
   .tkr.on{color:var(--txt);background:#141924;border-left:2px solid var(--txt);padding-left:8px}
   .tkr.done{opacity:.55}
@@ -640,7 +641,7 @@ function renderState(){
     + kv("size", s.allow_size_up ? "up to displayed" : "≤ ticket", "MERIDIAN_ARB_ALLOW_SIZE_UP");
   $("#meta").innerHTML =
       kv("dir", `<b>${esc(s.dir)}</b>`, s.dir)
-    + kv("ticket cap", `$${num(s.budget_usd, 0)} / game`, "LADDER_BUDGET_USD — the most the executor may PROPOSE per game; it places nothing")
+    + kv("ticket cap", Number(s.budget_usd) > 0 ? `$${num(s.budget_usd, 0)} / game` : "none", "LADDER_BUDGET_USD — a cap on what the executor may PROPOSE per game. None by default: a withheld ticket is an opportunity nobody saw, and the capital decision is SEND. The per-pair cap below is the one that limits money.")
     + kv("sampler", `every ${num(s.sample_seconds, 0)}s`, "MERIDIAN_ARB_SAMPLE_SECONDS")
     + kv("watching", `${(s.watching||[]).length}`, (s.watching||[]).join(", ") || "no game is being sampled")
     + kv("tickets", `${(s.tickets||[]).length} on file`, "every intent the executor wrote, any league");
@@ -655,7 +656,7 @@ function renderState(){
    every intent's cost_usd in the game's file, whatever its status). */
 function renderBudget(){
   const s = STATE;
-  if(!s || !GAME){ $("#s-budget").textContent = s ? `— / $${num(s.budget_usd, 2)}` : "—"; return; }
+  if(!s || !GAME){ $("#s-budget").textContent = "—"; return; }
   const mine = (s.tickets || []).filter(t => plainGame(t.game) === plainGame(GAME));
   /* The executor stops counting a ticket against the cap once it flags it
      over_budget, so the page counts the same ones it does; the over-cap
@@ -663,8 +664,13 @@ function renderBudget(){
   const used = mine.filter(t => !t.over_budget).reduce((a, t) => a + Number(t.cost_usd || 0), 0);
   const over = mine.filter(t => t.over_budget).length;
   const cap = Number(s.budget_usd || 0);
-  $("#s-budget").innerHTML = `<span class="${used >= cap ? "accc" : ""}">${money(used)}</span> <span class="dimc">proposed / ${money(cap)} cap</span>`
-    + (over ? ` <span class="accc" title="Detected and ticketed past the cap: shown on the right, refused by the send route. The cap limits placing, not detection.">+${over} over cap</span>` : "");
+  /* With no cap the number beside "proposed" would be $0.00, which reads as
+     a ceiling of nothing rather than the absence of one. */
+  $("#s-budget").innerHTML = cap > 0
+    ? `<span class="${used >= cap ? "accc" : ""}">${money(used)}</span> <span class="dimc">proposed / ${money(cap)} cap</span>`
+      + (over ? ` <span class="accc" title="Detected and ticketed past the cap: shown on the right, refused by the send route. The cap limits placing, not detection.">+${over} over cap</span>` : "")
+    : `${money(used)} <span class="dimc">proposed, no cap</span>`
+      + (over ? ` <span class="accc" title="Written under an older run that DID have a cap; the send route still refuses them.">+${over} over cap</span>` : "");
 }
 
 function renderGames(){
@@ -982,26 +988,32 @@ function ticketCard(t){
   </div>`;
 }
 
-/* Seconds since the ticket was written, from its HH:MM:SS stamp against the
-   clock. Tickets carry no date, so a stamp that reads as "tomorrow" is last
-   night's file and counts as old rather than negative. */
-function ticketAge(ts){
-  const m = /^(\d{2}):(\d{2}):(\d{2})$/.exec(String(ts || ""));
+/* Seconds since the ticket was written. The server stamps `at` with a real
+   date, so pass the TICKET and a two-day-old row reads as two days rather
+   than wrapping into this morning. A bare HH:MM:SS still works for anything
+   written before that stamp existed. */
+function ticketAge(t){
+  const at = t && t.at;
+  if(at){
+    const d = new Date(at.endsWith("Z") ? at : at + "Z");
+    if(!isNaN(d)) return (new Date() - d) / 1000;
+  }
+  const m = /^(\d{2}):(\d{2}):(\d{2})$/.exec(String((t && t.ts) || t || ""));
   if(!m) return null;
-  const now = new Date(), t = new Date(now);
-  t.setUTCHours(+m[1], +m[2], +m[3], 0);
-  let age = (now - t) / 1000;
+  const now = new Date(), x = new Date(now);
+  x.setUTCHours(+m[1], +m[2], +m[3], 0);
+  let age = (now - x) / 1000;
   if(age < -60) age += 86400;
   return age;
 }
 /* fresh under a minute, going under five, cold after. */
-function freshClass(ts){
-  const a = ticketAge(ts);
+function freshClass(t){
+  const a = ticketAge(t);
   if(a == null) return "";
   return a < 60 ? "pos" : a < 300 ? "warnc" : "neg";
 }
 
-function ticketRow(t){
+function ticketRow(t, g){
   /* The two lines carry the pair's colours: the easier one green (we buy
      it), the harder one red (we sell it). The last two cells are the
      ticket's state against the CURRENT book, then its state on the desk —
@@ -1011,9 +1023,16 @@ function ticketRow(t){
   const stat = t.over_budget && t.status === "open"
     ? `<span class="st cap" title="past this game's ticket cap: written for the record, refused by the send route">over cap</span>`
     : `<span class="st ${esc(t.status)}">${esc(t.status)}</span>`;
-  return `<button class="tkr ${t.id === SEL ? "on" : ""} ${t.status === "open" ? "" : "done"}" data-sel="${esc(t.id)}" title="${esc(plainGame(t.game))} · ${esc(t.id)} · ${t.status === "open" ? "written " + agef(ticketAge(t.ts)) + " ago — green under a minute old, red past five; the chip beside it is the pair against the current sample" : esc(t.status)}">
-    <span class="${t.status === "open" ? freshClass(t.ts) : "dimc"}">${esc(t.ts)}</span>
-    <span>${esc(shortGame(t.game))} <span class="${c1 ? c1 + "c" : ""}">${lineTxt((t.leg1||{}).market_line)}</span>/<span class="${c2 ? c2 + "c" : ""}">${lineTxt((t.leg2||{}).market_line)}</span></span>
+  /* One row per PAIR, not per write. The executor re-tickets a crossing every
+     cycle for as long as it stands, so a pair that held for ten minutes used
+     to fill thirty identical rows and push every other game off the screen.
+     `g` carries how many writes this row stands for and how long the pair has
+     been standing, which is the thing those rows were really saying. */
+  const reps = g && g.reps > 1
+    ? `<span class="reps" title="the executor has written this same pair ${g.reps} times, over ${agef(ticketAge(g.oldest) - ticketAge(t))}; one opportunity, not ${g.reps}">×${g.reps}</span>` : "";
+  return `<button class="tkr ${t.id === SEL ? "on" : ""} ${t.status === "open" ? "" : "done"}" data-sel="${esc(t.id)}" title="${esc(plainGame(t.game))} · ${esc(t.id)} · ${t.status === "open" ? "written " + agef(ticketAge(t)) + " ago — green under a minute old, red past five; the chip beside it is the pair against the current sample" : esc(t.status)}">
+    <span class="${t.status === "open" ? freshClass(t) : "dimc"}">${esc(t.ts)}</span>
+    <span>${esc(shortGame(t.game))} <span class="${c1 ? c1 + "c" : ""}">${lineTxt((t.leg1||{}).market_line)}</span>/<span class="${c2 ? c2 + "c" : ""}">${lineTxt((t.leg2||{}).market_line)}</span>${reps}</span>
     <span class="r ${Number(t.edge_c) > 0 ? "pos" : "neg"}">${signed(t.edge_c, 2)}¢</span>
     <span class="r">${money(t.cost_usd)}</span>
     <span class="r">${t.status === "open" ? liveChip(t) : ""}</span>
@@ -1028,16 +1047,29 @@ function renderTickets(){
   const mine = SHOW_ALL ? inLeague : inLeague.filter(t => !dead(t));
   const hidden = all.length - inLeague.length;
   const past = inLeague.length - mine.length;
-  $("#tknote").innerHTML = `${mine.length} of ${all.length}, newest first`
+  /* Collapse repeats of the SAME pair. `mine` is newest-first from the
+     server, so the first row of each group is the live one and the rest are
+     that pair being re-written every cycle. */
+  const groups = [], byPair = new Map();
+  for(const t of mine){
+    const k = `${t.game}|${(t.leg1||{}).market_line}/${(t.leg2||{}).market_line}`;
+    const g = byPair.get(k);
+    if(g){ g.reps++; g.oldest = t; continue; }
+    const ng = {head: t, reps: 1, oldest: t};
+    byPair.set(k, ng); groups.push(ng);
+  }
+  const heads = groups.map(g => g.head);
+  $("#tknote").innerHTML = `${groups.length} pair${groups.length === 1 ? "" : "s"} from ${mine.length} ticket${mine.length === 1 ? "" : "s"}, newest first`
     + (hidden ? ` · ${hidden} other leagues` : "")
     + (past || SHOW_ALL ? ` · <a href="#" id="tkall" title="a ticket that no longer clears, or one past a cap the server refuses, is history: hidden unless you ask">${SHOW_ALL ? "hide " + inLeague.filter(dead).length + " past" : "show " + past + " past"}</a>` : "");
   const list = $("#tklist"), det = $("#tkdetail");
-  if(!mine.length){ list.innerHTML = `<div class="empty">${SHOW_ALL ? "no ticket for this league" : "nothing live right now"}</div>`; det.innerHTML = `<div class="empty">—</div>`; SEL = null; return; }
-  /* Newest first. The executor appends, so file order put the oldest ticket
-     at the top of the list and, through `find`, under the cursor: on
-     2026-09-18 that was a 62-minute-old pair. Past a game's cap the file is
-     hundreds of rows long and the oldest is the least useful row in it. */
-  const newest = [...mine].reverse();
+  if(!groups.length){ list.innerHTML = `<div class="empty">${SHOW_ALL ? "no ticket for this league" : "nothing live right now"}</div>`; det.innerHTML = `<div class="empty">—</div>`; SEL = null; return; }
+  /* The server sorts newest-first on a real instant, so nothing is reordered
+     here. This line used to `.reverse()` that, on the assumption the server
+     handed over raw file order; combined with a server key of (game, ts) it
+     put the alphabetically-first game's OLDEST ticket at the top, which is
+     how a live Saturday desk spent the afternoon showing Friday night. */
+  const newest = heads;
   /* The selection follows the operator; failing one, the newest ticket that
      is BOTH sendable and still live on the current sample, then the newest
      sendable, then the newest. Liveness is the server's word: a ticket with
@@ -1045,10 +1077,10 @@ function renderTickets(){
      one that is merely priced — THIN (no size behind the quote) and STALE
      (edge past the scanner's plausibility bound) are not LIVE, so the
      biggest number on the page cannot select itself by being unreal. */
-  if(!mine.some(t => t.id === SEL))
+  if(!heads.some(t => t.id === SEL))
     SEL = (newest.find(t => t.sendable && (t.live || {}).state === "LIVE")
         || newest.find(t => t.sendable) || newest[0]).id;
-  list.innerHTML = newest.map(ticketRow).join("");
+  list.innerHTML = groups.map(g => ticketRow(g.head, g)).join("");
   const open = new Set([...det.querySelectorAll(".fills.on")].map(x => x.id));
   const keep = {};
   det.querySelectorAll(".res").forEach(x => { if(x.innerHTML) keep[x.id] = x.innerHTML; });
