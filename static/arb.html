@@ -1043,7 +1043,16 @@ function renderTickets(){
   const all = (STATE && STATE.tickets) || [];
   all.forEach(t => { TICKETS[t.id] = t; });
   const inLeague = all.filter(t => leagueOf(t.game) === LEAGUE);
-  const dead = t => t.status === "open" && ((t.live || {}).state === "GONE" || t.over_budget);
+  /* History is three things, and the third one was missing. A ticket whose
+     GAME is no longer on the board cannot be priced against anything: the
+     server gives it no live block at all, so `state === "GONE"` was false for
+     it and it stayed in the list forever, while TODAY's tickets -- the only
+     ones that CAN be evaluated -- were being hidden the moment their crossing
+     closed. On a live Saturday the pane was 135 rows of Friday night and none
+     of the game on the screen beside it. Absence of a verdict is not a pass. */
+  const onBoard = new Set((STATE.games || []).map(plainGame));
+  const dead = t => t.status === "open" && ((t.live || {}).state === "GONE" || t.over_budget
+                    || !onBoard.has(plainGame(t.game)));
   const mine = SHOW_ALL ? inLeague : inLeague.filter(t => !dead(t));
   const hidden = all.length - inLeague.length;
   const past = inLeague.length - mine.length;
