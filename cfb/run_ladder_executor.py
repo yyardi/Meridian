@@ -65,14 +65,24 @@ def intent_for(v, game: str, when: str, attempt_usd: float) -> dict:
 
 
 def spent_so_far(path: str) -> float:
+    """What the cap has actually been charged, re-read from the file so a
+    restart cannot re-spend it.
+
+    Over-cap tickets are written to the same file but were never charged --
+    they exist so the operator can see what went past. Counting them here
+    would make every restart inflate `spent` by the whole observed tail and
+    silently stop the game from ever ticketing again.
+    """
     if not os.path.exists(path):
         return 0.0
     tot = 0.0
     with open(path, encoding="utf-8") as f:
         for line in f:
             try:
-                tot += float(json.loads(line).get("cost_usd", 0.0))
-            except (ValueError, TypeError):
+                row = json.loads(line)
+                if not row.get("over_budget"):
+                    tot += float(row.get("cost_usd", 0.0))
+            except (ValueError, TypeError, AttributeError):
                 continue
     return tot
 
@@ -142,19 +152,27 @@ def main() -> int:
                 key = (x.high_line, x.low_line)
                 if time.time() - last.get(key, -1e9) < a.cooldown * 60:
                     continue
-                if spent + a.attempt_usd > a.budget_usd + 1e-9:
-                    print(f"=== {now}Z  BUDGET EXHAUSTED ${spent:.2f} of ${a.budget_usd:.2f}; observing only")
-                    break
+                # Past the cap the ticket is still WRITTEN, flagged, and not
+                # pushed. The cap is the operator's limit on what may be
+                # PLACED, not on what the ladder may show: on 2026-09-18 two
+                # CFB games put 281 pairs over the $25 floor and the operator
+                # saw four, because the loop stopped here. The send route
+                # refuses a flagged ticket, so the limit still holds where it
+                # was meant to.
+                over = spent + a.attempt_usd > a.budget_usd + 1e-9
                 it = intent_for(x, game, now, a.attempt_usd)
+                it["over_budget"] = over
                 it["leg1_book_age_s"] = book_age_s(meta.get(x.high_line), now_ts)
                 it["leg2_book_age_s"] = book_age_s(meta.get(x.low_line), now_ts)
                 with open(out, "a", encoding="utf-8") as f:
                     f.write(json.dumps(it) + "\n")
-                spent += it["cost_usd"]; last[key] = time.time(); issued = it
-                push(it)
+                spent += 0.0 if over else it["cost_usd"]
+                last[key] = time.time(); issued = it
+                if not over:
+                    push(it)
                 break
             print(f"=== {now}Z rungs {len(rungs)} in {took:.1f}s  violations {len(v)}  {'LOCKED ' if locked else ''}"
-                  f"candidates {len(cands)}  {'INTENT ' + str(issued['leg1']['market_line']) + '/' + str(issued['leg2']['market_line']) if issued else ''}  spent ${spent:.2f}")
+                  f"candidates {len(cands)}  {('OVER-CAP ' if issued.get('over_budget') else 'INTENT ') + str(issued['leg1']['market_line']) + '/' + str(issued['leg2']['market_line']) if issued else ''}  spent ${spent:.2f}")
             sys.stdout.flush()
             time.sleep(max(0.0, a.every - took))
     return 0
