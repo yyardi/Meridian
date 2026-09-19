@@ -471,6 +471,7 @@ const money = v => v == null || !isFinite(v) ? "—" : (v < 0 ? "-$" : "$") + Ma
 const signed = (v, d) => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d);
 const lineTxt = l => l == null ? "—" : (l === 0 ? "winner" : (l > 0 ? "+" : "") + Number(l).toFixed(1));
 const leagueOf = game => String(game || "").replace(/^aec-/, "").split("-")[0];
+let SHOW_ALL = false;   // the ticket list shows what can still be acted on
 const plainGame = game => String(game || "").replace(/^aec-/, "");
 const shortGame = game => plainGame(game).replace(/-\d{4}-\d{2}-\d{2}$/, "").replace(/^[a-z0-9]+-/, "").toUpperCase();
 
@@ -1020,12 +1021,16 @@ function ticketRow(t){
 function renderTickets(){
   const all = (STATE && STATE.tickets) || [];
   all.forEach(t => { TICKETS[t.id] = t; });
-  const mine = all.filter(t => leagueOf(t.game) === LEAGUE);
-  const hidden = all.length - mine.length;
-  $("#tknote").textContent = `${mine.length} of ${all.length}, newest first`
-    + (hidden ? ` · ${hidden} other leagues` : "");
+  const inLeague = all.filter(t => leagueOf(t.game) === LEAGUE);
+  const dead = t => t.status === "open" && ((t.live || {}).state === "GONE" || t.over_budget);
+  const mine = SHOW_ALL ? inLeague : inLeague.filter(t => !dead(t));
+  const hidden = all.length - inLeague.length;
+  const past = inLeague.length - mine.length;
+  $("#tknote").innerHTML = `${mine.length} of ${all.length}, newest first`
+    + (hidden ? ` · ${hidden} other leagues` : "")
+    + (past || SHOW_ALL ? ` · <a href="#" id="tkall" title="a ticket that no longer clears, or one past a cap the server refuses, is history: hidden unless you ask">${SHOW_ALL ? "hide " + inLeague.filter(dead).length + " past" : "show " + past + " past"}</a>` : "");
   const list = $("#tklist"), det = $("#tkdetail");
-  if(!mine.length){ list.innerHTML = `<div class="empty">no ticket for this league</div>`; det.innerHTML = `<div class="empty">—</div>`; SEL = null; return; }
+  if(!mine.length){ list.innerHTML = `<div class="empty">${SHOW_ALL ? "no ticket for this league" : "nothing live right now"}</div>`; det.innerHTML = `<div class="empty">—</div>`; SEL = null; return; }
   /* Newest first. The executor appends, so file order put the oldest ticket
      at the top of the list and, through `find`, under the cursor: on
      2026-09-18 that was a 62-minute-old pair. Past a game's cap the file is
@@ -1049,6 +1054,13 @@ function renderTickets(){
   open.forEach(id => { const x = document.getElementById(id); if(x) x.classList.add("on"); });
   Object.entries(keep).forEach(([id, html]) => { const x = document.getElementById(id); if(x) x.innerHTML = html; });
 }
+
+$("#tknote").addEventListener("click", e => {
+  if(e.target.id !== "tkall") return;
+  e.preventDefault();
+  SHOW_ALL = !SHOW_ALL;
+  renderTickets();
+});
 
 $("#tickets").addEventListener("click", async e => {
   const sel = e.target.closest("button[data-sel]");
