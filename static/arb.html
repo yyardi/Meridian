@@ -265,7 +265,7 @@
   .vt .w b{color:var(--txt)}
 
   /* ── Right: the tickets. A one-line list, the selected one in full. ── */
-  .tkr{display:grid;grid-template-columns:56px minmax(0,1fr) 46px 50px 44px 58px;gap:5px;width:100%;text-align:left;
+  .tkr{display:grid;grid-template-columns:56px minmax(0,1fr) 46px 50px 40px 44px 58px;gap:5px;width:100%;text-align:left;
        padding:4px 10px;border:0;border-bottom:1px solid var(--line2);background:transparent;
        color:var(--dim);cursor:pointer;letter-spacing:0;font-size:11px}
   .tkr>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -476,6 +476,20 @@ const lineTxt = l => l == null ? "—" : (l === 0 ? "winner" : (l > 0 ? "+" : ""
 const leagueOf = game => String(game || "").replace(/^aec-/, "").split("-")[0];
 let SHOW_ALL = false;   // the ticket list shows what can still be acted on
 const plainGame = game => String(game || "").replace(/^aec-/, "");
+/* The older of a ticket's two book ages, and a verdict on it.
+
+   This is the most decision-relevant number on a ticket and it had no column.
+   Measured on 48 games of venue stream on 2026-09-19: crossings whose two
+   legs were both quoted inside two seconds are the ones that survive, and 19
+   of the 20 worth over $25 were in that set — while on the REST book the
+   sampler actually polls, crossings nobody else could see sat on legs a
+   median 884 SECONDS old. A pair is only as live as its staler leg. */
+const legAge = t => {
+  const a = Number(t.leg1_book_age_s), b = Number(t.leg2_book_age_s);
+  const xs = [a, b].filter(x => isFinite(x));
+  return xs.length ? Math.max(...xs) : null;
+};
+const ageCls = s => s == null ? "dimc" : s <= 2 ? "pos" : s <= 60 ? "warnc" : "neg";
 const shortGame = game => plainGame(game).replace(/-\d{4}-\d{2}-\d{2}$/, "").replace(/^[a-z0-9]+-/, "").toUpperCase();
 
 /* The header's height feeds the pane grid so the terminal fills the viewport
@@ -1035,6 +1049,7 @@ function ticketRow(t, g){
     <span>${esc(shortGame(t.game))} <span class="${c1 ? c1 + "c" : ""}">${lineTxt((t.leg1||{}).market_line)}</span>/<span class="${c2 ? c2 + "c" : ""}">${lineTxt((t.leg2||{}).market_line)}</span>${reps}</span>
     <span class="r ${Number(t.edge_c) > 0 ? "pos" : "neg"}">${signed(t.edge_c, 2)}¢</span>
     <span class="r">${money(t.cost_usd)}</span>
+    <span class="r ${ageCls(legAge(t))}" title="the STALER of the two legs' books. A pair is only as live as its older side: on 2026-09-19, across 48 games of venue stream, the crossings that survived a two-second freshness gate held 19 of the 20 worth over $25 — and the ones only the slow REST book saw sat on legs a median 884s old. Green is 2s or under, amber under a minute.">${legAge(t) == null ? "—" : agef(legAge(t))}</span>
     <span class="r">${t.status === "open" ? liveChip(t) : ""}</span>
     <span class="r">${stat}</span></button>`;
 }
