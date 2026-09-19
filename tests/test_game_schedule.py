@@ -92,8 +92,9 @@ def test_a_big_league_is_listed_by_kickoff_slot_not_by_game():
     assert "16:00Z  +2.0h  15 games" in body
     assert "19:30Z  +5.5h  12 games" in body
     assert "more" not in body, "nothing is hidden: every game is in a slot"
-    assert "22:00Z  +8.0h" in body and "cfb-late-one" in body, \
+    assert "22:00Z  +8.0h  cfb-late-one" in body, \
         "a slot of one names the game -- there is nothing to summarise"
+    assert "1 games" not in body
     assert len(body) <= 1400
 
 
