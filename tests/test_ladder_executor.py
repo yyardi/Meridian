@@ -4,6 +4,8 @@ from __future__ import annotations
 import datetime as dt
 import importlib
 import json
+
+import pytest
 import pathlib
 import sys
 
@@ -93,3 +95,20 @@ def test_intent_and_push_speak_the_screen_language():
     assert it["leg2"]["screen_row"] == "WAKE to win by over 7.5 points" and it["leg2"]["screen_button"] == "Yes"
     body = SRC[SRC.index("def push("):SRC.index("def main(")]
     assert "screen_row" in body and "screen_button" in body, "the phone message names the row and the button"
+
+
+def test_over_cap_tickets_are_written_but_never_charged_to_the_budget(tmp_path):
+    """The cap limits PLACING, not detection: past it the executor keeps
+    ticketing so the operator sees what went by. Those rows must not be
+    charged, or a restart re-reads them as spend and the game goes silent."""
+    p = tmp_path / "i.jsonl"
+    p.write_text("\n".join([
+        json.dumps({"cost_usd": 0.96}),
+        json.dumps({"cost_usd": 0.96}),
+        json.dumps({"cost_usd": 0.95, "over_budget": True}),
+        json.dumps({"cost_usd": 0.97, "over_budget": True}),
+    ]) + "\n")
+    assert EX.spent_so_far(str(p)) == pytest.approx(1.92), "only the charged ones"
+    src = SRC[SRC.index("while time.time() < end"):]
+    assert 'it["over_budget"] = over' in src, "every ticket says which it is"
+    assert "if not over:" in src and "push(it)" in src, "an over-cap ticket is not pushed"
