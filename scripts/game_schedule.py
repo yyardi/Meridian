@@ -100,8 +100,11 @@ def compose(games: list[dict], now: dt.datetime) -> tuple[str, str]:
             for tip, slot in _by_kickoff(group):
                 when = "live" if tip <= now else f"+{(tip - now).total_seconds() / 3600:.1f}h"
                 big = max(slot, key=lambda g: g["rungs"])
-                lines.append(f"  {tip:%H:%M}Z {when:>6}  {len(slot)} games"
-                             + (f", incl {big['game']}" if len(slot) > 1 else f"  {big['game']}"))
+                # A slot of one has nothing to summarise, so it reads like the
+                # small-league line rather than "1 games".
+                what = (f"{len(slot)} games, incl {big['game']}" if len(slot) > 1
+                        else f"{big['game']}  {big['rungs']} rungs")
+                lines.append(f"  {tip:%H:%M}Z {when:>6}  {what}")
         else:
             for g in group:
                 tip = g["tip"]
