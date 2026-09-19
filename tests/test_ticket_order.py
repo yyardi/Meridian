@@ -144,3 +144,17 @@ def test_a_tail_that_vanishes_between_the_glob_and_the_stat_is_not_an_error(tmp_
     (tmp_path / "live_ladder_aec-cfb-a-b-2026-09-19.txt").write_text("x\n", encoding="utf-8")
     assert len(desk.log_files(str(tmp_path), "executor")) == 1
     assert desk.log_files(str(tmp_path / "gone"), "executor") == []
+
+
+def test_a_ticket_whose_game_left_the_board_counts_as_past():
+    """The third kind of history, and the one that was missing. A ticket the
+    server cannot price -- because nobody is sampling that game any more --
+    gets no live block, so a GONE test was False for it and it stayed in the
+    list forever, while today's tickets were hidden the moment their crossing
+    closed. Absence of a verdict is not a pass."""
+    body = _code("function renderTickets(")
+    assert "const onBoard = new Set((STATE.games || []).map(plainGame))" in body
+    assert "!onBoard.has(plainGame(t.game))" in body
+    d = body[body.index("const dead ="):body.index("const mine")]
+    assert "GONE" in d and "over_budget" in d and "onBoard" in d, \
+        "all three kinds of past in one predicate"
