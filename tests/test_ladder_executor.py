@@ -111,8 +111,31 @@ def test_over_cap_tickets_are_written_but_never_charged_to_the_budget(tmp_path):
     assert EX.spent_so_far(str(p)) == pytest.approx(1.92), "only the charged ones"
     src = SRC[SRC.index("while time.time() < end"):]
     assert 'it["over_budget"] = over' in src, "every ticket says which it is"
-    assert "if not (over or a.quiet) and time.time() - pushed.get(key" in src, \
+    gate = src[src.index("if not (over or a.quiet)"):src.index("push(it)")]
+    assert "over" in gate and "a.quiet" in gate and "pushed.get(key" in gate, \
         "an over-cap ticket is not pushed, and --quiet silences the rest"
+
+
+def test_the_phone_has_its_own_floor_and_it_reads_the_same_number_as_the_page():
+    """Two floors, two questions. --floor-usd asks whether a pair is worth the
+    desk showing; --push-floor-usd asks whether it is worth waking someone.
+    Collapsing them is what makes a phone useless: on 2026-09-18, three games
+    put 93 episodes over $25 and only 13 over $500.
+
+    The floor must be measured in the SAME expression the ladder page ranks
+    by, or a number read off /log means something else here. Both scan with
+    max_size=1e12, and the push gate reads `x.dollars` -- the Violation field
+    /log's best_dollars comes from -- not a recomputed cost."""
+    src = SRC[SRC.index("def main("):]
+    assert '"--push-floor-usd", type=float, default=0.0' in src, \
+        "default 0 pushes every ticket: the floor is opt-in, not a silent mute"
+    loop = SRC[SRC.index("while time.time() < end"):]
+    assert "loud = x.dollars >= a.push_floor_usd" in loop
+    assert "and loud" in loop, "the floor is ANDed into the push gate, not into ticketing"
+    assert "max_size=1e12" in loop, "the same size cap /log's scan uses"
+    write = loop[:loop.index("loud =")]
+    assert "push_floor_usd" not in write, \
+        "the floor must not touch the write: a ticket below it still reaches the desk"
 
 
 def test_the_phone_is_deduped_per_pair_but_the_ticket_is_not():

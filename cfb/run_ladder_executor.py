@@ -135,6 +135,14 @@ def main() -> int:
     ap.add_argument("--push-cooldown", type=float, default=5.0,
                     help="minutes between PHONE alerts for the same pair; the ticket is "
                          "still written every cycle. 0 = push every one")
+    ap.add_argument("--push-floor-usd", type=float, default=0.0,
+                    help="only alert the phone above this edge x displayed size; the "
+                         "ticket is still written at --floor-usd. 0 = alert on every "
+                         "ticket. This is the SECOND floor and it exists because the "
+                         "two thresholds answer different questions: --floor-usd asks "
+                         "'is this worth the desk showing', --push-floor-usd asks 'is "
+                         "this worth interrupting a person'. On 2026-09-18, three games "
+                         "put 93 episodes over $25 and 13 over $500.")
     ap.add_argument("--quiet", action="store_true",
                     help="write tickets but send no phone alert at all -- the desk shows "
                          "every one with its own liveness, so the phone is redundant once "
@@ -190,7 +198,13 @@ def main() -> int:
                     f.write(json.dumps(it) + "\n")
                 spent += 0.0 if over else it["cost_usd"]
                 last[key] = time.time(); issued = it
-                if not (over or a.quiet) and time.time() - pushed.get(key, -1e9) >= a.push_cooldown * 60:
+                # x.dollars is the same expression --floor-usd is measured
+                # in and the same one /log ranks episodes by (both scan with
+                # max_size=1e12), so a threshold read off that page means here
+                # exactly what it meant there.
+                loud = x.dollars >= a.push_floor_usd
+                if not (over or a.quiet) and loud \
+                        and time.time() - pushed.get(key, -1e9) >= a.push_cooldown * 60:
                     pushed[key] = time.time()
                     push(it)
                 break
