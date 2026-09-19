@@ -48,11 +48,15 @@ from core.executor import (
     round_to_tick,
 )
 from core.ladder import desk as _ladder_desk
+from core.ladder import gamelog as _ladder_gamelog
+from core.ladder import gamelog_page as _ladder_gamelog_page
 from core.ladder import pnl as _ladder_pnl
 from core.ladder import pnl_page as _ladder_pnl_page
+from core.ladder import tape as _ladder_tape
 from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for
 from core.ladder.live import book_age_s, line_of, sample, slugs_for
-from core.ladder.scan import best_per_game, fee, scan_ladder
+from core.ladder.scan import (MAX_PLAUSIBLE_EDGE, MAX_PLAUSIBLE_SIZE,
+                              best_per_game, fee, scan_ladder)
 from core.ladder.ui import ui_wording
 from core.polymarket.client import (
     MissingCredentialsError,
@@ -3092,8 +3096,29 @@ def _arb_live_block(t: dict, snap: dict | None, now: float) -> dict | None:
         the ticketed cost;
       * a BUY NO leg's ticketed cost is ``1 - that rung's YES bid``, so it is
         still available while the bid is at or above ``1 - cost``.
-    The state is LIVE when both hold, MOVED when they do not but the pair
-    still clears fee-netted at the current prices, and GONE when it does not.
+    A price alone is not availability. Both guards the executor trades by
+    are SIZE and PLAUSIBILITY, and both come from `core.ladder.scan`, never
+    from a second copy here:
+
+      * the tradeable size of a pair is the MIN of the two legs' displayed
+        size on the side we take (the ask we lift, the bid we hit), capped
+        at ``MAX_PLAUSIBLE_SIZE`` exactly as ``scan_ladder`` caps it, so
+        ``size_now`` / ``dollars_now`` ARE the centre pane's violation row;
+      * an edge above ``MAX_PLAUSIBLE_EDGE`` is a stale deep rung nobody has
+        re-quoted, not a market (scan.py:5-10) — the centre pane drops those
+        entirely, so a ticket must not read as the best thing on the page
+        because one of its rungs went stale.
+
+    The state, in the order the checks bind:
+      * STALE  — ``edge_now`` is above the scan module's plausibility bound.
+        Not a price; ``implausible`` is True and the page must not select it.
+      * MOVED  — a leg is dearer than ticketed but the pair still clears
+        fee-netted; GONE when it no longer clears.
+      * THIN   — priced at the ticket or better with less size behind it
+        than the ticket asks for. Before 2026-09-18 this read LIVE while the
+        SAME snapshot's violation row said $0.00 / not a candidate.
+      * LIVE   — both legs at the ticketed price or better, with at least the
+        ticket's own quantity displayed on each side.
     None is UNKNOWN: no sample, an unavailable one, one older than the
     unwind's own staleness bound, or a rung this sample does not carry.
     **Never LIVE for want of data — absence is not confirmation.**
@@ -3112,26 +3137,51 @@ def _arb_live_block(t: dict, snap: dict | None, now: float) -> dict | None:
         return None
     if age_s > _ARB_STALE_TOUCH_INTERVALS * _arb_sample_seconds():
         return None
-    legs, costs, oks = {}, [], []
+    legs, costs, oks, sizes, thin = {}, [], [], [], []
     for key in ("leg1", "leg2"):
         leg = t.get(key) or {}
         try:
             cost = float(leg["price"])
+            qty = float(leg.get("qty") or 0)
             rung = snap["rungs"][f"{float(leg['market_line']):g}"]
             if str(leg.get("side") or "").upper().endswith("YES"):
                 now_cost = float(rung["ask"])              # we lift the ask
+                now_size = float(rung["ask_sz"])           # and only what it shows
             else:
                 now_cost = round(1.0 - float(rung["bid"]), 4)   # we hit the bid
+                now_size = float(rung["bid_sz"])
         except (KeyError, TypeError, ValueError):
             return None
         legs[key] = now_cost
         costs.append(now_cost)
+        sizes.append(now_size)
         oks.append(now_cost <= cost + _ARB_LIVE_EPS)
+        # A zero-size quote is never available, whatever the ticket asks for:
+        # an intent written off an empty book carries qty 0 and would
+        # otherwise clear this test by asking for nothing.
+        thin.append(now_size <= 0.0 or now_size + _ARB_LIVE_EPS < qty)
     c1, c2 = costs
     edge_now = 1.0 - c1 - c2 - fee(c1) - fee(c2)
+    # The pair is only as large as its smaller side, and the scan module's own
+    # cap applies: this is Violation.size, so the two panes report one number.
+    size_now = min(sizes + [MAX_PLAUSIBLE_SIZE])
+    implausible = edge_now > MAX_PLAUSIBLE_EDGE
+    if implausible:
+        state = "STALE"
+    elif not all(oks):
+        state = "MOVED" if edge_now > 0 else "GONE"
+    elif any(thin):
+        state = "THIN"
+    else:
+        state = "LIVE"
     moved = [n for n, ok in zip((1, 2), oks) if not ok]
     return {
-        "state": "LIVE" if all(oks) else ("MOVED" if edge_now > 0 else "GONE"),
+        "state": state,
+        "implausible": implausible,
+        "size_now": size_now,
+        "dollars_now": round(edge_now * size_now, 2),
+        "thin_leg": None if not any(thin) else (
+            "both" if all(thin) else f"leg {1 if thin[0] else 2}"),
         "leg1_now": legs["leg1"], "leg2_now": legs["leg2"],
         "leg1_delta_c": round((legs["leg1"] - float((t.get("leg1") or {})["price"])) * 100, 2),
         "leg2_delta_c": round((legs["leg2"] - float((t.get("leg2") or {})["price"])) * 100, 2),
@@ -4335,6 +4385,30 @@ def arb_pnl_page() -> str:
     out = _ladder_desk.api_out_dir()
     stamp = dt.datetime.now(UTC).strftime("%Y-%m-%d %H:%M") + "Z"
     return _ladder_pnl_page.render(_ladder_pnl.session(out), _ladder_pnl.opportunity(out), out, stamp)
+
+
+@app.get("/log", response_class=HTMLResponse)
+def arb_gamelog_page(game: str = Query("", max_length=120)) -> str:
+    """Every opportunity a game's tape showed, acted on or not.
+
+    The ARB tab's ticket list is a to-do list — a ticket that no longer clears
+    is hidden — so nothing on the dashboard held the FULL record of a night.
+    This is that record: one row per episode, with the operator's own tickets
+    joined on, so an episode with no ticket beside it is visible as what it is.
+
+    Server-rendered for the same reason /pnl is: every number is arithmetic
+    over files `/api/arb/state` already reads, so there is nothing to poll and
+    nothing that can disagree with the tab.
+
+    `game` is empty for the most recently written tape, which is what opening
+    /log mid-slate should show.
+    """
+    out = _ladder_desk.api_out_dir()
+    stamp = dt.datetime.now(UTC).strftime("%Y-%m-%d %H:%M") + "Z"
+    return _ladder_gamelog_page.render(
+        _ladder_gamelog.game_log(out, game or None),
+        _ladder_gamelog.slate_log(out),
+        _ladder_tape.games(out), out, stamp)
 
 
 @app.get("/quote")
