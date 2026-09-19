@@ -969,3 +969,254 @@ def test_the_page_gates_send_on_armed_and_unwind_on_the_send_mark(page):
     assert "pc + fees >= 1) return bad(" in send
     tip = re.search(r'title="The executor\'s lock file[^"]*"', page).group(0)
     assert "SEND is not offered" in tip and "server refuses every send" in tip
+
+
+# --------------------------------------------------------------------------- #
+# Ticket liveness: a ticket is a snapshot of one instant, not a standing offer
+# --------------------------------------------------------------------------- #
+
+def _snap(rungs=None, at=None):
+    return api_module._arb_ladder_snapshot(GAME, dict(rungs or RUNGS), {}, 1.0,
+                                           time.time() if at is None else at)
+
+
+def _tick(rungs, line, *, bid=None, ask=None):
+    """One rung re-quoted, the rest of the ladder untouched."""
+    out = dict(rungs)
+    b, a, bs, asz = out[line]
+    out[line] = (b if bid is None else bid, a if ask is None else ask, bs, asz)
+    return out
+
+
+def test_a_ticket_is_live_at_the_ticketed_price_and_moves_one_tick_later():
+    """The boundary is the whole point: the ticket asks for 0.41 and the rung
+    asks 0.41, so it is LIVE — not MOVED for a float's sake. One tick dearer
+    it still clears fee-netted (MOVED); five ticks dearer it does not (GONE),
+    and the block names the leg that moved and by how much."""
+    now = time.time()
+    live = api_module._arb_live_block(INTENT, _snap(at=now), now)
+    assert live["state"] == "LIVE" and live["moved_leg"] is None
+    assert (live["leg1_now"], live["leg2_now"]) == (0.41, 0.53)
+    assert live["leg1_delta_c"] == 0.0 and live["leg2_delta_c"] == 0.0
+
+    moved = api_module._arb_live_block(INTENT, _snap(_tick(RUNGS, 10.5, ask=0.42), now), now)
+    assert moved["state"] == "MOVED" and moved["moved_leg"] == "leg 1"
+    assert moved["leg1_now"] == 0.42 and moved["leg1_delta_c"] == 1.0
+    assert 0 < moved["edge_now_c"] < INTENT["edge_c"]
+
+    gone = api_module._arb_live_block(INTENT, _snap(_tick(RUNGS, 10.5, ask=0.46), now), now)
+    assert gone["state"] == "GONE" and gone["moved_leg"] == "leg 1"
+    assert gone["leg1_delta_c"] == 5.0 and gone["edge_now_c"] < 0
+
+
+def test_the_second_leg_is_read_in_the_cost_frame_and_both_can_move():
+    """Leg 2 buys NO at the harder line: its ticketed 0.53 is 1 - the rung's
+    YES bid of 0.47, so the bid falling to 0.46 makes the leg cost 0.54."""
+    now = time.time()
+    one = api_module._arb_live_block(INTENT, _snap(_tick(RUNGS, 7.5, bid=0.46), now), now)
+    assert one["leg2_now"] == 0.54 and one["leg2_delta_c"] == 1.0 and one["moved_leg"] == "leg 2"
+    both = api_module._arb_live_block(
+        INTENT, _snap(_tick(_tick(RUNGS, 7.5, bid=0.46), 10.5, ask=0.42), now), now)
+    assert both["moved_leg"] == "both" and both["state"] == "MOVED"
+    dead = api_module._arb_live_block(
+        INTENT, _snap(_tick(_tick(RUNGS, 7.5, bid=0.44), 10.5, ask=0.44), now), now)
+    assert dead["moved_leg"] == "both" and dead["state"] == "GONE"
+
+
+def test_the_live_edge_is_scan_ladders_own_fee_model_not_a_second_copy():
+    """`1 - c1 - c2 - fee(c1) - fee(c2)` in the cost frame IS
+    `sell - buy - fee(buy) - fee(sell)`: the fee curve is symmetric about
+    0.5, so the two frames agree to the cent the page prints. If they ever
+    diverge, the page and the executor are pricing different trades."""
+    from core.ladder.scan import scan_ladder
+    now = time.time()
+    for ask in (0.41, 0.42, 0.44, 0.46):
+        rungs = _tick(RUNGS, 10.5, ask=ask)
+        live = api_module._arb_live_block(INTENT, _snap(rungs, now), now)
+        pair = [v for v in scan_ladder(GAME, rungs, max_size=1e12)
+                if (v.high_line, v.low_line) == (10.5, 7.5)]
+        if pair:
+            assert live["edge_now_c"] == pytest.approx(round(pair[0].edge * 100, 2), abs=0.01)
+        else:
+            assert live["edge_now_c"] <= 0, "no violation means the pair does not clear"
+
+
+@pytest.mark.parametrize("snap, why", [
+    (None, "the game is not sampled at all"),
+    ({"available": False, "reason": "first sample pending"}, "the sample failed"),
+    ({"available": True, "sampled_ts": None, "rungs": {}}, "the sample carries no clock"),
+])
+def test_no_current_sample_is_unknown_and_never_live(snap, why):
+    assert api_module._arb_live_block(INTENT, snap, time.time()) is None, why
+
+
+def test_a_stale_sample_and_a_missing_rung_are_unknown_not_live(monkeypatch):
+    """Two ways to be told nothing: a sample older than the unwind's own
+    staleness bound, and a ladder that does not carry one of the legs. Both
+    answer UNKNOWN. A ticket is never LIVE for want of data."""
+    monkeypatch.setenv("MERIDIAN_ARB_SAMPLE_SECONDS", "10")
+    now = time.time()
+    assert api_module._arb_live_block(INTENT, _snap(at=now - 19), now)["state"] == "LIVE"
+    assert api_module._arb_live_block(INTENT, _snap(at=now - 21), now) is None
+    thin = {k: v for k, v in RUNGS.items() if k != 10.5}
+    assert api_module._arb_live_block(INTENT, _snap(thin, now), now) is None
+
+
+def test_state_attaches_the_live_block_from_the_cache_the_ladder_serves(client, reads, monkeypatch):
+    """Same cache, so the centre pane and the ticket panel cannot disagree —
+    and only an open ticket carries the block, because only an open ticket
+    can be sent."""
+    monkeypatch.setitem(api_module._ARB_LADDER, "cache", {PREFIX: _snap()})
+    t = client.get("/api/arb/state").json()["tickets"][0]
+    assert t["live"]["state"] == "LIVE" and t["live"]["age_s"] < 5
+    assert t["live"]["leg1_now"] == 0.41 and t["live"]["edge_now_c"] == pytest.approx(3.05, abs=0.01)
+    desk.record_attempt(str(reads), TICKET_ID, "placed")
+    assert "live" not in client.get("/api/arb/state").json()["tickets"][0]
+
+
+def test_state_without_a_sample_leaves_the_block_off_entirely(client, reads, monkeypatch):
+    monkeypatch.setitem(api_module._ARB_LADDER, "cache", {})
+    t = client.get("/api/arb/state").json()["tickets"][0]
+    assert "live" not in t and t["sendable"] is True, "unknown liveness does not block a send"
+
+
+# --------------------------------------------------------------------------- #
+# Over-cap tickets: the cap limits placing, not detection
+# --------------------------------------------------------------------------- #
+
+def test_an_over_cap_ticket_is_shown_in_full_and_is_not_sendable(client, reads):
+    """The executor now writes a ticket past the game's cap, flags it and
+    does not push it; the send route refuses it. It must still arrive on the
+    page with every term, because seeing what went by is the point."""
+    over = dict(INTENT, ts="23:52:00", over_budget=True)
+    with open(reads / f"ladder_intents_{PREFIX}.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(over) + "\n")
+    by_ts = {t["ts"]: t for t in client.get("/api/arb/state").json()["tickets"]}
+    flagged, plain = by_ts["23:52:00"], by_ts["23:41:07"]
+    assert flagged["over_budget"] is True and flagged["sendable"] is False
+    assert flagged["status"] == "open" and flagged["spread_pair"] is True
+    assert flagged["leg1"]["price"] == 0.41 and flagged["cost_usd"] == 1.88
+    assert plain["over_budget"] is False and plain["sendable"] is True
+
+
+def test_the_send_route_refuses_an_over_cap_ticket_before_the_venue(client, reads, no_db_no_venue):
+    over = dict(INTENT, ts="23:52:00", over_budget=True)
+    with open(reads / f"ladder_intents_{PREFIX}.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(over) + "\n")
+    body = _send_body(ticket_id=f"{GAME}|23:52:00|10.5/7.5")
+    r = client.post("/api/arb/send", json=body, headers=TOKEN)
+    assert r.status_code == 409 and "past its ticket cap" in r.json()["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# The page renders the block; it does not recompute it
+# --------------------------------------------------------------------------- #
+
+def test_the_page_renders_the_live_block_and_carries_no_second_fee_model(page):
+    """The four states are the server's word, rendered. The fee arithmetic
+    stays in core.ladder.scan: the page's only 0.06 is the confirm modal's
+    own pre-existing guard, and the liveness functions have none."""
+    for fn in ("function liveChip(t){", "function liveBanner(t){"):
+        body = _fn(page, fn)
+        assert "t.live" in body and "LIVE_WORDS" in body
+        for machinery in ("0.06", "fee", "Math."):
+            assert machinery not in body, f"{machinery} is the server's job"
+    assert '"lv unknown"' in _fn(page, "function liveChip(t){")
+    assert '"lv unknown"' in _fn(page, "function liveBanner(t){")
+    send = _fn(page, "function openSend(t){")
+    for m in re.finditer(r"0\.06", page):
+        assert page.index(send) <= m.start() < page.index(send) + len(send), \
+            "a second fee model on the page is a second answer"
+    # Every state the server can return has words on the page, and UNKNOWN is
+    # the default rather than a fourth branch that could fall through to LIVE.
+    words = _fn(page, "const LIVE_WORDS = {")
+    for state in ("LIVE:", "MOVED:", "GONE:"):
+        assert state in words, state
+    assert "UNKNOWN" not in words, "UNKNOWN is the absence of a block, not a value"
+
+
+def test_the_ticket_panel_shows_liveness_on_the_row_and_the_card(page):
+    row = _fn(page, "function ticketRow(t){")
+    assert "liveChip(t)" in row and 'class="st cap"' in row and "over cap" in row
+    card = _fn(page, "function ticketCard(t){")
+    assert "liveBanner(t)" in card
+    assert "capnote" in card and "not what is detected" in card
+    # The card hands each leg its current price; legLine prints it beside the
+    # ticketed one rather than in place of it.
+    assert "now: lv.leg1_now" in card and "now: lv.leg2_now" in card
+    leg = _fn(page, "function legLine(n, leg, game, first){")
+    assert "cost ${num(leg.price, 3)}" in leg and "leg.now" in leg
+
+
+def test_a_send_on_a_pair_that_no_longer_clears_is_offered_not_recommended(page):
+    """GONE de-emphasises the button and puts the reason on it; it does not
+    remove it — the operator may still choose, and a page that hides the
+    choice teaches nothing about why."""
+    acts = _fn(page, "function ticketActions(t){")
+    assert 'lv.state === "GONE"' in acts and 'gone ? "faded" : "go"' in acts
+    assert "no longer clears on the current sample" in acts
+    assert 'data-act="send"' in acts, "the button is still there"
+    assert "SEND (over cap)" in acts and "t.over_budget" in acts
+    assert "button.faded" in page, "the de-emphasis has a style"
+    # The last screen before the money says what the pair is doing now.
+    assert "liveBanner(t)" in _fn(page, "function openSend(t){")
+
+
+def test_the_leg_colours_follow_the_easier_and_harder_line_not_the_leg_order(page):
+    """Green is the line we BUY (the easier, higher one) and red the line we
+    SELL, whichever leg number carries it. Pinned at the one place the page
+    decides it: a ticket whose leg 1 held the LOWER line would come out red.
+    (Source-level: there is no JS runtime in this suite.)"""
+    fn = _fn(page, "function legCls(t){")
+    assert 'a > b ? ["buy", "sell"] : ["sell", "buy"]' in fn
+    assert "market_line" in fn and "isFinite(a) && isFinite(b)" in fn
+    for caller in ("function ticketRow(t){", "function ticketCard(t){"):
+        assert "legCls(t)" in _fn(page, caller), caller
+    # Both callers take the pair in the order legCls returns it; neither
+    # hands "buy" to leg 1 by name.
+    for caller in ("function ticketRow(t){", "function ticketCard(t){"):
+        body = _fn(page, caller)
+        assert "[c1, c2] = legCls(t)" in body, caller
+        assert '"buy"' not in body and '"sell"' not in body, caller
+
+
+def test_the_ladder_lights_the_side_it_would_touch_and_keeps_the_accent(page):
+    """Three meanings, three marks: green on the rung bought at its ask, red
+    on the rung sold at its bid, and the accent still saying 'this rung
+    breaks its bound'. The bounds and the pair remain the server's."""
+    body = _fn(page, "function renderLadder(){")
+    assert "tkt.high_line" in body and "tkt.low_line" in body
+    assert "tkbuy" in body and "tksell" in body
+    assert "actbuy" in body and "actsell" in body
+    assert 'bidLit ? "lit"' in body and 'askLit ? "lit"' in body, "the accent keeps its own meaning"
+    for machinery in ("Math.max(", "Math.min(", "scan"):
+        assert machinery not in body, f"{machinery} is the server's job"
+    # inBuy is the ask side, inSell the bid side, and not the other way round.
+    assert "inBuy = !!tkt && r.line === tkt.high_line" in body
+    assert "inSell = !!tkt && r.line === tkt.low_line" in body
+    assert body.index("inSell ? \" act actsell\"") < body.index("inBuy ? \" act actbuy\"")
+    # and the three colours are named once, under the ladder's own header
+    legend = page[page.index('<div class="legend">'):page.index('<div id="ladder">')]
+    for word in ("buy · easier line · at its ask", "sell · harder line · at its bid",
+                 "breaks its bound"):
+        assert word in legend, word
+
+
+def test_the_panel_leads_with_the_newest_and_never_opens_on_a_stale_ticket(page):
+    """The executor appends, so file order put the OLDEST ticket at the top
+    of the list and under the cursor — which is how a 62-minute-old pair came
+    to be the one on screen. Newest first, and the default selection prefers
+    a ticket that is both sendable and LIVE on the current sample. A ticket
+    with no live block never wins it: unknown is not live."""
+    body = _fn(page, "function renderTickets(){")
+    assert "const newest = [...mine].reverse()" in body
+    assert "newest.map(ticketRow)" in body and "mine.map(ticketRow)" not in body
+    assert 't.sendable && (t.live || {}).state === "LIVE"' in body
+    assert body.index('state === "LIVE"') < body.index("newest.find(t => t.sendable) ||"), \
+        "live-and-sendable is preferred to merely sendable"
+
+
+def test_the_violations_table_colours_its_legs_by_the_line_too(page):
+    ladder = _fn(page, "function renderLadder(){")
+    assert 'Number(l1.market_line) > Number(l2.market_line) ? ["buyc", "sellc"] : ["sellc", "buyc"]' in ladder
+    assert "${vc1}" in ladder and "${vc2}" in ladder
