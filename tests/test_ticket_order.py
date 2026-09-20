@@ -187,3 +187,11 @@ def test_the_state_route_sends_only_tickets_for_games_on_the_board():
     assert "in on_board]" in body, "the view is built only for on-board games"
     assert '"tally": _ladder_desk.tally(raw)' in body, "the tally sees the whole file"
     assert '"tickets_on_file": len(raw)' in body
+
+
+def test_a_game_the_stream_detector_watches_is_on_the_board(tmp_path):
+    """It logs to stream_exec_*.txt and touches its intents file only when it
+    tickets; the board must not wait for a ticket to admit the game exists."""
+    f = tmp_path / "stream_exec_aec-nfl-phi-ten-2026-09-20.txt"
+    f.write_text("stream executor prefix=... rungs=42\n", encoding="utf-8")
+    assert desk.recent_games(str(tmp_path)) == ["aec-nfl-phi-ten-2026-09-20"]

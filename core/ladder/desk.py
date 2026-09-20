@@ -250,8 +250,13 @@ def recent_games(out_dir: str, within_s: float = 6 * 3600, now: float | None = N
     nothing still touches its log every cycle."""
     now = dt.datetime.now(dt.timezone.utc).timestamp() if now is None else now
     seen: dict[str, float] = {}
+    # The stream detector logs to stream_exec_<prefix>.txt and touches its
+    # intents file only when it tickets, so without this line a game it is
+    # watching is not "on the board" until it finds something -- on
+    # 2026-09-20 the desk said "3 in 6h" while eight NFL games were live.
     for pat, head, ext in (("ladder_intents_*.jsonl", "ladder_intents_", ".jsonl"),
-                           ("live_ladder_aec-*.txt", "live_ladder_", ".txt")):
+                           ("live_ladder_aec-*.txt", "live_ladder_", ".txt"),
+                           ("stream_exec_aec-*.txt", "stream_exec_", ".txt")):
         for p in glob.glob(os.path.join(out_dir, pat)):
             try:
                 age = now - os.path.getmtime(p)
