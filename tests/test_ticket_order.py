@@ -172,3 +172,18 @@ def test_the_row_carries_the_staler_leg_s_book_age():
     assert "ageCls(legAge(t))" in row and "agef(legAge(t))" in row
     grid = PAGE[PAGE.index(".tkr{"):PAGE.index(".tkr>span")]
     assert grid.count("px") >= 6, "the grid gained a column for it"
+
+
+def test_the_state_route_sends_only_tickets_for_games_on_the_board():
+    """Pricing every ticket ever written against the ladder on each poll was
+    7.2 s and 451 KB per call on 2026-09-20; the page hid all but today's
+    anyway. The tally keeps the full file, because 'placed' is about all
+    time and needs no pricing."""
+    src = pathlib.Path(__file__).resolve().parents[1] / "core" / "api.py"
+    body = src.read_text(encoding="utf-8")
+    body = body[body.index("def arb_state("):body.index("def ", body.index("def arb_state(") + 10)]
+    assert "games = _ladder_desk.recent_games(out)" in body
+    assert body.index("recent_games") < body.index("load_tickets"), "games first, then filter"
+    assert "in on_board]" in body, "the view is built only for on-board games"
+    assert '"tally": _ladder_desk.tally(raw)' in body, "the tally sees the whole file"
+    assert '"tickets_on_file": len(raw)' in body

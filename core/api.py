@@ -3217,7 +3217,17 @@ def arb_state() -> dict:
                 "note": f"reads directory {out} is not mounted in this container"}
     try:
         now = time.time()
-        tickets = [_arb_ticket_view(t) for t in _ladder_desk.load_tickets(out)]
+        games = _ladder_desk.recent_games(out)
+        on_board = {g.replace("aec-", "", 1) for g in games}
+        raw = _ladder_desk.load_tickets(out)
+        # Only tickets for a game on the board are sent and priced. The page
+        # hides every other one as history anyway, and pricing 678 of them
+        # against the ladder on every 10-second poll was 7.2 s and 451 KB per
+        # call -- the desk was spending most of each interval loading itself.
+        # The tally still runs over the full file: its "placed" and "recorded"
+        # counts are about all time, and it reads nothing that needs pricing.
+        tickets = [_arb_ticket_view(t) for t in raw
+                   if str(t.get("game") or "").replace("aec-", "", 1) in on_board]
         for t in tickets:
             # Only an open ticket can be sent, so only an open ticket needs
             # its legs priced against the book the operator is looking at.
@@ -3230,12 +3240,12 @@ def arb_state() -> dict:
                    for p in _ladder_desk.log_files(out, kind)]
             for kind in ("executor", "freshness")
         }
-        games = _ladder_desk.recent_games(out)
     except OSError as exc:
         return {"available": False, "dir": out, "note": f"cannot read {out}: {exc}"}
     return {
         "available": True,
         "dir": out,
+        "tickets_on_file": len(raw),
         "armed": _ladder_desk.armed(out),
         # 0 means NO cap, which is what the launcher now runs: the executor
         # stopped taking --budget-usd on 2026-09-19 because a $2 ceiling had
@@ -3247,7 +3257,7 @@ def arb_state() -> dict:
         "sample_seconds": _arb_sample_seconds(),
         "filters": _arb_filters(),
         "tickets": tickets,
-        "tally": _ladder_desk.tally(tickets),
+        "tally": _ladder_desk.tally(raw),
         "tails": tails,
         "games": games,
         "watching": sorted(_arb_watched(time.time())),

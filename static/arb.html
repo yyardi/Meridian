@@ -658,7 +658,7 @@ function renderState(){
     + kv("ticket cap", Number(s.budget_usd) > 0 ? `$${num(s.budget_usd, 0)} / game` : "none", "LADDER_BUDGET_USD — a cap on what the executor may PROPOSE per game. None by default: a withheld ticket is an opportunity nobody saw, and the capital decision is SEND. The per-pair cap below is the one that limits money.")
     + kv("sampler", `every ${num(s.sample_seconds, 0)}s`, "MERIDIAN_ARB_SAMPLE_SECONDS")
     + kv("watching", `${(s.watching||[]).length}`, (s.watching||[]).join(", ") || "no game is being sampled")
-    + kv("tickets", `${(s.tickets||[]).length} on file`, "every intent the executor wrote, any league");
+    + kv("tickets", `${s.tickets_on_file ?? (s.tickets||[]).length} on file`, "every intent the executor wrote, any league; only tickets for games on the board are sent to the page");
   renderGames();
   renderBudget();
   renderTickets();
