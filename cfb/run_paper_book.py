@@ -12,7 +12,10 @@ A strategy is a rule over the ladder, registered here by name BEFORE its
 weeks accrue. Adding one is a new entry in STRATEGIES; changing one is a new
 name. The point is one table the operator can read on Monday that says which
 paper lines are positive, on how many games, with what interval -- and the
-same table next Monday. Fees: taker 0.0695*p*(1-p) on Polymarket US.
+same table next Monday. Fees: taker coefficient*p*(1-p) on Polymarket US, at the
+coefficient the venue carried ON EACH ROW (market_snapshots.fee_coefficient, selected
+beside the book): the venue raised it at 2026-09-17 04:07Z and a 60-day read spans that
+instant, so one constant across the window overcharges every earlier close by 16 %.
 
 Registered 2026-09-13. LEAGUES env (comma list) limits the run; default all. ONLY=name,name limits strategies.
 Settled labels are cached by core/settlements.py (one JSON file under the reads dir) so a daily run
@@ -20,8 +23,9 @@ costs a few HTTP calls instead of ~18k; only 0/1 is ever cached, an unsettled ma
 Cron: scripts/prod_weekend_read.sh (gate mode, Monday) runs it after H4 and
 writes stdout to artifacts/reads/paper_book_<UTC>.txt.
 
-The per-bet arithmetic is the pure function bet_pnl (with bet_stake) at module
-level, tested without a database in tests/test_longshot_shadow_paper_book.py;
+The per-bet arithmetic is the pure functions bet_pnl and bet_row (with bet_stake) at
+module level, tested without a database in tests/test_longshot_shadow_paper_book.py
+and tests/test_fee_per_row_closing.py;
 the run is under main() and executes only when the file is the script.
 """
 import datetime as dt
@@ -32,7 +36,10 @@ import os
 import tempfile
 from collections import defaultdict
 
-from core.fees import POLYMARKET_TAKER as FEE  # noqa: E402  0.0695, the venue's feeCoefficient
+# FEE is today's coefficient and prices a bet NOW (bet_pnl's default, used by the
+# permutation null and the tests); every close main() scores is charged through
+# recorded_fee at the coefficient its own row carries.
+from core.fees import POLYMARKET_TAKER as FEE, recorded_fee  # noqa: E402
 UTC = dt.timezone.utc
 
 # The registry moved to strategies/ladder.py (ARCHITECTURE.md §4 step 2) so the
@@ -103,7 +110,7 @@ WITH g AS (
   SELECT game_id, min(game_start_time) ko FROM market_snapshots
   WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL AND captured_at > :since GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug, s.sports_market_type mtype, s.game_id, g.ko,
-       s.best_bid::float bid, s.best_ask::float ask, s.captured_at
+       s.best_bid::float bid, s.best_ask::float ask, s.fee_coefficient::float fee_coefficient, s.captured_at
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
 WHERE s.market_slug LIKE ANY(:pats) AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
   AND s.captured_at > :since AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL
@@ -123,14 +130,27 @@ def bet_pnl(side, y, bid, ask, fee=FEE):
 
     side 'yes': buy YES at the ask p:      y - p - fee*p*(1-p)
     side 'no' : buy NO at 1 - bid, p = bid: (1-y) - (1-p) - fee*p*(1-p)
-    The fee is the venue's 0.0695*p*(1-p) on the YES price p either way (p(1-p) is
-    symmetric in p and 1-p, so pricing the fee on the NO price gives the same number).
+    `fee` is the coefficient the venue carried on the ROW the prices came from
+    (market_snapshots.fee_coefficient; bet_row passes it). It is a constant of a
+    period, not of the venue -- raised at 2026-09-17 04:07Z, and a 60-day read
+    spans that instant -- so None is refused (core.fees.recorded_fee), never
+    charged at today's. The default IS today's and is right only for a bet
+    priced now. p(1-p) is symmetric in p and 1-p, so pricing the fee on the NO
+    price gives the same number.
     """
     if side == "yes":
         p = ask
-        return y - p - fee * p * (1 - p)
+        return y - p - recorded_fee(p, fee)
     p = bid
-    return (1 - y) - (1 - p) - fee * p * (1 - p)
+    return (1 - y) - (1 - p) - recorded_fee(p, fee)
+
+
+def bet_row(side, y, r):
+    """(pnl $, stake $, game_id) for one priced close, charged at the coefficient the
+    venue carried on THAT row. A row without `fee_coefficient` is refused (KeyError
+    when CLOSE_SQL lost the column, ValueError when the venue sent NULL)."""
+    return (bet_pnl(side, y, r["bid"], r["ask"], r["fee_coefficient"]),
+            bet_stake(side, r["bid"], r["ask"]), r["game_id"])
 
 
 def clustered(vals, keys):
@@ -219,7 +239,7 @@ def main():
         for r in rows:
             y = settlement(r["market_slug"]); wk = r["ko"].date() - dt.timedelta(days=r["ko"].weekday())
             if y is None: unsettled[wk] += 1; continue
-            weeks[wk].append((bet_pnl(st["side"], y, r["bid"], r["ask"]), bet_stake(st["side"], r["bid"], r["ask"]), r["game_id"]))
+            weeks[wk].append(bet_row(st["side"], y, r))
         for wk in sorted(set(weeks) | set(unsettled)):
             w = weeks.get(wk, [])
             if not w:

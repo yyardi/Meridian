@@ -47,8 +47,9 @@ with its reason** -- silent exclusion is how a family shrinks without anyone dec
 NIGHTLY CONTRACT (scripts/nightly_scan.sh runs this at 04:40Z):
   * exits NON-ZERO on any failure, so a silent empty night is impossible;
   * writes CELLS_JSON (the scored cells) and ROWS_JSON (the per-bet INPUTS, not
-    outputs -- slug, game, bid, ask, y -- so the permutation null can reshuffle
-    settlements within games and recompute, rather than trusting our pnl);
+    outputs -- game, bid, ask, y and the row's fee_coefficient -- so the permutation
+    null can reshuffle settlements within games and recompute, rather than trusting
+    our pnl);
   * needs NO warm settlement cache: it builds the cache as it goes and saves it,
     so the first run on a cold cache is slow but complete, never partial.
 
@@ -66,7 +67,11 @@ from core import settlements
 from core.leagues import LEAGUES, venue_patterns
 from core.polymarket.client import PolymarketGatewayClient
 
-from core.fees import POLYMARKET_TAKER as FEE_PM  # noqa: E402  0.0695, the venue's feeCoefficient
+# The fee is charged at the coefficient the venue carried on EACH close
+# (fee_coefficient, selected beside the book), never at one constant: the venue
+# raised it at 2026-09-17 04:07Z and the unfloored scan reads every partition on
+# both sides of that instant. A row without one is refused, not charged today's.
+from core.fees import recorded_fee  # noqa: E402
 G_FLOOR = 6
 DECILES = [(i / 10, (i + 1) / 10) for i in range(10)]
 MAXCALLS = int(os.environ.get("MAXCALLS", "40000"))
@@ -108,7 +113,7 @@ CLOSE_SQL = """
 WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
   WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL{floor_g} GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug slug, s.sports_market_type mt, s.game_id gid,
-       s.best_bid::float bid, s.best_ask::float ask,
+       s.best_bid::float bid, s.best_ask::float ask, s.fee_coefficient::float fee_coefficient,
        -- ★ THE AGE OF THE CLOSE. A count of closes without their age is a label
        -- that misdescribes its population: a table-tennis match lasts ~14-20
        -- minutes, and a close taken 20 minutes early is a different market state
@@ -250,7 +255,6 @@ def age_summary(ages) -> str:
     return f"age med {q(0.50):.0f}m p90 {q(0.90):.0f}m >1h {over:.0f}%"
 
 
-def fee(p, k=FEE_PM): return k * p * (1 - p)
 def mid(bid, ask): return round((bid + ask) / 2, 4)
 
 
@@ -271,7 +275,8 @@ def poisson_binomial_p(trials):
     to price within the band.
 
     Break-even varies per trial (a single midpoint-derived break-even was wrong by 3.4c
-    on one measured cell), so each trial carries its own ask_i + fee(ask_i).
+    on one measured cell), so each trial carries its own ask_i + fee(ask_i), the fee at
+    the coefficient ITS row carried.
 
     TWO-SIDED BY THE SMALL-p METHOD: the total probability of every outcome AT MOST AS
     LIKELY as the observed one -- scipy.binomtest's convention, so this reduces EXACTLY
@@ -433,9 +438,10 @@ for lg, pat in PATS:
         m = mid(r["bid"], r["ask"])
         for lo, hi in DECILES:
             if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
-            a = r["ask"]
-            CELLS[(lg, mt, lo)].append((y - a - fee(a), r["gid"], r["bid"], a, y,
-                                        abs(m - (lo + 0.05))))   # |mid - decile centre|
+            a, fc = r["ask"], r["fee_coefficient"]        # fc: the coefficient the venue charged on THIS row
+            CELLS[(lg, mt, lo)].append((y - a - recorded_fee(a, fc), r["gid"], r["bid"], a, y,
+                                        abs(m - (lo + 0.05)),     # |mid - decile centre|
+                                        fc))
             STOCK[(lg, mt)][2].add(r["gid"])
     # The floor rides on the SAME LINE as the count it produced. A reader
     # cannot see "22,870 closes" without seeing what was excluded to get it.
@@ -515,7 +521,7 @@ for key, bets in sorted(CELLS.items()):
     best = {}
     for bb in bets:
         if bb[1] not in best or bb[5] < best[bb[1]][5]: best[bb[1]] = bb
-    tr = [(min(max(bb[3] + fee(bb[3]), 1e-9), 1 - 1e-9), 1 if bb[4] == 1 else 0)
+    tr = [(min(max(bb[3] + recorded_fee(bb[3], bb[6]), 1e-9), 1 - 1e-9), 1 if bb[4] == 1 else 0)
           for bb in best.values() if bb[4] in (0, 1)]
     # THE G FLOOR GATES THIS PATH TOO. It used to gate only the sandwich, so a TWO-GAME
     # cell ranked in the top ten at p=8.9e-04 -- and a two-game cell cannot nominate
@@ -536,7 +542,8 @@ for key, bets in sorted(CELLS.items()):
     # as printed, against 5.87 and 1.308 once removed. A sandwich cannot express this;
     # the honest instrument is a binomial bound on the win count, so these are excluded
     # from every distributional statistic and reported separately.
-    # the bet tuple is (pnl, game_id, bid, ask, y) -- the SETTLEMENT is index 4.
+    # the bet tuple is (pnl, game_id, bid, ask, y, |mid - centre|, fee_coefficient) --
+    # the SETTLEMENT is index 4, the row's COEFFICIENT index 6.
     ys = {b[4] for b in bets}
     if len(ys) < 2:
         excluded.append((key, n, G, f"DEGENERATE: all {n} bets settled {next(iter(ys))} -- no outcome variation"))
@@ -671,7 +678,8 @@ def _write_json(path: str, payload) -> None:
 if os.environ.get("ROWS_JSON"):                 # the permutation null consumes the INPUTS
     _write_json(os.environ["ROWS_JSON"],
                 [{"lg": k[0], "mt": k[1], "dec": k[2], "game": b[1], "bid": b[2],
-                  "ask": b[3], "y": b[4]} for k, bs in CELLS.items() for b in bs])
+                  "ask": b[3], "y": b[4], "fee_coefficient": b[6]}
+                 for k, bs in CELLS.items() for b in bs])
     print(f"\n  wrote ROWS_JSON {os.environ['ROWS_JSON']}"
           f" ({sum(len(v) for v in CELLS.values()):,} bet inputs)")
 if os.environ.get("CELLS_JSON"):

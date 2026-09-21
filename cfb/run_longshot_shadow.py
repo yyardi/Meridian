@@ -3,7 +3,10 @@ r"""Longshot-NO shadow lister. SHADOW ONLY: this script PLACES NOTHING.
 The bet (docs/math/longshot-no-candidate.md, section 1): before kickoff, on every
 CFB full-game spread rung whose YES mid = (best_bid + best_ask) / 2 is in
 [0.20, 0.30), buy NO at 1 - best_bid (taking the resting YES bid), hold to
-settlement, net of the 0.0695 * p * (1 - p) taker fee. That rule is a HYPOTHESIS
+settlement, net of the taker fee coefficient * p * (1 - p) at the coefficient the
+venue carried on that snapshot row (fee_coefficient, selected beside the book; the
+venue raised it at 2026-09-17 04:07Z, so a replay DATE before then is charged less
+than one after). That rule is a HYPOTHESIS
 under a registered read on 2026-09-19 (doc section 4), not a result. This lists
 what the rule would have done (replay) or would do now (live) so timing, depth
 and the rung set a live process sees can be checked against the backtest.
@@ -64,20 +67,24 @@ carry a depth row, so the LATEST sample in the window is shown with its age;
 '*' = its level price is not the quote's bid; 'n/a' = no sample. Never assumed.
 
 The decisions a live process must get right are pure functions at module level
-(passes_spread_cap, choose_kickoff, buy_no_pnl_c, write_orders_csv) so
-tests/test_longshot_shadow_paper_book.py checks them without a database; the
-run itself is under main() and only executes when the file is the script.
+(passes_spread_cap, choose_kickoff, buy_no_pnl_c, rung_pnl_c, write_orders_csv) so
+tests/test_longshot_shadow_paper_book.py and tests/test_fee_per_row_closing.py check
+them without a database; the run itself is under main() and only executes when the
+file is the script.
 """
 import csv
 import datetime as dt
 import os
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 MODE, DATE = os.environ.get("MODE", "replay"), os.environ.get("DATE", "2026-09-12")
 try:
-    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
-except ImportError:                                  # run bare, no repo root on sys.path
-    FEE = 0.0695
+    from core.fees import recorded_fee              # the fee at the coefficient the venue carried on THAT row
+except ImportError:                                  # run bare (trainer image mounts cfb/ only): the same strict form, no constant
+    def recorded_fee(price, coefficient):
+        if coefficient is None:
+            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
+        return float(coefficient) * price * (1.0 - price)
 LO, HI = 0.20, 0.30
 SPREAD_CAP = 0.06            # skip a rung whose ask - bid exceeds this (doc section 3c)
 START_DISAGREE_MIN = 30      # print games whose venue start values disagree by more than this
@@ -112,7 +119,7 @@ WHERE game_id = ANY(:gids) AND sports_market_type = :t AND captured_at BETWEEN :
 """
 SNAPS_SQL = """
 SELECT game_id vg, event_slug, market_slug, line::float line, best_bid::float bid, best_ask::float ask,
-       captured_at, game_start_time
+       fee_coefficient::float fee_coefficient, captured_at, game_start_time
 FROM market_snapshots
 WHERE game_id = ANY(:gids) AND sports_market_type = :t AND captured_at BETWEEN :lo AND :hi
   AND best_bid IS NOT NULL AND best_ask IS NOT NULL
@@ -156,10 +163,19 @@ def choose_kickoff(rows):
     return starts[0], (starts[-1] - starts[0]).total_seconds() / 60
 
 
-def buy_no_pnl_c(bid, y, fee=FEE):
-    """Cents per $1 contract: buy NO at 1 - bid, settle y (YES = 1). Same formula as
-    cfb/run_paper_book.py's bet_pnl(side='no') times 100; the test pins the two together."""
-    return 100 * ((1 - y) - (1 - bid) - fee * bid * (1 - bid))
+def buy_no_pnl_c(bid, y, fee):
+    """Cents per $1 contract: buy NO at 1 - bid, settle y (YES = 1), at the coefficient `fee`
+    the venue carried on the row the bid came from. Same formula as cfb/run_paper_book.py's
+    bet_pnl(side='no') times 100; the test pins the two together at both coefficients. No
+    today's-value default: every call in this file is per row, and None is refused."""
+    return 100 * ((1 - y) - (1 - bid) - recorded_fee(bid, fee))
+
+
+def rung_pnl_c(q, y):
+    """buy_no_pnl_c on one SNAPS_SQL row: the bid and the coefficient come from the SAME
+    row. A row without fee_coefficient is refused (KeyError if the column left the SELECT,
+    ValueError if the venue sent NULL), never charged at today's."""
+    return buy_no_pnl_c(q["bid"], y, q["fee_coefficient"])
 
 
 def write_orders_csv(path, rows, columns=CSV_COLUMNS):
@@ -351,7 +367,7 @@ def main():
                 why["window-only: last quote before kick left the bucket"] += 1
             if in_win:
                 y = settle(q["line"], g["h"], g["a"]) if g["h"] is not None else None
-                pnl = None if y is None else buy_no_pnl_c(q["bid"], y)
+                pnl = None if y is None else rung_pnl_c(q, y)
                 picked[g["vg"]].append((q, y, pnl, passes_spread_cap(q["bid"], q["ask"])))
     dep_by = depth_for(win_set, min(g["ko"] for g in games) - T_EARLY, hi) if win_set else {}
 
@@ -376,7 +392,12 @@ def main():
                 if ok:
                     rows_cap.append((pnl, g["vg"]))
 
-    print(f"\n=== SUMMARY (buy NO at 1-bid on the LAST quote in [T-60,T-5], fee {FEE}*bid*(1-bid)) ===")
+    # The coefficient is printed as a tally over the SCORED rungs, not as a constant: it is
+    # whatever the venue carried on each row, and a DATE on either side of 2026-09-17 shows
+    # one value while a run that straddled it would show two.
+    coefs = Counter(q["fee_coefficient"] for pk in picked.values() for q, _, pnl, _ in pk if pnl is not None)
+    print(f"\n=== SUMMARY (buy NO at 1-bid on the LAST quote in [T-60,T-5], fee = the row's coefficient*bid*(1-bid); "
+          f"coefficients on scored rungs: {', '.join(f'{k:g} x{n}' for k, n in sorted(coefs.items())) or 'none'}) ===")
     print(f"games {len(games)}   games with a bucket rung {len(picked)}   rungs selected {len(win_set)}"
           f"   scored {len(rows)}   (unscored = unsettled or push)")
     n_sel = sum(len(pk) for pk in picked.values()); n_skip = sum(not ok for pk in picked.values() for _, _, _, ok in pk)

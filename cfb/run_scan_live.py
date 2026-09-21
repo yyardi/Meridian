@@ -47,7 +47,12 @@ from core import settlements
 from core.leagues import LEAGUES, venue_patterns
 from core.polymarket.client import PolymarketGatewayClient
 
-from core.fees import POLYMARKET_TAKER as FEE_PM  # noqa: E402  0.0695, the venue's feeCoefficient
+# The fee is charged at the coefficient the venue carried on EACH sampled tick
+# (fee_coefficient, selected beside the book), never at one constant: the venue
+# raised it at 2026-09-17 04:07Z, the tape spans both sides, and the day it moves
+# again the row is right before anyone edits a constant. A tick without one is
+# refused, not charged today's.
+from core.fees import recorded_fee  # noqa: E402
 G_FLOOR = 6
 DECILES = [(i / 10, (i + 1) / 10) for i in range(10)]
 SPREAD_BUCKETS = ((0.0, 1.0, "<=1c"), (1.0, 3.0, "1-3c"), (3.0, 1e9, ">3c"))
@@ -89,7 +94,7 @@ WITH g AS (SELECT game_id, min(game_start_time) ko FROM market_snapshots
   WHERE market_slug LIKE ANY(:pats) AND game_start_time IS NOT NULL GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug, floor(extract(epoch from s.captured_at) / (60 * :smin)))
        s.market_slug slug, s.sports_market_type mt, s.game_id gid,
-       s.best_bid::float bid, s.best_ask::float ask
+       s.best_bid::float bid, s.best_ask::float ask, s.fee_coefficient::float fee_coefficient
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
 WHERE s.market_slug LIKE ANY(:pats)
   -- LIVE FROM THE CLOCK, never from is_live (core/board.py: the flag freezes true forever
@@ -140,7 +145,6 @@ def check_since(conn, since):
             f"  while still narrowing the population. Boundaries: {sorted(floors)}")
 
 
-def fee(p, k=FEE_PM): return k * p * (1 - p)
 def mid(bid, ask): return round((bid + ask) / 2, 4)
 
 
@@ -161,7 +165,8 @@ def poisson_binomial_p(trials):
     to price within the band.
 
     Break-even varies per trial (a single midpoint-derived break-even was wrong by 3.4c
-    on one measured cell), so each trial carries its own ask_i + fee(ask_i).
+    on one measured cell), so each trial carries its own ask_i + fee(ask_i), the fee at
+    the coefficient ITS row carried.
 
     TWO-SIDED BY THE SMALL-p METHOD: the total probability of every outcome AT MOST AS
     LIKELY as the observed one -- scipy.binomtest's convention, so this reduces EXACTLY
@@ -316,11 +321,11 @@ for lg, pat in PATS:
         m = mid(r["bid"], r["ask"])
         for lo, hi in DECILES:
             if not (lo <= m < hi or (hi >= 1.0 and m == 1.0)): continue
-            a = r["ask"]
+            a, fc = r["ask"], r["fee_coefficient"]    # fc: the coefficient the venue charged on THIS tick
             hs_c = (a - m) * 100                       # half-spread in cents
             sb = next(lab for x, yv, lab in SPREAD_BUCKETS if x <= hs_c < yv)
-            CELLS[(lg, mt, lo, sb)].append((y - a - fee(a), r["gid"], r["bid"], a, y,
-                                            abs(m - (lo + 0.05))))
+            CELLS[(lg, mt, lo, sb)].append((y - a - recorded_fee(a, fc), r["gid"], r["bid"], a, y,
+                                            abs(m - (lo + 0.05)), fc))
             STOCK[(lg, mt)][2].add(r["gid"])
     # The floor rides on the SAME LINE as the count it produced. A reader
     # cannot see "22,870 closes" without seeing what was excluded to get it.
@@ -350,7 +355,7 @@ for key, bets in sorted(CELLS.items()):
     best = {}
     for bb in bets:
         if bb[1] not in best or bb[5] < best[bb[1]][5]: best[bb[1]] = bb
-    tr = [(min(max(bb[3] + fee(bb[3]), 1e-9), 1 - 1e-9), 1 if bb[4] == 1 else 0)
+    tr = [(min(max(bb[3] + recorded_fee(bb[3], bb[6]), 1e-9), 1 - 1e-9), 1 if bb[4] == 1 else 0)
           for bb in best.values() if bb[4] in (0, 1)]
     # THE G FLOOR GATES THIS PATH TOO. It used to gate only the sandwich, so a TWO-GAME
     # cell ranked in the top ten at p=8.9e-04 -- and a two-game cell cannot nominate
@@ -371,7 +376,8 @@ for key, bets in sorted(CELLS.items()):
     # as printed, against 5.87 and 1.308 once removed. A sandwich cannot express this;
     # the honest instrument is a binomial bound on the win count, so these are excluded
     # from every distributional statistic and reported separately.
-    # the bet tuple is (pnl, game_id, bid, ask, y) -- the SETTLEMENT is index 4.
+    # the bet tuple is (pnl, game_id, bid, ask, y, |mid - centre|, fee_coefficient) --
+    # the SETTLEMENT is index 4, the row's COEFFICIENT index 6.
     ys = {b[4] for b in bets}
     if len(ys) < 2:
         excluded.append((key, n, G, f"DEGENERATE: all {n} bets settled {next(iter(ys))} -- no outcome variation"))
@@ -506,7 +512,8 @@ def _write_json(path: str, payload) -> None:
 if os.environ.get("ROWS_JSON"):                 # the permutation null consumes the INPUTS
     _write_json(os.environ["ROWS_JSON"],
                 [{"lg": k[0], "mt": k[1], "dec": k[2], "sb": k[3], "game": b[1], "bid": b[2],
-                  "ask": b[3], "y": b[4]} for k, bs in CELLS.items() for b in bs])
+                  "ask": b[3], "y": b[4], "fee_coefficient": b[6]}
+                 for k, bs in CELLS.items() for b in bs])
     print(f"\n  wrote ROWS_JSON {os.environ['ROWS_JSON']}"
           f" ({sum(len(v) for v in CELLS.values()):,} bet inputs)")
 if os.environ.get("CELLS_JSON"):

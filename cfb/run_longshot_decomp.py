@@ -6,7 +6,8 @@ tennis carry one lineless winner market per event, so there are no rungs.
 Runs inside meridian-api (venue client for settlement): docker exec -i -e LEAGUE=cfb meridian-api python - < this.
 Prices every rung at the paper book's close (CLOSE_SQL is cfb/run_paper_book.py's plus the line: last quote before
 the venue's game_start_time, within 6h), settles from the venue's own endpoint (unsettled skipped and counted), taker
-fee FEE*p*(1-p) with FEE from core/fees.py (0.0695, the venue's feeCoefficient). Per cell: mean net per $1 contract in cents, 95% game-clustered sandwich interval, n bets, G games,
+fee coefficient*p*(1-p) at the coefficient the venue carried ON THAT ROW (fee_coefficient, selected beside the book: the
+venue raised it at 2026-09-17 04:07Z and a 90-day read spans that instant). Per cell: mean net per $1 contract in cents, 95% game-clustered sandwich interval, n bets, G games,
 G_eff = n^2/sum(cluster^2), net per $ staked; G < 25 is UNDERPOWERED. bet_stake / bet_pnl / clustered are the paper
 book's, verbatim. Mids are rounded to 4 dp before bucketing (prices tick at 0.01, so mids sit on a 0.005 grid).
   Q1  buy NO at YES-mid [0.20,0.30), split by whether the cheap YES (the AWAY side, always: slug <away>-<home>)
@@ -24,9 +25,12 @@ import os
 import sys
 from collections import Counter, defaultdict
 try:
-    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
-except ImportError:                                  # run bare, no repo root on sys.path
-    FEE = 0.0695
+    from core.fees import recorded_fee              # the fee at the coefficient the venue carried on THAT row
+except ImportError:                                  # run bare, no repo root on sys.path: the same strict form, no constant
+    def recorded_fee(price, coefficient):
+        if coefficient is None:
+            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
+        return float(coefficient) * price * (1.0 - price)
 
 UTC = dt.timezone.utc
 NO_BUCKETS = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5)]
@@ -37,7 +41,7 @@ WITH g AS (
   SELECT game_id, min(game_start_time) ko FROM market_snapshots
   WHERE market_slug LIKE :pat AND game_start_time IS NOT NULL AND captured_at > :since GROUP BY 1)
 SELECT DISTINCT ON (s.market_slug) s.market_slug, s.sports_market_type mtype, s.game_id, g.ko, s.line::float line,
-       s.best_bid::float bid, s.best_ask::float ask, s.captured_at
+       s.best_bid::float bid, s.best_ask::float ask, s.fee_coefficient::float fee_coefficient, s.captured_at
 FROM market_snapshots s JOIN g ON g.game_id = s.game_id
 WHERE s.market_slug LIKE :pat AND s.captured_at < g.ko AND s.captured_at > g.ko - interval '6 hours'
   AND s.captured_at > :since AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL
@@ -51,25 +55,27 @@ def no_mid(r): return round(((1 - r["ask"]) + (1 - r["bid"])) / 2, 4)
 def in_bucket(m, lo, hi): return lo <= m < hi or (hi >= 1.0 and m == 1.0)   # half-open; the top bucket takes 1.0
 
 
-# ---------------------------------------------------------------- copied verbatim from cfb/run_paper_book.py
+# ---------------------------------------------------------------- cfb/run_paper_book.py's, with the coefficient REQUIRED
 def bet_stake(side, bid, ask):
     """Dollars at risk on one $1 contract: YES costs the ask; NO costs 1 - bid."""
     return ask if side == "yes" else 1 - bid
 
 
-def bet_pnl(side, y, bid, ask, fee=FEE):
+def bet_pnl(side, y, bid, ask, fee):
     """Net P&L in dollars on one $1 contract, settled y (1 = YES resolved), taker fee charged.
 
     side 'yes': buy YES at the ask p:      y - p - fee*p*(1-p)
     side 'no' : buy NO at 1 - bid, p = bid: (1-y) - (1-p) - fee*p*(1-p)
-    The fee is the venue's FEE*p*(1-p) (core/fees.py, 0.0695) on the YES price p either way (p(1-p) is
-    symmetric in p and 1-p, so pricing the fee on the NO price gives the same number).
+    `fee` is the coefficient the venue carried on the ROW the prices came from (fee_coefficient,
+    which bets_for passes per row); every call here is per row, so there is no today's-value
+    default, and None is refused rather than charged at today's. p(1-p) is symmetric in p and
+    1-p, so pricing the fee on the NO price gives the same number.
     """
     if side == "yes":
         p = ask
-        return y - p - fee * p * (1 - p)
+        return y - p - recorded_fee(p, fee)
     p = bid
-    return (1 - y) - (1 - p) - fee * p * (1 - p)
+    return (1 - y) - (1 - p) - recorded_fee(p, fee)
 
 
 def clustered(vals, keys):
@@ -95,7 +101,8 @@ def bets_for(rows, side, settle):          # settle(slug) -> 0/1, or None = the 
     for r in rows:
         y = settle(r["market_slug"])
         if y is None: uns += 1; continue
-        out.append((bet_pnl(side, y, r["bid"], r["ask"]), bet_stake(side, r["bid"], r["ask"]), r["game_id"]))
+        out.append((bet_pnl(side, y, r["bid"], r["ask"], r["fee_coefficient"]),   # the row's coefficient, never a constant
+                    bet_stake(side, r["bid"], r["ask"]), r["game_id"]))
     return out, uns
 
 
