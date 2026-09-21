@@ -22,11 +22,13 @@ before kickoff), the venue's result. Per league x market type x horizon:
 """
 import datetime as dt
 import os
+import sys
 from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
 
-FEE = 0.07
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import KALSHI_TAKER as FEE  # noqa: E402  Kalshi's quadratic taker coefficient; no per-row column exists on kalshi_snapshots
 HORIZONS = (6, 3, 1)   # the recorder polls only from tip-6h (pregame_window_hours); earlier does not exist on tape
 
 eng = create_engine(os.environ["DATABASE_URL"])

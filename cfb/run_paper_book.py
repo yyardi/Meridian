@@ -28,6 +28,7 @@ module level, tested without a database in tests/test_longshot_shadow_paper_book
 and tests/test_fee_per_row_closing.py;
 the run is under main() and executes only when the file is the script.
 """
+import sys
 import datetime as dt
 import json
 
@@ -39,7 +40,8 @@ from collections import defaultdict
 # FEE is today's coefficient and prices a bet NOW (bet_pnl's default, used by the
 # permutation null and the tests); every close main() scores is charged through
 # recorded_fee at the coefficient its own row carries.
-from core.fees import POLYMARKET_TAKER as FEE, recorded_fee  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import recorded_fee  # noqa: E402
 UTC = dt.timezone.utc
 
 # The registry moved to strategies/ladder.py (ARCHITECTURE.md §4 step 2) so the
@@ -125,7 +127,7 @@ def bet_stake(side, bid, ask):
     return ask if side == "yes" else 1 - bid
 
 
-def bet_pnl(side, y, bid, ask, fee=FEE):
+def bet_pnl(side, y, bid, ask, fee):
     """Net P&L in dollars on one $1 contract, settled y (1 = YES resolved), taker fee charged.
 
     side 'yes': buy YES at the ask p:      y - p - fee*p*(1-p)

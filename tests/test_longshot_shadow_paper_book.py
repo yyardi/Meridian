@@ -195,7 +195,7 @@ def test_the_paper_book_default_is_today_s_fee_and_the_lister_carries_none():
     """bet_pnl's default prices a bet NOW; every close main() scores is charged at
     its own row's coefficient (tests/test_fee_per_row_closing.py). The lister has
     no now-priced use at all, so it holds no constant to go stale."""
-    assert book.FEE == FEE
+    assert not hasattr(book, "FEE"), "the book carries no fee constant; every fee is the row's"
     assert not hasattr(shadow, "FEE")
 
 
@@ -206,27 +206,27 @@ def test_buy_no_at_yes_bid_025_settles_no():
     FEE*0.25*0.75 -> +0.25 minus that. (The brief's "+0.75 - fee(0.25)" reads
     "bid 0.25" as the NO price; that case is the next test.)
     """
-    assert book.bet_pnl("no", 0, 0.25, 0.27) == pytest.approx(0.25 - FEE * 0.25 * 0.75, abs=1e-12)
-    assert book.bet_pnl("no", 0, 0.25, 0.27) == pytest.approx(0.25 - FEE * 0.25 * 0.75, abs=1e-12)
+    assert book.bet_pnl("no", 0, 0.25, 0.27, FEE) == pytest.approx(0.25 - FEE * 0.25 * 0.75, abs=1e-12)
+    assert book.bet_pnl("no", 0, 0.25, 0.27, FEE) == pytest.approx(0.25 - FEE * 0.25 * 0.75, abs=1e-12)
     assert book.bet_stake("no", 0.25, 0.27) == pytest.approx(0.75)
 
 
 def test_buy_no_priced_at_025_settles_no():
     """NO priced 0.25 means YES bid 0.75: profit 0.75 minus FEE*0.75*0.25."""
-    assert book.bet_pnl("no", 0, 0.75, 0.77) == pytest.approx(0.75 - FEE * 0.75 * 0.25, abs=1e-12)
-    assert book.bet_pnl("no", 0, 0.75, 0.77) == pytest.approx(0.75 - FEE * 0.75 * 0.25, abs=1e-12)
+    assert book.bet_pnl("no", 0, 0.75, 0.77, FEE) == pytest.approx(0.75 - FEE * 0.75 * 0.25, abs=1e-12)
+    assert book.bet_pnl("no", 0, 0.75, 0.77, FEE) == pytest.approx(0.75 - FEE * 0.75 * 0.25, abs=1e-12)
     assert book.bet_stake("no", 0.75, 0.77) == pytest.approx(0.25)
 
 
 def test_buy_yes_at_ask_090_settles_yes():
-    assert book.bet_pnl("yes", 1, 0.88, 0.90) == pytest.approx(0.10 - FEE * 0.9 * 0.1, abs=1e-12)
-    assert book.bet_pnl("yes", 1, 0.88, 0.90) == pytest.approx(0.10 - FEE * 0.9 * 0.1, abs=1e-12)
+    assert book.bet_pnl("yes", 1, 0.88, 0.90, FEE) == pytest.approx(0.10 - FEE * 0.9 * 0.1, abs=1e-12)
+    assert book.bet_pnl("yes", 1, 0.88, 0.90, FEE) == pytest.approx(0.10 - FEE * 0.9 * 0.1, abs=1e-12)
     assert book.bet_stake("yes", 0.88, 0.90) == pytest.approx(0.90)
 
 
 def test_losing_legs_lose_the_stake_plus_the_fee():
-    assert book.bet_pnl("yes", 0, 0.88, 0.90) == pytest.approx(-0.90 - FEE * 0.9 * 0.1, abs=1e-12)
-    assert book.bet_pnl("no", 1, 0.25, 0.27) == pytest.approx(-0.75 - FEE * 0.25 * 0.75, abs=1e-12)
+    assert book.bet_pnl("yes", 0, 0.88, 0.90, FEE) == pytest.approx(-0.90 - FEE * 0.9 * 0.1, abs=1e-12)
+    assert book.bet_pnl("no", 1, 0.25, 0.27, FEE) == pytest.approx(-0.75 - FEE * 0.25 * 0.75, abs=1e-12)
 
 
 def test_fee_is_a_parameter_and_zero_fee_is_the_raw_payoff():
@@ -243,8 +243,8 @@ def test_zero_fee_bet_at_a_fair_price_has_zero_expectation():
 
 def test_yes_side_uses_the_ask_and_no_side_uses_the_bid():
     # widen the spread: YES pnl moves with the ask only, NO pnl with the bid only
-    assert book.bet_pnl("yes", 1, 0.80, 0.90) == book.bet_pnl("yes", 1, 0.50, 0.90)
-    assert book.bet_pnl("no", 0, 0.25, 0.27) == book.bet_pnl("no", 0, 0.25, 0.60)
+    assert book.bet_pnl("yes", 1, 0.80, 0.90, FEE) == book.bet_pnl("yes", 1, 0.50, 0.90, FEE)
+    assert book.bet_pnl("no", 0, 0.25, 0.27, FEE) == book.bet_pnl("no", 0, 0.25, 0.60, FEE)
 
 
 def test_lister_buy_no_cents_equals_paper_book_bet_pnl_times_100():

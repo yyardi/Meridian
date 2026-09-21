@@ -45,8 +45,7 @@ import os
 import time
 
 UTC = dt.timezone.utc
-from core.fees import POLYMARKET_TAKER  # noqa: E402  (0.0695: the venue's feeCoefficient; a stale literal stood here until 2026-09-21)
-FEE_RATE = POLYMARKET_TAKER
+from core.fees import recorded_fee  # noqa: E402  the row's own coefficient; None raises
 TRIGGERS = ("ytg40", "ytg20", "move2c")
 EXIT_REASONS = ("tp", "stop", "drive_end", "final", "stale")
 
@@ -69,17 +68,16 @@ def params_from_env(env=None):
 # instant is passed in, so tests drive them on fixture rows.
 # --------------------------------------------------------------------------- #
 
-def fee(px, coefficient=None):
+def fee(px, coefficient):
     """Taker fee per $1 contract at `px`. Zero at 0 and 1 by construction.
 
     `coefficient` is the venue's `fee_coefficient` on the market_snapshots row
     the price came from; the engine always passes it (`realise`), because the
     venue raised it on 2026-09-17 04:07Z and a book written across that
-    instant must charge each side what the venue charged then. None prices
-    NOW at today's constant (core/fees.py) and is for a price with no row.
+    instant must charge each side what the venue charged then. None is an
+    error: nothing in this module prices a bet now.
     """
-    rate = FEE_RATE if coefficient is None else float(coefficient)
-    return rate * px * (1.0 - px)
+    return recorded_fee(px, coefficient)   # None raises there: nothing in this module prices a bet now
 
 
 def entry_side(pos_team, home, away):

@@ -52,6 +52,7 @@ from core.polymarket.client import PolymarketGatewayClient
 # raised it at 2026-09-17 04:07Z, the tape spans both sides, and the day it moves
 # again the row is right before anyone edits a constant. A tick without one is
 # refused, not charged today's.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
 from core.fees import recorded_fee  # noqa: E402
 G_FLOOR = 6
 DECILES = [(i / 10, (i + 1) / 10) for i in range(10)]

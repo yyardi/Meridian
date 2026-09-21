@@ -84,11 +84,13 @@ def test_paper_book_refuses_a_close_without_a_coefficient():
         book.bet_pnl("no", 0, 0.49, 0.50, fee=None)
 
 
-def test_paper_book_default_prices_a_bet_now_and_nothing_else():
-    """bet_pnl's default is today's coefficient, for the permutation null's use on a bet
-    priced now. A close never reaches it: bet_row passes the row's value, always."""
-    assert book.FEE == fees.POLYMARKET_TAKER
-    assert book.bet_pnl("yes", 1, 0.49, 0.50) == book.bet_pnl("yes", 1, 0.49, 0.50, fees.POLYMARKET_TAKER)
+def test_paper_book_has_no_default_fee_and_no_constant():
+    """bet_pnl takes the fee it charges; a call without one is a TypeError, not
+    today's coefficient. The permutation null passes each row's (run_scan_null)."""
+    with pytest.raises(TypeError):
+        book.bet_pnl("yes", 1, 0.49, 0.50)
+    assert not hasattr(book, "FEE")
+    assert book.bet_pnl("yes", 1, 0.49, 0.50, PRE) != book.bet_pnl("yes", 1, 0.49, 0.50, POST)
 
 
 # ------------------------------------------------------------------ the decomposition
@@ -132,20 +134,29 @@ def test_shadow_refuses_a_rung_without_a_coefficient():
         shadow.buy_no_pnl_c(0.25, 0)
     assert not hasattr(shadow, "FEE"), "the lister carries no fee constant; every fee is the row's"
 
+def _bootstraps_then_imports(src: str) -> bool:
+    """Run bare (the trainer image mounts cfb/ alone) the script puts the repo
+    root on sys.path itself and then imports core.fees -- one function, never
+    a copy of it and never a constant. The guarded-import-with-fallback shape
+    it replaces is refused by name."""
+    import ast
+    boot = src.find("sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))")
+    imp = src.find("from core.fees import")
+    guarded = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Try)
+               and any(isinstance(m, ast.ImportFrom) and m.module == "core.fees" for m in ast.walk(n))]
+    return 0 <= boot < imp and not guarded
 
-@pytest.mark.parametrize("path", ["run_longshot_decomp.py", "run_longshot_shadow.py"])
-def test_run_bare_the_fallback_is_as_strict_as_core_fees(path, monkeypatch):
+
+@pytest.mark.parametrize("path", ["run_longshot_decomp.py", "run_longshot_shadow.py", "run_paper_book.py",
+                                  "run_scan.py", "run_scan_live.py"])
+def test_run_bare_the_script_bootstraps_the_repo_root_and_imports_one_recorded_fee(path):
     """Both scripts also run where core/ is not on sys.path (the trainer image mounts
-    cfb/ only) and guard the import. The fallback must be the same function: the same
-    number at both coefficients, and the same refusal of None."""
-    monkeypatch.setitem(sys.modules, "core.fees", None)      # `import core.fees` now raises ImportError
-    bare = _load(f"bare_{path[:-3]}", CFB / path)
-    assert bare.recorded_fee is not fees.recorded_fee
-    for p in (0.05, 0.25, 0.5, 0.9):
-        for k in (PRE, POST):
-            assert bare.recorded_fee(p, k) == fees.recorded_fee(p, k)
-    with pytest.raises(ValueError):
-        bare.recorded_fee(0.5, None)
+    cfb/ only). They no longer carry a fallback copy of recorded_fee: they put the
+    repo root on sys.path and import the one in core/fees.py, so there is exactly
+    one function to be right or wrong."""
+    src = (CFB / path).read_text()
+    assert "from core.fees import" in src, path
+    assert _bootstraps_then_imports(src), path
 
 
 # ------------------------------------------------------------------ the SELECTs (needs the suite's DB)

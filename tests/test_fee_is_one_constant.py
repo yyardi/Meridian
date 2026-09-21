@@ -49,6 +49,17 @@ NOT_FEES = {
     ("cfb/run_longshot_shadow.py", "SPREAD_CAP"),
 }
 
+#: Fee-named names that legitimately hold a literal, none a venue coefficient.
+#: A value-free rule (below) is the point: a rule that looked for the CURRENT
+#: constant would go green at the moment the venue moves and the literals go
+#: stale -- signal and no-signal coinciding when it matters (Debugger, 09-21).
+NOT_COEFFICIENTS = {
+    ("cfb/run_making_touch.py", "MAKER_THETA"): "0.0: there is no maker rebate (findings C7); core/fees.py owns POLYMARKET_MAKER",
+    ("core/quote/adverse_selection.py", "DEFAULT_FEE"): "0.0: an explicit 'unset' sentinel, not a coefficient",
+    ("core/window_detector.py", "DEFAULT_FEE"): "0.0: an explicit 'unset' sentinel, not a coefficient",
+}
+FEE_TOKEN = re.compile(r"(^|_)(FEE|THETA|TAKER)(_|$)")
+
 #: Prose that calls 0.06 a fee: a fee word within 40 characters of the
 #: literal, either side. "spread cap 0.06" and "0.06000000000000005 in
 #: floats" do not match; "fee 0.06*p*(1-p)" and "theta_taker = 0.06" do.
@@ -124,6 +135,30 @@ def test_every_0_06_literal_in_code_is_a_named_non_fee_constant():
                 offenders.append((rel, node.lineno))
     assert not offenders, f"a 0.06 in code that is not a named non-fee constant: {offenders}"
     assert named == NOT_FEES, (named - NOT_FEES, NOT_FEES - named)
+
+
+def test_no_fee_named_name_is_assigned_a_float_literal_outside_core_fees():
+    """Whatever the value. Seven runners carried `except ImportError: FEE = 0.0695`
+    fallbacks and two Kalshi runners `FEE = 0.07`; the next venue move leaves
+    every such literal stale while the import stays right. `FEED_LAG` is not
+    a fee name; `MAKER_THETA` and the two `DEFAULT_FEE` sentinels are listed."""
+    offenders = []
+    for p in _py_files():
+        rel = _rel(p)
+        if rel == "core/fees.py":
+            continue
+        tree = ast.parse(p.read_text(encoding="utf-8"), filename=rel)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            t, v = node.targets[0], node.value
+            pairs = list(zip(t.elts, v.elts)) if isinstance(t, ast.Tuple) and isinstance(v, ast.Tuple) else [(t, v)]
+            for name, val in pairs:
+                if isinstance(name, ast.Name) and FEE_TOKEN.search(name.id) \
+                        and isinstance(val, ast.Constant) and isinstance(val.value, (int, float)) \
+                        and (rel, name.id) not in NOT_COEFFICIENTS:
+                    offenders.append((rel, name.id, val.value, node.lineno))
+    assert not offenders, f"fee-named names holding a literal instead of importing core.fees: {offenders}"
 
 
 def test_no_comment_or_string_calls_0_06_the_fee():

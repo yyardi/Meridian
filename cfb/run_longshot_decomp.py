@@ -24,13 +24,8 @@ import datetime as dt
 import os
 import sys
 from collections import Counter, defaultdict
-try:
-    from core.fees import recorded_fee              # the fee at the coefficient the venue carried on THAT row
-except ImportError:                                  # run bare, no repo root on sys.path: the same strict form, no constant
-    def recorded_fee(price, coefficient):
-        if coefficient is None:
-            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
-        return float(coefficient) * price * (1.0 - price)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import recorded_fee  # noqa: E402  the fee at the coefficient the venue carried on THAT row
 
 UTC = dt.timezone.utc
 NO_BUCKETS = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5)]

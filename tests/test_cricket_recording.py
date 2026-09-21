@@ -142,16 +142,16 @@ def test_LABELS_names_exactly_what_label_accepts():
 # ------------------------------------------------------------------- the book
 def test_a_half_settlement_pays_half_the_ticket_and_still_charges_the_fee():
     """bet_pnl handles y=0.5 arithmetically; this pins what that means."""
-    yes = bet_pnl("yes", 0.5, 0.49, 0.50)
+    yes = bet_pnl("yes", 0.5, 0.49, 0.50, FEE)
     assert yes == pytest.approx(0.5 - 0.50 - FEE * 0.50 * 0.50)
-    no = bet_pnl("no", 0.5, 0.49, 0.50)
+    no = bet_pnl("no", 0.5, 0.49, 0.50, FEE)
     assert no == pytest.approx((1 - 0.5) - (1 - 0.49) - FEE * 0.49 * 0.51)
     assert yes < 0 and no < 0, "a draw loses the spread and the fee on both sides"
 
 
 def test_a_draw_is_worse_than_a_win_and_better_than_a_loss():
     args = (0.49, 0.50)
-    assert bet_pnl("yes", 0, *args) < bet_pnl("yes", 0.5, *args) < bet_pnl("yes", 1, *args)
+    assert bet_pnl("yes", 0, *args, FEE) < bet_pnl("yes", 0.5, *args, FEE) < bet_pnl("yes", 1, *args, FEE)
 
 
 @pytest.mark.parametrize("name", [

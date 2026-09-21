@@ -240,7 +240,8 @@ class TestMomentumScalp:
         assert "def trade(arm, side, t_in, deadline, T, B, A, M, FC, chg, game, away_won)" in src
         assert src.count('FC, chg, g["eg"]') == 2, "both trade() call sites pass the per-tick column"
         assert "recorded_fee(p_in, FC[i])" in src and "recorded_fee(p_out, FC[j])" in src
-        assert "fee_now(p)" in src and "def fee(" not in src   # the NOW-priced table is the only constant use
+        assert "taker_fee(p)" in src and "# fee-now: an illustration" in src and "def fee(" not in src \
+            and "def fee_now" not in src   # the illustrative table is the only NOW-priced use, marked where it happens
 
 
 # --------------------------------------------------------------------------- #
@@ -319,22 +320,19 @@ GUARDED = ["cfb/run_ladder_calibration.py", "cfb/run_ladder_rv.py", "cfb/run_mom
 
 
 @pytest.mark.parametrize("rel", GUARDED)
-def test_the_bare_run_fallback_is_the_same_strict_contract_not_a_constant(rel):
+def test_the_bare_run_bootstraps_the_repo_root_and_imports_the_one_recorded_fee(rel):
     """These five are piped into a container over stdin, where core/ may not be
-    on sys.path, so each keeps an ImportError fallback. It must be the SAME
-    function -- None raises -- and never a coefficient: a fallback to today's
-    is the silent path this change exists to remove."""
-    tree = ast.parse(_src(rel))
-    handlers = [h for n in tree.body if isinstance(n, ast.Try) for h in n.handlers
-                if isinstance(h.type, ast.Name) and h.type.id == "ImportError"]
-    assert len(handlers) == 1, rel
-    ns: dict = {}
-    exec(compile(ast.Module(body=handlers[0].body, type_ignores=[]), rel, "exec"), ns)  # noqa: S102
-    fallback = ns["recorded_fee"]
-    assert fallback(0.5, PRE) == recorded_fee(0.5, PRE)
-    assert fallback(0.5, POST) == recorded_fee(0.5, POST)
-    with pytest.raises(ValueError):
-        fallback(0.5, None)
+    on sys.path. They used to keep an ImportError fallback copy of recorded_fee;
+    a copy is a second place to be wrong, so each now puts the repo root on
+    sys.path itself and imports the one function. No handler, no constant."""
+    src = _src(rel)
+    boot = src.find("sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))")
+    imp = src.find("from core.fees import")
+    assert 0 <= boot < imp, rel
+    assert "except ImportError" not in src, rel
+    tree = ast.parse(src)
+    assert not [n for n in tree.body if isinstance(n, ast.Try)
+                and any(isinstance(h.type, ast.Name) and h.type.id == "ImportError" for h in n.handlers)], rel
 
 
 def test_extreme_hold_imports_core_unguarded_like_the_rest_of_its_imports():

@@ -35,13 +35,8 @@ import sys
 from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
-try:
-    from core.fees import recorded_fee              # the row's own coefficient; None raises (core/fees.py)
-except ImportError:                                  # run bare, no repo root on sys.path
-    def recorded_fee(price, coefficient):            # the same contract, spelled out: never a constant
-        if coefficient is None:
-            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
-        return float(coefficient) * price * (1.0 - price)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import recorded_fee  # noqa: E402  the row's own coefficient; None raises (core/fees.py)
 
 TYPES = ("football_team_full_game_winner", "football_team_full_game_spread",
          "football_team_full_game_total", "football_team_points_full_game_total")

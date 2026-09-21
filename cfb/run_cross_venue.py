@@ -26,18 +26,12 @@ EARLIEST venue game_start_time; pregame instants only. ESTIMATOR: fills-weighted
 (cluster = game), G < 25 printed UNDERPOWERED and kept.
 RUN: docker-run recipe in docs/HANDOFF_2026-09-13.md; env LEAGUE=cfb|nfl, D0/D1 slate dates, SETTLE_VENUE=1 in meridian-api.
 """
-import bisect, datetime as dt, os, re
+import bisect, datetime as dt, os, re, sys
 from collections import defaultdict
 from sqlalchemy import create_engine, event, text
 
-try:
-    from core.fees import KALSHI_TAKER as FK, recorded_fee  # FK 0.07: Kalshi's one constant; recorded_fee: the Polymarket row's own
-except ImportError:                                                  # run bare, no repo root on sys.path
-    FK = 0.07
-    def recorded_fee(price, coefficient):                            # the same contract as core.fees: None raises, never today's
-        if coefficient is None:
-            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
-        return float(coefficient) * price * (1.0 - price)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import KALSHI_TAKER as FK, recorded_fee  # noqa: E402  FK: Kalshi's one constant; recorded_fee: the Polymarket row's own
 GAP, LO, HI, FLAG = 3.0, 0.20, 0.30, 35.0
 MATCH, B_LO, B_HI, DAY = (dt.timedelta(minutes=m) for m in (5, 30, 90, 1440))
 LG, D0, D1 = os.environ.get("LEAGUE", "cfb"), os.environ.get("D0", "2026-09-11"), os.environ.get("D1", "2026-09-13")
