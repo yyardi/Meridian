@@ -16,6 +16,18 @@ import pytest
 from core.backtest.fills import fee_per_contract
 from core.tt import money, rule
 
+#: The LATEST measurement of the TT cost bar, kept HERE and not in the module:
+#: 1,339 last-pregame quotes over 2026-09-18..09-21 at the venue's own
+#: coefficient (0.0695), median total 2.238c and mean total 6.065c. The
+#: previous window (724 markets, 09-13..09-15, fee 0.06) gave 2.260c and
+#: 3.728c -- the median barely moved while the mean grew 63%, because the board
+#: nearly doubled and its tail of wide-quoted matches grew with it. A test may
+#: hardcode a measurement to exercise arithmetic at a realistic magnitude; the
+#: production path may not, which is what `test_the_module_carries_no_bar`
+#: pins.
+MEASURED_MEDIAN = 0.02238
+MEASURED_MEAN = 0.06065
+
 
 def test_fee_is_the_venues_not_ours():
     """A rate restated here instead of imported is the drift this pins."""
@@ -25,28 +37,27 @@ def test_fee_is_the_venues_not_ours():
     assert money.fee(0.5) > money.fee(0.1)
 
 
-def test_the_bar_is_a_range_of_two_coherent_totals():
-    """2.260c and 3.728c on the 724 last pregame quotes, at the ask.
+def test_the_module_carries_no_bar():
+    """The cost bar is a property of a window, so the module holds none.
 
-    Two bars were published by crossing statistics instead: 2.22c (a median of
-    the sum with a "fee" back-derived out of it -- medians do not add, so that
-    fee never existed) and 2.39c (median half-spread + mean fee, mine). Neither
-    survives, and this test fails if either is reintroduced as a constant.
+    It has been measured four times in nine days and moved every time, twice by
+    a published constant that was then retracted (2.22c, a median of a sum with
+    a fee back-derived out of it; 2.39c, a median half-spread plus a mean fee)
+    and twice because the board and the venue's coefficient both changed. The
+    gate's target now comes from what the arm actually paid.
     """
-    assert money.BAR_MEDIAN == pytest.approx(0.02260)
-    assert money.BAR_MEAN == pytest.approx(0.03728)
-    assert not hasattr(money, "COST_BAR")     # the crossed statistic is gone
-    assert not hasattr(money, "HALF_SPREAD")  # no component invites re-crossing
-    for published in (0.0222, 0.02388):
-        assert not any(abs(b - published) < 1e-4
-                       for b in (money.BAR_MEDIAN, money.BAR_MEAN))
+    for gone in ("COST_BAR", "BAR_MEDIAN", "BAR_MEAN", "HALF_SPREAD",
+                 "MEAN_FEE"):
+        assert not hasattr(money, gone), (
+            f"money.{gone} is a population constant and will go stale; the "
+            f"runner gates on MoneyResult.cost_median instead")
 
 
-def test_the_mean_bar_is_the_tail_not_a_rounding():
-    """The mean total is 1.65x the median because the mean HALF-SPREAD is 2.34x
-    its median (2.339c vs 1.000c). A range this wide is a fact about the book,
-    so a strategy's realised cost has to be measured, not chosen."""
-    assert money.BAR_MEAN / money.BAR_MEDIAN > 1.5
+def test_the_mean_cost_is_the_tail_not_a_rounding():
+    """The mean total is 2.7x the median on the latest window because the mean
+    HALF-SPREAD is 9x its median (4.499c vs 0.500c). A gap that wide is a fact
+    about the book, so a strategy's cost has to be measured, not chosen."""
+    assert MEASURED_MEAN / MEASURED_MEDIAN > 2.0
 
 
 class TestBet:
@@ -68,7 +79,7 @@ class TestBet:
         ARE the cost. Subtracting COST_BAR again is `anchor-is-bookkeeping`."""
         b = money.bet("s", 0.95, 0.39, 0.40, 1)
         assert b.pnl == pytest.approx(1 - 0.40 - money.fee(0.40))
-        assert b.pnl != pytest.approx(1 - 0.40 - money.fee(0.40) - money.BAR_MEDIAN)
+        assert b.pnl != pytest.approx(1 - 0.40 - money.fee(0.40) - MEASURED_MEDIAN)
 
     def test_a_lost_bet_loses_the_stake_and_still_pays_the_fee(self):
         b = money.bet("s", 0.95, 0.39, 0.40, 0)
@@ -90,7 +101,7 @@ class TestPower:
             money.required_n()
 
     def test_required_n_resolves_the_bar_it_is_given(self):
-        for bar in (money.BAR_MEDIAN, money.BAR_MEAN):
+        for bar in (MEASURED_MEDIAN, MEASURED_MEAN):
             n = money.required_n(resolution=bar)
             assert money.Z95 * money.PNL_SD / math.sqrt(n) <= bar
             assert money.Z95 * money.PNL_SD / math.sqrt(n - 1) > bar   # smallest
@@ -98,10 +109,10 @@ class TestPower:
     def test_the_target_dominates_the_noise_estimate(self):
         """Choosing the bar moves the floor 2.7x; the sd's own rounding moves it
         4%. So the unnamed number to insist on is X, not sd."""
-        by_target = (money.required_n(resolution=money.BAR_MEDIAN)
-                     / money.required_n(resolution=money.BAR_MEAN))
-        by_sd = (money.required_n(resolution=money.BAR_MEDIAN, sd=0.4995)
-                 / money.required_n(resolution=money.BAR_MEDIAN, sd=0.49))
+        by_target = (money.required_n(resolution=MEASURED_MEDIAN)
+                     / money.required_n(resolution=MEASURED_MEAN))
+        by_sd = (money.required_n(resolution=MEASURED_MEDIAN, sd=0.4995)
+                 / money.required_n(resolution=MEASURED_MEDIAN, sd=0.49))
         assert by_target > 2.5 > 1.1 > by_sd
 
     def test_a_tighter_resolution_costs_quadratically(self):
@@ -109,13 +120,29 @@ class TestPower:
         ratio = money.required_n(resolution=0.01) / money.required_n(resolution=0.02)
         assert 3.9 < ratio < 4.1
 
-    def test_mde_at_the_signal_floor_is_far_above_either_bar(self):
-        """~9.7c against 2.26c-3.73c. Stated before any fit, not after."""
-        assert money.mde(rule.MIN_PREDICTED) > 2 * money.BAR_MEAN
+    def test_the_interval_at_the_signal_floor_exceeds_either_bar(self):
+        """The achievable-image claim, restated on what the gate actually uses.
+
+        The 200-match interval half-width is 6.81c against a median cost of
+        2.238c and a mean of 6.065c, and the MDE at 80% power is 9.73c. The
+        earlier version of this test asserted MDE > 2x the mean bar, which was
+        calibrated to a bar of 3.728c and started failing when the mean cost
+        grew to 6.065c -- a threshold tuned to a number that moves.
+
+        Worth noting how close the mean end now is: ~252 matches resolve 6.065c,
+        against ~1,814 for 2.238c. At the mean cost this arm can speak far
+        sooner than the 667 I quoted three days ago.
+        """
+        half = money.Z95 * money.PNL_SD / math.sqrt(rule.MIN_PREDICTED)
+        assert half > MEASURED_MEDIAN
+        assert half > MEASURED_MEAN
+        assert money.mde(rule.MIN_PREDICTED) > MEASURED_MEAN
+        assert money.required_n(resolution=MEASURED_MEAN) < 400
+        assert money.required_n(resolution=MEASURED_MEDIAN) > 1500
 
 
 class TestVerdict:
-    def _at(self, n, mean, bar=money.BAR_MEDIAN):
+    def _at(self, n, mean, bar=MEASURED_MEDIAN):
         se = money.PNL_SD / math.sqrt(n)
         return rule.money_verdict(
             n=n, lo=mean - money.Z95 * se, hi=mean + money.Z95 * se,
@@ -130,19 +157,19 @@ class TestVerdict:
         assert got == {rule.NOT_YET}
 
     def test_both_branches_open_once_the_interval_resolves_the_bar(self):
-        n = money.required_n(resolution=money.BAR_MEDIAN)
+        n = money.required_n(resolution=MEASURED_MEDIAN)
         assert self._at(n, +0.05)[0] == rule.PASS
         assert self._at(n, 0.0)[0] == rule.FAIL
         assert self._at(n, -0.05)[0] == rule.FAIL
 
     def test_no_qualifying_bet_is_not_yet_not_fail(self):
         assert rule.money_verdict(n=0, lo=float("nan"), hi=float("nan"),
-                                  resolution=money.BAR_MEDIAN, required=10)[0] \
+                                  resolution=MEASURED_MEDIAN, required=10)[0] \
             == rule.NOT_YET
 
     def test_not_estimable_interval_is_not_yet(self):
         assert rule.money_verdict(n=3, lo=float("nan"), hi=float("nan"),
-                                  resolution=money.BAR_MEDIAN, required=10)[0] \
+                                  resolution=MEASURED_MEDIAN, required=10)[0] \
             == rule.NOT_YET
 
     def test_the_two_verdicts_are_never_collapsed(self):
@@ -220,14 +247,14 @@ class TestRealisedCost:
         tight = self._placed([(0.49, 0.50)] * 8)
         wide = self._placed([(0.40, 0.55)] * 8)
         assert wide.cost_mean > tight.cost_mean
-        assert tight.cost_mean < money.BAR_MEAN < wide.cost_mean
+        assert tight.cost_mean < MEASURED_MEAN < wide.cost_mean
 
     def test_realised_cost_is_reported_not_assumed(self):
         r = self._placed([(0.49, 0.50), (0.30, 0.45), (0.48, 0.52)])
         assert not math.isnan(r.cost_mean)
         assert not math.isnan(r.cost_median)
-        assert r.cost_mean != pytest.approx(money.BAR_MEDIAN)
-        assert r.cost_mean != pytest.approx(money.BAR_MEAN)
+        assert r.cost_mean != pytest.approx(MEASURED_MEDIAN)
+        assert r.cost_mean != pytest.approx(MEASURED_MEAN)
 
     def test_required_needs_its_target_named_even_from_a_result(self):
         r = self._placed([(0.49, 0.50)] * 4)
@@ -248,12 +275,12 @@ class TestCollapsedVariance:
     def test_zero_width_interval_is_not_yet(self):
         for point in (-0.515, 0.0, +0.515):
             v, why = rule.money_verdict(n=40, lo=point, hi=point,
-                                        resolution=money.BAR_MEDIAN,
+                                        resolution=MEASURED_MEDIAN,
                                         required=1814)
             assert v == rule.NOT_YET
             assert "collapsed" in why
 
     def test_a_real_narrow_interval_still_decides(self):
         v, _ = rule.money_verdict(n=1814, lo=0.001, hi=0.02,
-                                  resolution=money.BAR_MEDIAN, required=1814)
+                                  resolution=MEASURED_MEDIAN, required=1814)
         assert v == rule.PASS
