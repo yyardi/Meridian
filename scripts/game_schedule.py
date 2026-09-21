@@ -52,18 +52,25 @@ def _by_kickoff(games: list[dict]) -> list[tuple, ]:
         slots.setdefault(g["tip"], []).append(g)
     return sorted(slots.items())
 
+#: `game` is the key WITHOUT its date, for the phone (shorter lines);
+#: `key` is the full game key the launchers take, `cfb-mia-wake-2026-09-18`.
+#: The scheduler must use `key`: a dry run on 2026-09-21 built every slug
+#: from `game` and would have launched `aec-mlb-tor-bal` with no date,
+#: which the recorder has never heard of.
 SQL = """
 SELECT substring(market_slug from '^a[es]c-(.*)-[0-9]{4}-[0-9]{2}-[0-9]{2}') AS game,
+       substring(market_slug from '^a[es]c-(.*-[0-9]{4}-[0-9]{2}-[0-9]{2})')  AS key,
        split_part(market_slug, '-', 2)                                       AS league,
        min(game_start_time)                                                  AS tip,
        count(DISTINCT market_slug)                                           AS rungs
 FROM market_snapshots
-WHERE captured_at >= now() - interval '12 hours'
+WHERE captured_at >= date_trunc('month', now() - interval '12 hours')
+  AND captured_at >= now() - interval '12 hours'
   AND sports_market_type = ANY(:families)
   AND game_start_time BETWEEN now() - interval '1 hour' AND now() + CAST(:hours AS interval)
-GROUP BY 1, 2
+GROUP BY 1, 2, 3
 HAVING count(DISTINCT market_slug) >= 1
-ORDER BY 3, 1
+ORDER BY 4, 1
 """
 
 
@@ -74,7 +81,8 @@ def slate(hours: float, engine=None) -> list[dict]:
     with eng.connect() as c:
         rows = c.execute(text(SQL), {"families": list(LADDER_MARKET_TYPES),
                                      "hours": f"{hours} hours"}).all()
-    return [{"game": r[0], "league": r[1], "tip": r[2], "rungs": int(r[3])} for r in rows]
+    return [{"game": r[0], "key": r[1], "league": r[2], "tip": r[3], "rungs": int(r[4])}
+            for r in rows]
 
 
 def compose(games: list[dict], now: dt.datetime) -> tuple[str, str]:
