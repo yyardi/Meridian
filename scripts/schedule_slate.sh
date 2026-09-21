@@ -17,6 +17,12 @@
 set -euo pipefail
 R=/opt/meridian/artifacts/reads
 API=$(docker inspect meridian-api --format "{{.Config.Image}}")
+# The crontab this manages is the OPERATOR user's, by name. This script runs
+# under sudo (docker needs it), and a bare `crontab -` under sudo edits
+# ROOT's crontab: the first real run on 2026-09-21 installed the day's block
+# there while the hand-written block, the pings and this job's own line all
+# lived in ubuntu's, so the night would have launched everything twice.
+CRON_USER=${CRON_USER:-ubuntu}
 DRY=0
 ARGS=()
 for a in "$@"; do
@@ -41,5 +47,5 @@ if ! echo "$BLOCK" | grep -q "^[0-9]"; then
 fi
 
 # Keep every non-TEMP line; the self-clean line contains TEMP too and goes.
-( crontab -l 2>/dev/null | grep -v "TEMP" ; echo "$BLOCK" ) | crontab -
-echo "schedule_slate: installed $(echo "$BLOCK" | grep -c '^[0-9]') lines"
+( crontab -u "$CRON_USER" -l 2>/dev/null | grep -v "TEMP" ; echo "$BLOCK" ) | crontab -u "$CRON_USER" -
+echo "schedule_slate: installed $(echo "$BLOCK" | grep -c '^[0-9]') lines into $CRON_USER's crontab"
