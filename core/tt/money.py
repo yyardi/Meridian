@@ -38,7 +38,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from core.backtest.fills import fee_per_contract
+from core.fees import POLYMARKET_TAKER, taker_fee
 
 # --- there is no cost-bar constant in this file, and that is the point ------ #
 #
@@ -46,15 +46,16 @@ from core.backtest.fills import fee_per_contract
 # property of a WINDOW and a STATISTIC, not of the venue:
 #
 #   window        n      med half   mean half   MED total   MEAN total
-#   09-13..09-15   724     1.000c     2.339c     2.260c      3.728c    (venue coefficient then 0.06)
-#   09-18..09-21  1339     0.500c     4.499c     2.238c      6.065c    (0.0695 since 09-17 04:07Z)
+#   09-13..09-15   724     1.000c     2.339c     2.260c      3.728c   pre-raise
+#   09-18..09-21  1339     0.500c     4.499c     2.238c      6.065c   post-raise
 #
 # Between those two the half-spread's median HALVED while its mean nearly
 # DOUBLED: the board grew from 724 markets to 1,339 and the right tail of
 # wide-quoted matches grew with it. The venue's taker coefficient changed
-# underneath as well -- 0.0695 on the venue's own `feeCoefficient` field, zero
-# variation on 12,713 table-tennis rows, against the 0.06 every earlier figure
-# used. Two independent reasons for the same number to move, in three days.
+# underneath as well -- the venue RAISED its coefficient on 2026-09-17 04:07Z
+# (core/fees.py owns both values and the row counts; I confirmed the new one on
+# 12,713 table-tennis rows with zero variation). Two independent reasons for the
+# same number to move, in three days.
 #
 # Two constants published from those measurements are already retracted: 2.22c
 # (a median of a sum with a "fee" back-derived out of it -- medians do not add)
@@ -68,8 +69,8 @@ from core.backtest.fills import fee_per_contract
 # own costs.
 #
 # Per-bet fees are never a constant either: every bet is charged
-# `fee_per_contract` at its own entry price, so the correction from 0.06 to
-# 0.0695 reaches this module through the one place that defines it.
+# the venue's coefficient at its own entry price, so a change to it reaches this
+# module through the one place that defines it.
 
 #: Per-contract standard deviation of the P&L, which is the binary outcome's
 #: and therefore irreducible. Measured, not assumed: the 357 settled TT matches
@@ -87,9 +88,28 @@ Z95 = 1.959964
 Z80 = 0.8416212                            # one-sided 80% power
 
 
-def fee(price: float) -> float:
-    """The venue's taker fee at `price`, from the one place that defines it."""
-    return fee_per_contract(price, is_maker=False)
+def fee(price: float, coefficient: float | None = None) -> float:
+    """The venue's taker fee at `price`, from the one place that defines it.
+
+    `coefficient` is the venue's `feeCoefficient` AS RECORDED ON THE ROW the bet
+    was priced from. It matters because the coefficient is not a constant of the
+    venue, it is a constant of a PERIOD: the venue RAISED it on 2026-09-17 at
+    04:07Z (core/fees.py has both values and the row counts). Every settled
+    table-tennis match that exists today was played before that instant -- the
+    357 measured on 09-15 are all pre-change -- so charging today's coefficient
+    to them overstates their cost by 16%.
+
+    The direction is conservative for a go/no-go (it makes the arm look worse
+    than it was) and wrong all the same: a point-in-time measurement charged at
+    today's prices is not a measurement of what happened. The substrate already
+    carries the answer per row, so the fix is to read it rather than to hardcode
+    a boundary date that will need editing the next time the venue moves.
+
+    Omitted, it falls back to the current coefficient, which is right only for
+    bets priced now.
+    """
+    return taker_fee(price, POLYMARKET_TAKER if coefficient is None
+                     else coefficient)
 
 
 @dataclass(frozen=True)
@@ -101,7 +121,8 @@ class Bet:
     cost: float                            # half-spread paid + fee paid
 
 
-def bet(slug: str, elo_p: float, bid: float, ask: float, y: int) -> Bet | None:
+def bet(slug: str, elo_p: float, bid: float, ask: float, y: int,
+        coefficient: float | None = None) -> Bet | None:
     """One bet, or None when neither side has positive EV at its own price.
 
     `elo_p` is P(YES). Buying YES pays `ask`; buying NO pays `1 - bid`. Both
@@ -111,12 +132,13 @@ def bet(slug: str, elo_p: float, bid: float, ask: float, y: int) -> Bet | None:
     if not (0.0 <= bid <= ask <= 1.0):
         return None
     half = (ask - bid) / 2.0
-    if elo_p > ask + fee(ask):
-        return Bet(slug, "YES", ask, y - ask - fee(ask), half + fee(ask))
+    f_yes = fee(ask, coefficient)
+    if elo_p > ask + f_yes:
+        return Bet(slug, "YES", ask, y - ask - f_yes, half + f_yes)
     entry_no = 1.0 - bid
-    if (1.0 - elo_p) > entry_no + fee(entry_no):
-        return Bet(slug, "NO", entry_no, (1 - y) - entry_no - fee(entry_no),
-                   half + fee(entry_no))
+    f_no = fee(entry_no, coefficient)
+    if (1.0 - elo_p) > entry_no + f_no:
+        return Bet(slug, "NO", entry_no, (1 - y) - entry_no - f_no, half + f_no)
     return None
 
 
