@@ -20,7 +20,9 @@ by the caller (public, unauthenticated) -- a derived settlement is a claim.
 Reported per market type x pregame-mid bucket: n markets, G games, the
 calibration gap E[settle - mid] in cents with a game-clustered 95% interval,
 and the TAKER P&L of buying YES at the ask and of buying NO at 1-bid, each net
-of the 0.0695*p*(1-p) fee. Both sides are printed for every bucket; nothing is
+of the taker fee c*p*(1-p) at the coefficient recorded on that close's own row
+(the venue raised c on 2026-09-17; a close from before then is charged what it
+was charged, never today's). Both sides are printed for every bucket; nothing is
 selected on the outcome. EXPLORATORY: nothing here is pre-registered. A bucket
 whose taker P&L is positive, excludes zero, G >= 25, and clears fee + half
 spread is a HYPOTHESIS for the next weekend's games, which are held out.
@@ -34,9 +36,12 @@ from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
 try:
-    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
+    from core.fees import recorded_fee              # the row's own coefficient; None raises (core/fees.py)
 except ImportError:                                  # run bare, no repo root on sys.path
-    FEE = 0.0695
+    def recorded_fee(price, coefficient):            # the same contract, spelled out: never a constant
+        if coefficient is None:
+            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
+        return float(coefficient) * price * (1.0 - price)
 
 TYPES = ("football_team_full_game_winner", "football_team_full_game_spread",
          "football_team_full_game_total", "football_team_points_full_game_total")
@@ -170,7 +175,8 @@ WHERE m.venue_game_id IS NOT NULL
 # Last pregame quote per market for ONE game (bounded window, DISTINCT ON).
 CLOSE_SQL = """
 SELECT DISTINCT ON (market_slug) market_slug, sports_market_type, line::float line,
-       best_bid::float bid, best_ask::float ask, captured_at, game_start_time
+       best_bid::float bid, best_ask::float ask, fee_coefficient::float fee_coefficient,
+       captured_at, game_start_time
 FROM market_snapshots
 WHERE game_id = :vg AND captured_at BETWEEN :lo AND :ko
   AND best_bid IS NOT NULL AND best_ask IS NOT NULL
@@ -221,6 +227,19 @@ def clustered(vals, keys):
 def bucket(mid):
     return min(int(mid * 10), 9)
 
+
+def taker_net(r):
+    """(buy YES at the ask, buy NO at 1-bid) P&L in cents, net of the fee AT THIS ROW's coefficient.
+
+    `r["fee_coefficient"]` is market_snapshots.fee_coefficient on the close's own row. The
+    venue raised it on 2026-09-17, so a close from before then is charged what it was
+    charged; a row without the column is a KeyError and a NULL a ValueError, never
+    today's constant. 1-bid pays the same fee as the bid: p(1-p) is symmetric.
+    """
+    fy = recorded_fee(r["ask"], r["fee_coefficient"])
+    fn = recorded_fee(r["bid"], r["fee_coefficient"])
+    return 100 * (r["y"] - r["ask"] - fy), 100 * ((1 - r["y"]) - (1 - r["bid"]) - fn)
+
 def report(title, sel, key=lambda r: bucket((r["bid"] + r["ask"]) / 2), labels=None):
     print(f"\n=== {title} ===")
     print(f"  {'bucket':<10}{'n':>6}{'G':>5}{'G_eff':>7}   {'gap E[y-mid] c':>16}{'95% CI':>18}   "
@@ -233,8 +252,9 @@ def report(title, sel, key=lambda r: bucket((r["bid"] + r["ask"]) / 2), labels=N
             print(f"  {str(labels[k] if labels else k):<10}{len(rs):>6}   too few"); continue
         keys = [r["vg"] for r in rs]
         gap, gh, n, G, ge = clustered([100 * (r["y"] - (r["bid"] + r["ask"]) / 2) for r in rs], keys)
-        by, byh, *_ = clustered([100 * (r["y"] - r["ask"] - FEE * r["ask"] * (1 - r["ask"])) for r in rs], keys)
-        bn, bnh, *_ = clustered([100 * ((1 - r["y"]) - (1 - r["bid"]) - FEE * r["bid"] * (1 - r["bid"])) for r in rs], keys)
+        nets = [taker_net(r) for r in rs]
+        by, byh, *_ = clustered([x[0] for x in nets], keys)
+        bn, bnh, *_ = clustered([x[1] for x in nets], keys)
         hs = 100 * sum((r["ask"] - r["bid"]) / 2 for r in rs) / n
         lab = str(labels[k] if labels else k)
         flag = ""
@@ -260,7 +280,8 @@ GROUP BY 1
 """
 MLB_CLOSE_SQL = """
 SELECT DISTINCT ON (market_slug) market_slug, sports_market_type, line::float line,
-       best_bid::float bid, best_ask::float ask, captured_at, game_start_time
+       best_bid::float bid, best_ask::float ask, fee_coefficient::float fee_coefficient,
+       captured_at, game_start_time
 FROM market_snapshots
 WHERE game_id = :vg AND captured_at BETWEEN :lo AND :ko
   AND best_bid IS NOT NULL AND best_ask IS NOT NULL

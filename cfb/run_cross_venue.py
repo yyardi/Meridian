@@ -15,7 +15,9 @@
     flips to post) and is counted against ESPN wherever both exist. Split by the named team's side: AWAY is the
     Polymarket line's rung (asc line -X at YES mid 0.2-0.3); HOME is the complement of its 0.7-0.8 mirror.
 FEES. Kalshi 0.07*p*(1-p) (docs/math/the-rebate.md: NCAAF series quadratic_with_maker_fees, multiplier 1; the
-venue's round-up to the cent is not applied); Polymarket taker FP*p*(1-p), FP from core/fees.py (0.0695). MATCHING. Kalshi game -> cfb_game_map
+venue's round-up to the cent is not applied; kalshi_snapshots carries no fee field, so this is ONE constant, FK);
+Polymarket taker c*p*(1-p) at the coefficient recorded on EACH sweep's own market_snapshots row (the venue raised it
+on 2026-09-17; a sweep is charged what it was charged, never today's constant). MATCHING. Kalshi game -> cfb_game_map
 game on date +-1, BOTH teams, exact then prefix then containment LAST, over (Kalshi code vs slug token) OR (Kalshi
 title vs ESPN display name); orientation from ESPN's home/away names, never ticker order; two games or both
 orientations at the winning tier -> refused; the tier is printed. A matched game whose winner mids disagree by
@@ -29,9 +31,13 @@ from collections import defaultdict
 from sqlalchemy import create_engine, event, text
 
 try:
-    from core.fees import KALSHI_TAKER as FK, POLYMARKET_TAKER as FP  # 0.07 / 0.0695: the venues' coefficients (core/fees.py)
+    from core.fees import KALSHI_TAKER as FK, recorded_fee  # FK 0.07: Kalshi's one constant; recorded_fee: the Polymarket row's own
 except ImportError:                                                  # run bare, no repo root on sys.path
-    FK, FP = 0.07, 0.0695
+    FK = 0.07
+    def recorded_fee(price, coefficient):                            # the same contract as core.fees: None raises, never today's
+        if coefficient is None:
+            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
+        return float(coefficient) * price * (1.0 - price)
 GAP, LO, HI, FLAG = 3.0, 0.20, 0.30, 35.0
 MATCH, B_LO, B_HI, DAY = (dt.timedelta(minutes=m) for m in (5, 30, 90, 1440))
 LG, D0, D1 = os.environ.get("LEAGUE", "cfb"), os.environ.get("D0", "2026-09-11"), os.environ.get("D1", "2026-09-13")
@@ -49,7 +55,8 @@ Q = dict(
  bf="SELECT game_id eg, home_score h, away_score a FROM espn_cfb_backfill_games WHERE game_id = ANY(:egs) AND home_score IS NOT NULL",
  ks="""SELECT ticker, market_type t, floor_strike::float f, captured_at ts, yes_bid::float b, yes_ask::float a FROM kalshi_snapshots
        WHERE game_key = :gk AND series_ticker LIKE :ser AND captured_at BETWEEN :lo AND :hi AND yes_bid > 0 AND yes_ask < 1 AND yes_ask >= yes_bid ORDER BY captured_at""",
- pm="""SELECT sports_market_type t, line::float line, captured_at ts, best_bid::float b, best_ask::float a, game_start_time gst FROM market_snapshots
+ pm="""SELECT sports_market_type t, line::float line, captured_at ts, best_bid::float b, best_ask::float a, fee_coefficient::float fc,
+       game_start_time gst FROM market_snapshots
        WHERE game_id = :vg AND sports_market_type = ANY(:ts) AND captured_at BETWEEN :lo AND :hi AND best_bid > 0 AND best_ask < 1 AND best_ask >= best_bid ORDER BY captured_at""")
 
 def clustered(vals, keys):
@@ -63,7 +70,12 @@ def ci(vals, keys, u="c"):
     m, hw, n, G, ge = clustered(vals, keys)
     return f"{m:+7.2f}{u} [{m-hw:+7.2f}, {m+hw:+7.2f}]  n={n:<5d} G={G:<3d} G_eff={ge:5.1f}{'  UNDERPOWERED' if G < 25 else ''}"
 def pct(xs, q): xs = sorted(xs); return xs[int(round(q * (len(xs) - 1)))]
-def fee(p, th): return th * p * (1 - p)
+def fee(p, th): return th * p * (1 - p)                              # Kalshi only: FK is the one coefficient it has
+def dutch_cost(kb, ka, pb, pa, pc):
+    """The cheaper dutch, fees in: YES at one venue's ask + NO at the other's 1 - bid. Kalshi at FK; Polymarket at
+    `pc`, the fee_coefficient recorded on THIS sweep's row -- the venue raised it on 2026-09-17 and a sweep from
+    before then is charged what it was charged. None raises (core.fees.recorded_fee), never today's constant."""
+    return min(ka + (1 - pb) + fee(ka, FK) + recorded_fee(pb, pc), pa + (1 - kb) + recorded_fee(pa, pc) + fee(kb, FK))
 def norm(s): return re.sub(r"[^a-z0-9]", "", re.sub(r"\(.*?\)", "", (s or "").lower()).replace("st.", "state"))
 def fit(k, e, tier):
     for x, y in zip(k, e):
@@ -113,7 +125,7 @@ with eng.connect() as c:
         F["kickoff from plays" if m["eg"] in ko else "kickoff from venue start"] += 1; F["settled by ESPN"] += m["eg"] in fin
         P, K, meta = defaultdict(list), defaultdict(list), {}
         for r in pr:
-            if r["ts"] < kick: P[(PT[r["t"]], None if r["line"] is None else round(r["line"], 1))].append((r["ts"], r["b"], r["a"]))
+            if r["ts"] < kick: P[(PT[r["t"]], None if r["line"] is None else round(r["line"], 1))].append((r["ts"], r["b"], r["a"], r["fc"]))
         for r in kr:
             if r["ts"] < kick: K[r["ticker"]].append((r["ts"], r["b"], r["a"])); meta[r["ticker"]] = (r["t"], r["f"])
         gA, gB, gC, wgap = [], [], [], None
@@ -133,12 +145,12 @@ with eng.connect() as c:
             ps = P.get(("winner", None) if t == "winner" else ("total", round(f, 1)) if t == "total" else ("spread", round(-f if side == "away" else f, 1)))
             if not ps: F["kalshi contracts with no polymarket rung"] += 1; continue
             F["matched contracts"] += 1; kts = [x[0] for x in ks]; seq = []
-            for tp, pb, pa in ps:
+            for tp, pb, pa, pc in ps:                  # pc: the coefficient recorded on this sweep's row
                 if side == "home": pb, pa = 1 - pa, 1 - pb
                 j = near(kts, tp)
                 if j is None: F["polymarket sweeps with no kalshi within 5 min"] += 1; continue
                 _, kb, ka = ks[j]; km, pm_ = (kb + ka) / 2, (pb + pa) / 2; gap = 100 * (km - pm_)
-                dutch = round(min(ka + (1 - pb) + fee(ka, FK) + fee(pb, FP), pa + (1 - kb) + fee(pa, FP) + fee(kb, FK)), 6) < 1
+                dutch = round(dutch_cost(kb, ka, pb, pa, pc), 6) < 1
                 gA.append((t, side, gap, dutch, g["gk"], abs(kts[j] - tp).total_seconds())); seq.append((tp, pm_, km, gap))
                 if t == "winner" and side == "away": wgap = gap
             i = 0

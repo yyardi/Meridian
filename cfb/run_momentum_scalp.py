@@ -17,8 +17,9 @@ DESIGN -- registered here before the first outcome run.
  Entry  the first tick with captured_at STRICTLY AFTER trigger time + LATENCY (default 3 s;
    LATENCY=poll anchors on the play's first_seen_at, i.e. when OUR poller saw it -- the header
    prints that lag; it is ~55 s, so 3 s is an optimistic bound).  Offense = away -> YES at ask;
-   offense = home -> NO at 1 - bid.  Taker fee 0.0695*p*(1-p) per share on entry and on every
-   taker exit (no fee on settlement, no maker fee, no rebate).
+   offense = home -> NO at 1 - bid.  Taker fee c*p*(1-p) per share on entry and on every taker
+   exit, c the coefficient recorded on THAT tick (the venue raised it on 2026-09-17, so a run
+   spanning it charges two values; no fee on settlement, no maker fee, no rebate).
  Gates (each counted)  trigger play must not share the game's first wall-clock second
    (recorder-start bunch); the mid must have changed within the 120 s before the entry tick
    (frozen board); entry spread <= 10c.
@@ -49,9 +50,13 @@ from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
 try:
-    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
+    from core.fees import POLYMARKET_TAKER as FEE, recorded_fee  # FEE = today's, for the NOW-priced fee table only
 except ImportError:                                  # run bare, no repo root on sys.path
     FEE = 0.0695
+    def recorded_fee(price, coefficient):            # the same contract as core.fees: None raises, never today's
+        if coefficient is None:
+            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
+        return float(coefficient) * price * (1.0 - price)
 
 LG, LAT = os.environ.get("LEAGUE", "cfb"), os.environ.get("LATENCY", "3")
 KS, SS, T3_MOVE = (2, 5, 10), (5, 10, 20), 0.02
@@ -73,11 +78,11 @@ GROUP BY 1, 2, 3, 4, 8, 9, 10 ORDER BY min(p.wall_clock)"""
 Q_PLAYS = """SELECT wall_clock wc, first_seen_at fs, period, is_overtime ot, down, yards_to_goal ytg, pos_team pos,
   drive_id drv, coalesce(play_type, '') pt FROM espn_cfb_live_plays
 WHERE game_id = :eg AND league = :lg AND wall_clock IS NOT NULL ORDER BY wall_clock, id"""
-Q_TICKS = """SELECT captured_at t, best_bid::float b, best_ask::float a FROM market_snapshots
+Q_TICKS = """SELECT captured_at t, best_bid::float b, best_ask::float a, fee_coefficient::float fc FROM market_snapshots
 WHERE game_id = :vg AND sports_market_type = 'football_team_full_game_winner' AND captured_at BETWEEN :lo AND :hi
   AND best_bid > 0 AND best_ask < 1 AND best_ask >= best_bid ORDER BY captured_at"""
 
-def fee(p): return FEE * p * (1 - p)
+def fee_now(p): return FEE * p * (1 - p)   # TODAY's coefficient: the FEE TABLE only; every tick on tape is charged its own
 def clustered(vals, keys):
     n = len(vals); m = sum(vals) / n; res, size = defaultdict(float), defaultdict(int)
     for v, k in zip(vals, keys): res[k] += v - m; size[k] += 1
@@ -90,15 +95,17 @@ C, cells, spreads, lags = defaultdict(int), defaultdict(list), [], []
 def ptime(p): return (p["fs"] if LAT == "poll" else p["wc"]) + S3
 
 DBG = os.environ.get("DEBUG_GAME")   # espn game_id: dump every (5,10) taker trade for a by-eye check against raw ticks
-def trade(arm, side, t_in, deadline, T, B, A, M, chg, game, away_won):
+def trade(arm, side, t_in, deadline, T, B, A, M, FC, chg, game, away_won):
+    """FC[i] is the fee_coefficient recorded on tick i: the entry is charged at its tick's and a taker exit
+    at ITS tick's, so one trade can straddle the venue's 2026-09-17 raise. None raises (recorded_fee)."""
     i = bisect_right(T, t_in)                       # first tick STRICTLY after the information
     if i >= len(T): C["entry dropped: no tick after trigger"] += 1; return
     if T[i] - chg[i] > S120: C["TRAP frozen board: no mid change in 120 s"] += 1; return
     if A[i] - B[i] > 0.10: C["entry dropped: spread > 10c"] += 1; return
-    p_in = A[i] if side == "YES" else 1 - B[i]; f_in = fee(p_in)
+    p_in = A[i] if side == "YES" else 1 - B[i]; f_in = recorded_fee(p_in, FC[i])
     x = (lambda j: B[j]) if side == "YES" else (lambda j: 1 - A[j])
     def book(key, p_out, taker, kind, j):   # exact split: gross = signed mid drift - half-spreads paid (settle: all drift)
-        f_out = fee(p_out) if taker else 0.0; gross = (p_out - p_in) / p_in * 100
+        f_out = recorded_fee(p_out, FC[j]) if taker else 0.0; gross = (p_out - p_in) / p_in * 100
         hs = 0.0 if kind == "settle" else (A[i] - B[i] + A[j] - B[j]) / 2 / p_in * 100
         cells[key].append((gross - (f_in + f_out) / p_in * 100, gross, (f_in + f_out) / p_in * 100, kind,
                            (T[j] - T[i]).total_seconds(), game, side, gross + hs, hs, p_in, (A[i] - B[i]) / p_in * 100))
@@ -137,7 +144,7 @@ with eng.connect() as c:
                                          "hi": P[-1]["wc"] + dt.timedelta(minutes=40)}).fetchall()
         if len(rows) < 50: C["games skipped: no winner tape"] += 1; continue
         C["games scored"] += 1; C["games settled ('post')"] += settled
-        T, B, A = [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
+        T, B, A, FC = [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows]
         M = [(a + b) / 2 for a, b in zip(A, B)]
         chg = [T[0]]
         for i in range(1, len(T)): chg.append(T[i] if M[i] != M[i - 1] else chg[-1])
@@ -155,7 +162,7 @@ with eng.connect() as c:
                 side = "YES" if p["pos"] == g["pa"] else "NO" if p["pos"] == g["ph"] else None
                 if side is None: C["trigger dropped: offense not home/away id"] += 1; continue
                 nxt = next((q for q in P[idx + 1:] if q["pos"] != p["pos"]), None)
-                trade(arm, side, ptime(p), ptime(nxt) if nxt else T[-1], T, B, A, M, chg, g["eg"], away_won)
+                trade(arm, side, ptime(p), ptime(nxt) if nxt else T[-1], T, B, A, M, FC, chg, g["eg"], away_won)
         lock, j0 = T[0], 0
         for i in range(len(T)):
             if T[i] < lock or not (P[0]["wc"] <= T[i] <= P[-1]["wc"]): continue
@@ -164,7 +171,7 @@ with eng.connect() as c:
             d = M[i] - M[j0]
             if abs(d) >= T3_MOVE:
                 C["T3 triggers"] += 1
-                lock = trade("T3", "YES" if d > 0 else "NO", T[i] + S3, T[i] + S3 + S180, T, B, A, M, chg, g["eg"], None) or T[i] + S180
+                lock = trade("T3", "YES" if d > 0 else "NO", T[i] + S3, T[i] + S3 + S180, T, B, A, M, FC, chg, g["eg"], None) or T[i] + S180
 
 print(f"LEAGUE={LG} LATENCY={LAT}  run {NOW:%Y-%m-%d %H:%M}Z  games in plays+map {len(games)}")
 for k in sorted(C): print(f"  {k}: {C[k]}")
@@ -172,10 +179,11 @@ if not lags: raise SystemExit("NO DATA: no game scored")
 S = med(spreads) / 100
 print(f"  ESPN play poll lag first_seen_at - wall_clock: median {med(lags):.0f} s (p90 {sorted(lags)[int(0.9 * len(lags))]:.0f} s)"
       f" -- LATENCY=3 assumes the play is tradable 3 s after wall_clock")
-print(f"\nFEE TABLE  taker 0.0695*p*(1-p) per share, both legs; median in-game winner spread S = {S * 100:.2f}c (n={len(spreads)})"
+print(f"\nFEE TABLE  taker {FEE}*p*(1-p) per share at TODAY's coefficient, both legs (the cells below charge each tick at"
+      f" its recorded one); median in-game winner spread S = {S * 100:.2f}c (n={len(spreads)})"
       "\n  YES price  round-trip fee %ticket   mid move (c) needed for +1c/$1 ticket after 2 fees + 1 spread")
 for p in (0.2, 0.3, 0.5, 0.7, 0.8):
-    print(f"  {p * 100:5.0f}c   {2 * fee(p) / p * 100:7.2f} %            {(S + 2 * fee(p) + 0.01 * p) * 100:6.2f}")
+    print(f"  {p * 100:5.0f}c   {2 * fee_now(p) / p * 100:7.2f} %            {(S + 2 * fee_now(p) + 0.01 * p) * 100:6.2f}")
 
 def ci(rows):
     if len(rows) < 2: return "n/a"
