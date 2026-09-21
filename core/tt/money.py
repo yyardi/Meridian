@@ -46,8 +46,8 @@ from core.backtest.fills import fee_per_contract
 # property of a WINDOW and a STATISTIC, not of the venue:
 #
 #   window        n      med half   mean half   MED total   MEAN total
-#   09-13..09-15   724     1.000c     2.339c     2.260c      3.728c    (fee 0.06)
-#   09-18..09-21  1339     0.500c     4.499c     2.238c      6.065c    (fee 0.0695)
+#   09-13..09-15   724     1.000c     2.339c     2.260c      3.728c    (venue coefficient then 0.06)
+#   09-18..09-21  1339     0.500c     4.499c     2.238c      6.065c    (0.0695 since 09-17 04:07Z)
 #
 # Between those two the half-spread's median HALVED while its mean nearly
 # DOUBLED: the board grew from 724 markets to 1,339 and the right tail of
