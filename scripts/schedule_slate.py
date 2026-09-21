@@ -73,8 +73,20 @@ REST_BUCKET_MIN = 90
 REST_MIN_RUNGS = 30
 #: Below this many rungs a ladder has too few pairs to be worth a detector.
 MIN_RUNGS = 4
-#: Detector floor and freshness gate, from the measured edge.
-FLOOR_USD = 25
+#: Detector floor and freshness gate, from the measured edge. The floor is
+#: IMPORTED, not restated: a planner carrying its own 25 can schedule a night
+#: against a floor the detector no longer uses.
+#:
+#: It sits HERE, below the sys.path bootstrap, and not in the import block at
+#: the top. I moved it up there to avoid the noqa and the whole suite stayed
+#: green -- while `python scripts/schedule_slate.py` from cron raised
+#: ImportError on line 50, because the repo root is not on sys.path until the
+#: insert above runs. pytest has the root already; cron does not.
+#:
+#: `core.ladder.pnl` defines the same constant but pulls desk/scan/tape behind
+#: it; tape imports in 15 ms under `env -i` with no DATABASE_URL, which is what
+#: a cron planner requires.
+from core.ladder.tape import DEFAULT_FLOOR_USD as FLOOR_USD  # noqa: E402
 FRESH_S = 2
 #: The verdict runs this long after the last game should be over.
 VERDICT_AFTER_MIN = 30
