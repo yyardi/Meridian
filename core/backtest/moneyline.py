@@ -453,7 +453,7 @@ def _maybe_bet(
         # there is no recorded fee_coefficient to charge. The venue's taker
         # fee is applied to it as the cost a Polymarket taker would pay for
         # the same probability today.
-        fee=fee_per_contract(price, is_maker=False),
+        fee=fee_per_contract(price, is_maker=False),  # fee-now: a sportsbook offer, no venue row exists
     )
 
 

@@ -211,7 +211,7 @@ def score_cells(rows, ys, chosen=None, dropped: dict | None = None) -> dict:
             i = idx[b.market_slug]
             r, y = rows[i], ys[i]
             outcomes.add(y)
-            pv = bet_pnl(b.side, y, r["bid"], r["ask"])
+            pv = bet_pnl(b.side, y, r["bid"], r["ask"], r["coef"])   # the row's period, as break_even above
             vals.append(100 * pv)
             keys.append(r["game_id"])
             pnl += pv

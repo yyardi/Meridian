@@ -50,11 +50,14 @@ First run 2026-09-13 is a SMOKE TEST of the pipeline: the tape is NFL week 1
 import bisect
 import datetime as dt
 import os
+import sys
 from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
 
-FEE, HORIZONS = 0.07, (72, 48, 24, 12, 6, 2, 1)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import KALSHI_TAKER as FEE  # noqa: E402  Kalshi's quadratic taker coefficient; no per-row column exists on kalshi_snapshots
+HORIZONS = (72, 48, 24, 12, 6, 2, 1)
 UTC = dt.timezone.utc
 DK_START = dt.datetime(2026, 9, 12, 16, 45, tzinfo=UTC)  # change-detected DK recorder start
 STALE = dt.timedelta(minutes=20)                         # Kalshi polls ~60s; older is a gap, not a price

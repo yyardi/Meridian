@@ -82,7 +82,7 @@ def test_entering_and_exiting_immediately_loses_the_spread_and_two_fees():
 
 @pytest.mark.parametrize("px", [0.0, 1.0])
 def test_the_fee_vanishes_at_the_bounds(px):
-    assert fee(px) == 0.0
+    assert fee(px, 0.0695) == 0.0
 
 
 # --------------------------------------------------------------- the trigger
@@ -323,11 +323,14 @@ def test_a_charged_leg_whose_row_has_no_coefficient_is_refused(leg):
                 coefficient=None if leg == "exit" else C)
 
 
-def test_fee_without_a_coefficient_prices_now_and_with_one_prices_that_row():
-    from core.fees import POLYMARKET_TAKER
-    assert fee(0.40) == pytest.approx(POLYMARKET_TAKER * 0.40 * 0.60)
+def test_fee_needs_the_row_s_coefficient_and_charges_that_row():
+    """Nothing in the scalp prices a bet now: every price is a recorded tick,
+    so a missing coefficient is an error, never today's constant."""
+    from core.fees import POLYMARKET_TAKER as POST   # the coefficient since 2026-09-17; PRE is the one before
+    with pytest.raises(ValueError):
+        fee(0.40, None)
     assert fee(0.40, PRE) == pytest.approx(PRE * 0.40 * 0.60)
-    assert fee(0.40, PRE) < fee(0.40)
+    assert fee(0.40, PRE) < fee(0.40, POST)
 
 
 def test_the_tick_query_reads_the_coefficient_beside_the_touch():

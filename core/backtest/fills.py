@@ -59,7 +59,7 @@ from enum import Enum
 #: never compared to the field again; the recorded column settles it.
 from core.fees import POLYMARKET_MAKER, POLYMARKET_TAKER  # noqa: E402
 
-THETA_TAKER = POLYMARKET_TAKER
+THETA_TAKER = POLYMARKET_TAKER  # fee-now: the coefficient for a bet priced now; history passes the row's
 #: Default maker coefficient: zero. No rebate is booked unless asked for.
 THETA_MAKER = POLYMARKET_MAKER
 #: The unverified rebate coefficient, kept only for the explicit sensitivity
@@ -87,7 +87,7 @@ def fee_per_contract(price: float, *, is_maker: bool, assume_rebate: bool = Fals
     if is_maker:
         theta = THETA_MAKER_REBATE if assume_rebate else THETA_MAKER
     else:
-        theta = THETA_TAKER if coefficient is None else float(coefficient)
+        theta = THETA_TAKER if coefficient is None else float(coefficient)  # fee-now: None means priced now, not a recorded row
     return theta * price * (1.0 - price)
 
 

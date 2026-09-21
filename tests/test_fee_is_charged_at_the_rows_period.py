@@ -143,7 +143,6 @@ POINT_IN_TIME = {
     "cfb/run_scan_live.py": "recorded closes",
     "cfb/run_scan_null.py": "the NULL's break-even; the reference, not the estimate",
     "cfb/run_slowside.py": "recorded trade prices",
-    "cfb/run_tt_elo.py": "last pregame quote per match",
     "core/backtest/fills.py": "the fill model for reads over history",
     "core/backtest/ingame_replay.py": "replays recorded ticks",
     "core/backtest/moneyline.py": "recorded odds and closes",
@@ -159,7 +158,6 @@ PRICES_NOW = {
     "core/quote/wallet.py": "quotes now, against the live touch",
     "core/kelly_sizing.py": "sizes a bet being placed now",
     "core/executor.py": "places now",
-    "core/api.py": "the live ladder path answers a request",
     "cfb/run_stream_executor.py": "reads the stream and proposes now",
     "scripts/launchers/slate_fast.py": "launches tonight's detectors",
 }
@@ -178,6 +176,8 @@ TAPE_LEDGER_OR_INSTRUMENT = {
     "core/ladder/gamelog.py": "reads the ledger",
     "core/fees.py": "owns the constant and the recorded form",
     "scripts/fee_drift.py": "compares the constant to the column by design",
+    "cfb/run_kalshi_dk_lag.py": "kalshi_snapshots carries no fee column; KALSHI_TAKER is that venue's one constant",
+    "cfb/run_kalshi_early_vs_close.py": "kalshi_snapshots carries no fee column; KALSHI_TAKER is that venue's one constant",
 }
 
 CLASSIFIED = {**POINT_IN_TIME, **PRICES_NOW, **TAPE_LEDGER_OR_INSTRUMENT}

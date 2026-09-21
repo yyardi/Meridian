@@ -75,16 +75,12 @@ file is the script.
 import csv
 import datetime as dt
 import os
+import sys
 from collections import Counter, defaultdict
 
 MODE, DATE = os.environ.get("MODE", "replay"), os.environ.get("DATE", "2026-09-12")
-try:
-    from core.fees import recorded_fee              # the fee at the coefficient the venue carried on THAT row
-except ImportError:                                  # run bare (trainer image mounts cfb/ only): the same strict form, no constant
-    def recorded_fee(price, coefficient):
-        if coefficient is None:
-            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
-        return float(coefficient) * price * (1.0 - price)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import recorded_fee  # noqa: E402  the fee at the coefficient the venue carried on THAT row
 LO, HI = 0.20, 0.30
 SPREAD_CAP = 0.06            # skip a rung whose ask - bid exceeds this (doc section 3c)
 START_DISAGREE_MIN = 30      # print games whose venue start values disagree by more than this

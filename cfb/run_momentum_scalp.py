@@ -44,19 +44,13 @@ RUN (prod, read-only; env flags inside docker run): LEAGUE=cfb|nfl, LATENCY=3|po
     -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian -e LEAGUE=cfb \\
     -w /app meridian-trainer python3 -' < cfb/run_momentum_scalp.py
 """
-import datetime as dt, os
+import datetime as dt, os, sys
 from bisect import bisect_right
 from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
-try:
-    from core.fees import POLYMARKET_TAKER as FEE, recorded_fee  # FEE = today's, for the NOW-priced fee table only
-except ImportError:                                  # run bare, no repo root on sys.path
-    FEE = 0.0695
-    def recorded_fee(price, coefficient):            # the same contract as core.fees: None raises, never today's
-        if coefficient is None:
-            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
-        return float(coefficient) * price * (1.0 - price)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+from core.fees import POLYMARKET_TAKER, recorded_fee, taker_fee  # noqa: E402  every tick on tape is charged its own; taker_fee: the illustrative table only
 
 LG, LAT = os.environ.get("LEAGUE", "cfb"), os.environ.get("LATENCY", "3")
 KS, SS, T3_MOVE = (2, 5, 10), (5, 10, 20), 0.02
@@ -82,7 +76,6 @@ Q_TICKS = """SELECT captured_at t, best_bid::float b, best_ask::float a, fee_coe
 WHERE game_id = :vg AND sports_market_type = 'football_team_full_game_winner' AND captured_at BETWEEN :lo AND :hi
   AND best_bid > 0 AND best_ask < 1 AND best_ask >= best_bid ORDER BY captured_at"""
 
-def fee_now(p): return FEE * p * (1 - p)   # TODAY's coefficient: the FEE TABLE only; every tick on tape is charged its own
 def clustered(vals, keys):
     n = len(vals); m = sum(vals) / n; res, size = defaultdict(float), defaultdict(int)
     for v, k in zip(vals, keys): res[k] += v - m; size[k] += 1
@@ -179,11 +172,11 @@ if not lags: raise SystemExit("NO DATA: no game scored")
 S = med(spreads) / 100
 print(f"  ESPN play poll lag first_seen_at - wall_clock: median {med(lags):.0f} s (p90 {sorted(lags)[int(0.9 * len(lags))]:.0f} s)"
       f" -- LATENCY=3 assumes the play is tradable 3 s after wall_clock")
-print(f"\nFEE TABLE  taker {FEE}*p*(1-p) per share at TODAY's coefficient, both legs (the cells below charge each tick at"
+print(f"\nFEE TABLE  taker {POLYMARKET_TAKER}*p*(1-p) per share at TODAY's coefficient, both legs (the cells below charge each tick at"
       f" its recorded one); median in-game winner spread S = {S * 100:.2f}c (n={len(spreads)})"
       "\n  YES price  round-trip fee %ticket   mid move (c) needed for +1c/$1 ticket after 2 fees + 1 spread")
 for p in (0.2, 0.3, 0.5, 0.7, 0.8):
-    print(f"  {p * 100:5.0f}c   {2 * fee_now(p) / p * 100:7.2f} %            {(S + 2 * fee_now(p) + 0.01 * p) * 100:6.2f}")
+    print(f"  {p * 100:5.0f}c   {2 * taker_fee(p) / p * 100:7.2f} %            {(S + 2 * taker_fee(p) + 0.01 * p) * 100:6.2f}")  # fee-now: an illustration over hypothetical prices, no row exists
 
 def ci(rows):
     if len(rows) < 2: return "n/a"
