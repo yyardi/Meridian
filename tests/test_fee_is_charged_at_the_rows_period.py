@@ -79,7 +79,16 @@ def bare_constant_fee(text: str) -> list[str]:
     """
     # Lines that declare a NOW-priced exception are removed FIRST, so a marker
     # exempts its own line and nothing else.
-    lines = [l for l in text.splitlines() if not FEE_NOW_MARKER.search(l)]
+    #
+    # A marker on a `def` line is REFUSED. cfb/run_momentum_scalp.py is the case
+    # that showed why: `def fee(p): return FEE * p * (1 - p)` is used at line 98
+    # for the entry charge on a recorded tick, at 101 for the exit, and at 178
+    # for an illustrative table over hypothetical prices. A marker on the def
+    # would exempt the two real historical charges along with the table, and the
+    # reviewer of that diff would see one honest-looking comment, not three
+    # call sites. The exemption has to sit at the call that needs it.
+    lines = [l for l in text.splitlines()
+             if not (FEE_NOW_MARKER.search(l) and not re.match(r"\s*def\s", l))]
     text = "\n".join(lines)
 
     hits = []
@@ -268,3 +277,23 @@ def test_every_now_priced_exception_carries_a_reason():
     for s_ in seen or ["  (none)"]:
         print(f"    {s_}")
     assert not bad, bad
+
+
+def test_a_marker_on_a_def_line_does_not_exempt_its_callers():
+    """The hatch is per LINE, and a definition is not a call.
+
+    `def fee(p): return FEE * p * (1 - p)  # fee-now: ...` would clear every
+    caller at once -- including the ones charging recorded rows -- behind a
+    single comment the reviewer reads as covering the table.
+    """
+    on_def = ("from core.fees import POLYMARKET_TAKER as FEE\n"
+              "def fee(p): return FEE * p * (1 - p)  # fee-now: an illustrative "
+              "table over hypothetical prices\n"
+              "charged = fee(row_price)\n")
+    assert bare_constant_fee(on_def), "a marker on a def must not exempt callers"
+
+    at_call = ("from core.fees import recorded_fee, POLYMARKET_TAKER as FEE\n"
+               "def fee(p, coef): return coef * p * (1 - p)\n"
+               "charged = fee(row_price, row['fee_coefficient'])\n"
+               "table = fee(0.5, FEE)  # fee-now: an illustration, no row exists\n")
+    assert not bare_constant_fee(at_call), bare_constant_fee(at_call)
