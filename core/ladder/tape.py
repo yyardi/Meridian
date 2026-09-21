@@ -231,6 +231,14 @@ def ladder(sample: dict, game: str = "", *, fee_rate: float = scan.DEFAULT_FEE_R
     before fees and not after. `core.ladder.pnl` calls this once per sample
     over a whole night's tape, so the extra pass is off by default and
     `latest()` turns it on for the ONE sample a page actually draws.
+
+    `fee_rate` is the caller's, not the tape's: a freshness-tape row carries
+    each rung's bid/ask/sizes/transactTime and NO fee coefficient
+    (cfb/run_ws_freshness.py `compare()`), so there is nothing per row to
+    charge. The default is today's constant, and every freshness tape on file
+    was written after the venue raised it on 2026-09-17, so the default is
+    what the venue charged on all of them. A tape from before that day must
+    not be scanned at the default; add the coefficient to its rows first.
     """
     now = time.time() if now is None else now
     rows = sample.get("rows") or []

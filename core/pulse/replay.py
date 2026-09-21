@@ -81,6 +81,13 @@ class Tick:
     is_live: bool
     score: str | None
     period: str | None
+    #: The venue's taker coefficient recorded on this row
+    #: (market_snapshots.fee_coefficient). ``_stream`` sets it on every tick
+    #: it reads; ``None`` is a synthetic tick, and a strategy that charges a
+    #: fee goes through ``recorded_coefficient`` so it is refused rather than
+    #: charged at today's constant. Defaulted only so the fixtures that never
+    #: charge a fee still construct.
+    fee_coefficient: float | None = None
 
     @property
     def mid(self) -> float | None:
@@ -109,6 +116,25 @@ class Tick:
     def total_points(self) -> int | None:
         pts = self.points
         return None if pts is None else pts[0] + pts[1]
+
+
+def recorded_coefficient(tick: Tick) -> float:
+    """The taker coefficient the venue charged on THIS tick's row.
+
+    The coefficient is a constant of a period, not of the venue: it was raised
+    on 2026-09-17 at 04:07Z, and every recorded row carries the value in force
+    when it was written (core/fees.py has the counts). A replay that charges
+    today's constant across an archive from before that instant overcharges
+    every exit by 16 %, so a strategy charges each fee at the coefficient on
+    the tick it fills against. A tick without one is refused, never priced at
+    today's -- the silent fallback is the defect this exists to end.
+    """
+    if tick.fee_coefficient is None:
+        raise ValueError(
+            f"{tick.market_slug} @ {tick.captured_at.isoformat()}: tick carries no "
+            "fee_coefficient; a replay cannot charge today's"
+        )
+    return tick.fee_coefficient
 
 
 @dataclass
@@ -236,6 +262,7 @@ def _tick_stmt(*, event_slug: str, live_only: bool = True):
             MarketSnapshot.is_live,
             MarketSnapshot.event_score,
             MarketSnapshot.event_period,
+            MarketSnapshot.fee_coefficient,
         )
         .where(MarketSnapshot.event_slug == event_slug)
         .order_by(MarketSnapshot.captured_at, MarketSnapshot.market_slug)
@@ -313,6 +340,8 @@ def _stream(session: Session, stmt) -> Iterator[Tick]:
             is_live=r.is_live,
             score=r.event_score,
             period=r.event_period,
+            fee_coefficient=(float(r.fee_coefficient)
+                             if r.fee_coefficient is not None else None),
         )
 
 

@@ -448,6 +448,11 @@ def _maybe_bet(
         model_probability=model_p, book_probability=book_p,
         entry_price=price, edge=edge, won=won,
         pnl=pnl_for_contract(price, won),
+        # Priced at today's constant, on purpose: `price` is a SPORTSBOOK
+        # offer (american_to_price over sportsbook_odds), not a venue row, so
+        # there is no recorded fee_coefficient to charge. The venue's taker
+        # fee is applied to it as the cost a Polymarket taker would pay for
+        # the same probability today.
         fee=fee_per_contract(price, is_maker=False),
     )
 

@@ -26,6 +26,7 @@ from core.pulse.tight_game_reversion import (
     Trade,
     _flat_target,
     _settle_open,
+    charged_coefficients,
     minutes_left_in_q4,
 )
 
@@ -33,14 +34,21 @@ UTC = dt.timezone.utc
 T0 = dt.datetime(2026, 8, 8, 2, 0, tzinfo=UTC)
 GAME = "wnba-gsv-dal-2026-08-08"
 ML = "aec-wnba-gsv-dal-2026-08-08"
+#: The venue's taker coefficient on a fixture tick. PRE is what the venue
+#: charged before it raised the fee on 2026-09-17 04:07Z, and it is the
+#: default here because every Q4 archive this hypothesis replays is from
+#: August; NOW is the current value. PRE is spelled, not imported: it is
+#: history, and core/fees.py holds only the current value.
+PRE, NOW = 0.06, 0.0695
 
 
 def _tick(seconds, *, bid, ask, score="80-78", period="Q4", live=True,
-          slug=ML, mtype=MARKET_MONEYLINE):
+          slug=ML, mtype=MARKET_MONEYLINE, coef=PRE):
     return Tick(
         captured_at=T0 + dt.timedelta(seconds=seconds),
         event_slug=GAME, market_slug=slug, sports_market_type=mtype,
         line=None, bid=bid, ask=ask, is_live=live, score=score, period=period,
+        fee_coefficient=coef,
     )
 
 
@@ -292,3 +300,66 @@ def test_a_one_sided_book_does_not_crash_the_exit_check():
 def test_a_one_sided_book_does_not_trigger_an_entry():
     for bid, ask in ((None, 0.34), (0.30, None), (None, None)):
         assert TightGameReversion.triggers(_tick(0, bid=bid, ask=ask)) is None
+
+
+# ------------------------------------------------------------------ #
+# The exit fee is the EXIT TICK's own coefficient
+# ------------------------------------------------------------------ #
+# The venue raised its taker coefficient on 2026-09-17 04:07Z; every Q4
+# archive this replays was recorded before that. An exit charged at today's
+# constant would overstate every trade's cost by 16 %. The fee is read off
+# the tick the exit crosses on, never off a constant.
+
+
+def _yes_round_trip(slug, coef):
+    """Entry at 0.30 fills on the second tick; the third reaches the target
+    and carries `coef`, the coefficient the exit is charged at."""
+    return [
+        _tick(0, bid=0.30, ask=0.34, slug=slug),
+        _tick(1, bid=0.28, ask=0.30, slug=slug),              # filled at 0.30
+        _tick(2, bid=0.49, ask=0.53, slug=slug, coef=coef),   # exit at the bid
+    ]
+
+
+def test_a_pre_change_exit_and_a_post_change_exit_in_one_replay_are_charged_differently():
+    """Two markets in one game, identical books, one exit tick from before
+    the raise and one from after: each pays theta * p * (1-p) at ITS tick's
+    coefficient, and the difference is exactly the raise."""
+    s = _run(_yes_round_trip("aec-pre", PRE) + _yes_round_trip("aec-now", NOW))
+    by = {t.market_slug: t for t in s.trades}
+    assert set(by) == {"aec-pre", "aec-now"}
+    pre, now = by["aec-pre"], by["aec-now"]
+    assert pre.exit_proceeds == now.exit_proceeds == 0.49
+    assert pre.exit_fee == pytest.approx(PRE * 0.49 * 0.51)
+    assert now.exit_fee == pytest.approx(NOW * 0.49 * 0.51)
+    assert now.exit_fee - pre.exit_fee == pytest.approx((NOW - PRE) * 0.49 * 0.51)
+    assert pre.net_pnl > now.net_pnl                       # the old fee was cheaper
+    assert (pre.exit_coefficient, now.exit_coefficient) == (PRE, NOW)
+
+
+def test_an_exit_tick_without_a_coefficient_is_refused_not_charged_at_todays():
+    with pytest.raises(ValueError, match="fee_coefficient"):
+        _run(_yes_round_trip(ML, None))
+
+
+def test_a_no_side_exit_is_charged_at_its_tick_too():
+    """The mirror frame pays 1 - ask; its fee comes from the same tick."""
+    s = _run([
+        _tick(0, bid=0.66, ask=0.70),
+        _tick(1, bid=0.70, ask=0.74),                        # NO filled, cost 0.30
+        _tick(2, bid=0.46, ask=0.50, coef=NOW),              # YES mid 0.48 <= 0.50
+    ])
+    (trade,) = s.trades
+    assert trade.side == "no" and trade.exit_proceeds == pytest.approx(0.50)
+    assert trade.exit_fee == pytest.approx(NOW * 0.50 * 0.50)
+
+
+def test_the_report_names_what_was_charged_not_a_constant():
+    """A settled position pays no fee and carries no coefficient; the target
+    exits report the distinct coefficients they were actually charged at."""
+    s = _run(_yes_round_trip("aec-pre", PRE) + _yes_round_trip("aec-now", NOW)
+             + [_tick(0, bid=0.30, ask=0.34, slug="aec-open"),
+                _tick(1, bid=0.28, ask=0.30, slug="aec-open")])   # fills, never exits
+    _settle_open(s, {"aec-open": 1})
+    assert charged_coefficients(s.trades) == [PRE, NOW]
+    assert charged_coefficients([]) == []

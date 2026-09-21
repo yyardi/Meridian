@@ -530,6 +530,8 @@ class Executor:
             best_bid=Decimal(str(best_bid)) if best_bid is not None else None,
             best_ask=Decimal(str(best_ask)) if best_ask is not None else None,
         )
+        # Priced NOW, at decision time, at today's coefficient (core/fees.py):
+        # the order is built against the live touch, not a recorded row.
         fee = Decimal(str(
             fee_per_contract(float(limit_price), is_maker=rests) * float(quantity)
         ))

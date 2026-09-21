@@ -38,6 +38,15 @@ Measured with this on 2026-09-19 (48 CFB games, 697,492 updates, gate 2 s):
 control in tests/test_stream_episodes.py is two crossings that differ only
 in staleness; the gate must separate them or the number means nothing.
 
+The fee is the constant at scan time, not a value read from the tape. A
+stream-tape row carries slug, bid, ask, sizes and the receive stamp and no
+fee coefficient, so there is nothing per row to charge; every stream tape on
+file was written after the venue raised its coefficient on 2026-09-17, so
+the constant is what the venue charged on all of them. Nothing here invents a
+coefficient for an older tape: scan one and the ledger's ``fee_rate`` names
+the wrong number beside the result, which is the most a file with no
+coefficient can do.
+
 PLACES NOTHING and reads no network: files in, arithmetic out.
 """
 from __future__ import annotations
@@ -224,13 +233,15 @@ def summarize(results: list[GameResult], *, floor_usd: float = DEFAULT_FLOOR_USD
     """The numbers the ledger keeps, over one slate: the whole population
     (winner included as rung zero) and, under ``spread_only``, the pairs the
     desk can actually send. ``fee_rate`` is recorded because every dollar
-    here depends on it and it was wrong (0.06 for 0.0695) until 2026-09-21."""
+    here depends on it: it is the constant at scan time, not a value the
+    tape carries, and it was stale for four days after the venue's
+    2026-09-17 raise."""
     eps = [e for r in results for e in r.episodes]
     out = {
         "games": sum(1 for r in results if r.updates),
         "updates": sum(r.updates for r in results),
         "floor_usd": floor_usd,
-        "fee_rate": fee_rate,
+        "fee_rate": fee_rate,          # the constant at scan time; the tape carries none
         "games_with_over_floor": sum(1 for r in results if r.over(floor_usd)),
         **_stats(eps, floor_usd),
         "spread_only": _stats([e for e in eps if is_spread_pair(e)], floor_usd),

@@ -17,12 +17,24 @@ The real costs are:
 Fees, from the Polymarket US schedule::
 
     fee = theta * contracts * price * (1 - price)
-    theta_taker = +0.0695 (the venue's own feeCoefficient, every row; core/fees.py)
+    theta_taker = the venue's own feeCoefficient: today's value is
+                  core.fees.POLYMARKET_TAKER; a recorded row's is
+                  market_snapshots.fee_coefficient (``coefficient``, below)
     theta_maker = 0       (default; see below)
 
-At p=0.50 a taker pays 1.5c/contract, comparable to the entire edge being
-hunted. That is why the executor is limit-only, and why maker and taker are
-modelled separately here.
+At p=0.50 a taker pays about 1.7c/contract, comparable to the entire edge
+being hunted. That is why the executor is limit-only, and why maker and taker
+are modelled separately here.
+
+The coefficient is a constant of a PERIOD, not of the venue: it was raised on
+2026-09-17 at 04:07Z. So every fee function here takes ``coefficient``.
+Omitted (``None``) it charges today's constant, which is right only for a bet
+priced NOW -- a fill, a sizing decision, a ticket the ARB tab is about to
+send. A replay over recorded rows passes the coefficient stored beside the
+price it is charging, and refuses a row that has none rather than charging
+today's. This module cannot tell a row from a quote, so the CALLER decides
+which it is. The maker path ignores it: the maker fee has been zero in every
+period.
 
 The maker rebate is a sensitivity arm, not a default
 ----------------------------------------------------
@@ -55,21 +67,35 @@ THETA_MAKER = POLYMARKET_MAKER
 THETA_MAKER_REBATE = -0.0125
 
 
-def fee_per_contract(price: float, *, is_maker: bool, assume_rebate: bool = False) -> float:
+def fee_per_contract(price: float, *, is_maker: bool, assume_rebate: bool = False,
+                     coefficient: float | None = None) -> float:
     """Signed fee per contract. Negative means a rebate is earned.
 
     ``assume_rebate`` books the unverified maker rebate (sensitivity arm only).
+
+    ``coefficient`` is the taker coefficient to charge. ``None`` means the bet
+    is priced NOW, at today's constant (core.fees.POLYMARKET_TAKER). A replay
+    over recorded rows passes ``market_snapshots.fee_coefficient`` from the
+    row it is pricing: the venue raised it on 2026-09-17, and a historical
+    read charged at today's is not what the venue charged. Refusing a row
+    that carries none is the caller's job, because only the caller knows it
+    is reading a row (core.pulse.replay.recorded_coefficient,
+    core.backtest.ingame_replay._recorded_coefficient,
+    core.gridiron.scalp.realise). Ignored on the maker path: the maker fee is
+    zero in every period.
     """
     if is_maker:
         theta = THETA_MAKER_REBATE if assume_rebate else THETA_MAKER
     else:
-        theta = THETA_TAKER
+        theta = THETA_TAKER if coefficient is None else float(coefficient)
     return theta * price * (1.0 - price)
 
 
 def fee_total(price: float, contracts: float, *, is_maker: bool,
-              assume_rebate: bool = False) -> float:
-    return fee_per_contract(price, is_maker=is_maker, assume_rebate=assume_rebate) * contracts
+              assume_rebate: bool = False,
+              coefficient: float | None = None) -> float:
+    return fee_per_contract(price, is_maker=is_maker, assume_rebate=assume_rebate,
+                            coefficient=coefficient) * contracts
 
 
 class FillModel(str, Enum):
@@ -154,6 +180,7 @@ def simulate_fill(
     rng_value: float,
     assume_rebate: bool = False,
     adverse_selection_override: float | None = None,
+    coefficient: float | None = None,
 ) -> Fill:
     """Simulate one fill.
 
@@ -169,6 +196,11 @@ def simulate_fill(
     both derived as E[-dmid | filled] from recorded quote-windows. The engine
     rests AT its entry price with no half-spread cushion, which is why the
     concession is the full conditional mid move, not the net-capture number.
+
+    ``coefficient`` goes through to ``fee_total``: ``None`` prices the fill at
+    today's taker coefficient. The pregame engine (core/backtest/engine.py,
+    margin.py) leaves it ``None`` because its quoted prices are sportsbook
+    offers, not venue rows, and carry no recorded coefficient to charge.
     """
     a = ASSUMPTIONS[model]
 
@@ -186,7 +218,8 @@ def simulate_fill(
         filled=True,
         price=price,
         contracts=contracts,
-        fee=fee_total(price, contracts, is_maker=a.is_maker, assume_rebate=assume_rebate),
+        fee=fee_total(price, contracts, is_maker=a.is_maker, assume_rebate=assume_rebate,
+                      coefficient=coefficient),
         is_maker=a.is_maker,
     )
 
