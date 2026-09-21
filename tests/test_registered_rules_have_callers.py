@@ -29,6 +29,13 @@ from core.fees import POLYMARKET_TAKER  # the venue's coefficient; these read 0.
 from core.tt import money
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+#: The coefficient the venue charged BEFORE it raised the fee on 2026-09-17 at
+#: 04:07Z. Spelled here and not imported, because it is HISTORY: core/fees.py
+#: owns the current one and must not gain a second constant to keep the past in.
+#: Every settled table-tennis match that exists today is from before that
+#: instant, so this is the case the arm will actually score.
+PRE_CHANGE_COEF = 0.06
+
 SKIP_DIRS = {".venv", "node_modules", "alembic", ".git", ".pytest_cache",
              "__pycache__"}
 
@@ -101,14 +108,18 @@ def test_the_money_line_reads_the_registered_rule_not_an_expression():
     before = runner.BOOKS
     try:
         # 40 bets that all lose: the interval sits entirely below zero
-        runner.BOOKS = {f"s{i}": (0.49, 0.50) for i in range(40)}
+        # A PRE-CHANGE row: 0.06 was the venue's coefficient until 09-17
+        # 04:07Z, and every settled table-tennis match is from before then, so
+        # this is the case the arm will actually score.
+        runner.BOOKS = {f"s{i}": (0.49, 0.50, PRE_CHANGE_COEF) for i in range(40)}
         preds = [_P(f"s{i}", 0.99, 0, f"a{i}", f"b{i}") for i in range(40)]
         line = runner._money_line(preds)
     finally:
         runner.BOOKS = before
     assert not line.startswith("PASS"), line
-    # 40 losers at ask 0.50: each loses the stake plus the taker fee at 0.50.
-    expect = f"{-(0.50 + POLYMARKET_TAKER * 0.50 * 0.50) * 100:.2f}c"
+    # 40 losers at ask 0.50: each loses the stake plus the taker fee at 0.50,
+    # charged at THIS ROW's coefficient rather than at today's.
+    expect = f"{-(0.50 + PRE_CHANGE_COEF * 0.50 * 0.50) * 100:.2f}c"
     assert expect in line, (expect, line)      # and it does report the loss
 
 def test_the_money_line_prints_in_every_state():
@@ -119,7 +130,7 @@ def test_the_money_line_prints_in_every_state():
     try:
         runner.BOOKS = {}
         assert runner._money_line([]).startswith("NOT YET")
-        runner.BOOKS = {"s0": (0.49, 0.50)}
+        runner.BOOKS = {"s0": (0.49, 0.50, 0.06)}
         assert runner._money_line([]).startswith("NOT YET")
     finally:
         runner.BOOKS = before
@@ -155,7 +166,7 @@ def test_the_money_line_gates_on_what_it_paid_not_on_a_constant():
     def _line(bid, ask):
         before = runner.BOOKS
         try:
-            runner.BOOKS = {f"s{i}": (bid, ask) for i in range(30)}
+            runner.BOOKS = {f"s{i}": (bid, ask, 0.0695) for i in range(30)}
             preds = [_P(f"s{i}", 0.99, i % 2, f"a{i}", f"b{i}") for i in range(30)]
             return runner._money_line(preds)
         finally:

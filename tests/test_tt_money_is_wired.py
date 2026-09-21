@@ -34,7 +34,7 @@ def test_money_prints_on_every_state_including_zero(capsys):
     RUN.BOOKS.clear()
     assert "NOT YET" in RUN._money_line([]) and "no book" in RUN._money_line([])
 
-    RUN.BOOKS["s"] = (0.40, 0.42)
+    RUN.BOOKS["s"] = (0.40, 0.42, 0.0695)
     assert "0 eligible" in RUN._money_line([])
     RUN.BOOKS.clear()
 

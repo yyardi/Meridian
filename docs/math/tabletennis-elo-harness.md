@@ -213,6 +213,27 @@ output of the arm (`MoneyResult.cost_mean`), not a footnote — and if the model
 preferentially bets wide quotes it pays the tail, which makes even 3.73c
 optimistic. There is a test for exactly that selection.
 
+**AMENDED 2026-09-21 (second) — the fee is charged AT THE ROW'S PERIOD.** The
+venue RAISED its coefficient on 2026-09-17 at 04:07Z; `core/fees.py` owns both
+values and their row counts. **Every settled table-tennis match that exists
+today was played before that instant** — the 357 measured on 09-15 are all
+pre-change — so charging today's coefficient to them overstates their cost by
+16 %, which is **0.238c per contract at even prices** against a median cost bar
+of about 2.2c. The direction is conservative for a go/no-go, and wrong all the
+same: a point-in-time measurement charged at today's prices is not a
+measurement of what happened.
+
+The substrate already answers it per row, so nothing here hardcodes a boundary
+date: `PRICE_SQL` selects `fee_coefficient` alongside the book, `BOOKS` carries
+it, and `money.bet` charges both legs at that value. Omitting it falls back to
+today's, which is right only for a bet priced now. Two mutations confirm it —
+ignoring the row's coefficient fails three tests, dropping it from the book
+fails one.
+
+**This is a class, not a table-tennis detail.** Every research runner that
+scores tape spanning 09-17 04:07Z now charges one coefficient across two
+regimes; the fix is the same everywhere, and the column is already there.
+
 **AMENDED 2026-09-21 — the bar moved twice more, so the code carries none.**
 Re-measured on the venue's own coefficient (`market_snapshots.fee_coefficient`
 = 0.069500, zero variation on 12,713 table-tennis rows in twelve hours; the

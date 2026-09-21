@@ -284,3 +284,36 @@ class TestCollapsedVariance:
         v, _ = rule.money_verdict(n=1814, lo=0.001, hi=0.02,
                                   resolution=MEASURED_MEDIAN, required=1814)
         assert v == rule.PASS
+
+
+class TestPointInTime:
+    """The coefficient is a constant of a PERIOD, not of the venue.
+
+    Polymarket raised it from 0.06 to 0.0695 on 2026-09-17 at 04:07Z. Every
+    settled table-tennis match that exists today was played before that
+    instant -- the 357 measured on 09-15 are all pre-change -- so charging
+    today's coefficient to them overstates their cost by 16%, which is 0.238c
+    per contract at even prices against a median cost bar of about 2.2c.
+
+    The direction is conservative for a go/no-go and wrong all the same: a
+    point-in-time measurement charged at today's prices is not a measurement of
+    what happened.
+    """
+
+    def test_the_rows_coefficient_is_what_is_charged(self):
+        pre = money.bet("s", 0.99, 0.49, 0.50, 1, 0.06)
+        now = money.bet("s", 0.99, 0.49, 0.50, 1, 0.0695)
+        assert pre.pnl > now.pnl                      # the old fee was cheaper
+        assert pre.cost == pytest.approx(0.005 + 0.06 * 0.50 * 0.50)
+        assert now.cost == pytest.approx(0.005 + 0.0695 * 0.50 * 0.50)
+        assert (pre.pnl - now.pnl) == pytest.approx(0.00238, abs=1e-5)
+
+    def test_omitting_it_falls_back_to_today(self):
+        from core.fees import POLYMARKET_TAKER
+        assert money.fee(0.5) == pytest.approx(money.fee(0.5, POLYMARKET_TAKER))
+
+    def test_both_legs_use_the_same_period(self):
+        """A NO bet is priced at 1-bid; its fee must come from the same row."""
+        b = money.bet("s", 0.01, 0.40, 0.44, 0, 0.06)
+        assert b.side == "NO"
+        assert b.cost == pytest.approx(0.02 + 0.06 * 0.60 * 0.40)

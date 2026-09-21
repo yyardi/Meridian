@@ -41,16 +41,25 @@ COMPETITIONS = ("setkameua", "setkamecz", "setkamemd", "setkawoua")
 #: Prices and start times for the settled slugs. Equality on market_slug uses
 #: the unique (market_slug, captured_at) index, and the month-boundary floor
 #: prunes partitions -- an unbounded version of this seq-scans 62M rows.
-#: slug -> (best_bid, best_ask) at the LAST pregame quote. The money arm needs
-#: the EXECUTABLE sides, not the mid: you buy YES at the ask and NO at 1-bid,
-#: and charging a mid would understate the bar by the half-spread. Populated by
-#: load_db only -- load_tsv has no book, which is why the money arm reports
-#: "no book" rather than silently scoring zero bets.
-BOOKS: dict[str, tuple[float, float]] = {}
+#: slug -> (best_bid, best_ask, fee_coefficient) at the LAST pregame quote. The
+#: money arm needs the EXECUTABLE sides, not the mid: you buy YES at the ask and
+#: NO at 1-bid, and charging a mid would understate the bar by the half-spread.
+#: Populated by load_db only -- load_tsv has no book, which is why the money arm
+#: reports "no book" rather than silently scoring zero bets.
+#:
+#: The COEFFICIENT travels with the book because it is a constant of a period,
+#: not of the venue: it was RAISED on 2026-09-17 at 04:07Z, and core/fees.py
+#: holds both values with their row counts. Every settled table-tennis match that exists today is
+#: pre-change, so charging today's coefficient to them overstates their cost by
+#: 16 % -- 0.238c per contract at even prices, against a median cost bar of
+#: about 2.2c. Reading the row is point-in-time correct by construction and
+#: needs no boundary date in the code.
+BOOKS: dict[str, tuple[float, float, float | None]] = {}
 
 PRICE_SQL = """
 SELECT DISTINCT ON (market_slug) market_slug,
-       (best_bid + best_ask) / 2.0 AS mid, best_bid, best_ask, game_start_time
+       (best_bid + best_ask) / 2.0 AS mid, best_bid, best_ask, fee_coefficient,
+       game_start_time
 FROM market_snapshots
 WHERE market_slug = ANY(:slugs)
   AND captured_at >= CAST(:since AS timestamptz)
@@ -104,7 +113,9 @@ def load_db(settlements: str, since: str = "2026-09-01") -> list[elo.Match]:
                              r["game_start_time"] if r else None,
                              float(r["mid"]) if r else None))
         if r is not None and r["best_bid"] is not None and r["best_ask"] is not None:
-            BOOKS[slug] = (float(r["best_bid"]), float(r["best_ask"]))
+            coef = r["fee_coefficient"]
+            BOOKS[slug] = (float(r["best_bid"]), float(r["best_ask"]),
+                           None if coef is None else float(coef))
     if unparsed:
         print(f"  UNPARSED (counted, not dropped): {unparsed}")
     return out
@@ -166,7 +177,9 @@ def _money_line(preds) -> str:
         bk = BOOKS.get(pr.slug)
         if bk is None:
             continue
-        bet = money.bet(pr.slug, pr.elo_p, bk[0], bk[1], pr.y)
+        # bk[2] is the coefficient the venue charged on THIS row; None falls
+        # back to today's, which is right only for a bet priced now.
+        bet = money.bet(pr.slug, pr.elo_p, bk[0], bk[1], pr.y, bk[2])
         if bet is not None:
             bets.append(bet)
             a.append(pr.p1)
@@ -187,7 +200,8 @@ def _money_line(preds) -> str:
     # constant. That bar was measured four times in nine days and moved every
     # time -- the board went 724 -> 1,339 markets, the median half-spread
     # halved while its mean nearly doubled, and the venue's coefficient went
-    # 0.06 -> 0.0695 underneath. Two published constants from it are already
+    # coefficient was raised on 09-17 underneath. Two published constants from
+    # it are already
     # retracted (core/tt/money.py says why), so a fifth would be the pattern
     # rather than the answer.
     #
