@@ -126,7 +126,49 @@ def test_the_money_line_prints_in_every_state():
 
 
 def test_both_ends_of_the_bar_are_reachable_targets():
-    """The gate's X is a choice, so neither end may be the only one quoted."""
-    strict = money.required_n(resolution=money.BAR_MEDIAN)
-    loose = money.required_n(resolution=money.BAR_MEAN)
-    assert strict > loose                      # median bar is the STRICTER gate
+    """The gate's X is a choice, so neither end may be the only one quoted.
+
+    Measured on 2026-09-18..09-21: median total cost 2.238c, mean 6.065c. The
+    smaller target demands the narrower interval, so the MEDIAN is the stricter
+    gate -- which is the direction that was given to me backwards once.
+    """
+    strict = money.required_n(resolution=0.02238)
+    loose = money.required_n(resolution=0.06065)
+    assert strict > loose                      # median cost is the STRICTER gate
+
+
+def test_the_money_line_gates_on_what_it_paid_not_on_a_constant():
+    """The gate's target must come from the bets, so it cannot go stale.
+
+    Two selections with identical P&L but different books must produce
+    different targets: the wide-quoted one paid more, so it needs FEWER matches
+    to resolve its own (larger) costs. A population constant would give both
+    the same number, which is how a bar measured on 724 markets in September
+    went on gating a board of 1,339.
+    """
+    import cfb.run_tt_elo as runner
+
+    class _P:
+        def __init__(self, slug, p, y, a, b):
+            self.slug, self.elo_p, self.y, self.p1, self.p2 = slug, p, y, a, b
+
+    def _line(bid, ask):
+        before = runner.BOOKS
+        try:
+            runner.BOOKS = {f"s{i}": (bid, ask) for i in range(30)}
+            preds = [_P(f"s{i}", 0.99, i % 2, f"a{i}", f"b{i}") for i in range(30)]
+            return runner._money_line(preds)
+        finally:
+            runner.BOOKS = before
+
+    tight = _line(0.49, 0.50)
+    wide = _line(0.40, 0.55)
+    assert "paid" in tight and "paid" in wide
+    # the wide book paid more per contract, so its reported cost is larger
+    def _cost(line):
+        return float(line.split("median ")[1].split("c")[0])
+    assert _cost(wide) > _cost(tight)
+    # and a larger cost is a LOOSER target, so it needs fewer matches
+    def _need(line):
+        return int(line.split("need ~")[1].split(" ")[0])
+    assert _need(wide) < _need(tight)
