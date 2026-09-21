@@ -3332,6 +3332,9 @@ def _arb_ladder_snapshot(game: str, rungs: dict, meta: dict, took_s: float,
         }
     when = dt.datetime.fromtimestamp(now, UTC).strftime("%H:%M:%S")
     violations = []
+    # Priced NOW: `rungs` is the venue's live book sampled seconds ago, so the
+    # scanner's default (today's coefficient, core/fees.py) is what the venue
+    # charges on a ticket sent from this page. No recorded row is scanned here.
     found = scan_ladder(game, rungs, max_size=1e12)
     for v in found:
         spread = is_spread_pair(v)

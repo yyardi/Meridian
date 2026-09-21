@@ -38,11 +38,13 @@ try:  # reuse the venue fee coefficients, don't restate them
     from core.backtest.fills import fee_per_contract
 except Exception:  # noqa: BLE001 — keep the primitives importable without backtest
     def fee_per_contract(price: float, *, is_maker: bool,
-                         assume_rebate: bool = False) -> float:
+                         assume_rebate: bool = False,
+                         coefficient: float | None = None) -> float:
         # The fallback must charge the venue's coefficient too; it carried
         # a stale literal until 2026-09-21. 0.0695 lives in core/fees.py.
-        from core.fees import taker_fee
-        return 0.0 if is_maker else taker_fee(price)
+        from core.fees import POLYMARKET_TAKER, taker_fee
+        return 0.0 if is_maker else taker_fee(
+            price, POLYMARKET_TAKER if coefficient is None else coefficient)
 
 # --- registration constants (docs/math/paper-wallet-scoreboard.md) ---------- #
 SEED_PER_LEAGUE = 500.0          # $500 each at birth; $1,000 total
@@ -146,6 +148,8 @@ def maker_fee_per_contract(quote_price: float) -> float:
     """Maker fee per contract — theta_maker=0 (V9/C7), so ~0. The taker hook
     exists in fee_per_contract for any future arm that crosses; the frozen v1
     maker policy never does."""
+    # Priced NOW, at fill time, at today's coefficient (core/fees.py): the
+    # wallet marks a quote as it fills, it never re-charges a recorded row.
     return fee_per_contract(quote_price, is_maker=True)
 
 

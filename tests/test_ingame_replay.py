@@ -32,11 +32,17 @@ from core.backtest.ingame_replay import (
 
 UTC = dt.timezone.utc
 T0 = dt.datetime(2026, 8, 18, 23, 0, tzinfo=UTC)
+#: The venue's taker coefficient on a fixture row. PRE is what the venue
+#: charged before it raised the fee on 2026-09-17 04:07Z (spelled, not
+#: imported: it is history and core/fees.py holds only the current value);
+#: NOW is the current one and the fixture default.
+PRE, NOW = 0.06, 0.0695
 
 
 class _Tick:
     def __init__(self, *, secs, bid, ask, live=True, period="Q3", score="50-45",
-                 slug="aec-wnba-ny-phx-2026-08-18", event="wnba-ny-phx-2026-08-18"):
+                 slug="aec-wnba-ny-phx-2026-08-18", event="wnba-ny-phx-2026-08-18",
+                 coef=NOW):
         self.market_slug = slug
         self.event_slug = event
         self.captured_at = T0 + dt.timedelta(seconds=secs)
@@ -45,6 +51,7 @@ class _Tick:
         self.is_live = live
         self.best_bid = bid
         self.best_ask = ask
+        self.fee_coefficient = coef
 
 
 # ------------------------------------------------------------------ #
@@ -84,14 +91,16 @@ def test_a_settled_reference_is_refused():
 # ------------------------------------------------------------------ #
 
 
-def _rows(*, pregame_mid=0.50, live_bid=0.30, live_ask=0.32, final="70-50"):
+def _rows(*, pregame_mid=0.50, live_bid=0.30, live_ask=0.32, final="70-50",
+          coef=NOW, slug="aec-wnba-ny-phx-2026-08-18", event="wnba-ny-phx-2026-08-18"):
     """A market with a pregame prior and a live run that ends decided."""
+    kw = {"coef": coef, "slug": slug, "event": event}
     rows = [_Tick(secs=-600, bid=pregame_mid - 0.01, ask=pregame_mid + 0.01,
-                  live=False, period=None, score="0-0")]
+                  live=False, period=None, score="0-0", **kw)]
     for i in range(40):
         rows.append(_Tick(secs=i * 60, bid=live_bid, ask=live_ask,
-                          period="Q3", score="50-45"))
-    rows.append(_Tick(secs=3000, bid=0.99, ask=1.0, period="Q4", score=final))
+                          period="Q3", score="50-45", **kw))
+    rows.append(_Tick(secs=3000, bid=0.99, ask=1.0, period="Q4", score=final, **kw))
     return rows
 
 
@@ -141,3 +150,35 @@ def test_money_at_price_settles_zero_or_one():
     e = r.entries[0]
     expected = (1 - e.entry_price) if e.won else -e.entry_price
     assert e.pnl == pytest.approx(expected)
+
+
+# ------------------------------------------------------------------ #
+# The fee is the ENTRY ROW's own coefficient
+# ------------------------------------------------------------------ #
+# The venue raised its taker coefficient on 2026-09-17 04:07Z. The archive
+# carries the value in force on every row, and an entry is charged at the
+# coefficient on the row it crossed, never at today's constant.
+
+
+def test_a_pre_change_entry_and_a_post_change_entry_in_one_replay_are_charged_differently():
+    pre = _rows(coef=PRE, slug="aec-wnba-a-b-2026-08-18", event="wnba-a-b-2026-08-18")
+    now = _rows(coef=NOW, slug="aec-wnba-c-d-2026-09-18", event="wnba-c-d-2026-09-18")
+    r = replay(min_edge=0.01, decision_seconds=30, rows=pre + now)
+    by = {e.event_slug: e for e in r.entries}
+    assert set(by) == {"wnba-a-b-2026-08-18", "wnba-c-d-2026-09-18"}
+    a, b = by["wnba-a-b-2026-08-18"], by["wnba-c-d-2026-09-18"]
+    assert a.entry_price == b.entry_price                  # identical books
+    p = a.entry_price
+    assert a.fee == pytest.approx(PRE * p * (1 - p))
+    assert b.fee == pytest.approx(NOW * p * (1 - p))
+    assert b.fee - a.fee == pytest.approx((NOW - PRE) * p * (1 - p))
+
+
+def test_a_row_without_a_coefficient_is_refused_not_charged_at_todays():
+    with pytest.raises(ValueError, match="fee_coefficient"):
+        replay(min_edge=0.01, decision_seconds=30, rows=_rows(coef=None))
+
+
+def test_the_archive_query_reads_the_coefficient_beside_the_book():
+    from core.backtest.ingame_replay import _TICKS_SQL
+    assert "fee_coefficient" in str(_TICKS_SQL)

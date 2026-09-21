@@ -7,9 +7,16 @@ has updated, not a market. Measured: USC -17.5 quoted at 0.930 while USC -10.5
 sat at 0.040, an 88c "edge" on a rung with no size behind it. Including those
 inflates the total by roughly 2.5x and every one of them is untradeable.
 
-`fee_rate` -- 0.0695 on Polymarket US, 0.07 on Kalshi, charged at BOTH legs'
-traded prices. Netting the fee is what separates 1,107 real violations from the
-much larger number of pairs that merely cross the spread.
+`fee_rate` -- the taker coefficient, charged at BOTH legs' traded prices:
+0.0695 on Polymarket US today, 0.07 on Kalshi. WHICH value is the caller's
+decision, because the coefficient is a constant of a period: the venue raised
+it on 2026-09-17 04:07Z. A ladder sampled from the venue's live book (the ARB
+tab, the executors) is priced now and takes the default; a ladder rebuilt from
+a record is charged at the coefficient that record carries; and a record that
+carries none (the stream and freshness tapes, all written after the raise) is
+scanned at the constant and says so wherever it stores the result. Netting the
+fee is what separates 1,107 real violations from the much larger number of
+pairs that merely cross the spread.
 """
 from __future__ import annotations
 
@@ -40,7 +47,9 @@ MAX_PLAUSIBLE_SIZE = 10_000.0
 
 
 def fee(price: float, rate: float = DEFAULT_FEE_RATE) -> float:
-    """Taker fee at the price actually paid, not at the mid."""
+    """Taker fee at the price actually paid, not at the mid. `rate` is today's
+    constant unless the caller is charging a recorded row, which carries its
+    own (module docstring)."""
     return rate * price * (1.0 - price)
 
 

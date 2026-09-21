@@ -24,6 +24,7 @@ from core.backtest.fills import (
     FillModel,
     american_to_price,
     fee_per_contract,
+    fee_total,
     pnl_for_contract,
     simulate_fill,
 )
@@ -62,6 +63,38 @@ def test_rebate_sensitivity_arm_is_explicit_and_off_by_default():
     assert fee_per_contract(0.50, is_maker=False, assume_rebate=True) == pytest.approx(
         THETA_TAKER * 0.25
     )
+
+
+def test_a_given_coefficient_is_charged_and_none_means_priced_now():
+    """The venue raised its coefficient on 2026-09-17; a replay passes the
+    row's, a bet priced now passes nothing and gets today's constant."""
+    from decimal import Decimal
+    assert fee_per_contract(0.50, is_maker=False, coefficient=0.06) == pytest.approx(0.06 * 0.25)
+    assert fee_per_contract(0.50, is_maker=False, coefficient=Decimal("0.060000")) \
+        == pytest.approx(0.06 * 0.25)
+    assert fee_per_contract(0.50, is_maker=False) == pytest.approx(THETA_TAKER * 0.25)
+    assert fee_per_contract(0.50, is_maker=False, coefficient=None) \
+        == fee_per_contract(0.50, is_maker=False)
+    assert fee_per_contract(0.50, is_maker=False, coefficient=0.06) \
+        < fee_per_contract(0.50, is_maker=False)
+
+
+def test_the_maker_path_ignores_the_coefficient():
+    """The maker fee has been zero in every period."""
+    assert fee_per_contract(0.50, is_maker=True, coefficient=0.06) == 0.0
+    assert fee_per_contract(0.50, is_maker=True, coefficient=0.06, assume_rebate=True) \
+        == pytest.approx(THETA_MAKER_REBATE * 0.25)
+
+
+def test_fee_total_and_simulate_fill_thread_the_coefficient():
+    assert fee_total(0.50, 10, is_maker=False, coefficient=0.06) == pytest.approx(10 * 0.06 * 0.25)
+    kw = dict(quoted_price=0.5, contracts=10, model=FillModel.PESSIMISTIC,
+              rng_value=0.99, adverse_selection_override=0.0)
+    pre = simulate_fill(**kw, coefficient=0.06)
+    now = simulate_fill(**kw)
+    assert pre.fee == pytest.approx(10 * 0.06 * 0.25)
+    assert now.fee == pytest.approx(10 * THETA_TAKER * 0.25)
+    assert pre.fee < now.fee
 
 
 def test_fees_vanish_at_the_extremes():

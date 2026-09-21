@@ -117,7 +117,8 @@ None of these are reasons not to test it. They are reasons the P&L bar is net
 of costs and the fills are earned rather than assumed.
 
 
-    python -m core.pulse.tight_game_reversion     # refuses until implemented
+    python -m core.pulse.tight_game_reversion            # replays every game in the local archive; prints the verdict
+    python -m core.pulse.tight_game_reversion --json     # the same, as a JSON document
 """
 
 from __future__ import annotations
@@ -128,8 +129,9 @@ import json
 import sys
 from dataclasses import dataclass
 
-from core.backtest.fills import THETA_TAKER, fee_per_contract
-from core.pulse.replay import Order, ReplayContext, Tick, load_ticks, replay_game
+from core.backtest.fills import fee_per_contract
+from core.pulse.replay import (Order, ReplayContext, Tick, load_ticks,
+                               recorded_coefficient, replay_game)
 from core.pulse.win_curve import RULE_OF_THUMB_SIGMA, anchored_probability
 from core.quote.adverse_selection import clustered_mean
 
@@ -182,11 +184,13 @@ GATE_MIN_GAMES = 15             # the operator's 2026-08-08 policy
 #    the target, and the exit fill is taken at the far touch — a long YES sells
 #    at the bid. This is what makes the P&L "net of costs" without inventing a
 #    cost constant: the spread paid is the spread that was actually quoted.
-#    Entry is maker and pays no fee; the exit cross pays the venue's published
-#    taker fee via core.backtest.fills, theta = POLYMARKET_TAKER * p * (1-p)
-#    (core/fees.py: 0.0695, the venue's feeCoefficient), no rebate
-#    assumed (C7/V9 — the maker rebate has never been observed on this
-#    account).
+#    Entry is maker and pays no fee; the exit cross pays the venue's taker
+#    fee via core.backtest.fills, theta * p * (1-p) with theta the
+#    `fee_coefficient` RECORDED ON THE EXIT TICK, not today's constant: the
+#    venue raised it on 2026-09-17 04:07Z and every Q4 archive this replays
+#    was written before that instant. The report names what was charged.
+#    No rebate assumed (C7/V9 — the maker rebate has never been observed on
+#    this account).
 #
 # 3. MINUTES LEFT IS APPROXIMATED, and condition (5) is weaker for it. The
 #    anchored target needs minutes remaining; the archive stores `event_period`
@@ -213,6 +217,9 @@ class Trade:
     exit_proceeds: float | None = None
     exit_reason: str = "open"       # 'target' | 'settlement' | 'open'
     exit_fee: float = 0.0
+    #: The coefficient the exit fee was charged at: the exit tick's own. None
+    #: for a settlement, which pays no fee, and for an open position.
+    exit_coefficient: float | None = None
 
     @property
     def is_closed(self) -> bool:
@@ -308,7 +315,12 @@ class TightGameReversion:
                     proceeds = (tick.bid if position.side == "yes"
                                 else 1.0 - tick.ask)
                     position.exit_proceeds = proceeds
-                    position.exit_fee = fee_per_contract(proceeds, is_maker=False)
+                    # Charged at the coefficient on THIS tick's row, refused
+                    # if it has none: a Q4 archive from before the venue's
+                    # 2026-09-17 raise is not priced at today's constant.
+                    position.exit_coefficient = recorded_coefficient(tick)
+                    position.exit_fee = fee_per_contract(
+                        proceeds, is_maker=False, coefficient=position.exit_coefficient)
                     position.exited_at = tick.captured_at
                     position.exit_reason = "target"
                     self.trades.append(position)
@@ -442,6 +454,13 @@ def _settle_open(strategy: TightGameReversion, settlements: dict[str, int]) -> i
     return unsettled
 
 
+def charged_coefficients(trades: list[Trade]) -> list[float]:
+    """The distinct taker coefficients the target exits were charged at, read
+    back from the trades for the report: what WAS charged, not what a constant
+    promises. Settlements pay no fee and carry none."""
+    return sorted({t.exit_coefficient for t in trades if t.exit_coefficient is not None})
+
+
 def _score(trades: list[Trade], *, arm: str, unsettled: int) -> dict:
     """Score one arm's trades. Clustered by game, per the registration."""
     closed = [t for t in trades if t.is_closed]
@@ -548,8 +567,14 @@ def report(session) -> dict:
             ("minutes-left is interpolated across each game's Q4 wall-clock "
              "span; the archive stores no game clock (raw stripped to JSON "
              "null on 12.0M of 12.9M live rows). Affects the co-primary only."),
-            ("maker rebate not assumed (C7/V9); entry pays no fee, the exit "
-             f"cross pays theta_taker = {THETA_TAKER} * p * (1-p)."),
+            ("maker rebate not assumed (C7/V9); entry pays no fee, each "
+             "target exit pays theta * p * (1-p) at the fee_coefficient "
+             "recorded on its own tick (the venue raised it on 2026-09-17); "
+             "theta charged this run: "
+             + (", ".join(f"{c:g}" for c in
+                          charged_coefficients(flat_trades + anchored_trades))
+                or "none (no target exits)")
+             + ". Settlements pay no fee."),
         ],
     }
 
