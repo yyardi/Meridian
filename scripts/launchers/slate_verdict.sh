@@ -40,6 +40,14 @@ docker run --rm --network meridian_default --env-file /opt/meridian/.env \
   python3 scripts/edge_ledger.py --date "$DATE" >> "$REPORT" 2>&1 || true
 echo; sed -n "/^edge_ledger:/,\$p" "$REPORT"
 
+# Did anyone trade THROUGH the displayed quote while each over-floor crossing
+# stood? A quote that prints trade through is a picture, not a resting order;
+# on 2026-09-21, 8 of 29 were. The verdict carries the count so the ledger's
+# dollars are read beside it.
+docker run --rm -v /opt/meridian/core:/app/core -v /opt/meridian/scripts:/app/scripts -v "$R":/out -w /app "$API" \
+  python3 scripts/launchers/phantom_check.py --gate 2 >> "$REPORT" 2>&1 || true
+echo; tail -n 1 "$REPORT"
+
 # The headline is the 2-second row: crossings whose two legs the venue was
 # publishing at the same instant. That number, not the ungated one, is what
 # decides whether there is anything to trade.

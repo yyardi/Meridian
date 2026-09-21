@@ -47,7 +47,7 @@ import os
 import threading
 import time
 
-from core.ladder.live import game_and_line
+from core.ladder.live import game_and_line, game_of_slug
 from core.polymarket.ws_min import ConnectionClosed, WSClient
 
 WS_URL = "wss://api.polymarket.us/v1/ws/markets"
@@ -425,7 +425,10 @@ class StreamConnection:
                 self.torn += 1
             return
         parsed = game_and_line(row["slug"])
-        game = parsed[0] if parsed else UNMAPPED_GAME
+        # Route by the game alone, whatever the family: a totals row files
+        # beside its game's spreads with line null, rather than in the one
+        # unmapped file every unparsed slug used to share.
+        game = game_of_slug(row["slug"]) or UNMAPPED_GAME
         write(game, row)
         with self._lock:
             setattr(self, counter, getattr(self, counter) + 1)

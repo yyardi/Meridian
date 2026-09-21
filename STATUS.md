@@ -2503,6 +2503,8 @@ arbitrage is taken in seconds.
 | ~~total if every pair were taken~~ **double-counts shared legs — see below** | ~~$1,024.95~~ |
 | **best single trade per game, summed — defensible lower bound** | **$413.90** |
 
+> **SUPERSEDED by §0cd, and this line is where a reader meets it.** The $413.90 above, and every in-play ladder figure from here to §0bv, was measured on the REST sampler, which the venue's own stream shows running a median 54–62 s behind and never once ahead; 97 % of its crossings sat on a leg the venue had re-quoted minutes earlier. The fee it netted was also 0.06 where the venue charges 0.0695. The stream-measured, spread-only figure for a whole 49-game college Saturday is five crossings over $25 summing $269 (§0cd).
+
 > **CORRECTED, my own double-count.** Summing 350 *pairs* counts the same mispriced rung many times.
 > In `uk-txam` one rung generated six "opportunities" by pairing against six others — they share a leg
 > and compete for the same depth, so you can take one, not six. Per game, counting only the single best
@@ -2743,6 +2745,8 @@ discarded the rest** — 690,185 in-play CFB rows against 70,624 pregame.
 | best single trade per game, summed | $413.90 | **$4,480.45** |
 | games | 23 | 31 |
 | **median per game** | $0.55 | **$78.76** |
+
+> **SUPERSEDED by §0cd.** The in-play column is the REST sampler's and is retracted there; the pregame column stands as a property of the board at the close, not of anything tradeable in play.
 | games ≥ $100 | 3 | **14** |
 | single best | $162.38 | **$562.87** |
 
@@ -3001,6 +3005,8 @@ thing every earlier section lacked. Read at 01:16Z, 21–7, Q2.
 | distinct pair-episodes | 65 — median one sample, p90 8 min, max 16 min |
 | best $ per episode: median / max / **sum** | $3.11 / $494.96 / **$1,466.94** |
 | episodes ≥ $10 / ≥ $100 | 20 / **3** |
+
+> **SUPERSEDED by §0cd.** "Every two minutes, each rung inside ~4 seconds" is not simultaneity at the venue's clock: the 78 % is the REST assembly's, 3 % of its crossings exist on the stream at the same instant, and the fee netted here is 0.06 for 0.0695. What survives on the stream, and how much of that prints through the display, is in §0cd.
 | violations with **both legs within 3.5 pts of the line** | **63 of 136** |
 | most frequent pairs | +0.0/−1.5 ×11, +1.5/−1.5 ×10, +2.5/+1.5 ×7 |
 
@@ -4247,3 +4253,42 @@ Operator priorities set 09-13 evening: NFL in-game first (recorded at 0.5 s), si
 3. Does the WNBA under-bias exist outside late August? Playoffs answer.
 4. Kalshi vs DraftKings during the week: which moves first? Tape now exists.
 5. ANSWERED 09-13: not monotone (−0.05, +2.48, +5.44, −2.64, +1.97 across 0→50¢), so the bucket boundary did the work.
+
+## 0cd. Retraction at the table: the in-play ladder figures were an instrument's artifact, the fee was wrong, and what survives is small, rare and partly phantom
+
+**Retracted, mine.** Every in-play ladder number from §0bi to §0bv — *78 % of simultaneous in-play instants carry a fee-netted violation*, *$413.90 best-per-game over three CFB days*, *$4,480.45 in play* — came from the REST sampler, and the REST sampler was measuring a book that had already moved. Measured 2026-09-19 on the same games, same instants, REST beside the venue's stream:
+
+| REST against the stream, 2026-09-19, 3 CFB games, 39,510 rung observations | |
+|---|---:|
+| REST behind the stream by more than 1 s | 37,455 |
+| REST ahead of the stream by more than 1 s | **1** |
+| median lag | 54 s (p90 860 s) |
+| crossings REST reported | 7,972 |
+| of those, also present on the stream at the same instant | **239 (3.0 %)** |
+| median age of the staler leg, crossings only REST saw | **884 s** |
+| median age of the staler leg, crossings both saw | 31 s |
+
+The 97 % were pictures of a rung the venue had re-quoted minutes earlier. One worked example, Miami–Wake Forest at one sample: REST showed the −16.5 rung at 0.55/0.56 on a book a twentieth the size while the stream had it at 0.81/0.82, monotone with its neighbours; the "arbitrage" was the stale middle rung. A discovery agent found the same thing in the other direction on 2026-09-20: REST held Philadelphia–Tennessee's winner at 0.345 for a full quarter while the stream had 0.93–0.985. Nothing on the REST sampler is usable for this question and it is no longer the instrument.
+
+**Also retracted: the fee.** `DEFAULT_FEE_RATE` was 0.06 from the first ladder section on, and so was every hand derivation in docs/math. The venue publishes its coefficient on every market object as `feeCoefficient`; the recorder has stored it since 2026-09-18; on 2026-09-21 it read **0.0695** on all 214,790 rows across NFL, CFB, WNBA and MLB, confirmed independently by two agents. The gap is 16 % of the fee, about half a cent per pair at even prices. Every dollar in this document before this line is overstated by it, a sub-cent crossing the old constant reported is not one, and the plausibility cap's boundary moved with it (a 15.1c edge the cap refused is 14.6c and counts). Corrected in `core/ladder/scan.py` with the provenance; 25 tests recomputed. The correction exposed one more defect: the desk rounded a pair's dollars to the cent for display and tested the floor on the raw value, so $24.996 showed as $25.00 and said "not a candidate"; `scan.clears_floor` rounds first and every gate goes through it.
+
+**The instrument now.** `core/ladder/stream_episodes.py`: the venue's own stream at update resolution, last-known touch per rung, only pairs touching the rung that moved checked (`scan_ladder`'s arithmetic pair for pair, tested equal), and an EPISODE per continuously-crossed pair. A crossing opens an episode only if both legs were pushed by the venue within 2 s of each other; once open it runs until an update un-crosses it, because an unchanged quote is the venue's live book (the first draft re-applied the gate on every update and cut episodes short; the "median 29 s" in the operator report of 2026-09-19 was measured that way and was a floor). Dollars are the best instant, never the sum. The winner is rung zero in the scan but a leg the send gate refuses, so the spread-only population is reported beside the whole. `scripts/edge_ledger.py` appends one row per league per gate per night to `artifacts/reads/edge_ledger.jsonl`; `scripts/launchers/slate_verdict.sh` runs it after every slate, followed by the phantom check below.
+
+**What the ledger says, fee 0.0695, floor $25** (the CFB row double-counts a 30-minute overlap between two hand-scheduled recorder windows; the dedupe landed with this section and the nightly rows do not have it):
+
+| slate | gate | games | episodes | ≥ $25 | Σ best of those | biggest | median life of those | **spread-only ≥ $25** | **Σ** | **biggest** |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-09-19 CFB | 2 s | 92 | 6,500 | 31 | $1,634 | $248 | 12.5 s | **5** | **$269** | **$104** |
+| 2026-09-19 CFB | none | 92 | 20,114 | 38 | $2,099 | $248 | 19.8 s | 8 | $365 | $104 |
+| 2026-09-20 NFL | 2 s | 14 | 6,158 | 9 | $880 | $272 | 0.2 s | **6** | **$679** | **$272** |
+| 2026-09-20 NFL | none | 14 | 8,308 | 9 | $880 | $272 | 0.2 s | 6 | $679 | $272 |
+
+The spread-only column is the desk's whole opportunity as measured: five crossings over $25 on a 49-game college Saturday, six on a 14-game NFL Sunday, the largest $272 and it stood for 1.4 s. The NFL median life of 0.2 s says most of Sunday's were flickers no human reaches. On the REST instrument the same two days read $21,352 and $13,577.
+
+**Phantom check, 2026-09-21** (`scripts/launchers/phantom_check.py`): for each over-floor episode, replay the book to the instant it opened, take both legs' displayed touch, and read every print on either leg while it stood. A taker LIFT above the displayed ask, or a taker HIT below the displayed bid, means the displayed quote was not there — a resting order at that price would have been matched first. Of 29 episodes at the 2 s gate: **8 phantom** (prints through the display), **11 with no prints to judge by**, **10 with prints at the display on one leg** (consistent with a resting order on that leg; the other leg unevidenced). Among the spread-only ones the desk can send, none is confirmed on both legs and most are phantom or unproven. The decided-outcome agent found the mechanism the same day: on the deciding score change the venue holds the board and `get_book` at the pre-change state while its score field keeps updating, with `status = OPEN, tradable = true` throughout, and prints through the frozen display — zero executable decided-but-priced instants across 16,374 game-moments in six games.
+
+**Discovery, in play only, five agents, 2026-09-21.** (a) *The winner is rung zero.* Winning implies covering any positive line and covering any negative line implies winning; violated across 64 games with both legs within 2 s: CFB 2,644 episodes, 27 ≥ $25, median life 2.8 s; NFL 1,163, 4 ≥ $25, 0.9 s. An NFL tie pays these pairs $1.50, not $0.50, so "never the winner market" was wrong for this direction; the winner re-quotes at 10 Hz, which is why the episodes are short. (b) *The game-total ladder* carries the same defect: 5 games, 76 episodes, 13 instants ≥ $25 with market-maker size on both legs for minutes (471 s, 5,654 s, 4,368 s) — and no update-resolution tape existed for it; the stream recorder now subscribes the full-game total families and files them beside each game's spreads with line null, where the spread scanners cannot mis-orient them (`core/ladder/live.RECORDED_MARKET_TYPES`). (c) *Period versus full game*: at halftime the full-game spread at L equals the second-half spread at L minus the first-half margin, and likewise for totals; 1,112 runs across 16 games, 24 ≥ $25, 7 ≥ $100, median run 27–65 s; and an overtime pocket where second-half contracts are already determined but stay open about three minutes at OT-inclusive prices, with real prints. (d) *Cross-venue*: §0ah stands; in-play unreported at this writing. Each of these is a two-leg identity the desk could send; none has been recorded at update resolution yet except through the totals change above.
+
+**What is not known.** Whether displayed size fills. Zero ladder pairs have ever been placed; the only orders this system has ever sent are five single-legged WNBA orders on 2026-08-05/07 (§five-orders-exist in memory). The phantom check says a real share of the displayed crossings are not there; the only thing that resolves the rest is an order. That is the fill test, and it is what the next two weeks are for.
+
+**Operationally, from this section on:** the board schedules itself (`scripts/schedule_slate.py`, daily 12:10Z, tested against a Sunday-shaped fixture and against the live board), the launchers are versioned under `scripts/launchers/`, the verdict runs after every slate with the ledger and the phantom check, and the desk loads in under a second where it took a minute (§0cc's sampler ran a 30-minute serial rotation and a 47-second listing; 45 s, wake-on-ask, and 201 index probes now).

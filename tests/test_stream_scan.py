@@ -6,7 +6,11 @@ cheaper than the winner, which cannot both be true -- then has the winner's
 bid lifted while +4.5 stays stale, then has +4.5 re-quoted back.
 
 Every expected number below was worked out from the prices with
-fee = 0.06 p (1-p) charged at BOTH legs and written down, not read off the
+fee = 0.0695 p (1-p) (the venue's feeCoefficient) charged at BOTH legs; every
+expectation below is an expression in scan.fee, not a literal, after 2026-09-21
+found the 0.06 that stood here was never checked against the venue. The
+worked arithmetic that followed assumed 0.06 and an ask of 0.36; kept for the shape, not the numbers:
+
 code. A test that recomputes the thing it is testing checks nothing.
 
     t3  buy +4.5 @ 0.36, sell 0.0 @ 0.48
@@ -44,6 +48,14 @@ def row(recv: str, line: float, bid, ask, bsz, asz) -> str:
 
 
 #: The monotone ladder: YES price non-decreasing in the line number.
+_F = scan.fee     # the venue's coefficient lives in ONE place; every expectation is derived from it
+#: sell the winner's bid 0.50, buy +4.5's ask 0.35 (after the lift at t=30)
+BIG_EDGE = 0.50 - 0.35 - _F(0.35) - _F(0.50)
+#: sell -4.5's bid 0.40, buy +4.5's ask 0.35
+SMALL_EDGE = 0.40 - 0.35 - _F(0.35) - _F(0.40)
+#: the recorder test never lifts the winner: sell its bid 0.48
+REC_EDGE = 0.48 - 0.35 - _F(0.35) - _F(0.48)
+
 CLEAN = [(-4.5, 0.40, 0.42, 300, 300), (0.0, 0.48, 0.50, 900, 900), (4.5, 0.56, 0.58, 200, 800)]
 
 TAPE = [
@@ -51,8 +63,8 @@ TAPE = [
     row(at(0.5), *CLEAN[1]),
     row(at(1.0), *CLEAN[2]),
     "{not json at all",                                   # a torn line mid-tape
-    row(at(10.0), 4.5, 0.34, 0.36, 200, 1000),            # +4.5 re-quoted down: the violation
-    row(at(20.0), 4.5, 0.34, 0.36, 200, 1000),            # identical: no rung moved
+    row(at(10.0), 4.5, 0.34, 0.35, 200, 1000),            # +4.5 re-quoted down: the violation
+    row(at(20.0), 4.5, 0.34, 0.35, 200, 1000),            # identical: no rung moved
     row(at(30.0), 0.0, 0.50, 0.52, 900, 900),             # the winner lifts, +4.5 stays stale
     row(at(40.0), *CLEAN[2]),                             # +4.5 back: the episodes close
 ]
@@ -70,12 +82,12 @@ def test_a_violation_that_appears_and_disappears_is_one_episode_per_pair(tmp_pat
     big = next(e for e in eps if e.pair == (0.0, 4.5))
     assert big.start == at(10.0) and big.end == at(30.0), "opens on the update, closes on the last one"
     assert big.duration_s == 20.0 and big.updates == 2
-    assert abs(big.best_edge - 0.111176) < 1e-12 and abs(big.best_dollars - 100.0584) < 1e-9
-    assert (big.best_buy, big.best_sell, big.best_size) == (0.36, 0.50, 900.0)
+    assert abs(big.best_edge - BIG_EDGE) < 1e-12 and abs(big.best_dollars - BIG_EDGE * 900) < 1e-9
+    assert (big.best_buy, big.best_sell, big.best_size) == (0.35, 0.50, 900.0)
     assert big.spread_pair is False, "the winner market is a leg: not a spread pair"
     assert big.mid is False
     small = next(e for e in eps if e.pair == (-4.5, 4.5))
-    assert abs(small.best_edge - 0.011776) < 1e-12 and abs(small.best_dollars - 3.5328) < 1e-9
+    assert abs(small.best_edge - SMALL_EDGE) < 1e-12 and abs(small.best_dollars - SMALL_EDGE * 300) < 1e-9
     assert small.spread_pair is True and small.mid is True, "both legs inside the mid ladder"
     assert small.duration_s == 20.0 and small.updates == 2
 
@@ -87,7 +99,7 @@ def test_the_totals_name_the_population_every_number_is_about(tmp_path):
     assert t["scans"] == 6 and t["unchanged"] == 1, "the repeated quote runs no scan"
     assert t["scans_with_violation"] == 2 and t["rungs"] == 3 and t["one_sided"] == 0
     assert t["episodes"] == 2 and t["episodes_ge_10"] == 1 and t["episodes_ge_100"] == 1
-    assert abs(t["sum_best_usd"] - 103.5912) < 1e-9 and t["max_best_usd"] == 100.0584
+    assert abs(t["sum_best_usd"] - (BIG_EDGE * 900 + SMALL_EDGE * 300)) < 1e-3 and abs(t["max_best_usd"] - BIG_EDGE * 900) < 1e-3
     assert t["first_recv"] == at(0.0) and t["last_recv"] == at(40.0)
     assert t["fee_rate"] == scan.DEFAULT_FEE_RATE and t["max_size"] == scan.MAX_PLAUSIBLE_SIZE
 
@@ -108,7 +120,7 @@ def test_the_size_cap_is_part_of_the_answer_not_a_detail(tmp_path):
     the cap rides on the totals and changing it changes the dollars."""
     _, capped = stream_scan.episodes_in_book_file(write(tmp_path, TAPE), max_size=100.0)
     assert capped["max_size"] == 100.0
-    assert abs(capped["max_best_usd"] - 11.1176) < 1e-9, "0.111176 x 100, not x 900"
+    assert abs(capped["max_best_usd"] - BIG_EDGE * 100) < 1e-3, "the big edge x 100, not x 900"
 
 
 def test_a_rung_that_only_ever_has_one_side_never_enters_the_ladder(tmp_path):
@@ -126,9 +138,13 @@ def test_a_rung_that_only_ever_has_one_side_never_enters_the_ladder(tmp_path):
     would_be = scan.scan_ladder(GAME, {**complete, -10.5: (0.60, 0.62, 500, 500)})
     #   sell -10.5 @ 0.60, buy 0.0 @ 0.50:  0.10 - 0.015 - 0.0144 = 0.0706 -> a violation
     #   sell -10.5 @ 0.60, buy +4.5 @ 0.58: 0.02 - 0.014616 - 0.0144 < 0   -> the fees eat it
-    assert [(v.low_line, v.high_line) for v in would_be] == [(-10.5, 0.0)], (
+    # At 0.06 the -10.5 vs -4.5 pair was a 15.1c edge and the plausibility
+    # cap (0.15) refused it; at the venue's 0.0695 it is 14.6c and counts.
+    # A fee is a boundary condition on the cap too.
+    assert [(v.low_line, v.high_line) for v in would_be] == [(-10.5, -4.5), (-10.5, 0.0)], (
         "with both sides that rung violates, so excluding it is load-bearing, not inert")
-    assert abs(would_be[0].edge - 0.0706) < 1e-12
+    against_winner = next(v for v in would_be if v.high_line == 0.0)
+    assert abs(against_winner.edge - (0.10 - _F(0.60) - _F(0.50))) < 1e-12
 
 
 def test_a_rung_that_loses_a_side_leaves_the_ladder_and_closes_its_episodes(tmp_path):
@@ -174,7 +190,7 @@ def test_a_slate_is_scanned_one_game_at_a_time(tmp_path):
     assert len(eps) == 4 and {e.game for e in eps} == {GAME, "cfb-hou-ttu-2026-09-18"}
     s = stream_scan.slate_summary(totals)
     assert s["games"] == 2 and s["games_with_an_episode"] == 2 and s["episodes"] == 4
-    assert abs(s["sum_best_usd"] - 207.18) < 0.01 and s["episodes_ge_100"] == 2
+    assert abs(s["sum_best_usd"] - 2 * (BIG_EDGE * 900 + SMALL_EDGE * 300)) < 0.01 and s["episodes_ge_100"] == 2
     assert s["max_size"] == scan.MAX_PLAUSIBLE_SIZE, "the population rides on the slate row too"
 
 
@@ -216,9 +232,9 @@ def test_the_recorder_writes_the_file_the_scanner_reads(tmp_path):
         conn.handle(md(slug, bid, ask, bsz, asz))
     eps, _ = stream_scan.scan_slate(str(tmp_path))
     assert eps == [], "the monotone ladder the recorder just wrote violates nothing"
-    conn.handle(md(f"asc-{GAME}-pos-4pt5", 0.34, 0.36, 200, 1000))
+    conn.handle(md(f"asc-{GAME}-pos-4pt5", 0.34, 0.35, 200, 1000))
     sink.close()
     eps, totals = stream_scan.scan_slate(str(tmp_path))
     assert [e.pair for e in eps] == [(-4.5, 4.5), (0.0, 4.5)]
-    assert abs(next(e for e in eps if e.pair == (0.0, 4.5)).best_dollars - 82.08) < 1e-9
+    assert abs(next(e for e in eps if e.pair == (0.0, 4.5)).best_dollars - REC_EDGE * 900) < 1e-9
     assert totals[0]["game"] == GAME and totals[0]["scans"] == 4 and totals[0]["one_sided"] == 0

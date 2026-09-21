@@ -77,6 +77,34 @@ def line_of(slug: str, winner_prefix: str) -> float | None:
     return (-1.0 if m.group(1) == "neg" else 1.0) * (float(m.group(2)) + float(m.group(3)) / 10)
 
 
+#: What the STREAM RECORDER subscribes: the ladder families plus the
+#: full-game totals, which a discovery agent found carrying the same defect
+#: in play on 2026-09-21 (76 episodes, 13 instants over $25, market-maker
+#: size on both legs for minutes) with NO update-resolution tape to measure
+#: it on. Recorder-only: the scheduler counts rungs off LADDER_MARKET_TYPES,
+#: and a game's 42 total rungs must not pass it as a 30-rung spread ladder.
+#: The spread scanners never see these rows -- `game_and_line` still returns
+#: None for a totals slug, so its line is recorded as null and `line_of`
+#: skips it -- because a totals ladder runs the OTHER way (a higher line is
+#: harder, cheaper) and feeding it to the spread scanner reports the correct
+#: board as broken.
+RECORDED_MARKET_TYPES = LADDER_MARKET_TYPES + (
+    "football_team_full_game_total",
+    "basketball_team_full_game_total",
+    "baseball_team_full_game_total",
+)
+
+_ANY_GAME = re.compile(r"^[a-z]{3}-(?P<game>[a-z0-9]+-.+?-\d{4}-\d{2}-\d{2})(?:-|$)")
+
+
+def game_of_slug(slug: str) -> str | None:
+    """The game key from ANY family's slug -- `aec-`, `asc-`, `tsc-` -- so the
+    recorder can file a totals row beside the game's spreads. Says nothing
+    about the line: that stays `game_and_line`'s job, and it refuses totals."""
+    m = _ANY_GAME.match(slug)
+    return m.group("game") if m else None
+
+
 def game_and_line(slug: str) -> tuple[str, float] | None:
     """``('cfb-mia-wake-2026-09-18', 10.5)`` from one ladder slug, or None.
 
@@ -202,7 +230,7 @@ def slate_slugs(league: str, date: str | None = None, engine=None, *,
     # Inlined rather than bound: the list is this module's own constant, never
     # a caller's string. The league and the window ARE caller input and are
     # bound.
-    families = ",".join(f"'{t}'" for t in LADDER_MARKET_TYPES)
+    families = ",".join(f"'{t}'" for t in RECORDED_MARKET_TYPES)
     with _engine(engine).connect() as c:
         rows = c.execute(text(
             "SELECT DISTINCT market_slug, game_start_time FROM market_snapshots "
