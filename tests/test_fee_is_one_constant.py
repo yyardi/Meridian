@@ -90,6 +90,17 @@ def test_the_venue_s_coefficient_is_the_one_constant():
     assert fees.KALSHI_TAKER == 0.07 and fees.POLYMARKET_MAKER == 0.0
 
 
+def test_a_recorded_row_is_charged_at_its_own_coefficient_and_never_silently_at_today_s():
+    """The venue moved on 2026-09-17; a pre-change row pays 0.06, a post-change
+    row 0.0695, and a row with no coefficient is an error, not today's fee."""
+    import pytest
+    from decimal import Decimal
+    assert fees.recorded_fee(0.5, Decimal("0.060000")) == 0.06 * 0.25
+    assert fees.recorded_fee(0.5, 0.0695) == fees.taker_fee(0.5)
+    with pytest.raises(ValueError):
+        fees.recorded_fee(0.5, None)
+
+
 def test_every_0_06_literal_in_code_is_a_named_non_fee_constant():
     """Walk the AST: each `0.06` float is either the value of an allowlisted
     name or an offender. This catches `FEE = 0.06`, `k = 0.06` as a default

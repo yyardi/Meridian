@@ -37,3 +37,19 @@ KALSHI_TAKER = 0.07
 def taker_fee(price: float, coefficient: float = POLYMARKET_TAKER) -> float:
     """Fee per contract at the price actually paid, not at the mid."""
     return coefficient * price * (1.0 - price)
+
+
+def recorded_fee(price: float, coefficient) -> float:
+    """Fee per contract at the coefficient the venue charged on THAT row.
+
+    ``coefficient`` is ``market_snapshots.fee_coefficient`` read beside the
+    book the price came from. A historical read that charges today's constant
+    across rows the venue priced differently is not a measurement of what
+    happened (the venue moved 0.06 -> 0.0695 at 2026-09-17 04:07Z, and every
+    settled table-tennis match then on file was pre-change: 16 % overcharged).
+    ``None`` is an error here, never a fallback -- the silent path is exactly
+    the kind that hides for four days. Price a bet NOW with ``taker_fee``.
+    """
+    if coefficient is None:
+        raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
+    return float(coefficient) * price * (1.0 - price)
