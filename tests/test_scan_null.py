@@ -535,7 +535,8 @@ def test_break_even_includes_the_fee():
     """EV = p - ask - fee = 0, so break-even is ABOVE the ask. A break-even
     that forgot the fee would make every cell look better than it is."""
     assert N.break_even(0.50) > 0.50
-    assert abs(N.break_even(0.50) - (0.50 + 0.06 * 0.25)) < 1e-12
+    from core.fees import POLYMARKET_TAKER
+    assert abs(N.break_even(0.50) - (0.50 + POLYMARKET_TAKER * 0.25)) < 1e-12
     assert N.break_even(1.0) == 1.0          # no fee at the boundary
 
 
