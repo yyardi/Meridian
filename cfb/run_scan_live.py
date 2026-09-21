@@ -47,7 +47,8 @@ from core import settlements
 from core.leagues import LEAGUES, venue_patterns
 from core.polymarket.client import PolymarketGatewayClient
 
-FEE_PM, G_FLOOR = 0.06, 6
+from core.fees import POLYMARKET_TAKER as FEE_PM  # noqa: E402  0.0695, the venue's feeCoefficient
+G_FLOOR = 6
 DECILES = [(i / 10, (i + 1) / 10) for i in range(10)]
 SPREAD_BUCKETS = ((0.0, 1.0, "<=1c"), (1.0, 3.0, "1-3c"), (3.0, 1e9, ">3c"))
 SAMPLE_MIN = 10          # PRE-REGISTERED: one tick per market per 10 minutes, first in bucket

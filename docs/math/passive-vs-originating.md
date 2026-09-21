@@ -52,8 +52,9 @@ Rebates are a rounding error on a losing book; they are not a strategy.
 
 ## ★ OPEN AND MATERIAL: does the MAKER pay the fee here? ★
 
-Every CFB market on our venue carries **`feeCoefficient = 0.06`** — *higher*
-than polymarket.com's 0.05 sports rate. At p=0.50 that is **1.5¢ per contract**.
+Every CFB market on our venue carried **`feeCoefficient = 0.06`** when this was
+written (0.0695 since 2026-09-17 — docs/math/fee-coefficient.md) — *higher*
+than polymarket.com's 0.05 sports rate. At p=0.50 that is **1.5¢ per contract** (1.74¢ now).
 
 **Our shadow fills model no fee at all** (`capture = mid_at_fill − quote_price`,
 no fee term). So:

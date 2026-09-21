@@ -188,7 +188,7 @@ def test_depth_at_bid_only_when_the_level_price_is_the_quote_bid():
 
 
 # ------------------------------------------------------------------ the paper book's arithmetic
-FEE = 0.06
+from core.fees import POLYMARKET_TAKER as FEE  # noqa: E402  the venue's coefficient, 0.0695; this said 0.06
 
 
 def test_fee_constant_is_the_verified_taker_fee():
@@ -199,30 +199,30 @@ def test_buy_no_at_yes_bid_025_settles_no():
     """'no' buys NO at 1 - bid where bid is the YES best bid (the script's convention).
 
     YES bid 0.25 -> NO costs 0.75, pays 1 on y=0: profit 0.25 minus the fee
-    0.06*0.25*0.75 = 0.01125 -> +0.23875. (The brief's "+0.75 - fee(0.25)" reads
+    FEE*0.25*0.75 -> +0.25 minus that. (The brief's "+0.75 - fee(0.25)" reads
     "bid 0.25" as the NO price; that case is the next test.)
     """
-    assert book.bet_pnl("no", 0, 0.25, 0.27) == pytest.approx(0.25 - 0.06 * 0.25 * 0.75, abs=1e-12)
-    assert book.bet_pnl("no", 0, 0.25, 0.27) == pytest.approx(0.23875, abs=1e-12)
+    assert book.bet_pnl("no", 0, 0.25, 0.27) == pytest.approx(0.25 - FEE * 0.25 * 0.75, abs=1e-12)
+    assert book.bet_pnl("no", 0, 0.25, 0.27) == pytest.approx(0.25 - FEE * 0.25 * 0.75, abs=1e-12)
     assert book.bet_stake("no", 0.25, 0.27) == pytest.approx(0.75)
 
 
 def test_buy_no_priced_at_025_settles_no():
-    """NO priced 0.25 means YES bid 0.75: profit 0.75 minus 0.06*0.75*0.25 = 0.01125 -> +0.73875."""
-    assert book.bet_pnl("no", 0, 0.75, 0.77) == pytest.approx(0.75 - 0.06 * 0.75 * 0.25, abs=1e-12)
-    assert book.bet_pnl("no", 0, 0.75, 0.77) == pytest.approx(0.73875, abs=1e-12)
+    """NO priced 0.25 means YES bid 0.75: profit 0.75 minus FEE*0.75*0.25."""
+    assert book.bet_pnl("no", 0, 0.75, 0.77) == pytest.approx(0.75 - FEE * 0.75 * 0.25, abs=1e-12)
+    assert book.bet_pnl("no", 0, 0.75, 0.77) == pytest.approx(0.75 - FEE * 0.75 * 0.25, abs=1e-12)
     assert book.bet_stake("no", 0.75, 0.77) == pytest.approx(0.25)
 
 
 def test_buy_yes_at_ask_090_settles_yes():
-    assert book.bet_pnl("yes", 1, 0.88, 0.90) == pytest.approx(0.10 - 0.06 * 0.9 * 0.1, abs=1e-12)
-    assert book.bet_pnl("yes", 1, 0.88, 0.90) == pytest.approx(0.0946, abs=1e-12)
+    assert book.bet_pnl("yes", 1, 0.88, 0.90) == pytest.approx(0.10 - FEE * 0.9 * 0.1, abs=1e-12)
+    assert book.bet_pnl("yes", 1, 0.88, 0.90) == pytest.approx(0.10 - FEE * 0.9 * 0.1, abs=1e-12)
     assert book.bet_stake("yes", 0.88, 0.90) == pytest.approx(0.90)
 
 
 def test_losing_legs_lose_the_stake_plus_the_fee():
-    assert book.bet_pnl("yes", 0, 0.88, 0.90) == pytest.approx(-0.90 - 0.0054, abs=1e-12)
-    assert book.bet_pnl("no", 1, 0.25, 0.27) == pytest.approx(-0.75 - 0.01125, abs=1e-12)
+    assert book.bet_pnl("yes", 0, 0.88, 0.90) == pytest.approx(-0.90 - FEE * 0.9 * 0.1, abs=1e-12)
+    assert book.bet_pnl("no", 1, 0.25, 0.27) == pytest.approx(-0.75 - FEE * 0.25 * 0.75, abs=1e-12)
 
 
 def test_fee_is_a_parameter_and_zero_fee_is_the_raw_payoff():

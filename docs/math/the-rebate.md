@@ -20,7 +20,7 @@
 > correcting everything downstream of it.
 >
 > **Everything below is kept as the record of the episode. Read none of it as
-> current.** The verified fee facts are: taker 0.06 (measured), maker 0 (no
+> current.** The verified fee facts are: taker 0.06 measured then, 0.0695 since the venue raised it on 2026-09-17 (docs/math/fee-coefficient.md), maker 0 (no
 > rebate, never observed).
 
 # The maker rebate we were never counting — 2026-09-04

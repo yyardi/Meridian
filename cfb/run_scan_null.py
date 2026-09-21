@@ -46,6 +46,7 @@ from collections import defaultdict
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
+from core.fees import POLYMARKET_TAKER  # noqa: E402  0.0695, the venue's feeCoefficient
 
 
 def _load(name: str):
@@ -841,7 +842,7 @@ def poisson_binomial_p(k: int, ps) -> float:
     return min(1.0, sum(w for w in pmf if w <= obs * (1 + 1e-12)))
 
 
-def break_even(ask: float, fee_rate: float = 0.06) -> float:
+def break_even(ask: float, fee_rate: float = POLYMARKET_TAKER) -> float:
     """Win probability a YES-at-ask bet needs to break even: you pay the ask
     plus the fee, so EV = p - ask - fee = 0."""
     return ask + fee_rate * ask * (1.0 - ask)

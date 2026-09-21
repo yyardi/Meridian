@@ -39,7 +39,10 @@ try:  # reuse the venue fee coefficients, don't restate them
 except Exception:  # noqa: BLE001 — keep the primitives importable without backtest
     def fee_per_contract(price: float, *, is_maker: bool,
                          assume_rebate: bool = False) -> float:
-        return 0.0 if is_maker else 0.06 * price * (1.0 - price)
+        # The fallback must charge the venue's coefficient too; it carried
+        # a stale literal until 2026-09-21. 0.0695 lives in core/fees.py.
+        from core.fees import taker_fee
+        return 0.0 if is_maker else taker_fee(price)
 
 # --- registration constants (docs/math/paper-wallet-scoreboard.md) ---------- #
 SEED_PER_LEAGUE = 500.0          # $500 each at birth; $1,000 total

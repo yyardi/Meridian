@@ -15,7 +15,8 @@ Two reasons, both real:
 
 1. A ladder rung was observed quoting ``bid 0.03 / ask 0.39``. Crossing that
    fills nowhere near the intended price.
-2. Economics. The taker fee is ``+0.06 * C * p * (1-p)``; a maker pays
+2. Economics. The taker fee is ``+theta * C * p * (1-p)`` with theta the
+   venue's ``feeCoefficient`` (core/fees.py, 0.0695 since 2026-09); a maker pays
    nothing. At p=0.50 that is 1.5c/contract paid versus zero. Against a 2c
    spread, that swing is most of the edge. (The venue advertises a maker
    rebate, but it has never been observed in this account and is not booked —
@@ -219,7 +220,7 @@ class LimitOrder:
         ``post_only`` maps to the venue's ``participateDontInitiate``: the order
         may rest but must never cross. It defaults to True because the entire
         economic case for this system is being a maker — the taker fee is
-        ``+0.06·C·p·(1-p)`` against a maker coefficient of at best 0, and
+        ``+0.0695·C·p·(1-p)`` against a maker coefficient of at best 0, and
         against a 2c spread that swing is most of the edge. An order that would
         cross is rejected by the venue rather than filled expensively, which is
         the outcome we want: a crossed limit is a mispriced decision, not a

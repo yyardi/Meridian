@@ -128,7 +128,7 @@ import json
 import sys
 from dataclasses import dataclass
 
-from core.backtest.fills import fee_per_contract
+from core.backtest.fills import THETA_TAKER, fee_per_contract
 from core.pulse.replay import Order, ReplayContext, Tick, load_ticks, replay_game
 from core.pulse.win_curve import RULE_OF_THUMB_SIGMA, anchored_probability
 from core.quote.adverse_selection import clustered_mean
@@ -183,7 +183,8 @@ GATE_MIN_GAMES = 15             # the operator's 2026-08-08 policy
 #    at the bid. This is what makes the P&L "net of costs" without inventing a
 #    cost constant: the spread paid is the spread that was actually quoted.
 #    Entry is maker and pays no fee; the exit cross pays the venue's published
-#    taker fee via core.backtest.fills, theta = 0.06 * p * (1-p), no rebate
+#    taker fee via core.backtest.fills, theta = POLYMARKET_TAKER * p * (1-p)
+#    (core/fees.py: 0.0695, the venue's feeCoefficient), no rebate
 #    assumed (C7/V9 — the maker rebate has never been observed on this
 #    account).
 #
@@ -548,7 +549,7 @@ def report(session) -> dict:
              "span; the archive stores no game clock (raw stripped to JSON "
              "null on 12.0M of 12.9M live rows). Affects the co-primary only."),
             ("maker rebate not assumed (C7/V9); entry pays no fee, the exit "
-             "cross pays theta_taker = 0.06 * p * (1-p)."),
+             f"cross pays theta_taker = {THETA_TAKER} * p * (1-p)."),
         ],
     }
 

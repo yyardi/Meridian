@@ -12,8 +12,9 @@ best. Determines how much you can trade before moving the price. On this venue i
 **\$5–24 at the touch** on cheap contracts — see [findings.md](findings.md#1-venue-facts).
 
 **Maker / Taker** — a *maker* posts a resting limit order and waits; a *taker*
-crosses the spread to fill immediately and **pays a fee** ($\Theta = 0.06$,
-venue-published and measured). Maker-only is load-bearing: taker fills turn +0.75%
+crosses the spread to fill immediately and **pays a fee** ($\Theta = 0.0695$ since
+2026-09-17, $0.06$ before; the venue publishes it as `feeCoefficient` on every
+market and the recorder stores it — docs/math/fee-coefficient.md). Maker-only is load-bearing: taker fills turn +0.75%
 into −4.0%. A maker *rebate* is advertised by the venue but has **never been
 observed in this account** — the code books zero (findings C7) and sizes on the fee
 avoided, not the rebate earned. [math/fees-and-spread.md](math/fees-and-spread.md)

@@ -12,7 +12,7 @@ PRE-REGISTERED BEFORE THE FIRST RUN. Written here, then run once.
                the expected margin (-spread) so we trade where the book is.
   instant      play wall_clock + 30s (feed lag). First snapshot of EACH rung at
                or after that, within 5 min; older is STALE: excluded, counted.
-  entry        TAKER at the touch on both legs. Fee 0.06*p*(1-p) per leg.
+  entry        TAKER at the touch on both legs. Fee 0.0695*p*(1-p) per leg.
                No maker rebate (findings.md C7). This is the conservative cost;
                a maker could only do better, so a loss here is a real loss.
   direction    long the interval when model_interval - market_cost > TAU;
@@ -62,7 +62,6 @@ BAND = 14.0
 TAU_PRIMARY = 0.05
 TAUS = (0.03, 0.05, 0.08)
 MAX_LEG_SPREAD = 0.06
-TAKER_THETA = 0.06
 LEAGUE = os.environ.get("LEAGUE", "cfb")
 MODEL = os.environ.get("COVER_MODEL",
                        f"/app/artifacts/{LEAGUE}_cover_regulation.json")   # follows the league
@@ -88,6 +87,10 @@ eng = create_engine(os.environ["DATABASE_URL"])
 # "could not resize shared memory segment ... No space left on device" on
 # 2026-09-11 once the tape grew. Session-scoped, no config change.
 from sqlalchemy import event  # noqa: E402
+try:
+    from core.fees import POLYMARKET_TAKER as TAKER_THETA  # 0.0695: the venue's feeCoefficient (core/fees.py)
+except ImportError:                                  # run bare, no repo root on sys.path
+    TAKER_THETA = 0.0695
 @event.listens_for(eng, "connect")
 def _no_parallel_workers(dbapi_conn, _rec):
     # psycopg3 opens a transaction on the first execute; an uncommitted SET is
@@ -323,7 +326,7 @@ def report(label, sel):
 
 allp = list(taken.values())
 print(f"\n=== P&L per pair, cents per $1 contract, game-clustered, held to settlement ===")
-print("  net = after crossing both spreads and 0.06*p*(1-p) taker fee per leg;")
+print("  net = after crossing both spreads and 0.0695*p*(1-p) taker fee per leg;")
 print("  mid-to-mid = same positions priced at mid, no fees (does the model disagree usefully?)\n")
 for tau in TAUS:
     tag = "PRIMARY" if tau == TAU_PRIMARY else "secondary"

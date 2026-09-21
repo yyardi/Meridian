@@ -66,7 +66,8 @@ from core import settlements
 from core.leagues import LEAGUES, venue_patterns
 from core.polymarket.client import PolymarketGatewayClient
 
-FEE_PM, G_FLOOR = 0.06, 6
+from core.fees import POLYMARKET_TAKER as FEE_PM  # noqa: E402  0.0695, the venue's feeCoefficient
+G_FLOOR = 6
 DECILES = [(i / 10, (i + 1) / 10) for i in range(10)]
 MAXCALLS = int(os.environ.get("MAXCALLS", "40000"))
 sys.stdout.reconfigure(line_buffering=True)

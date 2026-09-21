@@ -15,7 +15,7 @@
     flips to post) and is counted against ESPN wherever both exist. Split by the named team's side: AWAY is the
     Polymarket line's rung (asc line -X at YES mid 0.2-0.3); HOME is the complement of its 0.7-0.8 mirror.
 FEES. Kalshi 0.07*p*(1-p) (docs/math/the-rebate.md: NCAAF series quadratic_with_maker_fees, multiplier 1; the
-venue's round-up to the cent is not applied); Polymarket taker 0.06*p*(1-p). MATCHING. Kalshi game -> cfb_game_map
+venue's round-up to the cent is not applied); Polymarket taker FP*p*(1-p), FP from core/fees.py (0.0695). MATCHING. Kalshi game -> cfb_game_map
 game on date +-1, BOTH teams, exact then prefix then containment LAST, over (Kalshi code vs slug token) OR (Kalshi
 title vs ESPN display name); orientation from ESPN's home/away names, never ticker order; two games or both
 orientations at the winning tier -> refused; the tier is printed. A matched game whose winner mids disagree by
@@ -28,7 +28,11 @@ import bisect, datetime as dt, os, re
 from collections import defaultdict
 from sqlalchemy import create_engine, event, text
 
-FK, FP, GAP, LO, HI, FLAG = 0.07, 0.06, 3.0, 0.20, 0.30, 35.0
+try:
+    from core.fees import KALSHI_TAKER as FK, POLYMARKET_TAKER as FP  # 0.07 / 0.0695: the venues' coefficients (core/fees.py)
+except ImportError:                                                  # run bare, no repo root on sys.path
+    FK, FP = 0.07, 0.0695
+GAP, LO, HI, FLAG = 3.0, 0.20, 0.30, 35.0
 MATCH, B_LO, B_HI, DAY = (dt.timedelta(minutes=m) for m in (5, 30, 90, 1440))
 LG, D0, D1 = os.environ.get("LEAGUE", "cfb"), os.environ.get("D0", "2026-09-11"), os.environ.get("D1", "2026-09-13")
 SER, DIV = {"cfb": "KXNCAAF%", "nfl": "KXNFL%"}[LG], ("= 'NFL'" if LG == "nfl" else "<> 'NFL'")
@@ -174,6 +178,6 @@ print(f"\n=== C. Kalshi spread rungs with YES mid in [{LO}, {HI}) at the last qu
 for side in ("away", "home", "all"):
     rs = [r for r in C if side == "all" or r[2] == side]
     print(f"  {side:<5} {ci([r[0] for r in rs], [r[1] for r in rs]) if rs else 'n=0'}   quote age median {pct([r[3] for r in rs], .5) if rs else 0:.1f} min before kickoff")
-print("  Polymarket reference, same rule on asc rungs at taker 0.06 (STATUS.md 09-13): +5.44c [-1.46, +12.35], 289 bets, 107 games."
+print("  Polymarket reference, same rule on asc rungs at the coefficient then in force (STATUS.md 09-13; docs/math/fee-coefficient.md): +5.44c [-1.46, +12.35], 289 bets, 107 games."
       "  AWAY here is that rung (Kalshi 'away wins by over X' == asc line -X); HOME is the complement of its 0.7-0.8 mirror rung.")
 print("G < 25 is UNDERPOWERED: a direction, never a result. Nothing here is placed; the tape is the only input.")

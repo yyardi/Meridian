@@ -130,7 +130,8 @@ def table(rows: list[dict]) -> str:
         g = "any" if r["gate_s"] is None else f"{r['gate_s']:g}s"
         ml = r.get("median_life_over_floor_s")
         so = r.get("spread_only") or {}
-        lines.append(f"  {r['date']:<11}{r['league']:<5}{g:>5}{r.get('fee_rate', 0.06):>7.4f}{r['games']:>6}"
+        fr = f"{r['fee_rate']:.4f}" if r.get("fee_rate") is not None else "n/a"
+        lines.append(f"  {r['date']:<11}{r['league']:<5}{g:>5}{fr:>7}{r['games']:>6}"
                      f"{r['episodes']:>9,}{r['over_floor']:>6}"
                      f"{r['sum_over_floor_usd']:>9,.0f}{r['biggest_usd']:>9,.0f}"
                      f"{(f'{ml:.1f}s' if ml is not None else '-'):>9}"

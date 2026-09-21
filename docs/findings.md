@@ -514,6 +514,16 @@ unregister a population.
 Filed in the verify-against-the-venue family: the venue's settlement is the
 fact; the feed's convenience column is a cache with no invalidation.
 
+### V33 — The venue raised its taker coefficient from 0.06 to 0.0695 on 2026-09-17, and the tree did not notice for four days
+
+`market_snapshots.fee_coefficient` (recorded on every snapshot since 2026-07-31): 0.06 on 63,539,087 rows
+through 2026-09-17 04:00:44Z, 0.0695 on every row from 04:07:24Z on (21,656,635 rows to 2026-09-21).
+**V9 was right on its day.** The correction is to the tree, not to V9: ten literal 0.06s under two provenance
+claims, none compared to the field, so 09-17..09-21 charged every fee 16 % light with every log green.
+At p = 0.50 the taker fee is 1.74¢, not 1.5¢. One constant now (`core/fees.py`), a sweep test
+(`tests/test_fee_is_one_constant.py`), and a nightly drift check (`scripts/fee_drift.py`) so the next change
+is caught the morning after. docs/math/fee-coefficient.md. — 2026-09-21
+
 ## 2. Bugs
 
 Every one of these was free because nothing traded. That property is the reason

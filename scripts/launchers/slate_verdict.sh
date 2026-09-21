@@ -48,6 +48,16 @@ docker run --rm -v /opt/meridian/core:/app/core -v /opt/meridian/scripts:/app/sc
   python3 scripts/launchers/phantom_check.py --gate 2 >> "$REPORT" 2>&1 || true
 echo; tail -n 1 "$REPORT"
 
+# Does core.fees still match what the venue recorded in the last day? The
+# venue raised its coefficient 0.06 -> 0.0695 on 2026-09-17 and nothing
+# compared the constant to the field for four days. This line does.
+docker run --rm --network meridian_default --env-file /opt/meridian/.env \
+  -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian \
+  -v /opt/meridian/core:/app/core -v /opt/meridian/scripts:/app/scripts -w /app "$API" \
+  python3 scripts/fee_drift.py >> "$REPORT" 2>&1 || true
+FEELINE=$(grep -E '^FEE ' "$REPORT" | tail -1)
+echo; echo "$FEELINE"
+
 # The headline is the 2-second row: crossings whose two legs the venue was
 # publishing at the same instant. That number, not the ungated one, is what
 # decides whether there is anything to trade.
@@ -63,5 +73,6 @@ notify.push('schedule', 'Slate verdict $STAMP',
   '''$GAMES
 both legs quoted within 2s: $FRESH
 no freshness gate at all:   $ANY
+$FEELINE
 Full table: $REPORT''', tags='microscope', timeout=15)
 " || true
