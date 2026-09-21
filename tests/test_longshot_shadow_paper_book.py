@@ -191,8 +191,12 @@ def test_depth_at_bid_only_when_the_level_price_is_the_quote_bid():
 from core.fees import POLYMARKET_TAKER as FEE  # noqa: E402  the venue's coefficient, 0.0695; this said 0.06
 
 
-def test_fee_constant_is_the_verified_taker_fee():
-    assert book.FEE == FEE and shadow.FEE == FEE
+def test_the_paper_book_default_is_today_s_fee_and_the_lister_carries_none():
+    """bet_pnl's default prices a bet NOW; every close main() scores is charged at
+    its own row's coefficient (tests/test_fee_per_row_closing.py). The lister has
+    no now-priced use at all, so it holds no constant to go stale."""
+    assert book.FEE == FEE
+    assert not hasattr(shadow, "FEE")
 
 
 def test_buy_no_at_yes_bid_025_settles_no():
@@ -245,7 +249,10 @@ def test_yes_side_uses_the_ask_and_no_side_uses_the_bid():
 
 def test_lister_buy_no_cents_equals_paper_book_bet_pnl_times_100():
     """Two implementations of one formula: the lister (trainer image) and the paper book
-    (api container) cannot import each other, so they are pinned to each other here."""
-    for bid in (0.05, 0.19, 0.20, 0.25, 0.29, 0.30, 0.75):
-        for y in (0, 1):
-            assert shadow.buy_no_pnl_c(bid, y) == pytest.approx(100 * book.bet_pnl("no", y, bid, bid + 0.02), abs=1e-9)
+    (api container) cannot import each other, so they are pinned to each other here --
+    at both coefficients the venue has carried (it raised the fee on 2026-09-17)."""
+    for k in (0.06, FEE):
+        for bid in (0.05, 0.19, 0.20, 0.25, 0.29, 0.30, 0.75):
+            for y in (0, 1):
+                assert shadow.buy_no_pnl_c(bid, y, k) == pytest.approx(
+                    100 * book.bet_pnl("no", y, bid, bid + 0.02, k), abs=1e-9)
