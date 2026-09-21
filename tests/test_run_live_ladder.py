@@ -153,7 +153,25 @@ def test_slugs_for_takes_the_callers_engine_and_defaults_to_the_scripts_env(monk
 
     assert RUN.slugs_for("cfb-mia-wake-2026-09-18", Engine()) == [
         "aec-cfb-mia-wake-2026-09-18", "aec-cfb-mia-wake-2026-09-18-pos-3pt5"]
-    assert seen["params"] == {"p": "%cfb-mia-wake-2026-09-18%"} and "market_snapshots" in seen["sql"]
+    cands = seen["params"]["cands"]
+    assert "aec-cfb-mia-wake-2026-09-18" in cands and "asc-cfb-mia-wake-2026-09-18-neg-3pt5" in cands
+    assert len(cands) == 201 and "market_snapshots" in seen["sql"] and "= ANY(:cands)" in seen["sql"]
+    assert "LIKE" not in seen["sql"], "a leading-wildcard LIKE cannot use the slug index: 47.6 s vs 0.83 s"
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(KeyError):
         RUN.slugs_for("cfb-mia-wake-2026-09-18")      # no engine, no env: the old behaviour, not a silent default
+
+
+def test_candidate_slugs_are_exactly_the_grammar_line_of_parses():
+    """The listing enumerates what a ladder CAN contain instead of searching
+    for it, so the two must agree: every candidate parses back to its line,
+    and the set covers the largest line ever recorded (+58.5) with room."""
+    from core.ladder import live as L2
+    game = "cfb-mia-wake-2026-09-18"
+    cands = L2.candidate_slugs(game)
+    assert cands[0] == f"aec-{game}" and len(cands) == 1 + 2 * (L2.MAX_LINE + 1)
+    lines = sorted(L2.line_of(s, f"aec-{game}") for s in cands)
+    assert lines[0] == -(L2.MAX_LINE + 0.5) and lines[-1] == L2.MAX_LINE + 0.5
+    assert 0.0 in lines and 58.5 in lines and -58.5 in lines
+    assert len(set(lines)) == len(cands), "no two candidates map to one line"
+    assert L2.slugs_for.__doc__ and "aec-" in L2.slugs_for.__doc__
