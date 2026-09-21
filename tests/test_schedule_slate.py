@@ -119,13 +119,14 @@ def test_a_game_whose_launch_time_is_past_is_named_not_dropped_and_not_launched(
 
 def test_the_cron_block_is_five_field_lines_tagged_temp_with_a_self_removing_clean():
     p = SS.plan(SUNDAY, NOW)
-    block = SS.cron_block(p, "/opt/meridian/artifacts/reads")
+    block = SS.cron_block(p, "/opt/meridian/scripts/launchers", "/opt/meridian/artifacts/reads")
     lines = [l for l in block.splitlines() if l and not l.startswith("#")]
     for l in lines[:-1]:
         f = l.split()
         assert f[4] == "*" and all(x.isdigit() for x in f[:4]), l
         assert "# TEMP" in l and ">> /opt/meridian/artifacts/reads/cron.log 2>&1" in l, l
-        assert "sudo -n /opt/meridian/artifacts/reads/launch_" in l or "slate_verdict.sh" in l, l
+        assert "sudo -n /opt/meridian/scripts/launchers/launch_" in l \
+            or "sudo -n /opt/meridian/scripts/launchers/slate_verdict.sh" in l, l
     clean = lines[-1]
     assert clean.startswith("0 8 21 9 * crontab -l | grep -v") and "TEMP" in clean, \
         "the self-clean carries the word TEMP inside its quotes and so removes itself"
@@ -180,3 +181,19 @@ def test_the_host_wrapper_drops_only_temp_lines_and_never_runs_without_a_plan():
     assert 'crontab -u "$CRON_USER" -l' in code and '| crontab -u "$CRON_USER" -' in code
     assert "| crontab -\n" not in code and "| crontab - " not in code, "never the bare form"
     assert "CRON_USER=${CRON_USER:-ubuntu}" in code
+    assert "--launchers-dir /opt/meridian/scripts/launchers" in code, \
+        "the cron lines call the VERSIONED launchers, not hand-copied ones under artifacts/"
+
+
+def test_the_recorder_window_equals_the_launcher_s_lookahead():
+    """The recorder resolves its slate once, at start, and subscribes only
+    games tipping inside --lookahead-hours. A scheduler window wider than
+    that leaves later games unrecorded; narrower opens sockets for nothing.
+    The constant and the flag are pinned to each other here, which is the
+    reason the launchers were brought into the repo."""
+    launcher = (pathlib.Path(__file__).resolve().parents[1] / "scripts" / "launchers"
+                / "launch_stream_slate.sh").read_text(encoding="utf-8")
+    code = "\n".join(l for l in launcher.splitlines() if not l.lstrip().startswith("#"))
+    m = re.search(r"--lookahead-hours\s+(\d+(?:\.\d+)?)", code)
+    assert m, "the launcher must pass --lookahead-hours explicitly"
+    assert float(m.group(1)) == SS.RECORDER_LOOKAHEAD_H

@@ -34,7 +34,7 @@ BLOCK=$(docker run --rm --network meridian_default --env-file /opt/meridian/.env
   -e MERIDIAN_READS_DIR=/out \
   -v /opt/meridian/core:/app/core -v /opt/meridian/scripts:/app/scripts \
   -v "$R":/out -w /app "$API" \
-  python3 scripts/schedule_slate.py --reads-dir "$R" "${ARGS[@]}")
+  python3 scripts/schedule_slate.py --launchers-dir /opt/meridian/scripts/launchers --reads-dir "$R" "${ARGS[@]}")
 
 if [ "$DRY" = "1" ]; then
   echo "$BLOCK"
