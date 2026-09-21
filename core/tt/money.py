@@ -40,31 +40,36 @@ from dataclasses import dataclass
 
 from core.backtest.fills import fee_per_contract
 
-# --- the cost bar is a RANGE, and the components must not be crossed -------- #
+# --- there is no cost-bar constant in this file, and that is the point ------ #
 #
-# On the 724 last pregame quotes, at the ask (measured 09-15, prod read-only):
+# It has been measured four times and moved every time, because it is a
+# property of a WINDOW and a STATISTIC, not of the venue:
 #
-#                    median     mean
-#   half-spread       1.000c    2.339c      <- mean is 2.34x the median
-#   fee               1.451c    1.388c
-#   TOTAL             2.260c    3.728c      (p25 1.962c, p90 4.923c)
+#   window        n      med half   mean half   MED total   MEAN total
+#   09-13..09-15   724     1.000c     2.339c     2.260c      3.728c    (fee 0.06)
+#   09-18..09-21  1339     0.500c     4.499c     2.238c      6.065c    (fee 0.0695)
 #
-# There is a long right tail of wide-quoted matches and it is the whole
-# difference between the two coherent totals. Only the two TOTAL columns are
-# quantities: medians do not add, so a median half-spread plus a mean fee is
-# not a statistic of anything. Two bars have now been published by crossing
-# them -- 2.22c (median of the sum, back-derived into a "fee" that never
-# existed) and 2.39c (median half-spread + mean fee, mine, the same error in a
-# new costume). Neither is in this file.
-
-BAR_MEDIAN = 0.02260       #: median total cost per contract
-BAR_MEAN = 0.03728         #: mean total cost per contract
-
-#: Where a strategy sits INSIDE that range is a property of its selection,
-#: which does not exist yet: bet every match and you pay the mean, bet typical
-#: ones and you pay near the median, and a model bets where it disagrees with
-#: the price, which is neither. So the arm reports the realised cost of the
-#: matches it actually bet (`MoneyResult.cost_mean`) rather than assuming one.
+# Between those two the half-spread's median HALVED while its mean nearly
+# DOUBLED: the board grew from 724 markets to 1,339 and the right tail of
+# wide-quoted matches grew with it. The venue's taker coefficient changed
+# underneath as well -- 0.0695 on the venue's own `feeCoefficient` field, zero
+# variation on 12,713 table-tennis rows, against the 0.06 every earlier figure
+# used. Two independent reasons for the same number to move, in three days.
+#
+# Two constants published from those measurements are already retracted: 2.22c
+# (a median of a sum with a "fee" back-derived out of it -- medians do not add)
+# and 2.39c (a median half-spread plus a MEAN fee, which is not a statistic of
+# anything). A fifth point estimate would keep the pattern going, so this file
+# carries none: `required_n` takes `resolution` with NO DEFAULT, and the runner
+# passes the cost the arm ACTUALLY PAID on the bets it placed
+# (`MoneyResult.cost_median` / `cost_mean`). That number cannot go stale, it is
+# measured on the same rows as the P&L it gates, and it answers the only
+# question the gate is for: can this sample resolve an effect the size of our
+# own costs.
+#
+# Per-bet fees are never a constant either: every bet is charged
+# `fee_per_contract` at its own entry price, so the correction from 0.06 to
+# 0.0695 reaches this module through the one place that defines it.
 
 #: Per-contract standard deviation of the P&L, which is the binary outcome's
 #: and therefore irreducible. Measured, not assumed: the 357 settled TT matches

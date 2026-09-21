@@ -2244,6 +2244,26 @@ populations named, not a fourth point estimate.
 | **MEDIAN of the total** | **2.260** |
 | **MEAN of the total** | **3.728** |
 
+> **AMENDED 2026-09-21, at the table: this whole column was computed at a fee of 0.06, and the
+> POPULATION has moved too.** Re-measured at the venue's own coefficient (0.069500, zero variation on
+> 12,713 table-tennis rows in twelve hours) over 09-18..09-21 on **1,339** last-pregame quotes:
+>
+> | | 09-13..09-15 (724, fee 0.06) | 09-18..09-21 (1,339, fee 0.0695) |
+> |---|---|---|
+> | median half-spread | 1.000¢ | **0.500¢** |
+> | mean half-spread | 2.339¢ | **4.499¢** |
+> | **MEDIAN total** | 2.260¢ | **2.238¢** |
+> | **MEAN total** | 3.728¢ | **6.065¢** |
+>
+> The median barely moved; **the mean grew 63%**, because the board nearly doubled and its tail of
+> wide-quoted matches grew with it — the mean half-spread is now **9× its median**. That is the FOURTH
+> revision of this number in nine days, two of them from crossing statistics and two from the
+> substrate moving. **So `core/tt/money.py` now carries no cost-bar constant at all**: the runner gates
+> on what the arm actually paid (`MoneyResult.cost_median` strict, `cost_mean` loose), which cannot go
+> stale and is measured on the same rows as the P&L it gates. Every 2.26–3.73¢ below should be read as
+> "the bar as measured on the 724, at the old fee". Registered in
+> `docs/math/tabletennis-elo-harness.md` §7.
+
 **Every published figure so far was a cross-statistic sum.** Mine — "1.00 half-spread + 1.22 fee =
 2.22" — took the median of the *sum* and back-derived a fee by subtraction; medians do not add, so
 **1.22¢ never existed as a quantity**. 7d's correction to 2.39 is "median half-spread 1.00 + **mean**
@@ -2373,8 +2393,10 @@ the branches that implement them.
 
 **And my characterisation of the bar choice was inverted.** I flagged that I had picked `BAR_MEDIAN`
 "to get a printable line" and called it the optimistic end. In `money_verdict` the bar plays the
-*resolution* role: a **tighter** bar demands a **narrower** interval, so `BAR_MEDIAN` (2.26¢) requires
-**1,814** matches against `BAR_MEAN`'s (3.73¢) **667**. It is the stricter gate, not the looser one.
+*resolution* role: a **tighter** bar demands a **narrower** interval, so the median bar is the stricter
+gate, not the looser one. (Both constants are gone as of 09-21 — the gate reads the realised cost. At
+today's costs the counts are **~1,850** matches to resolve the 2.238¢ median and **~252** for the
+6.065¢ mean, against the 1,814 and 667 these names used to mean.)
 Flagging an unstated choice was right; the direction I gave it was backwards. The line now prints both
 ends.
 

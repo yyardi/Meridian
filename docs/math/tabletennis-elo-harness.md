@@ -106,7 +106,7 @@ spec except where noted.
 | interval used for the verdict | game-clustered | registered |
 | **money arm: net P&L per contract** | **interval must exclude 0, null at ZERO net** | **registered 09-15** |
 | money arm: entry | **last pregame quote, executable side** | registered 09-15 |
-| money arm: minimum matches | **n = (1.96·49.1/X)², X named** — 1,814 at 2.260c, 667 at 3.728c (see §7) | registered 09-15 |
+| money arm: minimum matches | **n = (1.96·49.1/X)², X = the REALISED cost of the bets placed** (see §7) | registered 09-15, X amended 09-21 |
 
 **PASS** — ≥200 predicted matches, ≥25 distinct players, and the Elo
 coefficient's game-clustered 95% interval excludes zero.
@@ -212,6 +212,38 @@ is neither. So the realised cost of the matches actually bet is a first-class
 output of the arm (`MoneyResult.cost_mean`), not a footnote — and if the model
 preferentially bets wide quotes it pays the tail, which makes even 3.73c
 optimistic. There is a test for exactly that selection.
+
+**AMENDED 2026-09-21 — the bar moved twice more, so the code carries none.**
+Re-measured on the venue's own coefficient (`market_snapshots.fee_coefficient`
+= 0.069500, zero variation on 12,713 table-tennis rows in twelve hours; the
+0.06 above and in every figure before 09-21 was never checked against that
+field):
+
+| window | n | med half | mean half | MED total | MEAN total |
+|---|---|---|---|---|---|
+| 09-13..09-15 (fee 0.06) | 724 | 1.000c | 2.339c | 2.260c | 3.728c |
+| **09-18..09-21 (fee 0.0695)** | **1,339** | **0.500c** | **4.499c** | **2.238c** | **6.065c** |
+
+The median total barely moved; **the mean grew 63%**, because the board nearly
+doubled and its tail of wide-quoted matches grew with it — the mean half-spread
+is now **9× its median**. Two independent reasons for one number to move in
+three days, on top of two constants already retracted for crossing statistics
+(2.22c, 2.39c).
+
+**So the fourth revision is not a fifth number: `core/tt/money.py` carries no
+cost-bar constant at all.** `required_n` takes `resolution` with no default and
+the runner passes what the arm ACTUALLY PAID — `MoneyResult.cost_median` as the
+strict gate, `cost_mean` as the loose one. That cannot go stale, it is measured
+on the same rows as the P&L it gates, and it answers the only question the gate
+is for: can this sample resolve an effect the size of our own costs. A test
+drives two selections with identical P&L and different books and pins that they
+get different targets.
+
+At today's costs that is **~1,850 matches** to resolve the median and **~252**
+to resolve the mean — against the 1,814 and 667 registered on 09-15. The mean
+end moved from "eight days of accrual" to "three", which is the practical
+content of the tail growing: a strategy that pays the tail needs less data to
+prove it loses.
 
 **The power, stated before any fit.** Per-contract P&L noise is the binary
 outcome's and therefore irreducible. Measured two ways, one decimal apart: the

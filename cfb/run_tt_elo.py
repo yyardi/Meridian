@@ -183,26 +183,35 @@ def _money_line(preds) -> str:
     # degenerate interval at n=5 could PASS, which is exactly the protection
     # §7's achievable image exists to provide.
     #
-    # Both ends of the bar range are reported because the gate's X is a choice:
-    # BAR_MEDIAN is the STRICTER gate (a narrower interval is demanded, so
-    # ~1,814 matches) and BAR_MEAN the looser (~667). The verdict is read from
-    # the strict end; the loose end is printed so the choice is visible rather
-    # than implied by whichever constant the caller happened to pass.
-    strict = money.required_n(resolution=money.BAR_MEDIAN)
-    loose = money.required_n(resolution=money.BAR_MEAN)
+    # The gate's target is the cost this arm ACTUALLY PAID, not a population
+    # constant. That bar was measured four times in nine days and moved every
+    # time -- the board went 724 -> 1,339 markets, the median half-spread
+    # halved while its mean nearly doubled, and the venue's coefficient went
+    # 0.06 -> 0.0695 underneath. Two published constants from it are already
+    # retracted (core/tt/money.py says why), so a fifth would be the pattern
+    # rather than the answer.
+    #
+    # Realised MEDIAN is the stricter gate (a narrower interval is demanded)
+    # and realised MEAN the looser, because the cost distribution has a long
+    # right tail of wide-quoted matches. The verdict is read from the strict
+    # end; the loose end is printed so the choice is visible rather than
+    # implied by whichever number the caller happened to pass.
+    strict_bar, loose_bar = r.cost_median, r.cost_mean
+    strict = money.required_n(resolution=strict_bar)
+    loose = money.required_n(resolution=loose_bar)
     verdict, why = rule.money_verdict(
         n=len(bets), lo=r.lo, hi=r.hi,
-        resolution=money.BAR_MEDIAN, required=strict)
+        resolution=strict_bar, required=strict)
     at_loose, _ = rule.money_verdict(
         n=len(bets), lo=r.lo, hi=r.hi,
-        resolution=money.BAR_MEAN, required=loose)
-    both = "" if at_loose == verdict else f"  ({at_loose} at the mean bar)"
+        resolution=loose_bar, required=loose)
+    both = "" if at_loose == verdict else f"  ({at_loose} at the mean cost)"
     return (f"{verdict}  n={len(bets)} net {r.mean * 100:+.2f}c "
             f"player-clustered [{r.lo * 100:+.2f},{r.hi * 100:+.2f}]  "
-            f"realised cost mean {r.cost_mean * 100:.2f}c "
-            f"median {r.cost_median * 100:.2f}c  "
-            f"({why}; need ~{strict} at the {money.BAR_MEDIAN * 100:.2f}c bar, "
-            f"~{loose} at {money.BAR_MEAN * 100:.2f}c){both}")
+            f"realised cost mean {loose_bar * 100:.2f}c "
+            f"median {strict_bar * 100:.2f}c  "
+            f"({why}; need ~{strict} to resolve the {strict_bar * 100:.2f}c it "
+            f"paid, ~{loose} at {loose_bar * 100:.2f}c){both}")
 
 
 def report(matches: list[elo.Match], state_path: str | None = None) -> int:
