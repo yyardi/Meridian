@@ -67,9 +67,16 @@ def rows_for(date: str, dirs: list[str], floor_usd: float) -> list[dict]:
     rows = []
     for league, ds in sorted(by_league.items()):
         for gate in GATES:
-            results = []
+            # One tape per game. Two recorder windows can overlap -- the
+            # hand-scheduled cfb-a and cfb-b on 2026-09-19 both held the
+            # 19:30 wave for thirty minutes -- and counting both counts the
+            # overlap's episodes twice. Keep the fuller tape.
+            best: dict[str, SE.GameResult] = {}
             for d in ds:
-                results += SE.scan_dir(d, gate_s=gate)
+                for r in SE.scan_dir(d, gate_s=gate):
+                    if r.game not in best or r.updates > best[r.game].updates:
+                        best[r.game] = r
+            results = list(best.values())
             s = SE.summarize(results, floor_usd=floor_usd)
             big = sorted((e for r in results for e in r.over(floor_usd)), key=lambda e: -e.best_usd)
             rows.append({

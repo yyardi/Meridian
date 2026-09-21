@@ -259,10 +259,18 @@ def test_a_slug_that_does_not_parse_is_kept_under_its_own_name(tmp_path):
     """Every slug was chosen by the resolver, so a row here means the two
     parses disagree. Dropping it would hide that; the file names it."""
     conn, _, sink = _conn(tmp_path, [["weird"]], [])
+    # A totals slug has a GAME even though it has no spread line: since
+    # 2026-09-21 it is filed beside that game's spreads with line null, so a
+    # totals scanner can find it, and the spread scanners skip it.
     conn.handle(md_msg("tsc-mlb-col-det-2026-09-13-8pt5"))
     assert conn.unmapped == 1 and conn.books == 1
-    row = _lines(sink.path_for("books", stream.UNMAPPED_GAME))[0]
+    row = _lines(sink.path_for("books", "mlb-col-det-2026-09-13"))[0]
     assert row["line"] is None and row["slug"].startswith("tsc-")
+    # A slug with no game shape at all still goes under the unmapped name.
+    conn.handle(md_msg("weird"))
+    assert conn.unmapped == 2 and conn.books == 2
+    row = _lines(sink.path_for("books", stream.UNMAPPED_GAME))[0]
+    assert row["line"] is None and row["slug"] == "weird"
 
 
 # --------------------------------------------------------------------------- #
