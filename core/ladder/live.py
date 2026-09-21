@@ -109,7 +109,13 @@ def slugs_for(prefix: str, engine=None) -> list[str]:
     with _engine(engine).connect() as c:
         rows = c.execute(text(
             "SELECT DISTINCT market_slug FROM market_snapshots "
-            "WHERE captured_at >= now() - interval '2 days' AND market_slug LIKE :p "
+            # The month-boundary floor is what prunes partitions; the 2-day
+            # one is the recency the caller means. `slate_slugs` below has
+            # carried both since it was written; this one carried only the
+            # second and scanned every partition on an unindexable LIKE,
+            # once per newly watched game, against a database at 47 % CPU.
+            "WHERE captured_at >= date_trunc('month', now() - interval '2 days') "
+            "AND captured_at >= now() - interval '2 days' AND market_slug LIKE :p "
             "AND sports_market_type IN ('football_team_full_game_winner','football_team_full_game_spread',"
             "'baseball_team_full_game_winner','baseball_team_full_game_spread',"
             "'basketball_team_full_game_winner','basketball_team_full_game_spread')"),

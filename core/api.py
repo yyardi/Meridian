@@ -2975,11 +2975,21 @@ _ARB_FLOOR_USD = 25.0
 #: The executor's default --attempt-usd; the previewed ticket is sized as the
 #: executor would size it, so the two screens show the same contract count.
 _ARB_TICKET_ATTEMPT_USD = 1.0
-#: How long one /api/arb/ladder?game= request keeps that game sampled.
-_ARB_WATCH_SECONDS = 30 * 60
+#: How long one /api/arb/ladder?game= request keeps that game sampled. The
+#: page asks every 5 s while a game is on screen, so 45 s means "still being
+#: looked at". It was 30 MINUTES: on an NFL Sunday every game the operator
+#: had glanced at stayed in a strictly serial rotation at ~4 s a sample, the
+#: cycle reached a minute, and a newly picked game -- appended LAST -- showed
+#: "first sample pending" for the whole of it while every route answered in
+#: milliseconds. The route was never slow; what the page waited on was.
+_ARB_WATCH_SECONDS = 45
 #: The recorder's slug listing for a game is re-read this often; rungs are
 #: listed pregame and do not change during a game.
 _ARB_SLUGS_TTL_S = 10 * 60
+#: An EMPTY listing is cached too, for this long. It used to be re-queried
+#: every cycle -- an unindexable LIKE '%..%' scan -- for as long as the game
+#: stayed watched, because the cache test required a non-empty result.
+_ARB_SLUGS_EMPTY_TTL_S = 60
 #: A game prefix as the executor spells it (aec-cfb-mia-wake-2026-09-18) or
 #: as the intents file spells it (cfb-mia-wake-2026-09-18).
 _ARB_PREFIX = re.compile(r"^(?:aec-)?([a-z0-9]+-[a-z0-9-]+-\d{4}-\d{2}-\d{2})$")
@@ -3005,7 +3015,8 @@ _ARB_QTY_STEP = Decimal("0.01")
 _ARB_VIA_SEND = "send"
 _ARB_VIA_DESK = "desk"
 
-_ARB_LADDER: dict = {"watch": {}, "cache": {}, "slugs": {}, "thread": None}
+_ARB_LADDER: dict = {"watch": {}, "cache": {}, "slugs": {}, "thread": None,
+                     "wake": threading.Event()}
 _ARB_LOCK = threading.Lock()
 
 
@@ -3347,18 +3358,28 @@ def _arb_ladder_snapshot(game: str, rungs: dict, meta: dict, took_s: float,
 
 
 def _arb_watch(prefix: str) -> float:
+    """Register a game for sampling. A game the sampler has not seen wakes
+    it, so the first ladder lands after the sample in flight rather than
+    after a whole cycle -- with the same one client and the same request
+    budget, because waking is not a second sampler."""
     until = time.time() + _ARB_WATCH_SECONDS
     with _ARB_LOCK:
+        new = prefix not in _ARB_LADDER["watch"]
         _ARB_LADDER["watch"][prefix] = until
+    if new:
+        _ARB_LADDER["wake"].set()
     return until
 
 
 def _arb_watched(now: float) -> list[str]:
+    """Live watches, MOST RECENTLY ASKED FIRST: the game the operator just
+    picked is sampled before the one they left. Dict order was insertion
+    order, which put it last."""
     with _ARB_LOCK:
         watch = _ARB_LADDER["watch"]
         for prefix in [p for p, until in watch.items() if until <= now]:
             del watch[prefix]
-        return list(watch)
+        return sorted(watch, key=watch.get, reverse=True)
 
 
 def _arb_slugs(prefix: str, game: str, now: float) -> list[str]:
@@ -3366,8 +3387,10 @@ def _arb_slugs(prefix: str, game: str, now: float) -> list[str]:
     engine, cached for a while: the listing is a query over two days of
     snapshots and the rungs do not change in-game."""
     cached = _ARB_LADDER["slugs"].get(prefix)
-    if cached is not None and now - cached[0] < _ARB_SLUGS_TTL_S and cached[1]:
-        return cached[1]
+    if cached is not None:
+        ttl = _ARB_SLUGS_TTL_S if cached[1] else _ARB_SLUGS_EMPTY_TTL_S
+        if now - cached[0] < ttl:
+            return cached[1]
     slugs = slugs_for(game, _ENGINE)
     _ARB_LADDER["slugs"][prefix] = (now, slugs)
     return slugs
@@ -3406,12 +3429,18 @@ def _arb_sampler_loop() -> None:
     """Daemon: ONE gateway client, every watched game every N seconds. Same
     shape as the wallet refresh thread — the request never waits on the venue,
     it reads whatever the last cycle left."""
+    wake = _ARB_LADDER["wake"]
     with PolymarketGatewayClient() as client:
         while True:
             t0 = time.time()
+            wake.clear()
             for prefix in _arb_watched(t0):
                 _arb_sample_one(client, prefix)
-            time.sleep(max(0.5, _arb_sample_seconds() - (time.time() - t0)))
+                if wake.is_set():
+                    break              # a new game was asked for: restart, it goes first
+            if not wake.is_set():
+                # Sleep the remainder, but a new watch ends the sleep early.
+                wake.wait(timeout=max(0.5, _arb_sample_seconds() - (time.time() - t0)))
 
 
 def _arb_ensure_sampler() -> None:
@@ -3427,8 +3456,9 @@ def _arb_ensure_sampler() -> None:
 @app.get("/api/arb/ladder")
 def arb_ladder(game: str = Query(..., min_length=8, max_length=120)) -> dict:
     """The live ladder for one game, from the sampler's cache. Asking for a
-    game registers it for the next thirty minutes; the first answer says the
-    sample is pending. **This handler never calls the venue.**"""
+    game keeps it sampled for _ARB_WATCH_SECONDS and wakes the sampler if it
+    is new; the first answer says the sample is pending. **This handler
+    never calls the venue.**"""
     prefix, plain = _arb_prefix(game)
     until = _arb_watch(prefix)
     try:

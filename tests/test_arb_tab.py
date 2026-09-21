@@ -241,7 +241,10 @@ def test_ladder_registers_a_watch_and_reports_pending_then_serves_the_cache(clie
     body = client.get("/api/arb/ladder", params={"game": GAME}).json()
     assert body["available"] is False and body["reason"] == "first sample pending"
     assert body["prefix"] == PREFIX and PREFIX in api_module._ARB_LADDER["watch"]
-    assert body["watching_until"] > time.time() + 29 * 60
+    # 45 s, not 30 min: the page re-asks every 5 s while the game is on
+    # screen, and a 30-minute watch is what turned an NFL Sunday into a
+    # serial minute-long sampler rotation (tests/test_arb_sampler_latency.py).
+    assert time.time() + 30 < body["watching_until"] < time.time() + 120
     snap = api_module._arb_ladder_snapshot(GAME, RUNGS, {}, 1.0, time.time() - 4)
     api_module._ARB_LADDER["cache"][PREFIX] = snap
     body = client.get("/api/arb/ladder", params={"game": PREFIX}).json()
