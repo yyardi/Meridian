@@ -56,7 +56,7 @@ from core.ladder import pnl_page as _ladder_pnl_page
 from core.ladder import tape as _ladder_tape
 from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for
 from core.ladder.live import book_age_s, line_of, sample, slugs_for
-from core.ladder.scan import (MAX_PLAUSIBLE_EDGE, MAX_PLAUSIBLE_SIZE,
+from core.ladder.scan import (MAX_PLAUSIBLE_EDGE, MAX_PLAUSIBLE_SIZE, clears_floor,
                               best_per_game, fee, scan_ladder)
 from core.ladder.ui import ui_wording
 from core.polymarket.client import (
@@ -3342,7 +3342,7 @@ def _arb_ladder_snapshot(game: str, rungs: dict, meta: dict, took_s: float,
             "dollars": round(v.dollars, 2),
             "mid_ladder": is_mid(v), "spread_pair": spread,
             # The executor's own rule: floor, spread-only; mid-ladder first.
-            "candidate": spread and v.dollars >= _ARB_FLOOR_USD,
+            "candidate": spread and clears_floor(v.dollars, _ARB_FLOOR_USD),
             "ticket": ticket_for(v, game, when, _ARB_TICKET_ATTEMPT_USD),
         })
     violations.sort(key=lambda x: (not x["candidate"], not x["mid_ladder"], -x["dollars"]))

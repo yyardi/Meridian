@@ -197,14 +197,17 @@ def scan_dir(directory: str, **kw) -> list[GameResult]:
     return [scan_book_file(p, **kw) for p in paths]
 
 
-def summarize(results: list[GameResult], *, floor_usd: float = DEFAULT_FLOOR_USD) -> dict:
-    """The numbers the ledger keeps, over one slate."""
-    eps = [e for r in results for e in r.episodes]
+def is_spread_pair(e: Episode) -> bool:
+    """Neither leg is the winner (line 0.0). The desk's send gate refuses a
+    winner leg, so the ledger reports the population it can act on
+    separately from the one that includes the winner as rung zero."""
+    return e.low_line != 0.0 and e.high_line != 0.0
+
+
+def _stats(eps: list[Episode], floor_usd: float) -> dict:
     big = [e for e in eps if e.best_usd >= floor_usd]
     lives = [e.duration_s for e in eps]
     return {
-        "games": sum(1 for r in results if r.updates),
-        "updates": sum(r.updates for r in results),
         "episodes": len(eps),
         "one_update": sum(1 for e in eps if e.duration_s == 0.0),
         "over_floor": len(big),
@@ -213,6 +216,23 @@ def summarize(results: list[GameResult], *, floor_usd: float = DEFAULT_FLOOR_USD
         "biggest_usd": round(max((e.best_usd for e in eps), default=0.0), 2),
         "median_life_s": round(statistics.median(lives), 3) if lives else None,
         "median_life_over_floor_s": round(statistics.median(e.duration_s for e in big), 3) if big else None,
-        "floor_usd": floor_usd,
-        "games_with_over_floor": sum(1 for r in results if r.over(floor_usd)),
     }
+
+
+def summarize(results: list[GameResult], *, floor_usd: float = DEFAULT_FLOOR_USD,
+              fee_rate: float = DEFAULT_FEE_RATE) -> dict:
+    """The numbers the ledger keeps, over one slate: the whole population
+    (winner included as rung zero) and, under ``spread_only``, the pairs the
+    desk can actually send. ``fee_rate`` is recorded because every dollar
+    here depends on it and it was wrong (0.06 for 0.0695) until 2026-09-21."""
+    eps = [e for r in results for e in r.episodes]
+    out = {
+        "games": sum(1 for r in results if r.updates),
+        "updates": sum(r.updates for r in results),
+        "floor_usd": floor_usd,
+        "fee_rate": fee_rate,
+        "games_with_over_floor": sum(1 for r in results if r.over(floor_usd)),
+        **_stats(eps, floor_usd),
+        "spread_only": _stats([e for e in eps if is_spread_pair(e)], floor_usd),
+    }
+    return out

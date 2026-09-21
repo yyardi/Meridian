@@ -204,7 +204,7 @@ def _why_not(v, floor_usd: float) -> str:
     why = []
     if not is_spread_pair(v):
         why.append("winner leg — never ticketed")
-    if v.dollars < floor_usd:
+    if not scan.clears_floor(v.dollars, floor_usd):
         why.append(f"under the ${floor_usd:.0f} floor")
     return " · ".join(why)
 

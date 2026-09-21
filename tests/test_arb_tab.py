@@ -37,7 +37,7 @@ SLUGS = [PREFIX, f"asc-{GAME}-pos-10pt5", f"asc-{GAME}-pos-7pt5", f"asc-{GAME}-n
 INTENT = {"ts": "23:41:07", "game": GAME,
           "leg1": {"market_line": 10.5, "side": "BUY YES", "price": 0.41, "qty": 2},
           "leg2": {"market_line": 7.5, "side": "BUY NO", "price": 0.53, "qty": 2},
-          "displayed_size": 966.0, "edge_c": 3.05, "cost_usd": 1.88, "meridian_placed": False}
+          "displayed_size": 966.0, "edge_c": 2.59, "cost_usd": 1.88, "meridian_placed": False}
 TICKET_ID = f"{GAME}|23:41:07|10.5/7.5"
 TOKEN = {"X-Meridian-Order-Token": "test-token"}
 
@@ -206,15 +206,15 @@ def test_the_one_violation_carries_the_executors_ticket():
     assert len(snap["violations"]) == 1
     v = snap["violations"][0]
     assert (v["high_line"], v["low_line"]) == (10.5, 7.5)
-    assert v["edge_c"] == pytest.approx(3.05, abs=0.01) and v["size"] == 966.0
-    assert v["dollars"] == pytest.approx(29.5, abs=0.05)
+    assert v["edge_c"] == pytest.approx(2.59, abs=0.01) and v["size"] == 966.0
+    assert v["dollars"] == pytest.approx(25.0, abs=0.05)
     assert v["candidate"] is True and v["mid_ladder"] is True and v["spread_pair"] is True
     t = v["ticket"]
     assert t["leg1"] == {"market_line": 10.5, "side": "BUY YES", "price": 0.41, "qty": 1,
                          "screen_row": "WAKE to win by over 10.5 points", "screen_button": "No"}
     assert t["leg2"]["market_line"] == 7.5 and t["leg2"]["side"] == "BUY NO" and t["leg2"]["price"] == 0.53
     assert t["cost_usd"] == pytest.approx(0.94) and t["game"] == GAME
-    assert snap["best_per_game"] == {GAME: pytest.approx(29.5, abs=0.05)}
+    assert snap["best_per_game"] == {GAME: pytest.approx(25.0, abs=0.05)}
 
 
 def test_a_clean_ladder_has_no_violation_and_no_flags():
@@ -228,7 +228,7 @@ def test_a_sub_floor_or_winner_pair_is_a_violation_but_not_a_candidate():
     tiny = {7.5: (0.47, 0.49, 3.0, 40.0), 10.5: (0.40, 0.41, 20.0, 3.0)}
     v = api_module._arb_ladder_snapshot(GAME, tiny, {}, 0.5, 1_800_000_000.0)["violations"][0]
     assert v["dollars"] < 25 and v["candidate"] is False and v["spread_pair"] is True
-    winner = {0.0: (0.47, 0.49, 900.0, 900.0), 2.5: (0.40, 0.41, 900.0, 900.0)}
+    winner = {0.0: (0.47, 0.49, 1000.0, 1000.0), 2.5: (0.40, 0.41, 1000.0, 1000.0)}
     v = api_module._arb_ladder_snapshot(GAME, winner, {}, 0.5, 1_800_000_000.0)["violations"][0]
     assert v["dollars"] > 25 and v["spread_pair"] is False and v["candidate"] is False
 
@@ -1066,7 +1066,7 @@ def test_a_price_with_no_size_behind_it_is_thin_not_live():
     assert live["thin_leg"] == "both" and live["size_now"] == 0.0
     # Unchanged prices: this is a size finding, not a price one.
     assert (live["leg1_now"], live["leg2_now"]) == (0.41, 0.53)
-    assert live["edge_now_c"] == pytest.approx(3.05, abs=0.01)
+    assert live["edge_now_c"] == pytest.approx(2.59, abs=0.01)
     # One leg is enough, and the block names which.
     one = api_module._arb_live_block(INTENT, _snap(_resize(RUNGS, 7.5, bid_sz=1.0), now), now)
     assert one["state"] == "THIN" and one["thin_leg"] == "leg 2" and one["size_now"] == 1.0
@@ -1152,7 +1152,7 @@ def test_state_attaches_the_live_block_from_the_cache_the_ladder_serves(client, 
     monkeypatch.setitem(api_module._ARB_LADDER, "cache", {PREFIX: _snap()})
     t = client.get("/api/arb/state").json()["tickets"][0]
     assert t["live"]["state"] == "LIVE" and t["live"]["age_s"] < 5
-    assert t["live"]["leg1_now"] == 0.41 and t["live"]["edge_now_c"] == pytest.approx(3.05, abs=0.01)
+    assert t["live"]["leg1_now"] == 0.41 and t["live"]["edge_now_c"] == pytest.approx(2.59, abs=0.01)
     desk.record_attempt(str(reads), TICKET_ID, "placed")
     assert "live" not in client.get("/api/arb/state").json()["tickets"][0]
 

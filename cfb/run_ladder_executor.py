@@ -180,7 +180,7 @@ def main() -> int:
             now_ts = time.time()
             now = dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S")
             v = scan.scan_ladder(game, rungs, max_size=1e12)
-            cands = [x for x in v if x.dollars >= a.floor_usd and is_spread_pair(x)]
+            cands = [x for x in v if scan.clears_floor(x.dollars, a.floor_usd) and is_spread_pair(x)]
             cands.sort(key=lambda x: (not is_mid(x), -x.dollars))   # mid-ladder first, then biggest
             issued = None
             locked = os.path.exists(lock)                 # the operator's lock: observe only

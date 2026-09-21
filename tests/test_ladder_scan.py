@@ -105,3 +105,20 @@ def test_the_cap_does_not_touch_a_plausible_book():
     the tail is NFL-specific rather than an artifact of capping."""
     r = {0.0: (0.62, 0.63, 900, 900), 1.5: (0.48, 0.49, 900, 900)}
     assert scan.scan_ladder("g", r)[0].size == 900
+
+
+def test_the_fee_coefficient_is_the_venue_s_published_one():
+    """0.0695, read off `feeCoefficient` on every market object the recorder
+    stores: 214,790 rows across NFL, CFB, WNBA and MLB on 2026-09-21, all of
+    them, and confirmed independently by two discovery agents the same day.
+    The 0.06 that stood here since the ladder work began was never checked
+    against that field. The gap is 16 % of the fee, about half a cent per
+    pair at even prices, and every dollar measured before the change was
+    overstated by it."""
+    assert scan.DEFAULT_FEE_RATE == 0.0695
+    assert scan.fee(0.5) == 0.0695 * 0.25
+    # The sub-cent crossing the old constant reported is not one: sell 0.44
+    # against buy 0.41 cleared by +0.07c at 0.06 and fails by -0.23c now.
+    e_old = 0.44 - 0.41 - 0.06 * 0.41 * 0.59 - 0.06 * 0.44 * 0.56
+    e_new = 0.44 - 0.41 - scan.fee(0.41) - scan.fee(0.44)
+    assert e_old > 0 > e_new

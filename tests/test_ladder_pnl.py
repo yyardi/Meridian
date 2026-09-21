@@ -252,7 +252,7 @@ def test_the_pages_render_the_fixture_night_with_its_numbers(out, monkeypatch):
     c = _client(out, monkeypatch)
     index = c.get("/").text
     assert "MIA-WAKE" in index and "href='/pnl'" in index and "href='/ladder'" in index
-    assert "$35.30" in index                    # best $ seen, at quoted size
+    assert "$32.97" in index                    # best $ seen, at quoted size
     page = c.get("/pnl").text
     assert "$1.88" in page and "$2.00" in page and "+$0.12" in page
     assert "2 @ 0.410" in page and "2 @ 0.530" in page
