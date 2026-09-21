@@ -56,18 +56,42 @@ def _fee_names(text: str) -> set[str]:
     return names
 
 
+#: A line may charge the constant inside a POINT_IN_TIME file when it prices
+#: something NOW and no earlier row exists -- a live quote beside a historical
+#: score in the same module. It must say so AT THE LINE with a reason:
+#:
+#:     ask_now = touch + taker_fee(touch)   # fee-now: the live book, no row
+#:
+#: An exception that has to be written where it happens is reviewable; a rule
+#: that cannot be satisfied gets deleted instead, which is worse. This exists
+#: because the seven runners keep their import after the bootstrap rewrite, so
+#: a file may legitimately hold both uses.
+FEE_NOW_MARKER = re.compile(r"#\s*fee-now:\s*(\S.*)$")
+
+
 def bare_constant_fee(text: str) -> list[str]:
     """Fee applications carrying NO period, by shape.
 
     * `<name> * ...`            -- the coefficient straight into arithmetic
-    * `def f(p, k=<name>)`      -- the same thing behind a default argument
+    * `k = <name>` / `def f(p, k=<name>)` -- the same, one step removed
     * `taker_fee(x)`            -- one argument, so the default coefficient
     * `fee_per_contract(...)`   -- has no coefficient parameter to pass one to
     """
+    # Lines that declare a NOW-priced exception are removed FIRST, so a marker
+    # exempts its own line and nothing else.
+    lines = [l for l in text.splitlines() if not FEE_NOW_MARKER.search(l)]
+    text = "\n".join(lines)
+
     hits = []
     for name in sorted(_fee_names(text)):
-        for pat, why in ((rf"\b{name}\s*\*", f"{name} * ..."),
-                         (rf"=\s*{name}\b", f"default argument = {name}")):
+        # The second label used to read "default argument = FEE", which was
+        # wrong for `c = FEE * p`: the regex cannot tell an assignment from a
+        # parameter default, so it must not claim to. One honest label covers
+        # both, and a fixing agent is not sent looking for a default that is
+        # not there.
+        for pat, why in ((rf"\b{name}\s*\*", f"{name} * ... (arithmetic)"),
+                         (rf"=\s*{name}\b",
+                          f"{name} bound to a name (assignment or default)")):
             if re.search(pat, text):
                 hits.append(why)
     # A coefficient written as a LITERAL is not the row's either, whatever
@@ -224,3 +248,23 @@ def test_a_live_pricer_does_not_pretend_to_be_historical(path):
         f"{path} is classified PRICES_NOW ({PRICES_NOW[path]}) but calls "
         f"recorded_fee. If it now scores recorded rows, move it to "
         f"POINT_IN_TIME; if it prices now, charge core.fees.taker_fee.")
+
+
+def test_every_now_priced_exception_carries_a_reason():
+    """A marker with no reason is an off switch. Also prints them, because an
+    exception nobody reads is how the next one gets added silently."""
+    bad, seen = [], []
+    for path in sorted(POINT_IN_TIME):
+        for i, line in enumerate((REPO / path).read_text(encoding="utf-8")
+                                .splitlines(), 1):
+            m = FEE_NOW_MARKER.search(line)
+            if not m:
+                continue
+            reason = m.group(1).strip()
+            seen.append(f"{path}:{i} {reason}")
+            if len(reason) < 12:
+                bad.append(f"{path}:{i} reason too short: {reason!r}")
+    print("\n  NOW-priced exceptions inside historical readers:")
+    for s_ in seen or ["  (none)"]:
+        print(f"    {s_}")
+    assert not bad, bad
