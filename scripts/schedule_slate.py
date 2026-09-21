@@ -191,14 +191,18 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
     return out
 
 
-def cron_block(p: Plan, reads_dir: str) -> str:
+def cron_block(p: Plan, launchers_dir: str, reads_dir: str) -> str:
     """The lines to append to the crontab. Every launch line ends in
     ``# TEMP <date>`` so the self-clean can drop them; the self-clean line
-    contains the word TEMP inside its own quotes and so removes itself."""
+    contains the word TEMP inside its own quotes and so removes itself.
+
+    ``launchers_dir`` is where the scripts live (the versioned copies under
+    scripts/launchers/, deployed to /opt/meridian/scripts/launchers); the
+    log goes under ``reads_dir`` beside everything else the night writes."""
     lines = [f"# ===== slate scheduled by schedule_slate.py at {dt.datetime.now(UTC):%Y-%m-%d %H:%MZ}"]
     for l in p.launches:
         lines.append(f"{l.at.minute} {l.at.hour} {l.at.day} {l.at.month} * "
-                     f"sudo -n {reads_dir}/{l.command} >> {reads_dir}/cron.log 2>&1   # {l.tag}")
+                     f"sudo -n {launchers_dir}/{l.command} >> {reads_dir}/cron.log 2>&1   # {l.tag}")
     if p.clean_at is not None:
         c = p.clean_at
         lines.append(f'{c.minute} {c.hour} {c.day} {c.month} * crontab -l | grep -v "TEMP" | crontab -')
@@ -240,8 +244,10 @@ def main() -> int:
                     help="how far ahead to read the board; default is up to the next --until-utc-hour")
     ap.add_argument("--until-utc-hour", type=int, default=12,
                     help="the window ends at the next occurrence of this UTC hour (the daily run's own time)")
+    ap.add_argument("--launchers-dir", default="/opt/meridian/scripts/launchers",
+                    help="where the launcher scripts live ON THE HOST (the cron lines call them there)")
     ap.add_argument("--reads-dir", default="/opt/meridian/artifacts/reads",
-                    help="where the launchers live ON THE HOST (the cron lines run there)")
+                    help="where the night's files and cron.log live ON THE HOST")
     ap.add_argument("--dry-run", action="store_true", help="print the plan in words too")
     a = ap.parse_args()
     from scripts.game_schedule import slate
@@ -250,7 +256,7 @@ def main() -> int:
     p = plan(slate(hours), now)
     if a.dry_run:
         print(describe(p), file=sys.stderr)
-    sys.stdout.write(cron_block(p, a.reads_dir))
+    sys.stdout.write(cron_block(p, a.launchers_dir, a.reads_dir))
     if p.launches:
         try:
             from core import notify
