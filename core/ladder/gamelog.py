@@ -263,7 +263,7 @@ def episodes_in_tape(path: str, *, game: str | None = None,
         # Whether the book ages on every row mean anything. False is not an
         # error: it is "this tape has no date, so ages are withheld".
         "anchored": anchor is not None,
-        "fee_rate": fee_rate,
+        "fee_rate": fee_rate,          # the caller's constant; the tape carries none (core/ladder/tape.py)
     }
     return done, totals
 

@@ -108,6 +108,8 @@ def attempt_pnl(t: dict, *, fee_rate: float = scan.DEFAULT_FEE_RATE) -> dict:
     l2p, src2 = _price(rec.get("l2p"), leg2)
     qty = min(l1q, l2q)
     cost = l1q * l1p + l2q * l2p
+    # At `fee_rate`, the caller's constant: a ticket record carries no fee
+    # coefficient (the venue raised it on 2026-09-17; core/fees.py).
     fees = l1q * scan.fee(l1p, fee_rate) + l2q * scan.fee(l2p, fee_rate)
     return {
         "ticket": t.get("id"),

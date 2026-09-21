@@ -20,12 +20,18 @@ from core.gridiron.scalp import (entry_price, entry_side, exit_check, exit_price
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 9, 13, 20, 0, tzinfo=UTC)
 HOME, AWAY = "8", "2633"
+#: The venue's coefficient on a fixture row: C is the current one, PRE what
+#: the venue charged before it raised the fee on 2026-09-17 04:07Z. PRE is
+#: spelled here and not imported because it is history; core/fees.py holds
+#: only the current value.
+C, PRE = 0.0695, 0.06
 
 
-def _pos(side="yes", entry=0.40, tp=0.05, stop=0.10, size=25.0, pos_team=AWAY):
+def _pos(side="yes", entry=0.40, tp=0.05, stop=0.10, size=25.0, pos_team=AWAY,
+         coef=C):
     return {"side": side, "entry_px": entry, "tp": tp, "stop": stop,
             "size_usd": size, "pos_team": pos_team, "entered_at": NOW,
-            "market_slug": "aec-nfl-a-b-2026-09-13"}
+            "market_slug": "aec-nfl-a-b-2026-09-13", "fee_coefficient": coef}
 
 
 def _chk(pos, bid, ask, *, pos_team=AWAY, final=False, stale=False, maker=False):
@@ -70,7 +76,7 @@ def test_entering_and_exiting_immediately_loses_the_spread_and_two_fees():
         px = entry_price(side, 0.40, 0.44)
         pos = _pos(side=side, entry=px)
         out = exit_price(side, 0.40, 0.44)
-        pnl, f = realise(pos, "drive_end", out, maker_exit=False)
+        pnl, f = realise(pos, "drive_end", out, maker_exit=False, coefficient=C)
         assert pnl < 0 and f > 0
 
 
@@ -191,10 +197,10 @@ def test_the_maker_exit_fills_at_the_limit_and_pays_no_exit_fee():
     pos = _pos(entry=0.40)                       # rests at 0.42
     got = _chk(pos, 0.42, 0.44, maker=True)
     assert got == ("tp", pytest.approx(0.42))
-    pnl_m, fee_m = realise(pos, "tp", got[1], maker_exit=True)
-    pnl_t, fee_t = realise(pos, "tp", got[1], maker_exit=False)
+    pnl_m, fee_m = realise(pos, "tp", got[1], maker_exit=True, coefficient=C)
+    pnl_t, fee_t = realise(pos, "tp", got[1], maker_exit=False, coefficient=C)
     assert fee_m < fee_t and pnl_m > pnl_t
-    assert fee_m == pytest.approx((25.0 / 0.40) * fee(0.40))     # entry fee only
+    assert fee_m == pytest.approx((25.0 / 0.40) * fee(0.40, C))  # entry fee only
 
 
 def test_the_two_variants_share_a_trigger_and_differ_only_in_price_and_fee():
@@ -210,8 +216,8 @@ def test_the_two_variants_share_a_trigger_and_differ_only_in_price_and_fee():
 
 def test_a_maker_exit_on_a_non_tp_reason_still_pays_the_taker_fee():
     pos = _pos(entry=0.40)
-    _, f = realise(pos, "drive_end", 0.39, maker_exit=True)
-    assert f == pytest.approx((25.0 / 0.40) * (fee(0.40) + fee(0.39)))
+    _, f = realise(pos, "drive_end", 0.39, maker_exit=True, coefficient=C)
+    assert f == pytest.approx((25.0 / 0.40) * (fee(0.40, C) + fee(0.39, C)))
 
 
 # ------------------------------------------------------------------ the ticket
@@ -219,9 +225,9 @@ def test_the_ticket_costs_size_usd_whatever_the_price():
     for entry in (0.10, 0.40, 0.90):
         pos = _pos(entry=entry)
         contracts = 25.0 / entry
-        pnl, _ = realise(pos, "drive_end", entry, maker_exit=False)
+        pnl, _ = realise(pos, "drive_end", entry, maker_exit=False, coefficient=C)
         assert contracts * entry == pytest.approx(25.0)
-        assert pnl == pytest.approx(-contracts * fee(entry) * 2, rel=1e-9)
+        assert pnl == pytest.approx(-contracts * fee(entry, C) * 2, rel=1e-9)
 
 
 # ------------------------------------------------------------------- the config
@@ -285,3 +291,45 @@ def test_a_timestamp_from_the_future_is_stale_not_fresh():
     # a day is not skew.
     assert not is_stale(now, play_at=now + dt.timedelta(milliseconds=500),
                         tick_at=fresh, max_age_s=30.0)
+
+
+# ------------------------------------------------------ the row's coefficient
+# The venue raised its taker coefficient on 2026-09-17 04:07Z. The engine reads
+# the newest market_snapshots row, which carries the coefficient in force when
+# it was written, so a paper book written across that instant charges each leg
+# what the venue charged then -- never today's constant on both.
+
+
+def test_each_leg_is_charged_at_the_coefficient_on_its_own_row():
+    """Opened before the raise, closed after it: the entry pays the old
+    coefficient and the exit the new one, as expressions in each."""
+    pos = _pos(entry=0.40, coef=PRE)
+    contracts = 25.0 / 0.40
+    _, f = realise(pos, "drive_end", 0.39, maker_exit=False, coefficient=C)
+    assert f == pytest.approx(contracts * (PRE * 0.40 * 0.60 + C * 0.39 * 0.61))
+    # The same book with both legs pre-raise is cheaper by exactly the raise
+    # on the exit leg, and nothing else moved.
+    _, f_pre = realise(pos, "drive_end", 0.39, maker_exit=False, coefficient=PRE)
+    assert f - f_pre == pytest.approx(contracts * (C - PRE) * 0.39 * 0.61)
+    assert f > f_pre
+
+
+@pytest.mark.parametrize("leg", ["entry", "exit"])
+def test_a_charged_leg_whose_row_has_no_coefficient_is_refused(leg):
+    """Never silently priced at today's: the silent path is the defect."""
+    pos = _pos(entry=0.40, coef=None if leg == "entry" else C)
+    with pytest.raises(ValueError, match="fee_coefficient"):
+        realise(pos, "drive_end", 0.39, maker_exit=False,
+                coefficient=None if leg == "exit" else C)
+
+
+def test_fee_without_a_coefficient_prices_now_and_with_one_prices_that_row():
+    from core.fees import POLYMARKET_TAKER
+    assert fee(0.40) == pytest.approx(POLYMARKET_TAKER * 0.40 * 0.60)
+    assert fee(0.40, PRE) == pytest.approx(PRE * 0.40 * 0.60)
+    assert fee(0.40, PRE) < fee(0.40)
+
+
+def test_the_tick_query_reads_the_coefficient_beside_the_touch():
+    from core.gridiron.scalp import TICK_SQL
+    assert "fee_coefficient" in TICK_SQL

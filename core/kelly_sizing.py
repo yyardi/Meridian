@@ -87,6 +87,8 @@ def net_edge(probability: float, price: float, *, is_maker: bool = True) -> floa
     default assumption; a fill that crosses the spread becomes a taker, which
     is worth flagging.
     """
+    # Priced NOW, at decision time, at today's coefficient (core/fees.py): a
+    # sizing decision is made against the live price, never a recorded row.
     return (probability - price) - fee_per_contract(price, is_maker=is_maker)
 
 

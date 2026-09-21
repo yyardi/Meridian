@@ -222,6 +222,8 @@ def episodes_in_book_file(path: str, *, game: str | None = None,
         "sum_best_usd": round(sum(best), 4),
         "max_best_usd": round(max(best), 4) if best else 0.0,
         "first_recv": first_recv, "last_recv": last_recv,
+        # `fee_rate` is the constant at scan time; a stream tape carries none
+        # (core/ladder/stream_episodes.py).
         "fee_rate": fee_rate, "max_edge": max_edge, "max_size": max_size,
     }
     return done, totals

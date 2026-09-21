@@ -17,7 +17,11 @@ from core.pulse.replay import (
     GameReplay,
     ReplayContext,
     Tick,
+    _stream,
+    _tick_stmt,
     format_report,
+    load_ticks,
+    recorded_coefficient,
     replay_game,
 )
 
@@ -224,3 +228,101 @@ def test_replay_counts_markets_and_duration():
     assert r.n_ticks == 2
     assert r.n_markets == 2
     assert r.duration_minutes == pytest.approx(1.0)
+
+
+# ------------------------------------------------------------------ #
+# 4. Every tick carries the coefficient the venue charged on its row
+# ------------------------------------------------------------------ #
+# The venue raised its taker coefficient on 2026-09-17 04:07Z and the recorder
+# stores the value in force on every market_snapshots row. A replay charges a
+# fee at the tick's own coefficient; a tick with none is refused, never
+# priced at today's constant.
+
+
+def test_a_synthetic_tick_has_no_coefficient_and_charging_it_is_refused():
+    t = _tick(0, 0.40, 0.42)
+    assert t.fee_coefficient is None
+    with pytest.raises(ValueError, match="fee_coefficient"):
+        recorded_coefficient(t)
+
+
+def test_the_recorded_coefficient_is_the_ticks_own():
+    t = Tick(captured_at=T0, event_slug="g", market_slug="m", sports_market_type=None,
+             line=None, bid=0.4, ask=0.42, is_live=True, score=None, period=None,
+             fee_coefficient=0.06)
+    assert recorded_coefficient(t) == 0.06
+
+
+def test_the_tick_query_selects_the_rows_coefficient():
+    assert "fee_coefficient" in str(_tick_stmt(event_slug="g"))
+
+
+class _Result:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class _Session:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def execute(self, statement, *args, **kwargs):
+        return _Result(self.rows)
+
+
+def _row(at, coef):
+    from decimal import Decimal
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        captured_at=at, event_slug="g", market_slug="m", sports_market_type=None,
+        line=None, best_bid=Decimal("0.40"), best_ask=Decimal("0.42"), is_live=True,
+        event_score=None, event_period=None,
+        fee_coefficient=None if coef is None else Decimal(coef))
+
+
+def test_streamed_ticks_carry_the_rows_coefficient_as_a_float_and_null_as_none():
+    """The column is Numeric(8, 6): a pre-change row reads 0.060000, a
+    post-change row 0.069500, and a NULL stays None so the charge site can
+    refuse it rather than a fabricated zero slipping through."""
+    rows = [_row(T0, "0.060000"), _row(T0 + dt.timedelta(days=40), "0.069500"),
+            _row(T0 + dt.timedelta(days=41), None)]
+    ticks = list(_stream(_Session(rows), _tick_stmt(event_slug="g")))
+    assert [t.fee_coefficient for t in ticks] == [0.06, 0.0695, None]
+    assert all(isinstance(t.fee_coefficient, float) for t in ticks[:2])
+
+
+def test_load_ticks_reads_the_coefficient_the_recorder_stored():
+    """Against the test database: two rows either side of the venue's raise,
+    read back at the coefficients they were written with."""
+    from decimal import Decimal
+
+    from sqlalchemy import text
+
+    from core.storage import MarketSnapshot, get_engine, get_sessionmaker
+
+    event = "wnba-feetest-2026-09-16"
+    market = "aec-" + event
+    rows = [
+        (dt.datetime(2026, 9, 16, 23, 0, tzinfo=UTC), Decimal("0.060000")),
+        (dt.datetime(2026, 9, 18, 23, 0, tzinfo=UTC), Decimal("0.069500")),
+    ]
+    Session = get_sessionmaker(get_engine())
+    with Session() as s:
+        s.execute(text("delete from market_snapshots where event_slug = :e"), {"e": event})
+        s.add_all([MarketSnapshot(
+            captured_at=at, market_slug=market, event_slug=event,
+            sports_market_type="basketball_team_full_game_winner",
+            best_bid=Decimal("0.40"), best_ask=Decimal("0.42"), is_live=True,
+            fee_coefficient=coef) for at, coef in rows])
+        s.commit()
+    try:
+        with Session() as s:
+            ticks = load_ticks(s, event_slug=event)
+        assert [t.fee_coefficient for t in ticks] == [0.06, 0.0695]
+    finally:
+        with Session() as s:
+            s.execute(text("delete from market_snapshots where event_slug = :e"), {"e": event})
+            s.commit()
