@@ -27,7 +27,7 @@ from core.ladder.scan import DEFAULT_FEE_RATE, MAX_PLAUSIBLE_EDGE, fee  # noqa: 
 
 GATES = (2.0, 5.0, 15.0, 60.0, 300.0, 1e18)
 FLOOR = 25.0
-RATE = DEFAULT_FEE_RATE
+RATE = DEFAULT_FEE_RATE   # the constant at scan time: slate_books_*.jsonl rows carry no fee coefficient (core/ladder/stream_episodes.py)
 
 
 def _epoch(s):

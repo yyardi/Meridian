@@ -40,7 +40,9 @@ Every caveat in `core/live_fv.py` applies here and is not re-litigated:
 Fills, deliberately pessimistic
 -------------------------------
 An entry crosses the spread and pays the far touch, and is charged the taker
-fee. The executor is limit-only in production, so a resting order would
+fee at the coefficient recorded on the row it entered from (the venue raised
+it on 2026-09-17; a row without one is refused, never charged at today's).
+The executor is limit-only in production, so a resting order would
 usually do better — but a resting order also sometimes does not fill, and
 "assume the good half of that" is how a replay flatters itself. Crossing is
 the conservative floor: whatever edge survives it is not an artifact of the
@@ -278,7 +280,7 @@ def _reference_mid(live_ticks, *, after: dt.datetime) -> float | None:
 
 _TICKS_SQL = sql("""
     SELECT market_slug, event_slug, captured_at, event_period, event_score,
-           is_live, best_bid, best_ask
+           is_live, best_bid, best_ask, fee_coefficient
       FROM market_snapshots
      WHERE sports_market_type = :mtype
        AND best_bid IS NOT NULL AND best_ask IS NOT NULL
@@ -317,6 +319,19 @@ def replay(
         if entry is not None:
             result.entries.append(entry)
     return result
+
+
+def _recorded_coefficient(t) -> float:
+    """The taker coefficient the venue charged on THIS row, read beside the
+    book (`fee_coefficient` in _TICKS_SQL). The venue raised it on 2026-09-17
+    04:07Z, so an archive replayed at today's constant is charged 16 % over
+    what the venue charged on every row before that instant. A row without
+    one is refused, never charged at today's."""
+    c = getattr(t, "fee_coefficient", None)
+    if c is None:
+        raise ValueError(f"{t.market_slug} @ {t.captured_at}: row carries no "
+                         "fee_coefficient; a replay cannot charge today's")
+    return float(c)
 
 
 def _replay_one_market(ticks, *, min_edge, decision_seconds, sigma, result) -> Entry | None:
@@ -400,7 +415,8 @@ def _replay_one_market(ticks, *, min_edge, decision_seconds, sigma, result) -> E
             minutes_left=clock.minutes_left, pregame_price=pregame_price,
             fair_value=fv, side=side, entry_price=cost, edge=edge,
             reference_price=ref, won=won, pnl=pnl_for_contract(cost, won),
-            fee=fee_per_contract(cost, is_maker=False),
+            fee=fee_per_contract(cost, is_maker=False,
+                                 coefficient=_recorded_coefficient(t)),
         )
 
     if not saw_usable_clock:

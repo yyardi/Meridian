@@ -69,9 +69,17 @@ def params_from_env(env=None):
 # instant is passed in, so tests drive them on fixture rows.
 # --------------------------------------------------------------------------- #
 
-def fee(px):
-    """Taker fee per $1 contract at `px`. Zero at 0 and 1 by construction."""
-    return FEE_RATE * px * (1.0 - px)
+def fee(px, coefficient=None):
+    """Taker fee per $1 contract at `px`. Zero at 0 and 1 by construction.
+
+    `coefficient` is the venue's `fee_coefficient` on the market_snapshots row
+    the price came from; the engine always passes it (`realise`), because the
+    venue raised it on 2026-09-17 04:07Z and a book written across that
+    instant must charge each side what the venue charged then. None prices
+    NOW at today's constant (core/fees.py) and is for a price with no row.
+    """
+    rate = FEE_RATE if coefficient is None else float(coefficient)
+    return rate * px * (1.0 - px)
 
 
 def entry_side(pos_team, home, away):
@@ -186,12 +194,24 @@ def exit_check(pos, *, bid, ask, pos_team, game_final, stale, maker_exit):
     return None
 
 
-def realise(pos, reason, px, *, maker_exit):
-    """(pnl, fee) for a closed position. The ENTRY fee is always taker."""
+def _recorded(coefficient, leg):
+    """A fee is charged at the row's own coefficient or not at all: None is
+    refused rather than silently priced at today's."""
+    if coefficient is None:
+        raise ValueError(f"{leg} row carries no fee_coefficient; the book cannot charge today's")
+    return float(coefficient)
+
+
+def realise(pos, reason, px, *, maker_exit, coefficient):
+    """(pnl, fee) for a closed position. The ENTRY fee is always taker, at the
+    coefficient on the entry row (`pos["fee_coefficient"]`); a taker exit pays
+    again at `coefficient`, the exit row's. Both are market_snapshots rows and
+    carry the venue's coefficient as it stood at that instant. A leg that is
+    charged with no coefficient on its row is refused."""
     contracts = pos["size_usd"] / pos["entry_px"] if pos["entry_px"] else 0.0
-    f = contracts * fee(pos["entry_px"])
+    f = contracts * fee(pos["entry_px"], _recorded(pos.get("fee_coefficient"), "entry"))
     if not (maker_exit and reason == "tp"):
-        f += contracts * fee(px)
+        f += contracts * fee(px, _recorded(coefficient, "exit"))
     return contracts * (px - pos["entry_px"]) - f, f
 
 
@@ -210,7 +230,7 @@ ORDER BY p.game_id, p.wall_clock DESC, p.sequence_number DESC
 """
 TICK_SQL = """
 SELECT DISTINCT ON (s.game_id) s.game_id, s.market_slug, s.best_bid::float bid,
-       s.best_ask::float ask, s.captured_at
+       s.best_ask::float ask, s.captured_at, s.fee_coefficient::float fee_coefficient
 FROM market_snapshots s
 WHERE s.market_slug LIKE :pat AND s.captured_at > now() - interval '1 hour'
   AND s.best_bid IS NOT NULL AND s.best_ask IS NOT NULL
@@ -276,7 +296,8 @@ def main():                                                   # pragma: no cover
                                          maker_exit=p["maker_exit"])
                         if got is not None:
                             reason, px = got
-                            pnl, f = realise(pos, reason, px, maker_exit=p["maker_exit"])
+                            pnl, f = realise(pos, reason, px, maker_exit=p["maker_exit"],
+                                             coefficient=tick["fee_coefficient"])
                             c.execute(text(
                                 "INSERT INTO paper_scalps (league, game_id, market_slug, side,"
                                 " trigger, entered_at, entry_px, exit_at, exit_px, exit_reason,"
@@ -308,6 +329,7 @@ def main():                                                   # pragma: no cover
                     px = entry_price(side, bid, ask)
                     open_pos[eg] = {"side": side, "entry_px": px, "entered_at": now,
                                     "market_slug": tick["market_slug"], "pos_team": play["pos_team"],
+                                    "fee_coefficient": tick["fee_coefficient"],
                                     "tp": p["tp"], "stop": p["stop"], "size_usd": p["size_usd"]}
         except Exception:                                     # never die on one bad cycle
             log.exception("scalp.cycle_failed")
