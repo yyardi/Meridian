@@ -12,7 +12,9 @@ PRE-REGISTERED BEFORE THE FIRST RUN. Written here, then run once.
                the expected margin (-spread) so we trade where the book is.
   instant      play wall_clock + 30s (feed lag). First snapshot of EACH rung at
                or after that, within 5 min; older is STALE: excluded, counted.
-  entry        TAKER at the touch on both legs. Fee 0.0695*p*(1-p) per leg.
+  entry        TAKER at the touch on both legs. Fee c*p*(1-p) per leg, c the
+               coefficient recorded on that leg's own snapshot (the venue raised
+               it on 2026-09-17; a leg is charged what it was charged).
                No maker rebate (findings.md C7). This is the conservative cost;
                a maker could only do better, so a loss here is a real loss.
   direction    long the interval when model_interval - market_cost > TAU;
@@ -88,9 +90,12 @@ eng = create_engine(os.environ["DATABASE_URL"])
 # 2026-09-11 once the tape grew. Session-scoped, no config change.
 from sqlalchemy import event  # noqa: E402
 try:
-    from core.fees import POLYMARKET_TAKER as TAKER_THETA  # 0.0695: the venue's feeCoefficient (core/fees.py)
+    from core.fees import recorded_fee              # the row's own coefficient; None raises (core/fees.py)
 except ImportError:                                  # run bare, no repo root on sys.path
-    TAKER_THETA = 0.0695
+    def recorded_fee(price, coefficient):            # the same contract, spelled out: never a constant
+        if coefficient is None:
+            raise ValueError("row carries no fee_coefficient; a historical read cannot charge today's")
+        return float(coefficient) * price * (1.0 - price)
 @event.listens_for(eng, "connect")
 def _no_parallel_workers(dbapi_conn, _rec):
     # psycopg3 opens a transaction on the first execute; an uncommitted SET is
@@ -107,8 +112,18 @@ def featurize(hs, spread_home, K):
             E * math.exp(-4.0 * elapsed / REGULATION_SECONDS), hb, down, dist, ytg, per]
 
 
-def fee(p):
-    return TAKER_THETA * p * (1.0 - p)
+def leg_fees(side, qa, qb):
+    """Taker fee on both legs, each at the coefficient recorded on ITS OWN snapshot.
+
+    long  = SELL YES(K) at bid_K   + BUY  YES(K+7) at ask_{K+7}
+    short = BUY  YES(K) at ask_K   + SELL YES(K+7) at bid_{K+7}
+    `fc` is market_snapshots.fee_coefficient on the leg's row. The two legs are two
+    rows and can straddle the venue's 2026-09-17 raise, so each is charged its own;
+    None raises (core.fees.recorded_fee), never today's constant.
+    """
+    if side == "long":
+        return recorded_fee(qa["bid"], qa["fc"]) + recorded_fee(qb["ask"], qb["fc"])
+    return recorded_fee(qa["ask"], qa["fc"]) + recorded_fee(qb["bid"], qb["fc"])
 
 
 # ------------------------------------------------------------------ data
@@ -157,7 +172,8 @@ with eng.connect() as c:
     lo = min(p["wall_clock"] for p in plays)
     hi = max(p["wall_clock"] for p in plays) + dt.timedelta(seconds=FEED_LAG + STALE_S + 3600)
     ladder = [dict(r._mapping) for r in c.execute(text(
-        "SELECT game_id, line::float AS line, captured_at, best_bid::float AS bid, best_ask::float AS ask, is_live "
+        "SELECT game_id, line::float AS line, captured_at, best_bid::float AS bid, best_ask::float AS ask, is_live, "
+        "fee_coefficient::float AS fc "
         "FROM market_snapshots WHERE game_id = ANY(:g) AND sports_market_type = 'football_team_full_game_spread' "
         "AND best_bid IS NOT NULL AND best_ask IS NOT NULL AND line IS NOT NULL "
         "AND captured_at BETWEEN :lo AND :hi ORDER BY game_id, line, captured_at"),
@@ -278,13 +294,13 @@ for p in plays:
                 taken[(gid, K, tau)] = dict(
                     side="long", tau=tau, gid=gid, K=K, edge=e_long, inside=inside,
                     premium=cost_long,
-                    pnl=inside - cost_long - fee(qa["bid"]) - fee(qb["ask"]),
+                    pnl=inside - cost_long - leg_fees("long", qa, qb),
                     mid_pnl=inside - mid_int)
             elif e_short > tau:
                 taken[(gid, K, tau)] = dict(
                     side="short", tau=tau, gid=gid, K=K, edge=e_short, inside=inside,
                     premium=recv_short,
-                    pnl=-inside + recv_short - fee(qa["ask"]) - fee(qb["bid"]),
+                    pnl=-inside + recv_short - leg_fees("short", qa, qb),
                     mid_pnl=mid_int - inside)
 
 print(f"\ncandidate (game, pair, instant) evaluations {cands:,}   stale {stale:,}   "
@@ -326,7 +342,7 @@ def report(label, sel):
 
 allp = list(taken.values())
 print(f"\n=== P&L per pair, cents per $1 contract, game-clustered, held to settlement ===")
-print("  net = after crossing both spreads and 0.0695*p*(1-p) taker fee per leg;")
+print("  net = after crossing both spreads and the taker fee c*p*(1-p) per leg, c as recorded on that leg's snapshot;")
 print("  mid-to-mid = same positions priced at mid, no fees (does the model disagree usefully?)\n")
 for tau in TAUS:
     tag = "PRIMARY" if tau == TAU_PRIMARY else "secondary"

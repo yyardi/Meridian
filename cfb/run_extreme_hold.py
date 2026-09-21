@@ -1,8 +1,8 @@
 """Buy the near-certain side in-game at the ask and HOLD TO SETTLEMENT: one fee, not two.
 
-WHY. 0.0695*p*(1-p) collapses at the extremes: a round trip is 6.0% of the ticket at 50c, 0.4%
-at 95c. Everything so far died at mid prices paying two fees and two half-spreads; holding
-pays one of each, where both are smallest.
+WHY. c*p*(1-p) collapses at the extremes: a round trip is 2c(1-p) of the ticket, 7% at 50c and
+0.7% at 95c at the current coefficient. Everything so far died at mid prices paying two fees and
+two half-spreads; holding pays one of each, where both are smallest.
 
 THE NULL IS NOT ZERO: against a calibrated market, taking the ask when the MID is in the band
 loses exactly (ask - mid) + fee. Every cell splits exactly and additively, y=0.5 included:
@@ -32,6 +32,10 @@ TRAPS, each gated and COUNTED rather than described:
   * bands SHARE GAMES (0.90 -> 0.98 enters several), so cells are not independent of each
     other: the clustered interval covers within-cell dependence only, and "three of four
     bands negative" is closer to one observation repeated than to three.
+  * the venue RAISED its taker coefficient at 2026-09-17 04:07Z and market_snapshots carries the
+    value it charged on every tick, so each entry is charged at ITS tick's fee_coefficient and
+    the only fee trap left is a NULL one. The previous trap, "coefficient != today's constant",
+    skipped every pre-change game on any window spanning that instant.
 
 RUN prod read-only, env flags INSIDE docker run (sudo drops an env prefix); needs the API image
 + checkout mounted for the venue client -- scripts/prod_weekend_read.sh V=(). Nothing is placed.
@@ -48,7 +52,7 @@ from core.polymarket.client import PolymarketGatewayClient
 
 sys.stdout.reconfigure(line_buffering=True)   # a long per-game run must show progress
 LG = os.environ.get("LEAGUE", "cfb")
-from core.fees import POLYMARKET_TAKER as FEE  # noqa: E402  0.0695, the venue's feeCoefficient
+from core.fees import recorded_fee  # noqa: E402  the tick's own coefficient; None raises, never today's
 S120, GAP = dt.timedelta(seconds=120), 600.0
 NOW = dt.datetime.now(dt.timezone.utc)
 BANDS = [(0.900, 0.925), (0.925, 0.950), (0.950, 0.975), (0.975, 0.990)]
@@ -77,7 +81,23 @@ Q_TICKS = """SELECT captured_at t, best_bid::float b, best_ask::float a, fee_coe
 ORDER BY captured_at"""
 MT = "football_team_full_game_winner"
 
-def fee(p): return FEE * p * (1 - p)
+def fee_trap(rows):
+    """The one fee trap left: a tick with NO recorded coefficient, skipped and counted.
+
+    rows are Q_TICKS tuples, r[3] = fee_coefficient. A tick whose coefficient differs from
+    today's is the venue's history, not a trap -- the previous check here was `!= constant`
+    and on a window spanning 2026-09-17 04:07Z it fired on every pre-change tick."""
+    return "TRAP fee_coefficient NULL on some tick" if any(r[3] is None for r in rows) else None
+
+def entry(win, paid, pm, coef):
+    """The fee-bearing terms of one entry, charged at the coefficient recorded on ITS tick.
+
+    net = win - paid - fee(paid); nm = the same at the untradeable mid pm; fe = -fee(paid).
+    p(1-p) is symmetric, so a NO entry at 1-bid pays what YES would at the bid. `coef` is the
+    tick's fee_coefficient and travels out as `fc`; None raises (core.fees.recorded_fee) --
+    fee_trap ran first, so a None here is a caller defect, never a fallback to today's."""
+    f = recorded_fee(paid, coef)
+    return dict(net=win - paid - f, nm=win - pm - recorded_fee(pm, coef), fe=-f, fc=coef)
 
 def clustered(vals, keys):                     # verbatim from cfb/run_paper_book.py
     n = len(vals); m = sum(vals) / n
@@ -110,7 +130,7 @@ def cell(bets, fld="net"):
     m, h, n, G, ge = clustered([100 * b[fld] for b in bets], [b["game"] for b in bets])
     ca, cr, fe = (100 * sum(b[k] for b in bets) / n for k in ("calib", "cross", "fe"))
     wr = sum(b["win"] for b in bets) / n
-    be = sum(b["p"] + fee(b["p"]) for b in bets) / n
+    be = sum(b["p"] + recorded_fee(b["p"], b["fc"]) for b in bets) / n   # break-even at the tick's own fee
     k = round(sum(b["win"] for b in bets))
     return (f"{m:+6.2f} [{m - h:+6.2f},{m + h:+6.2f}] n={n:<4} G={G:<3} Ge={ge:5.1f} "
             f"| calib{ca:+6.2f} cross{cr:+6.2f} fee{fe:+6.2f} | win {wr:5.1%} CPlo {cp_lo(k, n):5.1%} "
@@ -118,7 +138,7 @@ def cell(bets, fld="net"):
             f"| {med([b['secs'] for b in bets]) / 60:4.0f}m {med([b['dips'] for b in bets]):3.0f}dip"
             + ("  UNDERPOWERED" if G < 25 else ""))
 
-C, cells = defaultdict(int), defaultdict(list)
+C, cells, SEEN = defaultdict(int), defaultdict(list), set()   # SEEN: coefficients charged on scored ticks
 with eng.connect() as c:
     games = [dict(r._mapping) for r in c.execute(text(Q_GAMES), {"lg": LG})]
     for g in games:
@@ -134,8 +154,9 @@ with eng.connect() as c:
         rows = c.execute(text(Q_TICKS), {"vg": g["vg"], "mt": MT, "lo": P[0]["wc"],
                                          "hi": P[-1]["wc"]}).fetchall()
         if len(rows) < 50: C["skipped: no in-game winner tape"] += 1; continue
-        if any(abs(r[3] - FEE) > 1e-9 for r in rows if r[3] is not None):
-            C[f"TRAP fee_coefficient != {FEE} on some tick"] += 1; continue
+        trap = fee_trap(rows)
+        if trap: C[trap] += 1; continue
+        SEEN.update(r[3] for r in rows)
         y = settle(rows[0][4])                      # the venue's own label, not our recorder's
         if y is None: C["skipped: venue has not settled"] += 1; continue
         C[f"venue settlement y={y}"] += 1
@@ -146,6 +167,7 @@ with eng.connect() as c:
         C["games scored"] += 1
         if C["games scored"] % 20 == 0: print(f"  ... {C['games scored']} games scored")
         T = [r[0] for r in rows]; B = [r[1] for r in rows]; A = [r[2] for r in rows]
+        FC = [r[3] for r in rows]                                  # the coefficient charged on each tick
         M = [round((a + b) / 2, 4) for a, b in zip(A, B)]          # round to tick before bucketing
         chg = [T[0]]
         for i in range(1, len(T)): chg.append(T[i] if M[i] != M[i - 1] else chg[-1])
@@ -164,15 +186,14 @@ with eng.connect() as c:
                     fired.add(key)
                     if T[i] - chg[i] > S120: C["TRAP frozen board: no mid change in 120 s"] += 1; continue
                     yes = side == "YES"
-                    p = A[i] if yes else B[i]        # p(1-p) is symmetric, so fee prices on YES either way
                     paid, pm = (A[i], m) if yes else (1 - B[i], 1 - m)   # touch, then untradeable mid
                     win = y if yes else 1 - y                            # y is 0, 0.5 or 1
                     out = (lambda j: M[j] < lo) if yes else (lambda j: M[j] > 1 - lo)
                     k = bisect_right(pw, T[i])
-                    b = dict(net=win - paid - fee(p), nm=win - pm - fee(m), win=win, p=paid,
+                    b = dict(win=win, p=paid, **entry(win, paid, pm, FC[i]),   # fee at THIS tick's coefficient
                              gap=(T[i] - T[i - 1]).total_seconds() if i else 0.0,
                              chg_age=(T[i] - chg[i]).total_seconds(),
-                             calib=(y - m) if yes else (m - y), fe=-fee(p),
+                             calib=(y - m) if yes else (m - y),
                              cross=-(A[i] - m) if yes else -(m - B[i]), game=g["eg"],
                              secs=(T[-1] - T[i]).total_seconds(),
                              dips=sum(1 for j in range(i + 1, len(T)) if out(j) and not out(j - 1)))
@@ -182,7 +203,8 @@ with eng.connect() as c:
                     C[f"entries {side}"] += 1
 
 settlements.save(CACHE)
-print(f"LEAGUE={LG}  {NOW:%Y-%m-%d %H:%M}Z  fee 0.0695*p*(1-p) VERIFIED per tick on every scored game")
+print(f"LEAGUE={LG}  {NOW:%Y-%m-%d %H:%M}Z  fee c*p*(1-p) charged PER TICK at the coefficient the venue"
+      f" recorded on it; coefficients on scored ticks: {sorted(SEEN)}")
 for k in sorted(C): print(f"  {k}: {C[k]}")
 if not cells: raise SystemExit("NO DATA: no entry taken")
 print("\ncents per $1 contract [95% game-clustered sandwich] n G G_eff | EXACT SPLIT calib (y-mid),"
