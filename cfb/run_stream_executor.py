@@ -41,7 +41,7 @@ from cfb.run_ws_freshness import Stream  # noqa: E402
 from cfb.run_ladder_executor import intent_for  # noqa: E402
 from core.ladder.live import line_of, slugs_for  # noqa: E402
 from core.ladder.scan import (DEFAULT_FEE_RATE, MAX_PLAUSIBLE_EDGE,  # noqa: E402
-                              Violation, fee)
+                              Violation, clears_floor, fee)
 from core.ladder.intent import is_spread_pair  # noqa: E402
 
 
@@ -122,7 +122,7 @@ def main() -> int:
             scans += 1
             hits = {}
             for v in crossings(k, touch, seen, now, a.fresh_s, game, DEFAULT_FEE_RATE):
-                if v.dollars >= a.floor_usd and is_spread_pair(v):
+                if clears_floor(v.dollars, a.floor_usd) and is_spread_pair(v):
                     hits[(v.low_line, v.high_line)] = v
             for key, v in hits.items():
                 if key in open_eps:

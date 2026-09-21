@@ -40,10 +40,10 @@ def _tape(tmp_path, rows, game=GAME):
 #: +5.5 bids 0.44; +7.5 offered at 0.41 is below it: crossed.
 FRESH_THEN_STALE = [
     _line(0,   LO, 0.44, 0.46),
-    _line(1,   HI, 0.41, 0.41),    # crossed, older leg 1 s old
+    _line(1,   HI, 0.38, 0.38),    # crossed, older leg 1 s old
     _line(20,  HI, 0.50, 0.52),    # clean again
     _line(40,  LO, 0.44, 0.46),
-    _line(140, HI, 0.41, 0.41),    # crossed, older leg 100 s old
+    _line(140, HI, 0.38, 0.38),    # crossed, older leg 100 s old
 ]
 
 
@@ -65,7 +65,7 @@ def test_the_arithmetic_is_scan_ladder_s_pair_for_pair(tmp_path):
     the production scanner reports, and so must the size."""
     path = _tape(tmp_path, FRESH_THEN_STALE[:2])
     ep = SE.scan_book_file(path).episodes[0]
-    rungs = {5.5: (0.44, 0.46, 900.0, 900.0), 7.5: (0.41, 0.41, 900.0, 900.0)}
+    rungs = {5.5: (0.44, 0.46, 900.0, 900.0), 7.5: (0.38, 0.38, 900.0, 900.0)}
     ref = scan.scan_ladder(GAME, rungs, max_size=1e12)[0]
     assert ep.pair == (ref.low_line, ref.high_line) == (5.5, 7.5)
     assert ep.best_edge == pytest.approx(ref.edge, abs=1e-12)
@@ -73,21 +73,21 @@ def test_the_arithmetic_is_scan_ladder_s_pair_for_pair(tmp_path):
 
 
 def test_an_episode_spans_consecutive_crossed_updates_and_keeps_its_best(tmp_path):
-    # 0.41 and 0.40 clear the two fees against a 0.44 bid; 0.405 still does
+    # 0.38 and 0.37 clear the two fees against a 0.44 bid; 0.385 still does
     # (+0.57c); 0.415 would NOT (-0.4c) and would close the episode -- the
     # first draft of this test priced the third update there and blamed
     # the scanner for closing early. The scanner was right.
     rows = [_line(0, LO, 0.44, 0.46),
-            _line(1, HI, 0.41, 0.41, asz=100.0),      # opens, size 100
-            _line(2, HI, 0.40, 0.40, asz=500.0),      # still crossed, bigger
-            _line(3, HI, 0.405, 0.405, asz=50.0),     # still crossed, smaller
+            _line(1, HI, 0.38, 0.38, asz=100.0),      # opens, size 100
+            _line(2, HI, 0.37, 0.37, asz=500.0),      # still crossed, bigger
+            _line(3, HI, 0.385, 0.385, asz=50.0),     # still crossed, smaller
             _line(9, HI, 0.60, 0.62)]                 # closes
     r = SE.scan_book_file(_tape(tmp_path, rows))
     assert len(r.episodes) == 1
     e = r.episodes[0]
     assert e.opened_at == pytest.approx(T0.timestamp() + 1) and e.closed_at == pytest.approx(T0.timestamp() + 3)
     assert e.duration_s == 2.0
-    best = scan.scan_ladder(GAME, {5.5: (0.44, 0.46, 900.0, 900.0), 7.5: (0.40, 0.40, 900.0, 500.0)},
+    best = scan.scan_ladder(GAME, {5.5: (0.44, 0.46, 900.0, 900.0), 7.5: (0.37, 0.37, 900.0, 500.0)},
                             max_size=1e12)[0]
     assert e.best_usd == pytest.approx(best.dollars), "the best instant, not the last and not the sum"
 
@@ -115,7 +115,7 @@ def test_summarize_reports_the_ledger_s_fields(tmp_path):
     rows = [_line(0, LO, 0.44, 0.46), _line(1, HI, 0.34, 0.34, asz=5000.0),   # big, fresh, opens
             _line(2, HI, 0.35, 0.35, asz=5000.0),                             # still crossed
             _line(3, HI, 0.60, 0.62),                                         # closes
-            _line(10, LO, 0.44, 0.46), _line(11, HI, 0.41, 0.41, asz=10.0)]   # tiny, fresh
+            _line(10, LO, 0.44, 0.46), _line(11, HI, 0.38, 0.38, asz=10.0)]   # tiny, fresh
     s = SE.summarize([SE.scan_book_file(_tape(tmp_path, rows))], floor_usd=25.0)
     assert s["episodes"] == 2 and s["over_floor"] == 1 and s["games_with_over_floor"] == 1
     assert s["biggest_usd"] > 25 and s["sum_over_floor_usd"] == s["biggest_usd"]
@@ -147,7 +147,7 @@ def test_a_quiet_leg_does_not_cut_a_persisting_crossing_short(tmp_path):
     at +1 s; the 'median 29 s' of 2026-09-19 was measured that way and is a
     floor on true persistence."""
     rows = [_line(0, LO, 0.44, 0.46),
-            _line(1, HI, 0.41, 0.41),          # opens, older leg 1 s old
+            _line(1, HI, 0.38, 0.38),          # opens, older leg 1 s old
             _line(60, HI, 0.40, 0.40),         # still crossed, LO now 60 s quiet
             _line(70, HI, 0.60, 0.62)]         # un-crossed: closes
     r = SE.scan_book_file(_tape(tmp_path, rows), gate_s=2.0)

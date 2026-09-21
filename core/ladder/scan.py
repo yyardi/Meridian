@@ -18,8 +18,18 @@ from dataclasses import dataclass
 #: Above this, a "violation" is a stale rung rather than a tradeable price.
 MAX_PLAUSIBLE_EDGE = 0.15
 
-#: Polymarket US taker. Kalshi is 0.07; callers pass their own.
-DEFAULT_FEE_RATE = 0.06
+#: Polymarket US taker coefficient in f(p) = rate * p * (1 - p). Kalshi is
+#: 0.07; callers pass their own.
+#:
+#: 0.0695, not 0.06. The venue publishes it on every market object as
+#: `feeCoefficient`, the recorder has stored it as market_snapshots
+#: .fee_coefficient since 2026-09-18, and on 2026-09-21 it read 0.0695 on all
+#: 214,790 rows across NFL, CFB, WNBA and MLB winners and spreads. The 0.06
+#: that stood here (and in STATUS, and in every docs/math derivation) was
+#: never checked against that field. The difference is 16 % of the fee:
+#: about 0.5c per pair at even prices, enough to flip a sub-cent crossing and
+#: to shrink every dollar figure measured before this line changed.
+DEFAULT_FEE_RATE = 0.0695
 
 #: A quoted size above this is not a book, it is a bad reading. `book_levels`
 #: carries a 1% tail of implausible NFL quantities: p99 104,552 and a max of
@@ -36,6 +46,17 @@ MAX_PLAUSIBLE_SIZE = 10_000.0
 def fee(price: float, rate: float = DEFAULT_FEE_RATE) -> float:
     """Taker fee at the price actually paid, not at the mid."""
     return rate * price * (1.0 - price)
+
+
+def clears_floor(dollars: float, floor_usd: float) -> bool:
+    """Whether a pair's dollars (edge x size) reach the floor, on the number
+    the operator SEES: dollars to the cent. Every gate -- both executors,
+    the ARB tab's `candidate`, the tape's `why_not` -- goes through here, so
+    a pair the desk prints as $25.00 cannot also say "under the $25 floor".
+    On 2026-09-21 the fee correction moved a fixture pair to $24.996: shown
+    as $25.00, refused on the raw value, and the test that says the floor
+    "is read off the same number" caught it."""
+    return round(dollars, 2) >= floor_usd
 
 
 @dataclass(frozen=True)

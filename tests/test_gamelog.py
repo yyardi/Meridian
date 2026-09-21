@@ -40,8 +40,8 @@ def _tape(tmp_path, samples, game=GAME):
 
 #: A clean ladder: every ask at or above the harder rung's bid.
 CLEAN = {3.5: (0.40, 0.42), 5.5: (0.44, 0.46), 7.5: (0.50, 0.52)}
-#: +7.5 offered at 0.41, below +5.5's bid of 0.44 -- a crossed pair.
-CROSSED = {3.5: (0.40, 0.42), 5.5: (0.44, 0.46), 7.5: (0.41, 0.41)}
+#: +7.5 offered at 0.38, below +5.5's bid of 0.44 -- a crossed pair.
+CROSSED = {3.5: (0.40, 0.42), 5.5: (0.44, 0.46), 7.5: (0.38, 0.38)}
 
 
 def test_a_pair_that_clears_across_consecutive_samples_is_one_episode(tmp_path):
@@ -69,7 +69,7 @@ def test_a_gap_starts_a_new_episode(tmp_path):
 
 
 def test_two_pairs_crossing_together_are_independent_episodes(tmp_path):
-    both = {3.5: (0.40, 0.42), 5.5: (0.44, 0.35), 7.5: (0.41, 0.41)}
+    both = {3.5: (0.40, 0.42), 5.5: (0.44, 0.35), 7.5: (0.38, 0.38)}
     path = _tape(tmp_path, [_sample("01:00:00", both)])
     eps, _ = gamelog.episodes_in_tape(path)
     pairs = {e.pair for e in eps}
@@ -121,7 +121,7 @@ def test_the_summary_sums_best_per_episode_never_every_pair(tmp_path):
 def test_winner_leg_pairs_are_excluded(tmp_path):
     """The executor never tickets a winner leg -- an NFL tie settles it at
     $0.50 -- so counting one here would credit a chance it declined."""
-    with_winner = {0.0: (0.90, 0.90), 5.5: (0.44, 0.46), 7.5: (0.41, 0.41)}
+    with_winner = {0.0: (0.90, 0.90), 5.5: (0.44, 0.46), 7.5: (0.38, 0.38)}
     path = _tape(tmp_path, [_sample("01:00:00", with_winner)])
     eps, _ = gamelog.episodes_in_tape(path)
     assert all(e.spread_pair for e in eps), "no episode may carry line 0"

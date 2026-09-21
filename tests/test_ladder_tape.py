@@ -140,11 +140,11 @@ def test_one_stale_rung_breaks_the_bound_and_prices_the_pair():
 
     v = {(x["high_line"], x["low_line"]): x for x in snap["violations"]}
     assert set(v) == {(4.5, -4.5), (4.5, 0.0)}
-    assert v[(4.5, -4.5)]["edge_c"] == 11.26 and v[(4.5, -4.5)]["size"] == 300
-    assert v[(4.5, -4.5)]["dollars"] == 33.78
-    assert v[(4.5, 0.0)]["edge_c"] == 13.25 and v[(4.5, 0.0)]["dollars"] == 106.0
+    assert v[(4.5, -4.5)]["edge_c"] == 10.83 and v[(4.5, -4.5)]["size"] == 300
+    assert v[(4.5, -4.5)]["dollars"] == 32.48
+    assert v[(4.5, 0.0)]["edge_c"] == 12.81 and v[(4.5, 0.0)]["dollars"] == 102.51
     # biggest first, so the operator reads the largest number at the top
-    assert [x["dollars"] for x in snap["violations"]] == [106.0, 33.78]
+    assert [x["dollars"] for x in snap["violations"]] == [102.51, 32.48]
 
 
 def test_a_winner_leg_pair_is_never_a_spread_pair_and_says_so():
@@ -175,7 +175,7 @@ def test_a_wnba_pair_off_the_mid_ladder_is_one_the_executor_would_ticket():
     assert set(v) == {(2.5, -2.5), (2.5, 0.0)}
 
     pair = v[(2.5, -2.5)]
-    assert pair["edge_c"] == 11.2 and pair["size"] == 500 and pair["dollars"] == 56.02
+    assert pair["edge_c"] == 10.76 and pair["size"] == 500 and pair["dollars"] == 53.81
     assert pair["spread_pair"] is True
     assert pair["mid"] is False              # outside the band, and still a ticket
     assert pair["why_not"] == ""
@@ -200,7 +200,7 @@ def test_a_sub_floor_pair_is_the_only_dollar_reason_the_page_gives():
     thin = {**WNBA_TIGHT, 2.5: (0.30, 0.32, 600, 100), -2.5: (0.46, 0.48, 100, 500)}
     snap = tape.ladder(_sample(thin), GAME)
     pair = next(x for x in snap["violations"] if x["spread_pair"])
-    assert pair["dollars"] == 11.2 and pair["why_not"] == "under the $25 floor"
+    assert pair["dollars"] == 10.76 and pair["why_not"] == "under the $25 floor"
     assert snap["ticketable"] == 0
 
 
@@ -393,7 +393,7 @@ def test_the_page_draws_the_rungs_the_pairs_and_the_stream_counts(tmp_path):
     assert "+4.5" in page and "-10.5" in page and "winner" in page
     assert "0.300" in page and "0.460" in page                  # the touch, to the tick
     assert "ask &ge; 0.460" in page                             # the bound, per rung
-    assert "$106.00" in page and "$33.78" in page and "+13.25&cent;" in page
+    assert "$102.51" in page and "$32.48" in page and "+12.81&cent;" in page
     assert "ticket it" in page and "winner leg" in page
     # The winner market is line 0 and must never print as a rung number.
     assert "+4.5 / winner" in page and "+0" not in page

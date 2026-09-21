@@ -78,9 +78,11 @@ def rows_for(date: str, dirs: list[str], floor_usd: float) -> list[dict]:
                 **s,
                 "over_floor_episodes": [
                     {"game": e.game, "pair": [e.low_line, e.high_line],
+                     "spread_only": SE.is_spread_pair(e),
                      "best_usd": round(e.best_usd, 2), "best_edge_c": round(e.best_edge * 100, 2),
                      "life_s": e.duration_s, "opened_leg_age_s": e.opened_leg_age_s,
-                     "opened_at": dt.datetime.fromtimestamp(e.opened_at, dt.timezone.utc).strftime("%H:%M:%S")}
+                     "opened_at": dt.datetime.fromtimestamp(e.opened_at, dt.timezone.utc).strftime("%H:%M:%S"),
+                     "opened_ts": round(e.opened_at, 3), "closed_ts": round(e.closed_at, 3)}
                     for e in big[:KEEP_TOP]],
                 "written_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             })
@@ -109,17 +111,24 @@ def table(rows: list[dict]) -> str:
     gate) wins, so a re-run replaces rather than duplicates on screen."""
     latest: dict[tuple, dict] = {}
     for r in rows:
-        latest[(r["date"], r["league"], r["gate_s"])] = r
-    lines = [f"  {'date':<11}{'lg':<5}{'gate':>5}{'games':>6}{'updates':>9}{'episodes':>9}"
-             f"{'1-upd':>7}{'>=$25':>6}{'sum>=25':>9}{'biggest':>9}{'med life>=25':>13}"]
+        # None (no gate) sorts after any numeric gate; a bare sort of the
+        # tuple raised TypeError on the first real ledger.
+        key = (r["date"], r["league"], r["gate_s"] is None, r["gate_s"] or 0.0)
+        latest[key] = r
+    lines = [f"  {'date':<11}{'lg':<5}{'gate':>5}{'fee':>7}{'games':>6}{'episodes':>9}"
+             f"{'>=$25':>6}{'sum>=25':>9}{'biggest':>9}{'life>=25':>9}"
+             f"{'| spread-only >=$25':>20}{'sum':>8}{'biggest':>9}"]
     for k in sorted(latest):
         r = latest[k]
         g = "any" if r["gate_s"] is None else f"{r['gate_s']:g}s"
         ml = r.get("median_life_over_floor_s")
-        lines.append(f"  {r['date']:<11}{r['league']:<5}{g:>5}{r['games']:>6}{r['updates']:>9,}"
-                     f"{r['episodes']:>9,}{r['one_update']:>7,}{r['over_floor']:>6}"
+        so = r.get("spread_only") or {}
+        lines.append(f"  {r['date']:<11}{r['league']:<5}{g:>5}{r.get('fee_rate', 0.06):>7.4f}{r['games']:>6}"
+                     f"{r['episodes']:>9,}{r['over_floor']:>6}"
                      f"{r['sum_over_floor_usd']:>9,.0f}{r['biggest_usd']:>9,.0f}"
-                     f"{(f'{ml:.1f}s' if ml is not None else '-'):>13}")
+                     f"{(f'{ml:.1f}s' if ml is not None else '-'):>9}"
+                     f"{so.get('over_floor', '-'):>20}{so.get('sum_over_floor_usd', 0):>8,.0f}"
+                     f"{so.get('biggest_usd', 0):>9,.0f}")
     return "\n".join(lines)
 
 
