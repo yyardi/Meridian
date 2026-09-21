@@ -49,7 +49,7 @@ from bisect import bisect_right
 from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import POLYMARKET_TAKER, recorded_fee, taker_fee  # noqa: E402  every tick on tape is charged its own; taker_fee: the illustrative table only
 
 LG, LAT = os.environ.get("LEAGUE", "cfb"), os.environ.get("LATENCY", "3")

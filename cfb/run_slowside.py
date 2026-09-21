@@ -18,7 +18,7 @@ whole hurdle: no maker rebate, taker pays. Game-clustered.
 import datetime as dt, os, sys
 from collections import defaultdict
 from sqlalchemy import create_engine, text
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import recorded_fee  # noqa: E402  the row's own coefficient; None raises (core/fees.py)
 LEAGUE = os.environ.get("LEAGUE", "cfb")
 

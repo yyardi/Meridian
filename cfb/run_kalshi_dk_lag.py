@@ -55,7 +55,7 @@ from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import KALSHI_TAKER as FEE  # noqa: E402  Kalshi's quadratic taker coefficient; no per-row column exists on kalshi_snapshots
 HORIZONS = (72, 48, 24, 12, 6, 2, 1)
 UTC = dt.timezone.utc

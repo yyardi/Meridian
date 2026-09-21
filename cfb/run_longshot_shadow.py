@@ -79,7 +79,7 @@ import sys
 from collections import Counter, defaultdict
 
 MODE, DATE = os.environ.get("MODE", "replay"), os.environ.get("DATE", "2026-09-12")
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import recorded_fee  # noqa: E402  the fee at the coefficient the venue carried on THAT row
 LO, HI = 0.20, 0.30
 SPREAD_CAP = 0.06            # skip a rung whose ask - bid exceeds this (doc section 3c)

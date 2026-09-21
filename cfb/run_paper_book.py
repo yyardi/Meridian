@@ -40,7 +40,7 @@ from collections import defaultdict
 # FEE is today's coefficient and prices a bet NOW (bet_pnl's default, used by the
 # permutation null and the tests); every close main() scores is charged through
 # recorded_fee at the coefficient its own row carries.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import recorded_fee  # noqa: E402
 UTC = dt.timezone.utc
 

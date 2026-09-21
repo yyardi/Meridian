@@ -30,7 +30,7 @@ import bisect, datetime as dt, os, re, sys
 from collections import defaultdict
 from sqlalchemy import create_engine, event, text
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import KALSHI_TAKER as FK, recorded_fee  # noqa: E402  FK: Kalshi's one constant; recorded_fee: the Polymarket row's own
 GAP, LO, HI, FLAG = 3.0, 0.20, 0.30, 35.0
 MATCH, B_LO, B_HI, DAY = (dt.timedelta(minutes=m) for m in (5, 30, 90, 1440))
