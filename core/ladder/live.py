@@ -97,6 +97,32 @@ def game_and_line(slug: str) -> tuple[str, float] | None:
     return m.group("game"), (-line if m.group("sign") == "neg" else line)
 
 
+#: The largest half-point line a ladder slug may carry. The largest ever
+#: recorded is +58.5 (Portland State at Oregon, 2026-09-18, an 84-point
+#: game); 99.5 leaves room without making the candidate list silly.
+MAX_LINE = 99
+
+
+def candidate_slugs(game: str) -> list[str]:
+    """Every slug a game's ladder CAN have, from the grammar `line_of`
+    already assumes: the winner `aec-<game>` and `asc-<game>-{neg,pos}-<n>pt5`
+    for n in 0..MAX_LINE. 201 exact strings.
+
+    Why enumerate rather than search: the listing used to be
+    `market_slug LIKE '%<game>%'`, and a leading wildcard cannot use the slug
+    index, so Postgres walked two days of EVERY market -- 820,000 pages,
+    47.6 s, measured 2026-09-21 -- to find 42 slugs. An `= ANY(...)` of the
+    201 candidates probes the slug index and takes 0.83 s for the same 42.
+    (`event_slug = <game>` was tried too: 6.7 s, because that index matches
+    every market family of the game and filters the 337,000 extras after.)
+    """
+    out = [f"aec-{game}"]
+    for n in range(MAX_LINE + 1):
+        out.append(f"asc-{game}-neg-{n}pt5")
+        out.append(f"asc-{game}-pos-{n}pt5")
+    return out
+
+
 def slugs_for(prefix: str, engine=None) -> list[str]:
     """The ladder's slugs from the recorder's own listing of this game.
 
@@ -104,22 +130,24 @@ def slugs_for(prefix: str, engine=None) -> list[str]:
     ``DATABASE_URL`` from the environment exactly as the scripts always have;
     the api passes its own engine because its process is configured
     differently and must not depend on the scripts' variable being set.
+
+    ``prefix`` is the plain game key (``cfb-mia-wake-2026-09-18``); an
+    ``aec-`` prefix is tolerated and stripped.
     """
     from sqlalchemy import text
+    game = prefix[4:] if prefix.startswith("aec-") else prefix
     with _engine(engine).connect() as c:
         rows = c.execute(text(
             "SELECT DISTINCT market_slug FROM market_snapshots "
-            # The month-boundary floor is what prunes partitions; the 2-day
-            # one is the recency the caller means. `slate_slugs` below has
-            # carried both since it was written; this one carried only the
-            # second and scanned every partition on an unindexable LIKE,
-            # once per newly watched game, against a database at 47 % CPU.
+            # Two captured_at floors doing two different jobs: the month
+            # boundary prunes partitions, the 2-day one is the recency meant.
             "WHERE captured_at >= date_trunc('month', now() - interval '2 days') "
-            "AND captured_at >= now() - interval '2 days' AND market_slug LIKE :p "
+            "AND captured_at >= now() - interval '2 days' "
+            "AND market_slug = ANY(:cands) "
             "AND sports_market_type IN ('football_team_full_game_winner','football_team_full_game_spread',"
             "'baseball_team_full_game_winner','baseball_team_full_game_spread',"
             "'basketball_team_full_game_winner','basketball_team_full_game_spread')"),
-            {"p": f"%{prefix}%"}).all()
+            {"cands": candidate_slugs(game)}).all()
     return sorted(r[0] for r in rows)
 
 
