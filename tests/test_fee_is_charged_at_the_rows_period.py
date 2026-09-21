@@ -176,11 +176,36 @@ TAPE_LEDGER_OR_INSTRUMENT = {
     "core/ladder/gamelog.py": "reads the ledger",
     "core/fees.py": "owns the constant and the recorded form",
     "scripts/fee_drift.py": "compares the constant to the column by design",
-    "cfb/run_kalshi_dk_lag.py": "kalshi_snapshots carries no fee column; KALSHI_TAKER is that venue's one constant",
-    "cfb/run_kalshi_early_vs_close.py": "kalshi_snapshots carries no fee column; KALSHI_TAKER is that venue's one constant",
 }
 
-CLASSIFIED = {**POINT_IN_TIME, **PRICES_NOW, **TAPE_LEDGER_OR_INSTRUMENT}
+#: The coefficient is not on the row THIS file reads, but it is recorded one
+#: join away. A bucket of its own because the reason is different from TAPE's:
+#: TAPE has nothing to charge, this has something nobody has plumbed.
+#:
+#: Both read `kalshi_snapshots`, which carries `series_ticker` and
+#: `event_ticker` and no fee column. Kalshi's own declared `fee_type` and
+#: `fee_multiplier` ARE recorded, on `kalshi_event_snapshots` (models.py 553-554),
+#: so the period is reachable by joining on the event or series ticker.
+#:
+#: THIS IS THE SAME DEFECT WAITING, ON A VENUE THAT ANNOUNCES IT. Kalshi
+#: publishes fee metadata per SERIES and its changes are SCHEDULED, so 0.07 is
+#: a constant of a period there too -- and unlike Polymarket, the change is
+#: knowable before it happens. The reason this is not POINT_IN_TIME today is
+#: that the RATE itself is not in the venue's payload (only the schedule type
+#: and multiplier are), so there is nothing per-row to charge yet. The fix when
+#: it matters is to record the rate, not to assume one constant; the wording
+#: here says "not plumbed", never "does not exist".
+COEFFICIENT_NOT_ON_THE_ROW_READ = {
+    "cfb/run_kalshi_dk_lag.py":
+        "reads kalshi_snapshots (no fee column); fee_type/fee_multiplier are on "
+        "kalshi_event_snapshots, one join away, and Kalshi's changes are scheduled",
+    "cfb/run_kalshi_early_vs_close.py":
+        "reads kalshi_snapshots (no fee column); same join, same scheduled risk",
+}
+
+CLASSIFIED = {**POINT_IN_TIME, **PRICES_NOW,
+              **TAPE_LEDGER_OR_INSTRUMENT,
+              **COEFFICIENT_NOT_ON_THE_ROW_READ}
 
 
 def _fee_charging_files() -> list[str]:
@@ -297,3 +322,17 @@ def test_a_marker_on_a_def_line_does_not_exempt_its_callers():
                "charged = fee(row_price, row['fee_coefficient'])\n"
                "table = fee(0.5, FEE)  # fee-now: an illustration, no row exists\n")
     assert not bare_constant_fee(at_call), bare_constant_fee(at_call)
+
+
+def test_the_not_plumbed_bucket_says_where_the_data_is():
+    """A reason that reads "does not exist" stops the next person looking.
+
+    The first wording for these two was "kalshi_snapshots carries no fee
+    column", which is true of the table they read and false as a conclusion:
+    fee_type and fee_multiplier are recorded on kalshi_event_snapshots. A bucket
+    whose reason closes the question is worse than no bucket.
+    """
+    for path, reason in COEFFICIENT_NOT_ON_THE_ROW_READ.items():
+        assert "kalshi_event_snapshots" in reason or "join" in reason, (
+            f"{path}: say WHERE the coefficient is, not only that this row "
+            f"lacks it")
