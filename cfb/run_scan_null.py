@@ -5,6 +5,17 @@ that cell against zero asks the wrong question — the right one is whether it
 beats what the same scan produces on data with the edge removed and everything
 else intact. This builds that comparison.
 
+THE FEE IS THE ROW'S, NOT TODAY'S, AND HERE THAT MATTERS MORE THAN USUAL.
+`break_even` sets every row's simulated win probability, so the coefficient is
+not a cost inside an estimate — it is the shape of the REFERENCE the estimate
+gets compared against. Charge today's rate to rows captured before the venue
+raised it (2026-09-17 04:07Z) and every break-even moves up, the null expects
+more wins, and the measured excess shrinks: the comparison then reports the
+distance between two fee regimes rather than between the strategy and chance.
+An estimate measured under yesterday's fee against a null built at today's is
+not a null at all. So `break_even` takes the row's `fee_coefficient` and has no
+default, and a row without one refuses rather than inheriting.
+
 METHOD. Take the scan's own pregame closes. Keep every price and every rule
 EXACTLY as they are — selection reads prices only, never settlements, so the
 chosen cells are identical in every replicate and are computed once. Permute
@@ -46,7 +57,7 @@ from collections import defaultdict
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from core.fees import POLYMARKET_TAKER  # noqa: E402  0.0695, the venue's feeCoefficient
+from core.fees import POLYMARKET_TAKER, recorded_fee  # noqa: E402  0.0695, the venue's feeCoefficient
 
 
 def _load(name: str):
@@ -145,10 +156,10 @@ def draw_under_h0(rows, rng, *, cluster: bool = True) -> list[float]:
             g = r["game_id"]
             if g not in u:
                 u[g] = rng.random()
-            out[i] = float(u[g] < break_even(r["ask"]))
+            out[i] = float(u[g] < break_even(r["ask"], r["coef"]))
     else:
         for i, r in enumerate(rows):
-            out[i] = float(rng.random() < break_even(r["ask"]))
+            out[i] = float(rng.random() < break_even(r["ask"], r["coef"]))
     return out
 
 
@@ -493,7 +504,8 @@ def plant_edge(rows, *, lo: float, hi: float, cents: float, seed: int = 7,
         # detected" because the cell carrying the signal stopped existing.
         # Measured: a 40c plant on a 1-row-per-game fixture made the target
         # cell degenerate and max|t| fell to 0.38.
-        pr = min(0.97, break_even(r["ask"]) + (cents / 100.0 if inside else 0.0))
+        pr = min(0.97, break_even(r["ask"], r["coef"])
+                 + (cents / 100.0 if inside else 0.0))
         if cluster:
             g = r["game_id"]
             if g not in u:
@@ -737,7 +749,7 @@ def report(rows, *, reps: int, seed: int, lo: float, hi: float,
 
 
 
-def load_canonical(path) -> tuple[list[dict], dict]:
+def load_canonical(path, coefficient=None) -> tuple[list[dict], dict]:
     """The scan's own ROWS_JSON, with the scan's own cells. Not re-selected.
 
     ★ THE CELLS COME FROM THE ARTIFACT'S `dec`, NOT FROM `select()`.
@@ -787,6 +799,10 @@ def main(argv=None) -> int:
     ap.add_argument("--trials", type=int, default=60)
     ap.add_argument("--bucket", default="0.60,0.80")
     ap.add_argument("--rows-json", help="pre-extracted rows, to avoid a DB hit")
+    ap.add_argument("--fee-coefficient", type=float, default=None,
+                    help="the venue's feeCoefficient for rows that do not carry "
+                         "it; name the period the export was captured in "
+                         "(the venue raised it at 2026-09-17 04:07Z)")
     ap.add_argument("--canonical", action="store_true",
                     help="--rows-json is cfb/run_scan.py's own ROWS_JSON "
                          "({lg,mt,dec,game,bid,ask,y}); use ITS cells, do not reselect")
@@ -798,12 +814,15 @@ def main(argv=None) -> int:
             "extract them alongside a scan run rather than paying for a second "
             "full pass over the tape.")
     if a.canonical:
-        rows, chosen = load_canonical(a.rows_json)
+        rows, chosen = load_canonical(a.rows_json, a.fee_coefficient)
         print(f"canonical artifact: {len(rows):,} bets, {len(chosen)} cells, "
               f"{len({r['game_id'] for r in rows})} games, "
               f"cells taken from the scan's own `dec`\n")
     else:
-        rows, chosen = json.loads(pathlib.Path(a.rows_json).read_text()), None
+        rows = json.loads(pathlib.Path(a.rows_json).read_text())
+        for r in rows:                     # same rule for a raw rows file
+            r["coef"] = row_coefficient(r, a.fee_coefficient)
+        chosen = None
     print(report(rows, reps=a.reps, seed=a.seed, lo=lo, hi=hi, trials=a.trials,
                  chosen=chosen))
     return 0
@@ -842,10 +861,52 @@ def poisson_binomial_p(k: int, ps) -> float:
     return min(1.0, sum(w for w in pmf if w <= obs * (1 + 1e-12)))
 
 
-def break_even(ask: float, fee_rate: float = POLYMARKET_TAKER) -> float:
+#: The keys a producer may use for the venue's `feeCoefficient` on a row.
+COEF_KEYS = ("fee_coefficient", "coef", "feeCoefficient")
+
+
+def row_coefficient(raw: dict, fallback=None):
+    """The coefficient the venue charged on THIS row, or a refusal.
+
+    `cfb/run_scan.py` writes the canonical artifact and does not yet carry the
+    column, so an older export has no period on it. Rather than inherit today's
+    silently -- the exact path that let one fee stand wrong for four days --
+    this refuses and names the producer, and `--fee-coefficient` lets an
+    operator state the period of an export they cannot re-make.
+    """
+    for k in COEF_KEYS:
+        if raw.get(k) is not None:
+            return float(raw[k])
+    if fallback is not None:
+        return float(fallback)
+    raise SystemExit(
+        "rows carry no fee_coefficient, so the null cannot know which fee "
+        "regime they were captured in. The venue raised its coefficient at "
+        "2026-09-17 04:07Z, and a null built at the wrong rate biases the "
+        "REFERENCE rather than the estimate. Fix: have cfb/run_scan.py emit "
+        "market_snapshots.fee_coefficient in ROWS_JSON (it already reads the "
+        "column's table), or pass --fee-coefficient for an export you cannot "
+        "re-make, naming the period those rows were captured in.")
+
+def break_even(ask: float, coefficient) -> float:
     """Win probability a YES-at-ask bet needs to break even: you pay the ask
-    plus the fee, so EV = p - ask - fee = 0."""
-    return ask + fee_rate * ask * (1.0 - ask)
+    plus the fee, so EV = p - ask - fee = 0.
+
+    `coefficient` is the venue's `feeCoefficient` ON THE ROW, and it has NO
+    DEFAULT on purpose. This function does not price a bet, it builds the
+    NULL's own outcome probabilities, so a coefficient from the wrong period
+    does not bias the estimate -- it biases the reference the estimate is
+    compared against. The venue raised its coefficient on 2026-09-17 04:07Z
+    (core/fees.py owns the values), so a null charged at today's rate against
+    an estimate measured on rows captured before it is two different worlds:
+    the break-even line moves, every row's simulated win probability moves with
+    it, and the excess the null reports is the difference between two fee
+    regimes rather than between the strategy and chance.
+
+    Strict via `recorded_fee`, so a row with no coefficient raises instead of
+    silently inheriting today's.
+    """
+    return ask + recorded_fee(ask, coefficient)
 
 
 def cell_price_table(rows, chosen, *, cluster: bool = True) -> dict:
@@ -869,7 +930,7 @@ def cell_price_table(rows, chosen, *, cluster: bool = True) -> dict:
             i = idx[b.market_slug]
             g = rows[i]["game_id"]
             by_game[g].append(i)
-            prices[g].append(break_even(rows[i]["ask"]))
+            prices[g].append(break_even(rows[i]["ask"], rows[i]["coef"]))
         n = sum(len(v) for v in by_game.values())
         if n < 2:
             continue
