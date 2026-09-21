@@ -577,6 +577,7 @@ const detail = d => esc((d && (d.detail || d.reason || d.note)) || JSON.stringif
    A tab with no game on it while another league has one follows the desk,
    once, so an operator does not open on an empty WNBA tab during a CFB slate. */
 fetch("/api/leagues").then(r=>r.json()).then(d=>{
+  if(!d || !d.leagues) throw new Error("/api/leagues: no leagues in reply");
   if(!d.leagues.some(l => l.slug === LEAGUE)) LEAGUE = d.default;
   LEAGUE_NAMES = Object.fromEntries(d.leagues.map(l=>[l.slug,l.name]));
   const el = document.getElementById("lgtabs");
@@ -590,7 +591,7 @@ fetch("/api/leagues").then(r=>r.json()).then(d=>{
     });
   });
   paintTabs();
-});
+}).catch(e => { console.error('league tabs did not load', e); });
 function paintTabs(){
   document.querySelectorAll(".lgt").forEach(x=>x.classList.toggle("on", x.dataset.lg===LEAGUE));
 }
@@ -691,7 +692,16 @@ function renderGames(){
   const el = $("#game");
   const all = (STATE && STATE.games) || [];
   const mine = all.filter(g => leagueOf(g) === LEAGUE);
-  if(!mine.includes(GAME)) GAME = mine.length ? mine[0] : "";
+  if(!mine.includes(GAME)){
+    /* Open on the game with the NEWEST TICKET in this league, not on the
+       game whose log file was touched last. The list is by file mtime and
+       deliberately includes games the stream detector merely watches and
+       games that have finished; on 2026-09-20 that put a finished game in
+       the centre pane, pending forever, beside 129 tickets for another. */
+    const tk = (STATE.tickets || []).map(t => plainGame(t.game));
+    const hot = mine.find(g => tk.includes(plainGame(g)));
+    GAME = hot || (mine.length ? mine[0] : "");
+  }
   el.innerHTML = mine.length ? mine.map(g => {
     const n = (STATE.tickets || []).filter(t => plainGame(t.game) === plainGame(g)).length;
     return `<button class="grow ${g === GAME ? "on" : ""}" data-game="${esc(g)}" title="${esc(plainGame(g))}">

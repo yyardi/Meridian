@@ -273,10 +273,14 @@ def test_log_files_and_recent_games_read_mtimes_not_contents(tmp_path):
     assert desk.recent_games(out, now=now) == ["aec-cfb-mia-wake-2026-09-18", "aec-cfb-hou-ttu-2026-09-18"]
     assert desk.recent_games(out, within_s=8 * 3600, now=now)[-1] == "aec-nfl-det-buf-2026-09-17"
     assert desk.recent_games(out, within_s=30, now=now) == [], "the freshness log is not a game listing"
+    # By mtime, oldest first and newest LAST, so `last=1` is the freshest
+    # log. This used to assert name order, under which the 7-hour-old NFL
+    # file won `last=1` over the one-minute-old CFB file -- the exact defect
+    # that showed a finished basketball game's tail on a live Saturday.
     assert [os.path.basename(p) for p in desk.log_files(out, "executor")] == [
-        "live_ladder_aec-cfb-mia-wake-2026-09-18.txt", "live_ladder_aec-nfl-det-buf-2026-09-17.txt"]
+        "live_ladder_aec-nfl-det-buf-2026-09-17.txt", "live_ladder_aec-cfb-mia-wake-2026-09-18.txt"]
     assert [os.path.basename(p) for p in desk.log_files(out, "freshness")] == ["ws_freshness_aec-cfb-mia-wake-2026-09-18.txt"]
-    assert desk.log_files(out, "executor", last=1) == [os.path.join(out, "live_ladder_aec-nfl-det-buf-2026-09-17.txt")]
+    assert desk.log_files(out, "executor", last=1) == [os.path.join(out, "live_ladder_aec-cfb-mia-wake-2026-09-18.txt")]
     with pytest.raises(KeyError):
         desk.log_files(out, "orders")
 
