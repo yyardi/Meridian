@@ -3391,7 +3391,15 @@ def _arb_slugs(prefix: str, game: str, now: float) -> list[str]:
         ttl = _ARB_SLUGS_TTL_S if cached[1] else _ARB_SLUGS_EMPTY_TTL_S
         if now - cached[0] < ttl:
             return cached[1]
+    t0 = time.monotonic()
     slugs = slugs_for(game, _ENGINE)
+    # Timed on the MISS only: a hit is a dict lookup, and logging it would bury
+    # the one measurement anybody wants. The first miss in a fresh process is
+    # 50x the later ones -- 2.56s against 0.03-0.05s measured 2026-09-21 in the
+    # running container -- so "the listing costs 0.8s" is neither figure and a
+    # cold ask cannot be reasoned about from a warm one.
+    log.info("arb_phase_listing", game=game, listing_s=round(time.monotonic() - t0, 3),
+             n_slugs=len(slugs), cache="miss")
     _ARB_LADDER["slugs"][prefix] = (now, slugs)
     return slugs
 
@@ -3402,7 +3410,9 @@ def _arb_sample_one(client, prefix: str) -> None:
     game = prefix.replace("aec-", "", 1)
     try:
         now = time.time()
+        t_list = time.monotonic()
         slugs = _arb_slugs(prefix, game, now)
+        listing_s = time.monotonic() - t_list
         if not slugs:
             _ARB_LADDER["cache"][prefix] = {
                 "available": False, "game": game, "prefix": prefix,
@@ -3410,8 +3420,17 @@ def _arb_sample_one(client, prefix: str) -> None:
                 "reason": f"no rungs recorded for {game} in the last two days"}
             return
         meta: dict = {}
+        t_venue = time.monotonic()
         rungs, took = sample(client, slugs, prefix, meta,
                              on_error=lambda s, e: log.warning("arb_rung_failed", slug=s, error=e))
+        venue_s = time.monotonic() - t_venue
+        # One line per sample carrying BOTH phases. The venue leg is the larger
+        # and the more variable: 3.22s best of three against a 4.20s median on
+        # 42 rungs, so an arithmetic built on its best case understates a cold
+        # ask by about a second before any other phase is counted.
+        log.info("arb_phase_sample", game=game, n_slugs=len(slugs),
+                 listing_s=round(listing_s, 3), venue_s=round(venue_s, 3),
+                 rungs=len(rungs))
         now = time.time()
         snap = _arb_ladder_snapshot(game, rungs, meta, took, now)
         snap["prefix"] = prefix
@@ -3430,14 +3449,36 @@ def _arb_sampler_loop() -> None:
     shape as the wallet refresh thread — the request never waits on the venue,
     it reads whatever the last cycle left."""
     wake = _ARB_LADDER["wake"]
+    t_client = time.monotonic()
     with PolymarketGatewayClient() as client:
+        # Measured 2026-09-21 in the running container: 0.006s best of three,
+        # 0.269s worst. Logged anyway because it was the leading suspect for a
+        # missing ~5s on a cold ask and it is not; a phase ruled out by
+        # measurement should stay measured rather than be ruled out by memory.
+        log.info("arb_phase_client", client_s=round(time.monotonic() - t_client, 3))
+        cycle = 0
         while True:
             t0 = time.time()
+            t_cycle = time.monotonic()
             wake.clear()
-            for prefix in _arb_watched(t0):
+            # Bound once, exactly as the original `for prefix in _arb_watched(t0)`
+            # did: calling it again to report the count would evaluate the watch
+            # list twice per cycle, which is a behaviour change, not a timing.
+            watched = _arb_watched(t0)
+            for prefix in watched:
                 _arb_sample_one(client, prefix)
                 if wake.is_set():
                     break              # a new game was asked for: restart, it goes first
+            cycle += 1
+            cycle_s = time.monotonic() - t_cycle
+            # The cold cycles always, and after that only a cycle that overran
+            # its own interval -- the loop falling behind is the thing worth a
+            # line. Logging all of them is ~8,600 lines a day at the 10s
+            # default, which is how a timing nobody reads gets added.
+            if cycle <= 3 or cycle_s > _arb_sample_seconds():
+                log.info("arb_phase_cycle", cycle=cycle,
+                         cycle_s=round(cycle_s, 3),
+                         games=len(watched), woken=wake.is_set())
             if not wake.is_set():
                 # Sleep the remainder, but a new watch ends the sleep early.
                 wake.wait(timeout=max(0.5, _arb_sample_seconds() - (time.time() - t0)))
