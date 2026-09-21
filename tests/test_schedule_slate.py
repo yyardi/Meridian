@@ -168,7 +168,15 @@ def test_the_window_runs_to_the_next_noon_utc_not_a_fixed_span():
 
 def test_the_host_wrapper_drops_only_temp_lines_and_never_runs_without_a_plan():
     src = (pathlib.Path(__file__).resolve().parents[1] / "scripts" / "schedule_slate.sh").read_text()
-    assert 'grep -v "TEMP"' in src and "| crontab -" in src
+    assert 'grep -v "TEMP"' in src
     assert 'grep -q "^[0-9]"' in src, "an empty block installs nothing"
     assert "set -euo pipefail" in src
     assert "docker run" in src and "schedule_slate.py" in src
+    # It runs under sudo, and a bare `crontab -` under sudo edits ROOT's
+    # crontab: the first real run put the day's block there while the
+    # pings and its own line lived in ubuntu's, so the night would have
+    # launched twice. Both the read and the write must name the user.
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    assert 'crontab -u "$CRON_USER" -l' in code and '| crontab -u "$CRON_USER" -' in code
+    assert "| crontab -\n" not in code and "| crontab - " not in code, "never the bare form"
+    assert "CRON_USER=${CRON_USER:-ubuntu}" in code
