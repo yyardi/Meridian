@@ -78,9 +78,17 @@ def test_the_sampler_loop_sleeps_on_the_event_and_restarts_when_woken():
     assert "time.sleep(" not in src, "a plain sleep cannot be interrupted"
     assert "wake.wait(timeout=" in src
     assert "wake.clear()" in src
-    body = src[src.index("for prefix in _arb_watched(t0):"):]
+    # Anchored on the loop HEADER, not on what it iterates. The first version
+    # of this line was `src.index("for prefix in _arb_watched(t0):")`, and
+    # binding that call to a local -- which evaluates it once, exactly as
+    # before -- made the substring vanish and the assertion raise ValueError
+    # instead of failing a claim. A text contract breaks on refactors that
+    # preserve the behaviour it means to protect.
+    loop_at = re.search(r"^\s*for prefix in \w+", src, re.M)
+    assert loop_at, "the cycle must still iterate the watched games"
+    body = src[loop_at.start():]
     assert "if wake.is_set():" in body and "break" in body.split("if wake.is_set():")[1][:40]
-    assert src.index("wake.clear()") < src.index("for prefix in _arb_watched"), "cleared before the cycle"
+    assert src.index("wake.clear()") < loop_at.start(), "cleared before the cycle"
 
 
 def test_the_sampler_still_uses_one_client_and_the_route_never_samples():
