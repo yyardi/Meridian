@@ -30,6 +30,14 @@ N = _load("run_scan_null")
 MTYPE = "baseball_team_full_game_winner"
 
 
+#: The coefficient these fixtures carry. It is the venue's PRE-RAISE value
+#: because every row the scan has actually scored was captured before
+#: 2026-09-17 04:07Z, so the fixtures are the population the null runs on.
+#: Spelled here, never imported: core/fees.py owns the CURRENT one and must not
+#: grow a second constant to hold the past.
+ROW_COEF = 0.06
+
+
 def _rows(n_games=60, *, seed=1, rungs=1, league="mlb", mtype=MTYPE):
     """Synthetic winner markets: one row per game unless `rungs` says more."""
     rng = random.Random(seed)
@@ -45,7 +53,7 @@ def _rows(n_games=60, *, seed=1, rungs=1, league="mlb", mtype=MTYPE):
             out.append({
                 "market_slug": f"aec-{league}-g{g}-r{k}", "game_id": f"g{g}",
                 "league": league, "mtype": mtype,
-                "bid": mid - 0.01, "ask": mid + 0.01,
+                "bid": mid - 0.01, "ask": mid + 0.01, "coef": ROW_COEF,
                 "y": game_y,
             })
     return out
@@ -69,7 +77,7 @@ def _rows_every_cell(n_games=70, seed=77):
                 out.append({"market_slug": f"aec-{lg}-{ty}-{g}-{k}",
                             "game_id": f"{lg}-g{g}", "league": lg,
                             "mtype": f"x_{ty}", "bid": round(mid - 0.01, 3),
-                            "ask": round(mid + 0.01, 3), "y": y})
+                            "ask": round(mid + 0.01, 3), "coef": ROW_COEF, "y": y})
     return out
 
 
@@ -100,7 +108,7 @@ def test_whole_games_move_together():
         for k in range(3):
             rows.append({"market_slug": f"m-{g}-{k}", "game_id": f"g{g}",
                          "league": "mlb", "mtype": MTYPE,
-                         "bid": 0.49, "ask": 0.51, "y": y})
+                         "bid": 0.49, "ask": 0.51, "coef": ROW_COEF, "y": y})
     ys, _ = N.permute_settlements(rows, random.Random(5))
     by_game = {}
     for r, y in zip(rows, ys):
@@ -117,7 +125,7 @@ def test_a_stratum_with_one_game_is_counted_as_frozen():
     rows = _rows(n_games=20) + [{
         "market_slug": "aec-cricket-solo", "game_id": "solo",
         "league": "cricket", "mtype": "match_winner",
-        "bid": 0.4, "ask": 0.42, "y": 1}]
+        "bid": 0.4, "ask": 0.42, "coef": ROW_COEF, "y": 1}]
     _, frozen = N.permute_settlements(rows, random.Random(6))
     assert frozen >= 1
 
@@ -439,7 +447,8 @@ def test_a_cell_with_no_outcome_variation_is_excluded():
     rows = [{"market_slug": f"m{g}", "game_id": f"g{g}", "league": "mlb",
              "mtype": "baseball_team_full_game_winner",
              "bid": round(0.40 + 0.004 * g - 0.01, 4),
-             "ask": round(0.40 + 0.004 * g + 0.01, 4), "y": 1} for g in range(40)]
+             "ask": round(0.40 + 0.004 * g + 0.01, 4), "coef": ROW_COEF, "y": 1}
+            for g in range(40)]
     chosen = {"deg": [Bet(market_slug=r["market_slug"], side="yes",
                           price=r["ask"], stake=r["ask"],
                           game_id=r["game_id"]) for r in rows]}
@@ -534,10 +543,10 @@ def test_a_decile_band_makes_the_single_p_binomial_wrong():
 def test_break_even_includes_the_fee():
     """EV = p - ask - fee = 0, so break-even is ABOVE the ask. A break-even
     that forgot the fee would make every cell look better than it is."""
-    assert N.break_even(0.50) > 0.50
+    assert N.break_even(0.50, ROW_COEF) > 0.50
     from core.fees import POLYMARKET_TAKER
-    assert abs(N.break_even(0.50) - (0.50 + POLYMARKET_TAKER * 0.25)) < 1e-12
-    assert N.break_even(1.0) == 1.0          # no fee at the boundary
+    assert abs(N.break_even(0.50, ROW_COEF) - (0.50 + ROW_COEF * 0.25)) < 1e-12
+    assert N.break_even(1.0, ROW_COEF) == 1.0   # no fee at the boundary
 
 
 def test_clustering_the_win_count_is_not_optional():
@@ -557,7 +566,7 @@ def test_clustering_the_win_count_is_not_optional():
         for k in range(4):                    # 4 bets per game, all agreeing
             rows.append({"market_slug": f"m{g}-{k}", "game_id": f"g{g}",
                          "league": "nfl", "mtype": "x_spread",
-                         "bid": 0.04, "ask": 0.06, "y": 0.0})
+                         "bid": 0.04, "ask": 0.06, "coef": ROW_COEF, "y": 0.0})
             ys.append(0.0)
     chosen = {"cell": [Bet(market_slug=r["market_slug"], side="yes",
                            price=r["ask"], stake=r["ask"],
@@ -594,7 +603,7 @@ def test_the_cached_price_table_is_the_same_test_it_replaces():
         for j in range(2):
             rows.append({"market_slug": f"m{g}-{j}", "game_id": f"g{g}",
                          "league": "cfb", "mtype": "full_game_winner",
-                         "bid": 0.30 + 0.01 * j, "ask": 0.32 + 0.01 * j,
+                         "bid": 0.30 + 0.01 * j, "ask": 0.32 + 0.01 * j, "coef": ROW_COEF,
                          "y": float((g + j) % 3 == 0)})
             ys.append(rows[-1]["y"])
     chosen = {"c": [Bet(market_slug=r["market_slug"], side="yes", price=r["ask"],
@@ -606,7 +615,8 @@ def test_the_cached_price_table_is_the_same_test_it_replaces():
     ref_ps, ref_k = [], 0
     for g in range(9):
         mem = [i for i, r in enumerate(rows) if r["game_id"] == f"g{g}"]
-        ref_ps.append(sum(N.break_even(rows[i]["ask"]) for i in mem) / len(mem))
+        ref_ps.append(sum(N.break_even(rows[i]["ask"], rows[i]["coef"])
+                          for i in mem) / len(mem))
         ref_k += int(sum(ys[i] for i in mem) / len(mem) >= 0.5)
     assert got["k"] == ref_k
     assert got["unit_n"] == 9
@@ -642,10 +652,10 @@ def test_an_exact_tie_is_not_silently_a_win():
     behind it."""
     from strategies.base import Bet
     rows = [{"market_slug": f"m{j}", "game_id": "g0", "league": "cfb",
-             "mtype": "full_game_winner", "bid": 0.48, "ask": 0.50,
+             "mtype": "full_game_winner", "bid": 0.48, "ask": 0.50, "coef": ROW_COEF,
              "y": float(j == 0)} for j in range(2)]
     rows.append({"market_slug": "m2", "game_id": "g1", "league": "cfb",
-                 "mtype": "full_game_winner", "bid": 0.48, "ask": 0.50, "y": 0.0})
+                 "mtype": "full_game_winner", "bid": 0.48, "ask": 0.50, "coef": ROW_COEF, "y": 0.0})
     ys = [r["y"] for r in rows]
     chosen = {"c": [Bet(market_slug=r["market_slug"], side="yes", price=r["ask"],
                         stake=r["ask"], game_id=r["game_id"]) for r in rows]}
@@ -698,7 +708,7 @@ def test_the_h0_draw_reproduces_the_prices_it_was_built_from():
                     tot[b][1] += 1
     for b in bands:
         got = tot[b][0] / tot[b][1]
-        want = statistics.fmean(N.break_even(r["ask"]) for r in rows
+        want = statistics.fmean(N.break_even(r["ask"], r["coef"]) for r in rows
                                 if b[0] <= r["ask"] < b[1])
         assert abs(got - want) < 0.06, (
             f"band {b}: drew {got:.3f} where break-even is {want:.3f} — the "
@@ -710,7 +720,7 @@ def test_the_draw_keeps_a_games_bets_together():
     narrow by roughly sqrt(n/G) -- the same factor, in the same direction, as an
     independent binomial overstating a cell."""
     rows = [{"market_slug": f"m{i}", "game_id": f"g{i // 4}", "league": "cfb",
-             "mtype": "full_game_winner", "bid": 0.49, "ask": 0.50, "y": 0.0}
+             "mtype": "full_game_winner", "bid": 0.49, "ask": 0.50, "coef": ROW_COEF, "y": 0.0}
             for i in range(40)]
     rng = random.Random(9)
     agreed = sum(len({*ys[i:i + 4]}) == 1
@@ -747,7 +757,8 @@ def test_the_control_does_not_fire_when_nothing_is_planted():
     # a zero plant is a pure H0 draw: its win rate in the bucket is break-even
     idx = [i for i, r in enumerate(rows) if 0.60 <= (r["bid"] + r["ask"]) / 2 < 0.80]
     assert idx, "fixture has no rows in the control bucket"
-    be = statistics.fmean(N.break_even(rows[i]["ask"]) for i in idx)
+    be = statistics.fmean(N.break_even(rows[i]["ask"], rows[i]["coef"])
+                          for i in idx)
     got = statistics.fmean(
         statistics.fmean(N.plant_edge(rows, lo=0.60, hi=0.80, cents=0.0,
                                       seed=200 + k)[i] for i in idx)
@@ -794,7 +805,8 @@ def _homogeneity_prediction(rows, chosen, *, clustered: bool):
         by_game: dict = {}
         for b in bets:
             i = idx[b.market_slug]
-            by_game.setdefault(rows[i]["game_id"], []).append(N.break_even(rows[i]["ask"]))
+            by_game.setdefault(rows[i]["game_id"], []).append(
+                N.break_even(rows[i]["ask"], rows[i]["coef"]))
         if sum(len(v) for v in by_game.values()) < 2:
             continue            # reaches no statistic; homogeneous by definition
         lo = hi = 1.0
@@ -896,3 +908,63 @@ def test_a_shuffle_undershoots_homogeneity_which_is_why_it_is_not_the_null():
     assert shuf / reps < expected, (
         f"the shuffle hit {shuf/reps:.3f} where prices imply {expected:.3f}; if "
         "it matched, the homogeneity argument for replacing it would be wrong")
+
+
+# --------------------------------------------------------------------------- #
+# The null is built at the coefficient the venue charged on each ROW.
+#
+# This is not the estimate's fee. `break_even` sets every row's simulated win
+# probability, so a coefficient from the wrong period moves the REFERENCE the
+# estimate is compared against: the null's excess then measures the distance
+# between two fee regimes rather than between the strategy and chance. The
+# venue raised its coefficient at 2026-09-17 04:07Z.
+# --------------------------------------------------------------------------- #
+
+POST_COEF = 0.0695           # the venue's value after the raise
+
+
+def test_break_even_is_an_expression_in_the_rows_own_coefficient():
+    for ask in (0.20, 0.50, 0.77):
+        for coef in (ROW_COEF, POST_COEF):
+            assert N.break_even(ask, coef) == pytest.approx(
+                ask + coef * ask * (1.0 - ask))
+
+
+def test_one_run_charges_two_periods_side_by_side():
+    """A window spanning the raise must not collapse to one rate."""
+    pre = N.break_even(0.50, ROW_COEF)
+    post = N.break_even(0.50, POST_COEF)
+    assert post > pre
+    # the whole gap is the coefficient delta on p(1-p), nothing else
+    assert post - pre == pytest.approx((POST_COEF - ROW_COEF) * 0.25)
+
+
+def test_the_reference_moves_with_the_coefficient_which_is_the_point():
+    """Charging today's rate to pre-change rows raises every row's break-even,
+    so the null expects MORE wins and the measured excess shrinks. The bias is
+    in the reference, and it does not announce itself."""
+    rows = _rows(n_games=40, seed=3)
+    pre = statistics.fmean(N.break_even(r["ask"], ROW_COEF) for r in rows)
+    post = statistics.fmean(N.break_even(r["ask"], POST_COEF) for r in rows)
+    assert post > pre
+    assert post - pre > 1e-4          # material, not a rounding artefact
+
+
+def test_a_row_with_no_coefficient_refuses_rather_than_inheriting_today():
+    with pytest.raises(ValueError):
+        N.break_even(0.50, None)
+    with pytest.raises(SystemExit) as exc:
+        N.row_coefficient({"ask": 0.5})
+    assert "2026-09-17" in str(exc.value) and "run_scan.py" in str(exc.value)
+
+
+def test_an_operator_may_name_the_period_of_an_export_they_cannot_remake():
+    assert N.row_coefficient({"ask": 0.5}, ROW_COEF) == pytest.approx(ROW_COEF)
+    # the row's own value always wins over the flag
+    assert N.row_coefficient({"fee_coefficient": POST_COEF}, ROW_COEF) \
+        == pytest.approx(POST_COEF)
+
+
+def test_every_spelling_a_producer_might_use_is_read():
+    for key in N.COEF_KEYS:
+        assert N.row_coefficient({key: ROW_COEF}) == pytest.approx(ROW_COEF)
