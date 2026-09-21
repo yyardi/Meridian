@@ -27,6 +27,11 @@ Two things this fixes by naming them:
 - **Pricing.** YES pays the ask, NO pays `1 − bid` (`strategies/base.py:price_of`).
   Fee `0.06·p·(1−p)` on the YES price either way.
 
+  > **Amendment 2026-09-21.** The venue raised Θ to **0.0695** at 2026-09-17 04:07Z — four days after this
+  > was written and two before the tape. The registration above says 0.06 because that was the coefficient
+  > when it was written; any read of the 09-19 tape charges 0.0695 (`core/fees.py`). The decision rule and
+  > multiplicity correction are unchanged; the fee is the venue's, not a parameter. docs/math/fee-coefficient.md.
+
 ## 2. The decision rule, and what it can actually produce
 
 Registered rule: **G ≥ 25 AND the 95% interval excludes 0 AND the home/away

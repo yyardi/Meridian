@@ -1,6 +1,6 @@
 """Buy the near-certain side in-game at the ask and HOLD TO SETTLEMENT: one fee, not two.
 
-WHY. 0.06*p*(1-p) collapses at the extremes: a round trip is 6.0% of the ticket at 50c, 0.4%
+WHY. 0.0695*p*(1-p) collapses at the extremes: a round trip is 6.0% of the ticket at 50c, 0.4%
 at 95c. Everything so far died at mid prices paying two fees and two half-spreads; holding
 pays one of each, where both are smallest.
 
@@ -48,7 +48,8 @@ from core.polymarket.client import PolymarketGatewayClient
 
 sys.stdout.reconfigure(line_buffering=True)   # a long per-game run must show progress
 LG = os.environ.get("LEAGUE", "cfb")
-FEE, S120, GAP = 0.06, dt.timedelta(seconds=120), 600.0
+from core.fees import POLYMARKET_TAKER as FEE  # noqa: E402  0.0695, the venue's feeCoefficient
+S120, GAP = dt.timedelta(seconds=120), 600.0
 NOW = dt.datetime.now(dt.timezone.utc)
 BANDS = [(0.900, 0.925), (0.925, 0.950), (0.950, 0.975), (0.975, 0.990)]
 BAD = ("timeout", "kickoff", "end period", "end of", "two-minute", "warning")
@@ -134,7 +135,7 @@ with eng.connect() as c:
                                          "hi": P[-1]["wc"]}).fetchall()
         if len(rows) < 50: C["skipped: no in-game winner tape"] += 1; continue
         if any(abs(r[3] - FEE) > 1e-9 for r in rows if r[3] is not None):
-            C["TRAP fee_coefficient != 0.06 on some tick"] += 1; continue
+            C[f"TRAP fee_coefficient != {FEE} on some tick"] += 1; continue
         y = settle(rows[0][4])                      # the venue's own label, not our recorder's
         if y is None: C["skipped: venue has not settled"] += 1; continue
         C[f"venue settlement y={y}"] += 1
@@ -181,7 +182,7 @@ with eng.connect() as c:
                     C[f"entries {side}"] += 1
 
 settlements.save(CACHE)
-print(f"LEAGUE={LG}  {NOW:%Y-%m-%d %H:%M}Z  fee 0.06*p*(1-p) VERIFIED per tick on every scored game")
+print(f"LEAGUE={LG}  {NOW:%Y-%m-%d %H:%M}Z  fee 0.0695*p*(1-p) VERIFIED per tick on every scored game")
 for k in sorted(C): print(f"  {k}: {C[k]}")
 if not cells: raise SystemExit("NO DATA: no entry taken")
 print("\ncents per $1 contract [95% game-clustered sandwich] n G G_eff | EXACT SPLIT calib (y-mid),"

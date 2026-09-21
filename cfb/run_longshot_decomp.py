@@ -6,7 +6,7 @@ tennis carry one lineless winner market per event, so there are no rungs.
 Runs inside meridian-api (venue client for settlement): docker exec -i -e LEAGUE=cfb meridian-api python - < this.
 Prices every rung at the paper book's close (CLOSE_SQL is cfb/run_paper_book.py's plus the line: last quote before
 the venue's game_start_time, within 6h), settles from the venue's own endpoint (unsettled skipped and counted), taker
-fee 0.06*p*(1-p). Per cell: mean net per $1 contract in cents, 95% game-clustered sandwich interval, n bets, G games,
+fee FEE*p*(1-p) with FEE from core/fees.py (0.0695, the venue's feeCoefficient). Per cell: mean net per $1 contract in cents, 95% game-clustered sandwich interval, n bets, G games,
 G_eff = n^2/sum(cluster^2), net per $ staked; G < 25 is UNDERPOWERED. bet_stake / bet_pnl / clustered are the paper
 book's, verbatim. Mids are rounded to 4 dp before bucketing (prices tick at 0.01, so mids sit on a 0.005 grid).
   Q1  buy NO at YES-mid [0.20,0.30), split by whether the cheap YES (the AWAY side, always: slug <away>-<home>)
@@ -23,8 +23,11 @@ import datetime as dt
 import os
 import sys
 from collections import Counter, defaultdict
+try:
+    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
+except ImportError:                                  # run bare, no repo root on sys.path
+    FEE = 0.0695
 
-FEE = 0.06
 UTC = dt.timezone.utc
 NO_BUCKETS = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5)]
 YES_BUCKETS = [(0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
@@ -59,7 +62,7 @@ def bet_pnl(side, y, bid, ask, fee=FEE):
 
     side 'yes': buy YES at the ask p:      y - p - fee*p*(1-p)
     side 'no' : buy NO at 1 - bid, p = bid: (1-y) - (1-p) - fee*p*(1-p)
-    The fee is the venue's 0.06*p*(1-p) on the YES price p either way (p(1-p) is
+    The fee is the venue's FEE*p*(1-p) (core/fees.py, 0.0695) on the YES price p either way (p(1-p) is
     symmetric in p and 1-p, so pricing the fee on the NO price gives the same number).
     """
     if side == "yes":

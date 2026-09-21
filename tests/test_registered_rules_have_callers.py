@@ -24,6 +24,8 @@ import pathlib
 
 import pytest
 
+from core.fees import POLYMARKET_TAKER  # the venue's coefficient; these read 0.06 until 2026-09-21
+
 from core.tt import money
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -105,7 +107,9 @@ def test_the_money_line_reads_the_registered_rule_not_an_expression():
     finally:
         runner.BOOKS = before
     assert not line.startswith("PASS"), line
-    assert "-51.50c" in line            # and it does report the loss
+    # 40 losers at ask 0.50: each loses the stake plus the taker fee at 0.50.
+    expect = f"{-(0.50 + POLYMARKET_TAKER * 0.50 * 0.50) * 100:.2f}c"
+    assert expect in line, (expect, line)      # and it does report the loss
 
 def test_the_money_line_prints_in_every_state():
     """Silence at zero is how the uncalled arm survived a merge and a review."""

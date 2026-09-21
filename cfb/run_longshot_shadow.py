@@ -3,7 +3,7 @@ r"""Longshot-NO shadow lister. SHADOW ONLY: this script PLACES NOTHING.
 The bet (docs/math/longshot-no-candidate.md, section 1): before kickoff, on every
 CFB full-game spread rung whose YES mid = (best_bid + best_ask) / 2 is in
 [0.20, 0.30), buy NO at 1 - best_bid (taking the resting YES bid), hold to
-settlement, net of the 0.06 * p * (1 - p) taker fee. That rule is a HYPOTHESIS
+settlement, net of the 0.0695 * p * (1 - p) taker fee. That rule is a HYPOTHESIS
 under a registered read on 2026-09-19 (doc section 4), not a result. This lists
 what the rule would have done (replay) or would do now (live) so timing, depth
 and the rung set a live process sees can be checked against the backtest.
@@ -74,7 +74,11 @@ import os
 from collections import defaultdict
 
 MODE, DATE = os.environ.get("MODE", "replay"), os.environ.get("DATE", "2026-09-12")
-FEE, LO, HI = 0.06, 0.20, 0.30
+try:
+    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
+except ImportError:                                  # run bare, no repo root on sys.path
+    FEE = 0.0695
+LO, HI = 0.20, 0.30
 SPREAD_CAP = 0.06            # skip a rung whose ask - bid exceeds this (doc section 3c)
 START_DISAGREE_MIN = 30      # print games whose venue start values disagree by more than this
 T_EARLY, T_LATE, SIX_H = dt.timedelta(minutes=60), dt.timedelta(minutes=5), dt.timedelta(hours=6)
@@ -372,7 +376,7 @@ def main():
                 if ok:
                     rows_cap.append((pnl, g["vg"]))
 
-    print("\n=== SUMMARY (buy NO at 1-bid on the LAST quote in [T-60,T-5], fee 0.06*bid*(1-bid)) ===")
+    print(f"\n=== SUMMARY (buy NO at 1-bid on the LAST quote in [T-60,T-5], fee {FEE}*bid*(1-bid)) ===")
     print(f"games {len(games)}   games with a bucket rung {len(picked)}   rungs selected {len(win_set)}"
           f"   scored {len(rows)}   (unscored = unsettled or push)")
     n_sel = sum(len(pk) for pk in picked.values()); n_skip = sum(not ok for pk in picked.values() for _, _, _, ok in pk)

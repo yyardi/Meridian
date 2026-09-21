@@ -20,7 +20,7 @@ by the caller (public, unauthenticated) -- a derived settlement is a claim.
 Reported per market type x pregame-mid bucket: n markets, G games, the
 calibration gap E[settle - mid] in cents with a game-clustered 95% interval,
 and the TAKER P&L of buying YES at the ask and of buying NO at 1-bid, each net
-of the 0.06*p*(1-p) fee. Both sides are printed for every bucket; nothing is
+of the 0.0695*p*(1-p) fee. Both sides are printed for every bucket; nothing is
 selected on the outcome. EXPLORATORY: nothing here is pre-registered. A bucket
 whose taker P&L is positive, excludes zero, G >= 25, and clears fee + half
 spread is a HYPOTHESIS for the next weekend's games, which are held out.
@@ -33,8 +33,11 @@ import sys
 from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
+try:
+    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
+except ImportError:                                  # run bare, no repo root on sys.path
+    FEE = 0.0695
 
-FEE = 0.06
 TYPES = ("football_team_full_game_winner", "football_team_full_game_spread",
          "football_team_full_game_total", "football_team_points_full_game_total")
 SHORT = {"football_team_full_game_winner": "winner", "football_team_full_game_spread": "spread",

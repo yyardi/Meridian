@@ -10,13 +10,17 @@ Then over the next 2 minutes:
   other_side  how much the side that did NOT lead moves in the same direction
   taker_pnl   trade AGAINST the slow side at t (ask-led DOWN move -> sell at the
               stale bid; ask-led UP -> buy at the stale ask; mirrored for bid-led),
-              mark at the mid at t+2, minus the fee 0.06*p*(1-p) at the trade price.
+              mark at the mid at t+2, minus the fee 0.0695*p*(1-p) at the trade price.
 If the slow side catches up, other_side > 0 and taker_pnl > 0. The fee is the
 whole hurdle: no maker rebate, taker pays. Game-clustered.
 """
 import datetime as dt, os, sys
 from collections import defaultdict
 from sqlalchemy import create_engine, text
+try:
+    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
+except ImportError:                                  # run bare, no repo root on sys.path
+    FEE = 0.0695
 LEAGUE = os.environ.get("LEAGUE", "cfb")
 eng = create_engine(os.environ["DATABASE_URL"])
 with eng.connect() as c:
@@ -75,7 +79,7 @@ for g in games:
         else:
             follow = sgn * (((b2+a2)/2) - ((b1+a1)/2)); px = a1 if sgn > 0 else b1
             pnl = ((b2+a2)/2 - px) if sgn > 0 else (px - (b2+a2)/2)
-        fee = 0.06 * px * (1 - px)
+        fee = FEE * px * (1 - px)
         obs[kind].append((100*follow, 100*(pnl - fee), 100*pnl, g["venue_game_id"], abs(dm)))
 def clustered(vals, keys):
     n=len(vals); m=sum(vals)/n; res=defaultdict(float); size=defaultdict(int)
@@ -84,7 +88,8 @@ def clustered(vals, keys):
     return m,1.96*se,n,G
 print(f"LEAGUE={LEAGUE}  games {len(games)}  (EXPLORATORY on CFB; registered H1b for NFL)")
 print(f"\n=== who moved first, and did the other side follow within 2 min? ===")
-print(f"  {'kind':<9}{'n':>6}{'G':>4}   {'other side follows':>19}{'95% CI':>18}   {'taker vs slow side, GROSS':>26}   {'NET of 0.06p(1-p) fee':>24}")
+net_hdr = f"NET of {FEE}p(1-p) fee"
+print(f"  {'kind':<9}{'n':>6}{'G':>4}   {'other side follows':>19}{'95% CI':>18}   {'taker vs slow side, GROSS':>26}   {net_hdr:>24}")
 for kind in ("ask-led", "bid-led", "both"):
     ob = obs[kind]
     if len(ob) < 40: print(f"  {kind:<9}{len(ob):>6}  too few"); continue

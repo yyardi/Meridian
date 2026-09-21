@@ -17,7 +17,7 @@ The real costs are:
 Fees, from the Polymarket US schedule::
 
     fee = theta * contracts * price * (1 - price)
-    theta_taker = +0.06   (venue-published; measured on 874,267 rows — V9)
+    theta_taker = +0.0695 (the venue's own feeCoefficient, every row; core/fees.py)
     theta_maker = 0       (default; see below)
 
 At p=0.50 a taker pays 1.5c/contract, comparable to the entire edge being
@@ -29,7 +29,7 @@ The maker rebate is a sensitivity arm, not a default
 The venue advertises a maker rebate of *25% of the matched taker fee* — a
 share of fees collected on the other side, not a guaranteed per-contract
 credit. It has **never been observed in this account**, and the old constant
-(-0.0125) reconciles neither with the measured theta_taker = 0.06 nor with any
+(-0.0125) reconciles neither with the venue's theta_taker = 0.0695 nor with any
 recorded source (findings C7/V9). Booking it as certain was worth roughly a
 full percentage point of fictional ROI. The default is therefore zero;
 ``assume_rebate=True`` turns the arm on explicitly, and stays off until a
@@ -41,9 +41,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-THETA_TAKER = 0.06
+#: The venue's taker coefficient, from core/fees.py: 0.0695 since the venue
+#: raised it on 2026-09-17. This line said 0.06 with the provenance
+#: "measured on 874,267 rows -- V9", which was true on 2026-08-04 and was
+#: never compared to the field again; the recorded column settles it.
+from core.fees import POLYMARKET_MAKER, POLYMARKET_TAKER  # noqa: E402
+
+THETA_TAKER = POLYMARKET_TAKER
 #: Default maker coefficient: zero. No rebate is booked unless asked for.
-THETA_MAKER = 0.0
+THETA_MAKER = POLYMARKET_MAKER
 #: The unverified rebate coefficient, kept only for the explicit sensitivity
 #: arm. Do not promote back to the default without a statement showing it.
 THETA_MAKER_REBATE = -0.0125

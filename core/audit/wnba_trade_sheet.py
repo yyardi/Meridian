@@ -61,7 +61,7 @@ payout — an unscored row is honest, a guessed one is not.
    venue's field of the same name.** The activities feed carries the venue's own
    ``realizedPnl``, which is **per-position, average-cost, ex-fees** (V27 in
    ``docs/findings.md``): fees live in ``cost``, and ``cost - baseCost`` is the
-   0.06*p*(1-p) fee to the cent.
+   theta*p*(1-p) charge to the cent, at the August coefficient (docs/math/fee-coefficient.md).
 
    Two policies over the same fills **disagree row by row and agree in total**.
    That is arithmetic, not an error in either, and a row-level mismatch against

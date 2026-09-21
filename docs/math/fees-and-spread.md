@@ -4,6 +4,11 @@
 
 This was missing from the original project brief, and it's large enough to change conclusions.
 
+⚠️ **Added 2026-09-21.** Every $\Theta = 0.06$ below was the venue's coefficient when written.
+The venue raised it to **0.0695** on 2026-09-17 and the tree did not notice for four days;
+the taker fee at p=0.50 is now 1.74¢, not 1.5¢. History, evidence and the guard that now
+watches it: docs/math/fee-coefficient.md. The constant lives in `core/fees.py`.
+
 ```mermaid
 flowchart LR
     subgraph TAKE["Market order — TAKER"]

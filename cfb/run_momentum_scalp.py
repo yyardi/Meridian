@@ -17,7 +17,7 @@ DESIGN -- registered here before the first outcome run.
  Entry  the first tick with captured_at STRICTLY AFTER trigger time + LATENCY (default 3 s;
    LATENCY=poll anchors on the play's first_seen_at, i.e. when OUR poller saw it -- the header
    prints that lag; it is ~55 s, so 3 s is an optimistic bound).  Offense = away -> YES at ask;
-   offense = home -> NO at 1 - bid.  Taker fee 0.06*p*(1-p) per share on entry and on every
+   offense = home -> NO at 1 - bid.  Taker fee 0.0695*p*(1-p) per share on entry and on every
    taker exit (no fee on settlement, no maker fee, no rebate).
  Gates (each counted)  trigger play must not share the game's first wall-clock second
    (recorder-start bunch); the mid must have changed within the 120 s before the entry tick
@@ -48,9 +48,13 @@ from bisect import bisect_right
 from collections import defaultdict
 
 from sqlalchemy import create_engine, event, text
+try:
+    from core.fees import POLYMARKET_TAKER as FEE  # 0.0695: the venue's feeCoefficient (core/fees.py)
+except ImportError:                                  # run bare, no repo root on sys.path
+    FEE = 0.0695
 
 LG, LAT = os.environ.get("LEAGUE", "cfb"), os.environ.get("LATENCY", "3")
-FEE, KS, SS, T3_MOVE = 0.06, (2, 5, 10), (5, 10, 20), 0.02
+KS, SS, T3_MOVE = (2, 5, 10), (5, 10, 20), 0.02
 S3, S60, S120, S180 = (dt.timedelta(seconds=x) for x in (3, 60, 120, 180))
 NOW = dt.datetime.now(dt.timezone.utc)
 BAD = ("timeout", "kickoff", "end period", "end of", "two-minute", "warning")
@@ -168,7 +172,7 @@ if not lags: raise SystemExit("NO DATA: no game scored")
 S = med(spreads) / 100
 print(f"  ESPN play poll lag first_seen_at - wall_clock: median {med(lags):.0f} s (p90 {sorted(lags)[int(0.9 * len(lags))]:.0f} s)"
       f" -- LATENCY=3 assumes the play is tradable 3 s after wall_clock")
-print(f"\nFEE TABLE  taker 0.06*p*(1-p) per share, both legs; median in-game winner spread S = {S * 100:.2f}c (n={len(spreads)})"
+print(f"\nFEE TABLE  taker 0.0695*p*(1-p) per share, both legs; median in-game winner spread S = {S * 100:.2f}c (n={len(spreads)})"
       "\n  YES price  round-trip fee %ticket   mid move (c) needed for +1c/$1 ticket after 2 fees + 1 spread")
 for p in (0.2, 0.3, 0.5, 0.7, 0.8):
     print(f"  {p * 100:5.0f}c   {2 * fee(p) / p * 100:7.2f} %            {(S + 2 * fee(p) + 0.01 * p) * 100:6.2f}")

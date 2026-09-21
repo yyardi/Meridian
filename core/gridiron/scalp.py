@@ -45,7 +45,8 @@ import os
 import time
 
 UTC = dt.timezone.utc
-FEE_RATE = 0.06
+from core.fees import POLYMARKET_TAKER  # noqa: E402  (0.0695: the venue's feeCoefficient; a stale literal stood here until 2026-09-21)
+FEE_RATE = POLYMARKET_TAKER
 TRIGGERS = ("ytg40", "ytg20", "move2c")
 EXIT_REASONS = ("tp", "stop", "drive_end", "final", "stale")
 

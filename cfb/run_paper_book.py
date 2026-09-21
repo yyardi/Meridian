@@ -12,7 +12,7 @@ A strategy is a rule over the ladder, registered here by name BEFORE its
 weeks accrue. Adding one is a new entry in STRATEGIES; changing one is a new
 name. The point is one table the operator can read on Monday that says which
 paper lines are positive, on how many games, with what interval -- and the
-same table next Monday. Fees: taker 0.06*p*(1-p) on Polymarket US.
+same table next Monday. Fees: taker 0.0695*p*(1-p) on Polymarket US.
 
 Registered 2026-09-13. LEAGUES env (comma list) limits the run; default all. ONLY=name,name limits strategies.
 Settled labels are cached by core/settlements.py (one JSON file under the reads dir) so a daily run
@@ -32,7 +32,7 @@ import os
 import tempfile
 from collections import defaultdict
 
-FEE = 0.06
+from core.fees import POLYMARKET_TAKER as FEE  # noqa: E402  0.0695, the venue's feeCoefficient
 UTC = dt.timezone.utc
 
 # The registry moved to strategies/ladder.py (ARCHITECTURE.md §4 step 2) so the
@@ -123,7 +123,7 @@ def bet_pnl(side, y, bid, ask, fee=FEE):
 
     side 'yes': buy YES at the ask p:      y - p - fee*p*(1-p)
     side 'no' : buy NO at 1 - bid, p = bid: (1-y) - (1-p) - fee*p*(1-p)
-    The fee is the venue's 0.06*p*(1-p) on the YES price p either way (p(1-p) is
+    The fee is the venue's 0.0695*p*(1-p) on the YES price p either way (p(1-p) is
     symmetric in p and 1-p, so pricing the fee on the NO price gives the same number).
     """
     if side == "yes":
