@@ -326,9 +326,10 @@ def test_the_bare_run_bootstraps_the_repo_root_and_imports_the_one_recorded_fee(
     a copy is a second place to be wrong, so each now puts the repo root on
     sys.path itself and imports the one function. No handler, no constant."""
     src = _src(rel)
-    boot = src.find("sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))")
+    boot = src.find("sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))")
     imp = src.find("from core.fees import")
     assert 0 <= boot < imp, rel
+    assert '"__file__" in globals()' in src[boot:imp], rel   # piped over stdin there is no __file__
     assert "except ImportError" not in src, rel
     tree = ast.parse(src)
     assert not [n for n in tree.body if isinstance(n, ast.Try)

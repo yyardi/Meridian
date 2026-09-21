@@ -140,11 +140,14 @@ def _bootstraps_then_imports(src: str) -> bool:
     a copy of it and never a constant. The guarded-import-with-fallback shape
     it replaces is refused by name."""
     import ast
-    boot = src.find("sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))")
+    boot = src.find("sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))")
     imp = src.find("from core.fees import")
     guarded = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Try)
                and any(isinstance(m, ast.ImportFrom) and m.module == "core.fees" for m in ast.walk(n))]
-    return 0 <= boot < imp and not guarded
+    # nightly_scan.sh pipes run_scan.py over stdin (`python - < cfb/run_scan.py`),
+    # where __file__ does not exist: the bootstrap must not touch it there.
+    piped_safe = '"__file__" in globals()' in src[boot:imp]
+    return 0 <= boot < imp and not guarded and piped_safe
 
 
 @pytest.mark.parametrize("path", ["run_longshot_decomp.py", "run_longshot_shadow.py", "run_paper_book.py",

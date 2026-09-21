@@ -24,7 +24,7 @@ import datetime as dt
 import os
 import sys
 from collections import Counter, defaultdict
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import recorded_fee  # noqa: E402  the fee at the coefficient the venue carried on THAT row
 
 UTC = dt.timezone.utc

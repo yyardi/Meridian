@@ -71,7 +71,7 @@ from core.polymarket.client import PolymarketGatewayClient
 # (fee_coefficient, selected beside the book), never at one constant: the venue
 # raised it at 2026-09-17 04:07Z and the unfloored scan reads every partition on
 # both sides of that instant. A row without one is refused, not charged today's.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # run bare: the trainer image mounts cfb/ alone
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if "__file__" in globals() else os.getcwd())  # run bare: the trainer image mounts cfb/ alone; piped over stdin (nightly_scan.sh) there is no __file__ and cwd is the repo root
 from core.fees import recorded_fee  # noqa: E402
 G_FLOOR = 6
 DECILES = [(i / 10, (i + 1) / 10) for i in range(10)]
