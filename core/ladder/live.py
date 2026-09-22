@@ -63,7 +63,8 @@ LADDER_MARKET_TYPES = (
 LIVE_WINDOW_HOURS = {"cfb": 6.0, "nfl": 5.0, "mlb": 6.0, "wnba": 4.0, "nba": 4.0,
                      # a T20 is ~3.5 h with the toss; an ODI ~8.5 h. Rain and a
                      # reduced-overs restart stretch both; generous, per the note above.
-                     "t20icr": 5.0, "t20iwcr": 5.0, "cplcr": 5.0, "odicr": 10.0}
+                     "t20icr": 5.0, "t20iwcr": 5.0, "cplcr": 5.0, "odicr": 10.0,
+                     "county": 96.0}   # four days from the first ball
 
 #: For a league not in the table: the longest window any of them needs.
 DEFAULT_LIVE_WINDOW_HOURS = 6.0
@@ -107,11 +108,15 @@ RECORDED_MARKET_TYPES = LADDER_MARKET_TYPES + (
 ) + MATCH_WINNER_TYPES
 
 #: The venue's cricket competitions the stream slate records (core/leagues.py
-#: `venue_leagues`), and the one it does not: county is multi-day and settles
-#: 0.5 on a draw, and no in-play read is registered for it. The scheduler
-#: names an excluded competition in its skipped list rather than dropping it.
-CRICKET_STREAM_LEAGUES = ("t20icr", "t20iwcr", "cplcr", "odicr")
-EXCLUDED_LEAGUES = {"county": "multi-day, settles 0.5 on a draw; no in-play read registered"}
+#: `venue_leagues`). county is four-day cricket that settles 0.5 on a draw and
+#: carries 50-84c spreads (leagues.py): it is recorded on the operator's ask
+#: (2026-09-22) as ITS OWN ROW in the in-play read, never pooled with the
+#: limited-overs formats, and a four-day window costs the stream nothing.
+#: EXCLUDED_LEAGUES is the scheduler's named-skip table; empty today, kept so
+#: the next exclusion is a line here and a line in the skipped list, not a
+#: silent drop.
+CRICKET_STREAM_LEAGUES = ("t20icr", "t20iwcr", "cplcr", "odicr", "county")
+EXCLUDED_LEAGUES: dict[str, str] = {}
 
 _ANY_GAME = re.compile(r"^[a-z]{3}-(?P<game>[a-z0-9]+-.+?-\d{4}-\d{2}-\d{2})(?:-|$)")
 

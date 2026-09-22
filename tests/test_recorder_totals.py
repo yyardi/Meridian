@@ -78,4 +78,4 @@ def test_the_cricket_winner_is_recorded_and_is_not_a_ladder_family():
     for fam in live.MATCH_WINNER_TYPES:
         assert fam in live.RECORDED_MARKET_TYPES and fam not in live.LADDER_MARKET_TYPES
     assert live.game_and_line("aec-t20icr-japan-india-2026-09-22") == ("t20icr-japan-india-2026-09-22", 0.0)
-    assert "county" in live.EXCLUDED_LEAGUES and "county" not in live.CRICKET_STREAM_LEAGUES
+    assert "county" in live.CRICKET_STREAM_LEAGUES and live.EXCLUDED_LEAGUES == {}
