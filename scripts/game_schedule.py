@@ -31,7 +31,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core import notify  # noqa: E402
-from core.ladder.live import LADDER_MARKET_TYPES, _engine  # noqa: E402
+from core.ladder.live import LADDER_MARKET_TYPES, MATCH_WINNER_TYPES, _engine  # noqa: E402
+
+#: What the board query counts as a game: the six ladder families (rungs) and
+#: the single-market cricket winner (one rung, recorder-only downstream).
+#: NOT the totals -- a game's 42 total rungs must not pass as a spread ladder.
+FAMILIES = LADDER_MARKET_TYPES + MATCH_WINNER_TYPES
 
 #: A ladder this short is listed in the counts but not by name: with n rungs
 #: there are n(n-1)/2 pairs, so three rungs is three chances and thirty is 435.
@@ -75,11 +80,13 @@ ORDER BY 4, 1
 
 
 def slate(hours: float, engine=None) -> list[dict]:
-    """Every game with a spread ladder tipping inside the window."""
+    """Every game with a spread ladder -- or a cricket winner -- tipping inside
+    the window. A cricket game arrives with rungs == 1; the scheduler treats
+    its league as recorder-only."""
     from sqlalchemy import text
     eng = engine if engine is not None else _engine(None)
     with eng.connect() as c:
-        rows = c.execute(text(SQL), {"families": list(LADDER_MARKET_TYPES),
+        rows = c.execute(text(SQL), {"families": list(FAMILIES),
                                      "hours": f"{hours} hours"}).all()
     return [{"game": r[0], "key": r[1], "league": r[2], "tip": r[3], "rungs": int(r[4])}
             for r in rows]

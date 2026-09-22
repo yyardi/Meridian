@@ -197,3 +197,66 @@ def test_the_recorder_window_equals_the_launcher_s_lookahead():
     m = re.search(r"--lookahead-hours\s+(\d+(?:\.\d+)?)", code)
     assert m, "the launcher must pass --lookahead-hours explicitly"
     assert float(m.group(1)) == SS.RECORDER_LOOKAHEAD_H
+
+
+# ------------------------------------------------------------- cricket: recorder-only
+# docs/math/cricket-inplay-dip.md. The board hands the scheduler one rung per
+# cricket match (the winner); nothing but the stream recorder may act on it.
+CRICKET = SUNDAY + [
+    {"game": "t20icr-japan-india", "key": "t20icr-japan-india-2026-09-22", "league": "t20icr",
+     "tip": _t(4, 0, day=22), "rungs": 1},
+    {"game": "t20icr-nepal-uae", "key": "t20icr-nepal-uae-2026-09-22", "league": "t20icr",
+     "tip": _t(5, 30, day=22), "rungs": 1},
+    {"game": "odicr-eng-slr", "key": "odicr-eng-slr-2026-09-21", "league": "odicr",
+     "tip": _t(13, 0, day=21), "rungs": 1},
+    {"game": "county-surrey-kent", "key": "county-surrey-kent-2026-09-21", "league": "county",
+     "tip": _t(9, 0, day=21), "rungs": 1},
+]
+
+
+def test_a_cricket_match_gets_the_stream_recorder_and_nothing_else():
+    p = SS.plan(CRICKET, NOW)
+    acted = [l for l in p.launches if l.script not in ("launch_stream_slate.sh", "slate_verdict.sh")
+             and ("t20icr" in l.args or "odicr" in l.args)]
+    assert acted == [], acted
+    rec = [l for l in _by(p, "launch_stream_slate.sh") if l.args.split()[0] in ("t20icr", "odicr")]
+    assert sorted(l.args.split()[0] for l in rec) == ["odicr", "t20icr"]
+
+
+def test_one_rung_is_a_winner_not_a_thin_ladder_when_the_league_is_recorder_only():
+    """MIN_RUNGS drops a four-rung football game; it must not drop a one-rung
+    cricket match, and a one-rung football game is still dropped."""
+    thin_nfl = [_g("thin-game", "nfl", _t(17, 0), rungs=1)]
+    p = SS.plan(CRICKET + thin_nfl, NOW)
+    names = " ".join(l.args for l in p.launches)
+    assert "thin-game" not in names
+    assert "t20icr" in names
+
+
+def test_the_cricket_window_runs_a_t20_four_hours_and_an_odi_nine_from_the_first_ball():
+    p = SS.plan(CRICKET, NOW)
+    rec = {l.args.split()[0]: l for l in _by(p, "launch_stream_slate.sh")}
+    t20 = rec["t20icr"]
+    assert t20.at == _t(3, 50, day=22)
+    assert int(t20.args.split()[1]) == int((_t(5, 30, day=22) + dt.timedelta(minutes=240) - _t(3, 50, day=22)).total_seconds() // 60), \
+        "both T20s tip inside one lookahead; the window runs to the later one's end"
+    odi = rec["odicr"]
+    assert int(odi.args.split()[1]) == 540 + SS.RECORDER_LEAD_MIN
+
+
+def test_county_is_excluded_and_counted_never_launched():
+    p = SS.plan(CRICKET, NOW)
+    assert not any("county" in l.args for l in p.launches)
+    assert any(s.startswith("county-surrey-kent excluded:") and "0.5" in s for s in p.skipped), p.skipped
+
+
+def test_the_verdict_waits_for_the_last_cricket_match_too():
+    p = SS.plan(CRICKET, NOW)
+    assert p.verdict_at == _t(5, 30, day=22) + dt.timedelta(minutes=240 + SS.VERDICT_AFTER_MIN)
+
+
+def test_the_recorder_only_set_and_the_stream_runner_agree():
+    src = (pathlib.Path(__file__).resolve().parents[1] / "cfb" / "run_stream_slate.py").read_text()
+    assert "CRICKET_STREAM_LEAGUES" in src, "the runner must accept every league the scheduler launches it for"
+    for lg in SS.RECORDER_ONLY:
+        assert lg in SS.GAME_MINUTES, f"{lg} has no game length"

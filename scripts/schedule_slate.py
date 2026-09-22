@@ -51,7 +51,10 @@ UTC = dt.timezone.utc
 #: bound the detector and executor runs and the recorder window. Football's
 #: 230 is the value that has been launched by hand since 2026-09-19 and has
 #: never cut a game short; the rest are conservative.
-GAME_MINUTES = {"nfl": 230, "cfb": 230, "wnba": 170, "nba": 170, "mlb": 200}
+GAME_MINUTES = {"nfl": 230, "cfb": 230, "wnba": 170, "nba": 170, "mlb": 200,
+                # cricket, from the first ball: a T20 runs ~3.5 h; an ODI ~8.5 h.
+                # The toss is ~30 min before, inside RECORDER_LEAD_MIN + LEAD_MIN.
+                "t20icr": 240, "t20iwcr": 240, "cplcr": 240, "odicr": 540}
 DEFAULT_MINUTES = 200
 #: Launch this many minutes before kickoff.
 LEAD_MIN = 2
@@ -87,6 +90,12 @@ MIN_RUNGS = 4
 #: it; tape imports in 15 ms under `env -i` with no DATABASE_URL, which is what
 #: a cron planner requires.
 from core.ladder.tape import DEFAULT_FLOOR_USD as FLOOR_USD  # noqa: E402
+#: Leagues the stream RECORDS and nothing else acts on: no detector, no
+#: sampler, no REST executor. Cricket, for the in-play calibration read
+#: (docs/math/cricket-inplay-dip.md). One rung is a winner, not a ladder, so
+#: MIN_RUNGS does not apply to them; EXCLUDED_LEAGUES (county) are named in
+#: the skipped list and never launched.
+from core.ladder.live import CRICKET_STREAM_LEAGUES as RECORDER_ONLY, EXCLUDED_LEAGUES  # noqa: E402
 FRESH_S = 2
 #: The verdict runs this long after the last game should be over.
 VERDICT_AFTER_MIN = 30
@@ -137,7 +146,12 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
     """
     now = _utc(now)
     out = Plan()
-    live = [dict(g, tip=_utc(g["tip"])) for g in games if int(g.get("rungs") or 0) >= MIN_RUNGS]
+    for g in games:
+        if g["league"] in EXCLUDED_LEAGUES:
+            out.skipped.append(f"{g['game']} excluded: {EXCLUDED_LEAGUES[g['league']]}")
+    live = [dict(g, tip=_utc(g["tip"])) for g in games
+            if g["league"] not in EXCLUDED_LEAGUES
+            and (int(g.get("rungs") or 0) >= MIN_RUNGS or g["league"] in RECORDER_ONLY)]
     live.sort(key=lambda g: (g["tip"], g["game"]))
     last_over: dt.datetime | None = None
 
@@ -153,6 +167,8 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
         at = tip - dt.timedelta(minutes=LEAD_MIN)
         over = tip + dt.timedelta(minutes=mins)
         last_over = over if last_over is None or over > last_over else last_over
+        if league in RECORDER_ONLY:
+            continue                      # the recorder window below is all it gets
         if at <= now + dt.timedelta(minutes=1):
             out.skipped.append(f"{g['game']} tips {tip:%H:%M}Z, launch time already past")
             continue
