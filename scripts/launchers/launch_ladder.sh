@@ -17,6 +17,7 @@
 # every game.
 set -euo pipefail
 S=$1; M=${2:-240}; WS=${3:-}
+G=${S#aec-*-}   # the game key without aec-<league>-; a fixed ${S:8} left WNBA names with a leading hyphen (sexec--atl-ny)
 API=$(docker inspect meridian-api --format "{{.Config.Image}}")
 RUN="docker run -d --rm --network meridian_default --env-file /opt/meridian/.env
   -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian
@@ -29,10 +30,10 @@ RUN="docker run -d --rm --network meridian_default --env-file /opt/meridian/.env
 # three games put 93 episodes over $25 and 13 over $500. PUSH_FLOOR=0 restores
 # an alert on every ticket.
 FLOOR=${FLOOR:-25}; PUSH_FLOOR=${PUSH_FLOOR:-500}
-$RUN --name "ladder-${S:8:20}" "$API" sh -c \
+$RUN --name "ladder-${G:0:20}" "$API" sh -c \
   "python cfb/run_ladder_executor.py --prefix $S --every 20 --minutes $M --attempt-usd 1 --floor-usd $FLOOR --push-floor-usd $PUSH_FLOOR --push-cooldown 10 > /out/live_ladder_${S}.txt 2>&1"
 
 if [ "$WS" = "ws" ]; then
-  $RUN --name "wsfresh-${S:8:20}" "$API" sh -c \
+  $RUN --name "wsfresh-${G:0:20}" "$API" sh -c \
     "python cfb/run_ws_freshness.py --prefix $S --every 20 --minutes $M > /out/ws_freshness_${S}.txt 2>&1"
 fi
