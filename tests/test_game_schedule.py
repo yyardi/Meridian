@@ -116,3 +116,11 @@ def test_every_game_is_accounted_for_in_the_slot_counts():
     counted = sum(int(n) for n in re.findall(r"  (\d+) games", body))
     singles = len(re.findall(r"\d\dZ\s+\S+\s+cfb-", body))
     assert counted + singles == 23
+
+
+def test_the_board_query_counts_ladders_and_cricket_winners_and_not_totals():
+    """A cricket match is one winner market; it must reach the scheduler as a
+    one-rung game, and a game's totals must still not inflate its rung count."""
+    from core.ladder.live import LADDER_MARKET_TYPES, MATCH_WINNER_TYPES
+    assert set(GS.FAMILIES) == set(LADDER_MARKET_TYPES) | set(MATCH_WINNER_TYPES)
+    assert not any(f.endswith("_total") for f in GS.FAMILIES)

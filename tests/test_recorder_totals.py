@@ -69,3 +69,13 @@ def test_the_recorder_subscribes_totals_and_the_scheduler_does_not_count_them():
     src = inspect.getsource(gs)
     assert "LADDER_MARKET_TYPES" in src and "RECORDED_MARKET_TYPES" not in src, \
         "the board's rung counts, and so the REST cap, stay spread-only"
+
+
+def test_the_cricket_winner_is_recorded_and_is_not_a_ladder_family():
+    """One market per match, no line: on the stream for the in-play read
+    (docs/math/cricket-inplay-dip.md), never counted as a ladder rung."""
+    assert live.MATCH_WINNER_TYPES == ("cricket_match_winner",)
+    for fam in live.MATCH_WINNER_TYPES:
+        assert fam in live.RECORDED_MARKET_TYPES and fam not in live.LADDER_MARKET_TYPES
+    assert live.game_and_line("aec-t20icr-japan-india-2026-09-22") == ("t20icr-japan-india-2026-09-22", 0.0)
+    assert "county" in live.EXCLUDED_LEAGUES and "county" not in live.CRICKET_STREAM_LEAGUES

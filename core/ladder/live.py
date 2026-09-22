@@ -60,7 +60,10 @@ LADDER_MARKET_TYPES = (
 #: SHORT silently drops live games from the slate. A wall clock measured on
 #: one league and applied to another is how 491 live CFB minutes were lost
 #: once already -- 25% of CFB games exceed the ~2h a WNBA game takes.
-LIVE_WINDOW_HOURS = {"cfb": 6.0, "nfl": 5.0, "mlb": 6.0, "wnba": 4.0, "nba": 4.0}
+LIVE_WINDOW_HOURS = {"cfb": 6.0, "nfl": 5.0, "mlb": 6.0, "wnba": 4.0, "nba": 4.0,
+                     # a T20 is ~3.5 h with the toss; an ODI ~8.5 h. Rain and a
+                     # reduced-overs restart stretch both; generous, per the note above.
+                     "t20icr": 5.0, "t20iwcr": 5.0, "cplcr": 5.0, "odicr": 10.0}
 
 #: For a league not in the table: the longest window any of them needs.
 DEFAULT_LIVE_WINDOW_HOURS = 6.0
@@ -88,11 +91,27 @@ def line_of(slug: str, winner_prefix: str) -> float | None:
 #: skips it -- because a totals ladder runs the OTHER way (a higher line is
 #: harder, cheaper) and feeding it to the spread scanner reports the correct
 #: board as broken.
+#: One market per event, no ladder: the venue's cricket winner. On the
+#: stream so the in-play calibration read (docs/math/cricket-inplay-dip.md)
+#: has a tape at update resolution -- the pregame sweep is one sample every
+#: fifteen minutes and a five-over innings is twenty. Recorder-only, like
+#: the totals: the scheduler launches no detector or sampler for a game
+#: with a single rung, and `game_and_line` reads it as line 0 of a one-rung
+#: ladder, which no pair can be made from.
+MATCH_WINNER_TYPES = ("cricket_match_winner",)
+
 RECORDED_MARKET_TYPES = LADDER_MARKET_TYPES + (
     "football_team_full_game_total",
     "basketball_team_full_game_total",
     "baseball_team_full_game_total",
-)
+) + MATCH_WINNER_TYPES
+
+#: The venue's cricket competitions the stream slate records (core/leagues.py
+#: `venue_leagues`), and the one it does not: county is multi-day and settles
+#: 0.5 on a draw, and no in-play read is registered for it. The scheduler
+#: names an excluded competition in its skipped list rather than dropping it.
+CRICKET_STREAM_LEAGUES = ("t20icr", "t20iwcr", "cplcr", "odicr")
+EXCLUDED_LEAGUES = {"county": "multi-day, settles 0.5 on a draw; no in-play read registered"}
 
 _ANY_GAME = re.compile(r"^[a-z]{3}-(?P<game>[a-z0-9]+-.+?-\d{4}-\d{2}-\d{2})(?:-|$)")
 
