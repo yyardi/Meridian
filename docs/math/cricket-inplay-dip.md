@@ -102,9 +102,12 @@ which is the same rows with the opposite sign minus spread and both fees.
 
 The 09-14 document's arithmetic holds: a 60 % hit rate at even money needs
 154 calls for 80 % power. Dips of 25c+ on a favourite are a minority of
-matches; at ~10–15 cricket events a day across the five competitions, the
-first honest read is weeks away, not days, and it will say UNDERPOWERED on
-its face until then. Nothing here is a reason to place anything.
+matches, and the substrate is thinner than the 09-13 note said: since
+2026-09-13 the venue has listed **27 non-county matches in nine days**
+(t20icr 11, odicr 6, cplcr 5, t20iwcr 5 — county's 18 are excluded), about
+three a day. At that rate 150 dips is months, not weeks; the read reports
+UNDERPOWERED on its face until then, and the count is printed beside every
+number. Nothing here is a reason to place anything.
 
 ## 7. What would kill it
 
