@@ -54,7 +54,10 @@ UTC = dt.timezone.utc
 GAME_MINUTES = {"nfl": 230, "cfb": 230, "wnba": 170, "nba": 170, "mlb": 200,
                 # cricket, from the first ball: a T20 runs ~3.5 h; an ODI ~8.5 h.
                 # The toss is ~30 min before, inside RECORDER_LEAD_MIN + LEAD_MIN.
-                "t20icr": 240, "t20iwcr": 240, "cplcr": 240, "odicr": 540}
+                "t20icr": 240, "t20iwcr": 240, "cplcr": 240, "odicr": 540,
+                # county: four days of ~6.5 h play each; one recorder for the
+                # match, the stream costs nothing and the tape is one slug.
+                "county": 4 * 24 * 60}
 DEFAULT_MINUTES = 200
 #: Launch this many minutes before kickoff.
 LEAD_MIN = 2
@@ -93,8 +96,8 @@ from core.ladder.tape import DEFAULT_FLOOR_USD as FLOOR_USD  # noqa: E402
 #: Leagues the stream RECORDS and nothing else acts on: no detector, no
 #: sampler, no REST executor. Cricket, for the in-play calibration read
 #: (docs/math/cricket-inplay-dip.md). One rung is a winner, not a ladder, so
-#: MIN_RUNGS does not apply to them; EXCLUDED_LEAGUES (county) are named in
-#: the skipped list and never launched.
+#: MIN_RUNGS does not apply to them; an EXCLUDED_LEAGUES entry is named in
+#: the skipped list and never launched (none today).
 from core.ladder.live import CRICKET_STREAM_LEAGUES as RECORDER_ONLY, EXCLUDED_LEAGUES  # noqa: E402
 FRESH_S = 2
 #: The verdict runs this long after the last game should be over.
@@ -166,7 +169,10 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
         slug, mins = f"aec-{g.get('key') or g['game']}", _minutes(league)
         at = tip - dt.timedelta(minutes=LEAD_MIN)
         over = tip + dt.timedelta(minutes=mins)
-        last_over = over if last_over is None or over > last_over else last_over
+        # A four-day county match must not hold the NIGHTLY verdict for four
+        # nights: only games that end within a day set the verdict time.
+        if mins <= 24 * 60:
+            last_over = over if last_over is None or over > last_over else last_over
         if league in RECORDER_ONLY:
             continue                      # the recorder window below is all it gets
         if at <= now + dt.timedelta(minutes=1):

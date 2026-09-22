@@ -219,8 +219,8 @@ def test_a_cricket_match_gets_the_stream_recorder_and_nothing_else():
     acted = [l for l in p.launches if l.script not in ("launch_stream_slate.sh", "slate_verdict.sh")
              and ("t20icr" in l.args or "odicr" in l.args)]
     assert acted == [], acted
-    rec = [l for l in _by(p, "launch_stream_slate.sh") if l.args.split()[0] in ("t20icr", "odicr")]
-    assert sorted(l.args.split()[0] for l in rec) == ["odicr", "t20icr"]
+    rec = [l for l in _by(p, "launch_stream_slate.sh") if l.args.split()[0] in ("t20icr", "odicr", "county")]
+    assert sorted(l.args.split()[0] for l in rec) == ["county", "odicr", "t20icr"]
 
 
 def test_one_rung_is_a_winner_not_a_thin_ladder_when_the_league_is_recorder_only():
@@ -244,15 +244,37 @@ def test_the_cricket_window_runs_a_t20_four_hours_and_an_odi_nine_from_the_first
     assert int(odi.args.split()[1]) == 540 + SS.RECORDER_LEAD_MIN
 
 
-def test_county_is_excluded_and_counted_never_launched():
+def test_county_gets_a_four_day_recorder_window_and_nothing_else():
+    """Four-day cricket, on the operator's ask (2026-09-22): recorded as its
+    own row of the in-play read, never a detector. An EXCLUDED_LEAGUES entry
+    would be named in the skipped list; the table is empty today."""
+    p = SS.plan(CRICKET, NOW)
+    rec = [l for l in _by(p, "launch_stream_slate.sh") if l.args.startswith("county ")]
+    assert len(rec) == 1 and int(rec[0].args.split()[1]) == 4 * 24 * 60 + SS.RECORDER_LEAD_MIN
+    assert not any("county" in l.args for l in p.launches if l.script != "launch_stream_slate.sh")
+    assert not any("county" in s for s in p.skipped)
+
+
+def test_an_excluded_league_is_named_in_the_skipped_list_never_silently_dropped(monkeypatch):
+    monkeypatch.setitem(SS.EXCLUDED_LEAGUES, "county", "a reason")
     p = SS.plan(CRICKET, NOW)
     assert not any("county" in l.args for l in p.launches)
-    assert any(s.startswith("county-surrey-kent excluded:") and "0.5" in s for s in p.skipped), p.skipped
+    assert any(s.startswith("county-surrey-kent excluded: a reason") for s in p.skipped), p.skipped
 
 
 def test_the_verdict_waits_for_the_last_cricket_match_too():
-    p = SS.plan(CRICKET, NOW)
+    p = SS.plan([g for g in CRICKET if g["league"] != "county"], NOW)
     assert p.verdict_at == _t(5, 30, day=22) + dt.timedelta(minutes=240 + SS.VERDICT_AFTER_MIN)
+
+
+def test_a_four_day_match_does_not_hold_the_nightly_verdict_for_four_days():
+    """The verdict is a NIGHTLY report; a county match spanning four nights
+    must not push it to the fifth. It is scheduled off the limited-overs and
+    US slates; the county tape is read when the match settles."""
+    p = SS.plan(CRICKET, NOW)
+    t20_over = _t(5, 30, day=22) + dt.timedelta(minutes=240)
+    assert p.verdict_at == t20_over + dt.timedelta(minutes=SS.VERDICT_AFTER_MIN), "set by the last T20, not by county"
+    assert p.verdict_at < _t(9, 0, day=21) + dt.timedelta(days=4)
 
 
 def test_the_recorder_only_set_and_the_stream_runner_agree():

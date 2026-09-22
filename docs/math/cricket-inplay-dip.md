@@ -64,9 +64,13 @@ dip. So, before any price is read:
 
 - the daily scheduler puts every cricket winner market on the **stream
   recorder** (update resolution, the venue's own pushes) for the match's
-  window — `t20icr`, `t20iwcr`, `cplcr` at 240 minutes, `odicr` at 540;
-  `county` is multi-day and settles 0.5 on a draw and is **excluded and
-  counted**;
+  window — `t20icr`, `t20iwcr`, `cplcr` at 240 minutes, `odicr` at 540,
+  and, on the operator's ask (2026-09-22 evening), `county` for four days
+  from the first ball: four-day cricket that settles 0.5 on a draw and
+  carries 50–84c spreads (core/leagues.py) — recorded as **its own row**,
+  never pooled with the limited-overs formats, because "a dip" in a
+  four-day match is a different object (follow-on, weather, the draw) and
+  the spread alone exceeds any dip the T20 read is looking for;
 - the ESPN cricket recorder (already running, 15 s in play) is the state:
   innings, overs, wickets, runs, target, toss.
 
