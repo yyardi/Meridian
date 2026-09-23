@@ -139,6 +139,9 @@ POINT_IN_TIME = {
     "cfb/run_longshot_shadow.py": "recorded last quote in a window",
     "cfb/run_momentum_scalp.py": "recorded in-game ticks, entry and exit",
     "cfb/run_paper_book.py": "recorded closes, rescored weekly",
+    "cfb/run_pulse_live_scorecard.py": "enter decisions at the recorded touch; the "
+        "coefficient is joined from market_snapshots at decided_at, which "
+        "pulse_decisions does not store",
     "cfb/run_scan.py": "writes ROWS_JSON and must emit the column it charges",
     "cfb/run_scan_live.py": "recorded closes",
     "cfb/run_scan_null.py": "the NULL's break-even; the reference, not the estimate",
