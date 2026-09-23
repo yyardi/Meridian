@@ -146,6 +146,7 @@ POINT_IN_TIME = {
     "cfb/run_scan_live.py": "recorded closes",
     "cfb/run_scan_null.py": "the NULL's break-even; the reference, not the estimate",
     "cfb/run_slowside.py": "recorded trade prices",
+    "cfb/run_wnba_player_model.py": "recorded T-1h closes, a sample spanning the 09-17 change",
     "core/backtest/fills.py": "the fill model for reads over history",
     "core/backtest/ingame_replay.py": "replays recorded ticks",
     "core/backtest/moneyline.py": "recorded odds and closes",
