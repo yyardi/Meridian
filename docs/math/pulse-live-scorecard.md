@@ -100,3 +100,39 @@ settlement cache; without it every market is asked again and nothing is kept.
 ---
 
 *Results append below this line, dated, with the command's output.*
+
+## Results — first run, 2026-09-23 00:35Z (`artifacts/reads/pulse_live_scorecard_2026-09-23T0035Z.txt`)
+
+36,754 decisions on 835 markets across **52 games** (34 regular season, 18
+playoffs from 2026-09-14), decided 2026-08-18 → 2026-09-23; fee joined on
+every row (coefficients 0.06 and 0.0695 both present, charged per row);
+settlement from the venue on 785 markets, 50 unsettled excluded; 218
+collision rows removed at the dedupe.
+
+**Calibration, model vs the venue mid at the same instants** (positive =
+model better; Brier, sandwich CI by game):
+
+| population | rows | G | mkt − model Brier [95 % CI] |
+|---|---:|---:|---|
+| all, all actions | 33,580 | 52 | **−0.0012 [−0.0115, +0.0091]** |
+| playoffs, all | 15,324 | 18 | +0.0036 [−0.0083, +0.0156] |
+| v3 (all) | 13,690 | 40 | +0.0090 [−0.0077, +0.0256] |
+| v4 (all) | 17,045 | 36 | −0.0050 [−0.0201, +0.0101] |
+
+The side the model leans to wins 47–53 % in every |fair value − mid| bucket
+(all regimes: 0.528, 0.497, 0.472, 0.481, 0.558 from the narrowest to the
+widest gap, every interval covering 0.5). **The live model does not forecast
+better than the venue's own price at the instants it decides.**
+
+**Paper P&L of enter decisions**, taker at the recorded touch, held to
+settlement, one contract, the row's fee: all **−0.99c [−3.76, +1.79]** per
+contract on 5,831 bets / 52 games (spreads +3.17c [−3.30, +9.64], totals
+−3.20c [−6.81, +0.42], winners +0.16c [−4.75, +5.06]); playoffs −1.01c
+[−4.97, +2.95]. **The unfilled arm flatters exactly as registered**: filled
+enters −3.11c [−7.82, +1.60] against withdrawn +1.81c [−0.02, +3.63], the
+mid having moved −4.52c into every fill.
+
+**Reading:** no signal beyond the price, with the interval that G = 52 games
+buys (about ±0.01 Brier, ±3c per contract). The playoff and v3 rows lean the
+model's way and cover zero. Nothing here is sized, gated or armed; the
+scorecard reruns with the paper book so the row accrues.
