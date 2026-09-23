@@ -63,6 +63,15 @@ WINNER_TYPE = "basketball_team_full_game_winner"
 SLUG_PREFIX = "aec-wnba-"
 INJURY_OUT = "Out"                  # the ESPN designation that zeroes minutes; Day-To-Day does not
 PLAYOFFS = 3                        # ESPN season_type; core.config.SEASON_TYPE_POSTSEASON
+#: Measured 2026-09-23 on prod: team_game_logs and player_game_logs stamp every
+#: 2026-09-14..09-22 game season_type 2, so the ESPN field alone left the playoff
+#: row empty on a 106-game run. The same date cut the PULSE live scorecard uses.
+PLAYOFFS_START = dt.datetime(2026, 9, 14, tzinfo=dt.timezone.utc)
+
+
+def is_playoff(r: dict) -> bool:
+    """ESPN's season_type when it says so, the date when it does not."""
+    return r["season_type"] == PLAYOFFS or r["tip"] >= PLAYOFFS_START
 
 
 # ----------------------------------------------------------------- point-in-time visibility
@@ -312,7 +321,7 @@ def report(rows, skipped, counts, settlement_label):
     print(f"\n{'row':<16}{'G':>6}{'B_model':>9}{'B_venue':>9}{'B_coin':>9}{'delta model-venue [95% game-clustered]':>40}"
           f"{'naive (WRONG)':>20}{'LL_model':>9}{'LL_venue':>9}{'LL_coin':>9}   verdict")
     out = {"all": _row("all", rows, keys)}
-    for name, pred in (("regular", lambda r: r["season_type"] != PLAYOFFS), ("playoffs", lambda r: r["season_type"] == PLAYOFFS),
+    for name, pred in (("regular", lambda r: not is_playoff(r)), ("playoffs", is_playoff),
                        ("first_is_away", lambda r: not r["first_is_home"]), ("first_is_home", lambda r: r["first_is_home"])):
         sub = [r for r in rows if pred(r)]
         if len({r["espn_game_id"] for r in sub}) >= 2:
