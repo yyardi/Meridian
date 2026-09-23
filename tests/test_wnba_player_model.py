@@ -283,3 +283,13 @@ def test_dry_run_prints_populations_then_rows_then_gate(capsys):
     assert out.index("FIXTURE dataset") < out.index("B_model"), "counts print before any Brier"
     assert "UNDERPOWERED" in out and "NOT SCORED" in out, "six fixture games cannot pass a 50-game floor"
     assert "n_first_is_home: 1" in out
+
+
+def test_a_september_playoff_game_stamped_regular_by_the_logs_is_still_a_playoff_row():
+    """Prod 2026-09-23: every 09-14..09-22 game carries season_type 2 in the logs,
+    which left the playoff row empty on 106 games. The row is cut by ESPN's
+    field OR the date; a season_type 3 row is a playoff whatever its date."""
+    assert m.is_playoff({"season_type": 2, "tip": dt.datetime(2026, 9, 17, 0, 0, tzinfo=UTC)})
+    assert not m.is_playoff({"season_type": 2, "tip": dt.datetime(2026, 8, 20, 0, 0, tzinfo=UTC)})
+    assert m.is_playoff({"season_type": 3, "tip": dt.datetime(2026, 8, 20, 0, 0, tzinfo=UTC)})
+    assert m.PLAYOFFS_START == dt.datetime(2026, 9, 14, tzinfo=UTC)
