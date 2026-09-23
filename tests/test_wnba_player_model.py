@@ -20,6 +20,7 @@ What is pinned, and why each is a registered kill condition rather than a nicety
 import datetime as dt
 import importlib.util
 import pathlib
+import random
 import sys
 from decimal import Decimal
 
@@ -263,7 +264,14 @@ def test_mc_agrees_with_the_closed_form_at_the_registered_draw_count():
 
 
 def test_mc_is_reproducible_under_the_registered_seed():
-    assert m.mc_win_prob(2.0, 12.0, draws=FAST) == m.mc_win_prob(2.0, 12.0, draws=FAST)
+    """Against an INDEPENDENT reference (this test's own walk of the seeded
+    generator), not against a second call to the same function -- that shape
+    passes whatever the code does (tests/test_no_self_comparing_assertions.py).
+    The control: a different seed must move the number, or the seed pins nothing."""
+    rng = random.Random(m.MC_SEED)
+    ref = sum(1 for _ in range(FAST) if rng.gauss(2.0, 12.0) > 0) / FAST
+    assert m.mc_win_prob(2.0, 12.0, draws=FAST) == ref
+    assert m.mc_win_prob(2.0, 12.0, draws=FAST, seed=m.MC_SEED + 1) != ref
 
 
 # ------------------------------------------------------------------ the dry run prints counts before any result
