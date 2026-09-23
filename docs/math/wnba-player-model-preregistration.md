@@ -219,3 +219,33 @@ next season and not reported as a result of this read.
   change rows in one run, each an expression in its own coefficient, NULL refused),
   estimator (duplicated rows widen the clustered interval and leave the naive one
   unchanged; the sandwich carries `G/(G−1)`), and MC-vs-Φ agreement.
+
+---
+
+## Addendum 2026-09-22 — first read, LOCAL MIRROR, ESPN-settled, not the primary
+
+Run after the registration above was committed (e302786), against the analysis
+mirror at `localhost:5433/meridian`, `--settlement espn`. **This is not the
+registered primary**: the primary is venue-settled on prod, and the mirror's
+`team_game_logs` end 2026-08-27 and `player_game_logs` end 2026-08-20, so the
+sample is regular season only and stops before the playoffs. Printed here so the
+prod read has a number to disagree with, not as a verdict.
+
+Population: 89 WNBA winner markets on tape (last 90 days), 3 future-stamped rows
+excluded, 76 with a quote in [tip−6h, tip−1h], 76 matched to exactly one ESPN game,
+76 with an ESPN final. `n_first_is_away = 76, n_first_is_home = 0`. 63 of 76
+games had an `Out` designation zero a rotation player. Realised mean home margin
++1.82 on 76 games (the fixed edge is 3.0).
+
+| row | G | Brier model | Brier venue | Brier coin | Δ model − venue [95 % game-clustered] | LL model / venue / coin |
+|---|---:|---:|---:|---:|---|---|
+| all (= regular = first-is-away) | 76 | 0.1977 | 0.1839 | 0.2500 | +0.0139 [−0.0073, +0.0350] spans 0 | 0.5836 / 0.5485 / 0.6931 |
+| playoffs | 0 | — | — | — | not a row | — |
+
+On this slice the gate is **not passed**: Δ is positive (the venue is better) and
+spans zero at G = 76 ≥ 50. Kill condition 2 does not fire (0.1977 < 0.25: the
+model beats a coin, i.e. it knows *something* — the team's point differential).
+The paper line would have taken 51 bets on 51 games (16 YES, 35 NO) and is
+**NOT SCORED**. The prod run decides; if it adds the September regular season and
+the playoffs and the all row still spans or favours the venue, condition 1 applies
+and the model is dead as a pregame line.
