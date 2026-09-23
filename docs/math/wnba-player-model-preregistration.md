@@ -249,3 +249,34 @@ The paper line would have taken 51 bets on 51 games (16 YES, 35 NO) and is
 **NOT SCORED**. The prod run decides; if it adds the September regular season and
 the playoffs and the all row still spans or favours the venue, condition 1 applies
 and the model is dead as a pregame line.
+
+## Addendum 2026-09-23 00:55Z — the PRIMARY read, prod, venue-settled (`artifacts/reads/wnba_player_model_2026-09-23T0055Z.txt`)
+
+118 winner markets on tape (90 days), 106 with a T−1h quote, 106 matched to
+one ESPN game, 106 venue-settled (0 unsettled, 0 venue/ESPN disagreements),
+all `first_is_away` (YES = the away team, as on every US league). 91 of 106
+games had an `Out` designation zero a rotation player. Constants as
+registered (K=400, N=10, home 3.0, σ prior 12/20, threshold 0.05, floor 50).
+
+| row | G | Brier model | Brier venue | Brier coin | Δ model − venue [95 % game-clustered] | verdict |
+|---|---:|---:|---:|---:|---|---|
+| all | 106 | 0.1951 | **0.1780** | 0.2500 | **+0.0171 [−0.0012, +0.0354]** | spans 0 — gate FAILED |
+| regular | 88 | 0.1994 | 0.1864 | 0.2500 | +0.0130 [−0.0074, +0.0334] | spans 0 |
+| playoffs | 18 | 0.1741 | 0.1368 | 0.2500 | +0.0373 [−0.0035, +0.0782] | UNDERPOWERED (G < 50) |
+
+Log loss points the same way (model 0.576, venue 0.530, coin 0.693). The
+model beats a coin comfortably and the venue's T−1h price beats the model
+in every row; in the playoffs the venue is sharper still. **Kill condition 1
+is met on 106 games: the gate failed, the paper line (76 bets it would have
+taken) is NOT SCORED and there is no P&L to quote.** The registered
+expectation (availability is priced by close) held.
+
+One labelling defect found on the first run and fixed before this one: the
+game logs stamp every 2026-09-14..09-22 game `season_type 2`, so the ESPN
+field alone left the playoff row empty; the row is now cut by the field OR
+the date (`is_playoff`, tested). The ESPN season-type stamping in the stats
+sweeper is an open item for the recorder, not for this read.
+
+The runner reruns with the paper book and the G accrues; condition 6
+(playoffs passing while all fails) is the only thing left for it to say,
+and that is a 2027 hypothesis on a fresh tape.
