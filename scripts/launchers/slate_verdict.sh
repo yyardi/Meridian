@@ -7,14 +7,21 @@ STAMP=$(date -u +%Y-%m-%dT%H%MZ)
 REPORT=$R/slate_verdict_$STAMP.txt
 API=$(docker inspect meridian-api --format "{{.Config.Image}}")
 
-# Only tapes written in the last 20 hours: tonight's slate, not every slate
-# on disk. Saturday's 1.1 GB would otherwise be rescanned every night.
-DIRS=""
-for d in $(find "$R"/stream -mindepth 1 -maxdepth 1 -type d -mmin -1200); do
-  case "$d" in *smoke*|*_fixture*) continue;; esac
-  DIRS="$DIRS /out/stream/$(basename "$d")"
-done
-[ -n "$DIRS" ] || { echo "no stream tapes"; exit 0; }
+# Every tape the verdict has not read yet, dated by its tag -- never a clock
+# window. On 2026-09-24 the verdict rolled a day and the previous night's
+# WNBA and MLB tapes aged out of a twenty-hour window unread. A tape whose
+# recorder is still up waits for the next run; a read tape gets a marker.
+RUNNING=$(docker ps --format '{{.Names}}' | sed -n 's/^stream-//p' | tr '\n' ' ')
+PAIRS=$(python3 /opt/meridian/scripts/launchers/verdict_tapes.py --root "$R"/stream --running $RUNNING)
+[ -n "$PAIRS" ] || { echo "no unread stream tapes"; exit 0; }
+DIRS=""; HOST_DIRS=""; DATES=""
+while read -r d p; do
+  DIRS="$DIRS /out/stream/$(basename "$p")"; HOST_DIRS="$HOST_DIRS $p"
+  case " $DATES " in *" $d "*) ;; *) DATES="$DATES $d";; esac
+done <<EOF_PAIRS
+$PAIRS
+EOF_PAIRS
+echo "tapes to read:$DIRS"
 
 docker run --rm --network meridian_default --env-file /opt/meridian/.env \
   -v /opt/meridian/core:/app/core -v "$R":/out \
@@ -33,12 +40,23 @@ docker run --rm --network meridian_default --env-file /opt/meridian/.env \
   python p.py "$DATE" >> "$REPORT" 2>&1 || true
 echo; tail -n +2 "$REPORT" | sed -n "/HYPOTHETICAL/,\$p"
 
-# The edge ledger: one row per league per gate for tonight's tapes, appended
-# to edge_ledger.jsonl so the running table answers "is the number solid".
-docker run --rm --network meridian_default --env-file /opt/meridian/.env \
-  -v /opt/meridian/core:/app/core -v /opt/meridian/scripts:/app/scripts -v "$R":/out -w /app "$API" \
-  python3 scripts/edge_ledger.py --date "$DATE" >> "$REPORT" 2>&1 || true
+# The edge ledger: one row per league per gate per TAPE DATE, appended to
+# edge_ledger.jsonl so the running table answers "is the number solid". A
+# late verdict files each tape under the night it recorded, not under today.
+LEDGER_RC=1
+for TD in $DATES; do
+  TD_DIRS=""
+  while read -r d p; do [ "$d" = "$TD" ] && TD_DIRS="$TD_DIRS /out/stream/$(basename "$p")"; done <<EOF_PAIRS
+$PAIRS
+EOF_PAIRS
+  docker run --rm --network meridian_default --env-file /opt/meridian/.env \
+    -v /opt/meridian/core:/app/core -v /opt/meridian/scripts:/app/scripts -v "$R":/out -w /app "$API" \
+    python3 scripts/edge_ledger.py --date "$TD" --dirs $TD_DIRS >> "$REPORT" 2>&1 && LEDGER_RC=0
+done
 echo; sed -n "/^edge_ledger:/,\$p" "$REPORT"
+# Mark the tapes read only once the ledger has their rows; a failed ledger
+# leaves them unmarked for the next run rather than silently dropped.
+[ "$LEDGER_RC" -eq 0 ] && python3 /opt/meridian/scripts/launchers/verdict_tapes.py --root "$R"/stream --mark $HOST_DIRS >> "$REPORT" 2>&1
 
 # Did anyone trade THROUGH the displayed quote while each over-floor crossing
 # stood? A quote that prints trade through is a picture, not a resting order;

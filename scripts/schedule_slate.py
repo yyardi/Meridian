@@ -169,9 +169,11 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
         slug, mins = f"aec-{g.get('key') or g['game']}", _minutes(league)
         at = tip - dt.timedelta(minutes=LEAD_MIN)
         over = tip + dt.timedelta(minutes=mins)
-        # A four-day county match must not hold the NIGHTLY verdict for four
-        # nights: only games that end within a day set the verdict time.
-        if mins <= 24 * 60:
+        # The verdict reads ladder tapes; a cricket tape has no ladder and a
+        # county match runs four days. Recorder-only leagues never set the
+        # verdict time -- on 2026-09-24 an ODI did, the verdict rolled a day,
+        # and the previous night's slate went unread until the marker fix.
+        if league not in RECORDER_ONLY:
             last_over = over if last_over is None or over > last_over else last_over
         if league in RECORDER_ONLY:
             continue                      # the recorder window below is all it gets

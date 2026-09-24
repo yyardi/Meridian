@@ -262,9 +262,12 @@ def test_an_excluded_league_is_named_in_the_skipped_list_never_silently_dropped(
     assert any(s.startswith("county-surrey-kent excluded: a reason") for s in p.skipped), p.skipped
 
 
-def test_the_verdict_waits_for_the_last_cricket_match_too():
-    p = SS.plan([g for g in CRICKET if g["league"] != "county"], NOW)
-    assert p.verdict_at == _t(5, 30, day=22) + dt.timedelta(minutes=240 + SS.VERDICT_AFTER_MIN)
+def test_the_verdict_does_not_wait_for_cricket():
+    """Recorder-only leagues have no ladder to verdict; on 2026-09-24 an ODI
+    pushed the verdict a day and the previous night's slate went unread."""
+    with_cricket = SS.plan(CRICKET, NOW)
+    without = SS.plan(SUNDAY, NOW)
+    assert with_cricket.verdict_at == without.verdict_at
 
 
 def test_a_four_day_match_does_not_hold_the_nightly_verdict_for_four_days():
@@ -272,8 +275,7 @@ def test_a_four_day_match_does_not_hold_the_nightly_verdict_for_four_days():
     must not push it to the fifth. It is scheduled off the limited-overs and
     US slates; the county tape is read when the match settles."""
     p = SS.plan(CRICKET, NOW)
-    t20_over = _t(5, 30, day=22) + dt.timedelta(minutes=240)
-    assert p.verdict_at == t20_over + dt.timedelta(minutes=SS.VERDICT_AFTER_MIN), "set by the last T20, not by county"
+    assert p.verdict_at == SS.plan(SUNDAY, NOW).verdict_at, "set by the US slate, by no cricket match"
     assert p.verdict_at < _t(9, 0, day=21) + dt.timedelta(days=4)
 
 
