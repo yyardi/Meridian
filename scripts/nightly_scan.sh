@@ -58,6 +58,21 @@ docker run --rm -i --network meridian_default \
 PB_RC=$?
 echo "paper book: $PB (exit $PB_RC)" >> "$F"
 
+# --- THE TWO WNBA READS, registered 2026-09-22/23 and told to the operator as
+# nightly: the in-game model's live decisions scored against settlement
+# (docs/math/pulse-live-scorecard.md) and the player-based pregame model
+# against the venue's T-1h price (docs/math/wnba-player-model-preregistration.md).
+# Both read-only; both reuse the settlement cache through the artifacts mount.
+for READ in run_pulse_live_scorecard.py run_wnba_player_model.py; do
+  RF="$OUT/${READ#run_}"; RF="$OUT/${RF##*/}"; RF="${RF%.py}_$TS.txt"
+  docker run --rm --network meridian_default \
+    -e DATABASE_URL=postgresql+psycopg://meridian:meridian@postgres:5432/meridian \
+    -v /opt/meridian/core:/app/core -v /opt/meridian/cfb:/app/cfb \
+    -v /opt/meridian/artifacts:/opt/meridian/artifacts -w /app \
+    "$IMG" python "cfb/$READ" > "$RF" 2>&1
+  echo "$READ: $RF (exit $?)" >> "$F"
+done
+
 # The strategy line. Counted from the ALL WEEKS table, which is the one with a
 # verdict per strategy. `grep -c` prints its count and RETURNS 1 on no match, so
 # it is never given a `|| echo` fallback here -- that is the defect that put a
