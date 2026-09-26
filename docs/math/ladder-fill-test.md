@@ -127,3 +127,29 @@ keeps the refusal body on a rejection. Where a reply carries several priced exec
 VWAP of `lastPx × lastShares` is the recorded average and a disagreement with the reported
 `avgPx` is logged, because the document does not say whether a per-execution `avgPx` is
 cumulative.
+
+## Amendment 2026-09-26 — the ticket gate is sized to the attempt, not to the display
+
+The operator, testing with about $20: *"idk why u have the $25 limit, it dont
+gotta be that high."* Right. The $25 alert floor above is **edge × the FULL
+displayed size** — a statistic about what the venue showed, never about
+anyone's bankroll — and it stood between a $20 test and every crossing whose
+thin leg showed twenty-odd contracts at a good edge but whose full size was
+small. From today the ticket gate is the operator's (`core/ladder/intent.py`):
+
+- **attempt** = `MERIDIAN_ARB_ATTEMPT_USD`, default **$20**; a ticket is sized
+  to it (`qty = attempt ÷ pair cost`, ~21–23 contracts of a $0.85–0.95 pair),
+  never above the thin leg;
+- a crossing is a **ticket** when the thin leg displays at least that many
+  contracts **and** the net edge is ≥ **2c** per contract (rounded to a
+  hundredth of a cent first);
+- the desk's `candidate` flag, both executors and the planner's launch line
+  carry the same number; the pair cap `MERIDIAN_ARB_MAX_PAIR_USD` ($25) still
+  bounds a send.
+
+The $25 floor stays as the **ledger's statistic** (`>= $25` columns), and the
+ledger gains `tkt@$20 / profit / life`: how many crossings a $20 attempt could
+have ticketed, what twenty contracts of each would have netted, and how long
+they stood. The decision rule (five attempts, 80 % / zero-fill) is unchanged;
+its **size** is now the attempt's contracts rather than the 15 registered on
+a $15 balance.

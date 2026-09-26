@@ -65,6 +65,8 @@ DEFAULT_GATE_S = 2.0
 #: The desk's floor, so "worth ticketing" means the same thing here.
 DEFAULT_FLOOR_USD = 25.0
 
+from core.ladder.intent import DEFAULT_ATTEMPT_USD, DEFAULT_MIN_EDGE  # noqa: E402  the operator's gate
+
 
 @dataclass(frozen=True)
 class Episode:
@@ -215,6 +217,12 @@ def is_spread_pair(e: Episode) -> bool:
 
 def _stats(eps: list[Episode], floor_usd: float) -> dict:
     big = [e for e in eps if e.best_usd >= floor_usd]
+    # The operator's gate (core/ladder/intent.py): an attempt of DEFAULT_ATTEMPT_USD
+    # buys about that many contracts of a sub-$1 pair, so a crossing is
+    # ticketable when the thin leg shows at least that many at >= DEFAULT_MIN_EDGE.
+    # An Episode carries edge and edge x size, not prices, so the contract count
+    # is approximated by the dollars: size >= attempt (one contract ~ $1).
+    tick = [e for e in eps if e.best_edge >= DEFAULT_MIN_EDGE and e.best_usd / e.best_edge >= DEFAULT_ATTEMPT_USD]
     lives = [e.duration_s for e in eps]
     return {
         "episodes": len(eps),
@@ -225,6 +233,9 @@ def _stats(eps: list[Episode], floor_usd: float) -> dict:
         "biggest_usd": round(max((e.best_usd for e in eps), default=0.0), 2),
         "median_life_s": round(statistics.median(lives), 3) if lives else None,
         "median_life_over_floor_s": round(statistics.median(e.duration_s for e in big), 3) if big else None,
+        "ticketable": len(tick),
+        "ticketable_profit_at_attempt_usd": round(sum(DEFAULT_ATTEMPT_USD * e.best_edge for e in tick), 2),
+        "ticketable_median_life_s": round(statistics.median(e.duration_s for e in tick), 3) if tick else None,
     }
 
 

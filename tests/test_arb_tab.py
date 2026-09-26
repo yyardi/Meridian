@@ -210,10 +210,12 @@ def test_the_one_violation_carries_the_executors_ticket():
     assert v["dollars"] == pytest.approx(25.0, abs=0.05)
     assert v["candidate"] is True and v["mid_ladder"] is True and v["spread_pair"] is True
     t = v["ticket"]
-    assert t["leg1"] == {"market_line": 10.5, "side": "BUY YES", "price": 0.41, "qty": 1,
+    # Sized to the operator's attempt ($20 buys 21 contracts of a $0.94 pair),
+    # never above the thin leg's 966; the page and the executor show one count.
+    assert t["leg1"] == {"market_line": 10.5, "side": "BUY YES", "price": 0.41, "qty": 21,
                          "screen_row": "WAKE to win by over 10.5 points", "screen_button": "No"}
     assert t["leg2"]["market_line"] == 7.5 and t["leg2"]["side"] == "BUY NO" and t["leg2"]["price"] == 0.53
-    assert t["cost_usd"] == pytest.approx(0.94) and t["game"] == GAME
+    assert t["cost_usd"] == pytest.approx(21 * 0.94) and t["game"] == GAME
     assert snap["best_per_game"] == {GAME: pytest.approx(25.0, abs=0.05)}
 
 
@@ -227,7 +229,8 @@ def test_a_clean_ladder_has_no_violation_and_no_flags():
 def test_a_sub_floor_or_winner_pair_is_a_violation_but_not_a_candidate():
     tiny = {7.5: (0.47, 0.49, 3.0, 40.0), 10.5: (0.40, 0.41, 20.0, 3.0)}
     v = api_module._arb_ladder_snapshot(GAME, tiny, {}, 0.5, 1_800_000_000.0)["violations"][0]
-    assert v["dollars"] < 25 and v["candidate"] is False and v["spread_pair"] is True
+    # three contracts on the thin leg: under the operator's attempt, so not a ticket
+    assert v["size"] == 3.0 and v["candidate"] is False and v["spread_pair"] is True
     winner = {0.0: (0.47, 0.49, 1000.0, 1000.0), 2.5: (0.40, 0.41, 1000.0, 1000.0)}
     v = api_module._arb_ladder_snapshot(GAME, winner, {}, 0.5, 1_800_000_000.0)["violations"][0]
     assert v["dollars"] > 25 and v["spread_pair"] is False and v["candidate"] is False
@@ -1097,8 +1100,10 @@ def test_the_ticket_panels_size_is_the_centre_panes_violation_row():
         assert row, "the fixture pair clears; the violation row must exist"
         assert live["size_now"] == row[0]["size"]
         assert live["dollars_now"] == pytest.approx(row[0]["dollars"], abs=0.01)
-        # And the floor the executor trades by is read off the same number.
-        assert (live["dollars_now"] >= api_module._ARB_FLOOR_USD) is row[0]["candidate"]
+        # And the gate the executor trades by is read off the same numbers: the
+        # thin leg's contracts against the attempt's, the edge against 2c.
+        assert row[0]["candidate"] is (row[0]["spread_pair"] and row[0]["edge_c"] >= 2.0
+                                       and row[0]["size"] >= 21)
 
 
 def test_an_edge_past_the_scan_modules_bound_is_stale_not_the_best_thing_on_the_page():

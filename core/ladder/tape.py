@@ -54,12 +54,14 @@ import os
 import time
 
 from core.ladder import scan
-from core.ladder.intent import is_mid, is_spread_pair
+from core.ladder.intent import DEFAULT_ATTEMPT_USD, DEFAULT_MIN_EDGE, clears_ticket_gate, is_mid, is_spread_pair, qty_for
 from core.ladder.live import book_age_s
 
-#: The executor's `--floor-usd` default: edge x displayed size below this is
-#: real and untradeable-in-practice, and it is why a lit rung may carry no
-#: ticket. Shown so the operator can see the reason rather than infer it.
+#: The ledger's statistic: edge x FULL displayed size. It was the executors'
+#: `--floor-usd` gate until 2026-09-26, when the operator asked why a $25
+#: floor stood between a $20 test and a crossing with twenty contracts on it;
+#: the ticket gate is now core/ladder/intent.clears_ticket_gate, and this
+#: number is reported, never gated on.
 DEFAULT_FLOOR_USD = 25.0
 
 #: How much of the tail to read on the first pass. One sample of a 12-rung
@@ -184,12 +186,13 @@ def _touch(row: dict, prefer: tuple[str, ...] = ("rest", "ws")) -> dict | None:
     return part
 
 
-def _why_not(v, floor_usd: float) -> str:
+def _why_not(v, attempt_usd: float) -> str:
     """Why the executor would pass on a pair it can see. Empty string means it
     would ticket it, so a blank cell on the page is a real statement.
 
-    The executor's gate is exactly two tests -- ``x.dollars >= floor_usd and
-    is_spread_pair(x)`` (cfb/run_ladder_executor.py) -- and the mid ladder is
+    The executor's gate is exactly two tests -- ``clears_ticket_gate(x,
+    attempt_usd) and is_spread_pair(x)`` (cfb/run_ladder_executor.py, the
+    thin leg showing the attempt's contracts at >= 2c) -- and the mid ladder is
     not one of them: `is_mid` is the SORT KEY that decides which candidate goes
     first in a cycle, so a pair off the mid ladder is ticketed, just behind any
     mid one. core/api.py's ARB tab draws the same line (`candidate` is the
@@ -204,13 +207,13 @@ def _why_not(v, floor_usd: float) -> str:
     why = []
     if not is_spread_pair(v):
         why.append("winner leg — never ticketed")
-    if not scan.clears_floor(v.dollars, floor_usd):
-        why.append(f"under the ${floor_usd:.0f} floor")
+    if not clears_ticket_gate(v, attempt_usd):
+        why.append(f"under the ticket gate: {qty_for(v, attempt_usd)} contracts at >= {DEFAULT_MIN_EDGE * 100:.0f}c")
     return " · ".join(why)
 
 
 def ladder(sample: dict, game: str = "", *, fee_rate: float = scan.DEFAULT_FEE_RATE,
-           floor_usd: float = DEFAULT_FLOOR_USD, now: float | None = None,
+           attempt_usd: float = DEFAULT_ATTEMPT_USD, now: float | None = None,
            gross_count: bool = False) -> dict:
     """One sample of the tape as a table: rungs, bounds, violations.
 
@@ -305,14 +308,15 @@ def ladder(sample: dict, game: str = "", *, fee_rate: float = scan.DEFAULT_FEE_R
             "buy_price": v.buy_price, "sell_price": v.sell_price,
             "edge_c": round(v.edge * 100, 2), "size": v.size, "dollars": round(v.dollars, 2),
             "spread_pair": is_spread_pair(v), "mid": is_mid(v),
-            "why_not": _why_not(v, floor_usd),
+            "why_not": _why_not(v, attempt_usd),
         } for v in live],
         #: Pairs the executor would not act on, counted rather than hidden.
         #: `fee_eaten` is None when it was not asked for, which is not zero.
         "above_cap": len(every) - len(live),
         "fee_eaten": fee_eaten,
-        "ticketable": sum(1 for v in live if not _why_not(v, floor_usd)),
-        "floor_usd": floor_usd,
+        "ticketable": sum(1 for v in live if not _why_not(v, attempt_usd)),
+        "floor_usd": DEFAULT_FLOOR_USD,      # the ledger's statistic, shown, not gated on
+        "attempt_usd": attempt_usd,
         "viol_rest": sample.get("viol_rest"), "viol_ws": sample.get("viol_ws"),
         "viol_common": sample.get("viol_common"),
         "ws_trades": sample.get("ws_trades"), "ws_msgs": sample.get("ws_msgs"),

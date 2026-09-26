@@ -124,7 +124,8 @@ def table(rows: list[dict]) -> str:
         latest[key] = r
     lines = [f"  {'date':<11}{'lg':<5}{'gate':>5}{'fee':>7}{'games':>6}{'episodes':>9}"
              f"{'>=$25':>6}{'sum>=25':>9}{'biggest':>9}{'life>=25':>9}"
-             f"{'| spread-only >=$25':>20}{'sum':>8}{'biggest':>9}"]
+             f"{'| spread-only >=$25':>20}{'sum':>8}{'biggest':>9}"
+             f"{'| tkt@$20':>10}{'profit':>8}{'life':>7}"]
     for k in sorted(latest):
         r = latest[k]
         g = "any" if r["gate_s"] is None else f"{r['gate_s']:g}s"
@@ -136,7 +137,9 @@ def table(rows: list[dict]) -> str:
                      f"{r['sum_over_floor_usd']:>9,.0f}{r['biggest_usd']:>9,.0f}"
                      f"{(f'{ml:.1f}s' if ml is not None else '-'):>9}"
                      f"{so.get('over_floor', '-'):>20}{so.get('sum_over_floor_usd', 0):>8,.0f}"
-                     f"{so.get('biggest_usd', 0):>9,.0f}")
+                     f"{so.get('biggest_usd', 0):>9,.0f}"
+                     f"{str(so.get('ticketable', '-')):>10}{so.get('ticketable_profit_at_attempt_usd', 0):>8,.2f}"
+                     f"{(f"{tl:.1f}s" if (tl := so.get('ticketable_median_life_s')) is not None else '-'):>7}")
     return "\n".join(lines)
 
 

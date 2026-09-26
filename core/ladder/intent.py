@@ -35,6 +35,38 @@ def is_spread_pair(v) -> bool:
     return 0.0 not in (float(v.high_line), float(v.low_line))
 
 
+#: The TICKET gate, operator-sized (2026-09-26). The operator tests with about
+#: $20 a pair, and asked why a $25 floor stood in the way: that floor is edge x
+#: the FULL displayed size, a statistic about what the venue showed, never
+#: about anyone's bankroll. A crossing is a ticket when the THIN leg displays
+#: at least the contracts the attempt buys and the edge is worth crossing for.
+#: $25 stays the ledger's statistic (core/ladder/tape.DEFAULT_FLOOR_USD).
+DEFAULT_ATTEMPT_USD = 20.0
+#: Net of both fees, per contract. Below this a one-tick nudge on either leg
+#: is the whole edge.
+DEFAULT_MIN_EDGE = 0.02
+
+
+def pair_cost(v) -> float:
+    """What one contract of the pair costs up front: the buy leg's ask plus
+    the NO side of the sell leg (1 - bid). Under $1 whenever the gross edge
+    is positive; the pair pays $1 at settlement."""
+    return round(v.buy_price + round(1.0 - v.sell_price, 4), 4)   # to the tick: 0.41 + 0.47 is 0.88, not 0.8799999
+
+
+def qty_for(v, attempt_usd: float) -> int:
+    """Contracts the attempt buys of this pair, at least one."""
+    return max(1, int(attempt_usd // pair_cost(v)))
+
+
+def clears_ticket_gate(v, attempt_usd: float = DEFAULT_ATTEMPT_USD,
+                       min_edge: float = DEFAULT_MIN_EDGE) -> bool:
+    """The thin leg shows at least the attempt's contracts, and the net edge
+    is at least ``min_edge``. The edge is rounded to a hundredth of a cent
+    first: 0.0199999 is 2.00c, not a refusal (round to tick before comparing)."""
+    return round(v.edge, 4) >= min_edge and int(v.size) >= qty_for(v, attempt_usd)
+
+
 def ticket_for(v, game: str, when: str, attempt_usd: float) -> dict:
     """One fully-formed two-leg order, sized to the attempt budget. qty >= 1.
 
@@ -45,9 +77,8 @@ def ticket_for(v, game: str, when: str, attempt_usd: float) -> dict:
     cannot read never blocks a ticket.
     """
     no_px = round(1.0 - v.sell_price, 4)
-    pair_cost = v.buy_price + no_px               # < 1 whenever E > 0
-    qty = max(1, int(attempt_usd // pair_cost))
-    qty = min(qty, int(v.size))                   # never more than the smaller displayed side
+    cost = pair_cost(v)                           # < 1 whenever E > 0
+    qty = min(qty_for(v, attempt_usd), int(v.size))   # never more than the smaller displayed side
     try:
         row1, btn1 = ui_wording(game, v.high_line, "BUY YES")
         row2, btn2 = ui_wording(game, v.low_line, "BUY NO")
@@ -60,7 +91,7 @@ def ticket_for(v, game: str, when: str, attempt_usd: float) -> dict:
         "leg2": {"market_line": v.low_line, "side": "BUY NO", "price": no_px, "qty": qty,
                  "screen_row": row2, "screen_button": btn2},
         "displayed_size": v.size, "edge_c": round(v.edge * 100, 2),
-        "cost_usd": round(qty * pair_cost, 4),
-        "guaranteed_usd": round(qty * (1.0 - pair_cost), 4),   # = qty * (B - A), gross
+        "cost_usd": round(qty * cost, 4),
+        "guaranteed_usd": round(qty * (1.0 - cost), 4),   # = qty * (B - A), gross
         "expected_net_usd": round(qty * v.edge, 4),             # after both fees
     }
