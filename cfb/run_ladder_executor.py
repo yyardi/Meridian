@@ -1,7 +1,7 @@
 """The autonomous ladder algorithm, end to end, EXCEPT the send.
 
     python cfb/run_ladder_executor.py --prefix aec-cfb-mia-wake-2026-09-18 \
-        --budget-usd 5 --attempt-usd 1 --floor-usd 25 --every 20 --minutes 240
+        --budget-usd 5 --attempt-usd 20 --every 20 --minutes 240
 
 Every step a trading algorithm has -- observe the venue's live ladder
 simultaneously, detect a fee-netted self-contradiction, apply the registered
@@ -46,7 +46,8 @@ from core.ladder.live import book_age_s, sample, slugs_for  # noqa: E402,F401
 # The ticket builder and the two filters moved to core.ladder.intent so the
 # dashboard previews the same ticket this file writes; re-exported here
 # because the tests and cfb/ read them from this module.
-from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for  # noqa: E402,F401
+from core.ladder.intent import (DEFAULT_ATTEMPT_USD, MID_LADDER, clears_ticket_gate,  # noqa: E402,F401
+                                is_mid, is_spread_pair, ticket_for)
 # The one door to the phone. Kind "tickets" is the default scope, so these
 # pushes reach the operator while summaries and health flaps are muted to disk
 # (docs/ops/notifications.md). core.notify is stdlib-only, by the same test
@@ -128,21 +129,19 @@ def main() -> int:
     # a quiet phone passes one.
     ap.add_argument("--budget-usd", type=float, default=float("inf"),
                     help="cap on total intent cost; the default is no cap")
-    ap.add_argument("--attempt-usd", type=float, default=1.0)
-    ap.add_argument("--floor-usd", type=float, default=25.0, help="min edge x displayed size to act")
+    ap.add_argument("--attempt-usd", type=float, default=DEFAULT_ATTEMPT_USD,
+                    help="the attempt a ticket is sized to; the thin leg must display at least its contracts")
     ap.add_argument("--cooldown", type=float, default=0.0,
                     help="minutes to wait before re-ticketing the SAME pair; 0 = never wait")
     ap.add_argument("--push-cooldown", type=float, default=5.0,
                     help="minutes between PHONE alerts for the same pair; the ticket is "
                          "still written every cycle. 0 = push every one")
     ap.add_argument("--push-floor-usd", type=float, default=0.0,
-                    help="only alert the phone above this edge x displayed size; the "
-                         "ticket is still written at --floor-usd. 0 = alert on every "
-                         "ticket. This is the SECOND floor and it exists because the "
-                         "two thresholds answer different questions: --floor-usd asks "
-                         "'is this worth the desk showing', --push-floor-usd asks 'is "
-                         "this worth interrupting a person'. On 2026-09-18, three games "
-                         "put 93 episodes over $25 and 13 over $500.")
+                    help="edge x FULL displayed size below which a ticket is written but not "
+                         "pushed to the phone. 0 = alert on every ticket. The ticket gate "
+                         "itself is the operator's (core/ladder/intent.clears_ticket_gate: "
+                         "the thin leg shows the attempt's contracts at >= 2c); this asks "
+                         "'is it worth the phone'.")
     ap.add_argument("--quiet", action="store_true",
                     help="write tickets but send no phone alert at all -- the desk shows "
                          "every one with its own liveness, so the phone is redundant once "
@@ -168,7 +167,7 @@ def main() -> int:
              f"every ticket, {a.push_cooldown:.0f}m dedupe" if a.push_floor_usd <= 0 else
              f"${a.push_floor_usd:.0f}+, {a.push_cooldown:.0f}m dedupe")
     print(f"executor (shadow) prefix={a.prefix} rungs={len(slugs)} budget={cap_txt} "
-          f"spent_so_far=${spent:.2f} attempt=${a.attempt_usd:.2f} floor=${a.floor_usd:.0f} "
+          f"spent_so_far=${spent:.2f} attempt=${a.attempt_usd:.2f} "
           f"phone={phone}")
     last: dict = {}        # per pair: last time it was TICKETED
     pushed: dict = {}      # per pair: last time it reached the PHONE
@@ -180,7 +179,7 @@ def main() -> int:
             now_ts = time.time()
             now = dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S")
             v = scan.scan_ladder(game, rungs, max_size=1e12)
-            cands = [x for x in v if scan.clears_floor(x.dollars, a.floor_usd) and is_spread_pair(x)]
+            cands = [x for x in v if clears_ticket_gate(x, a.attempt_usd) and is_spread_pair(x)]
             cands.sort(key=lambda x: (not is_mid(x), -x.dollars))   # mid-ladder first, then biggest
             issued = None
             locked = os.path.exists(lock)                 # the operator's lock: observe only

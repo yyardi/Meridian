@@ -79,9 +79,9 @@ REST_BUCKET_MIN = 90
 REST_MIN_RUNGS = 30
 #: Below this many rungs a ladder has too few pairs to be worth a detector.
 MIN_RUNGS = 4
-#: Detector floor and freshness gate, from the measured edge. The floor is
-#: IMPORTED, not restated: a planner carrying its own 25 can schedule a night
-#: against a floor the detector no longer uses.
+#: The ticket attempt and freshness gate. The attempt is IMPORTED, not
+#: restated: a planner carrying its own number can schedule a night against a
+#: gate the detector no longer uses (it did, with a 25, on 2026-09-21).
 #:
 #: It sits HERE, below the sys.path bootstrap, and not in the import block at
 #: the top. I moved it up there to avoid the noqa and the whole suite stayed
@@ -92,7 +92,7 @@ MIN_RUNGS = 4
 #: `core.ladder.pnl` defines the same constant but pulls desk/scan/tape behind
 #: it; tape imports in 15 ms under `env -i` with no DATABASE_URL, which is what
 #: a cron planner requires.
-from core.ladder.tape import DEFAULT_FLOOR_USD as FLOOR_USD  # noqa: E402
+from core.ladder.intent import DEFAULT_ATTEMPT_USD as ATTEMPT_USD  # noqa: E402
 #: Leagues the stream RECORDS and nothing else acts on: no detector, no
 #: sampler, no REST executor. Cricket, for the in-play calibration read
 #: (docs/math/cricket-inplay-dip.md). One rung is a winner, not a ladder, so
@@ -181,7 +181,7 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
             out.skipped.append(f"{g['game']} tips {tip:%H:%M}Z, launch time already past")
             continue
         tag = f"TEMP {tip:%Y-%m-%d}"
-        out.launches.append(Launch(at, "launch_stream_exec.sh", f"{slug} {mins} {FLOOR_USD} {FRESH_S}", tag))
+        out.launches.append(Launch(at, "launch_stream_exec.sh", f"{slug} {mins} {ATTEMPT_USD:g} {FRESH_S}", tag))
         if league in FOOTBALL and rungs >= REST_MIN_RUNGS:
             # The bucket is the 90-minute slot of the day the kickoff falls
             # in: a 17:00 wave and a 20:05 wave are different slots, so each

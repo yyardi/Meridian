@@ -131,4 +131,6 @@ def test_the_ticket_carries_its_freshness_and_its_source():
 
 def test_the_default_gate_is_where_the_measured_edge_is():
     assert '"--fresh-s", type=float, default=2.0' in SRC
-    assert '"--floor-usd", type=float, default=25.0' in SRC
+    assert '"--attempt-usd", type=float, default=DEFAULT_ATTEMPT_USD' in SRC
+    assert '"--min-edge-c", type=float, default=2.0' in SRC
+    assert "--floor-usd" not in SRC, "the $25 full-size floor is the ledger's statistic, not a ticket gate (2026-09-26)"

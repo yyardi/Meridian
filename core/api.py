@@ -54,7 +54,8 @@ from core.ladder import instructions as _ladder_instructions
 from core.ladder import pnl as _ladder_pnl
 from core.ladder import pnl_page as _ladder_pnl_page
 from core.ladder import tape as _ladder_tape
-from core.ladder.intent import MID_LADDER, is_mid, is_spread_pair, ticket_for
+from core.ladder.intent import (DEFAULT_ATTEMPT_USD, DEFAULT_MIN_EDGE, MID_LADDER, clears_ticket_gate,
+                                is_mid, is_spread_pair, ticket_for)
 from core.ladder.live import book_age_s, line_of, sample, slugs_for
 from core.ladder.scan import (MAX_PLAUSIBLE_EDGE, MAX_PLAUSIBLE_SIZE, clears_floor,
                               best_per_game, fee, scan_ladder)
@@ -2969,12 +2970,15 @@ def scalps(limit: int = Query(200, ge=1, le=1000)) -> dict:
 # unauthenticated gateway client; the ladder handler serves its cache and
 # never calls the venue itself.
 
-#: The executor's ticket-issuing filters, shown on the page beside the live
-#: violations so the operator can see why a violation is or is not a ticket.
+#: The ledger's statistic (edge x FULL displayed size), shown beside the live
+#: violations. NOT the ticket gate since 2026-09-26: a $25 floor at full
+#: displayed size said nothing about a $20 test, which was the operator's point.
 _ARB_FLOOR_USD = 25.0
-#: The executor's default --attempt-usd; the previewed ticket is sized as the
-#: executor would size it, so the two screens show the same contract count.
-_ARB_TICKET_ATTEMPT_USD = 1.0
+#: The attempt the desk sizes a ticket to and gates a candidate by: the thin
+#: leg must show at least the contracts this buys, at >= DEFAULT_MIN_EDGE.
+#: MERIDIAN_ARB_ATTEMPT_USD overrides it; the executors take the same number
+#: from the planner, so the page and the tickets show one contract count.
+_ARB_TICKET_ATTEMPT_USD = float(os.environ.get("MERIDIAN_ARB_ATTEMPT_USD") or DEFAULT_ATTEMPT_USD)
 #: How long one /api/arb/ladder?game= request keeps that game sampled. The
 #: page asks every 5 s while a game is on screen, so 45 s means "still being
 #: looked at". It was 30 MINUTES: on an NFL Sunday every game the operator
@@ -3068,7 +3072,8 @@ def _arb_prefix(game: str) -> tuple[str, str]:
 
 def _arb_filters() -> dict:
     return {"floor_usd": _ARB_FLOOR_USD, "spread_only": True, "mid_first": True,
-            "mid_ladder": list(MID_LADDER), "attempt_usd": _ARB_TICKET_ATTEMPT_USD}
+            "mid_ladder": list(MID_LADDER), "attempt_usd": _ARB_TICKET_ATTEMPT_USD,
+            "min_edge_c": DEFAULT_MIN_EDGE * 100}
 
 
 def _arb_ticket_view(t: dict) -> dict:
@@ -3344,8 +3349,9 @@ def _arb_ladder_snapshot(game: str, rungs: dict, meta: dict, took_s: float,
             "edge_c": round(v.edge * 100, 2), "size": v.size,
             "dollars": round(v.dollars, 2),
             "mid_ladder": is_mid(v), "spread_pair": spread,
-            # The executor's own rule: floor, spread-only; mid-ladder first.
-            "candidate": spread and clears_floor(v.dollars, _ARB_FLOOR_USD),
+            # The executor's own rule: the operator-sized ticket gate, spread-only;
+            # mid-ladder first. Dollars at full displayed size are shown, not gated on.
+            "candidate": spread and clears_ticket_gate(v, _ARB_TICKET_ATTEMPT_USD),
             "ticket": ticket_for(v, game, when, _ARB_TICKET_ATTEMPT_USD),
         })
     violations.sort(key=lambda x: (not x["candidate"], not x["mid_ladder"], -x["dollars"]))

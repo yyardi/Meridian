@@ -120,8 +120,14 @@ def test_summarize_reports_the_ledger_s_fields(tmp_path):
     assert s["episodes"] == 2 and s["over_floor"] == 1 and s["games_with_over_floor"] == 1
     assert s["biggest_usd"] > 25 and s["sum_over_floor_usd"] == s["biggest_usd"]
     assert s["median_life_over_floor_s"] == 1.0, "opened at +1, last seen crossed at +2"
-    for k in ("games", "updates", "one_update", "sum_best_usd", "median_life_s", "floor_usd"):
+    for k in ("games", "updates", "one_update", "sum_best_usd", "median_life_s", "floor_usd",
+              "ticketable", "ticketable_profit_at_attempt_usd", "ticketable_median_life_s"):
         assert k in s, k
+    # the operator's gate: the 5,000-contract crossing at +7.2c is ticketable at $20,
+    # the ten-contract one is not, whatever its dollars
+    from core.ladder import scan
+    edge = 0.44 - 0.34 - scan.fee(0.34) - scan.fee(0.44)   # the big crossing's net edge, at the scan's fee
+    assert s["ticketable"] == 1 and s["ticketable_profit_at_attempt_usd"] == pytest.approx(20 * edge, abs=0.01)
 
 
 def test_scan_dir_reads_only_book_tapes(tmp_path):

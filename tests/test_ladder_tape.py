@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from cfb import ladder_tape_page
 from core.ladder import scan, tape
-from core.ladder.intent import is_spread_pair
+from core.ladder.intent import DEFAULT_ATTEMPT_USD, clears_ticket_gate, qty_for, is_spread_pair
 
 GAME = "aec-wnba-lv-sea-2026-09-18"
 
@@ -153,7 +153,7 @@ def test_a_winner_leg_pair_is_never_a_spread_pair_and_says_so():
     assert v[(4.5, 0.0)]["spread_pair"] is False
     assert "winner" in v[(4.5, 0.0)]["why_not"]
     # The spread-vs-spread pair clears every filter the executor applies:
-    # both legs mid-ladder, both spreads, $33.78 over the $25 floor.
+    # both legs mid-ladder, both spreads, the thin leg past the attempt's contracts at >= 2c.
     assert v[(4.5, -4.5)]["spread_pair"] is True and v[(4.5, -4.5)]["mid"] is True
     assert v[(4.5, -4.5)]["why_not"] == "" and snap["ticketable"] == 1
 
@@ -162,7 +162,7 @@ def test_a_wnba_pair_off_the_mid_ladder_is_one_the_executor_would_ticket():
     """The page's verdict column must be the EXECUTOR's predicate, not a
     stricter one of its own.
 
-    The executor gates on two tests -- `x.dollars >= floor and
+    The executor gates on two tests -- `clears_ticket_gate(x, attempt) and
     is_spread_pair(x)` (cfb/run_ladder_executor.py) -- and uses `is_mid` only
     to sort, so a +/-2.5 pair is ticketed and pushed. MID_LADDER starts at 3.5,
     so a page that treated it as a gate would print "the executor would: off
@@ -185,7 +185,7 @@ def test_a_wnba_pair_off_the_mid_ladder_is_one_the_executor_would_ticket():
     # from the scanner with the executor's arguments rather than read off the
     # page: one predicate, two measurements of it.
     gate = [x for x in scan.scan_ladder(GAME, WNBA_TIGHT, max_size=1e12)
-            if x.dollars >= tape.DEFAULT_FLOOR_USD and is_spread_pair(x)]
+            if clears_ticket_gate(x) and is_spread_pair(x)]
     assert snap["ticketable"] == len(gate) == 1
 
     page = ladder_tape_page.render({**snap, "game": GAME, "tape_age_s": 1.0, "history": []},
@@ -194,13 +194,17 @@ def test_a_wnba_pair_off_the_mid_ladder_is_one_the_executor_would_ticket():
     assert "mid-ladder pairs go first" in page      # an ordering, said as one
 
 
-def test_a_sub_floor_pair_is_the_only_dollar_reason_the_page_gives():
-    """The floor is a gate (the executor's `--floor-usd`); the mid ladder is
-    not. Shrinking the displayed size is what must silence the ticket."""
-    thin = {**WNBA_TIGHT, 2.5: (0.30, 0.32, 600, 100), -2.5: (0.46, 0.48, 100, 500)}
+def test_a_thin_pair_is_the_only_size_reason_the_page_gives():
+    """The ticket gate is the executor's (the thin leg must show the attempt's
+    contracts at >= 2c); the mid ladder is not a gate. Shrinking the displayed
+    size below the attempt's contracts is what must silence the ticket -- a
+    $25 full-size floor no longer does (2026-09-26)."""
+    thin = {**WNBA_TIGHT, 2.5: (0.30, 0.32, 600, 10), -2.5: (0.46, 0.48, 10, 500)}
     snap = tape.ladder(_sample(thin), GAME)
     pair = next(x for x in snap["violations"] if x["spread_pair"])
-    assert pair["dollars"] == 10.76 and pair["why_not"] == "under the $25 floor"
+    v = next(x for x in scan.scan_ladder(GAME, thin, max_size=1e12) if is_spread_pair(x))
+    assert pair["size"] == 10 and pair["why_not"] == f"under the ticket gate: {qty_for(v, DEFAULT_ATTEMPT_USD)} contracts at >= 2c"
+    assert qty_for(v, DEFAULT_ATTEMPT_USD) > 10
     assert snap["ticketable"] == 0
 
 

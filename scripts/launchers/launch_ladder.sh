@@ -24,14 +24,15 @@ RUN="docker run -d --rm --network meridian_default --env-file /opt/meridian/.env
   -v /opt/meridian/core:/app/core -v /opt/meridian/cfb:/app/cfb
   -v /opt/meridian/artifacts/reads:/out -w /app"
 
-# Two floors. $25 is what reaches the DESK -- every crossing worth looking at,
-# and /log keeps them all. $500 is what reaches the PHONE, because the operator
-# asked for the buzzing to stop and the board to carry the rest: on 2026-09-18
-# three games put 93 episodes over $25 and 13 over $500. PUSH_FLOOR=0 restores
-# an alert on every ticket.
-FLOOR=${FLOOR:-25}; PUSH_FLOOR=${PUSH_FLOOR:-500}
+# The ticket gate is the operator-sized one (core/ladder/intent.py, 2026-09-26):
+# the thin leg must display the contracts a $ATTEMPT pair buys, at >= 2c. The
+# old $25 floor (edge x FULL displayed size) said nothing about a $20 test.
+# $500 is what reaches the PHONE, because the operator asked for the buzzing
+# to stop and the board to carry the rest: on 2026-09-18 three games put 93
+# episodes over $25 and 13 over $500. PUSH_FLOOR=0 restores an alert on every ticket.
+ATTEMPT=${ATTEMPT:-20}; PUSH_FLOOR=${PUSH_FLOOR:-500}
 $RUN --name "ladder-${G:0:20}" "$API" sh -c \
-  "python cfb/run_ladder_executor.py --prefix $S --every 20 --minutes $M --attempt-usd 1 --floor-usd $FLOOR --push-floor-usd $PUSH_FLOOR --push-cooldown 10 > /out/live_ladder_${S}.txt 2>&1"
+  "python cfb/run_ladder_executor.py --prefix $S --every 20 --minutes $M --attempt-usd $ATTEMPT --push-floor-usd $PUSH_FLOOR --push-cooldown 10 > /out/live_ladder_${S}.txt 2>&1"
 
 if [ "$WS" = "ws" ]; then
   $RUN --name "wsfresh-${G:0:20}" "$API" sh -c \

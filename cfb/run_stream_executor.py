@@ -2,7 +2,7 @@
 """Ticket a ladder from the venue's STREAM, at update resolution, fresh only.
 
     python cfb/run_stream_executor.py --prefix aec-cfb-ga-ark-2026-09-19 \
-        --minutes 215 --floor-usd 25 --fresh-s 2
+        --minutes 215 --attempt-usd 20 --fresh-s 2
 
 Why this exists, measured on 2026-09-19 across 48 college games and 697,492
 book updates:
@@ -41,8 +41,8 @@ from cfb.run_ws_freshness import Stream  # noqa: E402
 from cfb.run_ladder_executor import intent_for  # noqa: E402
 from core.ladder.live import line_of, slugs_for  # noqa: E402
 from core.ladder.scan import (DEFAULT_FEE_RATE, MAX_PLAUSIBLE_EDGE,  # noqa: E402
-                              Violation, clears_floor, fee)
-from core.ladder.intent import is_spread_pair  # noqa: E402
+                              Violation, fee)
+from core.ladder.intent import DEFAULT_ATTEMPT_USD, clears_ticket_gate, is_spread_pair  # noqa: E402
 
 
 def crossings(line: float, touch: dict, seen: dict, now: float, fresh_s: float,
@@ -77,12 +77,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prefix", required=True)
     ap.add_argument("--minutes", type=float, default=240.0)
-    ap.add_argument("--floor-usd", type=float, default=25.0,
-                    help="min edge x displayed size to ticket")
+    ap.add_argument("--attempt-usd", type=float, default=DEFAULT_ATTEMPT_USD,
+                    help="the attempt a ticket is sized to; the thin leg must display at least its contracts")
+    ap.add_argument("--min-edge-c", type=float, default=2.0,
+                    help="net edge per contract, cents, below which a crossing is not a ticket")
     ap.add_argument("--fresh-s", type=float, default=2.0,
                     help="both legs must have been quoted within this many seconds "
                          "of each other; 2 is where the measured edge lives")
-    ap.add_argument("--attempt-usd", type=float, default=1.0)
     ap.add_argument("--out-dir", default="/out" if os.path.isdir("/out") else "artifacts/reads")
     ap.add_argument("--status-every", type=float, default=60.0)
     a = ap.parse_args()
@@ -95,7 +96,7 @@ def main() -> int:
     stream = Stream(list(line_by_slug), os.path.join(a.out_dir, f"stream_exec_trades_{a.prefix}.jsonl"))
     stream.start()
     print(f"stream executor prefix={a.prefix} rungs={len(line_by_slug)} "
-          f"floor=${a.floor_usd:.0f} fresh={a.fresh_s:g}s -> {out}  (places nothing)",
+          f"attempt=${a.attempt_usd:.0f} min_edge={a.min_edge_c:g}c fresh={a.fresh_s:g}s -> {out}  (places nothing)",
           flush=True)
 
     touch: dict[float, tuple] = {}
@@ -122,7 +123,7 @@ def main() -> int:
             scans += 1
             hits = {}
             for v in crossings(k, touch, seen, now, a.fresh_s, game, DEFAULT_FEE_RATE):
-                if clears_floor(v.dollars, a.floor_usd) and is_spread_pair(v):
+                if clears_ticket_gate(v, a.attempt_usd, a.min_edge_c / 100.0) and is_spread_pair(v):
                     hits[(v.low_line, v.high_line)] = v
             for key, v in hits.items():
                 if key in open_eps:

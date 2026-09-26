@@ -52,7 +52,7 @@ def test_every_game_with_a_ladder_gets_the_stream_detector_two_minutes_before_ti
         slug = l.args.split()[0]
         g = next(x for x in SUNDAY if f"aec-{x['game']}" == slug)
         assert l.at == g["tip"] - dt.timedelta(minutes=SS.LEAD_MIN)
-        assert l.args.endswith(f"{SS.FLOOR_USD} {SS.FRESH_S}"), "the measured floor and gate"
+        assert l.args.endswith(f"{SS.ATTEMPT_USD:g} {SS.FRESH_S}"), "the operator's attempt and the freshness gate"
 
 
 def test_a_thin_ladder_is_not_scheduled():
