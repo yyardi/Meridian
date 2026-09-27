@@ -159,6 +159,40 @@ def snapshot_floor(now: dt.datetime | None = None) -> dt.datetime:
     return t.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+#: Slugs per `= ANY(...)` lookup. Small enough that each statement is an index
+#: range scan on (market_slug, captured_at), never a hash of the table.
+FINISHED_CHUNK = 500
+
+
+def finished_slugs(session, slugs: list[str], now: dt.datetime | None = None,
+                   chunk: int = FINISHED_CHUNK) -> set[str]:
+    """Which of ``slugs`` belong to a game that started more than three hours
+    ago, read off market_snapshots BY SLUG in chunks.
+
+    The previous form -- ``market_slug IN (SELECT market_slug FROM
+    market_snapshots WHERE game_start_time < now - 3h)`` -- made postgres hash
+    every slug of the whole table (87 million rows; a month floor removed a
+    few thousand of them) into one backend. That backend reached 1.2-4 GB
+    three times in 22 hours (2026-09-26 22:35Z, 2026-09-27 15:58Z and 20:10Z)
+    and the kernel killed it, taking every recorder's connection down for
+    four minutes each time. Nine thousand unresolved slugs looked up by index
+    cost nothing.
+    """
+    from sqlalchemy import text
+    now = now or dt.datetime.now(UTC)
+    cut = now - dt.timedelta(hours=3)
+    floor = snapshot_floor(now)
+    out: set[str] = set()
+    for i in range(0, len(slugs), chunk):
+        rows = session.execute(text(
+            "SELECT DISTINCT market_slug FROM market_snapshots "
+            "WHERE market_slug = ANY(:slugs) AND captured_at >= :floor "
+            "AND game_start_time < :cut"),
+            {"slugs": slugs[i:i + chunk], "floor": floor, "cut": cut}).all()
+        out.update(r[0] for r in rows)
+    return out
+
+
 class ResolutionJob:
     def __init__(self, sessionmaker=None, client: PolymarketGatewayClient | None = None) -> None:
         self._Session = sessionmaker or get_sessionmaker(get_engine())
@@ -169,7 +203,9 @@ class ResolutionJob:
         stats = ResolutionStats()
 
         with self._Session() as session:
-            unresolved = session.execute(
+            # Unresolved predicted markets: a few thousand slugs, off the
+            # predictions table alone.
+            candidates = session.execute(
                 select(
                     Prediction.market_slug,
                     func.max(Prediction.line),
@@ -181,28 +217,17 @@ class ResolutionJob:
                         select(ResolvedOutcome.market_slug)
                     )
                 )
-                # Only ask about markets whose game has actually finished.
-                # Without this the job fires a settlement request per unplayed
-                # market every cycle and collects ~100 404s for nothing.
-                # Bounded to the last two months of snapshots. Unbounded, this
-                # subquery hashed every slug in an 87-million-row table: the
-                # backend reached 4 GB and the kernel killed postgres on
-                # 2026-09-26 22:35Z (and again on the 27th), taking the venue
-                # recorders down for four minutes each time. A month-boundary
-                # floor is the one that prunes partitions; a prediction older
-                # than that is not waiting on this job.
-                .where(
-                    Prediction.market_slug.in_(
-                        select(MarketSnapshot.market_slug).where(
-                            MarketSnapshot.captured_at >= snapshot_floor(),
-                            MarketSnapshot.game_start_time
-                            < dt.datetime.now(UTC) - dt.timedelta(hours=3),
-                        )
-                    )
-                )
                 .group_by(Prediction.market_slug)
-                .limit(limit)
             ).all()
+            # Only ask about markets whose game has actually finished.
+            # Without this the job fires a settlement request per unplayed
+            # market every cycle and collects ~100 404s for nothing. Read by
+            # slug, in chunks, by index -- see finished_slugs for the three
+            # times the subquery form got postgres killed.
+            finished = finished_slugs(session, [c[0] for c in candidates])
+            unresolved = [c for c in candidates if c[0] in finished]
+            if limit is not None:
+                unresolved = unresolved[:limit]
 
             for market_slug, line, _mtype in unresolved:
                 stats.markets_seen += 1
