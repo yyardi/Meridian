@@ -1,288 +1,189 @@
 # Meridian
 
-An algorithmic trading system for WNBA prediction markets on **Polymarket US**.
+**A self-scheduling market-microstructure research and execution platform for
+Polymarket US sports markets.**
 
-This file is the entry point and nothing more. Everything of substance lives in
-[`docs/`](docs/README.md) as short, single-topic documents.
+Meridian records a regulated prediction-market venue at update resolution across
+seven sports, tests every trading idea against pre-registered rules with
+game-clustered statistics, and puts the one that survives — the venue's own
+spread ladders contradicting themselves for seconds at a time — in front of a
+trading desk that can send both legs in two clicks. It schedules, records,
+grades and reports itself every night with no hands on it.
 
-**New here?** Read [docs/how-it-all-works.md](docs/how-it-all-works.md) — the whole
-project in plain language, then the maths.
-
----
-
-## Status — 2026-08-03
-
-| | |
-|---|---|
-| **Model** | v4 (v3 + winner's-curse shrinkage in the live path) |
-| **Real orders ever placed** | **0** |
-| **Execution mode** | SHADOW, kill switch on, market orders unrepresentable |
-| **Tests** | 464 |
-| **Recurring cost** | \$0 |
-
-**Data:** 839k market snapshots · 831k book levels · 3,290 team game logs · 18,145
-player games · 12,658 sportsbook odds rows · 11,609 predictions (8,937 on v4) · 1,356
-resolved · 1,333 shadow orders.
-
-**Where we are stuck:** ANCHOR is at 4 games post-v4 and cannot be judged yet. PULSE's
-two Tier-1 hypotheses both report NO DATA — 3 of 20 recorded games have 200ms
-coverage. **The bottleneck is games, not code.**
-
-> ⚠️ **Open problem:** the model's probabilities carry no demonstrable signal —
-> ~50% realised across every confidence bucket, edge-vs-return correlation +0.001.
-> [docs/math/calibration-problem.md](docs/math/calibration-problem.md). Do not size
-> this live until resolved.
-
-Full picture: [docs/STATUS.md](docs/STATUS.md) · what to build next:
-[docs/next-build.md](docs/next-build.md) · what we got wrong:
-[docs/findings.md](docs/findings.md).
-
----
-
-## Running on AWS (production since 2026-08-20)
-
-The whole stack runs 24/7 on one EC2 box (`meridian-host`, us-east-1) — the
-laptop is a cold backup. Full details: `docs/infra/aws-migration.md`.
-
-Real values (server IP, bucket) are not in this repo: read them from the
-EC2/S3 console, or keep them in a local note. The IP also changes if the
-instance is ever stopped and started.
-
-Day-to-day commands (from any terminal with the key at `~/.ssh/meridian-aws.pem`):
-
-```bash
-# health: 11 lines of "Up" = good
-ssh -i ~/.ssh/meridian-aws.pem ubuntu@<server-ip> \
-  "cd /opt/meridian && sudo -H -u meridian docker compose ps"
-
-# dashboard: open the tunnel, then browse http://localhost:8009
-ssh -i ~/.ssh/meridian-aws.pem -L 8009:localhost:8008 -N ubuntu@<server-ip>
-
-# deploy merged code
-ssh -i ~/.ssh/meridian-aws.pem ubuntu@<server-ip> \
-  "cd /opt/meridian && sudo -H -u meridian git pull && \
-   sudo -H -u meridian docker compose --env-file .env up -d --build"
-```
-
-Nothing is exposed to the internet: SSH from the operator's IP only, dashboard
-over the tunnel, secrets live only in `/opt/meridian/.env` (copied by hand,
-never in git). Phone alerts come from the server's alerter. Backups land in a private S3 bucket.
-
-**Laptop fallback:** the sections below describe running the stack locally.
-That is now the emergency/backup mode — `docker compose up -d` from this
-directory revives it, data intact through 2026-08-20.
-
-## Start everything
-
-**One terminal tab per thing, each left open.** Every tab shows its own logs and
-stops with `Ctrl-C` in that tab. Nothing is hidden in the background.
-
-All commands run from `/Users/yayardia/Documents/Quant/Meridian`.
-
-### Tab 1 — keep the Mac awake
-
-```bash
-caffeinate -dims
-```
-
-Prints nothing and just sits there. That is correct. Snapshots cannot be
-backfilled, so a sleeping laptop is a permanent hole in the record.
-
-### Tab 2 — the services, with live logs
-
-```bash
-docker compose up
-```
-
-**No `-d`.** All eight containers stream their logs into this tab, so you can
-watch the recorder and scheduler work. `Ctrl-C` stops all eight.
-
-After changing code or the schema, use `docker compose up --build` instead.
-
-**The dashboard is one of the eight** (`meridian-api`, since 2026-08-07) — open
-**<http://localhost:8008>** once the stack is up. There is no separate uvicorn
-tab any more: the host `nohup uvicorn` was the only component that died on
-reboot, which is disqualifying on a machine that runs unattended. The fill
-watcher lives inside that container and starts with it.
-
-**So is the phone alerter** (`meridian-alerter`): the health checks below,
-evaluated every 5 minutes, pushed to `ntfy.sh/$MERIDIAN_NTFY_TOPIC` on any
-transition to DEAD, plus a 9:00 CT daily digest that is always issued — a
-missing digest means the alerter itself is dead. Since 2026-09-18 what reaches
-the phone is `MERIDIAN_NTFY_SCOPE` (default: order tickets only; health pushes
-go to the muted log) — see `docs/ops/notifications.md`. Subscribe to the topic
-in the ntfy app before leaving the machine alone; test the channel with
-`docker compose exec alerter python -m core.alerter --test` (exit 1 and a
-stderr line when the scope mutes it).
-
-### Tab 3 — checks and live data
-
-This tab stays free for one-off commands.
-
-```bash
-.venv/bin/python scripts/health.py
-```
-
-Must say `Verdict: ALL GOOD`. If not, the red lines say exactly what is broken.
-
-```bash
-.venv/bin/python scripts/watch.py
-```
-
-Live tail of the **200ms tick recorder**, refreshed every 2 seconds. During a
-game the `rows/min` counter should be in the hundreds. **If it reads 0 while a
-game is on, recording is dead and that data is gone for good.** Add `--slow` to
-watch the 15-minute pregame recorder instead. `Ctrl-C` stops it.
-
-## Stop everything
-
-`Ctrl-C` in tabs 1 and 2. That is the whole procedure.
-
-If something was started in the background and you have lost track of it:
-
-```bash
-./scripts/stop.sh
-```
-
-Stops the dashboard, the containers and the sleep guard wherever they are, then
-verifies each one actually went away. Safe to run when things are already
-stopped, and **it deletes no data** — every recorded row survives.
-
-Recording stops too. Don't leave it off through a game.
-
-## Running in the background instead
-
-Only if you want to close the terminals. Prefix any of the above with `nohup`
-and suffix with `&`:
-
-```bash
-nohup caffeinate -dims > /dev/null 2>&1 &
-```
-
-`&` backgrounds it, `nohup` keeps it alive after the terminal closes, and the
-redirect sends output to a file instead of the screen. For containers the
-equivalent is `docker compose up -d`, then `docker compose logs -f` to watch.
-**For an unattended stretch (vacation), `docker compose up -d` is the right
-mode** — `restart: unless-stopped` brings every container back after a crash
-or reboot, and the alerter's startup push tells your phone the reboot happened.
-
-**The cost is that you can no longer `Ctrl-C` any of it** — you need
-`./scripts/stop.sh` or `pkill`. Prefer the tabs.
-
-## Other commands
-
-| Command | Does |
-|---|---|
-| `docker compose up --build` | **use instead of tab 2 after any code or schema change** |
-| `docker compose ps` | are the containers up |
-| `docker compose logs scheduler --tail 50` | why predictions aren't appearing |
-| `docker compose logs live-recorder --tail 50` | why tick data isn't appearing |
-| `docker compose logs kalshi-recorder --tail 50` | why Kalshi snapshots aren't appearing |
-| `docker compose restart scheduler` | nudge a stuck job |
-| `docker compose logs api --tail 50` | why the dashboard is misbehaving |
-| `docker compose logs alerter --tail 50` | what the alerter last pushed |
-| `docker compose exec alerter python -m core.alerter --test` | test push to the phone |
-| `pmset -g assertions` | confirm the sleep guard is actually held |
-| `pkill caffeinate` | let the Mac sleep again |
-| `.venv/bin/python -m pytest -q` | run the tests |
-
-> **`--build` is not optional after a schema change.** Skipping it once put the
-> recorder in a crash-loop — its Alembic could not find the new revision.
-
-## Gotchas that have already cost data
-
-**The dashboard used to be a host process, and that cost a reboot's worth of
-coverage.** Since 2026-08-07 it is the `meridian-api` container and restarts
-with everything else. If the UI is dead now, `docker compose ps` — not a
-terminal tab — is where to look.
-
-**`caffeinate -s` only applies on AC power.** On battery the machine can still
-sleep. `health.py` warns about this explicitly.
-
-**`caffeinate` does not override the lid switch.** Closing the lid sleeps the
-machine regardless of what is running — carrying the laptop between rooms stops
-recording. There is no flag that fixes this. On a game night: **plugged in, lid
-open.**
-
-**The dashboard and the tick recorder use different databases.** The UI reads
-Supabase; the 200ms recorder writes to local Postgres. A healthy-looking
-dashboard says nothing about tick recording — that blind spot let the tick
-recorder die for 23 hours unnoticed. `health.py` checks both, which is why it
-exists.
-
-### The dashboard pages
-
-| Page | Shows |
-|---|---|
-| `/` | Today's picks as trade tickets, framed by a game/score strip, plus resolved results and the game tape — click a game for every shadow trade in it |
-| `/picks` | Redirects to `/` — the picks page *is* the landing page ([why](docs/infra/landing-page.md)) |
-| `/analytics` | CLV, calibration, equity charts |
-
-Published on **all interfaces** (operator decision, 2026-08-07) so the dashboard
-is readable over the tailnet while away — which also makes the unauthenticated
-read endpoints reachable from the LAN. The one write path — the human-confirm
-order endpoint — is separately gated by `MERIDIAN_ORDER_TOKEN` and fails closed
-without it. Revert to `127.0.0.1:8008:8008` in docker-compose.yml when remote
-access is no longer needed.
-
-**Reading the edge column:** an edge is tradable only if the row is *actionable*.
-Rows marked `reduced_confidence` are usually games the sportsbooks have not priced
-yet — with no book line there is nothing to anchor against, so the number shown is
-raw model opinion and is typically the largest and least trustworthy figure on the
-page.
-
-### Environment
-
-```bash
-DATABASE_URL=postgresql://...   # Supabase
-MERIDIAN_TX_POOLER=1            # route to the transaction pooler (port 6543)
-POLYMARKET_KEY_ID=...           # executor only
-POLYMARKET_SECRET_KEY=...       # executor only
-MERIDIAN_NTFY_TOPIC=...         # phone alerts — subscribe to it in the ntfy app
-```
-
-Never commit these. `.env` is gitignored.
+Built from a first commit on 2026-07-31 to ~139,000 lines of Python, 2,900+
+tests and 180 documents in eight weeks, by one operator directing a team of AI
+sessions held to the same rules as the code.
 
 ---
 
 ## What it does
 
-1. **Records** Polymarket US WNBA prices and full book depth, forever
-2. **Fetches** team stats and sportsbook odds from free sources
-3. **Predicts** a fair value for each market
-4. **Logs** every prediction alongside the live market price
-5. **Backtests** those predictions against what happened
-6. **Sizes** hypothetical positions with fractional Kelly
-7. **Shadow-trades** — logs what it would have done, places nothing
-
-Execution on real money is the last milestone, gated behind a human confirm step and
-a validated track record.
-
-## Design rules — non-negotiable
-
-1. **Limit orders only, enforced by construction.** No market-order code path exists.
-   The type signature makes one unrepresentable.
-2. **No lookahead, enforced by construction.** `as_of` is keyword-only with no
-   default everywhere. [docs/math/point-in-time.md](docs/math/point-in-time.md)
-3. **Log every prediction, forever.** Including the no-edge control group — which is
-   why raw log hit rates are not performance.
-4. **Start simple; add complexity only on evidence.** Every adopted change traces to
-   a pre-registered gate. [docs/math/performance-targets.md](docs/math/performance-targets.md)
-5. **Human in the loop.** Nothing reaches the venue without a person deciding.
-
-## Layout
-
-| Path | Contains |
+| | |
 |---|---|
-| `core/` | recorder, feeds, predictions, executor, backtest, API |
-| `core/pulse/` | in-game strategy research (replay engine, overreaction, first-score) |
-| `core/quote/` | market-making research (adverse selection, depth signal) |
-| `strategies/` | the WNBA totals model |
-| `docs/` | everything explained — [start here](docs/README.md) |
-| `tests/` | 464 tests |
+| **Records** | Polymarket US winner, spread and total markets for NFL, college football, MLB, WNBA, cricket and table tennis — best bid/ask, size, fee coefficient, live state and score on every sweep; a 200 ms in-play feed; full order-book depth; and the venue's public WebSocket, taped per game with every book push and every print. Reference feeds: Kalshi boards and events, ESPN scoreboards, play-by-play, box scores, injuries, sportsbook odds, cricket toss and innings state. |
+| **Researches** | 37 runners and 72 registered reads over one partitioned Postgres — point-in-time by construction, every estimate game-clustered with a sandwich interval, every number printed with its population and count. A nightly paper book settles 34 strategy lines against the venue's own results. |
+| **Trades** | The ladder arbitrage: a spread ladder must be monotone in the line, and when the venue quotes it otherwise the desk tickets a two-leg pair that pays ≥ $1 in every state of the world. A stream executor tickets at the venue's clock; a FastAPI desk previews the ticket in the venue's own screen wording and sends both legs, stale side first, with a per-pair cap, a lock, and a fill watcher reconciling the venue's replies. |
+| **Runs itself** | A planner reads the board daily and writes the night's cron: recorders per kickoff window, executors per game, a verdict after the last game, a self-clean the next morning. The verdict appends the edge ledger, replays every large crossing against the prints to call it real or phantom, checks the fee constant against the recorded column, computes settlement P&L per ticket and pushes four lines to a phone. |
 
-## Reference
+---
 
-[Glossary](docs/glossary.md) · [Data sources](docs/infra/data-sources.md) ·
-[Hosting and costs](docs/infra/hosting.md) · [Architecture](docs/infra/architecture.md) ·
-[Tech stack](docs/README.md#stack)
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph venue["Polymarket US"]
+    REST[REST board & book]
+    WS[WebSocket markets stream]
+  end
+  subgraph ref["Reference feeds"]
+    K[Kalshi]
+    E[ESPN: live, stats, box scores, injuries, odds, cricket]
+  end
+  subgraph data["Data plane"]
+    R[recorders] --> PG[(Postgres, monthly partitions)]
+    S[stream recorder] --> T[(JSONL tapes per game)]
+  end
+  subgraph research["Research plane"]
+    RR[37 runners · 72 registered reads] --> PB[paper book · ledger · scorecards]
+  end
+  subgraph exec["Execution plane"]
+    X[stream executor] --> D[desk: tickets · SEND · UNWIND]
+  end
+  subgraph ops["Operations plane"]
+    P[planner 12:10Z] --> C[cron: launches · verdict · self-clean]
+  end
+  REST --> R
+  WS --> S
+  K --> R
+  E --> R
+  PG --> RR
+  T --> RR
+  T --> X
+  PG --> D
+  C --> S
+  C --> X
+  C --> PB
+```
+
+**Data plane.** Seventeen feed modules write into one Postgres partitioned by
+month (a query prunes only from a month-boundary floor — tested). Roughly
+2.5 million venue snapshot rows a day, 87 million on disk, 16 million Kalshi
+rows, 8.7 million depth rows, 12 GB of stream tapes.
+
+**Research plane.** A box score is visible three hours after its own tip; a
+quote at T−1h is the last one at or before it; a fee is the coefficient the
+venue recorded on that row. Eighteen rungs on one game are one opinion, so
+intervals cluster by game. The nightly scan, paper book, edge ledger, phantom
+check, fee-drift line and two model scorecards run from cron and append to
+files the dashboard reads.
+
+**Execution plane.** The desk (`/arb`) shows a live ladder per game, the
+executor's tickets, a two-click SEND that spells every term in the venue's
+words — the row ("KC to win by over 6.5 points") and the button — and sends
+immediate-or-cancel legs, leg 2 only for what leg 1 filled. A lock file the
+executors honour, a per-pair cap, an order token held in session storage, and
+an UNWIND.
+
+**Operations plane.** `scripts/schedule_slate.py` plans; versioned launchers
+under `scripts/launchers/` start containers; `slate_verdict.sh` grades every
+tape exactly once, dated by its tag.
+
+---
+
+## The ladder arbitrage
+
+For one team in one game the venue lists spread lines ℓ₁ < ℓ₂ < … Covering a
+harder line implies covering every easier one, so YES prices must be monotone:
+`YES(ℓ_hi) ≥ YES(ℓ_lo)`. A violation is a **bid** on a harder line above the
+**ask** on an easier one by more than both taker fees,
+
+```
+E = B_lo − A_hi − f(A_hi) − f(B_lo),     f(p) = θ · p · (1 − p)
+```
+
+Buy the easier line at `A_hi`, sell the harder one at `B_lo` (on this venue,
+buy its NO at `1 − B_lo`). The pair costs `1 − (B_lo − A_hi)` per contract and
+pays $1 at settlement in every margin region — $2 if the margin lands between
+the lines. The edge is an identity, not a forecast.
+
+The venue breaks its ladders in play, at score changes, when rungs are re-quoted
+one at a time and a stale resting order survives beside its moved neighbours
+for a few hundred milliseconds to a few seconds. Measuring that honestly took
+three instruments:
+
+- a **stream recorder** on the venue's WebSocket (a REST sampler ran 54–62 s
+  behind the venue and was retracted, at the table, with the figures it had
+  produced);
+- a **freshness gate** — a crossing counts only if the venue pushed both legs
+  within two seconds of each other;
+- a **phantom check** — each large crossing is replayed against the tape's
+  prints; a taker lift above the displayed ask or a hit below the displayed
+  bid during the crossing means the quote was a picture.
+
+The **edge ledger** accrues one row per league per night: crossings, the
+≥ $25-at-full-size statistic, and what a $20 attempt could have ticketed, with
+their lives in seconds.
+
+---
+
+## The discipline
+
+- **Pre-registration.** Estimator, decision rule, sample size and kill
+  condition are written before the tape exists (`docs/math/*preregistration*`).
+- **Named estimators.** Fills-weighted and equal-weight game means are both
+  printed; "game-clustered" names the interval, not the estimate.
+- **Fee per row.** The venue's coefficient is a constant of a period (it moved
+  from 0.06 to 0.0695 on 2026-09-17). `core/fees.py` owns the constants;
+  `recorded_fee(price, coefficient)` charges a historical row its own value
+  and refuses `None`; two guard tests parse the tree for any restated fee and
+  for any historical read that charges today's; `scripts/fee_drift.py`
+  compares the constant to the column every night.
+- **Guards at collection.** Sweep tests fail the suite on a defect's family —
+  a restated threshold, a fee literal, a launcher's naming, a documented
+  nightly read no cron script runs.
+- **The ledger of being wrong.** [`docs/findings.md`](docs/findings.md): 41
+  venue facts, 17 bugs, 20 corrections, each dated with what it cost and what
+  would have caught it. Retractions sit at the table they retract.
+
+---
+
+## Repository layout
+
+```
+core/            feeds, ladder (scan · stream · executor · desk), pulse, quote, backtest, fees
+cfb/             research runners (run_*.py) and the stream slate/executor entry points
+scripts/         scheduler, launchers, edge ledger, fee drift, nightly scripts
+static/          the dashboard (ARB desk, tape, log, P&L, scoreboard)
+strategies/      registered paper-book strategy lines
+alembic/         45 migrations
+tests/           172 files, 2,900+ tests
+STATUS.md        the running record, 90+ dated sections
+docs/            findings.md, math/ (111 documents), ops/, infra/
+```
+
+---
+
+## Running it
+
+```bash
+cp .env.example .env            # database URL, venue credentials, notification topic
+docker compose up --build       # postgres, recorders, scheduler, api (dashboard on :8008), alerter
+docker compose -f docker-compose.yml -f docker-compose.nfl.yml up -d      # per-sport overlays
+.venv/bin/alembic upgrade head
+.venv/bin/python -m pytest -q   # the suite needs a local Postgres on :5433
+```
+
+Production is one AWS host: the base compose plus the sport overlays, a daily
+planner at 12:10Z that installs the night's launches, and the nightly scan at
+04:40Z. Deploys are path-level checkouts of `origin/main` plus an api image
+rebuild; `cfb/` and `scripts/` are bind-mounted into launched containers.
+
+---
+
+## Documents
+
+- [`STATUS.md`](STATUS.md) — the running record, newest sections last; start at §0cd.
+- [`docs/findings.md`](docs/findings.md) — what the venue actually does, what broke, what we retracted.
+- [`docs/math/`](docs/math/) — one short document per question: the fee, the ladder fill test, the stream instrument, cricket in play, the WNBA player model, the PULSE live scorecard, and 100 more.
+- [`docs/how-it-all-works.md`](docs/how-it-all-works.md) — the project in plain language.
+- [`docs/ops/intern-desk-guide.md`](docs/ops/intern-desk-guide.md) — a one-page guide to the desk for a new trader.
