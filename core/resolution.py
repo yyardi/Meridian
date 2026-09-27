@@ -148,6 +148,17 @@ def implied_settlement(
     return None
 
 
+#: How far back the resolution job looks for a market's snapshots, rounded down
+#: to a month boundary so the partitioned table prunes (a mid-month floor
+#: filters rows and costs MORE).
+SNAPSHOT_LOOKBACK_DAYS = 45
+
+
+def snapshot_floor(now: dt.datetime | None = None) -> dt.datetime:
+    t = (now or dt.datetime.now(UTC)) - dt.timedelta(days=SNAPSHOT_LOOKBACK_DAYS)
+    return t.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
 class ResolutionJob:
     def __init__(self, sessionmaker=None, client: PolymarketGatewayClient | None = None) -> None:
         self._Session = sessionmaker or get_sessionmaker(get_engine())
@@ -173,11 +184,19 @@ class ResolutionJob:
                 # Only ask about markets whose game has actually finished.
                 # Without this the job fires a settlement request per unplayed
                 # market every cycle and collects ~100 404s for nothing.
+                # Bounded to the last two months of snapshots. Unbounded, this
+                # subquery hashed every slug in an 87-million-row table: the
+                # backend reached 4 GB and the kernel killed postgres on
+                # 2026-09-26 22:35Z (and again on the 27th), taking the venue
+                # recorders down for four minutes each time. A month-boundary
+                # floor is the one that prunes partitions; a prediction older
+                # than that is not waiting on this job.
                 .where(
                     Prediction.market_slug.in_(
                         select(MarketSnapshot.market_slug).where(
+                            MarketSnapshot.captured_at >= snapshot_floor(),
                             MarketSnapshot.game_start_time
-                            < dt.datetime.now(UTC) - dt.timedelta(hours=3)
+                            < dt.datetime.now(UTC) - dt.timedelta(hours=3),
                         )
                     )
                 )

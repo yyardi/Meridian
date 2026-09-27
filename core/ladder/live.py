@@ -64,7 +64,10 @@ LIVE_WINDOW_HOURS = {"cfb": 6.0, "nfl": 5.0, "mlb": 6.0, "wnba": 4.0, "nba": 4.0
                      # a T20 is ~3.5 h with the toss; an ODI ~8.5 h. Rain and a
                      # reduced-overs restart stretch both; generous, per the note above.
                      "t20icr": 5.0, "t20iwcr": 5.0, "cplcr": 5.0, "odicr": 10.0,
-                     "county": 96.0}   # four days from the first ball
+                     "county": 96.0,   # four days from the first ball
+                     # a basketball game is ~2 h; overtime and a late tip stretch it
+                     "eurolg": 3.5, "lnbp": 3.5, "bbl": 3.5, "vtb": 3.5, "bsl": 3.5,
+                     "denbl": 3.5, "slnbl": 3.5, "hunbl": 3.5}
 
 #: For a league not in the table: the longest window any of them needs.
 DEFAULT_LIVE_WINDOW_HOURS = 6.0
@@ -116,6 +119,17 @@ RECORDED_MARKET_TYPES = LADDER_MARKET_TYPES + (
 #: the next exclusion is a line here and a line in the skipped list, not a
 #: silent drop.
 CRICKET_STREAM_LEAGUES = ("t20icr", "t20iwcr", "cplcr", "odicr", "county")
+#: The venue's international basketball competitions (listed 2026-09-27:
+#: EuroLeague, LNB Pro A, BBL, VTB, BSL, plus the Danish, Slovenian and
+#: Hungarian leagues), each ONE winner market per game, no spread or total
+#: ladder -- so there is nothing for a detector to pair, and the tape is for
+#: the pregame and in-play calibration reads (docs/math/intl-basketball-winner.md).
+BASKETBALL_INTL_LEAGUES = ("eurolg", "lnbp", "bbl", "vtb", "bsl", "denbl", "slnbl", "hunbl")
+#: Recorder-only: the stream tapes them and nothing acts. MLB joins on
+#: 2026-09-27: run lines are the only spread, so the ladder has one rung and
+#: a week of samplers and executors produced zero episodes while costing
+#: ~1.6 GB of a 7.6 GB box on a Sunday the kernel killed postgres.
+RECORDER_ONLY_LEAGUES = CRICKET_STREAM_LEAGUES + BASKETBALL_INTL_LEAGUES + ("mlb",)
 EXCLUDED_LEAGUES: dict[str, str] = {}
 
 _ANY_GAME = re.compile(r"^[a-z]{3}-(?P<game>[a-z0-9]+-.+?-\d{4}-\d{2}-\d{2})(?:-|$)")

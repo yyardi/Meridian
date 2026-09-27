@@ -79,3 +79,8 @@ def test_the_cricket_winner_is_recorded_and_is_not_a_ladder_family():
         assert fam in live.RECORDED_MARKET_TYPES and fam not in live.LADDER_MARKET_TYPES
     assert live.game_and_line("aec-t20icr-japan-india-2026-09-22") == ("t20icr-japan-india-2026-09-22", 0.0)
     assert "county" in live.CRICKET_STREAM_LEAGUES and live.EXCLUDED_LEAGUES == {}
+    # 2026-09-27: international basketball (winner-only) and MLB (one-rung run
+    # lines) are recorder-only too; every recorder-only league has a live window.
+    assert set(live.BASKETBALL_INTL_LEAGUES) <= set(live.RECORDER_ONLY_LEAGUES) and "mlb" in live.RECORDER_ONLY_LEAGUES
+    for lg in live.BASKETBALL_INTL_LEAGUES:
+        assert lg in live.LIVE_WINDOW_HOURS, lg

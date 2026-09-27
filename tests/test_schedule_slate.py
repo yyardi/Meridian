@@ -47,7 +47,7 @@ def _by(p, script):
 def test_every_game_with_a_ladder_gets_the_stream_detector_two_minutes_before_tip():
     p = SS.plan(SUNDAY, NOW)
     dets = _by(p, "launch_stream_exec.sh")
-    assert len(dets) == 16, "14 NFL + WNBA + MLB"
+    assert len(dets) == 15, "14 NFL + WNBA; MLB is recorder-only"
     for l in dets:
         slug = l.args.split()[0]
         g = next(x for x in SUNDAY if f"aec-{x['game']}" == slug)
@@ -74,10 +74,17 @@ def test_rest_executors_are_capped_per_kickoff_bucket_and_two_carry_the_comparat
     assert not any("wnba" in l.args or "mlb" in l.args for l in rest), "REST is football only"
 
 
-def test_basketball_and_baseball_get_the_sampler_not_the_executor():
+def test_basketball_gets_the_sampler_and_baseball_only_the_recorder():
+    """MLB left MEASURED_ONLY on 2026-09-27: run lines are the only spread, so
+    the ladder has one rung; a week of samplers and executors found zero
+    episodes and thirty of them sat on a 7.6 GB box the day postgres was
+    OOM-killed. The stream recorder still tapes every MLB window."""
     p = SS.plan(SUNDAY, NOW)
     samp = _by(p, "launch_sampler.sh")
-    assert sorted(l.args.split()[0] for l in samp) == ["aec-mlb-tor-tex-2026-09-20", "aec-wnba-atl-ny-2026-09-20"]
+    assert sorted(l.args.split()[0] for l in samp) == ["aec-wnba-atl-ny-2026-09-20"]
+    assert not any("mlb" in l.args for l in _by(p, "launch_stream_exec.sh"))
+    assert any(l.args.startswith("mlb ") for l in _by(p, "launch_stream_slate.sh"))
+    assert "mlb" in SS.RECORDER_ONLY and "wnba" not in SS.RECORDER_ONLY
 
 
 def test_the_recorder_windows_group_kickoffs_within_three_hours():
@@ -143,18 +150,18 @@ def test_the_plan_is_ordered_by_time_and_deterministic():
 def test_the_slug_comes_from_the_dated_key_not_the_phone_s_short_game_name():
     """The board query returns `game` without its date for the phone and
     `key` with it for the launchers. A dry run against the live board on
-    2026-09-21 built `aec-mlb-tor-bal` from `game`; the recorder has never
+    2026-09-21 built `aec-wnba-tor-bal` from `game`; the recorder has never
     heard of that slug and every launch would have found zero rungs."""
-    row = {"game": "mlb-tor-bal", "key": "mlb-tor-bal-2026-09-21", "league": "mlb",
+    row = {"game": "wnba-tor-bal", "key": "wnba-tor-bal-2026-09-21", "league": "wnba",
            "tip": _t(22, 35), "rungs": 5}
     p = SS.plan([row], NOW)
     slugs = {l.args.split()[0] for l in p.launches if l.script != "launch_stream_slate.sh"
              and l.script != "slate_verdict.sh"}
-    assert slugs == {"aec-mlb-tor-bal-2026-09-21"}
+    assert slugs == {"aec-wnba-tor-bal-2026-09-21"}
     # A fixture row with only a dated `game` (no key) still works.
-    p2 = SS.plan([dict(row, key=None, game="mlb-tor-bal-2026-09-21")], NOW)
+    p2 = SS.plan([dict(row, key=None, game="wnba-tor-bal-2026-09-21")], NOW)
     assert {l.args.split()[0] for l in p2.launches if "launch_s" in l.script and "slate" not in l.script} \
-        == {"aec-mlb-tor-bal-2026-09-21"}
+        == {"aec-wnba-tor-bal-2026-09-21"}
 
 
 def test_the_window_runs_to_the_next_noon_utc_not_a_fixed_span():

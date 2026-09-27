@@ -57,7 +57,10 @@ GAME_MINUTES = {"nfl": 230, "cfb": 230, "wnba": 170, "nba": 170, "mlb": 200,
                 "t20icr": 240, "t20iwcr": 240, "cplcr": 240, "odicr": 540,
                 # county: four days of ~6.5 h play each; one recorder for the
                 # match, the stream costs nothing and the tape is one slug.
-                "county": 4 * 24 * 60}
+                "county": 4 * 24 * 60,
+                # international basketball: ~2 h of play plus overtime, from tip
+                "eurolg": 150, "lnbp": 150, "bbl": 150, "vtb": 150, "bsl": 150,
+                "denbl": 150, "slnbl": 150, "hunbl": 150}
 DEFAULT_MINUTES = 200
 #: Launch this many minutes before kickoff.
 LEAD_MIN = 2
@@ -98,13 +101,16 @@ from core.ladder.intent import DEFAULT_ATTEMPT_USD as ATTEMPT_USD  # noqa: E402
 #: (docs/math/cricket-inplay-dip.md). One rung is a winner, not a ladder, so
 #: MIN_RUNGS does not apply to them; an EXCLUDED_LEAGUES entry is named in
 #: the skipped list and never launched (none today).
-from core.ladder.live import CRICKET_STREAM_LEAGUES as RECORDER_ONLY, EXCLUDED_LEAGUES  # noqa: E402
+from core.ladder.live import RECORDER_ONLY_LEAGUES as RECORDER_ONLY, EXCLUDED_LEAGUES  # noqa: E402
 FRESH_S = 2
 #: The verdict runs this long after the last game should be over.
 VERDICT_AFTER_MIN = 30
 
 FOOTBALL = ("nfl", "cfb")
-MEASURED_ONLY = ("wnba", "nba", "mlb")
+#: Sampler + stream executor, no REST ladder. MLB left this set on
+#: 2026-09-27 for RECORDER_ONLY: one-rung run lines, zero episodes in a week,
+#: thirty containers on the Sunday the kernel killed postgres.
+MEASURED_ONLY = ("wnba", "nba")
 
 
 @dataclass(frozen=True)
