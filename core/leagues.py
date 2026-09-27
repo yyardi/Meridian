@@ -150,6 +150,24 @@ LEAGUES: dict[str, League] = {
         ),
         venue_leagues=("cplcr", "t20icr", "t20iwcr", "odicr", "county"),
     ),
+    "basketball-intl": League(
+        slug="basketball-intl",
+        name="Basketball (international)",
+        espn_path="basketball",
+        recorded=True,
+        # Read off the venue 2026-09-27: EuroLeague 20 events (first tip
+        # 09-29), LNB Pro A 16 (first 09-27), BBL 9, VTB 6, BSL 1 and three
+        # smaller leagues; ONE market per event, `basketball_team_full_game_winner`,
+        # no spread, no total. Recorder-only: pregame board sweeps here, the
+        # stream in play via the scheduler; no detector can pair a single rung.
+        empty_state=(
+            "International basketball recording started 2026-09-27 "
+            "(docker-compose.basketball.yml): eight venue competitions, one "
+            "winner market each, no ladder. Pregame sweeps plus the in-play "
+            "stream; no model, no quoter, nothing acts."
+        ),
+        venue_leagues=("eurolg", "lnbp", "bbl", "vtb", "bsl", "denbl", "slnbl", "hunbl"),
+    ),
     "tabletennis": League(
         slug="tabletennis",
         name="Table Tennis",

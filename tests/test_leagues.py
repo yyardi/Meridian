@@ -55,6 +55,10 @@ def test_slug_lookup_covers_event_and_market_shapes():
     # MLB became a league on 2026-09-13, so this is now a POSITIVE case; the
     # negative below uses a slug that cannot be promoted out from under it.
     assert leagues.league_of_slug("mlb-nyy-bos-2026-05-01").slug == "mlb"
+    # 2026-09-27: the venue's international basketball competitions resolve to one league
+    assert leagues.league_of_slug("aec-eurolg-real-madrid-panathinaikos-2026-09-29").slug == "basketball-intl"
+    assert leagues.league_of_slug("lnbp-monaco-paris-2026-09-27").slug == "basketball-intl"
+    assert set(leagues.venue_patterns("basketball-intl")) >= {"%-eurolg-%", "%-lnbp-%", "%-vtb-%"}
     assert leagues.league_of_slug(f"{NOT_A_LEAGUE}-a-b-2026-05-01") is None
     assert leagues.league_of_slug(None) is None
 

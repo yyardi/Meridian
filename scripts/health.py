@@ -97,6 +97,7 @@ def check_containers() -> list[Check]:
         # operator's focus ruling cut recording to NFL alone. League-suffixed
         # heartbeat rows (pregame_recorder_nfl / live_recorder_nfl).
         "meridian-cricket-recorder": "cricket pregame board (5 competitions)",
+        "meridian-basketball-recorder": "international basketball pregame board (8 competitions)",
         "meridian-tt-recorder": "table tennis pregame board (4 competitions)",
         "meridian-nfl-recorder": "GRIDIRON: NFL pregame board",
         "meridian-nfl-live-recorder": "GRIDIRON: NFL live ticks (0.5s)",

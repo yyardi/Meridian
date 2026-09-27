@@ -45,9 +45,9 @@ from core.ladder.stream import (  # noqa: E402
     SlateRecorder,
 )
 
-from core.ladder.live import CRICKET_STREAM_LEAGUES  # noqa: E402
+from core.ladder.live import BASKETBALL_INTL_LEAGUES, CRICKET_STREAM_LEAGUES  # noqa: E402
 
-LEAGUES = ("cfb", "nfl", "mlb", "wnba") + CRICKET_STREAM_LEAGUES
+LEAGUES = ("cfb", "nfl", "mlb", "wnba") + CRICKET_STREAM_LEAGUES + BASKETBALL_INTL_LEAGUES
 
 
 def _age(seconds: float | None) -> str:
