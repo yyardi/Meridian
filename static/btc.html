@@ -251,7 +251,7 @@ if (H !== "15m" && H !== "1h") H = "15m";
 const RANGES = { "15m": [["window", 0], ["1h", 60], ["6h", 360], ["24h", 1440]],
                  "1h":  [["window", 0], ["6h", 360], ["24h", 1440]] };
 let RANGE = store.get("btc.range." + H, H === "15m" ? "1h" : "6h");
-let S = null, T = null, ROWS = [], OPEN = new Set();
+let S = null, T = null, ROWS = [], OPEN = new Set(), PAGE_VERSION = null;
 
 // ---------------------------------------------------------------- formatting
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -281,6 +281,10 @@ const stTag = (s) => { const [t, c] = STATUS[s] || [s || "—", ""]; return `<sp
 async function loadSummary() {
   try { S = await fetch(`/api/btc/summary?h=${H}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status)); }
   catch (e) { S = null; $("call").innerHTML = `<div class="waiting">The ${H} bot's ledger could not be read (${esc(e)}).</div>`; return; }
+  if (S.page_version != null) {
+    if (PAGE_VERSION == null) PAGE_VERSION = S.page_version;
+    else if (S.page_version !== PAGE_VERSION) { location.reload(); return; }
+  }
   renderStatus(); renderNow(); renderRecord();
 }
 async function loadTicks() {
@@ -539,7 +543,8 @@ function drawPnl() {
   const X = (i) => L + i / Math.max(1, vals.length - 1) * (W - L - R);
   const Y = (v) => Tp + (hi - v) / (hi - lo) * (Hh - Tp - B);
   svg.appendChild(el("line", { x1: L, x2: W - R, y1: Y(0), y2: Y(0), stroke: "var(--faint)", "stroke-dasharray": "2 3" }));
-  svg.appendChild(el("text", { x: W - R + 6, y: Y(0) + 3, "font-size": 10, fill: "var(--faint)" }, "$0"));
+  const lastY = Y(vals[vals.length - 1]);
+  if (Math.abs(lastY - Y(0)) > 12) svg.appendChild(el("text", { x: W - R + 6, y: Y(0) + 3, "font-size": 10, fill: "var(--faint)" }, "$0"));
   svg.appendChild(el("text", { x: W - R + 6, y: Y(-10) + 3, "font-size": 10, fill: "var(--acc)" }, lo <= -10 ? "−$10 limit" : ""));
   let d = `M${X(0)} ${Y(0)}`;
   vals.forEach((v, i) => { if (i) d += `H${X(i).toFixed(1)}V${Y(v).toFixed(1)}`; });
