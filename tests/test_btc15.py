@@ -622,3 +622,65 @@ def test_kalshi_is_a_probability_only_for_the_same_window_and_a_tight_book(led):
     assert h.kalshi_mid(now, m) is None                                   # the next window is not this one
     h.reference = None
     assert h.kalshi_mid(now, m) is None
+
+
+# ------------------------------------------------------------------ the venue hid the metadata (2026-09-28 ~19:25Z)
+def _hidden_venue(book_state, settlement=None, book_bids=(("0.4100", "10"),), book_offers=(("0.4300", "12"),)):
+    import httpx
+
+    def handler(req):
+        path = req.url.path
+        if path == "/v1/markets":
+            return httpx.Response(200, json={"markets": []})           # hidden
+        if path.endswith("/book"):
+            if book_state is None:
+                return httpx.Response(404, json={"code": 5})
+            return httpx.Response(200, json={"marketData": {
+                "state": book_state, "bids": [{"px": {"value": b}, "qty": q} for b, q in book_bids],
+                "offers": [{"px": {"value": a}, "qty": q} for a, q in book_offers]}})
+        if path.endswith("/settlement"):
+            if settlement is None:
+                return httpx.Response(404, json={"code": 5})
+            return httpx.Response(200, json={"settlement": settlement})
+        return httpx.Response(404, json={})
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="https://gateway.polymarket.us")
+
+
+def test_window_of_reads_the_slug():
+    from core.btc15.polymarket import window_of
+    o, c = window_of("cpc-btc-updown-15m-2026-09-28-1930z")
+    assert c - o == 900 and _iso(o).startswith("2026-09-28T19:30")
+    o, c = window_of("cpc-btc-updown-1h-2026-09-28-1900z")
+    assert c - o == 3600
+
+
+def test_a_hidden_open_market_is_rebuilt_from_its_book_and_kalshis_strike():
+    from core.btc15.polymarket import PolymarketBTC, window_of
+    slug = "cpc-btc-updown-15m-2026-09-28-1930z"
+    o, c = window_of(slug)
+    v = PolymarketBTC(client=_hidden_venue("MARKET_STATE_OPEN"), strike_source=lambda a, b: 83619.94,
+                      clock=lambda: o + 120)
+    m = v.market(slug)
+    assert m["status"] == "active" and m["strike"] == 83619.94 and m["open_ts"] == o and m["close_ts"] == c
+    assert m["yes_bid"] == 0.41 and m["yes_ask"] == 0.43 and m["fee_coefficient"] == "0.0695"
+    assert v.current(o + 120)["ticker"] == slug
+
+
+def test_a_hidden_market_settles_off_the_settlement_endpoint():
+    from core.btc15.polymarket import PolymarketBTC, window_of
+    slug = "cpc-btc-updown-15m-2026-09-28-1900z"
+    o, c = window_of(slug)
+    up = PolymarketBTC(client=_hidden_venue("MARKET_STATE_EXPIRED", settlement=1), clock=lambda: c + 60)
+    assert up.outcome(slug) == {"final": True, "result": "yes", "expiration_value": None}
+    down = PolymarketBTC(client=_hidden_venue("MARKET_STATE_EXPIRED", settlement=0), clock=lambda: c + 60)
+    assert down.outcome(slug)["result"] == "no"
+    waiting = PolymarketBTC(client=_hidden_venue("MARKET_STATE_EXPIRED", settlement=None), clock=lambda: c + 60)
+    assert waiting.outcome(slug)["final"] is False                     # resolving: not final yet
+
+
+def test_a_window_with_no_book_yet_is_not_a_market():
+    from core.btc15.polymarket import PolymarketBTC, window_of
+    slug = "cpc-btc-updown-15m-2026-09-28-2000z"
+    o, _ = window_of(slug)
+    v = PolymarketBTC(client=_hidden_venue(None), clock=lambda: o - 60)
+    assert v.meta(slug) is None and v.current(o - 60) is None

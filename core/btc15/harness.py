@@ -170,6 +170,11 @@ class Harness:
             log.warning("%s current market: %s", self.venue.venue, e)
             self._next["market"] = now + 5
             return
+        if m and m.get("strike") is None and now >= m["open_ts"] + 1:
+            # No stated price to beat (a rebuilt market with no Kalshi twin, e.g. the hourly
+            # one): the composite's 60-second average before the open, the same average the
+            # contract settles against, marked as a proxy.
+            m = dict(m, strike=self.feed.average(m["open_ts"] - 60, m["open_ts"]), strike_source="proxy")
         self.market = m
         if m:
             self.ledger.upsert_window(m)
@@ -494,8 +499,12 @@ def build(settings: Settings) -> Harness:
         broker = None
     if settings.venue == "polymarket":
         # Kalshi lists only the 15-minute contract; the hourly one has no reference.
-        venue = PolymarketBTC(horizon=settings.horizon)
         reference = KalshiBTC() if settings.horizon == "15m" else None
+
+        def kalshi_strike(o: float, c: float) -> float | None:
+            r = reference.current(o + 1) if reference else None
+            return r["strike"] if r and r.get("open_ts") == o and r.get("close_ts") == c else None
+        venue = PolymarketBTC(horizon=settings.horizon, strike_source=kalshi_strike if reference else None)
     elif settings.venue == "kalshi":
         if settings.horizon != "15m":
             raise SystemExit("Kalshi's KXBTC15M is 15-minute only")
