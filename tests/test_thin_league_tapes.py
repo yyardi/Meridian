@@ -152,3 +152,66 @@ def test_thin_basketball_opens_three_hours_before_tip_and_others_ten_minutes():
     assert rec["eurolg"].at == tip - dt.timedelta(minutes=180)
     assert int(rec["eurolg"].args.split()[1]) == 180 + 150
     assert rec["nfl"].at == tip - dt.timedelta(minutes=SS.RECORDER_LEAD_MIN)
+
+
+# ------------------------------------------------------------------ the league's own shot log
+from core.ladder.official_pbp import VENUE_EUROLEAGUE_CLUB, match_euroleague, save_official, venue_game  # noqa: E402
+
+
+def _el(code, local, road, utc):
+    return {"gameCode": code, "utcDate": utc, "local": {"club": {"code": local, "name": local}},
+            "road": {"club": {"code": road, "name": road}}}
+
+
+def _vg(home, away, start="2026-09-29T17:45:00Z"):
+    return {"start": dt.datetime.fromisoformat(start.replace("Z", "+00:00")), "home": home, "away": away,
+            "names": [home, away]}
+
+
+SCHED = [_el(17, "ULK", "MUN", "2026-09-29T17:45:00Z"), _el(11, "IST", "MAD", "2026-09-29T17:45:00Z"),
+         _el(40, "MUN", "ULK", "2027-01-10T17:45:00Z")]
+
+
+def test_a_game_matches_only_by_both_teams_the_start_minute_and_home_equal_local():
+    g, why = match_euroleague(_vg("Fenerbahce Istanbul", "Bayern Munich"), SCHED)
+    assert g["gameCode"] == 17 and why["league_local"] == "ULK"
+    assert match_euroleague(_vg("Anadolu Efes SK", "Real Madrid"), SCHED)[0]["gameCode"] == 11
+    # the same two clubs at another date are another game
+    assert match_euroleague(_vg("Bayern Munich", "Fenerbahce Istanbul", "2027-01-10T17:45:00Z"), SCHED)[0]["gameCode"] == 40
+    # swapped home/away at the same minute is refused, never silently flipped
+    g, why = match_euroleague(_vg("Bayern Munich", "Fenerbahce Istanbul"), SCHED)
+    assert g is None and "disagree" in why["why"]
+    g, why = match_euroleague(_vg("Some New Club", "Bayern Munich"), SCHED)
+    assert g is None and "not in the table" in why["why"]
+
+
+def test_the_club_table_is_one_to_one():
+    assert len(VENUE_EUROLEAGUE_CLUB) == 20 and len(set(VENUE_EUROLEAGUE_CLUB.values())) == 20
+
+
+def test_venue_game_reads_home_from_the_market_side():
+    payload = {"event": {"startTime": "2026-09-29T17:45:00Z",
+                         "teams": [{"name": "Bayern Munich"}, {"name": "Fenerbahce Istanbul"}],
+                         "markets": [{"marketSides": [{"long": True, "team": {"name": "Fenerbahce Istanbul", "ordering": "home"}},
+                                                      {"long": False, "team": {"name": "Bayern Munich", "ordering": "away"}}]}]}}
+    vg = venue_game(payload)
+    assert vg["home"] == "Fenerbahce Istanbul" and vg["away"] == "Bayern Munich"
+
+
+def test_save_official_writes_the_shot_log_with_the_match(tmp_path):
+    rows = [{"NUM_ANOT": 4, "ID_ACTION": "2FGM", "CONSOLE": "09:39", "POINTS_A": 2, "POINTS_B": 0, "UTC": "20260929174549"}]
+    venue = {"event": {"startTime": "2026-09-29T17:45:00Z", "teams": [{"name": "Fenerbahce Istanbul", "ordering": "home"},
+                                                                       {"name": "Bayern Munich", "ordering": "away"}]}}
+
+    def handler(req):
+        u = str(req.url)
+        if "competitions" in u:
+            return httpx.Response(200, json={"data": SCHED})
+        if "Points" in u:
+            return httpx.Response(200, json={"Rows": rows})
+        return httpx.Response(200, json=venue)
+    out = save_official("eurolg", ["eurolg-fen-bay-2026-09-29"], str(tmp_path),
+                        client=httpx.Client(transport=httpx.MockTransport(handler)))
+    d = json.loads(pathlib.Path(out[0]).read_text())
+    assert d["match"]["gameCode"] == 17 and d["points"] == rows and "gamecode=17" in d["source"]
+    assert save_official("bbl", ["x"], str(tmp_path)) == []

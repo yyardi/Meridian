@@ -156,6 +156,15 @@ def main() -> int:
             scores.stop()
         if kalshi is not None:
             kalshi.stop()
+        # The league's own shot log, with the wall-clock second of every basket, is
+        # complete once the games are over -- which is when this window ends.
+        try:
+            from core.ladder.official_pbp import OFFICIAL_LEAGUES, save_official
+            if a.league in OFFICIAL_LEAGUES:
+                for p in save_official(a.league, list(by_game), a.out_dir):
+                    print(f"official shot log -> {p}")
+        except Exception as e:                                    # noqa: BLE001 -- never lose the tapes over it
+            print(f"official shot log failed: {type(e).__name__}: {e}")
     t = rec.totals()
     print(f"done  games {t['games']}  books {t['books']:,}  trades {t['trades']:,}  "
           f"reconnects {t['reconnects']}  errors {t['errors']}  torn {t['torn']}")

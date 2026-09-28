@@ -89,3 +89,22 @@ Basketball has ~80–110 scoring plays a game, so 30 games give a few thousand e
 they are clustered: what the interval sees is ~30 games. With a per-game sd of mean M60 of
 ~3¢ (unmeasured; it will be printed), 30 games detect a ~1.5¢ mean at 80 %. The realised
 sd and the minimum detectable effect at the realised G are printed with the result.
+
+## Addendum, 2026-09-28 ~03:00Z, still before any tape exists: the league's own clock
+
+EuroLeague publishes a shot log (`live.euroleague.net/api/Points`) whose every row carries
+`UTC`, the second of the shot, checked on a finished 2025-26 game. Each eurolg window now
+saves it as `official_<game>.json` when it ends (core/ladder/official_pbp.py), matched to
+the venue's game by a hand-written table of the 20 clubs, the start minute, and the venue's
+home team equal to the league's local club (10 of 10 games of 09-29/30 matched). Printed
+beside, **never gated**:
+
+- **Venue score latency:** for each league scoring shot at `t_L`, the venue's
+  `state_updated_at` on the first score line equal to the league's running score after
+  it; median and p90 by game.
+- **Information mark-out:** M60 computed exactly as above but entered at `t_L + 1 s`
+  instead of `t_R + 1 s` — the best a poller of the league's live feed could do; that
+  feed's live refresh was not measured and would only add delay.
+
+A positive information mark-out is a hypothesis for a new registration that names a live
+feed and its measured refresh; it is not a result of this one.
