@@ -1,33 +1,93 @@
 # Meridian
 
-**A self-scheduling market-microstructure research and execution platform for
-prediction markets.**
+**A quantitative research and trading platform for prediction markets.**
 
-Meridian records Polymarket US at update resolution — sports and crypto — with
-Kalshi and the leagues' own feeds beside it, tests every trading idea against
-rules written before the data, and turns what survives into execution: a desk
-for the venue's spread ladders when they contradict themselves, and an
-autonomous model-driven harness on the Bitcoin Up-or-Down markets. It is
-market-agnostic by design: the instruments, the statistics and the guards are
-the same whether the contract settles on a touchdown, a wicket or a Bitcoin
-index. It schedules, records, grades and reports itself every day with no
-hands on it.
+Meridian captures Polymarket US at update resolution — sports and crypto — beside
+Kalshi and the leagues' own feeds, holds every trading idea to pre-registered,
+cluster-robust inference, and puts what survives into execution: an arbitrage
+engine for no-arbitrage violations in the venue's spread ladders, and an
+autonomous model-driven harness on the 15-minute and hourly Bitcoin markets. The
+method is market-agnostic — the same instruments, statistics and risk controls
+apply whether a contract settles on a touchdown, a wicket or a Bitcoin index —
+and the whole system schedules, records, grades and reports itself every day.
 
 Built from a first commit on 2026-07-31 to ~142,000 lines of Python, 3,000+
 tests and 180+ documents in two months, by one operator directing a team of AI
-sessions held to the same rules as the code.
+coding agents held to the same rules as the code.
 
 ---
 
-## What it does
+## Quantitative research
 
-| | |
-|---|---|
-| **Records** | Polymarket US winner, spread and total markets for NFL, college football, MLB, WNBA, cricket, table tennis and eight international basketball leagues (EuroLeague, Mexico's LNBP, Germany's BBL, VTB, Turkey's BSL, Denmark, Slovenia, Hungary), and the 15-minute and hourly Bitcoin markets: best bid/ask, size, fee coefficient, live state and score on every sweep; a 200 ms in-play feed; full order-book depth; and the venue's public WebSocket, taped per game with every book push and every print. Beside it: Kalshi boards and events, ESPN scoreboards, play-by-play, box scores, injuries, sportsbook odds, cricket state, a four-exchange Bitcoin composite at 1 Hz, and league shot logs stamped to the second. |
-| **Researches** | 37 runners and 60 reads whose rules were fixed before their data, over one partitioned Postgres — point-in-time by construction, every estimate clustered by game with a sandwich interval, every number printed with its population and count. A nightly paper book settles 34 strategy lines against the venue's own results. |
-| **Trades** | The **ladder arbitrage**: a spread ladder must be monotone in the line, and when the venue quotes it otherwise the desk tickets a two-leg pair that pays ≥ $1 in every state of the world. A stream executor tickets at the venue's clock; the desk previews each ticket in the venue's own screen wording and sends both legs, stale side first, under a per-pair cap, a lock and a fill watcher. |
-| **Decides** | The **Bitcoin harness**: every window an OpenAI model states the probability that Bitcoin settles above the price to beat; the harness buys one contract of the side it favours, settles it off the venue's result, and feeds the model its own record and the lessons it wrote. Integer-cent ledger, a $10 drawdown limit enforced from the rows, dollar-capped model spend, and an automatic pause for a model that forecasts worse than the market. |
-| **Runs itself** | A planner reads the board daily and writes the day's schedule: recorders per kickoff window, executors per game, a verdict after the last game, a self-clean the next morning. The verdict appends the edge ledger, replays every large crossing against the prints to call it real or phantom, checks the fee constant against the recorded column, computes settlement P&L per ticket and pushes four lines to a phone. |
+- **No-arbitrage in strike ladders.** A spread ladder must be monotone in the
+  line; a violation net of both taker fees is a two-leg pair that pays at least
+  $1 in every outcome. Measured on the venue's WebSocket at update resolution
+  ([below](#the-ladder-arbitrage)).
+- **Validate the instrument before the inference.** REST snapshots against the
+  venue's stream on 39,510 rung observations: REST lagged by more than 1 s on
+  37,455 and led on 1, and only 239 of 7,972 REST-reported crossings (3.0 %)
+  existed on the stream. The REST figures were retracted at the table that
+  printed them; a 2-s two-leg freshness gate and a trade-replay phantom check
+  replaced them (8 of 29 large stream crossings traded through the displayed
+  quote).
+- **Inference on dependent data.** Sandwich intervals clustered by game with
+  the G/(G−1) correction and slate-level clustering printed beside; power stated
+  before the data; the estimator named in every label — fills-weighted and
+  equal-weight game means once differed by more than the interval (−2.08¢ vs
+  −3.35¢).
+- **Pre-registration with falsifiable controls.** 60 reads whose estimator,
+  gate and kill conditions were fixed before the tape (`docs/math/*preregistration*`),
+  each with a control that must be able to fail — a random-instant mark-out
+  that must come out negative, a permutation that must destroy the effect and
+  nothing else.
+- **Forecast evaluation.** Brier scoring against the market mid and a driftless
+  random walk. The venue's price beat a lineup-aware WNBA model over 106 games
+  and an in-game model's live decisions over 52 (Brier difference −0.0012, 95 %
+  CI [−0.0115, +0.0091]) — so the search moved from out-forecasting the price
+  to microstructure and latency.
+- **Costs and leakage as data.** The quadratic taker fee θ·p·(1−p) is a
+  constant of a period (θ rose 0.06 → 0.0695 on 2026-09-17): `core/fees.py`
+  charges each historical row the coefficient it recorded, and two AST guard
+  tests fail the suite on a restated fee or a row charged today's. Adverse
+  selection measured at −2.66¢ per filled quote kept a market-making strategy
+  unbuilt; a +3.58¢ maker "edge" was traced to a one-minute look-ahead and
+  retracted.
+- **Point-in-time by construction.** A box score is visible three hours after
+  its own tip; a quote at T−1h is the last one at or before it. The ledger of
+  being wrong — [`docs/findings.md`](docs/findings.md) — dates every venue fact,
+  bug and retraction with what it cost and what would have caught it.
+
+## Quantitative development
+
+- **Market-data capture.** A WebSocket recorder subscribes whole slates (≤ 100
+  markets per subscription) and writes per-game tapes of every book update and
+  print with venue and receive timestamps (22 GB). Beside it: a 200 ms in-play
+  feed and REST sweeps with full depth into monthly-partitioned PostgreSQL —
+  94 million snapshot rows, 139 million depth rows, 17 million Kalshi rows —
+  where partition pruning was verified to need month-boundary predicates.
+- **Execution.** Two-leg immediate-or-cancel limit orders, stale leg first, the
+  second leg sized to the first leg's fill; per-pair caps, a kill-switch lock
+  honoured by executors and server, an order token, a fill watcher reconciling
+  the venue's replies, and an unwind path. Tickets are previewed in the venue's
+  own screen wording.
+- **Scheduling under a rate limit.** `scripts/schedule_slate.py` reads the board
+  daily and writes the day's cron: stream recorders per kickoff window,
+  executors per game inside a shared 20 req/s REST budget (REST executors capped
+  per 90-minute bucket), a verdict that grades every tape once, a self-clean.
+- **Autonomous trading harness.** A 1 Hz median-of-four-exchanges Bitcoin
+  composite, ~60 point-in-time features, strict-schema model forecasts, and an
+  integer-unit SQLite ledger with CHECK and UNIQUE constraints; a latching
+  drawdown guard verified by a 3,000-trade randomized invariant test; every
+  model call costed from its reported tokens (cache writes included) against a
+  daily dollar cap ([below](#the-bitcoin-harness)).
+- **Reliability on one host.** Repeated PostgreSQL OOM kills on a 7.6 GB box
+  traced to an IN-subquery that hashed a 90M-row table, fixed with chunked key
+  lookups; monitors that alarm on what is missing, not only on what arrives,
+  after a venue froze its prices while its timestamps kept advancing.
+- **Testing and deployment.** 3,000+ pytest tests, including AST sweeps that
+  fail the suite on a whole defect family and a smoke test of every route and of
+  every URL a page fetches; Docker Compose on AWS; a FastAPI dashboard; read-only
+  SQLite mounts across containers; path-level deploys from `origin/main`.
 
 ---
 
@@ -75,33 +135,6 @@ flowchart LR
   C --> PB
 ```
 
-**Data plane.** Seventeen feed modules write into one Postgres partitioned by
-month (a query prunes only from a month-boundary floor — tested): 94 million
-venue snapshot rows, 139 million depth rows, 17 million Kalshi rows. The
-WebSocket stream writes per-game tapes — 22 GB so far — and in the thin
-basketball leagues each tape carries the venue's own score with its timestamp,
-Kalshi's touch on the same game, and, for EuroLeague, the league's shot log
-with the second of every basket.
-
-**Research plane.** A box score is visible three hours after its own tip; a
-quote at T−1h is the last one at or before it; a fee is the coefficient the
-venue recorded on that row. Eighteen rungs on one game are one opinion, so
-intervals cluster by game. The nightly scan, paper book, edge ledger, phantom
-check, fee-drift line and model scorecards run from cron and append to files
-the dashboard reads.
-
-**Execution plane.** The dashboard's ARB tab shows a live ladder per game, the
-executor's tickets, and a two-click SEND that spells every term in the venue's
-words — the row ("KC to win by over 6.5 points") and the button — and sends
-immediate-or-cancel legs, leg 2 only for what leg 1 filled. The BTC tab shows
-each window's call beside the market's and a random walk's, the model's
-reasoning, the fill, the price against the line, the allocation's record, and
-the lessons the model reads before its next call.
-
-**Operations plane.** `scripts/schedule_slate.py` plans; versioned launchers
-under `scripts/launchers/` start containers; `slate_verdict.sh` grades every
-tape exactly once, dated by its tag.
-
 ---
 
 ## The ladder arbitrage
@@ -120,23 +153,14 @@ buy its NO at `1 − B_lo`). The pair costs `1 − (B_lo − A_hi)` per contract
 pays $1 at settlement in every margin region — $2 if the margin lands between
 the lines. The edge is an identity, not a forecast.
 
-The venue breaks its ladders in play, at score changes, when rungs are re-quoted
-one at a time and a stale resting order survives beside its moved neighbours
-for a few hundred milliseconds to a few seconds. Measuring that honestly took
-three instruments:
-
-- a **stream recorder** on the venue's WebSocket (a REST sampler ran 54–62 s
-  behind the venue and was retracted, at the table, with the figures it had
-  produced);
-- a **freshness gate** — a crossing counts only if the venue pushed both legs
-  within two seconds of each other;
-- a **phantom check** — each large crossing is replayed against the tape's
-  prints; a taker lift above the displayed ask or a hit below the displayed
-  bid during the crossing means the quote was a picture.
-
-The **edge ledger** accrues one row per league per night: crossings, the
-≥ $25-at-full-size statistic, and what a $20 attempt could have ticketed, with
-their lives in seconds.
+Violations appear in play: after a score the venue re-quotes rungs one at a
+time, and a stale resting order survives beside its re-priced neighbours for a
+fraction of a second to a few seconds. The engine (`core/ladder/`) keeps a
+last-known touch per rung from the stream, checks only the pairs touching the
+rung that moved, opens an episode only when both legs were pushed within 2 s of
+each other, and replays each large episode against the prints. A nightly edge
+ledger records, per league, the count, the size at the touch and the lifetime in
+seconds, net of the fee each row carried.
 
 ---
 
@@ -153,7 +177,8 @@ is the only moving part:
   timeframes; the venue's book and Kalshi's same-window price; funding; the run
   of recent results. Two baselines ride with every window: the market's mid and a
   driftless random walk to the settlement average,
-  `P(up) = Φ(ln(S/K) / (σ·√(τ − 40 s)))`.
+  `P(up) = Φ(ln(S/K) / (σ·√(τ − 40 s)))` — the average over the final 60 s
+  carries only a third of that minute's variance (20 s of 60), hence the 40 s.
 - **One decision, deterministic execution.** The model returns `p_up` under a
   strict schema; the harness buys one contract of the favoured side at the ask.
   The model never sizes, times or cancels.
@@ -176,36 +201,18 @@ is the only moving part:
 
 ## Thin markets
 
-International basketball on the venue is a single winner market per game, books
-7¢ wide and often empty, while Kalshi trades the same fixtures in six figures.
-The working thesis is that in markets this quiet the edge is information and
-speed. Every thin-league game is taped from three hours before tip with the
-venue's own score changes, Kalshi's price, and the league's clock; the first
-read — does the venue reprice late after its own score changes? — has its
-estimator, control and kill conditions written before the first tape
-([`docs/math/thin-league-speed-preregistration.md`](docs/math/thin-league-speed-preregistration.md)).
-
----
-
-## The discipline
-
-- **Pre-registration.** Estimator, decision rule, sample size and kill
-  condition are written before the tape exists (`docs/math/*preregistration*`).
-- **Named estimators.** Fills-weighted and equal-weight game means are both
-  printed; "game-clustered" names the interval, not the estimate.
-- **Fee per row.** The venue's coefficient is a constant of a period (it moved
-  from 0.06 to 0.0695 on 2026-09-17). `core/fees.py` owns the constants;
-  `recorded_fee(price, coefficient)` charges a historical row its own value
-  and refuses `None`; two guard tests parse the tree for any restated fee and
-  for any historical read that charges today's; `scripts/fee_drift.py`
-  compares the constant to the column every night.
-- **Guards at collection.** Sweep tests fail the suite on a defect's family —
-  a restated threshold, a fee literal, a launcher's naming, a documented
-  nightly read no cron script runs, a page that fetches a route that does not
-  exist.
-- **The ledger of being wrong.** [`docs/findings.md`](docs/findings.md): venue
-  facts, bugs and corrections, each dated with what it cost and what would have
-  caught it. Retractions sit at the table they retract.
+In illiquid markets the edge is information and latency. International
+basketball on the venue is one winner market per game, books around 7¢ wide and
+often empty, while Kalshi trades the same fixtures in six figures. Every game in
+eight leagues is taped from three hours before tip against three clocks: the
+venue's own score changes (its `updatedAt` stamp, each change bracketed by the
+poll before), Kalshi's touch, and for EuroLeague the league's shot log stamped
+to the second — matched to the venue's game by a hand-built club table, the start
+minute and home = local. The registered test buys the scoring side at the ask
+visible 1 s after the venue's score changes and marks out at 60 s net of fee,
+game-clustered; its random-instant control must lose money or the test is void,
+and it is killed if 90 % of events are already repriced by the time an order
+could land ([`docs/math/thin-league-speed-preregistration.md`](docs/math/thin-league-speed-preregistration.md)).
 
 ---
 
