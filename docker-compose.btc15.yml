@@ -1,0 +1,45 @@
+# BTC15 overlay (2026-09-28): the LLM decision harness for Kalshi's 15-minute Bitcoin market.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.btc15.yml up -d btc15
+#
+# One process, ~60 MB. It polls four free exchanges once a second, decides once per
+# 15-minute window through OpenAI, fills at the ask (PAPER by default), settles off
+# Kalshi's own result, and keeps everything in its own SQLite ledger under
+# /opt/meridian/artifacts/btc15 -- deliberately NOT the shared Postgres, which was
+# OOM-killed three times on 2026-09-26/27; the money ledger does not depend on it.
+#
+# To let it decide, add to /opt/meridian/.env and re-run the command above:
+#   OPENAI_API_KEY=...
+#   MERIDIAN_BTC15_MODEL=<an id from `docker compose ... run --rm btc15 python -m core.btc15.harness --check-openai`>
+# Without them it records the price feed, every window's features and every result.
+#
+# core/ is mounted, so a code deploy is a checkout and a restart, never an image build.
+services:
+  btc15:
+    image: meridian-api:latest
+    container_name: meridian-btc15
+    restart: unless-stopped
+    command: ["python", "-m", "core.btc15.harness"]
+    working_dir: /app
+    mem_limit: 256m
+    volumes:
+      - /opt/meridian/core:/app/core:ro
+      - /opt/meridian/artifacts/btc15:/data
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MERIDIAN_BTC15_MODEL: ${MERIDIAN_BTC15_MODEL:-}
+      MERIDIAN_BTC15_REASONING_EFFORT: ${MERIDIAN_BTC15_REASONING_EFFORT:-}
+      MERIDIAN_BTC15_MODE: ${MERIDIAN_BTC15_MODE:-paper}
+      MERIDIAN_BTC15_DRAWDOWN_USD: "10"
+      MERIDIAN_BTC15_DECIDE_AT_S: ${MERIDIAN_BTC15_DECIDE_AT_S:-30}
+      MERIDIAN_BTC15_DB: /data/btc15.sqlite
+      MERIDIAN_BTC15_STATUS: /data/status.json
+      MERIDIAN_NTFY_TOPIC: ${MERIDIAN_NTFY_TOPIC:-}
+      MERIDIAN_NTFY_SCOPE: ${MERIDIAN_NTFY_SCOPE:-}
+      MERIDIAN_NTFY_SERVER: ${MERIDIAN_NTFY_SERVER:-}
+      PYTHONUNBUFFERED: "1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

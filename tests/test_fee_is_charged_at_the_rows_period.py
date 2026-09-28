@@ -159,6 +159,7 @@ POINT_IN_TIME = {
 #: `recorded_fee` would be wrong. These are not exempt from review -- they are
 #: classified, and the reason is that there is no earlier row to charge.
 PRICES_NOW = {
+    "core/btc15/ledger.py": "charges the Kalshi fee at fill time from the series' live schedule (fee_multiplier, re-read hourly) and stores it on the fill row; settlement reads that stored fee_u",
     "core/quote/wallet.py": "quotes now, against the live touch",
     "core/kelly_sizing.py": "sizes a bet being placed now",
     "core/executor.py": "places now",
