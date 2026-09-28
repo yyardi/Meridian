@@ -98,6 +98,7 @@ def check_containers() -> list[Check]:
         # heartbeat rows (pregame_recorder_nfl / live_recorder_nfl).
         "meridian-cricket-recorder": "cricket pregame board (5 competitions)",
         "meridian-basketball-recorder": "international basketball pregame board (8 competitions)",
+        "meridian-btc15": "BTC15: LLM decision harness, Kalshi 15-minute Bitcoin (own SQLite ledger)",
         "meridian-tt-recorder": "table tennis pregame board (4 competitions)",
         "meridian-nfl-recorder": "GRIDIRON: NFL pregame board",
         "meridian-nfl-live-recorder": "GRIDIRON: NFL live ticks (0.5s)",
