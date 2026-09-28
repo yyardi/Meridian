@@ -120,6 +120,15 @@ class PolymarketBTC:
         r.raise_for_status()
         return r.json()
 
+    last_meta: dict | None = None
+
+    def quote(self, slug: str) -> dict | None:
+        """The window's book only (one request), on the metadata the last current() read."""
+        meta = self.last_meta
+        if not meta or meta.get("slug") != slug:
+            return None
+        return normalize(meta, self.book(slug))
+
     def owns(self, ticker: str) -> bool:
         return ticker.startswith(f"cpc-btc-updown-{self.horizon}-")
 
@@ -141,6 +150,7 @@ class PolymarketBTC:
 
     def current(self, now: float) -> dict | None:
         meta = self.meta(slug_at(now, self.horizon))
+        self.last_meta = meta
         if meta is None or meta.get("status") != "MARKET_STATUS_OPEN":
             return None
         m = normalize(meta, self.book(meta["slug"]))

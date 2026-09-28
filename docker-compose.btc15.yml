@@ -69,6 +69,12 @@ services:
       MERIDIAN_BTC15_MODEL: ${MERIDIAN_BTC1H_MODEL:-}
       MERIDIAN_BTC15_MODE: paper
       MERIDIAN_BTC15_HORIZON: 1h
+      # Kalshi lists no hourly twin and the fitted model is 15-minute: the hourly bot
+      # runs the LLM's price-aware arms and the market-mid control
+      MERIDIAN_BTC15_ARMS: >-
+        [{"name":"llm_taker","prob":"llm","kind":"taker","margin":0.02},
+         {"name":"llm_maker","prob":"llm","kind":"maker","margin":0.02},
+         {"name":"mid_maker","prob":"mid","kind":"maker","margin":0.02,"start_s":600}]
       MERIDIAN_BTC15_DECIDE_AT_S: "60"
       MERIDIAN_BTC15_MIN_LEAD_S: "180"
       MERIDIAN_BTC15_DB: /data/polymarket-1h.sqlite
