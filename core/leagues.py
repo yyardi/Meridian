@@ -156,7 +156,7 @@ LEAGUES: dict[str, League] = {
         espn_path="basketball",
         recorded=True,
         # Read off the venue 2026-09-27: EuroLeague 20 events (first tip
-        # 09-29), LNB Pro A 16 (first 09-27), BBL 9, VTB 6, BSL 1 and three
+        # 09-29), Mexico's LNBP 16 (first 09-27), Germany's BBL 9, VTB 6, BSL 1 and three
         # smaller leagues; ONE market per event, `basketball_team_full_game_winner`,
         # no spread, no total. Recorder-only: pregame board sweeps here, the
         # stream in play via the scheduler; no detector can pair a single rung.

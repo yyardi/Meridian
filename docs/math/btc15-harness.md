@@ -1,4 +1,4 @@
-# BTC15 — an LLM harness for Kalshi's 15-minute Bitcoin market
+# BTC15 — an LLM harness for the 15-minute (and hourly) Bitcoin Up-or-Down market
 
 2026-09-28. The operator's design: every 15 minutes an OpenAI model reads the
 market and takes a side; the system buys one contract of it ($1 to win),
@@ -7,14 +7,24 @@ drawdown. This document says what was built and what the numbers mean.
 
 ## The market (verified against the venue, 2026-09-28)
 
-Kalshi series `KXBTC15M`, one market per quarter hour. **YES pays $1 if the
-simple average of CF Benchmarks' BRTI over the 60 seconds before the close is
-at least the same average over the 60 seconds before the open.** That opening
-average is the market's `floor_strike`, known when it opens; the closing one is
-reported as `expiration_value` about a second after close, with `result`.
-Books are 1c wide with $0.8–3M traded a window. Taker fee: Kalshi's quadratic
-schedule, `ceil(0.07 × P × (1−P))` to the cent per contract. Polymarket US lists
-no crypto markets (312 leagues read, none crypto), so this runs on Kalshi.
+**Traded on Polymarket US**, the operator's account: "BTC Up or Down: 15 min",
+slug `cpc-btc-updown-15m-YYYY-MM-DD-HHMMz` (HHMM = window start, UTC), and an
+hourly sibling `cpc-btc-updown-1h-…`. **Up pays $1 if the simple average of CF
+Benchmarks' BRTI over the 60 seconds before the window ends is at least the same
+average over the 60 seconds before it starts** — the market's `priceToBeat`,
+known at the start; the closing average arrives as `settlementPrice` with
+`outcomePrices` ["1","0"] (Up) or ["0","1"] (Down). Book 1c wide, tick 0.01;
+fee `feeCoefficient × p × (1−p)`, 0.0695 today, read off each market.
+
+*(Correction, 2026-09-28: the first build of this document said Polymarket US
+lists no crypto and ran the harness on Kalshi. That came from the venue's
+sports-only listing endpoint; its search and market endpoints list the BTC
+markets, as the operator pointed out.)*
+
+**Kalshi's `KXBTC15M` is the same contract on the same numbers** — Polymarket's
+23:30Z window of 2026-09-27 resolved at 84,337.75, Kalshi's `expiration_value` for
+that window. Kalshi is read as a reference: its same-window mid is a feature,
+and `MERIDIAN_BTC15_VENUE=kalshi` would trade it instead.
 
 ## Data
 
@@ -75,11 +85,13 @@ mid is not reading anything the price does not already know.
 
 ## Running it
 
-`docker-compose.btc15.yml`: one container, 256 MB cap, log rotation. Set
+`docker-compose.btc15.yml`: `btc15` (15-minute) and `btc1h` (hourly, paper),
+each one container with a 256 MB cap, log rotation and its own ledger and $10
+allocation. Set
 `OPENAI_API_KEY` and `MERIDIAN_BTC15_MODEL` in `/opt/meridian/.env` to let it
 decide (`--check-openai` lists the models the key can use); until then it
 records the feed, the features and every result. `MERIDIAN_BTC15_MODE=paper` is
-the default. Live execution needs Kalshi API credentials and an order adapter
-that does not exist yet — it will be built and exercised against Kalshi's demo
-environment first; with `MODE=live` today the service predicts and places
-nothing.
+the default. Live execution on Polymarket US reuses the order path the ARB desk
+already sends through (immediate-or-cancel limit at the ask, one contract, the
+ledger's guard before the order exists); until that adapter lands, `MODE=live`
+predicts and places nothing.

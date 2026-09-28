@@ -179,6 +179,7 @@ def build(*, now: float, secs: list[tuple[float, float]], c1m: list, c5m: list, 
     return {
         "window": {
             "ticker": market["ticker"],
+            "length_s": round(close_t - open_t),
             "seconds_since_open": round(now - open_t, 1),
             "seconds_to_close": round(tau, 1),
             "strike_usd": strike,
@@ -233,6 +234,9 @@ def build(*, now: float, secs: list[tuple[float, float]], c1m: list, c5m: list, 
             "yes_bid": yes_bid, "yes_ask": yes_ask, "no_bid": market.get("no_bid"), "no_ask": market.get("no_ask"),
             "yes_bid_size": market.get("yes_bid_size"), "yes_ask_size": market.get("yes_ask_size"),
             "last_price": market.get("last_price"), "volume_usd": market.get("volume"),
+            # the same window on the other venue (Kalshi KXBTC15M settles on the same BRTI averages)
+            "other_venue_p_up": market.get("reference_p_up"),
+            "other_venue_strike_usd": market.get("reference_strike"),
         },
         "context": {
             "hour_et": et.hour, "minute_et": et.minute, "weekday_et": et.strftime("%A"),

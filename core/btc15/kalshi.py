@@ -60,9 +60,12 @@ def normalize(m: dict) -> dict:
 
 
 class KalshiBTC:
+    venue = "kalshi"
+
     def __init__(self, client: httpx.Client | None = None, base: str = BASE) -> None:
         self._http = client or httpx.Client(timeout=10.0, headers={"User-Agent": "meridian-btc15/1"})
         self._base = base.rstrip("/")
+        self._mult: tuple[float, Decimal] | None = None
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         r = self._http.get(self._base + path, params=params)
@@ -84,6 +87,22 @@ class KalshiBTC:
         out = [normalize(m) for m in ms]
         out.sort(key=lambda m: m["close_ts"] or 0)
         return out
+
+    def owns(self, ticker: str) -> bool:
+        return ticker.startswith(f"{SERIES}-")
+
+    def outcome(self, ticker: str) -> dict:
+        m = self.market(ticker)
+        return {"final": m["status"] in ("finalized", "settled") and m["result"] in ("yes", "no"),
+                "result": m["result"], "expiration_value": m["expiration_value"]}
+
+    def fee_units(self, price_u: int, market: dict) -> int:
+        """Kalshi's quadratic schedule with the series multiplier, re-read hourly."""
+        import time
+        from core.btc15.ledger import fee_units
+        if self._mult is None or time.time() - self._mult[0] > 3600:
+            self._mult = (time.time(), self.fee_multiplier())
+        return fee_units(price_u, 1, self._mult[1])
 
     def fee_multiplier(self) -> Decimal:
         s = self._get(f"/series/{SERIES}").get("series") or {}
