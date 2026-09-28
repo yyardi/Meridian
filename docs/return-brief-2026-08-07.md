@@ -1,5 +1,9 @@
 # Return brief — week of 2026-08-07
 
+> **History — the first phase (August 2026).** This describes Meridian when it was a WNBA
+> fair-value model. For the project as it is now, read the root [README](../README.md) and
+> [STATUS.md](../STATUS.md).
+
 Read this first. Everything else has a link.
 
 **One sentence: the week measured ten ideas, killed all but one of them, built the

@@ -1,5 +1,9 @@
 # How it all works
 
+> **History — the first phase (August 2026).** This describes Meridian when it was a WNBA
+> fair-value model. For the project as it is now, read the root [README](../README.md) and
+> [STATUS.md](../STATUS.md).
+
 Read this before anything else. It explains the whole project in plain language, then gets specific enough that you can argue with the maths. If something here sounds wrong to you, it might be — the flaws in this project have been found by exactly that kind of reading.
 
 ## 1. What we are actually doing

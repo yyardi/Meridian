@@ -1,5 +1,9 @@
 # Meridian — Status (2026-08-04)
 
+> **History — the first phase (August 2026).** This describes Meridian when it was a WNBA
+> fair-value model. For the project as it is now, read the root [README](../README.md) and
+> [STATUS.md](../STATUS.md).
+
 One page: what exists, what it says, where we are stuck.
 Companion: [findings.md](findings.md) — what we got wrong, and the venue facts that
 constrain everything below.

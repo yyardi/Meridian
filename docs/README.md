@@ -4,18 +4,37 @@ Short, single-topic docs. Each one should be readable in a few minutes.
 
 The root [`README.md`](../README.md) is the project overview. These go deeper on one thing each.
 
-**Just back? Read this first:** [return-brief-2026-08-07.md](return-brief-2026-08-07.md) — the week's verdicts, what got built, and the click list.
-**Start here:** [how-it-all-works.md](how-it-all-works.md) — the whole project in plain language, then the maths.
+**Start here:** the root [`README.md`](../README.md) — what Meridian is now — and [`STATUS.md`](../STATUS.md), the running record (newest sections last).
 **What we got wrong:** [findings.md](findings.md) — venue facts, bugs, and retracted claims. **Append as you find more.**
-**PULSE queue:** [pulse-hypotheses.md](pulse-hypotheses.md) — all 14 in-game hypotheses in one editable table.
-**Handing off / picking up:** [next-build.md](next-build.md) — the three routes, what's built, what to measure next.
-**Status snapshot:** [STATUS.md](STATUS.md) — one page: built, measured, stuck.
-**Current direction:** [roadmap.md](roadmap.md) — why we stayed WNBA, and the window-hunting plan.
+**Codebase map:** [ARCHITECTURE.md](ARCHITECTURE.md) — every container, what it writes, why it exists (a 2026-09-13 snapshot).
 **Terms:** [glossary.md](glossary.md) — every piece of jargon, defined once.
 
-## Math
+## Now: the questions the system works on today
 
-The modelling, stated precisely enough to argue with.
+| Doc | Question it answers |
+|---|---|
+| [ladder-fill-test.md](math/ladder-fill-test.md) | The ladder arbitrage: when the venue's spread ladder contradicts itself, can both legs be filled? (pre-registered) |
+| [fee-coefficient.md](math/fee-coefficient.md) | The venue's fee as a constant of a period, charged per row |
+| [btc15-harness.md](math/btc15-harness.md) | The Bitcoin Up-or-Down harness: the model, the ledger, the $10 limit, the cost caps |
+| [thin-league-speed-preregistration.md](math/thin-league-speed-preregistration.md) | Thin basketball leagues: does the venue reprice late after its own score changes? |
+| [thin-league-live-feeds.md](math/thin-league-live-feeds.md) | Which leagues publish a free live feed with the second of every basket |
+| [intl-basketball-ls-research.md](math/intl-basketball-ls-research.md) | International basketball against Kalshi: the anchor and the pregame read |
+| [cricket-inplay-dip.md](math/cricket-inplay-dip.md) | Cricket in play: buying the dip, registered |
+| [tabletennis-preregistration.md](math/tabletennis-preregistration.md) | Table tennis: a rating model against the venue, registered |
+| [pulse-live-scorecard.md](math/pulse-live-scorecard.md) | The in-game model's live decisions, scored against the price |
+
+## First phase: the WNBA fair-value model (August 2026), kept as history
+
+Meridian began as a WNBA fair-value model on Polymarket US. These documents record
+that phase, what it measured and what failed; they describe the project as it was
+then, not as it is now.
+
+**Then:** [how-it-all-works.md](how-it-all-works.md) — the first phase in plain language, then the maths.
+**Then:** [return-brief-2026-08-07.md](return-brief-2026-08-07.md) · [next-build.md](next-build.md) · [STATUS.md](STATUS.md) (2026-08-04) · [roadmap.md](roadmap.md) · [pulse-hypotheses.md](pulse-hypotheses.md).
+
+### First-phase maths
+
+The WNBA modelling, stated precisely enough to argue with.
 
 | Doc | Question it answers |
 |---|---|
@@ -92,6 +111,6 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 
 ## Reading order
 
-New to the project? **[how-it-all-works.md](how-it-all-works.md)** first, then **[ARCHITECTURE.md](ARCHITECTURE.md)** → **[fair-value.md](math/fair-value.md)** → **[clv.md](math/clv.md)**. That's the system, the model, and how we judge it.
+New to the project? The root **[README](../README.md)**, then **[STATUS.md](../STATUS.md)** from §0cd on, then **[findings.md](findings.md)** and the "Now" table above.
 
-Re-reading with experience? Go **[findings.md](findings.md)** → **[math/market-shrinkage.md](math/market-shrinkage.md)** → **[math/calibration-problem.md](math/calibration-problem.md)**. That's what's broken, why, and the one thing still unexplained.
+Want the history? **[how-it-all-works.md](how-it-all-works.md)** → **[math/market-shrinkage.md](math/market-shrinkage.md)** → **[math/calibration-problem.md](math/calibration-problem.md)**: how the first phase worked, and why forecasting the WNBA better than the market was not where the edge was.
