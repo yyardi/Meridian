@@ -88,7 +88,8 @@ mid is not reading anything the price does not already know.
 ## Running it
 
 `docker-compose.btc15.yml`: `btc15` (15-minute) and `btc1h` (hourly, paper,
-**data only** until `MERIDIAN_BTC1H_MODEL` gives it a model), each one
+**data only** until `MERIDIAN_BTC1H_MODEL` gives it a model; on prod it has
+`gpt-6-astra` from 2026-09-28 02:00Z), each one
 container with a 256 MB cap, log rotation and its own ledger and $10
 allocation.
 
@@ -114,3 +115,10 @@ the default. Live execution on Polymarket US reuses the order path the ARB desk
 already sends through (immediate-or-cancel limit at the ask, one contract, the
 ledger's guard before the order exists); until that adapter lands, `MODE=live`
 predicts and places nothing.
+
+The dashboard's BTC tab (`/btc`, `static/btc.html`, data from
+`core/btc15/desk.py`) reads both ledgers read-only: the window in play, the
+model's p_up beside the market mid, the random walk and Kalshi, its reasoning
+and fill, the price chart with each window's line and call, the allocation's
+P&L, drawdown and Brier scores, OpenAI spend, the twelve lessons the model
+reads before its next call, and every window.
