@@ -103,6 +103,8 @@ def test_the_routes_answer_from_the_mounted_directory(tmp_path, monkeypatch):
     c = TestClient(app)
     s = c.get("/api/btc/summary?h=15m")
     assert s.status_code == 200 and s.json()["current"]["decision"]["side"] == "NO"
+    assert isinstance(s.json()["page_version"], int)          # the open tab reloads when this changes
+    assert c.get("/btc").headers["cache-control"] == "no-cache"
     assert c.get("/api/btc/history?h=15m&limit=5").json()["rows"][0]["ticker"].endswith("0100z")
     assert c.get("/api/btc/ticks?h=15m&minutes=5").status_code == 200
     assert c.get("/api/btc/summary?h=1h").status_code == 404          # no hourly ledger here

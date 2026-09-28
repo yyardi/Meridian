@@ -4487,7 +4487,16 @@ def btc_page() -> FileResponse:
     page = STATIC / "btc.html"
     if not page.is_file():
         raise HTTPException(status_code=404, detail="static/btc.html is not present in this build")
-    return FileResponse(page)
+    return FileResponse(page, headers={"Cache-Control": "no-cache"})
+
+
+def _btc_page_version() -> int | None:
+    """The page's build stamp. An open tab compares it on every refresh and
+    reloads itself when a newer page ships, so nobody reads yesterday's layout."""
+    try:
+        return int((STATIC / "btc.html").stat().st_mtime)
+    except OSError:
+        return None
 
 
 @app.get("/api/btc/summary")
@@ -4499,6 +4508,7 @@ def btc_summary(h: str = Query("15m", pattern=_BTC_H)) -> dict:
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
     out["book"] = desk.live_book(h)
+    out["page_version"] = _btc_page_version()
     return out
 
 
