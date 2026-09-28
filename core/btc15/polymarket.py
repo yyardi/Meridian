@@ -35,7 +35,10 @@ GATEWAY = os.environ.get("POLYMARKET_GATEWAY_URL", "https://gateway.polymarket.u
 #: The venue lists BTC Up or Down at these horizons (read 2026-09-28: 15 min and
 #: 60 min; there is no 5-minute market). The slug carries the horizon token.
 HORIZONS = {"15m": 900, "1h": 3600}
-STATUS = {"MARKET_STATUS_OPEN": "active", "MARKET_STATUS_RESOLVED": "finalized"}
+#: RESOLVING sits between the close and the result: 30 s to ~3 min, measured
+#: 2026-09-28 (the 01:45Z window resolved 2 min 48 s after its close).
+STATUS = {"MARKET_STATUS_OPEN": "active", "MARKET_STATUS_RESOLVING": "resolving",
+          "MARKET_STATUS_RESOLVED": "finalized"}
 
 
 def slug_at(ts: float, horizon: str = "15m") -> str:
