@@ -154,13 +154,19 @@ def test_the_api_is_given_reports_and_nothing_else():
             host_side, container_side = parts[0], parts[1]
         else:
             host_side, container_side = volume.rsplit(":", 1)
-        # Two mounts and no more: the analytics report, and the reads directory
+        # Three mounts and no more: the analytics report, the reads directory
         # where the cron leaves the paper book and the settlement cache lives
-        # (read-write, the book runs inside this container). Never the root.
+        # (read-write, the book runs inside this container), and the BTC bot's
+        # ledgers for the BTC tab -- READ-ONLY, the bot's own container is
+        # their only writer, and they hold paper P&L and model text, no
+        # credentials. Never the root.
         allowed = {"/reports": f"{paths.DATA_DIR_CONTAINER}/reports",
-                   "./artifacts/reads": "/opt/meridian/artifacts/reads"}
-        key = "./artifacts/reads" if host_side == "./artifacts/reads" else "/reports"
+                   "./artifacts/reads": "/opt/meridian/artifacts/reads",
+                   "./artifacts/btc15": "/opt/meridian/artifacts/btc15"}
+        key = host_side if host_side in ("./artifacts/reads", "./artifacts/btc15") else "/reports"
         assert host_side.endswith(key), (
-            f"api mounts {host_side!r}; it may see reports/ and artifacts/reads and nothing else"
+            f"api mounts {host_side!r}; it may see reports/, artifacts/reads and artifacts/btc15 and nothing else"
         )
         assert container_side == allowed[key]
+        if key == "./artifacts/btc15":
+            assert volume.endswith(":ro"), "the api must never be able to write the BTC bot's ledger"

@@ -4466,6 +4466,63 @@ def arb_page() -> FileResponse:
     return FileResponse(page)
 
 
+# ---------------------------------------------------------------------------
+# BTC tab — the Up-or-Down bot (core/btc15), read-only.
+#
+# The harness runs in its own container and is the only writer of its SQLite
+# ledgers; the api mounts that directory read-only (docker-compose.yml) and
+# core/btc15/desk.py opens each ledger with mode=ro. Nothing on this tab can
+# place, cancel or change anything.
+# ---------------------------------------------------------------------------
+_BTC_H = "^(15m|1h)$"
+
+
+def _btc_dir() -> Path:
+    from core.btc15.desk import DEFAULT_DIR
+    return Path(os.environ.get("MERIDIAN_BTC_DIR") or DEFAULT_DIR)
+
+
+@app.get("/btc")
+def btc_page() -> FileResponse:
+    page = STATIC / "btc.html"
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="static/btc.html is not present in this build")
+    return FileResponse(page)
+
+
+@app.get("/api/btc/summary")
+def btc_summary(h: str = Query("15m", pattern=_BTC_H)) -> dict:
+    """The window in play, the bot's call on it, the live book, the account and the spend."""
+    from core.btc15 import desk
+    try:
+        out = desk.summary(_btc_dir(), h)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
+    out["book"] = desk.live_book(h)
+    return out
+
+
+@app.get("/api/btc/ticks")
+def btc_ticks(h: str = Query("15m", pattern=_BTC_H), minutes: int = Query(60, ge=5, le=1440)) -> dict:
+    """The bot's own composite BTC price (median of four exchanges, 1 Hz) and the windows over it."""
+    from core.btc15 import desk
+    try:
+        return desk.ticks(_btc_dir(), h, time.time() - minutes * 60)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
+
+
+@app.get("/api/btc/history")
+def btc_history(h: str = Query("15m", pattern=_BTC_H), limit: int = Query(100, ge=1, le=500),
+                before: float | None = Query(None)) -> dict:
+    """Every window, newest first: the call, the fill, the settlement and the lesson."""
+    from core.btc15 import desk
+    try:
+        return {"rows": desk.history(_btc_dir(), h, limit=limit, before_ts=before)}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
+
+
 @app.get("/pnl", response_class=HTMLResponse)
 def arb_pnl_page() -> str:
     """What the night committed, what a filled pair returns, and what the tape
