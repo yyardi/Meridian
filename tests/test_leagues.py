@@ -108,7 +108,9 @@ def test_picks_counts_slugs_it_cannot_place(client):
 #: A tab would hide one arm of a shared bankroll, which is the thing the page
 #: exists to show together. Named here rather than satisfied with an empty div,
 #: which would turn this guard green without making it true.
-NOT_TABBED = {"wallet.html"}
+#: `btc.html` is the Bitcoin Up-or-Down bot: no sports league exists on it, and its
+#: header tabs are the bot's two horizons (15 MIN / 1 HOUR), not leagues.
+NOT_TABBED = {"wallet.html", "btc.html"}
 
 
 def test_no_page_hardcodes_the_league_in_its_header():
