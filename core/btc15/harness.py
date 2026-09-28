@@ -51,7 +51,7 @@ from core.btc15 import features as F
 from core.btc15.kalshi import KalshiBTC
 from core.btc15.ledger import DEFAULT_LIMIT_U, UNIT, Ledger
 from core.btc15.polymarket import PolymarketBTC
-from core.btc15.model import ModelConfig, ModelError, OpenAIModel, side_of
+from core.btc15.model import ModelConfig, ModelError, OpenAIModel, cost_usd, side_of
 from core.btc15.prices import PriceFeed
 
 log = logging.getLogger("btc15")
@@ -70,8 +70,11 @@ class Settings:
     status_path: str = "/data/status.json"
     venue: str = "polymarket"
     horizon: str = "15m"
-    #: OpenAI tokens per UTC day, decisions and lessons together. At the cap the
-    #: window is recorded as budget_exhausted and nothing is asked.
+    #: OpenAI spend per UTC day, decisions and lessons together, in dollars from
+    #: the model's listed price (core.btc15.model.PRICES_PER_M). At the cap the
+    #: window is recorded as budget_exhausted and nothing is asked until 00:00Z.
+    max_usd_per_day: float = 10.0
+    #: Backstop in tokens, for a model with no listed price.
     max_tokens_per_day: int = 1_500_000
     #: Stop asking the model once it has been scored on this many windows and
     #: its Brier score is WORSE than the market's own mid: a model that reads
@@ -91,6 +94,7 @@ class Settings:
             status_path=e("MERIDIAN_BTC15_STATUS") or "/data/status.json",
             venue=(e("MERIDIAN_BTC15_VENUE") or "polymarket").lower(),
             horizon=(e("MERIDIAN_BTC15_HORIZON") or "15m").lower(),
+            max_usd_per_day=float(e("MERIDIAN_BTC15_MAX_USD_PER_DAY") or 10.0),
             max_tokens_per_day=int(e("MERIDIAN_BTC15_MAX_TOKENS_PER_DAY") or 1_500_000),
             pause_if_worse_after=int(e("MERIDIAN_BTC15_PAUSE_IF_WORSE_AFTER") or 200),
         )
@@ -187,6 +191,21 @@ class Harness:
         finally:
             self._inflight.discard(m["ticker"])
 
+    def _model_name(self) -> str | None:
+        return getattr(getattr(self.model, "cfg", None), "model", None)
+
+    def _spend(self, usage: dict | None) -> None:
+        self.ledger.add_spend(usage, cost_usd(self._model_name(), usage))
+
+    def _over_budget(self) -> str | None:
+        """Why the next model call must not be made today, or None."""
+        s = self.ledger.spent()
+        if s["usd"] >= self.settings.max_usd_per_day:
+            return f"${s['usd']:.2f} spent today >= ${self.settings.max_usd_per_day:.2f} cap"
+        if s["tokens"] >= self.settings.max_tokens_per_day:
+            return f"{s['tokens']:,} tokens today >= {self.settings.max_tokens_per_day:,}"
+        return None
+
     def decide(self, m: dict, has_book: bool = True) -> None:
         now = self.clock()
         secs = self.feed.seconds()
@@ -220,10 +239,9 @@ class Harness:
             self.ledger.finish_decision(m["ticker"], status="no_model",
                                         error="set OPENAI_API_KEY and MERIDIAN_BTC15_MODEL to decide")
             return
-        spent = self.ledger.spent()["tokens"]
-        if spent >= self.settings.max_tokens_per_day:
-            self.ledger.finish_decision(m["ticker"], status="budget_exhausted",
-                                        error=f"{spent:,} tokens today >= {self.settings.max_tokens_per_day:,}")
+        over = self._over_budget()
+        if over:
+            self.ledger.finish_decision(m["ticker"], status="budget_exhausted", error=over)
             return
         experience = self.ledger.experience(self.settings.mode)
         rec = experience["your_record"]
@@ -244,7 +262,7 @@ class Harness:
             self.ledger.finish_decision(m["ticker"], status="model_error", error=str(e)[:800],
                                         answered_at=_iso(self.clock()))
             return
-        self.ledger.add_spend(usage)
+        self._spend(usage)
         side = side_of(out["p_up"])
         answered = self.clock()
         self.ledger.finish_decision(m["ticker"], answered_at=_iso(answered), response=json.dumps(out),
@@ -325,11 +343,11 @@ class Harness:
                     "features_at_decision": feats}
         outcome = {"result": r["result"], "strike": r["strike"], "closing_average": r["expiration_value"],
                    "you_were": "right" if (r["p_up"] >= 0.5) == (r["result"] == "yes") else "wrong"}
-        if self.ledger.spent()["tokens"] >= self.settings.max_tokens_per_day:
+        if self._over_budget():
             return
         try:
             text, usage = self.model.lesson(decision, outcome)
-            self.ledger.add_spend(usage)
+            self._spend(usage)
             self.ledger.finish_decision(r["ticker"], lesson=text)
         except Exception as e:                                   # noqa: BLE001
             log.warning("lesson %s: %s", r["ticker"], e)
@@ -342,7 +360,9 @@ class Harness:
              "model_ready": bool(self.model and self.model.cfg.ready),
              "account": {k: (v / UNIT if k.endswith("_u") else v) for k, v in a.items()},
              "halted": self.ledger.halted(self.settings.mode), "feed_errors": dict(self.feed.errors),
-             "openai_today": {**self.ledger.spent(), "cap_tokens": self.settings.max_tokens_per_day}}
+             "openai_today": {**self.ledger.spent(), "cap_usd": self.settings.max_usd_per_day,
+                              "cap_tokens": self.settings.max_tokens_per_day},
+             "openai_total": self.ledger.spent_total()}
         try:
             with open(self.settings.status_path, "w") as fh:
                 json.dump(s, fh, indent=1)
