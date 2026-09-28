@@ -32,7 +32,9 @@ EVENT = {"event": {"slug": "lnbp-dia-ast-2026-09-27", "live": True, "ended": Fal
                                   "elapsed": "03:05", "period": "Q4", "live": True, "ended": False,
                                   "periodScores": [{"number": 1, "label": "Q1",
                                                     "scores": [{"competitorId": "1", "score": 15},
-                                                               {"competitorId": "2", "score": 22}]}]}}}
+                                                               {"competitorId": "2", "score": 22}]}]},
+                   "markets": [{"sportsMarketType": "basketball_team_full_game_winner",
+                                "marketSides": [{"long": True, "teamId": 1}, {"long": False, "teamId": 2}]}]}}
 
 
 class Clock:
@@ -74,6 +76,7 @@ def test_state_of_reads_the_event_state_and_its_stamp():
     assert st["live"] is True and st["ended"] is False
     assert st["state_updated_at"] == "2026-09-28T00:08:01.123Z"
     assert st["period_scores"] == [["Q1", [15, 22]]]
+    assert st["competitors"] == ["1", "2"]
 
 
 def test_a_line_per_change_bounded_by_the_poll_before(tmp_path):
@@ -90,6 +93,7 @@ def test_a_line_per_change_bounded_by_the_poll_before(tmp_path):
     assert rows[0]["prev_recv"] is None
     # the basket happened after the second poll (which still saw 10-8) and by the third
     assert rows[1]["prev_recv"] < rows[1]["recv"] and rows[1]["polls"] == 3
+    assert rows[1]["yes_team_id"] == "1" and rows[1]["competitors"] == ["1", "2"]
 
 
 def test_an_ended_game_leaves_the_rotation_and_pregame_is_polled_slowly(tmp_path):

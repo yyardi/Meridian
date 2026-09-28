@@ -15,7 +15,11 @@ This polls that payload for every game on the slate and writes one line to
      "state_updated_at": <eventState.updatedAt>, "polls": <polls of this game so far>}
 
 so the change happened in (prev_recv, recv], and the venue stamped it at
-``state_updated_at``. Beside the book tape that answers the speed question in
+``state_updated_at``. Direction: ``score`` lists the teams in the order of
+``competitors`` (the period scores' competitor ids; verified on
+lnbp-lob-min-2026-09-27, "81-84" = Lobos 81, Mineros 84), and ``yes_team_id``
+is the team the winner market's long (YES) side pays on -- the home team in
+every thin league read on 2026-09-27. Beside the book tape that answers the speed question in
 thin leagues: how long after the venue's own score changes does its price
 move, and what size stood at the old price meanwhile.
 
@@ -52,7 +56,21 @@ def state_of(payload: dict) -> dict:
     out["period_scores"] = [
         [p.get("label"), [s.get("score") for s in (p.get("scores") or [])]]
         for p in (st.get("periodScores") or [])]
+    first = (st.get("periodScores") or [{}])[0].get("scores") or []
+    out["competitors"] = [str(s.get("competitorId")) for s in first]
     return out
+
+
+def yes_team_of(payload: dict) -> str | None:
+    """The team id the game-winner market's long (YES) side pays on."""
+    e = payload.get("event") if isinstance(payload.get("event"), dict) else payload
+    for m in e.get("markets") or []:
+        if not str(m.get("sportsMarketType", "")).endswith("full_game_winner"):
+            continue
+        for side in m.get("marketSides") or []:
+            if side.get("long") and side.get("teamId") is not None:
+                return str(side["teamId"])
+    return None
 
 
 class ScorePoller:
@@ -86,7 +104,8 @@ class ScorePoller:
         try:
             r = self._http.get(f"{GATEWAY}/v1/events/slug/{slug}")
             r.raise_for_status()
-            st = state_of(r.json())
+            payload = r.json()
+            st = state_of(payload)
         except (httpx.HTTPError, ValueError):
             self.errors += 1
             return False
@@ -101,7 +120,8 @@ class ScorePoller:
         self.changes += 1
         line = {"recv": _iso(now), "prev_recv": None if before is None else _iso(before), "game": game,
                 **{k: st[k] for k in _FIELDS}, "state_updated_at": st["state_updated_at"],
-                "period_scores": st["period_scores"], "polls": self._polls[game]}
+                "period_scores": st["period_scores"], "competitors": st["competitors"],
+                "yes_team_id": yes_team_of(payload), "polls": self._polls[game]}
         with open(os.path.join(self.out_dir, f"slate_scores_{game}.jsonl"), "a") as fh:
             fh.write(json.dumps(line) + "\n")
         return True
