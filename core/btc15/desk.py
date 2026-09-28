@@ -132,12 +132,14 @@ def summary(root: str | Path, horizon: str, now: float | None = None) -> dict:
         cur = led._conn.execute(_ROWS + "WHERE w.open_ts <= ? ORDER BY w.open_ts DESC LIMIT 1",
                                 (mode, now)).fetchone()
         last = led._conn.execute("SELECT t, px, n FROM ticks ORDER BY t DESC LIMIT 1").fetchone()
-        curve, cum = [], 0
+        curve, cum, staked = [], 0, 0
         for r in led._conn.execute(
-                "SELECT s.settled_at, s.pnl_u, f.ticker FROM settlements s JOIN fills f ON f.id = s.fill_id "
+                "SELECT s.settled_at, s.pnl_u, f.ticker, f.price_u, f.fee_u FROM settlements s JOIN fills f ON f.id = s.fill_id "
                 "WHERE f.mode = ? AND f.epoch = ? ORDER BY s.settled_at, f.id", (mode, a["epoch"])):
             cum += r["pnl_u"]
-            curve.append({"at": r["settled_at"], "ticker": r["ticker"], "pnl": _usd(r["pnl_u"]), "cum": _usd(cum)})
+            staked += r["price_u"] + r["fee_u"]
+            curve.append({"at": r["settled_at"], "ticker": r["ticker"], "pnl": _usd(r["pnl_u"]), "cum": _usd(cum),
+                          "cost": _usd(r["price_u"] + r["fee_u"])})
         counts = {r["status"]: r["n"] for r in led._conn.execute(
             "SELECT status, COUNT(*) n FROM decisions GROUP BY status")}
         # The same selection Ledger.experience hands the model: newest first, twelve.
@@ -159,7 +161,10 @@ def summary(root: str | Path, horizon: str, now: float | None = None) -> dict:
         "account": {"epoch": a["epoch"], "pnl": _usd(a["realized_u"]), "peak": _usd(a["peak_u"]),
                     "drawdown": _usd(a["drawdown_u"]), "limit": _usd(DEFAULT_LIMIT_U),
                     "open_cost": _usd(a["open_cost_u"]), "open": a["open"], "settled": a["settled"],
-                    "wins": a["wins"]},
+                    "wins": a["wins"],
+                    # Return on what the settled contracts cost (price + fee): P&L / staked.
+                    "staked": _usd(staked),
+                    "roi": None if not staked else round(a["realized_u"] / staked, 4)},
         "record": rec, "decision_counts": counts, "pnl_curve": curve, "lessons": lessons,
         "openai": {"today": spent, "total": spent_total,
                    "cap_usd": (status.get("openai_today") or {}).get("cap_usd")},

@@ -173,7 +173,7 @@
   <div class="sb" title="PAPER: fills are simulated at the ask and settled off the venue's own result. LIVE would send real orders; that is the operator's switch in the server's .env, not this page's."><span class="k">bot</span><span class="chip" id="s-mode">—</span><span class="dimc" id="s-model">—</span></div>
   <div class="sb" title="The bot's own Bitcoin price: the median mid of Coinbase, Kraken, Bitstamp and Gemini, sampled every second. The venue settles on CF Benchmarks' BRTI, which these four feed."><span class="k">btc</span><span id="s-btc">—</span><span class="age" id="s-btc-age"></span></div>
   <div class="sb" title="Time left in the window in play."><span class="k">closes in</span><span id="s-left">—</span></div>
-  <div class="sb" title="Settled P&amp;L of this allocation, net of every fee; then today's settled P&amp;L (your local day) and the open position marked at the current bid (what it would fetch now, before any exit fee; the bot holds to settlement)."><span class="k">p&amp;l</span><span id="s-pnl">—</span><span class="age" id="s-pnl-sub"></span></div>
+  <div class="sb" title="Return on what the settled contracts cost (P&amp;L ÷ price + fee paid), with the dollars beside it; then today's (your local day), and the open contract marked at the current bid of the side held (what it would fetch now, before any exit fee; the bot holds to settlement)."><span class="k">p&amp;l</span><span id="s-pnl">—</span><span class="age" id="s-pnl-sub"></span></div>
   <div class="sb" title="How far the allocation sits below its high-water mark, against the $10 limit. At the limit the bot stops buying until a new allocation is started by hand."><span class="k">drawdown</span><span id="s-dd">—</span></div>
   <div class="sb" title="OpenAI spend today (UTC day) against the daily cap, priced from the tokens the API reported; then the total since the bot started."><span class="k">openai</span><span id="s-ai">—</span><span class="age" id="s-ai-total"></span></div>
   <div class="sb" title="Age of the bot's status file, which it rewrites every minute. Past three minutes the bot is not running."><span class="k">heartbeat</span><span id="s-hb">—</span></div>
@@ -326,10 +326,19 @@ function todayPnl() {
     .reduce((t, x) => t + x.pnl, 0);
 }
 const signed = (x, d = 2) => `<span class="${x > 0 ? "pos" : x < 0 ? "neg" : ""}">${sgn(x, d)}</span>`;
+// P&L as a return on what was staked (contract price + fee), the % a trader reads.
+const pctOf = (pnl, cost) => cost ? (pnl / cost > 0 ? "+" : pnl / cost < 0 ? "−" : "") + Math.abs(pnl / cost * 100).toFixed(1) + "%" : "—";
+const signedPct = (pnl, cost) => `<span class="${pnl > 0 ? "pos" : pnl < 0 ? "neg" : ""}">${pctOf(pnl, cost)}</span>`;
+function todayStake() {
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  return ((S && S.pnl_curve) || []).filter((x) => Date.parse(x.at) >= midnight.getTime())
+    .reduce((t, x) => t + (x.cost || 0), 0);
+}
 function openTxt(m) {
   if (!m) return "";
   if (m.settling) return "open: settling";
-  return `open ${sgn(m.mark)} at the bid`;
+  const cost = S.current.fill.cost;
+  return `open ${sgn(m.mark)} (${pctOf(m.mark, cost)}) at the bid`;
 }
 
 // ---------------------------------------------------------------- status row
@@ -344,9 +353,9 @@ function renderStatus() {
   $("s-btc").textContent = lt ? usd(lt.px) : "—";
   $("s-btc-age").textContent = lt ? `${lt.exchanges} exch · ${Math.max(0, Math.round(Date.now() / 1000 - lt.t))}s` : "";
   const a = S.account;
-  $("s-pnl").innerHTML = signed(a.pnl);
+  $("s-pnl").innerHTML = `${signedPct(a.pnl, a.staked)} <span class="faint">${sgn(a.pnl)}</span>`;
   const m = openMark();
-  $("s-pnl-sub").innerHTML = `today ${sgn(todayPnl())}` + (m ? ` · ${openTxt(m)}` : "");
+  $("s-pnl-sub").innerHTML = `today ${pctOf(todayPnl(), todayStake())} ${sgn(todayPnl())}` + (m ? ` · ${openTxt(m)}` : "");
   $("s-dd").innerHTML = `${usd(a.drawdown)} <span class="faint">/ ${usd(a.limit, 0)}</span>`;
   const ai = S.openai || {};
   const cap = ai.cap_usd;
@@ -427,8 +436,8 @@ function renderNow() {
   if (f) {
     const won = f.pnl != null ? f.pnl > 0 : null;
     html += `<div class="fill">${S.mode === "live" ? "Bought" : "Paper-bought"} one ${sideTxt(f.side)} at <b>${cents(f.price)}</b> + ${cents(f.fee)} fee = ${usd(f.cost)}` +
-      (f.pnl != null ? ` · settled <span class="${won ? "pos" : "neg"}">${sgn(f.pnl)}</span>` : ` · pays $1.00 if ${f.side === "YES" ? "Up" : "Down"}`) +
-      (() => { const m = openMark(); return m && !m.settling ? `<br>Now ${cents(m.bid)} at the bid: ${signed(m.mark)} marked, held to settlement` : ""; })() +
+      (f.pnl != null ? ` · settled ${signedPct(f.pnl, f.cost)} <span class="${won ? "pos" : "neg"}">${sgn(f.pnl)}</span>` : ` · pays $1.00 if ${f.side === "YES" ? "Up" : "Down"}`) +
+      (() => { const m = openMark(); return m && !m.settling ? `<br>Now ${cents(m.bid)} at the bid: ${signedPct(m.mark, f.cost)} ${signed(m.mark)} marked, held to settlement` : ""; })() +
       `</div>`;
   }
   html += `<div class="meta">${esc(d.model || "")} · answered in ${d.latency_s != null ? d.latency_s.toFixed(1) + " s" : "—"}` +
@@ -445,8 +454,8 @@ function renderRecord() {
   const bri = (x) => x == null ? "—" : x.toFixed(4);
   const better = r.brier_you != null && r.brier_market_mid != null ? (r.brier_you < r.brier_market_mid) : null;
   const tiles = [
-    ["P&L, this allocation", signed(a.pnl),
-      `today ${sgn(todayPnl())} · ${a.open ? (openTxt(openMark()) || `${a.open} open`) + `, ${usd(a.open_cost)} at risk` : "nothing open"}`],
+    ["return, this allocation", `${signedPct(a.pnl, a.staked)} <span class="faint" style="font-size:11px">${sgn(a.pnl)} on ${usd(a.staked)} staked</span>`,
+      `today ${pctOf(todayPnl(), todayStake())} · ${a.open ? (openTxt(openMark()) || `${a.open} open`) + `, ${usd(a.open_cost)} at risk` : "nothing open"}`],
     ["drawdown", `${usd(a.drawdown)} <span class="faint" style="font-size:11px">of ${usd(a.limit, 0)}</span>`,
       `<div class="ddbar"><i style="width:${ddp.toFixed(1)}%"></i></div>`],
     ["settled", `${a.wins}–${lost}`, a.settled ? `won ${pct(a.wins / a.settled)} of contracts` : "none settled yet"],
@@ -603,7 +612,7 @@ function renderHistory() {
   tb.innerHTML = ROWS.map((r) => {
     const d = r.decision || {}, f = r.fill;
     const open = OPEN.has(r.ticker);
-    const pnl = f && f.pnl != null ? `<span class="${f.pnl > 0 ? "pos" : "neg"}">${sgn(f.pnl)}</span>` : f ? '<span class="faint">open</span>' : "";
+    const pnl = f && f.pnl != null ? `<span class="${f.pnl > 0 ? "pos" : "neg"}">${sgn(f.pnl)} <span style="opacity:.75">${pctOf(f.pnl, f.cost)}</span></span>` : f ? '<span class="faint">open</span>' : "";
     let row = `<tr class="row" tabindex="0" data-t="${esc(r.ticker)}" aria-expanded="${open}">` +
       `<td class="l">${esc(day(r.open_ts))} ${esc(hm(r.open_ts))}–${esc(hm(r.close_ts))}</td>` +
       `<td>${usd(r.strike)}</td><td>${r.settle != null ? usd(r.settle) : '<span class="faint">—</span>'}</td>` +
