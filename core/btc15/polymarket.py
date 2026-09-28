@@ -14,6 +14,15 @@ HHMM is the window START in UTC, listed about twelve hours ahead:
   (Up), best first. Buying NO (Down) costs 1 - the best YES bid.
 * ``GET /v1/markets/<slug>/settlement`` -> ``{"settlement": 1 | 0}``.
 
+**The venue hid these markets' metadata on 2026-09-28 between 19:19Z and 19:30Z**:
+``/v1/markets?slug=`` and search return nothing for them, while ``/book`` and
+``/settlement`` still answer. ``meta()`` therefore falls back to a REBUILT record
+(``"rebuilt": true``): the window from the slug, the status from the book's state
+(MARKET_STATE_OPEN while it trades, EXPIRED after) and the settlement endpoint
+(1 = Up, 0 = Down), the price to beat from ``strike_source`` (Kalshi's same window,
+identical by construction) when one is given, and the fee coefficient as this
+period's constant (core.fees) -- the one field the venue no longer states.
+
 The contract is Kalshi's KXBTC15M's to the cent: both settle on the same BRTI
 averages (Polymarket's 23:30Z window of 2026-09-27 resolved at 84,337.75, Kalshi's
 ``expiration_value`` for that window). The fee is the venue's
@@ -25,11 +34,13 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import time
 from decimal import ROUND_CEILING, Decimal
 
 import httpx
 
 from core.btc15.kalshi import UNITS_PER_DOLLAR, to_units
+from core.fees import POLYMARKET_TAKER  # fee-now: only a REBUILT market (the venue stopped stating it) uses the period's constant
 
 GATEWAY = os.environ.get("POLYMARKET_GATEWAY_URL", "https://gateway.polymarket.us")
 #: The venue lists BTC Up or Down at these horizons (read 2026-09-28: 15 min and
@@ -46,6 +57,15 @@ def slug_at(ts: float, horizon: str = "15m") -> str:
     w = HORIZONS[horizon]
     start = int(ts // w) * w
     return f"cpc-btc-updown-{horizon}-" + dt.datetime.fromtimestamp(start, dt.timezone.utc).strftime("%Y-%m-%d-%H%Mz")
+
+
+def window_of(slug: str) -> tuple[float, float]:
+    """cpc-btc-updown-<h>-YYYY-MM-DD-HHMMz -> (open_ts, close_ts)."""
+    head, _, stamp = slug.rpartition("-")
+    date = head[-10:]
+    horizon = head.split("cpc-btc-updown-")[1].split("-")[0]
+    o = dt.datetime.strptime(f"{date} {stamp.rstrip('z')}", "%Y-%m-%d %H%M").replace(tzinfo=dt.timezone.utc).timestamp()
+    return o, o + HORIZONS[horizon]
 
 
 def _ts(s: str | None) -> float | None:
@@ -108,9 +128,12 @@ def normalize(meta: dict, book: dict | None) -> dict:
 class PolymarketBTC:
     venue = "polymarket"
 
-    def __init__(self, client: httpx.Client | None = None, base: str = GATEWAY, horizon: str = "15m") -> None:
+    def __init__(self, client: httpx.Client | None = None, base: str = GATEWAY, horizon: str = "15m",
+                 strike_source=None, clock=time.time) -> None:
         if horizon not in HORIZONS:
             raise ValueError(f"horizon {horizon!r}: one of {sorted(HORIZONS)}")
+        self.strike_source = strike_source          # (open_ts, close_ts) -> price to beat, or None
+        self._clock = clock
         self._http = client or httpx.Client(timeout=10.0, headers={"User-Agent": "meridian-btc15/1"})
         self._base = base.rstrip("/")
         self.horizon = horizon
@@ -134,7 +157,45 @@ class PolymarketBTC:
 
     def meta(self, slug: str) -> dict | None:
         ms = self._get("/v1/markets", {"slug": slug}).get("markets") or []
-        return ms[0] if ms else None
+        return ms[0] if ms else self.rebuilt_meta(slug)
+
+    def settlement(self, slug: str) -> int | None:
+        try:
+            s = self._get(f"/v1/markets/{slug}/settlement").get("settlement")
+        except httpx.HTTPStatusError:
+            return None
+        return int(s) if s in (0, 1, "0", "1") else None
+
+    def rebuilt_meta(self, slug: str) -> dict | None:
+        """The market record the venue no longer lists, from what it still serves."""
+        try:
+            o, c = window_of(slug)
+        except (ValueError, KeyError, IndexError):
+            return None
+        book = self.book(slug)
+        state = (book or {}).get("state")
+        status, prices = None, None
+        if state == "MARKET_STATE_OPEN":
+            status = "MARKET_STATUS_OPEN"
+        elif book is not None or self._clock() >= c:
+            s = self.settlement(slug)
+            if s is not None:
+                status, prices = "MARKET_STATUS_RESOLVED", (["1", "0"] if s == 1 else ["0", "1"])
+            elif book is not None:
+                status = "MARKET_STATUS_RESOLVING"
+        if status is None:
+            return None
+        strike = None
+        if status == "MARKET_STATUS_OPEN" and self.strike_source is not None:
+            try:
+                strike = self.strike_source(o, c)
+            except Exception:                                    # noqa: BLE001 -- a missing strike is None, never a crash
+                strike = None
+        iso = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat().replace("+00:00", "Z")
+        return {"slug": slug, "status": status, "rebuilt": True, "feeCoefficient": str(POLYMARKET_TAKER),
+                "outcomePrices": prices,
+                "assetPriceTerms": {"windowStart": iso(o), "windowEnd": iso(c),
+                                    "priceToBeat": None if strike is None else {"value": str(strike)}}}
 
     def book(self, slug: str) -> dict | None:
         try:

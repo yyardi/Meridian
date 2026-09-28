@@ -160,6 +160,7 @@ POINT_IN_TIME = {
 #: classified, and the reason is that there is no earlier row to charge.
 PRICES_NOW = {
     "core/btc15/ledger.py": "charges the Kalshi fee at fill time from the series' live schedule (fee_multiplier, re-read hourly) and stores it on the fill row; settlement reads that stored fee_u",
+    "core/btc15/polymarket.py": "the period's constant stands in only for the LIVE window's rebuilt record after the venue hid the metadata (2026-09-28); the fill row stores the fee it was charged",
     "core/quote/wallet.py": "quotes now, against the live touch",
     "core/kelly_sizing.py": "sizes a bet being placed now",
     "core/executor.py": "places now",
