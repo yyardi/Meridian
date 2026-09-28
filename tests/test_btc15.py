@@ -474,3 +474,28 @@ def test_each_venue_owns_only_its_own_windows():
     assert PolymarketBTC(horizon="1h").owns("cpc-btc-updown-1h-2026-09-28-0000z")
     from core.btc15.kalshi import KalshiBTC
     assert KalshiBTC().owns("KXBTC15M-26SEP272015-15") and not KalshiBTC().owns("cpc-btc-updown-15m-x")
+
+
+def test_the_decision_waits_for_the_venues_book_and_records_a_window_that_never_gets_one(led, monkeypatch):
+    now = 1_790_600_000.0
+    model = FakeModel(p=0.6)
+    h, m = _harness(led, now, model)
+    started = []
+    monkeypatch.setattr("core.btc15.harness.threading.Thread",
+                        lambda target, args, daemon: type("T", (), {"start": lambda self: started.append(args)})())
+    no_book = dict(m, yes_bid_u=None, yes_ask_u=None)
+    h.market = no_book
+    h.maybe_decide(m["open_ts"] + 60)                        # book not live yet: wait
+    assert started == []
+    h.maybe_decide(m["close_ts"] - 100)                      # still none inside the last 105 s: record it
+    assert started and started[-1][1] is False
+    h.decide(*started[-1])
+    assert led.decision(m["ticker"])["status"] == "no_book" and model.calls == 0
+    assert led._conn.execute("SELECT count(*) FROM fills").fetchone()[0] == 0
+    h._inflight.clear()
+    started.clear()
+    h.market = dict(m, ticker="WITHBOOK")
+    h.venue.m["ticker"] = "WITHBOOK"
+    led.upsert_window(h.market)
+    h.maybe_decide(m["open_ts"] + 45)                        # book live: decide now
+    assert started and started[-1][1] is True

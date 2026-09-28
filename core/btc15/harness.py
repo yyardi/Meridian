@@ -148,6 +148,12 @@ class Harness:
 
     # ------------------------------------------------------------------ decide
     def maybe_decide(self, now: float) -> None:
+        """Decide at the first second after open + DECIDE_AT_S at which the venue's
+        book is live. Measured 2026-09-28: Polymarket US answers 404 on a
+        15-minute window's book for a while after the window opens although the
+        market is OPEN, and a decision without the book has no ask to fill at
+        and no market price to read. A window whose book never appears before
+        the last MIN_LEAD_S is recorded as ``no_book`` with its features."""
         m = self.market
         if not m or m.get("strike") is None:
             return
@@ -155,19 +161,23 @@ class Harness:
             return
         if m["ticker"] in self._inflight or self.ledger.decision(m["ticker"]) is not None:
             return
+        has_book = m.get("yes_bid_u") is not None or m.get("yes_ask_u") is not None
+        if not has_book and now < m["close_ts"] - self.settings.min_lead_s - 15:
+            self._next["market"] = min(self._next["market"], now + 3)     # look again soon
+            return
         self._inflight.add(m["ticker"])
-        threading.Thread(target=self._decide_safely, args=(dict(m),), daemon=True).start()
+        threading.Thread(target=self._decide_safely, args=(dict(m), has_book), daemon=True).start()
 
-    def _decide_safely(self, m: dict) -> None:
+    def _decide_safely(self, m: dict, has_book: bool = True) -> None:
         try:
-            self.decide(m)
+            self.decide(m, has_book)
         except Exception as e:                                   # noqa: BLE001
             log.exception("decide %s", m["ticker"])
             self.ledger.finish_decision(m["ticker"], status="harness_error", error=repr(e)[:500])
         finally:
             self._inflight.discard(m["ticker"])
 
-    def decide(self, m: dict) -> None:
+    def decide(self, m: dict, has_book: bool = True) -> None:
         now = self.clock()
         secs = self.feed.seconds()
         m = dict(m)
@@ -185,6 +195,10 @@ class Harness:
                         recent_results=self.ledger.recent_results(12))
         model_name = self.model.cfg.model if self.model else None
         if not self.ledger.start_decision(m["ticker"], model_name, feats):
+            return
+        if not has_book:
+            self.ledger.finish_decision(m["ticker"], status="no_book",
+                                        error="the venue's book was not live before the last decision second")
             return
         fresh = [q for q in self.feed.quotes.values() if now - q.t <= self.settings.max_data_age_s]
         if not secs or now - secs[-1][0] > self.settings.max_data_age_s or len(fresh) < self.settings.min_exchanges:
