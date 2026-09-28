@@ -56,7 +56,9 @@ deterministically (YES at ≥ 0.5) and buys **one contract of that side at the
 ask** — the model never sizes, times or cancels. After Kalshi settles, the model
 writes a one-line lesson that the next window reads. A refusal, malformed
 answer, timeout, stale price feed, or an answer that arrives inside the last
-90 seconds is recorded and places nothing.
+90 seconds is recorded and places nothing. The venue's book appears some time
+after the window opens (46 s after the 00:45Z start on 2026-09-28, one window
+observed); the harness re-reads every 3 s and decides once there is a book.
 
 ## The ledger and the $10
 
@@ -85,9 +87,21 @@ mid is not reading anything the price does not already know.
 
 ## Running it
 
-`docker-compose.btc15.yml`: `btc15` (15-minute) and `btc1h` (hourly, paper),
-each one container with a 256 MB cap, log rotation and its own ledger and $10
-allocation. Set
+`docker-compose.btc15.yml`: `btc15` (15-minute) and `btc1h` (hourly, paper,
+**data only** until `MERIDIAN_BTC1H_MODEL` gives it a model), each one
+container with a 256 MB cap, log rotation and its own ledger and $10
+allocation.
+
+**Credits.** Three limits keep the OpenAI bill bounded. Each answer is capped at
+`MERIDIAN_BTC15_MAX_OUTPUT_TOKENS` (4,000, reasoning included; a truncated
+answer is a recorded `model_error`, never a trade). Every call's tokens are
+written to the ledger's `spend` table by UTC day, and at
+`MERIDIAN_BTC15_MAX_TOKENS_PER_DAY` (1.5M) the window is recorded as
+`budget_exhausted` and nothing is asked until midnight UTC. After 200 scored
+windows, a model whose Brier score is worse than the market mid's stops being
+asked (`paused_underperforming`, one push): it would be paying for a reading
+the price already gives for free. `status-15m.json` shows today's calls and
+tokens. Set
 `OPENAI_API_KEY` and `MERIDIAN_BTC15_MODEL` in `/opt/meridian/.env` to let it
 decide (`--check-openai` lists the models the key can use); until then it
 records the feed, the features and every result. `MERIDIAN_BTC15_MODE=paper` is

@@ -70,6 +70,13 @@ class Settings:
     status_path: str = "/data/status.json"
     venue: str = "polymarket"
     horizon: str = "15m"
+    #: OpenAI tokens per UTC day, decisions and lessons together. At the cap the
+    #: window is recorded as budget_exhausted and nothing is asked.
+    max_tokens_per_day: int = 1_500_000
+    #: Stop asking the model once it has been scored on this many windows and
+    #: its Brier score is WORSE than the market's own mid: a model that reads
+    #: less than the price is not worth the credits. 0 disables.
+    pause_if_worse_after: int = 200
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -84,6 +91,8 @@ class Settings:
             status_path=e("MERIDIAN_BTC15_STATUS") or "/data/status.json",
             venue=(e("MERIDIAN_BTC15_VENUE") or "polymarket").lower(),
             horizon=(e("MERIDIAN_BTC15_HORIZON") or "15m").lower(),
+            max_tokens_per_day=int(e("MERIDIAN_BTC15_MAX_TOKENS_PER_DAY") or 1_500_000),
+            pause_if_worse_after=int(e("MERIDIAN_BTC15_PAUSE_IF_WORSE_AFTER") or 200),
         )
 
 
@@ -113,6 +122,7 @@ class Harness:
     _ticks: list = field(default_factory=list)
     _last_summary_day: str | None = None
     _pushed_halt: bool = False
+    _pushed_pause: bool = False
 
     # ------------------------------------------------------------------ the second
     def step(self, now: float, px: float | None, n: int, disp: float) -> None:
@@ -210,12 +220,31 @@ class Harness:
             self.ledger.finish_decision(m["ticker"], status="no_model",
                                         error="set OPENAI_API_KEY and MERIDIAN_BTC15_MODEL to decide")
             return
+        spent = self.ledger.spent()["tokens"]
+        if spent >= self.settings.max_tokens_per_day:
+            self.ledger.finish_decision(m["ticker"], status="budget_exhausted",
+                                        error=f"{spent:,} tokens today >= {self.settings.max_tokens_per_day:,}")
+            return
+        experience = self.ledger.experience(self.settings.mode)
+        rec = experience["your_record"]
+        if (self.settings.pause_if_worse_after and rec["windows_scored"] >= self.settings.pause_if_worse_after
+                and rec["brier_you"] is not None and rec["brier_market_mid"] is not None
+                and rec["brier_you"] > rec["brier_market_mid"]):
+            self.ledger.finish_decision(m["ticker"], status="paused_underperforming",
+                                        error=f"Brier {rec['brier_you']} worse than the market's {rec['brier_market_mid']} "
+                                              f"over {rec['windows_scored']} windows")
+            if not self._pushed_pause:
+                self._pushed_pause = True
+                _push("BTC15 paused", f"model Brier {rec['brier_you']} is worse than the market mid's "
+                                      f"{rec['brier_market_mid']} after {rec['windows_scored']} windows; no more model calls.")
+            return
         try:
-            out, usage, took = self.model.decide(feats, self.ledger.experience(self.settings.mode))
+            out, usage, took = self.model.decide(feats, experience)
         except ModelError as e:
             self.ledger.finish_decision(m["ticker"], status="model_error", error=str(e)[:800],
                                         answered_at=_iso(self.clock()))
             return
+        self.ledger.add_spend(usage)
         side = side_of(out["p_up"])
         answered = self.clock()
         self.ledger.finish_decision(m["ticker"], answered_at=_iso(answered), response=json.dumps(out),
@@ -296,8 +325,12 @@ class Harness:
                     "features_at_decision": feats}
         outcome = {"result": r["result"], "strike": r["strike"], "closing_average": r["expiration_value"],
                    "you_were": "right" if (r["p_up"] >= 0.5) == (r["result"] == "yes") else "wrong"}
+        if self.ledger.spent()["tokens"] >= self.settings.max_tokens_per_day:
+            return
         try:
-            self.ledger.finish_decision(r["ticker"], lesson=self.model.lesson(decision, outcome))
+            text, usage = self.model.lesson(decision, outcome)
+            self.ledger.add_spend(usage)
+            self.ledger.finish_decision(r["ticker"], lesson=text)
         except Exception as e:                                   # noqa: BLE001
             log.warning("lesson %s: %s", r["ticker"], e)
 
@@ -308,7 +341,8 @@ class Harness:
              "venue": self.venue.venue, "mode": self.settings.mode, "model": self.model.cfg.model if self.model else None,
              "model_ready": bool(self.model and self.model.cfg.ready),
              "account": {k: (v / UNIT if k.endswith("_u") else v) for k, v in a.items()},
-             "halted": self.ledger.halted(self.settings.mode), "feed_errors": dict(self.feed.errors)}
+             "halted": self.ledger.halted(self.settings.mode), "feed_errors": dict(self.feed.errors),
+             "openai_today": {**self.ledger.spent(), "cap_tokens": self.settings.max_tokens_per_day}}
         try:
             with open(self.settings.status_path, "w") as fh:
                 json.dump(s, fh, indent=1)
