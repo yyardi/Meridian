@@ -65,6 +65,9 @@ def test_the_desk_reads_the_call_the_fill_and_the_settlement(tmp_path):
     # the 00:45Z window settled Down; the bot held Down at 59c + 2c: +$0.39
     assert s["account"]["settled"] == 1 and s["account"]["pnl"] == pytest.approx(0.39)
     assert s["pnl_curve"][-1]["cum"] == pytest.approx(0.39)
+    # return on what was staked: +$0.39 on 59c + 2c
+    assert s["pnl_curve"][-1]["cost"] == pytest.approx(0.61) and s["account"]["staked"] == pytest.approx(0.61)
+    assert s["account"]["roi"] == pytest.approx(0.39 / 0.61, abs=1e-4)
     assert [x["lesson"] for x in s["lessons"]] == ["keep anchoring to the strike distance"]
     assert s["lessons"][0]["result"] == "no" and s["lessons"][0]["side"] == "NO"
     rows = desk.history(tmp_path, "15m")
