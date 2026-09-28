@@ -55,8 +55,10 @@
   .chip.warn{color:var(--acc);border-color:#5a3322;background:var(--acc-bg)}
 
   /* ── Panels ── */
-  main{padding:12px;display:grid;gap:12px;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);align-items:start}
-  @media (max-width:980px){ main{grid-template-columns:minmax(0,1fr)} }
+  main{padding:12px;display:grid;gap:12px;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);align-items:start;
+       grid-template-rows:auto auto 1fr auto;grid-template-areas:"chart now" "rec now" "learn now" "hist hist"}
+  #p-chart{grid-area:chart} #now{grid-area:now} #p-rec{grid-area:rec} #p-learn{grid-area:learn} #p-hist{grid-area:hist}
+  @media (max-width:980px){ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-template-areas:"now" "chart" "rec" "learn" "hist"} }
   .panel{background:var(--panel);border:1px solid var(--line);min-width:0}
   .ph{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .ph h2{margin:0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:700}
@@ -65,7 +67,6 @@
   .rng{display:flex;gap:2px}
   .rng button{background:transparent;border-color:transparent;color:var(--faint)}
   .rng button.on{color:var(--txt);background:#1a1f2b;border-color:var(--line)}
-  .wide{grid-column:1 / -1}
 
   /* chart */
   #chartwrap{position:relative;height:330px}
@@ -90,16 +91,17 @@
   .callhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
   .callside{font-size:22px;font-weight:700;letter-spacing:.06em}
   .callp{font-size:13px;color:var(--dim)}
-  .scale{position:relative;height:46px;margin:12px 6px 4px}
-  .scale .bar{position:absolute;left:0;right:0;top:12px;height:6px;
-              background:linear-gradient(90deg,#2a1216,#151a24 50%,#0e2419)}
-  .scale .mid{position:absolute;left:50%;top:6px;width:1px;height:18px;background:var(--faint)}
-  .mk{position:absolute;top:0;transform:translateX(-50%);text-align:center;font-size:9px;letter-spacing:.06em;white-space:nowrap}
-  .mk b{display:block;width:2px;height:30px;margin:0 auto 2px;background:var(--dim)}
-  .mk.model b{width:3px;background:var(--txt)}
-  .mk.market b{background:var(--blue)}
-  .mk.low{top:auto}
-  .scalelbl{display:flex;justify-content:space-between;color:var(--faint);font-size:9px;margin:0 6px}
+  .probs{display:grid;grid-template-columns:auto 1fr auto;gap:5px 10px;align-items:center;margin:12px 0 2px;font-size:11px}
+  .probs .k{color:var(--faint);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase}
+  .probs .k.me{color:var(--txt)}
+  .probs .v{text-align:right;min-width:3.5ch}
+  .track{position:relative;height:8px;background:var(--line2)}
+  .track::after{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--faint)}
+  .track i{position:absolute;top:0;bottom:0}
+  .track i.up{background:var(--pos)} .track i.dn{background:var(--neg)}
+  .track.me{height:10px}
+  .probaxis{display:grid;grid-template-columns:auto 1fr auto;gap:0 10px;color:var(--faint);font-size:9px}
+  .probaxis span:nth-child(2){display:flex;justify-content:space-between}
   .rationale{margin:10px 0 0;color:var(--txt);line-height:1.6;font-size:11.5px}
   ul.factors{margin:8px 0 0;padding-left:16px;color:var(--dim);font-size:11px;line-height:1.55}
   .fill{margin-top:10px;padding:7px 9px;border:1px solid var(--line);background:var(--panel2);font-size:11px}
@@ -107,7 +109,8 @@
   .waiting{padding:14px 10px;color:var(--dim);font-size:11.5px;line-height:1.6}
 
   /* record */
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-bottom:1px solid var(--line)}
+  .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid var(--line)}
+  @media (max-width:520px){ .tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
   .tile{padding:9px 10px;border-right:1px solid var(--line2);border-bottom:1px solid var(--line2)}
   .tile .k{color:var(--faint);font-size:9px;letter-spacing:.1em;text-transform:uppercase}
   .tile .v{font-size:16px;font-weight:700;margin-top:2px}
@@ -116,6 +119,13 @@
   .ddbar i{display:block;height:100%;background:var(--acc)}
   #pnlwrap{height:120px;position:relative}
   #pnl{display:block;width:100%;height:100%}
+
+  /* lessons */
+  ol.lessons{list-style:none;margin:0;padding:0}
+  ol.lessons li{padding:8px 10px;border-bottom:1px solid var(--line2);line-height:1.6;font-size:11.5px}
+  ol.lessons li:first-child{background:#0f131b}
+  ol.lessons .lh{color:var(--faint);font-size:10px;margin-bottom:2px}
+  .how{padding:8px 10px 10px;color:var(--faint);font-size:10.5px;line-height:1.6}
 
   /* history */
   .tablewrap{overflow-x:auto}
@@ -170,7 +180,7 @@
 </header>
 
 <main>
-  <section class="panel">
+  <section class="panel" id="p-chart">
     <div class="ph">
       <h2>Bitcoin vs the price to beat</h2>
       <span class="note" id="chartnote"></span>
@@ -200,13 +210,21 @@
     <div class="call" id="call"><div class="waiting">Loading…</div></div>
   </section>
 
-  <section class="panel wide">
+  <section class="panel" id="p-rec">
     <div class="ph"><h2>Record</h2><span class="note" id="recnote"></span></div>
     <div class="tiles" id="tiles"></div>
     <div id="pnlwrap"><svg id="pnl" role="img" aria-label="Cumulative P&amp;L of settled contracts in this allocation"></svg></div>
   </section>
 
-  <section class="panel wide">
+  <section class="panel" id="p-learn">
+    <div class="ph"><h2>What it has taught itself</h2><span class="note">newest first · the model reads exactly these before every call</span></div>
+    <ol class="lessons" id="lessons"><li class="faint">Loading…</li></ol>
+    <div class="how">How it learns: the model is not retrained. Every call carries its own record (hit rate, Brier score against the market's
+      and a random walk's, P&amp;L, drawdown), its last 20 calls with their outcomes, and these lessons, each written by the model right after
+      a window settles. If after 200 scored windows it still forecasts worse than the market's own price, the bot stops asking it.</div>
+  </section>
+
+  <section class="panel" id="p-hist">
     <div class="ph"><h2>History</h2><span class="note">every window, newest first · click a row for the model's reasoning and lesson</span></div>
     <div class="tablewrap">
       <table>
@@ -330,8 +348,8 @@ function renderNow() {
   if (b && b.ticker === c.ticker) {
     $("b-up").textContent = `${cents(b.yes_bid)} / ${cents(b.yes_ask)}`;
     $("b-dn").textContent = `${cents(b.no_bid)} / ${cents(b.no_ask)}`;
-    $("b-up-s").textContent = `bid / ask · ${b.yes_ask_size != null ? Math.round(b.yes_ask_size) + " at the ask" : ""}`;
-    $("b-dn-s").textContent = `bid / ask · ${b.yes_bid_size != null ? Math.round(b.yes_bid_size) + " at the ask" : ""}`;
+    $("b-up-s").textContent = `bid / ask${b.yes_ask_size != null ? " · " + Math.round(b.yes_ask_size) + " at ask" : ""}`;
+    $("b-dn-s").textContent = `bid / ask${b.yes_bid_size != null ? " · " + Math.round(b.yes_bid_size) + " at ask" : ""}`;
   } else {
     $("b-up").textContent = "—"; $("b-dn").textContent = "—";
     $("b-up-s").textContent = c.result ? "settled" : "no book yet"; $("b-dn-s").textContent = "";
@@ -344,17 +362,22 @@ function renderNow() {
     return;
   }
   const up = d.side === "YES";
-  const mk = (cls, p, label, low) => p == null ? "" :
-    `<div class="mk ${cls}${low ? " low" : ""}" style="left:${(p * 100).toFixed(1)}%${low ? ";top:22px" : ""}"><b></b>${esc(label)} ${pct(p)}</div>`;
+  const bar = (label, p, me) => {
+    if (p == null) return "";
+    const x = Math.max(0, Math.min(1, p)), up = x >= 0.5;
+    const left = up ? 50 : x * 100, width = Math.abs(x - 0.5) * 100;
+    return `<span class="k${me ? " me" : ""}">${esc(label)}</span>` +
+      `<span class="track${me ? " me" : ""}"><i class="${up ? "up" : "dn"}" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></i></span>` +
+      `<span class="v"${me ? ' style="font-weight:700"' : ""}>${pct(p)}</span>`;
+  };
   let html = `<div class="callhead"><span class="callside ${up ? "pos" : "neg"}">${up ? "▲ UP" : "▼ DOWN"}</span>` +
     `<span class="callp">p(up) <b style="color:var(--txt)">${pct(d.p_up)}</b> · ${esc(d.confidence || "")} confidence</span><span style="flex:1"></span>${stTag(d.status)}</div>` +
-    `<div class="scale" aria-label="probability of Up: model ${pct(d.p_up)}, market ${pct(d.market_p_up)}, random walk ${pct(d.random_walk_p_up)}">` +
-    `<div class="bar"></div><div class="mid"></div>` +
-    mk("model", d.p_up, "model") + mk("market", d.market_p_up, "mkt", true) + mk("", d.random_walk_p_up, "walk", true) +
-    `</div><div class="scalelbl"><span class="neg">▼ Down 0%</span><span>50%</span><span class="pos">Up 100% ▲</span></div>`;
-  html += `<div class="meta">at the call: market ${pct(d.market_p_up)} · random walk ${pct(d.random_walk_p_up)}` +
-    (d.other_venue_p_up != null ? ` · Kalshi ${pct(d.other_venue_p_up)}` : "") +
-    (d.distance_sigma != null ? ` · ${d.distance_sigma > 0 ? "+" : ""}${d.distance_sigma.toFixed(2)}σ from the line` : "") + `</div>`;
+    `<div class="probs" aria-label="probability of Up at the call">` +
+    bar("model", d.p_up, true) + bar("market mid", d.market_p_up) + bar("random walk", d.random_walk_p_up) +
+    bar("Kalshi", d.other_venue_p_up) + `</div>` +
+    `<div class="probaxis"><span style="visibility:hidden">random walk</span><span><span class="neg">▼ Down</span><span>50%</span><span class="pos">Up ▲</span></span><span style="visibility:hidden">100%</span></div>`;
+  html += `<div class="meta">p(up) at the second of the call` +
+    (d.distance_sigma != null ? ` · price ${d.distance_sigma > 0 ? "+" : ""}${d.distance_sigma.toFixed(2)}σ from the line with the time left` : "") + `</div>`;
   if (d.rationale) html += `<p class="rationale">${esc(d.rationale)}</p>`;
   if (d.key_factors && d.key_factors.length) html += `<ul class="factors">${d.key_factors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
   if (f) {
@@ -391,6 +414,17 @@ function renderRecord() {
   $("recnote").textContent = r.windows_scored < 200 && r.windows_scored != null ?
     `${r.windows_scored} of 200 windows before the model is paused if it trails the market` : "";
   drawPnl();
+  renderLessons();
+}
+
+function renderLessons() {
+  const L = (S && S.lessons) || [];
+  if (!L.length) { $("lessons").innerHTML = '<li class="faint">No lesson yet. The first is written when the first called window settles.</li>'; return; }
+  $("lessons").innerHTML = L.map((x) => {
+    const right = x.result && x.p_up != null ? ((x.p_up >= 0.5) === (x.result === "yes")) : null;
+    return `<li><div class="lh">${esc(day(x.open_ts))} ${esc(hm(x.open_ts))}–${esc(hm(x.close_ts))} · called ${sideTxt(x.side)} at ${pct(x.p_up)} · ` +
+      `settled ${resTxt(x.result)}${right == null ? "" : right ? ' · <span class="pos">right</span>' : ' · <span class="neg">wrong</span>'}</div>${esc(x.lesson)}</li>`;
+  }).join("");
 }
 
 // ---------------------------------------------------------------- charts
@@ -411,6 +445,7 @@ function niceTicks(lo, hi, n) {
 function drawChart() {
   const svg = $("chart"), wrap = $("chartwrap");
   const W = wrap.clientWidth, Hh = wrap.clientHeight;
+  if (W < 160) return;                      // not laid out yet; the next refresh draws it
   svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`);
   svg.replaceChildren();
   const now = Date.now() / 1000;
@@ -441,7 +476,7 @@ function drawChart() {
     if (w.result && b - a > 26) svg.appendChild(el("text", { x: b - 4, y: Tp + 11, "text-anchor": "end", "font-size": 10, fill: w.result === "yes" ? "var(--pos)" : "var(--neg)" }, w.result === "yes" ? "▲ Up" : "▼ Down"));
   });
   // x labels
-  const span = x1 - x0, tstep = span <= 1200 ? 120 : span <= 3900 ? 900 : span <= 6 * 3600 + 900 ? 3600 : 4 * 3600;
+  const span = x1 - x0, tstep = span <= 1500 ? 180 : span <= 2.5 * 3600 ? 900 : span <= 9 * 3600 ? 3600 : 4 * 3600;
   for (let t = Math.ceil(x0 / tstep) * tstep; t <= x1; t += tstep)
     svg.appendChild(el("text", { x: X(t), y: Hh - 6, "text-anchor": "middle", "font-size": 10, fill: "var(--faint)" }, hm(t)));
   // now line
@@ -493,6 +528,7 @@ function drawChart() {
 function drawPnl() {
   const svg = $("pnl"), wrap = $("pnlwrap");
   const W = wrap.clientWidth, Hh = wrap.clientHeight;
+  if (W < 160) return;
   svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`);
   svg.replaceChildren();
   const c = (S && S.pnl_curve) || [];

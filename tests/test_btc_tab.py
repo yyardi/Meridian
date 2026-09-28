@@ -43,6 +43,7 @@ def _build(root):
         if res:
             led.finalize_window(tk, res, settle, 84139.55)
             led.settle(fid, res)
+            led.finish_decision(tk, lesson="keep anchoring to the strike distance")
     led.add_ticks([(NOW - 60 + i, 84100.0 + i, 4, 0.5) for i in range(60)])
     (root / "status-15m.json").write_text(json.dumps(
         {"at": "2026-09-28T01:04:30+00:00", "mode": "paper", "model": "gpt-6-astra",
@@ -64,6 +65,8 @@ def test_the_desk_reads_the_call_the_fill_and_the_settlement(tmp_path):
     # the 00:45Z window settled Down; the bot held Down at 59c + 2c: +$0.39
     assert s["account"]["settled"] == 1 and s["account"]["pnl"] == pytest.approx(0.39)
     assert s["pnl_curve"][-1]["cum"] == pytest.approx(0.39)
+    assert [x["lesson"] for x in s["lessons"]] == ["keep anchoring to the strike distance"]
+    assert s["lessons"][0]["result"] == "no" and s["lessons"][0]["side"] == "NO"
     rows = desk.history(tmp_path, "15m")
     assert [r["ticker"][-5:] for r in rows] == ["0100z", "0045z"]
     assert rows[1]["result"] == "no" and rows[1]["fill"]["pnl"] == pytest.approx(0.39)
