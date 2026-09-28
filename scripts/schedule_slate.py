@@ -66,6 +66,12 @@ DEFAULT_MINUTES = 200
 LEAD_MIN = 2
 #: A recorder window starts this many minutes before its first kickoff.
 RECORDER_LEAD_MIN = 10
+#: ...except where a read needs the pregame tape: the thin international
+#: basketball leagues open THREE HOURS before tip, the window the registered
+#: pregame staleness read scores (docs/math/intl-basketball-ls-research.md
+#: §5.2). The stream costs no request budget; the score and Kalshi tapes that
+#: ride with it poll at <= 1 req/s and one request per series per 10 s.
+RECORDER_LEAD_BY_LEAGUE = {lg: 180 for lg in ("eurolg", "lnbp", "bbl", "vtb", "bsl", "denbl", "slnbl", "hunbl")}
 #: Games tipping within this many hours of a recorder's START share its
 #: window. This MUST equal --lookahead-hours in launch_stream_slate.sh: the
 #: recorder resolves its slate once, at start, and subscribes only games
@@ -206,7 +212,7 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
         tips = [g["tip"] for g in live if g["league"] == league]
         i = 0
         while i < len(tips):
-            start = tips[i] - dt.timedelta(minutes=RECORDER_LEAD_MIN)
+            start = tips[i] - dt.timedelta(minutes=RECORDER_LEAD_BY_LEAGUE.get(league, RECORDER_LEAD_MIN))
             j = i
             while j + 1 < len(tips) and tips[j + 1] <= start + dt.timedelta(hours=RECORDER_LOOKAHEAD_H):
                 j += 1

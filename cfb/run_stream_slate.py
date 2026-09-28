@@ -93,6 +93,15 @@ def main() -> int:
     ap.add_argument("--debounced", action="store_true",
                     help="ask the venue to batch updates on high-frequency markets")
     ap.add_argument("--status-every", type=float, default=60.0)
+    ap.add_argument("--scores", choices=("auto", "on", "off"), default="auto",
+                    help="also tape the venue's score/clock per game (core/ladder/scores.py); "
+                         "auto = on for the thin international basketball leagues, which have "
+                         "no other in-play score source on the box")
+    ap.add_argument("--scores-rps", type=float, default=1.0,
+                    help="REST budget for the score tape, all games together")
+    ap.add_argument("--kalshi", choices=("auto", "on", "off"), default="auto",
+                    help="also tape Kalshi's touch on the league's game series (core/ladder/kalshi_tape.py); "
+                         "auto = on wherever Kalshi lists the league")
     a = ap.parse_args()
 
     by_game = slate_slugs(a.league, a.date, within_hours=a.within_hours,
@@ -115,17 +124,38 @@ def main() -> int:
         print(f"  {g}  {len(by_game[g])} rungs")
     sys.stdout.flush()
 
+    scores = None
+    if a.scores == "on" or (a.scores == "auto" and a.league in BASKETBALL_INTL_LEAGUES):
+        from core.ladder.scores import ScorePoller
+        scores = ScorePoller({g: g for g in by_game}, a.out_dir, max_rps=a.scores_rps)
+        scores.start()
+        print(f"score tape on: {len(by_game)} events at <= {a.scores_rps:g} req/s -> slate_scores_<game>.jsonl")
+    kalshi = None
+    from core.ladder.kalshi_tape import KALSHI_SERIES_BY_LEAGUE, KalshiTape
+    if a.league in KALSHI_SERIES_BY_LEAGUE and a.kalshi != "off":
+        kalshi = KalshiTape(a.league, a.out_dir)
+        kalshi.start()
+        print(f"kalshi tape on: {','.join(kalshi.series)} every {kalshi.interval_s:g}s -> kalshi_{a.league}.jsonl")
+
     rec.start()
     end = time.time() + a.minutes * 60
     try:
         while time.time() < end:
             time.sleep(min(a.status_every, max(0.0, end - time.time())))
             print(status_line(rec.totals(), rec.counters(), rec.top_games()))
+            if scores is not None:
+                print(scores.status())
+            if kalshi is not None:
+                print(kalshi.status())
             sys.stdout.flush()
     except KeyboardInterrupt:
         print("interrupted -- closing files")
     finally:
         rec.stop()
+        if scores is not None:
+            scores.stop()
+        if kalshi is not None:
+            kalshi.stop()
     t = rec.totals()
     print(f"done  games {t['games']}  books {t['books']:,}  trades {t['trades']:,}  "
           f"reconnects {t['reconnects']}  errors {t['errors']}  torn {t['torn']}")
