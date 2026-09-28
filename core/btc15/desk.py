@@ -210,6 +210,49 @@ def ticks(root: str | Path, horizon: str, since_ts: float, points: int = 1200) -
     return {"step_s": step, "px": px, "windows": wins}
 
 
+# ---------------------------------------------------------------- the strategy arms
+def _book(led: Ledger, mode: str = "paper") -> dict:
+    a = led.account(mode)
+    r = led._conn.execute(
+        "SELECT COUNT(*) n, COALESCE(SUM(f.price_u + f.fee_u), 0) staked, "
+        "COALESCE(SUM(CASE WHEN s.pnl_u > 0 THEN 1 ELSE 0 END), 0) wins "
+        "FROM fills f JOIN settlements s ON s.fill_id = f.id WHERE f.mode = ? AND f.epoch = ?",
+        (mode, a["epoch"])).fetchone()
+    staked = r["staked"]
+    return {"pnl": _usd(a["realized_u"]), "staked": _usd(staked), "settled": r["n"], "wins": r["wins"],
+            "roi": None if not staked else round(a["realized_u"] / staked, 4), "open": a["open"],
+            "drawdown": _usd(a["drawdown_u"]), "halted": led.halted(mode) is not None}
+
+
+def arms(root: str | Path, horizon: str, now: float | None = None) -> list[dict]:
+    """Every arm beside the model's own ledger: its rule, its record, and what it is doing now."""
+    now = time.time() if now is None else now
+    db, st = paths(root, horizon)
+    out = []
+    main = _ro(db)
+    try:
+        out.append({"name": "favourite", "rule": "v1: buys the model's favoured side at the ask, whatever the price",
+                    **_book(main, _mode(_status(st, now)))})
+    finally:
+        main._conn.close()
+    for f in sorted(Path(root).glob(f"polymarket-{horizon}-arm-*.sqlite")):
+        led = _ro(f)
+        try:
+            spec = _j(led.get("arm_spec"))
+            counts = {r["status"]: r["n"] for r in led._conn.execute("SELECT status, COUNT(*) n FROM decisions GROUP BY status")}
+            cur = led._conn.execute(
+                "SELECT d.ticker, d.status, d.side, d.p_up, d.rationale, w.close_ts FROM decisions d "
+                "JOIN windows w ON w.ticker = d.ticker ORDER BY w.open_ts DESC LIMIT 1").fetchone()
+            row = {"name": spec.get("name") or f.stem.split("-arm-")[-1], "spec": spec, **_book(led),
+                   "declined": counts.get("no_edge", 0) + counts.get("expired", 0), "counts": counts,
+                   "now": None if cur is None or cur["close_ts"] < now else
+                   {"status": cur["status"], "side": cur["side"], "p": cur["p_up"], "note": cur["rationale"]}}
+        finally:
+            led._conn.close()
+        out.append(row)
+    return out
+
+
 # ---------------------------------------------------------------- the live book
 _BOOK: dict[str, tuple[float, dict | None]] = {}
 _BOOK_TTL_S = 4.0

@@ -577,3 +577,48 @@ def test_a_ledger_from_before_the_dollar_cap_gains_the_column(tmp_path):
     assert L.spent("2026-09-28")["usd"] == 0.0 and L.spent("2026-09-28")["calls"] == 3
     L.add_spend({"prompt_tokens": 1_000_000}, cost_usd=10.0, day="2026-09-28")
     assert L.spent("2026-09-28")["usd"] == 10.0 and L.spent_total()["usd"] == 10.0
+
+
+# ------------------------------------------------------------------ the arms, through the harness
+def test_the_harness_runs_its_arms_on_the_live_book_and_settles_them(led, tmp_path):
+    from core.btc15.arms import Arm, ArmSpec
+    now = 1_790_600_000.0
+    model = FakeModel(p=0.62)
+    h, m = _harness(led, now, model)
+    live = dict(m, status="active", fee_coefficient="0.0695")
+    h.venue.quote = lambda slug: dict(live)
+    arm_led = Ledger(str(tmp_path / "arm.sqlite"))
+    h.arms = [Arm(ArmSpec("walk_taker", "walk", "taker", -1.0), arm_led, 10 * UNIT)]   # margin -1: always trades
+    t = m["open_ts"] + 60
+    h.run_arms(t)
+    probs = h.probabilities(t, live)
+    assert probs["walk"] is not None and probs["mid"] is not None
+    f = arm_led.unsettled_fills()
+    assert len(f) == 1 and arm_led.decision(m["ticker"])["status"] == "filled"
+    h.run_arms(t + 3)                                             # one contract per window
+    assert len(arm_led.unsettled_fills()) == 1
+    # the venue settles the window: the harness finalizes it and settles every arm
+    h.venue.m.update(status="finalized", result="yes", expiration_value=80200.0)
+    h.settle_due(m["close_ts"] + 5)
+    assert arm_led.account("paper")["settled"] == 1
+
+
+def test_kalshi_is_a_probability_only_for_the_same_window_and_a_tight_book(led):
+    now = 1_790_600_000.0
+    h, m = _harness(led, now, FakeModel(p=0.6))
+
+    class K:
+        def __init__(self, r):
+            self.r = r
+
+        def current(self, now):
+            return self.r
+    same = dict(open_ts=m["open_ts"], close_ts=m["close_ts"])
+    h.reference = K({**same, "yes_bid": 0.55, "yes_ask": 0.57})
+    assert h.kalshi_mid(now, m) == pytest.approx(0.56)
+    h.reference = K({**same, "yes_bid": 0.50, "yes_ask": 0.56})          # 6c wide: not a price
+    assert h.kalshi_mid(now, m) is None
+    h.reference = K({"open_ts": m["open_ts"] + 900, "close_ts": m["close_ts"] + 900, "yes_bid": 0.55, "yes_ask": 0.57})
+    assert h.kalshi_mid(now, m) is None                                   # the next window is not this one
+    h.reference = None
+    assert h.kalshi_mid(now, m) is None

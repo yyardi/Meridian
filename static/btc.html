@@ -56,9 +56,9 @@
 
   /* ── Panels ── */
   main{padding:12px;display:grid;gap:12px;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);align-items:start;
-       grid-template-rows:auto auto 1fr auto;grid-template-areas:"chart now" "rec now" "learn now" "hist hist"}
-  #p-chart{grid-area:chart} #now{grid-area:now} #p-rec{grid-area:rec} #p-learn{grid-area:learn} #p-hist{grid-area:hist}
-  @media (max-width:980px){ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-template-areas:"now" "chart" "rec" "learn" "hist"} }
+       grid-template-rows:auto auto 1fr auto auto;grid-template-areas:"chart now" "rec now" "learn now" "arms arms" "hist hist"}
+  #p-chart{grid-area:chart} #now{grid-area:now} #p-rec{grid-area:rec} #p-learn{grid-area:learn} #p-arms{grid-area:arms} #p-hist{grid-area:hist}
+  @media (max-width:980px){ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-template-areas:"now" "chart" "rec" "learn" "arms" "hist"} }
   .panel{background:var(--panel);border:1px solid var(--line);min-width:0}
   .ph{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .ph h2{margin:0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:700}
@@ -225,6 +225,16 @@
       a window settles. If after 200 scored windows it still forecasts worse than the market's own price, the bot stops asking it.</div>
   </section>
 
+  <section class="panel" id="p-arms">
+    <div class="ph"><h2>Strategies</h2><span class="note">paper, the same windows and the same book · each its own $10 allocation · a strategy that sees no edge does not trade</span></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th class="l">strategy</th><th>settled</th><th>won</th><th>p&amp;l</th><th>return</th><th class="l">this window</th><th>declined</th></tr></thead>
+        <tbody id="arms"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="panel" id="p-hist">
     <div class="ph"><h2>History</h2><span class="note">every window, newest first · click a row for the model's reasoning and lesson</span></div>
     <div class="tablewrap">
@@ -277,6 +287,7 @@ const STATUS = {
   late: ["too late", "warn"], no_ask: ["no ask", "warn"], no_book: ["no book", "warn"], budget_exhausted: ["openai cap", "warn"],
   paused_underperforming: ["paused", "warn"], stale_data: ["stale feed", "warn"], predict_only: ["predict only", ""],
   requested: ["asking…", ""], answered: ["answered", ""], cost_over_one_dollar: ["over $1", "warn"],
+  watching: ["watching", ""], resting: ["resting", ""], no_edge: ["no edge", ""], expired: ["expired", ""],
   no_fee_schedule: ["no fee", "warn"], harness_error: ["error", "warn"],
 };
 const stTag = (s) => { const [t, c] = STATUS[s] || [s || "—", ""]; return `<span class="st ${s === "filled" ? "filled" : c}">${esc(t)}</span>`; };
@@ -299,6 +310,33 @@ async function loadTicks() {
   catch (e) { T = null; }
   drawChart();
 }
+async function loadArms() {
+  let A = [];
+  try { A = (await fetch(`/api/btc/arms?h=${H}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status))).arms; }
+  catch (e) { $("arms").innerHTML = `<tr><td colspan="7" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
+  const nowTxt = (n) => {
+    if (!n) return '<span class="faint">—</span>';
+    const tag = stTag(n.status === "watching" ? "watching" : n.status);
+    const side = n.side ? " " + sideTxt(n.side) : "";
+    return `${tag}${side}` + (n.note ? ` <span class="faint" title="${esc(n.note)}">${esc(n.note.length > 48 ? n.note.slice(0, 48) + "…" : n.note)}</span>` : "");
+  };
+  $("arms").innerHTML = A.map((a) => {
+    const rule = a.rule || (a.spec && a.spec.name ? describeSpec(a.spec) : "");
+    const lost = (a.settled || 0) - (a.wins || 0);
+    return `<tr><td class="l"><b style="color:var(--txt)">${esc(a.name)}</b>${a.halted ? ' <span class="st warn">halted</span>' : ""}` +
+      `<br><span class="faint">${esc(rule)}</span></td>` +
+      `<td>${a.settled || 0}</td><td>${a.wins || 0}–${lost}</td><td>${a.pnl == null ? "—" : signed(a.pnl)}</td>` +
+      `<td>${a.staked ? signedPct(a.pnl, a.staked) : '<span class="faint">—</span>'}</td>` +
+      `<td class="l">${a.name === "favourite" ? '<span class="faint">see This window</span>' : nowTxt(a.now)}</td>` +
+      `<td>${a.declined == null ? "" : a.declined}</td></tr>`;
+  }).join("");
+}
+function describeSpec(sp) {
+  const what = { walk: "random walk", quant: "fitted model", llm: "the LLM", kalshi: "Kalshi's price, same window", mid: "market mid (control)" }[sp.prob] || sp.prob;
+  return sp.kind === "taker" ? `${what}: buys at the ask when its edge beats the fee by ${Math.round(sp.margin * 100)}¢`
+                             : `${what}: rests a zero-fee bid ${Math.round(sp.margin * 100)}¢ under fair, fills only if traded through`;
+}
+
 async function loadHistory(append) {
   const before = append && ROWS.length ? ROWS[ROWS.length - 1].open_ts : "";
   try {
@@ -677,6 +715,7 @@ async function refresh(all) {
   const t = S && S.current ? S.current.ticker + ":" + (S.current.result || "") + ":" + ((S.current.decision || {}).status || "") : null;
   if (all || t !== lastTicker) { lastTicker = t; loadHistory(false); }
   loadTicks();
+  loadArms();
 }
 refresh(true);
 setInterval(() => refresh(false), 5000);

@@ -51,6 +51,8 @@ from core.btc15 import features as F
 from core.btc15.kalshi import KalshiBTC
 from core.btc15.ledger import DEFAULT_LIMIT_U, UNIT, Ledger
 from core.btc15.polymarket import PolymarketBTC
+from core.btc15 import quant as Q
+from core.btc15.arms import Arm, specs_from_env
 from core.btc15.model import ModelConfig, ModelError, OpenAIModel, cost_usd, side_of
 from core.btc15.prices import PriceFeed
 
@@ -80,6 +82,11 @@ class Settings:
     #: its Brier score is WORSE than the market's own mid: a model that reads
     #: less than the price is not worth the credits. 0 disables.
     pause_if_worse_after: int = 200
+    #: Strategy arms paper-traded beside the model's own call (core/btc15/arms.py);
+    #: MERIDIAN_BTC15_ARMS = a JSON list of specs, or "none".
+    arms: str | None = None
+    #: How often the arms re-read the window's book (one request each time).
+    book_every_s: float = 3.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -97,6 +104,8 @@ class Settings:
             max_usd_per_day=float(e("MERIDIAN_BTC15_MAX_USD_PER_DAY") or 10.0),
             max_tokens_per_day=int(e("MERIDIAN_BTC15_MAX_TOKENS_PER_DAY") or 1_500_000),
             pause_if_worse_after=int(e("MERIDIAN_BTC15_PAUSE_IF_WORSE_AFTER") or 200),
+            arms=e("MERIDIAN_BTC15_ARMS") or None,
+            book_every_s=float(e("MERIDIAN_BTC15_BOOK_EVERY_S") or 3.0),
         )
 
 
@@ -127,6 +136,8 @@ class Harness:
     _last_summary_day: str | None = None
     _pushed_halt: bool = False
     _pushed_pause: bool = False
+    arms: list = field(default_factory=list)
+    _arm_next: float = 0.0
 
     # ------------------------------------------------------------------ the second
     def step(self, now: float, px: float | None, n: int, disp: float) -> None:
@@ -139,6 +150,12 @@ class Harness:
         if now >= self._next["market"]:
             self._refresh_market(now)
         self.maybe_decide(now)
+        if self.arms and now >= self._arm_next:
+            self._arm_next = now + self.settings.book_every_s
+            try:
+                self.run_arms(now)
+            except Exception:                                    # noqa: BLE001 -- an arm never stops the harness
+                log.exception("arms")
         if now >= self._next["settle"]:
             self.settle_due(now)
             self._next["settle"] = now + 5
@@ -222,6 +239,12 @@ class Harness:
         feats = F.build(now=now, secs=secs, c1m=self.feed.c1m, c5m=self.feed.c5m, c1h=self.feed.c1h,
                         market=m, quotes=self.feed.quotes, funding=self.feed.funding,
                         recent_results=self.ledger.recent_results(12))
+        try:
+            fitted = self.probabilities(now, m).get("quant")
+            if fitted is not None:
+                feats.setdefault("baselines", {})["fitted_p_up"] = round(fitted, 4)
+        except Exception:                                        # noqa: BLE001 -- a baseline is a feature, never a gate
+            log.warning("fitted baseline unavailable")
         model_name = self.model.cfg.model if self.model else None
         if not self.ledger.start_decision(m["ticker"], model_name, feats):
             return
@@ -303,8 +326,65 @@ class Harness:
             self._pushed_halt = True
             _push("BTC15 halted", f"{self.settings.mode}: $10 drawdown limit reached; trading stopped, predictions continue.")
 
+    # ------------------------------------------------------------------ arms
+    def probabilities(self, now: float, m: dict, kalshi: bool = False) -> dict:
+        """Every arm's probability source at this second, from the same inputs."""
+        out: dict = {"walk": None, "quant": None, "llm": None, "llm_at": None, "mid": None, "kalshi": None}
+        bid, ask = m.get("yes_bid"), m.get("yes_ask")
+        mid = (bid + ask) / 2 if bid is not None and ask is not None else None
+        out["mid"] = mid
+        secs = self.feed.seconds()
+        if secs and m.get("strike"):
+            s = secs[-1][1]
+            closes = [c[4] for c in self.feed.c1m if c[0] + 60 <= now] + [s]
+            qi = Q.inputs(s, float(m["strike"]), m["close_ts"] - now, closes)
+            if qi is not None:
+                out["walk"] = Q.walk_p(qi)
+                if mid is not None:
+                    frac = (now - m["open_ts"]) / (m["close_ts"] - m["open_ts"])
+                    out["quant"] = Q.quant_p(qi, mid, frac)
+        d = self.ledger.decision(m["ticker"])
+        if d is not None and d["p_up"] is not None and d["answered_at"]:
+            out["llm"] = d["p_up"]
+            out["llm_at"] = dt.datetime.fromisoformat(d["answered_at"]).timestamp()
+        if kalshi:
+            out["kalshi"] = self.kalshi_mid(now, m)
+        return out
+
+    def kalshi_mid(self, now: float, m: dict) -> float | None:
+        """Kalshi's mid on the same window, read now (the same tick as the venue's book),
+        only when its window matches to the second and its spread is <= 3c."""
+        if self.reference is None:
+            return None
+        try:
+            r = self.reference.current(now)
+        except Exception as e:                                   # noqa: BLE001 -- a reference is never a gate
+            log.warning("kalshi read: %s", e)
+            return None
+        if not r or r.get("open_ts") != m["open_ts"] or r.get("close_ts") != m["close_ts"]:
+            return None
+        b, a = r.get("yes_bid"), r.get("yes_ask")
+        if b is None or a is None or not (0 < b < a < 1) or a - b > 0.03 + 1e-9:
+            return None
+        return (a + b) / 2
+
+    def run_arms(self, now: float) -> None:
+        m = self.market
+        if not m or m.get("strike") is None or not (m["open_ts"] <= now < m["close_ts"]):
+            return
+        quote = getattr(self.venue, "quote", None)
+        live = quote(m["ticker"]) if quote else None
+        if not live or live.get("status") != "active":
+            return
+        probs = self.probabilities(now, live, kalshi=any(a.spec.prob == "kalshi" for a in self.arms))
+        coef = live.get("fee_coefficient")
+        coef = float(coef) if coef not in (None, "") else None
+        for arm in self.arms:
+            arm.tick(now, live, probs, coef, self.settings.min_lead_s)
+
     # ------------------------------------------------------------------ settle
     def settle_due(self, now: float) -> None:
+        finals: dict = {}
         for w in self.ledger.unfinalized_windows(now):
             if not self.venue.owns(w["ticker"]):
                 continue                                         # another venue's window in a shared file
@@ -317,11 +397,17 @@ class Harness:
                 continue
             proxy = self.feed.average(w["close_ts"] - 60, w["close_ts"])
             self.ledger.finalize_window(w["ticker"], o["result"], o.get("expiration_value"), proxy)
+            finals[w["ticker"]] = (o["result"], o.get("expiration_value"), proxy)
         results = {r["ticker"]: r["result"] for r in self.ledger._conn.execute(
             "SELECT ticker, result FROM windows WHERE result IS NOT NULL").fetchall()}
         for f in self.ledger.unsettled_fills():
             if f["ticker"] in results:
                 self.ledger.settle(f["id"], results[f["ticker"]])
+        for arm in self.arms:
+            try:
+                arm.settle(results, finals)
+            except Exception:                                    # noqa: BLE001
+                log.exception("settle arm %s", arm.spec.name)
         if self.settings.reflect and self.model and self.model.cfg.ready:
             self._reflect()
 
@@ -416,7 +502,18 @@ def build(settings: Settings) -> Harness:
         venue, reference = KalshiBTC(), None
     else:
         raise SystemExit(f"MERIDIAN_BTC15_VENUE={settings.venue!r}: polymarket or kalshi")
-    return Harness(settings, ledger, PriceFeed(), venue, model, broker, reference=reference)
+    h = Harness(settings, ledger, PriceFeed(), venue, model, broker, reference=reference)
+    if settings.venue == "polymarket":
+        h.arms = [Arm(spec, Ledger(arm_db_path(settings.db_path, spec.name)), settings.limit_u)
+                  for spec in specs_from_env(settings.arms)]
+        log.info("arms: %s", ", ".join(f"{a.spec.name} ({a.spec.describe()})" for a in h.arms) or "none")
+    return h
+
+
+def arm_db_path(db_path: str, name: str) -> str:
+    """/data/polymarket-15m.sqlite -> /data/polymarket-15m-arm-<name>.sqlite"""
+    base, ext = os.path.splitext(db_path)
+    return f"{base}-arm-{name}{ext or '.sqlite'}"
 
 
 def run(h: Harness) -> None:

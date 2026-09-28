@@ -4522,6 +4522,16 @@ def btc_ticks(h: str = Query("15m", pattern=_BTC_H), minutes: int = Query(60, ge
         raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
 
 
+@app.get("/api/btc/arms")
+def btc_arms(h: str = Query("15m", pattern=_BTC_H)) -> dict:
+    """The strategy arms paper-traded beside the model's own call, same windows, own allocations."""
+    from core.btc15 import desk
+    try:
+        return {"arms": desk.arms(_btc_dir(), h)}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
+
+
 @app.get("/api/btc/history")
 def btc_history(h: str = Query("15m", pattern=_BTC_H), limit: int = Query(100, ge=1, le=500),
                 before: float | None = Query(None)) -> dict:

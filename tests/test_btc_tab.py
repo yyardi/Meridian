@@ -129,3 +129,22 @@ def test_the_book_cache_asks_the_venue_once_per_ttl():
     assert len(calls) == 1
     desk.live_book("15m", venue=V(), now=t + desk._BOOK_TTL_S + 0.1)
     assert len(calls) == 2
+
+
+def test_the_arms_table_reads_every_arm_ledger_beside_the_models(tmp_path, monkeypatch):
+    from core.btc15.arms import Arm, ArmSpec
+    from core.btc15.ledger import UNIT
+    _build(tmp_path)
+    led = Ledger(str(tmp_path / "polymarket-15m-arm-walk_taker.sqlite"))
+    arm = Arm(ArmSpec("walk_taker", "walk", "taker", 0.04), led, 10 * UNIT)
+    m = {"ticker": "cpc-btc-updown-15m-2026-09-28-0045z", "status": "active", "open_ts": 1_790_556_300.0,
+         "close_ts": 1_790_557_200.0, "open_time": None, "close_time": None, "strike": 84272.52,
+         "yes_bid": 0.30, "yes_ask": 0.32, "yes_bid_u": 3000, "yes_ask_u": 3200}
+    arm.tick(m["open_ts"] + 60, m, {"walk": 0.10}, 0.0695, 90)       # NO at 0.70: EV 0.90-0.70-0.02 = 0.18
+    arm.settle({m["ticker"]: "no"}, {m["ticker"]: ("no", 84142.39, None)})
+    rows = desk.arms(tmp_path, "15m", now=NOW)
+    names = [r["name"] for r in rows]
+    assert names[0] == "favourite" and "walk_taker" in names
+    w = next(r for r in rows if r["name"] == "walk_taker")
+    assert w["settled"] == 1 and w["wins"] == 1 and w["pnl"] == pytest.approx(1 - 0.70 - 0.02)
+    assert w["roi"] == pytest.approx(0.28 / 0.72, abs=1e-4) and w["spec"]["kind"] == "taker"
