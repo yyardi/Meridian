@@ -140,6 +140,13 @@ def summary(root: str | Path, horizon: str, now: float | None = None) -> dict:
             curve.append({"at": r["settled_at"], "ticker": r["ticker"], "pnl": _usd(r["pnl_u"]), "cum": _usd(cum)})
         counts = {r["status"]: r["n"] for r in led._conn.execute(
             "SELECT status, COUNT(*) n FROM decisions GROUP BY status")}
+        # The same selection Ledger.experience hands the model: newest first, twelve.
+        lessons = [{"ticker": r["ticker"], "open_ts": r["open_ts"], "close_ts": r["close_ts"], "side": r["side"],
+                    "p_up": r["p_up"], "result": r["result"], "lesson": r["lesson"]}
+                   for r in led._conn.execute(
+                       "SELECT d.ticker, d.side, d.p_up, d.lesson, w.open_ts, w.close_ts, w.result "
+                       "FROM decisions d JOIN windows w ON w.ticker = d.ticker WHERE d.lesson IS NOT NULL "
+                       "ORDER BY d.requested_at DESC LIMIT 12")]
         spent, spent_total = led.spent(), led.spent_total()
         halted = led.halted(mode)
     finally:
@@ -153,7 +160,7 @@ def summary(root: str | Path, horizon: str, now: float | None = None) -> dict:
                     "drawdown": _usd(a["drawdown_u"]), "limit": _usd(DEFAULT_LIMIT_U),
                     "open_cost": _usd(a["open_cost_u"]), "open": a["open"], "settled": a["settled"],
                     "wins": a["wins"]},
-        "record": rec, "decision_counts": counts, "pnl_curve": curve,
+        "record": rec, "decision_counts": counts, "pnl_curve": curve, "lessons": lessons,
         "openai": {"today": spent, "total": spent_total,
                    "cap_usd": (status.get("openai_today") or {}).get("cap_usd")},
     }
