@@ -535,3 +535,45 @@ def test_a_model_worse_than_the_market_is_paused_after_the_threshold(led, monkey
     led.upsert_window(m2)
     h.decide(m2)
     assert model.calls == 1
+
+
+def test_cost_is_priced_from_the_reported_tokens_with_cached_input_at_its_own_rate():
+    from core.btc15.model import cost_usd
+    u = {"prompt_tokens": 8000, "completion_tokens": 1000, "prompt_tokens_details": {"cached_tokens": 2000}}
+    # astra: 6,000 fresh x $10/M + 2,000 cached x $1/M + 1,000 out x $50/M
+    assert cost_usd("gpt-6-astra", u) == pytest.approx(0.06 + 0.002 + 0.05)
+    # the first live call, 2026-09-28 01:00Z: 1,427 in of which 1,424 written to the cache, 191 out
+    first = {"prompt_tokens": 1427, "completion_tokens": 191,
+             "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 1424}}
+    assert cost_usd("gpt-6-astra", first) == pytest.approx((3 * 10 + 1424 * 12.5 + 191 * 50) / 1e6)
+    assert cost_usd("some-unlisted-model", u) is None
+
+
+def test_the_dollar_cap_stops_the_next_call(led):
+    now = 1_790_600_000.0
+    model = FakeModel(p=0.6)
+    model.cfg.model = "gpt-6-astra"
+    h, m = _harness(led, now, model)
+    h.decide(m)                                     # 5,000 in + 900 out on astra = $0.095
+    assert led.spent()["usd"] == pytest.approx(0.095)
+    h.settings.max_usd_per_day = 0.09
+    m2 = dict(m, ticker="CAPPED")
+    h.venue.m["ticker"] = "CAPPED"
+    led.upsert_window(m2)
+    h.decide(m2)
+    d = led.decision("CAPPED")
+    assert d["status"] == "budget_exhausted" and "$0.10 spent" in d["error"] and model.calls == 1
+
+
+def test_a_ledger_from_before_the_dollar_cap_gains_the_column(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.sqlite")
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE spend(day TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0, "
+              "prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0)")
+    c.execute("INSERT INTO spend VALUES('2026-09-28', 3, 100, 10)")
+    c.commit(); c.close()
+    L = Ledger(path)
+    assert L.spent("2026-09-28")["usd"] == 0.0 and L.spent("2026-09-28")["calls"] == 3
+    L.add_spend({"prompt_tokens": 1_000_000}, cost_usd=10.0, day="2026-09-28")
+    assert L.spent("2026-09-28")["usd"] == 10.0 and L.spent_total()["usd"] == 10.0

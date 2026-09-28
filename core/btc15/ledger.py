@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS settlements(
 CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS spend(
   day TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0,
-  prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0);
+  prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_micros INTEGER NOT NULL DEFAULT 0);
 """
 
 
@@ -98,6 +99,10 @@ class Ledger:
         self._lock = threading.RLock()
         with self._lock:
             self._conn.executescript(SCHEMA)
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(spend)")}
+            if "cost_micros" not in cols:                 # ledgers created before the dollar cap
+                self._conn.execute("ALTER TABLE spend ADD COLUMN cost_micros INTEGER NOT NULL DEFAULT 0")
+                self._backfill_cost()
 
     # ------------------------------------------------------------------ state
     def get(self, key: str, default: str | None = None) -> str | None:
@@ -123,25 +128,44 @@ class Ledger:
         return json.loads(v) if v else None
 
     # ------------------------------------------------------------------ model spend
-    def add_spend(self, usage: dict | None, day: str | None = None) -> None:
-        """Every model call's tokens, by UTC day, as the API reported them."""
+    def add_spend(self, usage: dict | None, cost_usd: float | None = None, day: str | None = None) -> None:
+        """Every model call's tokens and dollar cost, by UTC day, as the API reported them."""
         u = usage or {}
         p = int(u.get("prompt_tokens") or u.get("input_tokens") or 0)
         c = int(u.get("completion_tokens") or u.get("output_tokens") or 0)
+        micros = int(round((cost_usd or 0.0) * 1_000_000))
         day = day or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
         with self._lock:
             self._conn.execute(
-                "INSERT INTO spend(day,calls,prompt_tokens,completion_tokens) VALUES(?,1,?,?) "
+                "INSERT INTO spend(day,calls,prompt_tokens,completion_tokens,cost_micros) VALUES(?,1,?,?,?) "
                 "ON CONFLICT(day) DO UPDATE SET calls=calls+1, prompt_tokens=prompt_tokens+excluded.prompt_tokens, "
-                "completion_tokens=completion_tokens+excluded.completion_tokens", (day, p, c))
+                "completion_tokens=completion_tokens+excluded.completion_tokens, "
+                "cost_micros=cost_micros+excluded.cost_micros", (day, p, c, micros))
+
+    def _backfill_cost(self) -> None:
+        """Price the decisions made before costs were stored (lessons kept no usage then)."""
+        from core.btc15.model import cost_usd
+        by_day: dict[str, int] = {}
+        for r in self._conn.execute("SELECT requested_at, model, usage FROM decisions WHERE usage IS NOT NULL"):
+            c = cost_usd(r["model"], json.loads(r["usage"] or "{}"))
+            if c:
+                by_day[r["requested_at"][:10]] = by_day.get(r["requested_at"][:10], 0) + int(round(c * 1_000_000))
+        for day, micros in by_day.items():
+            self._conn.execute("UPDATE spend SET cost_micros=? WHERE day=?", (micros, day))
 
     def spent(self, day: str | None = None) -> dict:
         day = day or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
         r = self._conn.execute("SELECT * FROM spend WHERE day=?", (day,)).fetchone()
         if r is None:
-            return {"day": day, "calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "tokens": 0}
+            return {"day": day, "calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "tokens": 0, "usd": 0.0}
         return {"day": day, "calls": r["calls"], "prompt_tokens": r["prompt_tokens"],
-                "completion_tokens": r["completion_tokens"], "tokens": r["prompt_tokens"] + r["completion_tokens"]}
+                "completion_tokens": r["completion_tokens"], "tokens": r["prompt_tokens"] + r["completion_tokens"],
+                "usd": round(r["cost_micros"] / 1_000_000, 4)}
+
+    def spent_total(self) -> dict:
+        r = self._conn.execute("SELECT COUNT(*) days, COALESCE(SUM(calls),0) calls, "
+                               "COALESCE(SUM(cost_micros),0) micros FROM spend").fetchone()
+        return {"days": r["days"], "calls": r["calls"], "usd": round(r["micros"] / 1_000_000, 4)}
 
     # ------------------------------------------------------------------ data
     def add_ticks(self, rows: list[tuple[float, float, int, float]]) -> None:

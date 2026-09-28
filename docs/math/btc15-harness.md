@@ -94,10 +94,15 @@ allocation.
 
 **Credits.** Three limits keep the OpenAI bill bounded. Each answer is capped at
 `MERIDIAN_BTC15_MAX_OUTPUT_TOKENS` (4,000, reasoning included; a truncated
-answer is a recorded `model_error`, never a trade). Every call's tokens are
-written to the ledger's `spend` table by UTC day, and at
-`MERIDIAN_BTC15_MAX_TOKENS_PER_DAY` (1.5M) the window is recorded as
-`budget_exhausted` and nothing is asked until midnight UTC. After 200 scored
+answer is a recorded `model_error`, never a trade). Every call's tokens **and
+its dollar cost** are written to the ledger's `spend` table by UTC day, priced
+from OpenAI's listed rates at the time of the call (`PRICES_PER_M` in
+`model.py`; `gpt-6-astra` is $10 per million input tokens, $1 cached, $50
+output, read 2026-09-28). At `MERIDIAN_BTC15_MAX_USD_PER_DAY` the window is
+recorded as `budget_exhausted` and nothing is asked until midnight UTC; a
+token cap (`MERIDIAN_BTC15_MAX_TOKENS_PER_DAY`, 1.5M) is the backstop for a
+model with no listed price. A token cap alone is the wrong unit: at astra's
+rates 1.5M tokens is $15 to $40 depending on the input/output mix. After 200 scored
 windows, a model whose Brier score is worse than the market mid's stops being
 asked (`paused_underperforming`, one push): it would be paying for a reading
 the price already gives for free. `status-15m.json` shows today's calls and

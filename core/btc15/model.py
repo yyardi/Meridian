@@ -63,6 +63,42 @@ class ModelError(RuntimeError):
     pass
 
 
+#: USD per 1M tokens (input, cached input, cache write, output), Standard tier,
+#: short context, read from https://developers.openai.com/api/docs/pricing on
+#: 2026-09-28. The API writes prompts to its cache on its own and reports them
+#: as ``prompt_tokens_details.cache_write_tokens``, billed at the cache-write
+#: rate instead of the input rate. gpt-6-astra's row was read in full ($12.50);
+#: for the others the cache-write rate is ASSUMED to be 1.25x input, astra's
+#: ratio. A price is a constant of a period: each call's cost is computed and
+#: stored when it is made, so a later price change never rewrites the history.
+PRICES_PER_M = {
+    "gpt-6-astra": (10.00, 1.00, 12.50, 50.00),
+    "gpt-6-sol": (2.00, 0.20, 2.50, 10.00),
+    "gpt-6-luna": (0.10, 0.01, 0.125, 0.50),
+    "gpt-5.6-sol": (4.00, 0.40, 5.00, 20.00),
+    "gpt-5.6-luna": (0.20, 0.02, 0.25, 1.20),
+    "gpt-5.5": (5.00, 0.50, 6.25, 30.00),
+    "gpt-5.4-mini": (0.75, 0.075, 0.9375, 4.50),
+    "gpt-5-mini": (0.25, 0.025, 0.3125, 2.00),
+}
+
+
+def cost_usd(model: str | None, usage: dict | None) -> float | None:
+    """What one call cost, from the tokens the API reported; None for a model with no listed price."""
+    price = PRICES_PER_M.get(model or "")
+    if price is None:
+        return None
+    u = usage or {}
+    details = u.get("prompt_tokens_details") or {}
+    prompt = int(u.get("prompt_tokens") or 0)
+    cached = int(details.get("cached_tokens") or 0)
+    written = int(details.get("cache_write_tokens") or 0)
+    out = int(u.get("completion_tokens") or 0)
+    p_in, p_cached, p_write, p_out = price
+    fresh = max(prompt - cached - written, 0)
+    return (fresh * p_in + cached * p_cached + written * p_write + out * p_out) / 1_000_000
+
+
 @dataclass
 class ModelConfig:
     api_key: str | None
