@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS settlements(
   fill_id INTEGER PRIMARY KEY REFERENCES fills(id),
   result TEXT NOT NULL, payout_u INTEGER NOT NULL, pnl_u INTEGER NOT NULL, settled_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS spend(
+  day TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0);
 """
 
 
@@ -118,6 +121,27 @@ class Ledger:
     def halted(self, mode: str) -> dict | None:
         v = self.get(f"halted_{mode}_{self.epoch(mode)}")
         return json.loads(v) if v else None
+
+    # ------------------------------------------------------------------ model spend
+    def add_spend(self, usage: dict | None, day: str | None = None) -> None:
+        """Every model call's tokens, by UTC day, as the API reported them."""
+        u = usage or {}
+        p = int(u.get("prompt_tokens") or u.get("input_tokens") or 0)
+        c = int(u.get("completion_tokens") or u.get("output_tokens") or 0)
+        day = day or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO spend(day,calls,prompt_tokens,completion_tokens) VALUES(?,1,?,?) "
+                "ON CONFLICT(day) DO UPDATE SET calls=calls+1, prompt_tokens=prompt_tokens+excluded.prompt_tokens, "
+                "completion_tokens=completion_tokens+excluded.completion_tokens", (day, p, c))
+
+    def spent(self, day: str | None = None) -> dict:
+        day = day or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        r = self._conn.execute("SELECT * FROM spend WHERE day=?", (day,)).fetchone()
+        if r is None:
+            return {"day": day, "calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "tokens": 0}
+        return {"day": day, "calls": r["calls"], "prompt_tokens": r["prompt_tokens"],
+                "completion_tokens": r["completion_tokens"], "tokens": r["prompt_tokens"] + r["completion_tokens"]}
 
     # ------------------------------------------------------------------ data
     def add_ticks(self, rows: list[tuple[float, float, int, float]]) -> None:

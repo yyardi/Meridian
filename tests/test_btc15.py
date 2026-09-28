@@ -275,10 +275,11 @@ class FakeModel:
         assert "your_record" in experience and "features" not in experience
         if self.error:
             raise ModelError(self.error)
-        return {"p_up": self.p, "confidence": "medium", "key_factors": ["x"], "rationale": "r"}, {"total_tokens": 1}, 2.0
+        return ({"p_up": self.p, "confidence": "medium", "key_factors": ["x"], "rationale": "r"},
+                {"prompt_tokens": 5000, "completion_tokens": 900}, 2.0)
 
     def lesson(self, decision, outcome):
-        return f"lesson for {outcome['result']}"
+        return f"lesson for {outcome['result']}", {"prompt_tokens": 300, "completion_tokens": 40}
 
 
 def _live_market(now):
@@ -499,3 +500,38 @@ def test_the_decision_waits_for_the_venues_book_and_records_a_window_that_never_
     led.upsert_window(h.market)
     h.maybe_decide(m["open_ts"] + 45)                        # book live: decide now
     assert started and started[-1][1] is True
+
+
+# ------------------------------------------------------------------ the credits
+def test_every_call_is_counted_and_the_daily_cap_stops_the_next_one(led):
+    now = 1_790_600_000.0
+    model = FakeModel(p=0.6)
+    h, m = _harness(led, now, model)
+    h.decide(m)
+    assert led.spent()["tokens"] == 5900 and led.spent()["calls"] == 1
+    h.settings.max_tokens_per_day = 5900
+    m2 = dict(m, ticker="CAPPED")
+    h.venue.m["ticker"] = "CAPPED"
+    led.upsert_window(m2)
+    h.decide(m2)
+    assert led.decision("CAPPED")["status"] == "budget_exhausted" and model.calls == 1
+
+
+def test_a_model_worse_than_the_market_is_paused_after_the_threshold(led, monkeypatch):
+    now = 1_790_600_000.0
+    model = FakeModel(p=0.6)
+    h, m = _harness(led, now, model)
+    h.settings.pause_if_worse_after = 200
+    rec = {"windows_scored": 200, "brier_you": 0.26, "brier_market_mid": 0.24, "hit_rate": 0.5,
+           "brier_random_walk": 0.25, "pnl_usd_this_allocation": -3.0, "drawdown_usd": 3.0}
+    monkeypatch.setattr(led, "experience", lambda mode, **k: {"your_record": rec, "recent_calls_newest_first": [],
+                                                                "your_lessons_newest_first": []})
+    monkeypatch.setattr("core.btc15.harness._push", lambda *a: None)
+    h.decide(m)
+    assert led.decision(m["ticker"])["status"] == "paused_underperforming" and model.calls == 0
+    rec.update(brier_you=0.22)                                  # better than the market: keep asking
+    m2 = dict(m, ticker="BETTER")
+    h.venue.m["ticker"] = "BETTER"
+    led.upsert_window(m2)
+    h.decide(m2)
+    assert model.calls == 1

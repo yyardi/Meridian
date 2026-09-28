@@ -70,6 +70,9 @@ class ModelConfig:
     reasoning_effort: str | None = None
     timeout_s: float = 300.0
     base_url: str = "https://api.openai.com/v1"
+    #: Hard ceiling on one answer's output (reasoning included). An answer that
+    #: runs out is truncated JSON -> a recorded model_error, never a trade.
+    max_output_tokens: int = 4000
 
     @classmethod
     def from_env(cls) -> "ModelConfig":
@@ -79,6 +82,7 @@ class ModelConfig:
             reasoning_effort=os.environ.get("MERIDIAN_BTC15_REASONING_EFFORT") or None,
             timeout_s=float(os.environ.get("MERIDIAN_BTC15_TIMEOUT_S") or 300),
             base_url=(os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/"),
+            max_output_tokens=int(os.environ.get("MERIDIAN_BTC15_MAX_OUTPUT_TOKENS") or 4000),
         )
 
     @property
@@ -115,6 +119,8 @@ class OpenAIModel:
         }
         if self.cfg.reasoning_effort:
             body["reasoning_effort"] = self.cfg.reasoning_effort
+        if self.cfg.max_output_tokens:
+            body["max_completion_tokens"] = self.cfg.max_output_tokens
         headers = {"Authorization": f"Bearer {self.cfg.api_key}"}
         last: Exception | None = None
         for attempt in range(2):                      # one retry, transient failures only
@@ -150,16 +156,16 @@ class OpenAIModel:
             DECISION_SCHEMA, "btc15_decision")
         return validate(obj), usage, took
 
-    def lesson(self, decision: dict, outcome: dict) -> str:
+    def lesson(self, decision: dict, outcome: dict) -> tuple[str, dict]:
         prompt = {
             "your_call": decision, "outcome": outcome,
             "instruction": "Write the lesson you would want to read before the next window. Be specific about what you "
                            "over- or under-weighted. If the call was right for the right reason, say what to keep doing.",
         }
-        obj, _, _ = self._call(
+        obj, usage, _ = self._call(
             [{"role": "system", "content": SYSTEM}, {"role": "user", "content": json.dumps(prompt)}],
             LESSON_SCHEMA, "btc15_lesson")
-        return str(obj.get("lesson") or "")[:600]
+        return str(obj.get("lesson") or "")[:600], usage
 
     def list_models(self) -> list[str]:
         r = self._http.get(f"{self.cfg.base_url}/models", headers={"Authorization": f"Bearer {self.cfg.api_key}"})
