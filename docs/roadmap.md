@@ -1,5 +1,9 @@
 # Roadmap decision — 2026-08-01
 
+> **History — the first phase (August 2026).** This describes Meridian when it was a WNBA
+> fair-value model. For the project as it is now, read the root [README](../README.md) and
+> [STATUS.md](../STATUS.md).
+
 **Question:** deepen WNBA, or expand to MLB?
 
 ## The MLB probe settled it

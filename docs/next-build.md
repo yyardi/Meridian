@@ -1,5 +1,9 @@
 # Next build — handoff
 
+> **History — the first phase (August 2026).** This describes Meridian when it was a WNBA
+> fair-value model. For the project as it is now, read the root [README](../README.md) and
+> [STATUS.md](../STATUS.md).
+
 Written 2026-08-02. Self-contained: a fresh agent should be able to work from this plus [how-it-all-works.md](how-it-all-works.md) without the prior conversation.
 
 ## The one-paragraph situation

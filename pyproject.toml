@@ -1,7 +1,7 @@
 [project]
 name = "meridian"
 version = "0.1.0"
-description = "Algorithmic trading system for WNBA prediction markets on Polymarket US"
+description = "Self-scheduling market-microstructure research and execution platform for prediction markets (Polymarket US, Kalshi)"
 requires-python = ">=3.10"
 dependencies = [
     "sqlalchemy>=2.0",
