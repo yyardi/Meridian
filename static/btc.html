@@ -362,7 +362,17 @@ function renderNow() {
     $("b-up-s").textContent = c.result ? "settled" : "no book yet"; $("b-dn-s").textContent = "";
   }
   const d = c.decision, f = c.fill;
-  if (!d) { $("call").innerHTML = '<div class="waiting">The bot asks the model once the venue\'s book is live, about 30 seconds into the window.</div>'; return; }
+  if (!d) {
+    const into = Date.now() / 1000 - c.open_ts, left = c.close_ts - Date.now() / 1000;
+    const booked = b && b.ticker === c.ticker && (b.yes_ask != null || b.yes_bid != null);
+    $("call").innerHTML = `<div class="waiting">` + (booked
+      ? `The venue's book is live; the bot is asking the model now.`
+      : `<b style="color:var(--acc)">Waiting for the venue to open this window's order book</b> — ${mmss(into)} into the window, no book yet. ` +
+        `The bot asks the model the moment there is a price to buy at. Tonight the venue has taken from 30 seconds to about 5 minutes; ` +
+        `if no book opens before the last 90 seconds (${mmss(Math.max(0, left - 90))} from now), the window is recorded as “no book” and nothing trades.`) +
+      `</div>`;
+    return;
+  }
   if (d.p_up == null) {
     $("call").innerHTML = `<div class="callhead"><span class="callside faint">NO CALL</span>${stTag(d.status)}</div>` +
       `<div class="waiting" style="padding:8px 0 0">${esc(d.error || "")}</div>`;
