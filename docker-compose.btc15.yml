@@ -1,45 +1,70 @@
-# BTC15 overlay (2026-09-28): the LLM decision harness for Kalshi's 15-minute Bitcoin market.
+# BTC Up-or-Down overlay (2026-09-28): the LLM decision harness, Polymarket US.
 #
-#   docker compose -f docker-compose.yml -f docker-compose.btc15.yml up -d btc15
+#   docker compose -f docker-compose.yml -f docker-compose.btc15.yml up -d btc15 btc1h
 #
-# One process, ~60 MB. It polls four free exchanges once a second, decides once per
-# 15-minute window through OpenAI, fills at the ask (PAPER by default), settles off
-# Kalshi's own result, and keeps everything in its own SQLite ledger under
-# /opt/meridian/artifacts/btc15 -- deliberately NOT the shared Postgres, which was
-# OOM-killed three times on 2026-09-26/27; the money ledger does not depend on it.
+# btc15 trades the 15-minute market, btc1h the hourly one; each is one ~30 MB
+# process with its OWN SQLite ledger and its own $10 drawdown allocation. They poll
+# four free exchanges once a second, decide once per window through OpenAI, fill at
+# the ask (PAPER by default), and settle off the venue's own resolution. Kalshi's
+# KXBTC15M -- the same contract on the same BRTI averages -- is read for the
+# 15-minute instance's reference price. The ledgers live under
+# /opt/meridian/artifacts/btc15, deliberately NOT the shared Postgres, which was
+# OOM-killed three times on 2026-09-26/27.
 #
-# To let it decide, add to /opt/meridian/.env and re-run the command above:
+# To let them decide, add to /opt/meridian/.env and re-run the command above:
 #   OPENAI_API_KEY=...
-#   MERIDIAN_BTC15_MODEL=<an id from `docker compose ... run --rm btc15 python -m core.btc15.harness --check-openai`>
-# Without them it records the price feed, every window's features and every result.
+#   MERIDIAN_BTC15_MODEL=<an id from: docker compose -f docker-compose.yml -f docker-compose.btc15.yml
+#                          run --rm btc15 python -m core.btc15.harness --check-openai>
+# Without them they record the price feed, every window's features and every result.
 #
 # core/ is mounted, so a code deploy is a checkout and a restart, never an image build.
+x-btc: &btc
+  image: meridian-api:latest
+  restart: unless-stopped
+  command: ["python", "-m", "core.btc15.harness"]
+  working_dir: /app
+  mem_limit: 256m
+  volumes:
+    - /opt/meridian/core:/app/core:ro
+    - /opt/meridian/artifacts/btc15:/data
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "3"
+
+x-btc-env: &btc_env
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  MERIDIAN_BTC15_MODEL: ${MERIDIAN_BTC15_MODEL:-}
+  MERIDIAN_BTC15_REASONING_EFFORT: ${MERIDIAN_BTC15_REASONING_EFFORT:-}
+  MERIDIAN_BTC15_MODE: ${MERIDIAN_BTC15_MODE:-paper}
+  MERIDIAN_BTC15_VENUE: polymarket
+  MERIDIAN_BTC15_DRAWDOWN_USD: "10"
+  MERIDIAN_NTFY_TOPIC: ${MERIDIAN_NTFY_TOPIC:-}
+  MERIDIAN_NTFY_SCOPE: ${MERIDIAN_NTFY_SCOPE:-}
+  MERIDIAN_NTFY_SERVER: ${MERIDIAN_NTFY_SERVER:-}
+  PYTHONUNBUFFERED: "1"
+
 services:
   btc15:
-    image: meridian-api:latest
+    <<: *btc
     container_name: meridian-btc15
-    restart: unless-stopped
-    command: ["python", "-m", "core.btc15.harness"]
-    working_dir: /app
-    mem_limit: 256m
-    volumes:
-      - /opt/meridian/core:/app/core:ro
-      - /opt/meridian/artifacts/btc15:/data
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      MERIDIAN_BTC15_MODEL: ${MERIDIAN_BTC15_MODEL:-}
-      MERIDIAN_BTC15_REASONING_EFFORT: ${MERIDIAN_BTC15_REASONING_EFFORT:-}
-      MERIDIAN_BTC15_MODE: ${MERIDIAN_BTC15_MODE:-paper}
-      MERIDIAN_BTC15_DRAWDOWN_USD: "10"
+      <<: *btc_env
+      MERIDIAN_BTC15_HORIZON: 15m
       MERIDIAN_BTC15_DECIDE_AT_S: ${MERIDIAN_BTC15_DECIDE_AT_S:-30}
-      MERIDIAN_BTC15_DB: /data/btc15.sqlite
-      MERIDIAN_BTC15_STATUS: /data/status.json
-      MERIDIAN_NTFY_TOPIC: ${MERIDIAN_NTFY_TOPIC:-}
-      MERIDIAN_NTFY_SCOPE: ${MERIDIAN_NTFY_SCOPE:-}
-      MERIDIAN_NTFY_SERVER: ${MERIDIAN_NTFY_SERVER:-}
-      PYTHONUNBUFFERED: "1"
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "3"
+      MERIDIAN_BTC15_DB: /data/polymarket-15m.sqlite
+      MERIDIAN_BTC15_STATUS: /data/status-15m.json
+
+  btc1h:
+    <<: *btc
+    container_name: meridian-btc1h
+    environment:
+      <<: *btc_env
+      # hourly paper only until the 15-minute run has earned a live decision
+      MERIDIAN_BTC15_MODE: paper
+      MERIDIAN_BTC15_HORIZON: 1h
+      MERIDIAN_BTC15_DECIDE_AT_S: "60"
+      MERIDIAN_BTC15_MIN_LEAD_S: "180"
+      MERIDIAN_BTC15_DB: /data/polymarket-1h.sqlite
+      MERIDIAN_BTC15_STATUS: /data/status-1h.json

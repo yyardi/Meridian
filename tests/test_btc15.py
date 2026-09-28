@@ -21,6 +21,8 @@ from core.btc15.harness import Harness, PaperBroker, Settings  # noqa: E402
 from core.btc15.kalshi import normalize, to_units  # noqa: E402
 from core.btc15.ledger import DEFAULT_LIMIT_U, UNIT, Ledger, fee_units, payout_units  # noqa: E402
 from core.btc15.model import ModelConfig, ModelError, side_of, validate  # noqa: E402
+from core.btc15.polymarket import PolymarketBTC, result_of, slug_at  # noqa: E402
+from core.btc15.polymarket import normalize as pm_normalize  # noqa: E402
 from core.btc15.prices import Quote, candles_ascending, composite  # noqa: E402
 
 
@@ -239,15 +241,28 @@ class FakeFeed:
         return sum(xs) / len(xs) if xs else None
 
 
-class FakeKalshi:
+class FakeVenue:
+    """The venue interface as the harness uses it, with Polymarket's fee rule."""
+    venue = "fake"
+
+    def owns(self, ticker):
+        return True
+
     def __init__(self, m):
         self.m = dict(m)
+
+    def current(self, now):
+        return dict(self.m)
 
     def market(self, ticker):
         return dict(self.m)
 
-    def fee_multiplier(self):
-        return Decimal(1)
+    def outcome(self, ticker):
+        return {"final": self.m.get("status") == "finalized" and self.m.get("result") in ("yes", "no"),
+                "result": self.m.get("result"), "expiration_value": self.m.get("expiration_value")}
+
+    def fee_units(self, price_u, market):
+        return PolymarketBTC().fee_units(price_u, {**market, "fee_coefficient": "0.0695"})
 
 
 class FakeModel:
@@ -280,8 +295,8 @@ def _iso(ts):
 
 def _harness(led, now, model, broker=True):
     m = _live_market(now)
-    h = Harness(Settings(db_path=":memory:", status_path="/dev/null"), led, FakeFeed(now), FakeKalshi(m), model,
-                PaperBroker() if broker else None, clock=lambda: now, fee_multiplier=Decimal(1))
+    h = Harness(Settings(db_path=":memory:", status_path="/dev/null"), led, FakeFeed(now), FakeVenue(m), model,
+                PaperBroker() if broker else None, clock=lambda: now)
     h.market = m
     led.upsert_window(m)
     return h, m
@@ -317,7 +332,7 @@ def test_a_model_error_or_a_late_answer_is_recorded_and_places_nothing(led):
     slow = FakeModel(p=0.7)
     h2, m2 = _harness(led, now, slow)
     m2 = dict(m2, ticker="KXBTC15M-LATE")
-    h2.kalshi.m["ticker"] = "KXBTC15M-LATE"
+    h2.venue.m["ticker"] = "KXBTC15M-LATE"
     led.upsert_window(m2)
     clock = {"t": now}
     h2.clock = lambda: clock["t"]
@@ -354,7 +369,7 @@ def test_settlement_comes_from_kalshis_result_and_writes_the_lesson(led):
     now = 1_790_600_000.0
     h, m = _harness(led, now, FakeModel(p=0.62))
     h.decide(m)
-    h.kalshi.m.update(status="finalized", result="no", expiration_value=79990.0)
+    h.venue.m.update(status="finalized", result="no", expiration_value=79990.0)
     h.settings.reflect = False
     h.settle_due(m["close_ts"] + 2)
     w = led._conn.execute("SELECT * FROM windows").fetchone()
@@ -373,3 +388,89 @@ def test_predict_only_mode_records_the_call_and_places_nothing(led):
     h.decide(m)
     assert led.decision(m["ticker"])["status"] == "predict_only"
     assert led._conn.execute("SELECT count(*) FROM fills").fetchone()[0] == 0
+
+
+# ------------------------------------------------------------------ Polymarket US, the traded venue
+# Payload shapes copied from the venue's own replies on 2026-09-28.
+PM_META_OPEN = {
+    "slug": "cpc-btc-updown-15m-2026-09-28-0015z", "status": "MARKET_STATUS_OPEN", "feeCoefficient": 0.0695,
+    "outcomePrices": '["0","0"]',
+    "assetPriceTerms": {"marketType": "ASSET_PRICE_MARKET_TYPE_UP_DOWN", "indexSymbol": "BRTI", "horizon": "15m",
+                        "windowStart": "2026-09-28T00:15:00Z", "windowEnd": "2026-09-28T00:30:00Z",
+                        "priceToBeat": {"value": "84414.77", "currency": "USD"}, "settlementPrice": None},
+}
+PM_BOOK = {"marketSlug": "cpc-btc-updown-15m-2026-09-28-0015z", "state": "MARKET_STATE_OPEN",
+           "bids": [{"px": {"value": "0.9800", "currency": "USD"}, "qty": "956.1700"},
+                    {"px": {"value": "0.9700", "currency": "USD"}, "qty": "5120.9900"}],
+           "offers": [{"px": {"value": "0.9900", "currency": "USD"}, "qty": "533.0100"}],
+           "stats": {"lastTradePx": {"value": "0.9800", "currency": "USD"}}}
+PM_META_RESOLVED = {
+    "slug": "cpc-btc-updown-15m-2026-09-27-2330z", "status": "MARKET_STATUS_RESOLVED", "feeCoefficient": 0.0695,
+    "outcomePrices": '["0","1"]',
+    "assetPriceTerms": {"windowStart": "2026-09-27T23:30:00Z", "windowEnd": "2026-09-27T23:45:00Z",
+                        "priceToBeat": {"value": "84390.86", "currency": "USD"},
+                        "settlementPrice": {"value": "84337.75", "currency": "USD"}},
+}
+
+
+def test_the_slug_names_the_window_start_in_utc_for_both_horizons():
+    t = 1790554500.0 + 7 * 60                             # 2026-09-28 00:22Z
+    assert slug_at(t) == "cpc-btc-updown-15m-2026-09-28-0015z"
+    assert slug_at(t, "1h") == "cpc-btc-updown-1h-2026-09-28-0000z"
+    with pytest.raises(ValueError):
+        PolymarketBTC(horizon="5m")                        # the venue lists no 5-minute market
+
+
+def test_an_open_market_normalizes_to_the_harness_shape():
+    m = pm_normalize(PM_META_OPEN, PM_BOOK)
+    assert m["status"] == "active" and m["strike"] == 84414.77
+    assert (m["yes_bid_u"], m["yes_ask_u"], m["no_bid_u"], m["no_ask_u"]) == (9800, 9900, 100, 200)
+    assert m["yes_bid_size"] == 956.17 and m["close_ts"] - m["open_ts"] == 900
+    assert m["result"] is None, "an open market has no result, whatever outcomePrices says"
+
+
+def test_a_resolved_market_reads_down_and_the_official_average():
+    m = pm_normalize(PM_META_RESOLVED, None)
+    assert m["status"] == "finalized" and m["result"] == "no" and m["expiration_value"] == 84337.75
+    assert result_of('["1","0"]') == "yes" and result_of('["0","0"]') is None and result_of(None) is None
+
+
+def test_the_polymarket_fee_is_the_markets_coefficient_rounded_up_to_the_cent():
+    pm = PolymarketBTC()
+    assert pm.fee_units(5000, {"fee_coefficient": 0.0695}) == 200   # 1.7375c -> 2c
+    assert pm.fee_units(9800, {"fee_coefficient": 0.0695}) == 100   # 0.136c -> 1c
+    assert pm.fee_units(5000, {"fee_coefficient": 0.06}) == 200     # 1.5c -> 2c
+    with pytest.raises(ValueError):
+        pm.fee_units(5000, {"ticker": "x"})
+
+
+def test_the_reference_price_is_attached_only_for_the_same_window(led):
+    now = 1_790_600_000.0
+    model = FakeModel(p=0.6)
+    h, m = _harness(led, now, model)
+
+    class Ref:
+        def __init__(self, r):
+            self.r = r
+
+        def current(self, t):
+            return self.r
+    h.reference = Ref({"open_ts": m["open_ts"], "close_ts": m["close_ts"], "yes_bid": 0.60, "yes_ask": 0.62, "strike": 80000.0})
+    h.decide(m)
+    f = json.loads(led.decision(m["ticker"])["features"])
+    assert f["market"]["other_venue_p_up"] == 0.61 and f["market"]["other_venue_strike_usd"] == 80000.0
+    m2 = dict(m, ticker="OTHER")
+    h.venue.m["ticker"] = "OTHER"
+    led.upsert_window(m2)
+    h.reference = Ref({"open_ts": m["open_ts"] - 2700, "close_ts": m["close_ts"], "yes_bid": 0.1, "yes_ask": 0.2})
+    h.decide(m2)
+    assert json.loads(led.decision("OTHER")["features"])["market"]["other_venue_p_up"] is None, \
+        "an hourly window that ends with a 15-minute one is a different contract"
+
+
+def test_each_venue_owns_only_its_own_windows():
+    assert PolymarketBTC().owns("cpc-btc-updown-15m-2026-09-28-0015z")
+    assert not PolymarketBTC().owns("cpc-btc-updown-1h-2026-09-28-0000z")
+    assert PolymarketBTC(horizon="1h").owns("cpc-btc-updown-1h-2026-09-28-0000z")
+    from core.btc15.kalshi import KalshiBTC
+    assert KalshiBTC().owns("KXBTC15M-26SEP272015-15") and not KalshiBTC().owns("cpc-btc-updown-15m-x")

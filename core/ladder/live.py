@@ -120,7 +120,7 @@ RECORDED_MARKET_TYPES = LADDER_MARKET_TYPES + (
 #: silent drop.
 CRICKET_STREAM_LEAGUES = ("t20icr", "t20iwcr", "cplcr", "odicr", "county")
 #: The venue's international basketball competitions (listed 2026-09-27:
-#: EuroLeague, LNB Pro A, BBL, VTB, BSL, plus the Danish, Slovenian and
+#: EuroLeague, Mexico's LNBP, Germany's BBL, VTB, BSL, plus the Danish, Slovenian and
 #: Hungarian leagues), each ONE winner market per game, no spread or total
 #: ladder -- so there is nothing for a detector to pair, and the tape is for
 #: the pregame and in-play calibration reads (docs/math/intl-basketball-winner.md).

@@ -3,7 +3,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.basketball.yml up -d --build basketball-recorder
 #
 # RECORDING ONLY: pregame board sweeps of the venue's international basketball
-# competitions (core/leagues.py `basketball-intl`: EuroLeague, LNB Pro A, BBL,
+# competitions (core/leagues.py `basketball-intl`: EuroLeague, Mexico's LNBP, Germany's BBL,
 # VTB, BSL, and the Danish, Slovenian and Hungarian leagues). One winner market
 # per game, no spread or total ladder, so nothing here can be paired or placed.
 # In-play tapes come from the stream recorder the daily scheduler launches for

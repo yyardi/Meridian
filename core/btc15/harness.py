@@ -1,12 +1,18 @@
 """The BTC15 loop: poll once a second, decide once per window, fill, settle, reflect.
 
+The traded venue is Polymarket US ("BTC Up or Down", 15-minute by default,
+MERIDIAN_BTC15_HORIZON=1h for the hourly market), the operator's account;
+Kalshi's KXBTC15M settles on the same BRTI averages and is read as a reference
+(its same-window price becomes a feature). MERIDIAN_BTC15_VENUE=kalshi trades
+the Kalshi market instead.
+
     python -m core.btc15.harness                 # run forever (the service)
     python -m core.btc15.harness --check-openai  # list the models the key can use
     python -m core.btc15.harness --new-epoch paper   # operator: a fresh $10 allocation
 
 One window, start to finish:
 
-1. Kalshi opens KXBTC15M-<close> at :00/:15/:30/:45 with its strike set.
+1. The venue opens the window at :00/:15/:30/:45 (or on the hour) with its strike set.
 2. At open + DECIDE_AT_S (default 30 s) the harness builds the feature set from
    data at or before that instant and records it. If the price feed is stale
    (older than 5 s, or fewer than two exchanges) the window is recorded as
@@ -16,8 +22,8 @@ One window, start to finish:
    harness reads Kalshi's ask for that side NOW and buys one contract through
    the broker -- which checks the $10 drawdown guard and writes the fill in one
    locked step. A cost (price + fee) above $1.00 is refused.
-5. About a second after close Kalshi finalizes ``result``. The harness records
-   it, its own 60-second proxy average beside Kalshi's ``expiration_value``,
+5. After close the venue resolves the market. The harness records the result,
+   its own 60-second proxy average beside the official settlement average,
    settles the fill, and asks the model for a one-line lesson.
 
 Every step writes a row before it acts; a restart re-reads the ledger and never
@@ -43,7 +49,8 @@ from decimal import Decimal
 
 from core.btc15 import features as F
 from core.btc15.kalshi import KalshiBTC
-from core.btc15.ledger import DEFAULT_LIMIT_U, UNIT, Ledger, fee_units
+from core.btc15.ledger import DEFAULT_LIMIT_U, UNIT, Ledger
+from core.btc15.polymarket import PolymarketBTC
 from core.btc15.model import ModelConfig, ModelError, OpenAIModel, side_of
 from core.btc15.prices import PriceFeed
 
@@ -61,6 +68,8 @@ class Settings:
     max_data_age_s: float = 5.0
     min_exchanges: int = 2
     status_path: str = "/data/status.json"
+    venue: str = "polymarket"
+    horizon: str = "15m"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -73,6 +82,8 @@ class Settings:
             limit_u=int(Decimal(e("MERIDIAN_BTC15_DRAWDOWN_USD") or "10") * UNIT),
             reflect=(e("MERIDIAN_BTC15_REFLECT") or "1") != "0",
             status_path=e("MERIDIAN_BTC15_STATUS") or "/data/status.json",
+            venue=(e("MERIDIAN_BTC15_VENUE") or "polymarket").lower(),
+            horizon=(e("MERIDIAN_BTC15_HORIZON") or "15m").lower(),
         )
 
 
@@ -90,15 +101,15 @@ class Harness:
     settings: Settings
     ledger: Ledger
     feed: PriceFeed
-    kalshi: KalshiBTC
+    venue: object                      # PolymarketBTC or KalshiBTC: current / market / outcome / fee_units
     model: OpenAIModel | None
     broker: PaperBroker | None
+    reference: object | None = None    # the other venue, read for its same-window price only
     clock: object = time.time
-    fee_multiplier: Decimal | None = None
     market: dict | None = None
     _inflight: set = field(default_factory=set)
     _reflected: set = field(default_factory=set)
-    _next: dict = field(default_factory=lambda: {"market": 0.0, "settle": 0.0, "fee": 0.0, "status": 0.0, "flush": 0.0})
+    _next: dict = field(default_factory=lambda: {"market": 0.0, "settle": 0.0, "status": 0.0, "flush": 0.0})
     _ticks: list = field(default_factory=list)
     _last_summary_day: str | None = None
     _pushed_halt: bool = False
@@ -111,8 +122,6 @@ class Harness:
             self.ledger.add_ticks(self._ticks)
             self._ticks = []
             self._next["flush"] = now + 10
-        if now >= self._next["fee"]:
-            self._refresh_fee(now)
         if now >= self._next["market"]:
             self._refresh_market(now)
         self.maybe_decide(now)
@@ -123,20 +132,11 @@ class Harness:
             self._status(now, px, n)
             self._next["status"] = now + 60
 
-    def _refresh_fee(self, now: float) -> None:
-        try:
-            self.fee_multiplier = self.kalshi.fee_multiplier()
-            self._next["fee"] = now + 3600
-        except Exception as e:                                   # noqa: BLE001
-            log.warning("fee schedule unreadable, trading paused: %s", e)
-            self.fee_multiplier = None
-            self._next["fee"] = now + 60
-
     def _refresh_market(self, now: float) -> None:
         try:
-            m = self.kalshi.current(now)
+            m = self.venue.current(now)
         except Exception as e:                                   # noqa: BLE001
-            log.warning("kalshi current market: %s", e)
+            log.warning("%s current market: %s", self.venue.venue, e)
             self._next["market"] = now + 5
             return
         self.market = m
@@ -170,6 +170,16 @@ class Harness:
     def decide(self, m: dict) -> None:
         now = self.clock()
         secs = self.feed.seconds()
+        m = dict(m)
+        if self.reference is not None:
+            try:
+                r = self.reference.current(now)
+                same = r and r.get("open_ts") == m["open_ts"] and r.get("close_ts") == m["close_ts"]
+                if same and r.get("yes_bid") is not None and r.get("yes_ask") is not None:
+                    m["reference_p_up"] = round((r["yes_bid"] + r["yes_ask"]) / 2, 4)
+                    m["reference_strike"] = r.get("strike")
+            except Exception as e:                               # noqa: BLE001 -- a reference is a feature, never a gate
+                log.warning("reference read: %s", e)
         feats = F.build(now=now, secs=secs, c1m=self.feed.c1m, c5m=self.feed.c5m, c1h=self.feed.c1h,
                         market=m, quotes=self.feed.quotes, funding=self.feed.funding,
                         recent_results=self.ledger.recent_results(12))
@@ -209,10 +219,7 @@ class Harness:
         if answered >= m["close_ts"] - self.settings.min_lead_s:
             self.ledger.finish_decision(t, status="late")
             return
-        if self.fee_multiplier is None:
-            self.ledger.finish_decision(t, status="no_fee_schedule")
-            return
-        live = self.kalshi.market(t)
+        live = self.venue.market(t)
         if live.get("status") != "active":
             self.ledger.finish_decision(t, status=f"market_{live.get('status')}")
             return
@@ -220,7 +227,11 @@ class Harness:
         if not ask_u or not (0 < ask_u < UNIT):
             self.ledger.finish_decision(t, status="no_ask")
             return
-        fee_u = fee_units(ask_u, 1, self.fee_multiplier)
+        try:
+            fee_u = self.venue.fee_units(ask_u, live)
+        except Exception as e:                                   # noqa: BLE001
+            self.ledger.finish_decision(t, status="no_fee_schedule", error=str(e)[:300])
+            return
         if ask_u + fee_u > UNIT:
             self.ledger.finish_decision(t, status="cost_over_one_dollar")
             return
@@ -234,15 +245,17 @@ class Harness:
     # ------------------------------------------------------------------ settle
     def settle_due(self, now: float) -> None:
         for w in self.ledger.unfinalized_windows(now):
+            if not self.venue.owns(w["ticker"]):
+                continue                                         # another venue's window in a shared file
             try:
-                m = self.kalshi.market(w["ticker"])
+                o = self.venue.outcome(w["ticker"])
             except Exception as e:                               # noqa: BLE001
                 log.warning("settle read %s: %s", w["ticker"], e)
                 continue
-            if m.get("status") not in ("finalized", "settled") or not m.get("result"):
+            if not o["final"]:
                 continue
             proxy = self.feed.average(w["close_ts"] - 60, w["close_ts"])
-            self.ledger.finalize_window(w["ticker"], m["result"], m.get("expiration_value"), proxy)
+            self.ledger.finalize_window(w["ticker"], o["result"], o.get("expiration_value"), proxy)
         results = {r["ticker"]: r["result"] for r in self.ledger._conn.execute(
             "SELECT ticker, result FROM windows WHERE result IS NOT NULL").fetchall()}
         for f in self.ledger.unsettled_fills():
@@ -278,7 +291,7 @@ class Harness:
     def _status(self, now: float, px: float | None, n: int) -> None:
         a = self.ledger.account(self.settings.mode)
         s = {"at": _iso(now), "btc_usd": px, "exchanges": n, "window": (self.market or {}).get("ticker"),
-             "mode": self.settings.mode, "model": self.model.cfg.model if self.model else None,
+             "venue": self.venue.venue, "mode": self.settings.mode, "model": self.model.cfg.model if self.model else None,
              "model_ready": bool(self.model and self.model.cfg.ready),
              "account": {k: (v / UNIT if k.endswith("_u") else v) for k, v in a.items()},
              "halted": self.ledger.halted(self.settings.mode), "feed_errors": dict(self.feed.errors)}
@@ -325,12 +338,23 @@ def build(settings: Settings) -> Harness:
         log.error("MERIDIAN_BTC15_MODE=%s: live execution is not built yet; recording and predicting only, "
                   "nothing will be placed", settings.mode)
         broker = None
-    return Harness(settings, ledger, PriceFeed(), KalshiBTC(), model, broker)
+    if settings.venue == "polymarket":
+        # Kalshi lists only the 15-minute contract; the hourly one has no reference.
+        venue = PolymarketBTC(horizon=settings.horizon)
+        reference = KalshiBTC() if settings.horizon == "15m" else None
+    elif settings.venue == "kalshi":
+        if settings.horizon != "15m":
+            raise SystemExit("Kalshi's KXBTC15M is 15-minute only")
+        venue, reference = KalshiBTC(), None
+    else:
+        raise SystemExit(f"MERIDIAN_BTC15_VENUE={settings.venue!r}: polymarket or kalshi")
+    return Harness(settings, ledger, PriceFeed(), venue, model, broker, reference=reference)
 
 
 def run(h: Harness) -> None:
-    log.info("btc15 up: mode=%s model=%s db=%s", h.settings.mode, h.model.cfg.model if h.model else None,
-             h.settings.db_path)
+    logging.getLogger("httpx").setLevel(logging.WARNING)       # four GETs a second is not news
+    log.info("btc15 up: venue=%s mode=%s model=%s db=%s", h.venue.venue, h.settings.mode,
+             h.model.cfg.model if h.model else None, h.settings.db_path)
     while True:
         t0 = time.time()
         try:

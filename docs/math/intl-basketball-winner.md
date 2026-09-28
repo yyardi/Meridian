@@ -1,9 +1,12 @@
 # International basketball on the venue — one market a game, and what that allows
 
 2026-09-27. The venue began listing European and other international
-basketball this week: EuroLeague (20 events, first tip 2026-09-29 16:00Z), LNB
-Pro A (16, first 2026-09-27 22:15Z), the British BBL (9), VTB United (6), the
-Turkish BSL (1), and the Danish, Slovenian and Hungarian leagues (2 each). Read
+basketball this week: EuroLeague (20 events, first tip 2026-09-29 16:00Z),
+Mexico's LNBP (16, first 2026-09-27 22:15Z), Germany's Basketball Bundesliga (9),
+VTB United (6), the Turkish BSL (1), and the Danish, Slovenian and Hungarian
+leagues (2 each). *(Corrected 2026-09-28 from the venue's own descriptions:
+`lnbp` is Mexico's LNBP, not France's LNB Pro A; `bbl` is Germany's, not the
+UK's.)* Read
 off `api.polymarket.us` on the day: **every event carries exactly one market,
 `basketball_team_full_game_winner`, and no spread or total.**
 
@@ -28,10 +31,11 @@ the settlement:
 2. **In-play calibration by drawdown.** The stream tape at update resolution
    (`launch_stream_slate.sh <league>` from the planner, 150-minute windows):
    Brier of the in-play price by the pregame favourite's drawdown bucket, as
-   docs/math/cricket-inplay-dip.md §4 — with the caveat that **there is no
-   state feed** for these leagues yet (ESPN's coverage of EuroLeague box
-   scores is unverified), so a dip cannot be attributed to a score until one
-   exists. Until then the read is of the price path alone.
+   docs/math/cricket-inplay-dip.md §4. **The state feed is the venue's own**:
+   its event payload carries score, period, clock and quarter scores, plus a
+   `sportradarGameId` (corrected 2026-09-28; ESPN covers none of these
+   leagues). The relative-value design built on Kalshi's same-game markets is
+   docs/math/intl-basketball-ls-research.md.
 
 Estimator: per-game clusters, sandwich intervals, populations and counts
 printed on every number, fee at the row's own coefficient. Sample: the venue
