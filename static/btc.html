@@ -267,7 +267,10 @@ const utc = (ts) => new Date(ts * 1000).toISOString().slice(11, 16) + "Z";
 const iso2ts = (s) => s ? Date.parse(s) / 1000 : null;
 const mmss = (s) => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60); return m + ":" + String(s % 60).padStart(2, "0"); };
 const sideTxt = (side) => side === "YES" ? '<span class="pos">▲ Up</span>' : side === "NO" ? '<span class="neg">▼ Down</span>' : '<span class="faint">—</span>';
-const resTxt = (r) => r === "yes" ? '<span class="pos">▲ Up</span>' : r === "no" ? '<span class="neg">▼ Down</span>' : '<span class="faint">open</span>';
+// A window with no result is "open" while it runs and "settling" after it closes: the venue
+// posts the result anywhere from ~30 s to a few minutes after the close (RESOLVING in between).
+const resTxt = (r, closeTs) => r === "yes" ? '<span class="pos">▲ Up</span>' : r === "no" ? '<span class="neg">▼ Down</span>' :
+  (closeTs != null && closeTs < Date.now() / 1000 ? '<span class="accc">settling…</span>' : '<span class="faint">open</span>');
 const STATUS = {
   filled: ["filled", ""], not_filled: ["not filled", "warn"], no_model: ["no model", ""], model_error: ["model error", "warn"],
   late: ["too late", "warn"], no_ask: ["no ask", "warn"], no_book: ["no book", "warn"], budget_exhausted: ["openai cap", "warn"],
@@ -427,7 +430,7 @@ function renderLessons() {
   $("lessons").innerHTML = L.map((x) => {
     const right = x.result && x.p_up != null ? ((x.p_up >= 0.5) === (x.result === "yes")) : null;
     return `<li><div class="lh">${esc(day(x.open_ts))} ${esc(hm(x.open_ts))}–${esc(hm(x.close_ts))} · called ${sideTxt(x.side)} at ${pct(x.p_up)} · ` +
-      `settled ${resTxt(x.result)}${right == null ? "" : right ? ' · <span class="pos">right</span>' : ' · <span class="neg">wrong</span>'}</div>${esc(x.lesson)}</li>`;
+      `settled ${resTxt(x.result, x.close_ts)}${right == null ? "" : right ? ' · <span class="pos">right</span>' : ' · <span class="neg">wrong</span>'}</div>${esc(x.lesson)}</li>`;
   }).join("");
 }
 
@@ -478,6 +481,7 @@ function drawChart() {
     svg.appendChild(el("line", { x1: X(w.open_ts), x2: X(w.open_ts), y1: Tp, y2: Hh - B, stroke: "var(--line)" }));
     if (w.strike != null) svg.appendChild(el("line", { x1: a, x2: b, y1: Y(w.strike), y2: Y(w.strike), stroke: "var(--dim)", "stroke-width": 1.2, "stroke-dasharray": "4 3" }));
     if (w.result && b - a > 26) svg.appendChild(el("text", { x: b - 4, y: Tp + 11, "text-anchor": "end", "font-size": 10, fill: w.result === "yes" ? "var(--pos)" : "var(--neg)" }, w.result === "yes" ? "▲ Up" : "▼ Down"));
+    else if (!w.result && w.close_ts < now && b - a > 40) svg.appendChild(el("text", { x: b - 4, y: Tp + 11, "text-anchor": "end", "font-size": 10, fill: "var(--acc)" }, "settling…"));
   });
   // x labels
   const span = x1 - x0, tstep = span <= 1500 ? 180 : span <= 2.5 * 3600 ? 900 : span <= 9 * 3600 ? 3600 : 4 * 3600;
@@ -564,7 +568,7 @@ function renderHistory() {
     let row = `<tr class="row" tabindex="0" data-t="${esc(r.ticker)}" aria-expanded="${open}">` +
       `<td class="l">${esc(day(r.open_ts))} ${esc(hm(r.open_ts))}–${esc(hm(r.close_ts))}</td>` +
       `<td>${usd(r.strike)}</td><td>${r.settle != null ? usd(r.settle) : '<span class="faint">—</span>'}</td>` +
-      `<td class="l">${resTxt(r.result)}</td><td class="l">${d.p_up != null ? sideTxt(d.side) : '<span class="faint">—</span>'}</td>` +
+      `<td class="l">${resTxt(r.result, r.close_ts)}</td><td class="l">${d.p_up != null ? sideTxt(d.side) : '<span class="faint">—</span>'}</td>` +
       `<td>${pct(d.p_up)}</td><td class="dimc">${pct(d.market_p_up)}</td>` +
       `<td>${f ? cents(f.price) + '<span class="faint"> +' + cents(f.fee) + "</span>" : ""}</td><td>${pnl}</td>` +
       `<td class="l">${r.decision ? stTag(d.status) : '<span class="faint">—</span>'}</td></tr>`;
