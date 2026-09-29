@@ -288,6 +288,7 @@ const STATUS = {
   paused_underperforming: ["paused", "warn"], stale_data: ["stale feed", "warn"], predict_only: ["predict only", ""],
   requested: ["asking…", ""], answered: ["answered", ""], cost_over_one_dollar: ["over $1", "warn"],
   watching: ["watching", ""], resting: ["resting", ""], no_edge: ["no edge", ""], expired: ["expired", ""],
+  passed: ["passed", ""], second_look: ["second look", ""],
   no_fee_schedule: ["no fee", "warn"], harness_error: ["error", "warn"],
 };
 const stTag = (s) => { const [t, c] = STATUS[s] || [s || "—", ""]; return `<span class="st ${s === "filled" ? "filled" : c}">${esc(t)}</span>`; };
@@ -333,6 +334,7 @@ async function loadArms() {
 }
 function describeSpec(sp) {
   const what = { walk: "random walk", quant: "fitted model", llm: "the LLM", kalshi: "Kalshi's price, same window", mid: "market mid (control)" }[sp.prob] || sp.prob;
+  if (sp.kind === "agent") return `${what} trades for itself: buy Up, buy Down or pass, at a limit it sets; a pass gets a second look`;
   return sp.kind === "taker" ? `${what}: buys at the ask when its edge beats the fee by ${Math.round(sp.margin * 100)}¢`
                              : `${what}: rests a zero-fee bid ${Math.round(sp.margin * 100)}¢ under fair, fills only if traded through`;
 }

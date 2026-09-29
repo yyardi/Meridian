@@ -36,7 +36,10 @@ x-btc: &btc
 x-btc-env: &btc_env
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   MERIDIAN_BTC15_MODEL: ${MERIDIAN_BTC15_MODEL:-}
-  MERIDIAN_BTC15_REASONING_EFFORT: ${MERIDIAN_BTC15_REASONING_EFFORT:-}
+  # Iteration 1 left this blank and the model spent at most 71 thinking tokens a call;
+  # high effort measured 2026-09-28: ~350 thinking tokens, ~15 s, ~$0.08 a decision.
+  MERIDIAN_BTC15_REASONING_EFFORT: ${MERIDIAN_BTC15_REASONING_EFFORT:-high}
+  MERIDIAN_BTC15_LESSON_REASONING_EFFORT: ${MERIDIAN_BTC15_LESSON_REASONING_EFFORT:-low}
   MERIDIAN_BTC15_MODE: ${MERIDIAN_BTC15_MODE:-paper}
   MERIDIAN_BTC15_VENUE: polymarket
   MERIDIAN_BTC15_DRAWDOWN_USD: "10"
@@ -56,6 +59,8 @@ services:
       <<: *btc_env
       MERIDIAN_BTC15_HORIZON: 15m
       MERIDIAN_BTC15_DECIDE_AT_S: ${MERIDIAN_BTC15_DECIDE_AT_S:-30}
+      MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY_15M:-15}
+      MERIDIAN_BTC15_SECOND_LOOK_S: "360"
       MERIDIAN_BTC15_DB: /data/polymarket-15m.sqlite
       MERIDIAN_BTC15_STATUS: /data/status-15m.json
 
@@ -69,10 +74,13 @@ services:
       MERIDIAN_BTC15_MODEL: ${MERIDIAN_BTC1H_MODEL:-}
       MERIDIAN_BTC15_MODE: paper
       MERIDIAN_BTC15_HORIZON: 1h
+      MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY_1H:-5}
+      MERIDIAN_BTC15_SECOND_LOOK_S: "1800"
       # Kalshi lists no hourly twin and the fitted model is 15-minute: the hourly bot
       # runs the LLM's price-aware arms and the market-mid control
       MERIDIAN_BTC15_ARMS: >-
-        [{"name":"llm_taker","prob":"llm","kind":"taker","margin":0.02},
+        [{"name":"llm_agent","prob":"llm","kind":"agent","margin":0.0},
+         {"name":"llm_taker","prob":"llm","kind":"taker","margin":0.02},
          {"name":"llm_maker","prob":"llm","kind":"maker","margin":0.02},
          {"name":"mid_maker","prob":"mid","kind":"maker","margin":0.02,"start_s":600}]
       MERIDIAN_BTC15_DECIDE_AT_S: "60"

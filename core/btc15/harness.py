@@ -87,6 +87,9 @@ class Settings:
     arms: str | None = None
     #: How often the arms re-read the window's book (one request each time).
     book_every_s: float = 3.0
+    #: When the agent passed on its first look, it is asked once more this many seconds
+    #: after the open (if at least 3 minutes remain and the day's budget allows).
+    second_look_s: float = 360.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -106,6 +109,7 @@ class Settings:
             pause_if_worse_after=int(e("MERIDIAN_BTC15_PAUSE_IF_WORSE_AFTER") or 200),
             arms=e("MERIDIAN_BTC15_ARMS") or None,
             book_every_s=float(e("MERIDIAN_BTC15_BOOK_EVERY_S") or 3.0),
+            second_look_s=float(e("MERIDIAN_BTC15_SECOND_LOOK_S") or 360.0),
         )
 
 
@@ -271,7 +275,7 @@ class Harness:
         if over:
             self.ledger.finish_decision(m["ticker"], status="budget_exhausted", error=over)
             return
-        experience = self.ledger.experience(self.settings.mode)
+        experience = self._experience()
         rec = experience["your_record"]
         if (self.settings.pause_if_worse_after and rec["windows_scored"] >= self.settings.pause_if_worse_after
                 and rec["brier_you"] is not None and rec["brier_market_mid"] is not None
@@ -352,6 +356,12 @@ class Harness:
         if d is not None and d["p_up"] is not None and d["answered_at"]:
             out["llm"] = d["p_up"]
             out["llm_at"] = dt.datetime.fromisoformat(d["answered_at"]).timestamp()
+            try:
+                r = json.loads(d["response"] or "{}")
+            except ValueError:
+                r = {}
+            if r.get("action"):
+                out["llm_action"] = {**r, "p_up": d["p_up"]}
         if kalshi:
             out["kalshi"] = self.kalshi_mid(now, m)
         return out
@@ -386,6 +396,66 @@ class Harness:
         coef = float(coef) if coef not in (None, "") else None
         for arm in self.arms:
             arm.tick(now, live, probs, coef, self.settings.min_lead_s)
+        self.maybe_second_look(now, live)
+
+    def maybe_second_look(self, now: float, m: dict) -> None:
+        """An agent that passed on its first look is asked once more, later in the window."""
+        if not self.model or not self.model.cfg.ready:
+            return
+        if now < m["open_ts"] + self.settings.second_look_s or m["close_ts"] - now < 180:
+            return
+        for arm in self.arms:
+            if arm.spec.kind != "agent":
+                continue
+            d = arm.ledger.decision(m["ticker"])
+            key = (arm.spec.name, m["ticker"])
+            if d is None or d["status"] != "passed" or key in self._inflight:
+                continue
+            self._inflight.add(key)
+            threading.Thread(target=self._second_look, args=(arm, dict(m), key), daemon=True).start()
+
+    def _second_look(self, arm, m: dict, key) -> None:
+        try:
+            if self._over_budget():
+                return
+            now = self.clock()
+            feats = F.build(now=now, secs=self.feed.seconds(), c1m=self.feed.c1m, c5m=self.feed.c5m, c1h=self.feed.c1h,
+                            market=m, quotes=self.feed.quotes, funding=self.feed.funding,
+                            recent_results=self.ledger.recent_results(12))
+            k = self.kalshi_mid(now, m) if self.reference is not None else None
+            if k is not None:
+                feats.setdefault("market", {})["other_venue_p_up"] = round(k, 4)
+            out, usage, took = self.model.decide(feats, self._experience(), look="second")
+            self._spend(usage)
+            if arm.ledger.decision(m["ticker"])["status"] != "passed":
+                return
+            arm.ledger.finish_decision(m["ticker"], status="second_look", response=json.dumps(out), p_up=out["p_up"],
+                                       answered_at=_iso(self.clock()), latency_s=round(took, 3), usage=json.dumps(usage))
+        except ModelError as e:
+            log.warning("second look %s: %s", m["ticker"], e)
+        except Exception:                                        # noqa: BLE001
+            log.exception("second look %s", m["ticker"])
+        finally:
+            self._inflight.discard(key)
+
+    def _experience(self) -> dict:
+        """The model's record, trimmed to what it reads (12 calls, 8 lessons), plus the
+        agent's own trading record when an agent arm runs."""
+        ex = self.ledger.experience(self.settings.mode, n=12, n_lessons=8)
+        for arm in self.arms:
+            if arm.spec.kind == "agent":
+                a = arm.ledger.account("paper")
+                r = arm.ledger._conn.execute(
+                    "SELECT COUNT(*) n, COALESCE(SUM(f.price_u + f.fee_u), 0) staked, "
+                    "COALESCE(SUM(CASE WHEN s.pnl_u > 0 THEN 1 ELSE 0 END), 0) wins FROM fills f "
+                    "JOIN settlements s ON s.fill_id = f.id").fetchone()
+                passes = arm.ledger._conn.execute(
+                    "SELECT COUNT(*) FROM decisions WHERE status = 'no_edge'").fetchone()[0]
+                ex["your_trading_record"] = {
+                    "trades_settled": r["n"], "won": r["wins"], "pnl_usd": a["realized_u"] / UNIT,
+                    "return_on_staked": None if not r["staked"] else round(a["realized_u"] / r["staked"], 4),
+                    "windows_passed": passes, "open": a["open"]}
+        return ex
 
     # ------------------------------------------------------------------ settle
     def settle_due(self, now: float) -> None:
