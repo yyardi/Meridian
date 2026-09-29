@@ -127,3 +127,30 @@ The `llm_agent` arm changes the approach rather than the gate:
 
 It runs beside every other arm on the same windows, so its record is compared with
 Kalshi's price, the model's probability used mechanically, and the controls.
+
+## The checkpoint, agreed with the operator 2026-09-29 20:05Z, written before it is reached
+
+Standing at 20:02Z (15-minute arms since 2026-09-28 19:37Z, ~99 windows; the agent
+since 04:50Z, 62 windows):
+
+| arm | trades | mean / contract | t |
+|---|---:|---:|---:|
+| llm_agent | 10 | +34.1¢ | +2.4 |
+| kalshi_taker_wide | 91 | +4.5¢ | +0.95 |
+| kalshi_taker | 95 | −0.5¢ | −0.1 |
+| llm_taker | 76 | −1.5¢ | −0.3 |
+| llm_maker | 73 | −5.7¢ | −1.1 |
+| kalshi_maker | 82 | −7.9¢ | −1.6 |
+| mid_maker (control) | 72 | −13.0¢ | −2.7 |
+
+Everything keeps running unchanged (budgets $15/day 15-minute, $5/day hourly). The
+read is taken once, when **llm_agent has 40 settled trades** and **kalshi_taker_wide
+has 300**, whichever comes second; neither is read for a go/no-go before then:
+
+- An arm is a **live candidate** only if its mean P&L per contract is positive and its
+  t is at least 2.0 on those trades **counted from this checkpoint's standing onward**
+  (the trades above chose the arms and cannot also confirm them), and its return on
+  staked is positive over the whole run.
+- The maker arms are switched off at the read unless one of them meets the same bar.
+- Seven arms are running, so one of them clearing t = 2 by luck is not rare; a
+  candidate goes live at the smallest size the venue allows, never as a sized bet.
