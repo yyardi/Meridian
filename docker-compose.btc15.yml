@@ -76,13 +76,9 @@ services:
       MERIDIAN_BTC15_HORIZON: 1h
       MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY_1H:-5}
       MERIDIAN_BTC15_SECOND_LOOK_S: "1800"
-      # Kalshi lists no hourly twin and the fitted model is 15-minute: the hourly bot
-      # runs the LLM's price-aware arms and the market-mid control
-      MERIDIAN_BTC15_ARMS: >-
-        [{"name":"llm_agent","prob":"llm","kind":"agent","margin":0.0},
-         {"name":"llm_taker","prob":"llm","kind":"taker","margin":0.02},
-         {"name":"llm_maker","prob":"llm","kind":"maker","margin":0.02},
-         {"name":"mid_maker","prob":"mid","kind":"maker","margin":0.02,"start_s":600}]
+      # no strategies on the hourly bot (2026-09-29): Kalshi lists no hourly twin, the
+      # model is off here to save credits, and the makers were retired as losers
+      MERIDIAN_BTC15_ARMS: none
       MERIDIAN_BTC15_DECIDE_AT_S: "60"
       MERIDIAN_BTC15_MIN_LEAD_S: "180"
       MERIDIAN_BTC15_DB: /data/polymarket-1h.sqlite

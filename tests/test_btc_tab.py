@@ -142,9 +142,10 @@ def test_the_arms_table_reads_every_arm_ledger_beside_the_models(tmp_path, monke
          "yes_bid": 0.30, "yes_ask": 0.32, "yes_bid_u": 3000, "yes_ask_u": 3200}
     arm.tick(m["open_ts"] + 60, m, {"walk": 0.10}, 0.0695, 90)       # NO at 0.70: EV 0.90-0.70-0.02 = 0.18
     arm.settle({m["ticker"]: "no"}, {m["ticker"]: ("no", 84142.39, None)})
-    rows = desk.arms(tmp_path, "15m", now=NOW)
+    rows = desk.arms(tmp_path, "15m", now=NOW, include_v1=True)
     names = [r["name"] for r in rows]
     assert names[0] == "favourite" and "walk_taker" in names
+    assert [r["name"] for r in desk.arms(tmp_path, "15m", now=NOW)] == ["walk_taker"]   # v1 hidden by default
     w = next(r for r in rows if r["name"] == "walk_taker")
     assert w["settled"] == 1 and w["wins"] == 1 and w["pnl"] == pytest.approx(1 - 0.70 - 0.02)
     assert w["roi"] == pytest.approx(0.28 / 0.72, abs=1e-4) and w["spec"]["kind"] == "taker"

@@ -87,11 +87,15 @@ DEFAULT_ARMS = (
     ArmSpec("kalshi_taker_5c", "kalshi", "taker", cents(5)),
     ArmSpec("kalshi_taker_6c", "kalshi", "taker", cents(6)),
     ArmSpec("kalshi_taker_8c", "kalshi", "taker", cents(8)),
-    ArmSpec("kalshi_maker", "kalshi", "maker", cents(1)),
-    ArmSpec("llm_taker", "llm", "taker", cents(2)),
-    ArmSpec("llm_maker", "llm", "maker", cents(2)),
-    ArmSpec("mid_maker", "mid", "maker", cents(2), start_s=300.0),
 )
+
+#: Retired 2026-09-29 21:50Z on the operator's call, every one losing on paper as the
+#: 45-day backtest predicted (their ledgers are kept under <data>/retired/):
+#:   kalshi_maker  86 trades  -7.9c/contract  t -1.65
+#:   llm_maker     78 trades  -5.9c           t -1.15
+#:   llm_taker     82 trades  -2.1c           t -0.43
+#:   mid_maker     72 trades -13.0c           t -2.71  (the control: resting orders get picked off)
+RETIRED_ARMS = ("kalshi_maker", "llm_maker", "llm_taker", "mid_maker")
 
 
 def _iso(ts: float) -> str:
