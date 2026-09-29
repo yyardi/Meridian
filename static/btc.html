@@ -327,6 +327,7 @@ async function loadArms() {
   let A = [];
   try { A = (await fetch(`/api/btc/arms?h=${H}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status))).arms; }
   catch (e) { $("arms").innerHTML = `<tr><td colspan="7" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
+  if (!A.length) { $("arms").innerHTML = `<tr><td colspan="7" class="empty">No strategies run on this bot.</td></tr>`; ARMS = []; ARM = ""; return; }
   const nowTxt = (n) => {
     if (!n) return '<span class="faint">—</span>';
     const tag = stTag(n.status === "watching" ? "watching" : n.status);

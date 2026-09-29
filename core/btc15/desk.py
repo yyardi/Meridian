@@ -254,17 +254,20 @@ def _book(led: Ledger, mode: str = "paper") -> dict:
             "drawdown": _usd(a["drawdown_u"]), "halted": led.halted(mode) is not None}
 
 
-def arms(root: str | Path, horizon: str, now: float | None = None) -> list[dict]:
-    """Every arm beside the model's own ledger: its rule, its record, and what it is doing now."""
+def arms(root: str | Path, horizon: str, now: float | None = None, include_v1: bool = False) -> list[dict]:
+    """Every running arm: its rule, its record, and what it is doing now. Retired arms'
+    ledgers live under <root>/retired/ and are not listed; iteration 1's rule (the model's
+    own ledger) is listed only on request -- it is halted and its data feeds the agent."""
     now = time.time() if now is None else now
     db, st = paths(root, horizon)
     out = []
-    main = _ro(db)
-    try:
-        out.append({"name": "favourite", "rule": "v1: buys the model's favoured side at the ask, whatever the price",
-                    **_book(main, _mode(_status(st, now)))})
-    finally:
-        main._conn.close()
+    if include_v1:
+        main = _ro(db)
+        try:
+            out.append({"name": "favourite", "rule": "v1: buys the model's favoured side at the ask, whatever the price",
+                        **_book(main, _mode(_status(st, now)))})
+        finally:
+            main._conn.close()
     for f in sorted(Path(root).glob(f"polymarket-{horizon}-arm-*.sqlite")):
         led = _ro(f)
         try:
