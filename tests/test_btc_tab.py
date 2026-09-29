@@ -148,3 +148,38 @@ def test_the_arms_table_reads_every_arm_ledger_beside_the_models(tmp_path, monke
     w = next(r for r in rows if r["name"] == "walk_taker")
     assert w["settled"] == 1 and w["wins"] == 1 and w["pnl"] == pytest.approx(1 - 0.70 - 0.02)
     assert w["roi"] == pytest.approx(0.28 / 0.72, abs=1e-4) and w["spec"]["kind"] == "taker"
+
+
+def test_the_page_can_show_one_strategys_own_record_and_calls(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from core.api import app
+    from core.btc15.arms import Arm, ArmSpec
+    from core.btc15.ledger import UNIT
+    _build(tmp_path)
+    led = Ledger(str(tmp_path / "polymarket-15m-arm-llm_agent.sqlite"))
+    arm = Arm(ArmSpec("llm_agent", "llm", "agent", 0.0), led, 10 * UNIT)
+    old = {"ticker": "cpc-btc-updown-15m-2026-09-28-0045z", "status": "active", "open_ts": 1_790_556_300.0,
+           "close_ts": 1_790_557_200.0, "open_time": None, "close_time": None, "strike": 84272.52,
+           "yes_bid": 0.30, "yes_ask": 0.32, "yes_bid_u": 3000, "yes_ask_u": 3200}
+    arm.tick(old["open_ts"] + 60, old, {"llm_action": {"action": "buy_down", "limit_price": 0.75, "p_up": 0.2}}, 0.0695, 90)
+    arm.settle({old["ticker"]: "no"}, {old["ticker"]: ("no", 84142.39, None)})
+
+    s = desk.summary(tmp_path, "15m", now=NOW, arm="llm_agent")
+    assert s["arm"] == "llm_agent" and s["arm_spec"]["kind"] == "agent"
+    assert s["account"]["settled"] == 1 and s["account"]["pnl"] == pytest.approx(1 - 0.70 - 0.02)
+    # the agent has not reached the window in play: the window shows, with no call
+    assert s["current"]["ticker"].endswith("0100z") and s["current"]["decision"] is None
+    assert s["last_tick"]["px"] == 84159.0                        # the price feed is the model's ledger's
+    rows = desk.history(tmp_path, "15m", arm="llm_agent")
+    assert [r["ticker"][-5:] for r in rows] == ["0045z"] and rows[0]["fill"]["side"] == "NO"
+    with pytest.raises(FileNotFoundError):
+        desk.summary(tmp_path, "15m", arm="nope")
+
+    monkeypatch.setenv("MERIDIAN_BTC_DIR", str(tmp_path))
+    monkeypatch.setattr(desk, "live_book", lambda h, **k: None)
+    c = TestClient(app)
+    assert c.get("/api/btc/summary?h=15m&arm=llm_agent").json()["account"]["settled"] == 1
+    assert c.get("/api/btc/history?h=15m&arm=llm_agent").json()["rows"][0]["fill"]["side"] == "NO"
+    assert c.get("/api/btc/summary?h=15m&arm=nope").status_code == 404
+    assert c.get("/api/btc/summary?h=15m&arm=../x").status_code == 422

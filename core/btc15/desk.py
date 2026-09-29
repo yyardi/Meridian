@@ -32,6 +32,19 @@ def paths(root: str | Path, horizon: str) -> tuple[Path, Path]:
     return root / f"polymarket-{horizon}.sqlite", root / f"status-{horizon}.json"
 
 
+_ARM_NAME = __import__("re").compile(r"^[a-z0-9_]{1,40}$")
+
+
+def arm_path(root: str | Path, horizon: str, arm: str) -> Path:
+    """One strategy arm's ledger file (core/btc15/harness.arm_db_path's naming)."""
+    if not _ARM_NAME.match(arm or ""):
+        raise ValueError(f"arm {arm!r}")
+    p = Path(root) / f"polymarket-{horizon}-arm-{arm}.sqlite"
+    if not p.exists():
+        raise FileNotFoundError(str(p))
+    return p
+
+
 def _ro(path: Path) -> Ledger:
     """A Ledger over a read-only connection: its read methods, none of its writes."""
     if not path.exists():
@@ -119,19 +132,31 @@ def _status(path: Path, now: float) -> dict:
     return s
 
 
-def summary(root: str | Path, horizon: str, now: float | None = None) -> dict:
-    """The tab's header and top panels: the window in play, the bot's call on it, the book."""
+def summary(root: str | Path, horizon: str, now: float | None = None, arm: str | None = None) -> dict:
+    """The tab's header and top panels: the window in play, the selected strategy's call on it,
+    its record. ``arm`` None is the model's own ledger (iteration 1's rule); otherwise that arm's.
+    The price feed, the lessons and the OpenAI spend always come from the model's ledger."""
     now = time.time() if now is None else now
     db, st = paths(root, horizon)
     status = _status(st, now)
-    mode = _mode(status)
-    led = _ro(db)
+    main_mode = _mode(status)
+    main = _ro(db)
+    sel = _ro(arm_path(root, horizon, arm)) if arm else main
+    mode = "paper" if arm else main_mode
+    led = sel
     try:
         a = led.account(mode)
         rec = led.experience(mode, n=0, n_lessons=0)["your_record"]
         cur = led._conn.execute(_ROWS + "WHERE w.open_ts <= ? ORDER BY w.open_ts DESC LIMIT 1",
                                 (mode, now)).fetchone()
-        last = led._conn.execute("SELECT t, px, n FROM ticks ORDER BY t DESC LIMIT 1").fetchone()
+        cur_row = None if cur is None else _row(cur)
+        mcur = main._conn.execute(_ROWS + "WHERE w.open_ts <= ? ORDER BY w.open_ts DESC LIMIT 1",
+                                  (main_mode, now)).fetchone()
+        if arm and mcur is not None and (cur_row is None or cur_row["open_ts"] < mcur["open_ts"]):
+            # the arm has not reached the window in play yet: the window, and no call
+            cur_row = dict(_row(mcur), decision=None, fill=None)
+        spec = _j(led.get("arm_spec")) if arm else None
+        last = main._conn.execute("SELECT t, px, n FROM ticks ORDER BY t DESC LIMIT 1").fetchone()
         curve, cum, staked = [], 0, 0
         for r in led._conn.execute(
                 "SELECT s.settled_at, s.pnl_u, f.ticker, f.price_u, f.fee_u FROM settlements s JOIN fills f ON f.id = s.fill_id "
@@ -145,19 +170,22 @@ def summary(root: str | Path, horizon: str, now: float | None = None) -> dict:
         # The same selection Ledger.experience hands the model: newest first, twelve.
         lessons = [{"ticker": r["ticker"], "open_ts": r["open_ts"], "close_ts": r["close_ts"], "side": r["side"],
                     "p_up": r["p_up"], "result": r["result"], "lesson": r["lesson"]}
-                   for r in led._conn.execute(
+                   for r in main._conn.execute(
                        "SELECT d.ticker, d.side, d.p_up, d.lesson, w.open_ts, w.close_ts, w.result "
                        "FROM decisions d JOIN windows w ON w.ticker = d.ticker WHERE d.lesson IS NOT NULL "
                        "ORDER BY d.requested_at DESC LIMIT 12")]
-        spent, spent_total = led.spent(), led.spent_total()
+        spent, spent_total = main.spent(), main.spent_total()
         halted = led.halted(mode)
     finally:
         led._conn.close()
+        if led is not main:
+            main._conn.close()
     return {
         "horizon": horizon, "length_s": HORIZONS[horizon], "now": now, "mode": mode,
+        "arm": arm, "arm_spec": spec,
         "status": status, "halted": halted,
         "last_tick": None if last is None else {"t": last["t"], "px": last["px"], "exchanges": last["n"]},
-        "current": None if cur is None else _row(cur),
+        "current": cur_row,
         "account": {"epoch": a["epoch"], "pnl": _usd(a["realized_u"]), "peak": _usd(a["peak_u"]),
                     "drawdown": _usd(a["drawdown_u"]), "limit": _usd(DEFAULT_LIMIT_U),
                     "open_cost": _usd(a["open_cost_u"]), "open": a["open"], "settled": a["settled"],
@@ -172,9 +200,11 @@ def summary(root: str | Path, horizon: str, now: float | None = None) -> dict:
 
 
 def history(root: str | Path, horizon: str, limit: int = 100, before_ts: float | None = None,
-            mode: str | None = None) -> list[dict]:
-    """Every window, newest first: the call, the fill, the settlement, the lesson."""
+            mode: str | None = None, arm: str | None = None) -> list[dict]:
+    """Every window the selected strategy saw, newest first: the call, the fill, the settlement."""
     db, st = paths(root, horizon)
+    if arm:
+        db, mode = arm_path(root, horizon, arm), "paper"
     mode = mode or _mode(_status(st, time.time()))
     led = _ro(db)
     try:
