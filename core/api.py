@@ -4499,12 +4499,15 @@ def _btc_page_version() -> int | None:
         return None
 
 
+_BTC_ARM = "^[a-z0-9_]{1,40}$"
+
+
 @app.get("/api/btc/summary")
-def btc_summary(h: str = Query("15m", pattern=_BTC_H)) -> dict:
-    """The window in play, the bot's call on it, the live book, the account and the spend."""
+def btc_summary(h: str = Query("15m", pattern=_BTC_H), arm: str | None = Query(None, pattern=_BTC_ARM)) -> dict:
+    """The window in play, the selected strategy's call on it, the live book, its account, the spend."""
     from core.btc15 import desk
     try:
-        out = desk.summary(_btc_dir(), h)
+        out = desk.summary(_btc_dir(), h, arm=arm)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
     out["book"] = desk.live_book(h)
@@ -4534,11 +4537,11 @@ def btc_arms(h: str = Query("15m", pattern=_BTC_H)) -> dict:
 
 @app.get("/api/btc/history")
 def btc_history(h: str = Query("15m", pattern=_BTC_H), limit: int = Query(100, ge=1, le=500),
-                before: float | None = Query(None)) -> dict:
-    """Every window, newest first: the call, the fill, the settlement and the lesson."""
+                before: float | None = Query(None), arm: str | None = Query(None, pattern=_BTC_ARM)) -> dict:
+    """Every window the selected strategy saw, newest first: the call, the fill, the settlement."""
     from core.btc15 import desk
     try:
-        return {"rows": desk.history(_btc_dir(), h, limit=limit, before_ts=before)}
+        return {"rows": desk.history(_btc_dir(), h, limit=limit, before_ts=before, arm=arm)}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"the {h} bot has no ledger at {_btc_dir()}")
 
