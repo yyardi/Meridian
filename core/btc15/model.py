@@ -25,30 +25,37 @@ from dataclasses import dataclass
 
 import httpx
 
-SYSTEM = """You are the decision model inside an automated trading harness for a Bitcoin "Up or Down" prediction market (Polymarket US; the same contract Kalshi lists as KXBTC15M). The window's length is in features.window.length_s: 900 for the 15-minute market, 3600 for the hourly one.
+SYSTEM = """You are the trader inside an automated harness for a Bitcoin "Up or Down" prediction market on Polymarket US (the same contract Kalshi lists as KXBTC15M). The window's length is in features.window.length_s: 900 for the 15-minute market, 3600 for the hourly one.
 
-The contract: YES (Up) pays $1 if the simple average of CF Benchmarks' BRTI over the 60 seconds before the window closes is at least the strike, which is the same 60-second average before the window opened. Otherwise NO (Down) pays $1.
+The contract: Up pays $1 if the simple average of CF Benchmarks' BRTI over the 60 seconds before the window closes is at least the strike (the same 60-second average before the window opened). Otherwise Down pays $1.
 
-Your only job is to estimate p_up, the probability that YES pays. Trading strategies then compare your probability with the prices on the book: a side is bought only when your probability for it beats its ask plus the fee (about 2 cents near 50c) by a margin, or a bid is rested below your fair value. So a probability that merely repeats the market's mid never trades, and a confident number that is wrong loses money on both sides. You will be scored on calibration over many windows (Brier score beside the market's own mid): across all the times you say 0.62, YES should pay about 62% of the time. Deviate from the market only where you have a reason, and by as much as that reason is worth.
+Each call you see the window and the time left; Bitcoin's price against the strike in dollars and in volatility units over the time left; momentum, volatility and volume on three timeframes; the venue's live book (Up and Down bids and asks, with sizes); Kalshi's price for the same window (a much deeper market); three baselines (the venue's mid, a driftless random walk to the settlement average, and a model fitted on weeks of settled windows); and your own record and lessons.
 
-How to think about it:
-- The decisive quantity is where the price sits relative to the strike, in units of volatility over the time left (price.distance_in_sigma_to_close; baselines.brownian_p_up is what a driftless random walk implies). The less time left, the more the current distance decides it.
-- The market's own mid (baselines.market_p_up) is informed and has been hard to beat. baselines.fitted_p_up, when present, is a logistic model fitted on weeks of settled windows of this contract (market, distance, momentum, volatility). Say where and why you differ from both.
-- Momentum and mean reversion on 1m, 5m and 1h timeframes, volatility regime, volume, funding and the recent run of window results are evidence, not rules.
-- Read your record and your own lessons. If you have been systematically wrong in a direction or a regime, correct for it.
+You decide whether to buy ONE contract of Up, ONE of Down, or pass, and the most you will pay for it (limit_price).
+- A contract pays $1 or $0. Buying a side at price q when your probability for that side is p is worth p - q - fee. A 76c favourite that loses costs 76c: winning often is not the goal, buying below your probability is.
+- Costs. Taking (limit_price at or above that side's ask) fills now at the ask and pays the venue fee 0.0695 x q x (1-q) per contract, rounded up to the cent: about 2c near 50c, about 1c near 85c. A limit below the ask rests on the book at no fee and fills only if the market later trades through your price, which tends to happen when the price is moving against you.
+- The market has been hard to beat. On 4,263 settled windows of this contract its mid out-forecast a random walk at every minute, and rules built on price distance, momentum and volatility lost money after costs. Your edge, if you have one, is in reading the situation better than the price does, or in this venue's price lagging Kalshi's. When you have no edge, pass: passing costs nothing and is often the right call.
+- p_up is your honest probability that Up pays, whatever you decide. You are scored on it too (Brier score beside the market's mid).
+- For pass, set limit_price to 0.
+
+Read your record and your lessons. If you have been systematically wrong in a direction or a regime, correct for it.
 
 Return only the JSON object the schema asks for."""
+
+ACTIONS = ("buy_up", "buy_down", "pass")
 
 DECISION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "p_up": {"type": "number", "description": "probability that YES pays, between 0 and 1"},
+        "p_up": {"type": "number", "description": "probability that Up pays, between 0 and 1"},
+        "action": {"type": "string", "enum": list(ACTIONS)},
+        "limit_price": {"type": "number", "description": "the most you will pay per contract for the side you buy, 0.01 to 0.99; 0 for pass"},
         "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
         "key_factors": {"type": "array", "items": {"type": "string"}, "description": "at most five, most important first"},
-        "rationale": {"type": "string", "description": "two or three sentences"},
+        "rationale": {"type": "string", "description": "two or three sentences, including why this price is or is not worth paying"},
     },
-    "required": ["p_up", "confidence", "key_factors", "rationale"],
+    "required": ["p_up", "action", "limit_price", "confidence", "key_factors", "rationale"],
 }
 
 LESSON_SCHEMA = {
@@ -104,11 +111,14 @@ class ModelConfig:
     api_key: str | None
     model: str | None
     reasoning_effort: str | None = None
+    #: The lesson written after each settlement is a paragraph, not a trade: it gets its
+    #: own (lighter) effort so the thinking budget goes to decisions.
+    lesson_reasoning_effort: str | None = None
     timeout_s: float = 300.0
     base_url: str = "https://api.openai.com/v1"
     #: Hard ceiling on one answer's output (reasoning included). An answer that
     #: runs out is truncated JSON -> a recorded model_error, never a trade.
-    max_output_tokens: int = 4000
+    max_output_tokens: int = 8000
 
     @classmethod
     def from_env(cls) -> "ModelConfig":
@@ -116,9 +126,10 @@ class ModelConfig:
             api_key=os.environ.get("OPENAI_API_KEY") or None,
             model=os.environ.get("MERIDIAN_BTC15_MODEL") or None,
             reasoning_effort=os.environ.get("MERIDIAN_BTC15_REASONING_EFFORT") or None,
+            lesson_reasoning_effort=os.environ.get("MERIDIAN_BTC15_LESSON_REASONING_EFFORT") or None,
             timeout_s=float(os.environ.get("MERIDIAN_BTC15_TIMEOUT_S") or 300),
             base_url=(os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/"),
-            max_output_tokens=int(os.environ.get("MERIDIAN_BTC15_MAX_OUTPUT_TOKENS") or 4000),
+            max_output_tokens=int(os.environ.get("MERIDIAN_BTC15_MAX_OUTPUT_TOKENS") or 8000),
         )
 
     @property
@@ -137,7 +148,17 @@ def validate(obj: dict) -> dict:
         raise ModelError(f"p_up must be a number in [0, 1], got {p!r}")
     if obj.get("confidence") not in ("low", "medium", "high"):
         raise ModelError(f"confidence {obj.get('confidence')!r}")
-    return {"p_up": float(p), "confidence": obj["confidence"],
+    action = obj.get("action", "pass")
+    if action not in ACTIONS:
+        raise ModelError(f"action {action!r}")
+    limit = obj.get("limit_price", 0)
+    if not isinstance(limit, (int, float)):
+        raise ModelError(f"limit_price {limit!r}")
+    limit = float(limit)
+    if action != "pass" and not (0.01 <= limit <= 0.99):
+        raise ModelError(f"limit_price {limit} for {action}: must be 0.01 to 0.99")
+    return {"p_up": float(p), "action": action, "limit_price": round(limit, 2) if action != "pass" else 0.0,
+            "confidence": obj["confidence"],
             "key_factors": [str(x)[:200] for x in (obj.get("key_factors") or [])][:5],
             "rationale": str(obj.get("rationale") or "")[:1200]}
 
@@ -147,14 +168,14 @@ class OpenAIModel:
         self.cfg = cfg
         self._http = client or httpx.Client(timeout=cfg.timeout_s)
 
-    def _call(self, messages: list[dict], schema: dict, name: str) -> tuple[dict, dict, float]:
+    def _call(self, messages: list[dict], schema: dict, name: str, effort: str | None = None) -> tuple[dict, dict, float]:
         body = {
             "model": self.cfg.model,
             "messages": messages,
             "response_format": {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}},
         }
-        if self.cfg.reasoning_effort:
-            body["reasoning_effort"] = self.cfg.reasoning_effort
+        if effort:
+            body["reasoning_effort"] = effort
         if self.cfg.max_output_tokens:
             body["max_completion_tokens"] = self.cfg.max_output_tokens
         headers = {"Authorization": f"Bearer {self.cfg.api_key}"}
@@ -185,11 +206,11 @@ class OpenAIModel:
             return obj, d.get("usage") or {}, took
         raise ModelError(f"no answer after retry: {last}")
 
-    def decide(self, features: dict, experience: dict) -> tuple[dict, dict, float]:
-        user = {"features": features, "experience": experience}
+    def decide(self, features: dict, experience: dict, look: str = "first") -> tuple[dict, dict, float]:
+        user = {"decision_point": look, "features": features, "experience": experience}
         obj, usage, took = self._call(
             [{"role": "system", "content": SYSTEM}, {"role": "user", "content": json.dumps(user)}],
-            DECISION_SCHEMA, "btc15_decision")
+            DECISION_SCHEMA, "btc15_decision", effort=self.cfg.reasoning_effort)
         return validate(obj), usage, took
 
     def lesson(self, decision: dict, outcome: dict) -> tuple[str, dict]:
@@ -200,7 +221,7 @@ class OpenAIModel:
         }
         obj, usage, _ = self._call(
             [{"role": "system", "content": SYSTEM}, {"role": "user", "content": json.dumps(prompt)}],
-            LESSON_SCHEMA, "btc15_lesson")
+            LESSON_SCHEMA, "btc15_lesson", effort=self.cfg.lesson_reasoning_effort)
         return str(obj.get("lesson") or "")[:600], usage
 
     def list_models(self) -> list[str]:

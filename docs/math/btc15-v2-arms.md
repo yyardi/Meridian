@@ -99,3 +99,31 @@ direction.
 
 The model now sees the fitted model's probability as a baseline and is told that a
 probability which repeats the market never trades.
+
+## Iteration 3 — the LLM trades for itself (2026-09-28, evening)
+
+The operator's example ran Astra as the decision-maker and profited; iteration 1 did
+not run it that way. Measured: its reasoning effort was left blank, and across 111
+decisions the model spent **at most 71 thinking tokens** (mean output 240 tokens) —
+it answered without reasoning. It was also never allowed to decline or to choose a
+price: the harness bought its favourite at the ask every window.
+
+The `llm_agent` arm changes the approach rather than the gate:
+
+- **The model reasons.** Decisions run at high effort (measured on a live prompt:
+  ~350 thinking tokens, ~15 s, ~$0.08 a call; extra-high: ~920 tokens, ~31 s, ~$0.11).
+  Lessons run at low effort.
+- **The model decides the trade.** It sees the live book on both sides, Kalshi's price
+  for the same window, the fee rules (taking pays 0.0695·q·(1−q); resting pays nothing
+  but fills when the market moves against it), the 45-day finding that the market is
+  hard to beat, and its own trading record. It answers `buy_up`, `buy_down` or `pass`,
+  with `limit_price`, the most it will pay. At or above the ask it takes; below it
+  rests; a pass costs nothing and is recorded.
+- **A second look.** A first-look pass is asked once more at minute 6 of a 15-minute
+  window (minute 30 of an hour), when the picture is clearer, if at least 3 minutes
+  remain and the day's budget allows.
+- **Budget.** $15/day for the 15-minute instance, $5/day for the hourly one; the
+  prompt is trimmed to the last 12 calls and 8 lessons.
+
+It runs beside every other arm on the same windows, so its record is compared with
+Kalshi's price, the model's probability used mechanically, and the controls.

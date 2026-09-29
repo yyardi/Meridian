@@ -17,7 +17,11 @@ An arm is (probability source, execution kind, margin):
                       its window matches to the second and its spread is <= 3c. Kalshi is
                       the deeper market; this arm asks whether the venue lags it.
                mid    the market's own mid -- a CONTROL, the cost of trading on nothing
-  kind         taker  buy the better side at its ask the first second
+  kind         agent  the LLM trades for itself: it sees the book, Kalshi and the fees and
+                      answers buy Up / buy Down / pass with the most it will pay; at or
+                      above the ask it takes, below it rests (no fee); a first-look pass
+                      earns one second look at second_look_s (the harness asks again)
+               taker  buy the better side at its ask the first second
                       p_side - ask - fee > margin; never otherwise
                maker  once, at start_s, rest a bid at (p_side - margin) on the side p
                       favours over the mid; filled only when the book later trades
@@ -49,7 +53,7 @@ BTC_PRICE_TICK = 0.01
 class ArmSpec:
     name: str
     prob: str                   # walk | quant | llm | kalshi | mid
-    kind: str                   # taker | maker
+    kind: str                   # agent | taker | maker
     margin: float
     start_s: float = 30.0       # earliest second after the open to act (a maker posts then)
     llm_fresh_s: float = 60.0
@@ -57,6 +61,8 @@ class ArmSpec:
     def describe(self) -> str:
         what = {"walk": "random walk", "quant": "fitted model", "llm": "the LLM", "kalshi": "Kalshi's price",
                 "mid": "the market mid"}[self.prob]
+        if self.kind == "agent":
+            return f"{what} trades for itself: buy Up, buy Down or pass, at a limit it sets; a pass gets a second look"
         how = ("buys at the ask when its edge beats the fee by" if self.kind == "taker"
                else "rests a zero-fee bid below its fair value by")
         return f"{what}; {how} {self.margin * 100:.0f}c"
@@ -67,6 +73,7 @@ class ArmSpec:
 #: random-walk and fitted-model arms lost out of sample at every margin and timing,
 #: so they are not run; the model's fitted probability still goes to the LLM.
 DEFAULT_ARMS = (
+    ArmSpec("llm_agent", "llm", "agent", 0.0),
     ArmSpec("kalshi_taker", "kalshi", "taker", 0.02),
     ArmSpec("kalshi_taker_wide", "kalshi", "taker", 0.04),
     ArmSpec("kalshi_maker", "kalshi", "maker", 0.01),
@@ -104,6 +111,9 @@ class Arm:
         if status in ("filled", "no_edge", "expired", "no_fee", "not_filled"):
             return
         closing = now >= m["close_ts"] - min_lead_s
+        if self.spec.kind == "agent":
+            self._agent(now, m, probs, fee_coef, closing, d)
+            return
         if self.spec.kind == "taker":
             if closing:
                 self.ledger.finish_decision(t, status="no_edge")
@@ -120,6 +130,59 @@ class Arm:
                     self.ledger.finish_decision(t, status="expired")
                     return
                 self._check_fill(now, m, d)
+
+    # ------------------------------------------------------------------ the agent
+    def _agent(self, now: float, m: dict, probs: dict, fee_coef: float | None, closing: bool, d) -> None:
+        t, st = m["ticker"], d["status"]
+        if st == "resting":
+            if closing:
+                self.ledger.finish_decision(t, status="expired")
+            else:
+                self._check_fill(now, m, d)
+            return
+        if closing:
+            if st in ("watching", "passed", "second_look"):
+                self.ledger.finish_decision(t, status="no_edge")
+            return
+        if st == "watching":
+            act, look = probs.get("llm_action"), "first"
+        elif st == "second_look":
+            act, look = json.loads(d["response"] or "{}"), "second"
+        else:                                                    # passed: the harness owns the second look
+            return
+        if not act or act.get("action") not in ("buy_up", "buy_down", "pass"):
+            return
+        base = {k: act.get(k) for k in ("action", "limit_price", "p_up", "confidence")}
+        base["look"] = look
+        why = (act.get("rationale") or "")[:300]
+        if act["action"] == "pass":
+            self.ledger.finish_decision(t, status="passed" if look == "first" else "no_edge", p_up=act.get("p_up"),
+                                        response=json.dumps(base), rationale=f"{look} look: pass. {why}")
+            return
+        side = "YES" if act["action"] == "buy_up" else "NO"
+        limit = float(act["limit_price"])
+        ask = m.get("yes_ask") if side == "YES" else (None if m.get("yes_bid") is None else round(1 - m["yes_bid"], 4))
+        if ask is not None and fee_coef is not None and limit >= ask - 1e-9:
+            price_u = int(round(ask * UNIT))
+            fee_u = int(round(Q.fee(ask, fee_coef) * UNIT))
+            if not (0 < price_u < UNIT) or price_u + fee_u > UNIT:
+                return
+            book = {k: m.get(k) for k in ("yes_bid_u", "yes_ask_u", "no_bid_u", "no_ask_u", "yes_bid_size", "yes_ask_size")}
+            fid, err = self.ledger.record_fill("paper", t, side, price_u, fee_u, self.limit_u, book=book)
+            self.ledger.finish_decision(t, status="filled" if fid else "not_filled", side=side, p_up=act.get("p_up"),
+                                        answered_at=_iso(now), error=None if fid else err, response=json.dumps(base),
+                                        rationale=f"{look} look: took {side} at {ask:.2f} + {fee_u / UNIT:.2f} fee "
+                                                  f"(limit {limit:.2f}). {why}")
+            return
+        price = _floor_cent(limit) if ask is None else min(_floor_cent(limit), round(ask - BTC_PRICE_TICK, 2))
+        if price < BTC_PRICE_TICK:
+            self.ledger.finish_decision(t, status="no_edge", p_up=act.get("p_up"), response=json.dumps(base),
+                                        rationale=f"{look} look: limit {limit:.2f} leaves no resting bid. {why}")
+            return
+        self.ledger.finish_decision(t, status="resting", side=side, p_up=act.get("p_up"), answered_at=_iso(now),
+                                    response=json.dumps({**base, "resting_price": price, "posted_at": now}),
+                                    rationale=f"{look} look: resting {side} bid at {price:.2f} (limit {limit:.2f}, ask "
+                                              f"{'-' if ask is None else f'{ask:.2f}'}). {why}")
 
     def _prob(self, now: float, probs: dict) -> float | None:
         p = probs.get(self.spec.prob)

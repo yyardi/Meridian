@@ -270,12 +270,15 @@ class FakeModel:
         self.cfg = ModelConfig(api_key="k", model="fake-model")
         self.p, self.error, self.calls = p, error, 0
 
-    def decide(self, features, experience):
+    def decide(self, features, experience, look="first"):
         self.calls += 1
+        self.looks = getattr(self, "looks", []) + [look]
         assert "your_record" in experience and "features" not in experience
         if self.error:
             raise ModelError(self.error)
-        return ({"p_up": self.p, "confidence": "medium", "key_factors": ["x"], "rationale": "r"},
+        act = getattr(self, "actions", None)
+        extra = act.pop(0) if act else {}
+        return ({"p_up": self.p, "confidence": "medium", "key_factors": ["x"], "rationale": "r", **extra},
                 {"prompt_tokens": 5000, "completion_tokens": 900}, 2.0)
 
     def lesson(self, decision, outcome):
@@ -684,3 +687,82 @@ def test_a_window_with_no_book_yet_is_not_a_market():
     o, _ = window_of(slug)
     v = PolymarketBTC(client=_hidden_venue(None), clock=lambda: o - 60)
     assert v.meta(slug) is None and v.current(o - 60) is None
+
+
+
+# ------------------------------------------------------------------ the agent: the LLM trades for itself
+def test_validate_reads_the_action_and_its_limit():
+    from core.btc15.model import validate
+    ok = validate({"p_up": 0.3, "action": "buy_down", "limit_price": 0.655, "confidence": "low", "key_factors": [], "rationale": ""})
+    assert ok["action"] == "buy_down" and ok["limit_price"] in (0.65, 0.66)
+    assert validate({"p_up": 0.5, "action": "pass", "limit_price": 0, "confidence": "low", "key_factors": [], "rationale": ""})["limit_price"] == 0.0
+    with pytest.raises(ModelError):
+        validate({"p_up": 0.5, "action": "buy_up", "limit_price": 0, "confidence": "low", "key_factors": [], "rationale": ""})
+    with pytest.raises(ModelError):
+        validate({"p_up": 0.5, "action": "sell", "limit_price": 0.5, "confidence": "low", "key_factors": [], "rationale": ""})
+
+
+def _agent_harness(led, tmp_path, actions):
+    from core.btc15.arms import Arm, ArmSpec
+    now = 1_790_600_000.0
+    model = FakeModel(p=0.62)
+    model.actions = list(actions)
+    h, m = _harness(led, now, model)
+    live = dict(m, status="active", fee_coefficient="0.0695")
+    h.venue.quote = lambda slug: dict(live)
+    arm_led = Ledger(str(tmp_path / "agent.sqlite"))
+    h.arms = [Arm(ArmSpec("llm_agent", "llm", "agent", 0.0), arm_led, 10 * UNIT)]
+    return h, m, live, arm_led, model
+
+
+def test_an_agent_buy_at_or_above_the_ask_takes_and_pays_the_fee(led, tmp_path):
+    h, m, live, arm_led, _ = _agent_harness(led, tmp_path, [{"action": "buy_up", "limit_price": 0.65}])
+    h.decide(m)                                                   # first look: buy Up up to 65c; the ask is 62c
+    h.run_arms(m["open_ts"] + 60)
+    f = arm_led.unsettled_fills()[0]
+    assert f["side"] == "YES" and f["price_u"] == 6200 and f["fee_u"] == 200
+    assert arm_led.decision(m["ticker"])["status"] == "filled"
+
+
+def test_an_agent_limit_below_the_ask_rests_and_fills_only_when_traded_through(led, tmp_path):
+    h, m, live, arm_led, _ = _agent_harness(led, tmp_path, [{"action": "buy_down", "limit_price": 0.35}])
+    h.decide(m)                                                   # Down ask is 1 - 0.61 = 0.39: rest at 0.35
+    h.run_arms(m["open_ts"] + 60)
+    d = arm_led.decision(m["ticker"])
+    assert d["status"] == "resting" and d["side"] == "NO" and json.loads(d["response"])["resting_price"] == 0.35
+    live.update(yes_bid=0.66, yes_ask=0.67)                       # a YES buyer pays 0.66 >= 1 - 0.35 + 1c: through
+    h.run_arms(m["open_ts"] + 90)
+    f = arm_led.unsettled_fills()[0]
+    assert f["side"] == "NO" and f["price_u"] == 3500 and f["fee_u"] == 0
+
+
+def test_a_first_look_pass_earns_one_second_look(led, tmp_path, monkeypatch):
+    import threading
+    h, m, live, arm_led, model = _agent_harness(led, tmp_path, [{"action": "pass", "limit_price": 0},
+                                                                {"action": "buy_up", "limit_price": 0.70}])
+    monkeypatch.setattr(threading, "Thread", lambda target, args, daemon: type("T", (), {"start": lambda self: target(*args)})())
+    h.decide(m)
+    h.run_arms(m["open_ts"] + 60)
+    assert arm_led.decision(m["ticker"])["status"] == "passed"
+    h.run_arms(m["open_ts"] + 200)                                # before second_look_s: no second call
+    assert model.calls == 1
+    h.clock = lambda: m["open_ts"] + 400
+    h.run_arms(m["open_ts"] + 400)                                # second look asked, answered buy_up <= 70c
+    assert model.calls == 2 and model.looks[-1] == "second"
+    assert arm_led.decision(m["ticker"])["status"] == "second_look"
+    h.run_arms(m["open_ts"] + 403)                                # executed at the ask
+    assert arm_led.unsettled_fills()[0]["side"] == "YES" and arm_led.decision(m["ticker"])["status"] == "filled"
+
+
+def test_a_second_look_pass_is_final_and_a_passed_window_closes_as_no_edge(led, tmp_path, monkeypatch):
+    import threading
+    h, m, live, arm_led, model = _agent_harness(led, tmp_path, [{"action": "pass", "limit_price": 0},
+                                                                {"action": "pass", "limit_price": 0}])
+    monkeypatch.setattr(threading, "Thread", lambda target, args, daemon: type("T", (), {"start": lambda self: target(*args)})())
+    h.decide(m)
+    h.run_arms(m["open_ts"] + 60)
+    h.clock = lambda: m["open_ts"] + 400
+    h.run_arms(m["open_ts"] + 400)
+    h.run_arms(m["open_ts"] + 403)
+    assert arm_led.decision(m["ticker"])["status"] == "no_edge" and not arm_led.unsettled_fills()
+    assert model.calls == 2
