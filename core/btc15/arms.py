@@ -68,18 +68,29 @@ class ArmSpec:
         return f"{what}; {how} {self.margin * 100:.0f}c"
 
 
+def cents(n: int) -> float:
+    """An entry margin written in whole cents (never a fee coefficient)."""
+    return n / 100
+
+
 #: The arms run by default (MERIDIAN_BTC15_ARMS overrides with a JSON list of specs).
 #: Chosen by the 45-day backtest on Kalshi's history (docs/math/btc15-v2-arms.md):
 #: random-walk and fitted-model arms lost out of sample at every margin and timing,
-#: so they are not run; the model's fitted probability still goes to the LLM.
+#: so they are not run; the model's fitted probability still goes to the LLM. The
+#: Kalshi taker runs at six margins side by side (2026-09-29); the joint quote tape
+#: replays any margin (analysis/btc15/replay_kalshi_margins.py).
 DEFAULT_ARMS = (
     ArmSpec("llm_agent", "llm", "agent", 0.0),
-    ArmSpec("kalshi_taker", "kalshi", "taker", 0.02),
-    ArmSpec("kalshi_taker_wide", "kalshi", "taker", 0.04),
-    ArmSpec("kalshi_maker", "kalshi", "maker", 0.01),
-    ArmSpec("llm_taker", "llm", "taker", 0.02),
-    ArmSpec("llm_maker", "llm", "maker", 0.02),
-    ArmSpec("mid_maker", "mid", "maker", 0.02, start_s=300.0),
+    ArmSpec("kalshi_taker", "kalshi", "taker", cents(2)),
+    ArmSpec("kalshi_taker_3c", "kalshi", "taker", cents(3)),
+    ArmSpec("kalshi_taker_wide", "kalshi", "taker", cents(4)),
+    ArmSpec("kalshi_taker_5c", "kalshi", "taker", cents(5)),
+    ArmSpec("kalshi_taker_6c", "kalshi", "taker", cents(6)),
+    ArmSpec("kalshi_taker_8c", "kalshi", "taker", cents(8)),
+    ArmSpec("kalshi_maker", "kalshi", "maker", cents(1)),
+    ArmSpec("llm_taker", "llm", "taker", cents(2)),
+    ArmSpec("llm_maker", "llm", "maker", cents(2)),
+    ArmSpec("mid_maker", "mid", "maker", cents(2), start_s=300.0),
 )
 
 

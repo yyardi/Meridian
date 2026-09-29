@@ -143,3 +143,29 @@ def test_the_market_mid_control_rests_on_both_sides_by_a_coin_keyed_on_the_windo
         arm.tick(OPEN + 300, _m(0.50, 0.52, ticker=f"W{i}"), {"mid": 0.51}, COEF, 90)
         sides.add(led.decision(f"W{i}")["side"])
     assert sides == {"YES", "NO"}
+
+
+# ------------------------------------------------------------------ the joint quote tape and its replay
+def test_the_tape_records_both_venues_and_the_replay_takes_the_first_qualifying_tick(tmp_path):
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "replay", pathlib.Path(__file__).resolve().parents[1] / "analysis" / "btc15" / "replay_kalshi_margins.py")
+    R = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(R)
+    led = Ledger(str(tmp_path / "main.sqlite"))
+    w = {"ticker": "W1", "open_ts": OPEN, "close_ts": OPEN + 900, "open_time": None, "close_time": None, "strike": 1.0}
+    led.upsert_window(w)
+    # t=+10 s is before the 30 s start; +60: Kalshi 0.55 vs venue ask 0.50 -> EV 0.55-0.50-0.02 = 0.03;
+    # +90: Kalshi 0.60 vs ask 0.50 -> EV 0.08; +120: Kalshi 6c wide -> no price
+    for dt_, kb, ka in ((10, 0.70, 0.71), (60, 0.54, 0.56), (90, 0.59, 0.61), (120, 0.55, 0.61)):
+        led.add_quote(OPEN + dt_, {"ticker": "W1", "yes_bid": 0.48, "yes_ask": 0.50, "yes_bid_size": 10,
+                                   "yes_ask_size": 12}, {"yes_bid": kb, "yes_ask": ka})
+    led.finalize_window("W1", "yes", 2.0, None)
+    wins, ticks = R.load(str(tmp_path / "main.sqlite"))
+    assert len(ticks["W1"]) == 4
+    two = R.replay(wins, ticks, 0.02)            # the +60 s tick qualifies (EV 0.03 > 0.02)
+    five = R.replay(wins, ticks, 0.05)           # only the +90 s tick does (EV 0.08 > 0.05)
+    ten = R.replay(wins, ticks, 0.10)            # nothing does
+    assert two == [(pytest.approx(1 - 0.50 - 0.02), int(OPEN // 86400), pytest.approx(0.52))]
+    assert len(five) == 1 and ten == []

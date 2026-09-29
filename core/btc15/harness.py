@@ -363,12 +363,14 @@ class Harness:
             if r.get("action"):
                 out["llm_action"] = {**r, "p_up": d["p_up"]}
         if kalshi:
-            out["kalshi"] = self.kalshi_mid(now, m)
+            q = self.kalshi_quote(now, m)
+            out["kalshi_quote"] = q
+            out["kalshi"] = kalshi_mid_of(q)
         return out
 
-    def kalshi_mid(self, now: float, m: dict) -> float | None:
-        """Kalshi's mid on the same window, read now (the same tick as the venue's book),
-        only when its window matches to the second and its spread is <= 3c."""
+    def kalshi_quote(self, now: float, m: dict) -> dict | None:
+        """Kalshi's touch on the same window, read now (the same tick as the venue's book),
+        or None when its window does not match to the second."""
         if self.reference is None:
             return None
         try:
@@ -378,10 +380,10 @@ class Harness:
             return None
         if not r or r.get("open_ts") != m["open_ts"] or r.get("close_ts") != m["close_ts"]:
             return None
-        b, a = r.get("yes_bid"), r.get("yes_ask")
-        if b is None or a is None or not (0 < b < a < 1) or a - b > 0.03 + 1e-9:
-            return None
-        return (a + b) / 2
+        return {"yes_bid": r.get("yes_bid"), "yes_ask": r.get("yes_ask")}
+
+    def kalshi_mid(self, now: float, m: dict) -> float | None:
+        return kalshi_mid_of(self.kalshi_quote(now, m))
 
     def run_arms(self, now: float) -> None:
         m = self.market
@@ -394,6 +396,10 @@ class Harness:
         probs = self.probabilities(now, live, kalshi=any(a.spec.prob == "kalshi" for a in self.arms))
         coef = live.get("fee_coefficient")
         coef = float(coef) if coef not in (None, "") else None
+        try:
+            self.ledger.add_quote(now, live, probs.get("kalshi_quote"))
+        except Exception:                                        # noqa: BLE001 -- the tape never stops trading
+            log.exception("quote tape")
         for arm in self.arms:
             arm.tick(now, live, probs, coef, self.settings.min_lead_s)
         self.maybe_second_look(now, live)
@@ -534,6 +540,16 @@ class Harness:
         if dt.datetime.fromtimestamp(now, dt.timezone.utc).hour == 12 and self._last_summary_day != day:
             self._last_summary_day = day
             _push("BTC15 daily", _summary(self.ledger, self.settings.mode))
+
+
+def kalshi_mid_of(q: dict | None) -> float | None:
+    """Kalshi's mid, only when the book is two-sided and at most 3c wide."""
+    if not q:
+        return None
+    b, a = q.get("yes_bid"), q.get("yes_ask")
+    if b is None or a is None or not (0 < b < a < 1) or a - b > 0.03 + 1e-9:
+        return None
+    return (a + b) / 2
 
 
 def _iso(ts: float) -> str:
