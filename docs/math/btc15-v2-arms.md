@@ -154,3 +154,15 @@ has 300**, whichever comes second; neither is read for a go/no-go before then:
 - The maker arms are switched off at the read unless one of them meets the same bar.
 - Seven arms are running, so one of them clearing t = 2 by luck is not rare; a
   candidate goes live at the smallest size the venue allows, never as a sized bet.
+
+## Margin sweep and the joint quote tape (2026-09-29 21:45Z)
+
+The Kalshi taker now also runs at 3¢, 5¢, 6¢ and 8¢ beside 2¢ (`kalshi_taker`) and 4¢
+(`kalshi_taker_wide`), each with its own ledger and $10; they cost no API. They are
+exploratory: the checkpoint above still counts `llm_agent` and `kalshi_taker_wide`
+only. Six margins read on the same trades would crown one by luck, so the margin is
+chosen from the **joint quote tape** instead: every arms tick (3 s) the harness writes
+the venue's touch and Kalshi's same-window touch to `quotes` in the model's ledger, and
+`analysis/btc15/replay_kalshi_margins.py` replays the live rule (same `quant.edge`, same
+Kalshi-mid rule, first qualifying tick per window, one contract at the ask plus fee) at
+1¢…10¢, ranks margins on the earlier days and reads the chosen one once on the later days.

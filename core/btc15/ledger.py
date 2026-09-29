@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS settlements(
   fill_id INTEGER PRIMARY KEY REFERENCES fills(id),
   result TEXT NOT NULL, payout_u INTEGER NOT NULL, pnl_u INTEGER NOT NULL, settled_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS quotes(
+  t REAL NOT NULL, ticker TEXT NOT NULL, yes_bid REAL, yes_ask REAL, yes_bid_size REAL, yes_ask_size REAL,
+  kalshi_bid REAL, kalshi_ask REAL, PRIMARY KEY (t, ticker));
 CREATE TABLE IF NOT EXISTS spend(
   day TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0,
   prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0,
@@ -166,6 +169,18 @@ class Ledger:
         r = self._conn.execute("SELECT COUNT(*) days, COALESCE(SUM(calls),0) calls, "
                                "COALESCE(SUM(cost_micros),0) micros FROM spend").fetchone()
         return {"days": r["days"], "calls": r["calls"], "usd": round(r["micros"] / 1_000_000, 4)}
+
+    # ------------------------------------------------------------------ the joint quote tape
+    def add_quote(self, t: float, m: dict, kalshi: dict | None) -> None:
+        """The venue's touch and Kalshi's same-window touch at one arms tick, so any
+        margin or timing rule can be replayed later on the same joint data."""
+        k = kalshi or {}
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO quotes(t,ticker,yes_bid,yes_ask,yes_bid_size,yes_ask_size,kalshi_bid,kalshi_ask) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (round(t, 3), m["ticker"], m.get("yes_bid"), m.get("yes_ask"), m.get("yes_bid_size"),
+                 m.get("yes_ask_size"), k.get("yes_bid"), k.get("yes_ask")))
 
     # ------------------------------------------------------------------ data
     def add_ticks(self, rows: list[tuple[float, float, int, float]]) -> None:
