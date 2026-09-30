@@ -402,9 +402,13 @@ function describeSpec(sp) {
   const what = { walk: "random walk", quant: "fitted model", llm: "the LLM", kalshi: "Kalshi's price, same window", mid: "market mid (control)" }[sp.prob] || sp.prob;
   if (sp.kind === "agent") return `${what} trades for itself: buy Up, buy Down or pass, at a limit it sets; a pass gets a second look`;
   if (sp.kind === "requote") return `two-sided zero-fee quotes at Kalshi's live mid ∓${Math.round(sp.margin * 100)}¢, moved on every message; fills only if traded through`;
-  if (sp.kind === "join") return sp.prob === "kalshi"
-    ? `zero-fee quotes joined to the venue's touch, a side only when Kalshi's mid is ${Math.round(sp.margin * 100)}¢ better than our price; filled by prints beyond the size ahead`
-    : `zero-fee quotes joined to both sides of the venue's touch (the control); filled by prints beyond the size ahead, or a trade-through`;
+  if (sp.kind === "join") {
+    const base = sp.prob === "kalshi"
+      ? `zero-fee quotes joined to the venue's touch, a side only when Kalshi's mid is ${Math.round(sp.margin * 100)}¢ better than our price; filled by prints beyond the size ahead`
+      : `zero-fee quotes joined to both sides of the venue's touch (the control); filled by prints beyond the size ahead, or a trade-through`;
+    if (!(sp.spot_pull_usd > 0)) return base;
+    return base + `; ${sp.spot_pull_sides === "both" ? "both sides" : "the threatened side"} pulled when Coinbase moves $${Math.round(sp.spot_pull_usd)} in ${sp.spot_pull_ms || 250} ms, re-joined ${sp.spot_rejoin === "calm" ? "once spot is calm" : "after the book re-prices"}`;
+  }
   return sp.kind === "taker" ? `${what}: buys at the ask when its edge beats the fee by ${Math.round(sp.margin * 100)}¢`
                              : `${what}: rests a zero-fee bid ${Math.round(sp.margin * 100)}¢ under fair, fills only if traded through`;
 }
