@@ -34,9 +34,13 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     m = sqlite3.connect(f"file:{os.path.join(a.root, f'polymarket-{a.horizon}-microtape.sqlite')}?mode=ro", uri=True)
     c = sqlite3.connect(f"file:{os.path.join(a.root, f'polymarket-{a.horizon}.sqlite')}?mode=ro", uri=True)
+    if not m.execute("SELECT name FROM sqlite_master WHERE name='brti'").fetchone():
+        print("no brti table: this microtape was written before the relay existed, or the relay never ran")
+        return 0
     brti = m.execute("SELECT recv, source_ts_ms, value, avg_60s, last_60s_15m FROM brti ORDER BY recv").fetchall()
     print(f"brti ticks: {len(brti)}")
     if not brti:
+        print("the relay recorded nothing: read status brti.sign_path / last_error")
         return 0
     bt = [r[0] for r in brti]
     gaps = sorted(b - a_ for a_, b in zip(bt, bt[1:]))
