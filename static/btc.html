@@ -251,8 +251,9 @@
           <th title="The edge divided by its standard error. About 2 or more is the bar the checkpoint uses.">t</th>
           <th title="The edge the rule itself claimed when it bought: p(side) − price − fee, p being Kalshi's mid for the Kalshi takers and the model's own p_up for the agent. Realised edge converging to it is the check.">claimed at entry</th>
           <th title="Contracts filled since the fresh-quote fix (2026-09-30 05:08Z), their edge and t. Before it, entries were priced off quotes up to ~30 s old, so the checkpoint read counts only these. The two strategies the checkpoint reads show their target.">since checkpoint</th>
+          <th title="Each fill scored by the venue's mid 60 s later minus the price paid, in cents (n fills, t). A settlement is a ±50c coin per contract; the mid a minute on moves a few cents, so this reads spread capture and adverse selection with far less noise than P&amp;L. Recorded from 2026-09-30 only; a fill in the last minute of a window has no 60 s mark.">mark +60 s</th>
           <th title="Dollars on the $10 allocation, and the return on what the settled contracts cost (price + fee).">p&amp;l</th><th class="l">this window</th><th>declined</th></tr></thead>
-        <tbody id="arms"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
+        <tbody id="arms"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -351,8 +352,8 @@ async function loadTicks() {
 async function loadArms() {
   let A = [];
   try { A = (await fetch(`/api/btc/arms?h=${H}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status))).arms; }
-  catch (e) { $("arms").innerHTML = `<tr><td colspan="10" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
-  if (!A.length) { $("arms").innerHTML = `<tr><td colspan="10" class="empty">No strategies run on this bot.</td></tr>`; ARMS = []; ARM = ""; drawEdge(); return; }
+  catch (e) { $("arms").innerHTML = `<tr><td colspan="11" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
+  if (!A.length) { $("arms").innerHTML = `<tr><td colspan="11" class="empty">No strategies run on this bot.</td></tr>`; ARMS = []; ARM = ""; drawEdge(); return; }
   const nowTxt = (n) => {
     if (!n) return '<span class="faint">—</span>';
     const tag = stTag(n.status === "watching" ? "watching" : n.status);
@@ -385,8 +386,10 @@ function edgeCells(a) {
   const e = a.edge || {}, all = e.all || {}, si = e.since || {}, goal = CHECKPOINT[a.name];
   const since = `${si.n || 0}` + (goal ? `<span class="faint">/${goal}</span>` : "") +
     (si.mean_c != null ? `<span class="sub">${centsSigned(si.mean_c)}${si.t != null ? " · t " + si.t.toFixed(1) : ""}</span>` : "");
+  const mk = ((a.markouts || {})["60"]) || {};
+  const mark = mk.n ? `${centsSigned(mk.mean_c)}<span class="sub">n ${mk.n}${mk.t != null ? " · t " + mk.t.toFixed(1) : ""}</span>` : '<span class="faint">—</span>';
   return `<td>${edgeTxt(all)}</td><td>${all.t == null ? '<span class="faint">—</span>' : all.t.toFixed(2)}</td>` +
-    `<td>${e.entry_c == null ? '<span class="faint">—</span>' : centsSigned(e.entry_c)}</td><td>${since}</td>`;
+    `<td>${e.entry_c == null ? '<span class="faint">—</span>' : centsSigned(e.entry_c)}</td><td>${since}</td><td>${mark}</td>`;
 }
 function pickArm(a) {
   if (a === ARM) return;
@@ -398,6 +401,10 @@ $("s-arm").addEventListener("change", (ev) => pickArm(ev.target.value));
 function describeSpec(sp) {
   const what = { walk: "random walk", quant: "fitted model", llm: "the LLM", kalshi: "Kalshi's price, same window", mid: "market mid (control)" }[sp.prob] || sp.prob;
   if (sp.kind === "agent") return `${what} trades for itself: buy Up, buy Down or pass, at a limit it sets; a pass gets a second look`;
+  if (sp.kind === "requote") return `two-sided zero-fee quotes at Kalshi's live mid ∓${Math.round(sp.margin * 100)}¢, moved on every message; fills only if traded through`;
+  if (sp.kind === "join") return sp.prob === "kalshi"
+    ? `zero-fee quotes joined to the venue's touch, a side only when Kalshi's mid is ${Math.round(sp.margin * 100)}¢ better than our price; filled by prints beyond the size ahead`
+    : `zero-fee quotes joined to both sides of the venue's touch (the control); filled by prints beyond the size ahead, or a trade-through`;
   return sp.kind === "taker" ? `${what}: buys at the ask when its edge beats the fee by ${Math.round(sp.margin * 100)}¢`
                              : `${what}: rests a zero-fee bid ${Math.round(sp.margin * 100)}¢ under fair, fills only if traded through`;
 }

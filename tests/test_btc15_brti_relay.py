@@ -121,9 +121,48 @@ def test_the_relay_subscribes_delivers_ticks_to_the_microtape_and_reconnects_aft
     assert rows == [(clock[0], 1710000000123, 68000.12, 68000.12, 68000.23, 42), (clock[0], 1710000001123, 68001.0, 68000.12, 68000.23, 43)]
 
 
+def test_the_key_can_arrive_as_base64_pem_in_the_environment(monkeypatch):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "kid-3")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_B64", base64.b64encode(pem).decode() + "\n")
+    for k in ("KALSHI_PRIVATE_KEY", "KALSHI_PRIVATE_KEY_PATH"):
+        monkeypatch.delenv(k, raising=False)
+    kid, pk = credentials_from_env()
+    assert kid == "kid-3" and pk.public_key().public_numbers() == key.public_key().public_numbers()
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_B64", "not base64!!")
+    try:
+        credentials_from_env()
+        raise AssertionError("bad base64 must raise ValueError")
+    except ValueError:
+        pass
+
+
+def test_a_key_that_does_not_load_leaves_the_harness_running_without_the_relay(tmp_path, monkeypatch, caplog):
+    from core.btc15 import harness as H
+    for k in ("KALSHI_PRIVATE_KEY_B64", "KALSHI_PRIVATE_KEY", "OPENAI_API_KEY", "MERIDIAN_BTC15_MODEL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("POLYMARKET_KEY_ID", "k")
+    monkeypatch.setenv("POLYMARKET_SECRET", "s")
+    monkeypatch.setattr(H, "KalshiBTC", lambda: None)
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "kid-4")
+    for bad in (str(tmp_path / "missing.pem"), str(tmp_path)):                 # a wrong path; a directory
+        monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", bad)
+        with caplog.at_level("ERROR", logger="btc15"):
+            h = H.build(H.Settings(db_path=str(tmp_path / f"p{len(bad)}.sqlite"), status_path="/dev/null", horizon="15m"))
+        assert h.brti is None and h.microtape is not None and h.arms
+        h.microtape.stop()
+    (tmp_path / "bad.pem").write_bytes(b"this is not a pem at all\n")          # a file that is there but is no key
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", str(tmp_path / "bad.pem"))
+    h = H.build(H.Settings(db_path=str(tmp_path / "p3.sqlite"), status_path="/dev/null", horizon="15m"))
+    assert h.brti is None
+    h.microtape.stop()
+    assert all(bad not in rec.message for rec in caplog.records for bad in (str(tmp_path),))   # never the path itself
+
+
 def test_without_a_kalshi_key_the_harness_builds_with_no_relay(tmp_path, monkeypatch, caplog):
     from core.btc15 import harness as H
-    for k in ("KALSHI_API_KEY_ID", "KALSHI_PRIVATE_KEY_PATH", "KALSHI_PRIVATE_KEY", "OPENAI_API_KEY", "MERIDIAN_BTC15_MODEL"):
+    for k in ("KALSHI_API_KEY_ID", "KALSHI_PRIVATE_KEY_PATH", "KALSHI_PRIVATE_KEY", "KALSHI_PRIVATE_KEY_B64", "OPENAI_API_KEY", "MERIDIAN_BTC15_MODEL"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("POLYMARKET_KEY_ID", "k")
     monkeypatch.setenv("POLYMARKET_SECRET", "s")
