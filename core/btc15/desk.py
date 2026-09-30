@@ -29,9 +29,11 @@ DEFAULT_DIR = "/opt/meridian/artifacts/btc15"
 #: file, the API's ``arm=`` key and the checkpoint rule keep the original name.
 DISPLAY_NAMES = {"kalshi_taker": "kalshi_taker_2c", "kalshi_taker_wide": "kalshi_taker_4c"}
 
-#: The checkpoint agreed 2026-09-29 20:05Z (docs/math/btc15-v2-arms.md): the trades that
-#: chose the arms cannot also confirm them, so the read counts fills from this instant on.
-CHECKPOINT_FROM = "2026-09-29T20:02:00+00:00"
+#: The checkpoint counts fills from this instant on (docs/math/btc15-v2-arms.md). Agreed at
+#: 2026-09-29 20:02Z (the trades that chose the arms cannot also confirm them), then moved to
+#: 2026-09-30 05:08:42Z, when the arms began pricing off the venue's stream and Kalshi's order
+#: book: every fill before it was entered on a quote up to ~30 s old.
+CHECKPOINT_FROM = "2026-09-30T05:08:42+00:00"
 
 
 def paths(root: str | Path, horizon: str) -> tuple[Path, Path]:
