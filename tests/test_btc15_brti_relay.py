@@ -100,7 +100,7 @@ def test_the_relay_subscribes_delivers_ticks_to_the_microtape_and_reconnects_aft
     slept = []
     r = BRTIRelay("kid", None, on_tick=tape.brti, open_socket=lambda: sockets.pop(0), clock=lambda: clock[0],
                   sleep=lambda s: slept.append(s))
-    assert r.sign_path == "/cfbenchmarks_value"
+    assert r.sign_path == "/trade-api/ws/v2"                     # the documented main socket's path
     r.start()
     for _ in range(200):
         if r.ticks >= 1:
@@ -183,7 +183,9 @@ def test_a_refused_handshake_moves_the_signature_to_the_documented_trade_path_an
         if r.sign_path == "/cfbenchmarks_value":
             raise ConnectionClosed("handshake refused: HTTP/1.1 401 Unauthorized")
         return FakeWS([DOC_MSG])
-    r = BRTIRelay("kid", None, open_socket=open_socket, clock=lambda: clock[0], sleep=lambda s: None)
+    # a URL whose own path is not the documented one: the fallback alternates between the two
+    r = BRTIRelay("kid", None, url="wss://external-api-ws.kalshi.com/cfbenchmarks_value",
+                  open_socket=open_socket, clock=lambda: clock[0], sleep=lambda s: None)
     assert r.sign_paths == ["/cfbenchmarks_value", "/trade-api/ws/v2"]
     r.start()
     for _ in range(300):
