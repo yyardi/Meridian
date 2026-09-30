@@ -7,7 +7,10 @@ mid of four of its seven constituents, polled and streamed) proxies it with a -$
 and $3.34 sd against `expiration_value` over 241 windows. Kalshi relays the index to any API
 key (docs.kalshi.com/websockets/cfbenchmarks-value, read 2026-09-30):
 
-    wss://external-api-ws.kalshi.com/cfbenchmarks_value
+    wss://external-api-ws.kalshi.com/trade-api/ws/v2        (the one main socket; cfbenchmarks_value
+                                                            is a CHANNEL on it -- docs.kalshi.com
+                                                            getting_started/quick_start_websockets and
+                                                            websockets/websocket-connection, read 2026-09-30)
     {"id": 1, "cmd": "subscribe", "params": {"channels": ["cfbenchmarks_value"], "index_ids": ["BRTI"]}}
     -> {"type": "cfbenchmarks_value", "sid": 1, "seq": 42, "msg": {
           "index_id": "BRTI", "received_at": 1710000000123,
@@ -50,7 +53,10 @@ from core.polymarket.ws_min import ConnectionClosed, WSClient
 
 log = logging.getLogger("btc15.brti")
 
-URL = os.environ.get("KALSHI_CF_WS_URL", "wss://external-api-ws.kalshi.com/cfbenchmarks_value")
+#: The main websocket; every channel, cfbenchmarks_value included, rides on it. The first live
+#: attempt (2026-09-30 17:33Z) dialled ".../cfbenchmarks_value" as a path and got HTTP 404 on
+#: both signed paths -- a wrong URL, not a wrong signature.
+URL = os.environ.get("KALSHI_CF_WS_URL", "wss://external-api-ws.kalshi.com/trade-api/ws/v2")
 #: The path the venue documents for its trade socket's signature; the fallback when the value
 #: host refuses a signature over its own path.
 TRADE_WS_PATH = "/trade-api/ws/v2"
