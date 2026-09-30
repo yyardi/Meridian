@@ -271,6 +271,7 @@ sub-second one; the second session measured this first and it was re-derived her
 | lead-lag at 3 s: corr(Kalshi move now, Poly move next) / reverse | +0.049 / +0.004 | `scratchpad/maker_size.py` logic, reproducible from `quotes` |
 | the venue's REST book | `cache-control: public, max-age=30`, `cf-cache-status: HIT` | `curl -sD - https://gateway.polymarket.us/v1/markets/<slug>/book -o /dev/null` |
 | a two-sided maker at Kalshi mid ∓ 1–3¢, re-priced every 3 s, filled on trade-through | −2.6 to −4.4¢ a fill, 76–80 fills / 41 windows | same script |
+| does OUR spot feed lead either book? corr(spot move in the prior 2 s, book's next move) | Poly +0.034, Kalshi +0.022; contemporaneous +0.357; a taker on ≥ $15/$25/$40 spot moves: −4.4 / −0.7 / −2.9¢ at 30 s, −9.6 / −4.9 / −26.2¢ held | `scratchpad/spot_lead.py` logic over `ticks` + `quotes` (8,177 pairs, 41 windows) |
 | the last-minute snipe | in the final ~25 s the losing side leaves Poly's book (0.99 / no offer); 4 entries in 41 windows, one a confident loss | `scratchpad/endgame_size.py` logic over `quotes` + `ticks` |
 
 **What two browser tabs show is not a gap.** At 15:58:29Z the Kalshi page read "Up 47¢"
@@ -294,6 +295,17 @@ the middle.
   price). The main loop reads Kalshi's order book on each pass (`book_every_s` 3 → 1, a
   pass every ~1.8 s as measured; the `/markets` list is cached 10 s) and writes the tape.
 - The seven earlier arms are unchanged and keep running.
+
+**Against the underlying, not the other venue (2026-09-30 ~17:40Z).** A 15-minute Up/Down
+contract is a digital option on spot minus strike; if it is ever wrong, it is wrong against
+spot, and the question is whether our spot feed sees a move before the quotes do. It does not:
+the books move with spot inside the same tape row (corr +0.36) and our feed's prior 2-s move
+predicts nothing of their next move (+0.03 / +0.02). Our 1-s four-exchange REST composite is
+the laggard: its own 2-s moves are autocorrelated (+0.21), which is what a feed that smears a
+move across seconds looks like. A taker on large spot moves loses at every threshold. What this
+does not test is a sub-second websocket spot feed, which the second session is adding; the
+same correlation at 100–500 ms is the test to run on it, and it is the only speed hypothesis
+left.
 
 **Not built, and why:** the last-minute snipe (the book empties first); a Kalshi-side taker
 (Kalshi leads, so it would be trading on the laggard's noise); anything on polymarket.com
