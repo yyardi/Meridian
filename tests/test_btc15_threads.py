@@ -160,7 +160,7 @@ def test_build_hangs_the_microtape_off_the_stream_and_the_feed(tmp_path, monkeyp
     assert microtape_path("/data/polymarket-15m.sqlite") == "/data/polymarket-15m-microtape.sqlite"
     stream = h.venue.stream
     assert isinstance(stream, StreamBook) and stream.on_book == h.microtape.book and stream.on_trade == h.microtape.trade
-    assert h.feed.on_spot == h.microtape.spot
+    assert h.feed.on_spot is not None                                        # the fan-out: the tape and the spot trigger
     assert [a.spec.name for a in h.arms][-2:] == ["touch_maker", "touch_maker_k"] and h.arms[-1].prints == stream.prints
     h.microtape.stop()
     assert sqlite3.connect(h.microtape.path).execute("SELECT COUNT(*) FROM spot").fetchone()[0] == 0
@@ -205,3 +205,45 @@ def test_one_ledger_connection_survives_two_threads_reading_and_writing_at_once(
     for t in ts:
         t.join(5)
     assert errors == []
+
+
+def test_the_spot_socket_drives_the_trigger_from_the_coinbase_move_over_the_window(tmp_path):
+    from core.btc15.arms import Arm, ArmSpec
+    now = 1_790_700_000.0
+    h, m, led = _harness(now)
+    arm_led = Ledger(str(tmp_path / "p.sqlite"))
+    arm = Arm(ArmSpec("touch_maker_p", "mid", "join", 0.0, spot_pull_usd=10, spot_pull_ms=250), arm_led, 10 * UNIT)
+    h.arms = [arm]
+    arm.tick(now, dict(m, status="active", fee_coefficient="0.0695"), {"mid": 0.615}, 0.0695, 90)
+    h.on_spot_update("kraken", 84000.0, 84001.0, 84000.5, now + 1.0)          # not the trigger exchange
+    h.on_spot_update("coinbase", 84020.0, 84021.0, 84020.5, now + 1.0)        # a fresh socket: nothing before the window, no trigger
+    h.on_spot_update("coinbase", 84000.0, 84001.0, 84000.5, now + 1.5)
+    h.on_spot_update("coinbase", 84004.0, 84005.0, 84004.5, now + 1.9)        # +$4 over the prior 250 ms: under the threshold
+    r = json.loads(arm_led.decision(m["ticker"])["response"])
+    assert r["offer"] == 0.62 and r["bid"] == 0.61
+    h.on_spot_update("coinbase", 84012.0, 84013.0, 84012.5, now + 2.1)        # +$12 over the prior 250 ms (base: the 1.5 s quote): pull the offer
+    r = json.loads(arm_led.decision(m["ticker"])["response"])
+    assert r["offer"] is None and r["bid"] == 0.61 and r["pulled"]["offer"]["move"] == 12.0 and r["pulled"]["offer"]["mid"] == 0.615
+    h._arms_lock.acquire()                                                    # a pass holds the lock: the quote is skipped, never blocks
+    try:
+        h.on_spot_update("coinbase", 83980.0, 83981.0, 83980.5, now + 2.2)
+    finally:
+        h._arms_lock.release()
+    assert json.loads(arm_led.decision(m["ticker"])["response"])["bid"] == 0.61
+
+
+def test_build_fans_socket_quotes_out_to_the_tape_and_the_trigger(tmp_path, monkeypatch):
+    from core.btc15 import harness as H
+    monkeypatch.setenv("POLYMARKET_KEY_ID", "k")
+    monkeypatch.setenv("POLYMARKET_SECRET", "s")
+    for k in ("OPENAI_API_KEY", "MERIDIAN_BTC15_MODEL", "KALSHI_API_KEY_ID"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(H, "KalshiBTC", lambda: None)
+    h = H.build(H.Settings(db_path=str(tmp_path / "polymarket-15m.sqlite"), status_path="/dev/null", horizon="15m"))
+    seen = []
+    h.on_spot_update = lambda *a: seen.append(a)
+    h.feed.on_spot("coinbase", 1.0, 2.0, 1.5, 5.0)
+    h.microtape.drain()
+    assert seen == [("coinbase", 1.0, 2.0, 1.5, 5.0)]
+    assert sqlite3.connect(h.microtape.path).execute("SELECT COUNT(*) FROM spot").fetchone()[0] == 1
+    h.microtape.stop()

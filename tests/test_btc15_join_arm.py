@@ -151,3 +151,73 @@ def test_markouts_come_due_at_each_horizon_after_the_fill_and_never_past_the_clo
     assert led.markouts_due(filled + 400, close_of) == [(fid, T, 30), (fid, T, 60)]        # 300 s is past the close: never asked
     led.add_markout(fid, 30, None, None)                                                  # missed (a restart): recorded empty once
     assert led.markouts_due(filled + 400, close_of) == [(fid, T, 60)]
+
+
+# ------------------------------------------------------------------ the spot trigger (off by default)
+def _trig(tmp_path, prints=None, usd=10.0):
+    return _arm(tmp_path, ArmSpec("touch_maker_p", "mid", "join", 0.0, spot_pull_usd=usd, spot_pull_ms=250, spot_repost_s=2.0), prints=prints)
+
+
+def test_the_trigger_is_off_by_default_and_described_when_on():
+    assert all(a.spot_pull_usd == 0 for a in DEFAULT_ARMS)
+    on = ArmSpec("x", "mid", "join", 0.0, spot_pull_usd=10)
+    assert "pulled when coinbase moves $10 in 250 ms" in on.describe()
+    assert "pulled" not in ArmSpec("x", "mid", "join", 0.0).describe()
+
+
+def test_an_up_move_pulls_the_offer_only_and_a_print_there_no_longer_fills(tmp_path):
+    prints = []
+    a = _trig(tmp_path, prints=lambda t, since: [p for p in prints if p[0] > since])
+    a.tick(O + 40, _m(0.44, 0.45, 100.0, 10.0), {"mid": 0.445}, 0.0695, 90)
+    assert a.spot_pull(O + 40.3, T, "up", 12.0, 0.445) is True
+    st, r = _state(a)
+    assert st == "resting" and r["offer"] is None and r["bid"] == 0.44 and r["bid_since"] == O + 40     # bid keeps its queue
+    assert r["pulled"]["offer"]["dir"] == "up" and r["pulled"]["offer"]["was"] == 0.45
+    assert a.spot_pull(O + 40.4, T, "up", 15.0, 0.445) is False                                        # already pulled
+    prints += [(O + 40.5, 0.45, 500.0, "ORDER_INTENT_BUY_LONG", "ORDER_INTENT_UNDEFINED")]                # lifts 0.45: not us
+    a.tick(O + 40.6, _m(0.44, 0.45, 100.0, 10.0), {"mid": 0.445}, 0.0695, 90)
+    assert not a.ledger.unsettled_fills() and _state(a)[1]["offer"] is None
+    a.tick(O + 40.8, _m(0.45, 0.46, 80.0, 90.0), {"mid": 0.455}, 0.0695, 90)     # the book re-priced up a tick: re-join
+    st, r = _state(a)
+    assert (r["offer"], r["offer_since"], r["offer_ahead"]) == (0.46, O + 40.8, 90.0) and "pulled" not in r
+    assert (r["bid"], r["bid_since"], r["bid_ahead"]) == (0.45, O + 40.8, 80.0)   # the bid followed the touch as usual
+
+
+def test_a_down_move_pulls_the_bid_and_a_book_that_trades_through_the_old_bid_rejoins_without_filling(tmp_path):
+    a = _trig(tmp_path)
+    a.tick(O + 40, _m(0.44, 0.45), {"mid": 0.445}, 0.0695, 90)
+    assert a.spot_pull(O + 41, T, "down", -11.0, 0.445) is True
+    r = _state(a)[1]
+    assert r["bid"] is None and r["offer"] == 0.45
+    a.tick(O + 41.5, _m(0.44, 0.45), {"mid": 0.445}, 0.0695, 90)                 # book unchanged: still pulled
+    assert _state(a)[1]["bid"] is None
+    a.tick(O + 41.7, _m(0.42, 0.43), {"mid": 0.425}, 0.0695, 90)                 # the ask crossed the OLD 0.44 -- pulled, so no fill; re-priced down: re-join
+    assert not a.ledger.unsettled_fills()
+    r = _state(a)[1]
+    assert (r["bid"], r["bid_since"]) == (0.42, O + 41.7) and "pulled" not in r
+
+
+def test_a_pulled_side_rejoins_after_the_repost_timeout_when_the_book_never_repriced(tmp_path):
+    prints = []
+    a = _trig(tmp_path, prints=lambda t, since: [p for p in prints if p[0] > since])
+    a.tick(O + 40, _m(0.44, 0.45, 100.0, 100.0), {"mid": 0.445}, 0.0695, 90)
+    assert a.spot_pull(O + 41, T, "down", -11.0, 0.445) is True
+    prints += [(O + 41.2, 0.44, 999.0, "ORDER_INTENT_BUY_SHORT", "ORDER_INTENT_UNDEFINED")]   # hits 0.44 while we are pulled
+    a.tick(O + 41.5, _m(0.44, 0.45, 100.0, 100.0), {"mid": 0.445}, 0.0695, 90)
+    assert not a.ledger.unsettled_fills() and _state(a)[1]["bid"] is None
+    a.tick(O + 42.5, _m(0.44, 0.45, 100.0, 100.0), {"mid": 0.445}, 0.0695, 90)   # 1.5 s: still pulled
+    assert _state(a)[1]["bid"] is None
+    a.tick(O + 43.1, _m(0.44, 0.45, 70.0, 100.0), {"mid": 0.445}, 0.0695, 90)    # 2.1 s after the pull: re-joined, fresh queue
+    r = _state(a)[1]
+    assert (r["bid"], r["bid_since"], r["bid_ahead"]) == (0.44, O + 43.1, 70.0) and "pulled" not in r
+    assert r["offer_since"] == O + 40                                              # the offer kept its place throughout
+
+
+def test_a_move_below_the_threshold_or_on_a_control_arm_pulls_nothing(tmp_path):
+    a = _trig(tmp_path)
+    a.tick(O + 40, _m(0.44, 0.45), {"mid": 0.445}, 0.0695, 90)
+    assert a.spot_pull(O + 41, T, "up", 9.9, 0.445) is False and _state(a)[1]["offer"] == 0.45
+    c = _arm(tmp_path)                                                              # spot_pull_usd = 0: the control
+    c.tick(O + 40, _m(0.44, 0.45), {"mid": 0.445}, 0.0695, 90)
+    assert c.spot_pull(O + 41, T, "up", 50.0, 0.445) is False and _state(c)[1]["offer"] == 0.45
+    assert a.spot_pull(O + 41, "another-window", "up", 50.0, 0.445) is False
