@@ -42,12 +42,16 @@ CREATE INDEX IF NOT EXISTS trades_slug ON trades(slug, recv);
 CREATE TABLE IF NOT EXISTS spot(
   recv REAL NOT NULL, exchange TEXT NOT NULL, bid REAL, ask REAL, last REAL);
 CREATE INDEX IF NOT EXISTS spot_recv ON spot(recv);
+CREATE TABLE IF NOT EXISTS brti(
+  recv REAL NOT NULL, source_ts_ms INTEGER, value REAL NOT NULL, avg_60s REAL, last_60s_15m REAL, seq INTEGER);
+CREATE INDEX IF NOT EXISTS brti_recv ON brti(recv);
 """
 
 _INSERT = {
     "book": "INSERT INTO book_msgs(recv,slug,bid,ask,bid_size,ask_size,tt,state) VALUES(?,?,?,?,?,?,?,?)",
     "trade": "INSERT INTO trades(recv,slug,price,quantity,trade_time,taker_intent,maker_intent) VALUES(?,?,?,?,?,?,?)",
     "spot": "INSERT INTO spot(recv,exchange,bid,ask,last) VALUES(?,?,?,?,?)",
+    "brti": "INSERT INTO brti(recv,source_ts_ms,value,avg_60s,last_60s_15m,seq) VALUES(?,?,?,?,?,?)",
 }
 
 
@@ -83,6 +87,10 @@ class Microtape:
             return                                           # the touch did not move: nothing new to record
         self._last_spot[exchange] = (bid, ask)
         self._put("spot", (at, exchange, bid, ask, last))
+
+    def brti(self, tick) -> None:
+        """Kalshi's relay of the settlement index (core/btc15/brti_relay.py), every tick."""
+        self._put("brti", (tick.recv, tick.source_ts_ms, tick.value, tick.avg_60s, tick.last_60s_15m, tick.seq))
 
     def _put(self, kind: str, values: tuple) -> None:
         try:
@@ -143,7 +151,7 @@ class Microtape:
         now = self._clock() if now is None else now
         floor = now - self.keep_days * 86400
         c = self._conn()
-        for t in ("book_msgs", "trades", "spot"):
+        for t in ("book_msgs", "trades", "spot", "brti"):
             c.execute(f"DELETE FROM {t} WHERE recv < ?", (floor,))
 
     def _run(self) -> None:

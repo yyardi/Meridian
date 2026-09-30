@@ -103,6 +103,12 @@ final minute) — which is the quantity our four-exchange composite proxies with
 and $3.34 sd against `expiration_value` (241 windows). The handshake is RSA-PSS signed
 (`KALSHI-ACCESS-KEY`, `-TIMESTAMP`, `-SIGNATURE` over `{ts}GET/trade-api/ws/v2`), so it needs
 a Kalshi API key, which prod does not hold (`/opt/meridian/.env` names only: OpenAI and the
-venue). With one, the settlement proxy becomes the venue's own number and the endgame
-arithmetic stops depending on a proxy. Nothing trades on it until it is recorded beside
-`expiration_value` and the error measured.
+venue). The client is built and tested against the documented message shape
+(`core/btc15/brti_relay.py`; 15-minute bot only): with `KALSHI_API_KEY_ID` and
+`KALSHI_PRIVATE_KEY_PATH` (a PEM file, mounted read-only) in `.env` and a recreate, every tick
+lands in the microtape's `brti` table beside the composite, and the status file shows the
+relay's counters. The path the value host expects in the signature is undocumented (the trade
+socket signs `/trade-api/ws/v2`); the URL's own path is signed by default and
+`KALSHI_WS_SIGN_PATH` overrides it — the first live handshake says which. With it, the
+settlement proxy becomes the venue's own number. Nothing trades on it until it is recorded
+beside `expiration_value` and the error measured.

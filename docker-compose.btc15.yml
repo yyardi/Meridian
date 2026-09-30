@@ -56,6 +56,11 @@ x-btc-env: &btc_env
   # are on by default; "0" keeps the four REST polls only.
   MERIDIAN_BTC15_MICROTAPE: ${MERIDIAN_BTC15_MICROTAPE:-}
   MERIDIAN_BTC15_SPOT_SOCKETS: ${MERIDIAN_BTC15_SPOT_SOCKETS:-1}
+  # Kalshi's relay of BRTI (the settlement index) is recorded when a Kalshi API key exists:
+  # KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_PATH (a PEM file mounted read-only) in .env.
+  # Read-only feed; without them the 15-minute bot logs one line and runs as before.
+  KALSHI_API_KEY_ID: ${KALSHI_API_KEY_ID:-}
+  KALSHI_PRIVATE_KEY_PATH: ${KALSHI_PRIVATE_KEY_PATH:-}
   MERIDIAN_NTFY_TOPIC: ${MERIDIAN_NTFY_TOPIC:-}
   MERIDIAN_NTFY_SCOPE: ${MERIDIAN_NTFY_SCOPE:-}
   MERIDIAN_NTFY_SERVER: ${MERIDIAN_NTFY_SERVER:-}
