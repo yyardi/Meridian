@@ -108,3 +108,35 @@ beside, **never gated**:
 
 A positive information mark-out is a hypothesis for a new registration that names a live
 feed and its measured refresh; it is not a result of this one.
+
+## Interim look, 2026-09-30 ~01:30Z — not a read, gates nothing
+
+`analysis/thin/speed_read.py` (tests: `tests/test_thin_speed_read.py`) on the five windows
+taped so far (BSL 09-28, EuroLeague x2, Hungary, Slovenia 09-29): 11 games, **6 excluded**
+by the 60-s book-gap rule, **G = 4**. Recorded here because it was looked at, not because
+it decides anything.
+
+| printed | value |
+|---|---|
+| direction check | 8 / 8 agree |
+| M60 off the venue's own score, 1 s after receipt | −2.42¢ (253 events, G 4) |
+| control, random live instant | −3.13¢ (negative, as required) |
+| already repriced at entry | 28 % (kill 1 is 90 %) |
+| venue score latency vs EuroLeague's shot log | median 12.2 s, p10 4.1, p90 28.8 (n 305) |
+| information mark-out, entered at the shot's UTC second + 1 s | −1.73¢ / −1.48¢ / −1.43¢ at 10 / 30 / 60 s |
+| compound (skipped) vs scored simple events | 332 vs 253 |
+| displayed size at the entry ask | median 470 contracts |
+
+Two instrument findings, neither a result:
+
+- **The exclusions are a stalled stream, not quiet books.** Four of the six excluded games
+  have a gap starting between 19:14 and 19:23Z on 09-29 (87–398 s). All four are EuroLeague
+  games, all at once, and the trades tape kept printing through them. The book stream stalls and resumes; it does not reconnect
+  within 60 s. Until that is fixed the rule removes about half the games, and G ≥ 30 by
+  10-26 is at risk (kill 3).
+- **More score changes are compound than simple.** The poll skips states, so each scored
+  event is dated late by up to one poll interval. That bias works against the thesis. It
+  is not a reason to re-cut.
+
+An earlier draft of the script, which had no gap rule, printed G 8 and −2.33¢. Its rows
+included the stalled stretches.
