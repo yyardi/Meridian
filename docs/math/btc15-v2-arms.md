@@ -330,10 +330,13 @@ rules were read from the venues themselves.
   US-vs-Kalshi is the same contract on two books, which is what this harness reads.
 - **Of ~30 repositories touching the US venue, none is a public BTC-15-min bot trading it
   live.** The closest is [pisano18/kals](https://github.com/pisano18/kals): a Kalshi
-  KXBTC15M taker bot with a dry-run Polymarket US order path and one manual fill. Its own
-  measurement of the US venue: 269 windows since launch, median 4,423 shares, **126 of 269
-  windows with zero trades**, a book 1/10–1/50 of Kalshi's. Its reconciled Kalshi ledger is
-  **−$469 on KXBTC15M since 09-17**.
+  KXBTC15M taker bot with a dry-run Polymarket US order path and one manual fill. Its
+  reconciled Kalshi ledger is **−$469 on KXBTC15M since 09-17**. Its claim that the US venue
+  had "126 of 269 windows with zero trades" came from a REST read, and REST here is a 30-s
+  cache: **measured on the venue's own TRADE stream** (docs/math/btc15-microtape.md, 17:18–
+  18:22Z, a volatile US afternoon hour), the five 15-minute windows printed 2,510–7,014 trades
+  and 154k–245k contracts each, zero windows with zero prints. That is a rate for that hour;
+  the night's tape gives the day.
 - **No source shows a verifiable Polymarket BTC-15-min P&L.** The viral figures
   ($313 → $438k; $50 → $280k) trace to dashboard screenshots and a tweet. The most careful
   dry run (masterputra169, 448 trades) concludes "neither model beats the market price".
