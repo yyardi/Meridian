@@ -330,10 +330,13 @@ rules were read from the venues themselves.
   US-vs-Kalshi is the same contract on two books, which is what this harness reads.
 - **Of ~30 repositories touching the US venue, none is a public BTC-15-min bot trading it
   live.** The closest is [pisano18/kals](https://github.com/pisano18/kals): a Kalshi
-  KXBTC15M taker bot with a dry-run Polymarket US order path and one manual fill. Its own
-  measurement of the US venue: 269 windows since launch, median 4,423 shares, **126 of 269
-  windows with zero trades**, a book 1/10–1/50 of Kalshi's. Its reconciled Kalshi ledger is
-  **−$469 on KXBTC15M since 09-17**.
+  KXBTC15M taker bot with a dry-run Polymarket US order path and one manual fill. Its
+  reconciled Kalshi ledger is **−$469 on KXBTC15M since 09-17**. Its claim that the US venue
+  had "126 of 269 windows with zero trades" came from a REST read, and REST here is a 30-s
+  cache: **measured on the venue's own TRADE stream** (docs/math/btc15-microtape.md, 17:18–
+  18:22Z, a volatile US afternoon hour), the five 15-minute windows printed 2,510–7,014 trades
+  and 154k–245k contracts each, zero windows with zero prints. That is a rate for that hour;
+  the night's tape gives the day.
 - **No source shows a verifiable Polymarket BTC-15-min P&L.** The viral figures
   ($313 → $438k; $50 → $280k) trace to dashboard screenshots and a tweet. The most careful
   dry run (masterputra169, 448 trades) concludes "neither model beats the market price".
@@ -357,3 +360,39 @@ under `retired/`. The checkpoint's `kalshi_taker_wide` target is void with them;
 40 stands. What runs: `llm_agent`, `kalshi_requote`, and the print-judged `touch_maker` and
 `touch_maker_k` from the sub-second build (docs/math/btc15-microtape.md), whose fills accrue
 on flow rather than on a gap and are scored by 60-second mark-outs as well as settlement.
+
+## The spot trigger: interim split, the A/B, and what waits for the read (2026-09-30 ~20:45Z)
+
+The registered toxicity instrument (`analysis/btc15/maker_fill_toxicity.py`, the second
+session's; threshold registered before the night: $10 over 500 ms, 60-s mark-out, read once
+at 2026-10-01 12:00Z), run on a read-only snapshot at 20:21Z. **An interim look at n = 36,
+not the read**, recorded because it was looked at:
+
+| 60-s mark-out, maker fills 17:18–20:21Z | n | mean | t |
+|---|---:|---:|---:|
+| spot moved ≥ $10 against us within 500 ms before the fill | 16 | −8.4¢ | −2.7 |
+| the rest | 20 | −2.5¢ | −1.0 |
+| (250 ms) spot-preceded / the rest | 15 / 21 | −10.2¢ / −1.5¢ | −3.3 / −0.6 |
+
+That is the registered shape: the losses sit in the fills that followed a spot move, the
+rest is around zero. Two things follow, and one caution.
+
+**The build (the second session's, on `btc15/edge-arms`; nothing deploys before the read).**
+A maker arm with a spot trigger: on the Coinbase socket's own thread, the move over the prior
+window is computed on every quote; when it clears the threshold the arm pulls the
+**threatened** side only (an up-move threatens the offer, a down-move the bid), so the other
+side keeps its place in the queue; a pulled side cannot be filled by prints or a trade-through;
+it re-joins once the venue's book has re-priced a tick in the move's direction, or after two
+seconds. Two variants were designed independently (this session's pulled both sides and
+re-joined once spot had been calm for the window); the threatened-side, socket-thread version
+is the better one on latency and on queue position, and is the one built.
+
+**The A/B.** Two new arms, `touch_maker_t` and `touch_maker_kt`, identical to `touch_maker`
+and `touch_maker_k` but for the trigger, run beside them on the same windows and books. The
+controls are untouched. The difference between each pair's record, fill by fill, is the
+trigger's value; nothing else differs.
+
+**Caution.** "The rest" is −2.5¢ (t −1.0), not positive: removing the spot-preceded fills does
+not by itself make the join arm profitable on this sample; it removes the identified loss and
+leaves what a resting order at the touch earns on flow that is not informed, which the night
+measures. And at n = 36 the split is one look; the read at 12:05Z decides.
