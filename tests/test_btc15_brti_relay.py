@@ -172,3 +172,34 @@ def test_without_a_kalshi_key_the_harness_builds_with_no_relay(tmp_path, monkeyp
     assert h.brti is None and h.microtape is not None
     assert any("BRTI relay off" in rec.message for rec in caplog.records)
     h.microtape.stop()
+
+
+def test_a_refused_handshake_moves_the_signature_to_the_documented_trade_path_and_a_pinned_path_never_moves():
+    clock = [1_790_700_000.0]
+    tried = []
+
+    def open_socket():
+        tried.append(r.sign_path)
+        if r.sign_path == "/cfbenchmarks_value":
+            raise ConnectionClosed("handshake refused: HTTP/1.1 401 Unauthorized")
+        return FakeWS([DOC_MSG])
+    r = BRTIRelay("kid", None, open_socket=open_socket, clock=lambda: clock[0], sleep=lambda s: None)
+    assert r.sign_paths == ["/cfbenchmarks_value", "/trade-api/ws/v2"]
+    r.start()
+    for _ in range(300):
+        if r.ticks >= 1:
+            break
+        threading.Event().wait(0.01)
+    assert tried[:2] == ["/cfbenchmarks_value", "/trade-api/ws/v2"] and r.ticks == 1
+    assert r.counters()["sign_path"] == "/trade-api/ws/v2" and "signed /cfbenchmarks_value" in r.last_error
+    r.request_stop()
+    pinned = BRTIRelay("kid", None, sign_path="/pinned", open_socket=lambda: (_ for _ in ()).throw(ConnectionClosed("handshake refused")),
+                       clock=lambda: clock[0], sleep=lambda s: None)
+    assert pinned.sign_paths == ["/pinned"]
+    pinned.start()
+    for _ in range(100):
+        if pinned.reconnects >= 3:
+            break
+        threading.Event().wait(0.01)
+    assert pinned.sign_path == "/pinned" and pinned.reconnects >= 3
+    pinned.request_stop()
