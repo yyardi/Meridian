@@ -184,3 +184,57 @@ def test_the_page_can_show_one_strategys_own_record_and_calls(tmp_path, monkeypa
     assert c.get("/api/btc/history?h=15m&arm=llm_agent").json()["rows"][0]["fill"]["side"] == "NO"
     assert c.get("/api/btc/summary?h=15m&arm=nope").status_code == 404
     assert c.get("/api/btc/summary?h=15m&arm=../x").status_code == 422
+
+
+# ------------------------------------------------------------------ the edge estimate
+def _arm_ledger(root, name, trades):
+    """An arm ledger with one settled contract per (side, price, fee, p_up, result)."""
+    from core.btc15.ledger import UNIT
+    led = Ledger(str(root / f"polymarket-15m-arm-{name}.sqlite"))
+    led.put("arm_spec", json.dumps({"name": name, "prob": "kalshi", "kind": "taker", "margin": 0.04}))
+    for i, (side, price, fee, p_up, res) in enumerate(trades):
+        tk = f"W{i}"
+        led.upsert_window({"ticker": tk, "open_time": None, "close_time": None, "open_ts": 1_790_000_000.0 + 900 * i,
+                           "close_ts": 1_790_000_900.0 + 900 * i, "strike": 1.0})
+        assert led.start_decision(tk, None, {})
+        led.finish_decision(tk, status="filled", side=side, p_up=p_up)
+        fid, why = led.record_fill("paper", tk, side, int(round(price * UNIT)), int(round(fee * UNIT)), 100 * UNIT)
+        assert fid, why
+        led.finalize_window(tk, res, 2.0, None)
+        led.settle(fid, res)
+    return led
+
+
+def test_the_edge_is_the_mean_pnl_per_contract_with_its_interval_and_the_edge_claimed_at_entry(tmp_path):
+    import statistics
+    trades = [("YES", 0.60, 0.02, 0.70, "yes"),       # +0.38 realised; claimed 0.70 - 0.62 = 0.08
+              ("NO", 0.55, 0.02, 0.30, "yes"),        # -0.57; claimed (1 - 0.30) - 0.57 = 0.13
+              ("YES", 0.40, 0.02, 0.50, "yes")]       # +0.58; claimed 0.50 - 0.42 = 0.08
+    led = _arm_ledger(tmp_path, "kalshi_taker_wide", trades)
+    # the first fill predates the checkpoint: it chose the arm and does not count toward the read
+    led._conn.execute("UPDATE fills SET filled_at = '2026-09-29T19:00:00+00:00' WHERE ticker = 'W0'")
+    pnl = [0.38, -0.57, 0.58]
+    m, se = statistics.mean(pnl), statistics.stdev(pnl) / 3 ** 0.5
+    e = desk.edge(desk._ro(tmp_path / "polymarket-15m-arm-kalshi_taker_wide.sqlite"))
+    a = e["all"]
+    assert a["n"] == 3 and a["mean_c"] == pytest.approx(100 * m, abs=0.01)
+    assert a["se_c"] == pytest.approx(100 * se, abs=0.01) and a["t"] == pytest.approx(m / se, abs=0.01)
+    assert a["lo_c"] == pytest.approx(100 * (m - 1.96 * se), abs=0.01)
+    assert a["hi_c"] == pytest.approx(100 * (m + 1.96 * se), abs=0.01)
+    assert e["entry_c"] == pytest.approx(100 * (0.08 + 0.13 + 0.08) / 3, abs=0.01) and e["entry_n"] == 3
+    assert e["since"]["n"] == 2 and e["since"]["mean_c"] == pytest.approx(100 * (-0.57 + 0.58) / 2, abs=0.01)
+    # the running curve ends where the whole-sample estimate is, and has no interval at n = 1
+    assert [p[1] for p in e["curve"]] == [1, 2, 3]
+    assert e["curve"][0][3] is None and e["curve"][0][2] == pytest.approx(38.0)
+    assert e["curve"][-1][2:5] == pytest.approx([a["mean_c"], a["lo_c"], a["hi_c"]], abs=0.01)
+    assert e["curve"][-1][5] == pytest.approx(e["entry_c"], abs=0.01)
+
+
+def test_the_tab_names_the_4c_arm_by_its_margin_and_keeps_its_ledger_key(tmp_path):
+    _build(tmp_path)
+    _arm_ledger(tmp_path, "kalshi_taker_wide", [("YES", 0.60, 0.02, 0.70, "yes")])
+    rows = desk.arms(tmp_path, "15m", now=NOW)
+    assert [(r["name"], r["label"]) for r in rows] == [("kalshi_taker_wide", "kalshi_taker_4c")]
+    assert rows[0]["edge"]["all"]["n"] == 1 and len(rows[0]["edge_curve"]) == 1
+    s = desk.summary(tmp_path, "15m", now=NOW, arm="kalshi_taker_wide")
+    assert s["arm_label"] == "kalshi_taker_4c" and s["edge"]["all"]["mean_c"] == pytest.approx(38.0)

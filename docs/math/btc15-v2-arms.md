@@ -166,3 +166,28 @@ the venue's touch and Kalshi's same-window touch to `quotes` in the model's ledg
 `analysis/btc15/replay_kalshi_margins.py` replays the live rule (same `quant.edge`, same
 Kalshi-mid rule, first qualifying tick per window, one contract at the ask plus fee) at
 1¢…10¢, ranks margins on the earlier days and reads the chosen one once on the later days.
+
+## The edge on the tab (2026-09-30)
+
+The Strategies table and the "Edge per contract" chart show each arm's **realised edge**.
+That is the mean P&L per settled contract (payout − price − fee), in cents, with a 95 %
+interval of ±1.96·sd/√n. The trades are treated as independent: one contract per window,
+and the windows do not overlap. Beside it is the **edge claimed at entry**: p(side) −
+price − fee, where p is what the arm traded on (Kalshi's mid for the takers, the model's
+own p_up for the agent). The realised edge should converge to the claimed one if the rule
+is right. A third column counts fills since the checkpoint (20:02Z on 09-29). This is the
+population the read uses; the agent's target is 40 and the 4¢ arm's is 300. The chart
+plots the running estimate from each arm's fifth contract. Only the selected arm shows
+its band, and a narrowing band means the estimate is settling.
+
+Standing at 2026-09-30 02:00Z, all contracts:
+
+| arm | n | realised edge (95 %) | claimed at entry |
+|---|---:|---:|---:|
+| llm_agent | 14 | +30.6¢ (+6.3, +55.0) | +4.1¢ |
+| kalshi_taker_4c | 115 | +5.5¢ (−2.7, +13.7) | +7.8¢ |
+| kalshi_taker_2c | 119 | +1.7¢ (−6.5, +9.8) | +5.6¢ |
+
+The tab renames two arms. `kalshi_taker` is shown as `kalshi_taker_2c` and
+`kalshi_taker_wide` as `kalshi_taker_4c`, to match the margin sweep. The ledger files, the
+API's `arm=` key and the checkpoint rule above keep the original names.
