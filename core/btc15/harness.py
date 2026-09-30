@@ -759,6 +759,11 @@ def build(settings: Settings) -> Harness:
             h.brti = BRTIRelay.from_env(on_tick=h.microtape.brti)
         except MissingKalshiCredentials as e:
             log.info("BRTI relay off: set %s to record Kalshi's settlement index", e)
+        except (OSError, ValueError) as e:
+            # a key that is set but unreadable (wrong path, a directory, bad PEM or base64) must
+            # never take the bot down: every arm, the tape and the agent run without the relay
+            log.error("BRTI relay off: the Kalshi key in KALSHI_PRIVATE_KEY_B64 / _PATH did not load (%s)",
+                      type(e).__name__)
     if settings.venue == "polymarket":
         h.arms = [Arm(spec, Ledger(arm_db_path(settings.db_path, spec.name)), settings.limit_u,
                       prints=stream.prints if stream is not None else None)

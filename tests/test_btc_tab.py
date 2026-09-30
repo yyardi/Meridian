@@ -149,6 +149,12 @@ def test_the_arms_table_reads_every_arm_ledger_beside_the_models(tmp_path, monke
     w = next(r for r in rows if r["name"] == "walk_taker")
     assert w["settled"] == 1 and w["wins"] == 1 and w["pnl"] == pytest.approx(1 - 0.70 - 0.02)
     assert w["roi"] == pytest.approx(0.28 / 0.72, abs=1e-4) and w["spec"]["kind"] == "taker"
+    assert w["markouts"] == {}                                      # nothing marked yet
+    fid = led._conn.execute("SELECT id FROM fills").fetchone()[0]
+    led.add_markout(fid, 60, 0.26, 0.28)                            # NO at 0.70; mid 0.27 -> NO worth 0.73: +3c
+    led.add_markout(fid, 300, None, None)                           # missed: no mid, left out
+    w = next(r for r in desk.arms(tmp_path, "15m", now=NOW) if r["name"] == "walk_taker")
+    assert w["markouts"] == {"60": {"n": 1, "mean_c": 3.0, "t": None}}
 
 
 def test_the_page_can_show_one_strategys_own_record_and_calls(tmp_path, monkeypatch):

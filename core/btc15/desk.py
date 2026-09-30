@@ -345,6 +345,34 @@ def _book(led: Ledger, mode: str = "paper") -> dict:
             "drawdown": _usd(a["drawdown_u"]), "halted": led.halted(mode) is not None}
 
 
+def markouts(led, mode: str = "paper") -> dict:
+    """Each fill scored by the venue's touch a few seconds later (ledger ``markouts``, 2026-09-30):
+    per horizon, the mean of (mid at the horizon − price paid) in the side's own terms, in cents,
+    with n and a t statistic. A settlement is a ±50c coin per contract; the mid a minute on moves
+    a few cents, so this reads spread capture and adverse selection with far less noise than P&L
+    does. This allocation's fills only. A horizon that fell past the close, or was missed by a
+    restart, is recorded with no mid and left out of the mean."""
+    if not led._conn.execute("SELECT name FROM sqlite_master WHERE name='markouts'").fetchone():
+        return {}
+    a = led.account(mode)
+    rows = led._conn.execute(
+        "SELECT m.horizon_s, m.yes_bid, m.yes_ask, f.side, f.price_u FROM markouts m JOIN fills f ON f.id = m.fill_id "
+        "WHERE f.mode = ? AND f.epoch = ? AND m.yes_bid IS NOT NULL AND m.yes_ask IS NOT NULL", (mode, a["epoch"])).fetchall()
+    by: dict[int, list[float]] = {}
+    for r in rows:
+        mid = (r["yes_bid"] + r["yes_ask"]) / 2
+        value = mid if r["side"] == "YES" else 1 - mid
+        by.setdefault(r["horizon_s"], []).append(value - r["price_u"] / UNIT)
+    out = {}
+    for h, xs in sorted(by.items()):
+        n = len(xs)
+        m = sum(xs) / n
+        sd = (sum((x - m) ** 2 for x in xs) / n) ** 0.5 if n > 1 else 0.0
+        out[str(h)] = {"n": n, "mean_c": round(100 * m, 2),
+                       "t": None if n < 2 or sd == 0 else round(m / (sd / n ** 0.5), 2)}
+    return out
+
+
 def arms(root: str | Path, horizon: str, now: float | None = None, include_v1: bool = False) -> list[dict]:
     """Every running arm: its rule, its record, and what it is doing now. Retired arms'
     ledgers live under <root>/retired/ and are not listed; iteration 1's rule (the model's
@@ -377,6 +405,7 @@ def arms(root: str | Path, horizon: str, now: float | None = None, include_v1: b
             e = edge(led)
             row = {"name": name, "label": DISPLAY_NAMES.get(name, name), "spec": spec, **_book(led),
                    "edge": {k: v for k, v in e.items() if k != "curve"}, "edge_curve": e["curve"],
+                   "markouts": markouts(led),
                    "declined": counts.get("no_edge", 0) + counts.get("expired", 0), "counts": counts,
                    "now": None if cur is None or cur["close_ts"] < now else
                    {"status": cur["status"], "side": cur["side"], "p": cur["p_up"], "note": cur["rationale"]}}

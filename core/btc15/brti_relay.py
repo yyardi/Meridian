@@ -25,10 +25,13 @@ KALSHI-ACCESS-TIMESTAMP (ms) and KALSHI-ACCESS-SIGNATURE = base64 of the key's s
 ``f"{timestamp}GET{path}"`` -- RSA-PSS (SHA-256, MGF1, salt = digest length) or Ed25519 by key
 type. The documented path for the trade socket is ``/trade-api/ws/v2``; which path this host
 expects for the value feed is not documented, so the URL's own path is signed by default and
-``KALSHI_WS_SIGN_PATH`` overrides it. Credentials: ``KALSHI_API_KEY_ID`` and
-``KALSHI_PRIVATE_KEY_PATH`` (a PEM file) or ``KALSHI_PRIVATE_KEY`` (PEM text). Prod holds
-neither as of 2026-09-30 (the operator's ask); without them the relay is disabled and says so.
-Nothing here places an order: the value feed is read-only.
+``KALSHI_WS_SIGN_PATH`` overrides it. Credentials: ``KALSHI_API_KEY_ID`` and the private key
+as ``KALSHI_PRIVATE_KEY_B64`` (the PEM, base64 on one line, in ``/opt/meridian/.env`` beside
+the other secrets -- the bots mount no host path, and ``artifacts/btc15`` is mounted into the
+dashboard's container too, so a key never goes there), or ``KALSHI_PRIVATE_KEY`` (PEM text) or
+``KALSHI_PRIVATE_KEY_PATH`` (a path the operator mounted themselves). Prod holds none as of
+2026-09-30 (the operator's ask); without them, or with a key that does not load, the relay is
+off and the bot runs as before. Nothing here places an order: the value feed is read-only.
 """
 from __future__ import annotations
 
@@ -76,17 +79,21 @@ def auth_headers(key_id: str, private_key, path: str, ts_ms: int | None = None, 
 
 
 def credentials_from_env() -> tuple[str, object]:
+    """(key id, private key) from the environment. Raises MissingKalshiCredentials when unset;
+    OSError / ValueError when a key is set but cannot be read or parsed -- callers that must
+    stay up catch both and run without the relay."""
     e = os.environ.get
     key_id = e("KALSHI_API_KEY_ID")
-    pem = e("KALSHI_PRIVATE_KEY")
-    path = e("KALSHI_PRIVATE_KEY_PATH")
-    if not key_id or not (pem or path):
-        raise MissingKalshiCredentials("KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_PATH (or KALSHI_PRIVATE_KEY)")
-    if not pem:
+    b64, pem, path = e("KALSHI_PRIVATE_KEY_B64"), e("KALSHI_PRIVATE_KEY"), e("KALSHI_PRIVATE_KEY_PATH")
+    if not key_id or not (b64 or pem or path):
+        raise MissingKalshiCredentials("KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_B64 (or _PATH / KALSHI_PRIVATE_KEY)")
+    if b64:
+        pem_bytes = base64.b64decode(b64.strip().encode(), validate=True)      # binascii.Error is a ValueError
+    elif pem:
+        pem_bytes = pem.encode()
+    else:
         with open(path, "rb") as fh:
             pem_bytes = fh.read()
-    else:
-        pem_bytes = pem.encode()
     return key_id, load_private_key(pem_bytes)
 
 
