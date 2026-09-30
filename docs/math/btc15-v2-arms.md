@@ -251,3 +251,46 @@ The cause is confirmed in the venue's own headers: `/v1/markets/<slug>/book` is 
   are real; only the prices are suspect, and staleness flatters a paper fill. The targets
   stand (agent 40, `kalshi_taker_4c` 300), counted from here. The earlier record stays in
   the "all" columns for reference and is not evidence either way.
+
+## Message-driven arms and a re-quoting maker (2026-09-30 ~16:30Z)
+
+Every claim below names how to check it.
+
+**Measured on the live tape (`quotes` in the model's ledger, one row per second since the
+05:08:42Z fix; 8,363 tick pairs over 41 windows):**
+
+| what | value | check |
+|---|---|---|
+| Poly-vs-Kalshi mid gap, same second | median 0.4¢, p90 1.1¢, p99 3.0¢, max 9¢ | `analysis/btc15/kalshi_side.py`, or any SQL over `quotes` |
+| ticks with a gap ≥ 6¢ | 2 of 8,703 | same |
+| Poly's own mid moving ≥ 6¢ within 10 s | 15.8 % of ticks | same tape |
+| lead-lag at 3 s: corr(Kalshi move now, Poly move next) / reverse | +0.049 / +0.004 | `scratchpad/maker_size.py` logic, reproducible from `quotes` |
+| the venue's REST book | `cache-control: public, max-age=30`, `cf-cache-status: HIT` | `curl -sD - https://gateway.polymarket.us/v1/markets/<slug>/book -o /dev/null` |
+| a two-sided maker at Kalshi mid ∓ 1–3¢, re-priced every 3 s, filled on trade-through | −2.6 to −4.4¢ a fill, 76–80 fills / 41 windows | same script |
+| the last-minute snipe | in the final ~25 s the losing side leaves Poly's book (0.99 / no offer); 4 entries in 41 windows, one a confident loss | `scratchpad/endgame_size.py` logic over `quotes` + `ticks` |
+
+**What two browser tabs show is not a gap.** At 15:58:29Z the Kalshi page read "Up 47¢"
+while both live books were 63–66; 47/48 was the book's price at 15:57:52–55. Browsers
+throttle background tabs, so the tab not in focus freezes and shows a stale number when
+switched to. The dashboard's "This window" panel now prints both venues' live books from the
+same tape row, same second, so this can be checked without a browser tab in the middle.
+
+**What changed:**
+
+- `kalshi_requote` arm (`core/btc15/arms.py`, kind `requote`): two zero-fee quotes on Poly
+  at Kalshi's live mid −2¢ / +2¢, never crossing Poly's book, moved on every price message,
+  filled only when Poly trades **through** one of them (the touch crosses by a tick), one
+  contract per window, held to settlement. Kalshi leads Poly, so this makes on the laggard
+  priced off the leader. At 3-s staleness it lost 2.6¢ a fill to adverse selection; the
+  message-driven version cuts the stale window to about a second, and only a live run says
+  whether that is enough. Expected value is unknown, not positive.
+- The arms act on **every venue book message** (`Harness.on_stream_update`), on the socket's
+  thread, using the Kalshi read of the last second (`KALSHI_FRESH_S` = 2.5 s; older is no
+  price). The main loop reads Kalshi's order book once a second (`book_every_s` 3 → 1; the
+  `/markets` list is cached 10 s) and writes the once-a-second tape.
+- The seven earlier arms are unchanged and keep running.
+
+**Not built, and why:** the last-minute snipe (the book empties first); a Kalshi-side taker
+(Kalshi leads, so it would be trading on the laggard's noise); anything on polymarket.com
+(different venue, geo-blocked; whether the public "BTC 15-min arb" bots trade it or the US
+venue is being checked and will be written here with links).

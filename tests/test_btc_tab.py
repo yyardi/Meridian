@@ -273,3 +273,11 @@ def test_the_arms_new_epoch_command_leaves_the_models_own_ledger_alone(tmp_path,
     for name in ("kalshi_taker_wide", "llm_agent"):
         assert Ledger(str(tmp_path / f"polymarket-15m-arm-{name}.sqlite")).epoch("paper") == 2
     assert Ledger(str(tmp_path / "polymarket-15m.sqlite")).epoch("paper") == 1
+
+
+def test_the_summary_carries_the_two_venues_last_same_second_read(tmp_path):
+    led = _build(tmp_path)
+    led.add_quote(NOW - 2, {"ticker": "cpc-btc-updown-15m-2026-09-28-0100z", "yes_bid": 0.79, "yes_ask": 0.80,
+                            "yes_bid_size": 1, "yes_ask_size": 1}, {"yes_bid": 0.79, "yes_ask": 0.80})
+    q = desk.summary(tmp_path, "15m", now=NOW)["quote"]
+    assert q["t"] == NOW - 2 and (q["yes_bid"], q["kalshi_ask"]) == (0.79, 0.80)

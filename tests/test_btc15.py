@@ -795,3 +795,42 @@ def test_the_agent_reads_only_this_allocations_trading_record(led, tmp_path):
     arm_led.new_epoch("paper")
     rec = h._experience()["your_trading_record"]
     assert rec["trades_settled"] == 0 and rec["pnl_usd"] == 0 and rec["windows_passed"] == 0
+
+
+def test_a_stream_message_ticks_the_arms_with_the_last_seconds_kalshi_read(led, tmp_path):
+    """Between the main loop's once-a-second passes, a venue book message runs the arms on the
+    socket's thread with the cached Kalshi read; it never fetches, never writes the tape, and a
+    Kalshi read older than KALSHI_FRESH_S is no price."""
+    from core.btc15.arms import Arm, ArmSpec
+    now = 1_790_600_000.0
+    h, m = _harness(led, now, FakeModel(p=0.6))
+    live = dict(m, status="active", fee_coefficient="0.0695", book_source="stream")
+    h.venue.stream = object()
+    h.venue.quote = lambda slug: dict(live)
+    reads = []
+
+    class K:
+        def current(self, t):
+            reads.append(t)
+            return {"open_ts": m["open_ts"], "close_ts": m["close_ts"], "yes_bid": 0.80, "yes_ask": 0.81}
+    h.reference = K()
+    arm_led = Ledger(str(tmp_path / "kt.sqlite"))
+    h.arms = [Arm(ArmSpec("kalshi_taker", "kalshi", "taker", 0.02), arm_led, 10 * UNIT)]
+    h.clock = lambda: now + 60.5
+    h.on_stream_update(m["ticker"])                                # no cached read yet: no Kalshi price, no trade
+    assert reads == [] and not arm_led.unsettled_fills()
+    h.run_arms(now + 61)                                           # the main loop reads Kalshi and tapes
+    assert reads == [now + 61] and len(arm_led.unsettled_fills()) == 1
+    assert led._conn.execute("SELECT COUNT(*) FROM quotes").fetchone()[0] == 1
+    arm_led2 = Ledger(str(tmp_path / "kt2.sqlite"))
+    h.arms = [Arm(ArmSpec("kalshi_taker_2", "kalshi", "taker", 0.02), arm_led2, 10 * UNIT)]
+    h.clock = lambda: now + 62.0
+    h.on_stream_update(m["ticker"])                                # 1 s later: the cached read is a price, no fetch, no tape
+    assert reads == [now + 61] and len(arm_led2.unsettled_fills()) == 1
+    assert led._conn.execute("SELECT COUNT(*) FROM quotes").fetchone()[0] == 1
+    arm_led3 = Ledger(str(tmp_path / "kt3.sqlite"))
+    h.arms = [Arm(ArmSpec("kalshi_taker_3", "kalshi", "taker", 0.02), arm_led3, 10 * UNIT)]
+    h.clock = lambda: now + 65.0
+    h.on_stream_update(m["ticker"])                                # 4 s later: stale, no price
+    assert not arm_led3.unsettled_fills()
+    h.on_stream_update("some-other-window")                        # not the window in play: ignored

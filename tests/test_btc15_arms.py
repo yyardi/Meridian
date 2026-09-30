@@ -169,3 +169,57 @@ def test_the_tape_records_both_venues_and_the_replay_takes_the_first_qualifying_
     ten = R.replay(wins, ticks, 0.10)            # nothing does
     assert two == [(pytest.approx(1 - 0.50 - 0.02), int(OPEN // 86400), pytest.approx(0.52))]
     assert len(five) == 1 and ten == []
+
+
+# ------------------------------------------------------------------ the re-quoting maker (2026-09-30)
+def _mk(led, margin=0.02):
+    return Arm(ArmSpec("rq", "kalshi", "requote", margin, start_s=30), led, 10 * UNIT)
+
+
+def test_a_requote_maker_rests_both_sides_around_kalshi_and_moves_with_it(led):
+    arm = _mk(led)
+    arm.tick(OPEN + 60, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)
+    d = led.decision("W1"); r = json.loads(d["response"])
+    assert d["status"] == "resting" and d["side"] is None and (r["bid"], r["offer"]) == (0.49, 0.53)
+    arm.tick(OPEN + 63, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)          # nothing moved: same quotes, same posting
+    assert json.loads(led.decision("W1")["response"])["posted_at"] == OPEN + 60
+    arm.tick(OPEN + 66, _m(0.51, 0.53), {"kalshi": 0.52}, COEF, 90)          # Kalshi moved a cent, book still inside: re-priced
+    r = json.loads(led.decision("W1")["response"])
+    assert (r["bid"], r["offer"], r["posted_at"]) == (0.50, 0.54, OPEN + 66)
+
+
+def test_a_requote_maker_never_crosses_the_venues_book(led):
+    arm = _mk(led)
+    arm.tick(OPEN + 60, _m(0.50, 0.51), {"kalshi": 0.56}, COEF, 90)          # fair - 2c = 0.54 would cross the 0.51 ask
+    r = json.loads(led.decision("W1")["response"])
+    assert (r["bid"], r["offer"]) == (0.50, 0.58)                             # bid a tick under the ask, offer at fair + 2c
+
+
+def test_a_requote_maker_fills_only_when_traded_through_and_pays_no_fee(led):
+    arm = _mk(led)
+    arm.tick(OPEN + 60, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)          # 0.49 / 0.53
+    arm.tick(OPEN + 61, _m(0.48, 0.49), {"kalshi": 0.51}, COEF, 90)          # ask TOUCHES our bid: no fill, re-priced
+    assert led.decision("W1")["status"] == "resting" and not led.unsettled_fills()
+    arm.tick(OPEN + 60, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)
+    led2 = Ledger(":memory:"); arm2 = _mk(led2)
+    arm2.tick(OPEN + 60, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)         # 0.49 / 0.53
+    arm2.tick(OPEN + 61, _m(0.46, 0.48), {"kalshi": 0.51}, COEF, 90)         # ask 0.48 < 0.49 - tick: traded through
+    f = led2.unsettled_fills()[0]
+    assert f["side"] == "YES" and f["price_u"] == 4900 and f["fee_u"] == 0
+    assert led2.decision("W1")["status"] == "filled"
+    led3 = Ledger(":memory:"); arm3 = _mk(led3)
+    arm3.tick(OPEN + 60, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)
+    arm3.tick(OPEN + 61, _m(0.54, 0.56), {"kalshi": 0.51}, COEF, 90)         # bid 0.54 > 0.53 + tick: our offer was lifted
+    f = led3.unsettled_fills()[0]
+    assert f["side"] == "NO" and f["price_u"] == 4700 and f["fee_u"] == 0   # sold YES at 0.53 = bought NO at 0.47
+
+
+def test_a_requote_maker_pulls_its_quotes_without_a_fair_price_and_expires_at_the_close(led):
+    arm = _mk(led)
+    arm.tick(OPEN + 60, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)
+    arm.tick(OPEN + 63, _m(0.50, 0.52), {"kalshi": None}, COEF, 90)          # Kalshi wide or absent
+    d = led.decision("W1")
+    assert d["status"] == "watching" and d["response"] is None
+    arm.tick(OPEN + 66, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)
+    arm.tick(OPEN + 900 - 80, _m(0.50, 0.52), {"kalshi": 0.51}, COEF, 90)
+    assert led.decision("W1")["status"] == "expired" and not led.unsettled_fills()

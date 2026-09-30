@@ -59,6 +59,9 @@ class ArmSpec:
     llm_fresh_s: float = 60.0
 
     def describe(self) -> str:
+        if self.kind == "requote":
+            return (f"two-sided zero-fee quotes on the venue at Kalshi's live mid −/+ {round(self.margin * 100)}¢, "
+                    f"moved on every price message; filled only when traded through")
         what = {"walk": "random walk", "quant": "fitted model", "llm": "the LLM", "kalshi": "Kalshi's price",
                 "mid": "the market mid"}[self.prob]
         if self.kind == "agent":
@@ -87,6 +90,12 @@ DEFAULT_ARMS = (
     ArmSpec("kalshi_taker_5c", "kalshi", "taker", cents(5)),
     ArmSpec("kalshi_taker_6c", "kalshi", "taker", cents(6)),
     ArmSpec("kalshi_taker_8c", "kalshi", "taker", cents(8)),
+    # 2026-09-30: Kalshi's book moves first and the venue follows a tick later (live tape,
+    # corr +0.05 vs 0.00). This rests zero-fee quotes on the venue at Kalshi's live mid
+    # -/+ 2c and moves them on every price message; it is filled only when the venue
+    # trades through one of them. At 3-s staleness it lost 2.6c a fill (adverse
+    # selection); message-driven is the version being measured.
+    ArmSpec("kalshi_requote", "kalshi", "requote", cents(2)),
 )
 
 #: Retired 2026-09-29 21:50Z on the operator's call, every one losing on paper as the
@@ -128,6 +137,12 @@ class Arm:
         closing = now >= m["close_ts"] - min_lead_s
         if self.spec.kind == "agent":
             self._agent(now, m, probs, fee_coef, closing, d)
+            return
+        if self.spec.kind == "requote":
+            if closing:
+                self.ledger.finish_decision(t, status="expired" if status == "resting" else "no_edge")
+                return
+            self._requote(now, m, probs, d)
             return
         if self.spec.kind == "taker":
             if closing:
@@ -250,6 +265,44 @@ class Arm:
         self.ledger.finish_decision(m["ticker"], status="resting", side=side, p_up=round(p, 4), answered_at=_iso(now),
                                     response=json.dumps({"resting_price": price, "posted_at": now, "mid": mid}),
                                     rationale=f"resting {side} bid at {price:.2f} (fair {p if side == 'YES' else 1 - p:.3f}, mid {mid:.3f})")
+
+    def _requote(self, now: float, m: dict, probs: dict, d) -> None:
+        """Two-sided zero-fee quotes at fair -/+ margin, moved whenever fair or the book moves,
+        filled only when the venue trades THROUGH one of them (the other side's touch crosses
+        our price by a tick). The first fill takes the window's one contract."""
+        t = m["ticker"]
+        r = json.loads(d["response"] or "{}") if d["status"] == "resting" else {}
+        bid, offer, posted = r.get("bid"), r.get("offer"), r.get("posted_at")
+        yb, ya = m.get("yes_bid"), m.get("yes_ask")
+        if posted is not None and now > posted:                  # quotes from an earlier tick can be hit
+            if bid is not None and ya is not None and ya <= bid - BTC_PRICE_TICK + 1e-9:
+                self._maker_fill(now, m, d, "YES", bid)
+                return
+            if offer is not None and yb is not None and yb >= offer + BTC_PRICE_TICK - 1e-9:
+                self._maker_fill(now, m, d, "NO", round(1 - offer, 2))
+                return
+        p = self._prob(now, probs)
+        if p is None or yb is None or ya is None:
+            if d["status"] == "resting":
+                self.ledger.finish_decision(t, status="watching", response=None, rationale="quotes pulled: no fair price")
+            return
+        nb = min(_floor_cent(p - self.spec.margin), round(ya - BTC_PRICE_TICK, 2))
+        no = max(math.ceil((p + self.spec.margin) * 100 - 1e-9) / 100, round(yb + BTC_PRICE_TICK, 2))
+        if not (BTC_PRICE_TICK <= nb < no <= 1 - BTC_PRICE_TICK):
+            if d["status"] == "resting":
+                self.ledger.finish_decision(t, status="watching", response=None, rationale="quotes pulled: no room inside the book")
+            return
+        if (nb, no) != (bid, offer):
+            self.ledger.finish_decision(t, status="resting", p_up=round(p, 4), answered_at=_iso(now),
+                                        response=json.dumps({"bid": nb, "offer": no, "posted_at": now, "fair": round(p, 4)}),
+                                        rationale=f"quoting {nb:.2f} / {no:.2f} around Kalshi {p:.3f}")
+
+    def _maker_fill(self, now: float, m: dict, d, side: str, price: float) -> None:
+        price_u = int(round(price * UNIT))
+        book = {k: m.get(k) for k in ("yes_bid_u", "yes_ask_u", "no_bid_u", "no_ask_u", "yes_bid_size", "yes_ask_size")}
+        fid, why = self.ledger.record_fill("paper", m["ticker"], side, price_u, 0, self.limit_u, book=book)
+        self.ledger.finish_decision(m["ticker"], status="filled" if fid else "not_filled", side=side, error=None if fid else why,
+                                    rationale=(d["rationale"] or "") + f"; traded through: {side} at {price:.2f}, no fee, {_iso(now)}")
 
     def _check_fill(self, now: float, m: dict, d) -> None:
         r = json.loads(d["response"] or "{}")
