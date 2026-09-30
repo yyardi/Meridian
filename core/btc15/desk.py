@@ -107,7 +107,7 @@ _ROWS = (
     "d.response, d.p_up, d.side, d.confidence, d.rationale, d.status, d.error, d.latency_s, d.usage, d.lesson, "
     "f.side AS f_side, f.price_u, f.fee_u, f.filled_at, f.epoch, s.payout_u, s.pnl_u, s.settled_at "
     "FROM windows w LEFT JOIN decisions d ON d.ticker = w.ticker "
-    "LEFT JOIN fills f ON f.ticker = w.ticker AND f.mode = ? "
+    "LEFT JOIN fills f ON f.ticker = w.ticker AND f.mode = ? AND f.epoch = ? "
     "LEFT JOIN settlements s ON s.fill_id = f.id ")
 
 
@@ -160,10 +160,10 @@ def summary(root: str | Path, horizon: str, now: float | None = None, arm: str |
         a = led.account(mode)
         rec = led.experience(mode, n=0, n_lessons=0)["your_record"]
         cur = led._conn.execute(_ROWS + "WHERE w.open_ts <= ? ORDER BY w.open_ts DESC LIMIT 1",
-                                (mode, now)).fetchone()
+                                (mode, led.epoch(mode), now)).fetchone()
         cur_row = None if cur is None else _row(cur)
         mcur = main._conn.execute(_ROWS + "WHERE w.open_ts <= ? ORDER BY w.open_ts DESC LIMIT 1",
-                                  (main_mode, now)).fetchone()
+                                  (main_mode, main.epoch(main_mode), now)).fetchone()
         if arm and mcur is not None and (cur_row is None or cur_row["open_ts"] < mcur["open_ts"]):
             # the arm has not reached the window in play yet: the window, and no call
             cur_row = dict(_row(mcur), decision=None, fill=None)
@@ -178,7 +178,8 @@ def summary(root: str | Path, horizon: str, now: float | None = None, arm: str |
             curve.append({"at": r["settled_at"], "ticker": r["ticker"], "pnl": _usd(r["pnl_u"]), "cum": _usd(cum),
                           "cost": _usd(r["price_u"] + r["fee_u"])})
         counts = {r["status"]: r["n"] for r in led._conn.execute(
-            "SELECT status, COUNT(*) n FROM decisions GROUP BY status")}
+            "SELECT status, COUNT(*) n FROM decisions WHERE requested_at >= ? GROUP BY status",
+            (led.epoch_from(mode) or "",))}
         # The same selection Ledger.experience hands the model: newest first, twelve.
         lessons = [{"ticker": r["ticker"], "open_ts": r["open_ts"], "close_ts": r["close_ts"], "side": r["side"],
                     "p_up": r["p_up"], "result": r["result"], "lesson": r["lesson"]}
@@ -188,13 +189,14 @@ def summary(root: str | Path, horizon: str, now: float | None = None, arm: str |
                        "ORDER BY d.requested_at DESC LIMIT 12")]
         spent, spent_total = main.spent(), main.spent_total()
         halted = led.halted(mode)
+        ef = led.epoch_from(mode)
         e = edge(led, mode)
     finally:
         led._conn.close()
         if led is not main:
             main._conn.close()
     return {
-        "horizon": horizon, "length_s": HORIZONS[horizon], "now": now, "mode": mode,
+        "horizon": horizon, "length_s": HORIZONS[horizon], "now": now, "mode": mode, "epoch_from": ef,
         "arm": arm, "arm_label": DISPLAY_NAMES.get(arm, arm) if arm else "v1 favourite (old)", "arm_spec": spec,
         "edge": {k: v for k, v in e.items() if k != "curve"},
         "status": status, "halted": halted,
@@ -222,9 +224,13 @@ def history(root: str | Path, horizon: str, limit: int = 100, before_ts: float |
     mode = mode or _mode(_status(st, time.time()))
     led = _ro(db)
     try:
+        # this allocation's windows only: from the one in play when the epoch began
+        ef = _ts(led.epoch_from(mode))
+        floor = -1.0 if ef is None else ef - HORIZONS[horizon]
         rows = led._conn.execute(
-            _ROWS + "WHERE w.open_ts < ? ORDER BY w.open_ts DESC LIMIT ?",
-            (mode, before_ts if before_ts is not None else 1e12, max(1, min(int(limit), 500)))).fetchall()
+            _ROWS + "WHERE w.open_ts < ? AND w.open_ts > ? ORDER BY w.open_ts DESC LIMIT ?",
+            (mode, led.epoch(mode), before_ts if before_ts is not None else 1e12, floor,
+             max(1, min(int(limit), 500)))).fetchall()
     finally:
         led._conn.close()
     return [_row(r) for r in rows]
@@ -357,7 +363,9 @@ def arms(root: str | Path, horizon: str, now: float | None = None, include_v1: b
         led = _ro(f)
         try:
             spec = _j(led.get("arm_spec"))
-            counts = {r["status"]: r["n"] for r in led._conn.execute("SELECT status, COUNT(*) n FROM decisions GROUP BY status")}
+            counts = {r["status"]: r["n"] for r in led._conn.execute(
+                "SELECT status, COUNT(*) n FROM decisions WHERE requested_at >= ? GROUP BY status",
+                (led.epoch_from("paper") or "",))}
             cur = led._conn.execute(
                 "SELECT d.ticker, d.status, d.side, d.p_up, d.rationale, w.close_ts FROM decisions d "
                 "JOIN windows w ON w.ticker = d.ticker ORDER BY w.open_ts DESC LIMIT 1").fetchone()

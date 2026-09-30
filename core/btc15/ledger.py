@@ -121,10 +121,17 @@ class Ledger:
         return int(self.get(f"epoch_{mode}", "1"))
 
     def new_epoch(self, mode: str) -> int:
-        """Operator action: a fresh $10 allocation. Never called by the harness."""
+        """Operator action: a fresh $10 allocation. Never called by the harness. The old
+        epoch's fills stay in the file; everything that reads a record reads the current one."""
         e = self.epoch(mode) + 1
+        self.put(f"epoch_{mode}_{e}_from", _now_iso())
         self.put(f"epoch_{mode}", str(e))
         return e
+
+    def epoch_from(self, mode: str, epoch: int | None = None) -> str | None:
+        """When an epoch began (ISO, UTC); None for epoch 1, which began with the ledger."""
+        e = self.epoch(mode) if epoch is None else epoch
+        return self.get(f"epoch_{mode}_{e}_from")
 
     def halted(self, mode: str) -> dict | None:
         v = self.get(f"halted_{mode}_{self.epoch(mode)}")

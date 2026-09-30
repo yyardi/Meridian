@@ -238,3 +238,38 @@ def test_the_tab_names_the_4c_arm_by_its_margin_and_keeps_its_ledger_key(tmp_pat
     assert rows[0]["edge"]["all"]["n"] == 1 and len(rows[0]["edge_curve"]) == 1
     s = desk.summary(tmp_path, "15m", now=NOW, arm="kalshi_taker_wide")
     assert s["arm_label"] == "kalshi_taker_4c" and s["edge"]["all"]["mean_c"] == pytest.approx(38.0)
+
+
+# ------------------------------------------------------------------ a fresh allocation (2026-09-30)
+def test_a_new_epoch_shows_only_the_fresh_record_and_keeps_the_old_one_in_the_file(tmp_path):
+    from core.btc15.ledger import UNIT
+    _build(tmp_path)
+    led = _arm_ledger(tmp_path, "kalshi_taker_wide", [("YES", 0.60, 0.02, 0.70, "no")])     # old: -0.62
+    led.new_epoch("paper")
+    assert led.epoch("paper") == 2 and led.epoch_from("paper") is not None
+    tk, o = "W-fresh", time.time() - 60
+    led.upsert_window({"ticker": tk, "open_time": None, "close_time": None, "open_ts": o, "close_ts": o + 900, "strike": 1.0})
+    assert led.start_decision(tk, None, {})
+    led.finish_decision(tk, status="filled", side="YES", p_up=0.70)
+    fid, why = led.record_fill("paper", tk, "YES", int(0.60 * UNIT), int(0.02 * UNIT), 100 * UNIT)
+    led.finalize_window(tk, "yes", 2.0, None)
+    led.settle(fid, "yes")                                                                  # fresh: +0.38
+    row = desk.arms(tmp_path, "15m", now=NOW)[0]
+    assert row["settled"] == 1 and row["pnl"] == pytest.approx(0.38) and row["edge"]["all"]["n"] == 1
+    assert [r["ticker"] for r in desk.history(tmp_path, "15m", arm="kalshi_taker_wide")] == [tk]
+    s = desk.summary(tmp_path, "15m", now=o + 120, arm="kalshi_taker_wide")
+    assert s["account"]["settled"] == 1 and s["epoch_from"] == led.epoch_from("paper")
+    # nothing was deleted: the old epoch is still in the file
+    assert led.account("paper", epoch=1)["settled"] == 1 and led._conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0] == 2
+
+
+def test_the_arms_new_epoch_command_leaves_the_models_own_ledger_alone(tmp_path, monkeypatch):
+    from core.btc15 import harness
+    _build(tmp_path)
+    for name in ("kalshi_taker_wide", "llm_agent"):
+        _arm_ledger(tmp_path, name, [("YES", 0.60, 0.02, 0.70, "yes")])
+    monkeypatch.setenv("MERIDIAN_BTC15_DB", str(tmp_path / "polymarket-15m.sqlite"))
+    assert harness.main(["--new-epoch", "paper", "--arms"]) == 0
+    for name in ("kalshi_taker_wide", "llm_agent"):
+        assert Ledger(str(tmp_path / f"polymarket-15m-arm-{name}.sqlite")).epoch("paper") == 2
+    assert Ledger(str(tmp_path / "polymarket-15m.sqlite")).epoch("paper") == 1

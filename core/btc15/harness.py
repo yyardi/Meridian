@@ -452,13 +452,16 @@ class Harness:
         ex = self.ledger.experience(self.settings.mode, n=12, n_lessons=8)
         for arm in self.arms:
             if arm.spec.kind == "agent":
+                # this allocation's record only: an earlier epoch was priced on stale quotes
                 a = arm.ledger.account("paper")
+                since = arm.ledger.epoch_from("paper") or ""
                 r = arm.ledger._conn.execute(
                     "SELECT COUNT(*) n, COALESCE(SUM(f.price_u + f.fee_u), 0) staked, "
                     "COALESCE(SUM(CASE WHEN s.pnl_u > 0 THEN 1 ELSE 0 END), 0) wins FROM fills f "
-                    "JOIN settlements s ON s.fill_id = f.id").fetchone()
+                    "JOIN settlements s ON s.fill_id = f.id WHERE f.mode = 'paper' AND f.epoch = ?",
+                    (a["epoch"],)).fetchone()
                 passes = arm.ledger._conn.execute(
-                    "SELECT COUNT(*) FROM decisions WHERE status = 'no_edge'").fetchone()[0]
+                    "SELECT COUNT(*) FROM decisions WHERE status = 'no_edge' AND requested_at >= ?", (since,)).fetchone()[0]
                 ex["your_trading_record"] = {
                     "trades_settled": r["n"], "won": r["wins"], "pnl_usd": a["realized_u"] / UNIT,
                     "return_on_staked": None if not r["staked"] else round(a["realized_u"] / r["staked"], 4),
@@ -645,6 +648,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check-openai", action="store_true")
     ap.add_argument("--new-epoch", choices=("paper", "live"))
+    ap.add_argument("--arms", action="store_true",
+                    help="with --new-epoch: every strategy arm's ledger, and NOT the model's own "
+                         "(iteration 1's rule is halted; a new epoch would unlatch it)")
     a = ap.parse_args(argv)
     settings = Settings.from_env()
     if a.check_openai:
@@ -656,8 +662,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nconfigured MERIDIAN_BTC15_MODEL={cfg.model!r}")
         return 0
     if a.new_epoch:
-        led = Ledger(settings.db_path)
-        print(f"{a.new_epoch} epoch -> {led.new_epoch(a.new_epoch)}")
+        import glob
+        paths = sorted(glob.glob(arm_db_path(settings.db_path, "*"))) if a.arms else [settings.db_path]
+        for p in paths:
+            led = Ledger(p)
+            print(f"{p}: {a.new_epoch} epoch -> {led.new_epoch(a.new_epoch)} from {led.epoch_from(a.new_epoch)}")
         return 0
     run(build(settings))
     return 0

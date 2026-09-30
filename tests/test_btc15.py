@@ -784,3 +784,14 @@ def test_arms_trade_only_on_the_streamed_book_when_a_stream_is_configured(led, t
     h.run_arms(m["open_ts"] + 63)
     assert len(arm_led.unsettled_fills()) == 1
     assert led._conn.execute("SELECT COUNT(*) FROM quotes").fetchone()[0] == 1
+
+
+def test_the_agent_reads_only_this_allocations_trading_record(led, tmp_path):
+    h, m, live, arm_led, _ = _agent_harness(led, tmp_path, [{"action": "buy_up", "limit_price": 0.65}])
+    h.decide(m)
+    h.run_arms(m["open_ts"] + 60)
+    arm_led.settle(arm_led.unsettled_fills()[0]["id"], "yes")
+    assert h._experience()["your_trading_record"]["trades_settled"] == 1
+    arm_led.new_epoch("paper")
+    rec = h._experience()["your_trading_record"]
+    assert rec["trades_settled"] == 0 and rec["pnl_usd"] == 0 and rec["windows_passed"] == 0
