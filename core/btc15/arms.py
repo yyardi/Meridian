@@ -447,7 +447,7 @@ class Arm:
     # ------------------------------------------------------------------ settlement
     def settle(self, results: dict[str, str], finals: dict[str, tuple]) -> None:
         for t, (res, value, proxy) in finals.items():
-            w = self.ledger._conn.execute("SELECT result FROM windows WHERE ticker=?", (t,)).fetchone()
+            w = self.ledger.query_one("SELECT result FROM windows WHERE ticker=?", (t,))
             if w is not None and w["result"] is None:
                 self.ledger.finalize_window(t, res, value, proxy)
         for f in self.ledger.unsettled_fills():

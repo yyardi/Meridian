@@ -551,13 +551,13 @@ class Harness:
                 # this allocation's record only: an earlier epoch was priced on stale quotes
                 a = arm.ledger.account("paper")
                 since = arm.ledger.epoch_from("paper") or ""
-                r = arm.ledger._conn.execute(
+                r = arm.ledger.query_one(
                     "SELECT COUNT(*) n, COALESCE(SUM(f.price_u + f.fee_u), 0) staked, "
                     "COALESCE(SUM(CASE WHEN s.pnl_u > 0 THEN 1 ELSE 0 END), 0) wins FROM fills f "
                     "JOIN settlements s ON s.fill_id = f.id WHERE f.mode = 'paper' AND f.epoch = ?",
-                    (a["epoch"],)).fetchone()
-                passes = arm.ledger._conn.execute(
-                    "SELECT COUNT(*) FROM decisions WHERE status = 'no_edge' AND requested_at >= ?", (since,)).fetchone()[0]
+                    (a["epoch"],))
+                passes = arm.ledger.query_one(
+                    "SELECT COUNT(*) FROM decisions WHERE status = 'no_edge' AND requested_at >= ?", (since,))[0]
                 ex["your_trading_record"] = {
                     "trades_settled": r["n"], "won": r["wins"], "pnl_usd": a["realized_u"] / UNIT,
                     "return_on_staked": None if not r["staked"] else round(a["realized_u"] / r["staked"], 4),
@@ -601,8 +601,8 @@ class Harness:
             proxy = self.feed.average(w["close_ts"] - 60, w["close_ts"])
             self.ledger.finalize_window(w["ticker"], o["result"], o.get("expiration_value"), proxy)
             finals[w["ticker"]] = (o["result"], o.get("expiration_value"), proxy)
-        results = {r["ticker"]: r["result"] for r in self.ledger._conn.execute(
-            "SELECT ticker, result FROM windows WHERE result IS NOT NULL").fetchall()}
+        results = {r["ticker"]: r["result"] for r in self.ledger.query(
+            "SELECT ticker, result FROM windows WHERE result IS NOT NULL")}
         for f in self.ledger.unsettled_fills():
             if f["ticker"] in results:
                 self.ledger.settle(f["id"], results[f["ticker"]])
@@ -615,11 +615,11 @@ class Harness:
             self._reflect()
 
     def _reflect(self) -> None:
-        rows = self.ledger._conn.execute(
+        rows = self.ledger.query(
             "SELECT d.ticker, d.p_up, d.side, d.confidence, d.rationale, d.features, d.status, w.result, "
             "w.expiration_value, w.strike FROM decisions d JOIN windows w ON w.ticker=d.ticker "
             "WHERE d.p_up IS NOT NULL AND d.lesson IS NULL AND w.result IN ('yes','no') "
-            "ORDER BY w.close_ts DESC LIMIT 3").fetchall()
+            "ORDER BY w.close_ts DESC LIMIT 3")
         for r in rows:
             if r["ticker"] in self._reflected:
                 continue
