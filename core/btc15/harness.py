@@ -37,6 +37,7 @@ features and predictions and places nothing.
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime as dt
 import json
 import logging
@@ -158,6 +159,10 @@ class Harness:
     _kalshi_stop: object = field(default_factory=threading.Event)
     microtape: object = None                 # core.btc15.microtape.Microtape, or None
     brti: object = None                      # core.btc15.brti_relay.BRTIRelay, or None (no Kalshi key)
+    #: coinbase mids at the socket's cadence, for the join arms' spot trigger: (at, mid)
+    _spot_ring: object = field(default_factory=lambda: collections.deque(maxlen=400))
+    #: the exchange whose socket drives the spot trigger
+    SPOT_TRIGGER_EXCHANGE = "coinbase"
 
     # ------------------------------------------------------------------ the second
     def step(self, now: float, px: float | None, n: int, disp: float) -> None:
@@ -479,6 +484,47 @@ class Harness:
         finally:
             self._arms_lock.release()
 
+    def on_spot_update(self, exchange: str, bid: float, ask: float, last: float, at: float) -> None:
+        """Every socket quote, on the exchange socket's thread. For the join arms with a spot
+        trigger: the coinbase move over the prior spot_pull_ms, and a pull of the threatened side
+        when it clears spot_pull_usd. Skipped when an arms pass holds the lock (the next quote
+        arrives within milliseconds); never blocks the socket."""
+        if exchange != self.SPOT_TRIGGER_EXCHANGE:
+            return
+        mid = (bid + ask) / 2
+        ring = self._spot_ring
+        ring.append((at, mid))
+        arms = [a for a in self.arms if a.spec.kind == "join" and a.spec.spot_pull_usd > 0]
+        m = self.market
+        if not arms or not m:
+            return
+        w = max(a.spec.spot_pull_ms for a in arms) / 1000
+        base = None
+        for t0, px in reversed(ring):
+            if t0 <= at - w:
+                base = px
+                break
+        if base is None:
+            return
+        move = mid - base
+        if abs(move) < min(a.spec.spot_pull_usd for a in arms):
+            return
+        if not self._arms_lock.acquire(blocking=False):
+            return
+        try:
+            quote = getattr(self.venue, "quote", None)
+            live = quote(m["ticker"]) if quote else None
+            book_mid = None
+            if live and live.get("yes_bid") is not None and live.get("yes_ask") is not None:
+                book_mid = (live["yes_bid"] + live["yes_ask"]) / 2
+            for a in arms:
+                try:
+                    a.spot_pull(at, m["ticker"], "up" if move > 0 else "down", move, book_mid)
+                except Exception:                                # noqa: BLE001 -- one arm never stops the others
+                    log.exception("spot pull %s", a.spec.name)
+        finally:
+            self._arms_lock.release()
+
     def _run_arms(self, now: float, fetch_kalshi: bool) -> None:
         m = self.market
         if not m or m.get("strike") is None or not (m["open_ts"] <= now < m["close_ts"]):
@@ -751,7 +797,14 @@ def build(settings: Settings) -> Harness:
         h.microtape = Microtape(tape_path, keep_days=float(os.environ.get("MERIDIAN_BTC15_MICROTAPE_DAYS") or 3)).start()
         if stream is not None:
             stream.on_book, stream.on_trade = h.microtape.book, h.microtape.trade
-        feed.on_spot = h.microtape.spot
+        tape_spot = h.microtape.spot
+
+        def spot_fanout(exchange, bid, ask, last, at):
+            tape_spot(exchange, bid, ask, last, at)
+            h.on_spot_update(exchange, bid, ask, last, at)
+        feed.on_spot = spot_fanout
+    else:
+        feed.on_spot = h.on_spot_update
     if h.microtape is not None and settings.horizon == "15m":
         # Kalshi's relay of the settlement index, recorded beside the composite when a key exists
         from core.btc15.brti_relay import BRTIRelay, MissingKalshiCredentials

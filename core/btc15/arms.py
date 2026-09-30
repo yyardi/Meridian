@@ -44,6 +44,18 @@ An arm is (probability source, execution kind, margin):
                       both sides always (the control). The venue pays makers a rebate
                       (docs.polymarket.us/fees, 2026-09-25) which the ledger does NOT
                       credit: makers are booked at zero, the conservative reading.
+                      SPOT TRIGGER (spot_pull_usd > 0; off by default, 2026-09-30): spot
+                      leads the venue's book by ~250 ms (microtape lead-lag), and a join
+                      arm re-prices only on book messages, so its quote on the side spot
+                      just moved against stands stale for those milliseconds -- which is
+                      when it is hit. With the trigger, a coinbase move of >= spot_pull_usd
+                      within spot_pull_ms PULLS the threatened side (spot up: the offer;
+                      spot down: the bid) at the instant the spot socket delivers it; a
+                      print or trade-through on a pulled side does not fill. The side is
+                      re-joined once the book has re-priced in the move's direction by a
+                      tick, or after spot_repost_s. Sized on the registered read
+                      (analysis/btc15/maker_fill_toxicity.py); the other side keeps its
+                      queue place.
 
 At most one contract per arm per window, held to settlement. A window the arm saw and
 did not trade is recorded (no_edge / expired), so "chose not to trade" is data.
@@ -82,10 +94,16 @@ LIFTS_OFFER_MAKER = "ORDER_INTENT_BUY_SHORT"
 class ArmSpec:
     name: str
     prob: str                   # walk | quant | llm | kalshi | mid
-    kind: str                   # agent | taker | maker
+    kind: str                   # agent | taker | maker | requote | join
     margin: float
     start_s: float = 30.0       # earliest second after the open to act (a maker posts then)
     llm_fresh_s: float = 60.0
+    #: join arms only: pull the threatened side when coinbase moves this many dollars within
+    #: spot_pull_ms; 0 = no trigger (the control). Re-join after the book re-prices a tick in
+    #: the move's direction or spot_repost_s, whichever first.
+    spot_pull_usd: float = 0.0
+    spot_pull_ms: int = 250
+    spot_repost_s: float = 2.0
 
     def describe(self) -> str:
         if self.kind == "requote":
@@ -94,8 +112,10 @@ class ArmSpec:
         if self.kind == "join":
             gate = (f"; a side only when Kalshi's mid is {round(self.margin * 100)}¢ better than our price"
                     if self.prob == "kalshi" else " (both sides always: the control)")
+            pull = (f"; the threatened side pulled when coinbase moves ${self.spot_pull_usd:.0f} in {self.spot_pull_ms} ms, "
+                    f"re-joined after the book re-prices" if self.spot_pull_usd > 0 else "")
             return ("zero-fee quotes joined to the venue's own touch on every message, filled by prints beyond "
-                    "the size ahead of us or a trade-through" + gate)
+                    "the size ahead of us or a trade-through" + gate + pull)
         what = {"walk": "random walk", "quant": "fitted model", "llm": "the LLM", "kalshi": "Kalshi's price",
                 "mid": "the market mid"}[self.prob]
         if self.kind == "agent":
@@ -352,10 +372,22 @@ class Arm:
         t = m["ticker"]
         st = json.loads(d["response"] or "{}") if d["status"] == "resting" else {}
         yb, ya = m.get("yes_bid"), m.get("yes_ask")
+        mid = None if yb is None or ya is None else (yb + ya) / 2
+        # 0. a side the spot trigger pulled stays pulled until the book has re-priced in the
+        #    move's direction by a tick, or spot_repost_s has passed; it cannot be filled meanwhile
+        pulled = dict(st.get("pulled") or {})
+        for side, info in list(pulled.items()):
+            if info is None:
+                continue
+            moved = (mid is not None and info.get("mid") is not None
+                     and ((info["dir"] == "up" and mid >= info["mid"] + BTC_PRICE_TICK - 1e-9)
+                          or (info["dir"] == "down" and mid <= info["mid"] - BTC_PRICE_TICK + 1e-9)))
+            if moved or now - info["at"] >= self.spec.spot_repost_s:
+                pulled[side] = None                                  # free to re-join below
         # 1. what was resting: filled by prints beyond the size ahead, or by a trade-through
         for side in ("bid", "offer"):
             q = st.get(side)
-            if q is None:
+            if q is None or pulled.get(side):
                 continue
             since, ahead = st.get(f"{side}_since", now), st.get(f"{side}_ahead") or 0.0
             hit = 0.0
@@ -396,8 +428,14 @@ class Arm:
                 want["bid"] = None
             if k > ya - self.spec.margin + 1e-9:
                 want["offer"] = None
+        for side in ("bid", "offer"):
+            if pulled.get(side):
+                want[side] = None                                    # still pulled: not quoted
         new = dict(st)
-        changed = False
+        new["pulled"] = {k: v for k, v in pulled.items() if v} or None
+        if new["pulled"] is None:
+            new.pop("pulled", None)
+        changed = (new.get("pulled") != st.get("pulled"))
         for side, size_key in (("bid", "yes_bid_size"), ("offer", "yes_ask_size")):
             if want[side] != st.get(side) or side not in st:
                 changed = changed or want[side] != st.get(side)
@@ -417,6 +455,29 @@ class Arm:
                            f"{'-' if new.get('offer') is None else f'{new['offer']:.2f}'} "
                            f"(ahead {new.get('bid_ahead')}/{new.get('offer_ahead')})"
                            + ("" if k is None else f", Kalshi {k:.3f}")))
+
+    def spot_pull(self, now: float, ticker: str, direction: str, move_usd: float, mid: float | None) -> bool:
+        """The spot trigger, on the spot socket's thread: pull the side a coinbase move of
+        ``move_usd`` (``direction`` up/down within spot_pull_ms) threatens -- the offer on an
+        up-move, the bid on a down-move. Nothing happens unless spot_pull_usd > 0, the arm is a
+        join arm resting on that side, and the window matches. Returns True if a side was pulled."""
+        if self.spec.kind != "join" or self.spec.spot_pull_usd <= 0 or abs(move_usd) < self.spec.spot_pull_usd:
+            return False
+        d = self.ledger.decision(ticker)
+        if d is None or d["status"] != "resting":
+            return False
+        st = json.loads(d["response"] or "{}")
+        side = "offer" if direction == "up" else "bid"
+        if st.get(side) is None:
+            return False
+        pulled = dict(st.get("pulled") or {})
+        if pulled.get(side):
+            return False
+        pulled[side] = {"at": now, "dir": direction, "move": round(move_usd, 2), "mid": mid, "was": st[side]}
+        st = {**st, side: None, f"{side}_since": None, f"{side}_ahead": None, "pulled": pulled}
+        self.ledger.finish_decision(ticker, response=json.dumps(st),
+                                    rationale=(d["rationale"] or "")[:200] + f"; pulled {side} at {_iso(now)}: spot {direction} ${abs(move_usd):.0f}")
+        return True
 
     def _maker_fill(self, now: float, m: dict, d, side: str, price: float, how: str | None = None) -> None:
         price_u = int(round(price * UNIT))
