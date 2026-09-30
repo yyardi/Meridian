@@ -24,8 +24,10 @@ Authentication (docs.kalshi.com quick_start_websockets): headers KALSHI-ACCESS-K
 KALSHI-ACCESS-TIMESTAMP (ms) and KALSHI-ACCESS-SIGNATURE = base64 of the key's signature over
 ``f"{timestamp}GET{path}"`` -- RSA-PSS (SHA-256, MGF1, salt = digest length) or Ed25519 by key
 type. The documented path for the trade socket is ``/trade-api/ws/v2``; which path this host
-expects for the value feed is not documented, so the URL's own path is signed by default and
-``KALSHI_WS_SIGN_PATH`` overrides it. Credentials: ``KALSHI_API_KEY_ID`` and the private key
+expects for the value feed is not documented, so the URL's own path is signed first and, when
+the handshake is refused, the documented trade path is tried on the next attempt (and so on,
+alternating); ``KALSHI_WS_SIGN_PATH`` pins one. The path that worked is in the counters.
+Credentials: ``KALSHI_API_KEY_ID`` and the private key
 as ``KALSHI_PRIVATE_KEY_B64`` (the PEM, base64 on one line, in ``/opt/meridian/.env`` beside
 the other secrets -- the bots mount no host path, and ``artifacts/btc15`` is mounted into the
 dashboard's container too, so a key never goes there), or ``KALSHI_PRIVATE_KEY`` (PEM text) or
@@ -49,6 +51,9 @@ from core.polymarket.ws_min import ConnectionClosed, WSClient
 log = logging.getLogger("btc15.brti")
 
 URL = os.environ.get("KALSHI_CF_WS_URL", "wss://external-api-ws.kalshi.com/cfbenchmarks_value")
+#: The path the venue documents for its trade socket's signature; the fallback when the value
+#: host refuses a signature over its own path.
+TRADE_WS_PATH = "/trade-api/ws/v2"
 SUBSCRIBE = {"id": 1, "cmd": "subscribe", "params": {"channels": ["cfbenchmarks_value"], "index_ids": ["BRTI"]}}
 
 
@@ -150,7 +155,11 @@ class BRTIRelay:
                  on_tick=None, open_socket=None, clock=time.time, sleep=time.sleep, max_backoff: float = 30.0,
                  timeout: float = 30.0) -> None:
         self.key_id, self.private_key, self.url = key_id, private_key, url
-        self.sign_path = sign_path or os.environ.get("KALSHI_WS_SIGN_PATH") or (urlsplit(url).path or "/")
+        pinned = sign_path or os.environ.get("KALSHI_WS_SIGN_PATH")
+        own = urlsplit(url).path or "/"
+        #: Candidate paths to sign, tried in turn on handshake refusals; a pinned path is the only one.
+        self.sign_paths = [pinned] if pinned else list(dict.fromkeys([own, TRADE_WS_PATH]))
+        self._path_idx = 0
         self.on_tick = on_tick
         self._open_socket = open_socket or (lambda: self._default_socket(timeout))
         self._clock, self._sleep, self.max_backoff = clock, sleep, max_backoff
@@ -166,6 +175,10 @@ class BRTIRelay:
     def from_env(cls, **kw) -> "BRTIRelay":
         key_id, pk = credentials_from_env()
         return cls(key_id, pk, **kw)
+
+    @property
+    def sign_path(self) -> str:
+        return self.sign_paths[self._path_idx % len(self.sign_paths)]
 
     def _default_socket(self, timeout: float):
         ws = WSClient(self.url, auth_headers(self.key_id, self.private_key, self.sign_path), timeout=timeout)
@@ -202,8 +215,10 @@ class BRTIRelay:
                 backoff = 1.0
             except (ConnectionClosed, OSError, ValueError, json.JSONDecodeError) as e:    # noqa: PERF203
                 with self._lock:
-                    self.last_error = f"{type(e).__name__}: {str(e)[:120]}"
+                    self.last_error = f"{type(e).__name__}: {str(e)[:120]} (signed {self.sign_path})"
                     self.reconnects += 1
+                    if isinstance(e, ConnectionClosed) and "handshake" in str(e) and len(self.sign_paths) > 1:
+                        self._path_idx += 1                      # the host refused this path's signature: try the other
                 if self.stop.is_set():
                     return
                 self._sleep(backoff)
@@ -250,6 +265,7 @@ class BRTIRelay:
         with self._lock:
             t = self.latest
             return {"messages": self.msgs, "ticks": self.ticks, "reconnects": self.reconnects, "live": self.live(now),
+                    "sign_path": self.sign_path,
                     "last_tick_age_s": None if t is None else round(now - t.recv, 2),
                     "value": None if t is None else t.value, "avg_60s": None if t is None else t.avg_60s,
                     "last_60s_15m": None if t is None else t.last_60s_15m, "last_error": self.last_error}
