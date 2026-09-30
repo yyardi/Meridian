@@ -118,12 +118,11 @@ def cents(n: int) -> float:
 #: replays any margin (analysis/btc15/replay_kalshi_margins.py).
 DEFAULT_ARMS = (
     ArmSpec("llm_agent", "llm", "agent", 0.0),
-    ArmSpec("kalshi_taker", "kalshi", "taker", cents(2)),
-    ArmSpec("kalshi_taker_3c", "kalshi", "taker", cents(3)),
-    ArmSpec("kalshi_taker_wide", "kalshi", "taker", cents(4)),
-    ArmSpec("kalshi_taker_5c", "kalshi", "taker", cents(5)),
-    ArmSpec("kalshi_taker_6c", "kalshi", "taker", cents(6)),
-    ArmSpec("kalshi_taker_8c", "kalshi", "taker", cents(8)),
+    # The six Kalshi takers (2/3/4/5/6/8c) were retired 2026-09-30 ~17:30Z on the operator's
+    # call: on live books the same-second Poly-vs-Kalshi gap is a median 0.4c and clears the
+    # fee on 2 of 8,703 ticks, so they made 3/2/2/1/1/0 trades in 41 windows. The gap they had
+    # traded before the 05:08Z fix was the venue's 30-s REST cache. Their ledgers are under
+    # <root>/retired/.
     # 2026-09-30: Kalshi's book moves first and the venue follows a tick later (live tape,
     # corr +0.05 vs 0.00). This rests zero-fee quotes on the venue at Kalshi's live mid
     # -/+ 2c and moves them on every price message; it is filled only when the venue
@@ -144,7 +143,9 @@ DEFAULT_ARMS = (
 #:   llm_maker     78 trades  -5.9c           t -1.15
 #:   llm_taker     82 trades  -2.1c           t -0.43
 #:   mid_maker     72 trades -13.0c           t -2.71  (the control: resting orders get picked off)
-RETIRED_ARMS = ("kalshi_maker", "llm_maker", "llm_taker", "mid_maker")
+RETIRED_ARMS = ("kalshi_maker", "llm_maker", "llm_taker", "mid_maker",
+                "kalshi_taker", "kalshi_taker_3c", "kalshi_taker_wide", "kalshi_taker_5c", "kalshi_taker_6c",
+                "kalshi_taker_8c")
 
 
 def _iso(ts: float) -> str:
