@@ -393,6 +393,8 @@ class Harness:
         live = quote(m["ticker"]) if quote else None
         if not live or live.get("status") != "active":
             return
+        if getattr(self.venue, "stream", None) is not None and live.get("book_source") != "stream":
+            return                  # the stream is down or has no book for this window yet: no entry, no fill, no tape
         probs = self.probabilities(now, live, kalshi=any(a.spec.prob == "kalshi" for a in self.arms))
         coef = live.get("fee_coefficient")
         coef = float(coef) if coef not in (None, "") else None
@@ -590,7 +592,19 @@ def build(settings: Settings) -> Harness:
         def kalshi_strike(o: float, c: float) -> float | None:
             r = reference.current(o + 1) if reference else None
             return r["strike"] if r and r.get("open_ts") == o and r.get("close_ts") == c else None
-        venue = PolymarketBTC(horizon=settings.horizon, strike_source=kalshi_strike if reference else None)
+        stream = None
+        if specs_from_env(settings.arms):
+            # the arms trade on the venue's stream, never on its 30-s-cached REST book
+            from core.btc15.stream_book import StreamBook
+            from core.polymarket.client import MissingCredentialsError, USCredentials
+            try:
+                USCredentials.from_env()
+                stream = StreamBook()
+            except MissingCredentialsError as e:
+                log.error("arms need the venue's market-data stream and %s; they will not trade", e)
+                stream = StreamBook(enabled=False)
+        venue = PolymarketBTC(horizon=settings.horizon, strike_source=kalshi_strike if reference else None,
+                              stream=stream)
     elif settings.venue == "kalshi":
         if settings.horizon != "15m":
             raise SystemExit("Kalshi's KXBTC15M is 15-minute only")

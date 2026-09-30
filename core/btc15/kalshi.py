@@ -59,6 +59,27 @@ def normalize(m: dict) -> dict:
     }
 
 
+NO_TOUCH = {k: None for k in ("yes_bid_u", "yes_ask_u", "no_bid_u", "no_ask_u", "yes_bid", "yes_ask",
+                              "no_bid", "no_ask", "yes_bid_size", "yes_ask_size")}
+
+
+def book_touch(resp: dict | None) -> dict | None:
+    """The touch from /markets/<t>/orderbook: the best YES bid, and the YES ask as $1 minus the
+    best NO bid (Kalshi books only bids on each side). None if either side is empty."""
+    ob = (resp or {}).get("orderbook_fp") or (resp or {}).get("orderbook") or {}
+    def best(levels):
+        live = [(to_units(p), float(q)) for p, q in (levels or []) if float(q) > 0]
+        return max(live) if live else None
+    yb, nb = best(ob.get("yes_dollars")), best(ob.get("no_dollars"))
+    if yb is None or nb is None:
+        return None
+    ya = UNITS_PER_DOLLAR - nb[0]
+    return {"yes_bid_u": yb[0], "yes_ask_u": ya, "no_bid_u": nb[0], "no_ask_u": UNITS_PER_DOLLAR - yb[0],
+            "yes_bid": yb[0] / UNITS_PER_DOLLAR, "yes_ask": ya / UNITS_PER_DOLLAR,
+            "no_bid": nb[0] / UNITS_PER_DOLLAR, "no_ask": (UNITS_PER_DOLLAR - yb[0]) / UNITS_PER_DOLLAR,
+            "yes_bid_size": yb[1], "yes_ask_size": nb[1]}
+
+
 class KalshiBTC:
     venue = "kalshi"
 
@@ -73,11 +94,23 @@ class KalshiBTC:
         return r.json()
 
     def current(self, now: float) -> dict | None:
-        """The window trading now: active, open_time <= now < close_time."""
+        """The window trading now: active, open_time <= now < close_time, priced off its ORDER BOOK.
+
+        The /markets list names the window and its strike, but its touch lags the book: measured
+        2026-09-30, it held one price for a mean of 32 s (longest 58 s) while the order book
+        changed every second, a median 4c apart (analysis/btc15/quote_freshness_probe.py). The
+        touch here is the book's; if the book cannot be read, there is no touch, never the list's."""
         ms = self._get("/markets", {"series_ticker": SERIES, "status": "open", "limit": 10}).get("markets") or []
         live = [normalize(m) for m in ms]
         live = [m for m in live if m["open_ts"] and m["close_ts"] and m["open_ts"] <= now < m["close_ts"]]
-        return min(live, key=lambda m: m["close_ts"]) if live else None
+        if not live:
+            return None
+        m = min(live, key=lambda m: m["close_ts"])
+        try:
+            touch = book_touch(self._get(f"/markets/{m['ticker']}/orderbook"))
+        except (httpx.HTTPError, ValueError):
+            touch = None
+        return {**m, **(touch or NO_TOUCH), "touch_source": "orderbook" if touch else "none"}
 
     def market(self, ticker: str) -> dict:
         return normalize(self._get(f"/markets/{ticker}")["market"])

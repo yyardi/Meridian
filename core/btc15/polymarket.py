@@ -129,10 +129,13 @@ class PolymarketBTC:
     venue = "polymarket"
 
     def __init__(self, client: httpx.Client | None = None, base: str = GATEWAY, horizon: str = "15m",
-                 strike_source=None, clock=time.time) -> None:
+                 strike_source=None, clock=time.time, stream=None) -> None:
         if horizon not in HORIZONS:
             raise ValueError(f"horizon {horizon!r}: one of {sorted(HORIZONS)}")
         self.strike_source = strike_source          # (open_ts, close_ts) -> price to beat, or None
+        #: core.btc15.stream_book.StreamBook, or None. When set, the book the harness trades on is
+        #: the stream's and ONLY the stream's: the REST book is a 30-s Cloudflare cache.
+        self.stream = stream
         self._clock = clock
         self._http = client or httpx.Client(timeout=10.0, headers={"User-Agent": "meridian-btc15/1"})
         self._base = base.rstrip("/")
@@ -146,11 +149,26 @@ class PolymarketBTC:
     last_meta: dict | None = None
 
     def quote(self, slug: str) -> dict | None:
-        """The window's book only (one request), on the metadata the last current() read."""
+        """The window's book only, on the metadata the last current() read."""
         meta = self.last_meta
         if not meta or meta.get("slug") != slug:
             return None
-        return normalize(meta, self.book(slug))
+        book, source = self._book_now(slug)
+        return {**normalize(meta, book), "book_source": source}
+
+    def _book_now(self, slug: str) -> tuple[dict | None, str]:
+        """(book, source) to trade on. With a stream: its touch ("stream"), or no book at all
+        ("stream_down") -- never the REST book, which Cloudflare serves up to 30 s old
+        (cache-control: public, max-age=30; measured 2026-09-30). Without one: REST ("rest")."""
+        if self.stream is None:
+            return self.book(slug), "rest"
+        self.stream.ensure(slug)
+        t = self.stream.touch(slug)
+        if t is None:
+            return None, "stream_down"
+        lv = lambda px, q: [] if px is None else [{"px": {"value": f"{px:.4f}"}, "qty": str(q if q is not None else 0)}]
+        return {"bids": lv(t.get("bid"), t.get("bid_size")), "offers": lv(t.get("ask"), t.get("ask_size")),
+                "state": t.get("state")}, "stream"
 
     def owns(self, ticker: str) -> bool:
         return ticker.startswith(f"cpc-btc-updown-{self.horizon}-")
@@ -214,7 +232,8 @@ class PolymarketBTC:
         self.last_meta = meta
         if meta is None or meta.get("status") != "MARKET_STATUS_OPEN":
             return None
-        m = normalize(meta, self.book(meta["slug"]))
+        book, source = self._book_now(meta["slug"])
+        m = {**normalize(meta, book), "book_source": source}
         return m if (m["open_ts"] and m["close_ts"] and m["open_ts"] <= now < m["close_ts"]) else None
 
     def outcome(self, slug: str) -> dict:
