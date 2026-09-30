@@ -238,3 +238,41 @@ def test_a_poller_skips_the_exchange_whose_socket_is_live_and_polls_it_when_the_
     assert fetched == ["gemini"] and "gemini" in f.snapshot() and "coinbase" not in f.snapshot()
     f.sockets["coinbase"] = Sock(False)
     assert f._poll_once("coinbase", clock[0]) is True and fetched == ["gemini", "coinbase"]
+
+
+def test_two_threads_seeing_a_new_window_at_once_start_exactly_one_socket():
+    """At a window boundary the main loop, the markout thread and a stream callback can all call
+    ensure(new_slug) within microseconds; without a lock each starts its own socket and every
+    message drives the arms twice (review, 2026-09-30)."""
+    opened = []
+    lock = threading.Lock()
+
+    def open_socket():
+        with lock:
+            opened.append(1)
+        return FakeWS([])
+    sb = StreamBook(open_socket=open_socket, clock=lambda: 1_790_700_000.0)
+    sb.ensure("cpc-btc-updown-15m-2026-09-30-2000z")
+    for _ in range(100):
+        if opened:
+            break
+        threading.Event().wait(0.01)
+    assert len(opened) == 1
+    go = threading.Event()
+
+    def race():
+        go.wait()
+        sb.ensure("cpc-btc-updown-15m-2026-09-30-2015z")
+    ts = [threading.Thread(target=race) for _ in range(8)]
+    for t in ts:
+        t.start()
+    go.set()
+    for t in ts:
+        t.join(2)
+    for _ in range(100):
+        if len(opened) >= 2:
+            break
+        threading.Event().wait(0.01)
+    threading.Event().wait(0.05)
+    assert len(opened) == 2 and sb.slug.endswith("2015z")            # one socket per window, never two
+    sb.stop()

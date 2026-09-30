@@ -112,25 +112,35 @@ class StreamBook:
         self.slug: str | None = None
         self.conn: StreamConnection | None = None
         self._thread: threading.Thread | None = None
+        #: ensure() is called from the main loop, the markout thread and the stream's own
+        #: callbacks; at a window boundary two of them can see the new slug within the same
+        #: microseconds. One lock around the whole check-and-replace, or two sockets subscribe
+        #: to the same window and every message drives the arms twice (review, 2026-09-30).
+        self._ensure_lock = threading.Lock()
 
     def ensure(self, slug: str) -> None:
         """Be subscribed to ``slug``: a new window replaces the previous window's socket."""
         if not self.enabled:
             return
-        if slug == self.slug and self._thread is not None and self._thread.is_alive():
-            return
-        if slug == self.slug and self._clock() - self._started_at < self.RESTART_S:
-            return
-        self.stop()
-        self._started_at = self._clock()
-        self.slug = slug
-        self.sink.forget_except(slug)
-        self.conn = StreamConnection("btc", [[slug]], self.sink, open_socket=self._open_socket)
-        self._thread = threading.Thread(target=self.conn.run, name=f"btc-stream-{slug[-6:]}", daemon=True)
-        self._thread.start()
-        log.info("stream: subscribing %s", slug)
+        with self._ensure_lock:
+            if slug == self.slug and self._thread is not None and self._thread.is_alive():
+                return
+            if slug == self.slug and self._clock() - self._started_at < self.RESTART_S:
+                return
+            self._stop_locked()
+            self._started_at = self._clock()
+            self.slug = slug
+            self.sink.forget_except(slug)
+            self.conn = StreamConnection("btc", [[slug]], self.sink, open_socket=self._open_socket)
+            self._thread = threading.Thread(target=self.conn.run, name=f"btc-stream-{slug[-6:]}", daemon=True)
+            self._thread.start()
+            log.info("stream: subscribing %s", slug)
 
     def stop(self) -> None:
+        with self._ensure_lock:
+            self._stop_locked()
+
+    def _stop_locked(self) -> None:
         if self.conn is not None:
             self.conn.request_stop()
         self.conn, self._thread = None, None

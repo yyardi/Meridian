@@ -90,6 +90,9 @@ services:
       # save credits. 2026-09-30: one maker arm, judged by prints, so the hourly book and its
       # prints are taped (the stream subscribes only when an arm runs) -- no Kalshi-priced arm.
       MERIDIAN_BTC15_ARMS: '[{"name": "touch_maker", "prob": "mid", "kind": "join", "margin": 0.0}]'
+      # spot is taped once, by the 15-minute bot; here the microtape holds the hourly book
+      # and prints only, and the composite comes from the four REST polls on their own threads
+      MERIDIAN_BTC15_SPOT_SOCKETS: "0"
       MERIDIAN_BTC15_DECIDE_AT_S: "60"
       MERIDIAN_BTC15_MIN_LEAD_S: "180"
       MERIDIAN_BTC15_DB: /data/polymarket-1h.sqlite
