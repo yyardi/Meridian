@@ -86,9 +86,10 @@ services:
       MERIDIAN_BTC15_HORIZON: 1h
       MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY_1H:-5}
       MERIDIAN_BTC15_SECOND_LOOK_S: "1800"
-      # no strategies on the hourly bot (2026-09-29): Kalshi lists no hourly twin, the
-      # model is off here to save credits, and the makers were retired as losers
-      MERIDIAN_BTC15_ARMS: none
+      # the hourly bot (2026-09-29): Kalshi lists no hourly twin and the model is off here to
+      # save credits. 2026-09-30: one maker arm, judged by prints, so the hourly book and its
+      # prints are taped (the stream subscribes only when an arm runs) -- no Kalshi-priced arm.
+      MERIDIAN_BTC15_ARMS: '[{"name": "touch_maker", "prob": "mid", "kind": "join", "margin": 0.0}]'
       MERIDIAN_BTC15_DECIDE_AT_S: "60"
       MERIDIAN_BTC15_MIN_LEAD_S: "180"
       MERIDIAN_BTC15_DB: /data/polymarket-1h.sqlite

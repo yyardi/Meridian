@@ -93,3 +93,16 @@ the `walk` taker keyed on the socket feed. Sizing only; nothing it prints is edg
 before the close (`0.99 / None`), Kalshi's book goes one-sided ~74 s out, and the market
 maker re-prices within one tape row of a spot move. A taker on the partial 60-s settlement
 average had n ≤ 14 at every margin and window and every interval spanned zero. Not built.
+
+## Pending, for the operator
+
+Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
+channel `cfbenchmarks_value`, index `BRTI`, one tick a second carrying `avg_60s_data` (the
+trailing 60-s mean) and `last_60s_windowed_average_15min` (the settlement average, in the
+final minute) — which is the quantity our four-exchange composite proxies with a −$2.10 bias
+and $3.34 sd against `expiration_value` (241 windows). The handshake is RSA-PSS signed
+(`KALSHI-ACCESS-KEY`, `-TIMESTAMP`, `-SIGNATURE` over `{ts}GET/trade-api/ws/v2`), so it needs
+a Kalshi API key, which prod does not hold (`/opt/meridian/.env` names only: OpenAI and the
+venue). With one, the settlement proxy becomes the venue's own number and the endgame
+arithmetic stops depending on a proxy. Nothing trades on it until it is recorded beside
+`expiration_value` and the error measured.
