@@ -372,6 +372,10 @@ class Arm:
                 through = yb is not None and yb >= q + BTC_PRICE_TICK - 1e-9
             if through or hit > ahead:
                 how = "traded through" if through else f"prints {hit:.0f} > {ahead:.0f} ahead"
+                # the fill's own instant and evidence, beside the quote state, for the tape to join on
+                # (the ledger stamps fills to the second; a spot move is a matter of milliseconds)
+                self.ledger.finish_decision(t, response=json.dumps({**st, "filled_ts": now, "filled_by": "through" if through else "prints",
+                                                                   "filled_side": side, "filled_price": q, "ahead": ahead, "printed": hit}))
                 if side == "bid":
                     self._maker_fill(now, m, d, "YES", q, how)
                 else:
