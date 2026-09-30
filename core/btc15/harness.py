@@ -157,6 +157,7 @@ class Harness:
     _kalshi_thread: object = None            # the reader thread (start_kalshi_reader), or None: reads inline
     _kalshi_stop: object = field(default_factory=threading.Event)
     microtape: object = None                 # core.btc15.microtape.Microtape, or None
+    brti: object = None                      # core.btc15.brti_relay.BRTIRelay, or None (no Kalshi key)
 
     # ------------------------------------------------------------------ the second
     def step(self, now: float, px: float | None, n: int, disp: float) -> None:
@@ -659,6 +660,8 @@ class Harness:
             s["spot_sockets"] = {k: v.counters(now) for k, v in sockets.items()}
         if self.microtape is not None:
             s["microtape"] = self.microtape.counters()
+        if self.brti is not None:
+            s["brti"] = self.brti.counters(now)
         try:
             with open(self.settings.status_path, "w") as fh:
                 json.dump(s, fh, indent=1)
@@ -749,6 +752,13 @@ def build(settings: Settings) -> Harness:
         if stream is not None:
             stream.on_book, stream.on_trade = h.microtape.book, h.microtape.trade
         feed.on_spot = h.microtape.spot
+    if h.microtape is not None and settings.horizon == "15m":
+        # Kalshi's relay of the settlement index, recorded beside the composite when a key exists
+        from core.btc15.brti_relay import BRTIRelay, MissingKalshiCredentials
+        try:
+            h.brti = BRTIRelay.from_env(on_tick=h.microtape.brti)
+        except MissingKalshiCredentials as e:
+            log.info("BRTI relay off: set %s to record Kalshi's settlement index", e)
     if settings.venue == "polymarket":
         h.arms = [Arm(spec, Ledger(arm_db_path(settings.db_path, spec.name)), settings.limit_u,
                       prints=stream.prints if stream is not None else None)
@@ -776,6 +786,8 @@ def run(h: Harness) -> None:
     h.feed.start(sockets=h.settings.spot_sockets)                # exchanges on their own threads: tick never waits
     h.start_kalshi_reader()
     h.start_markout_thread()
+    if h.brti is not None:
+        h.brti.start()
     while True:
         t0 = time.time()
         try:
