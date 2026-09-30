@@ -292,5 +292,41 @@ same tape row, same second, so this can be checked without a browser tab in the 
 
 **Not built, and why:** the last-minute snipe (the book empties first); a Kalshi-side taker
 (Kalshi leads, so it would be trading on the laggard's noise); anything on polymarket.com
-(different venue, geo-blocked; whether the public "BTC 15-min arb" bots trade it or the US
-venue is being checked and will be written here with links).
+(different venue, geo-blocked; see below).
+
+## What the public "BTC 15-min" bots actually are (surveyed 2026-09-30)
+
+A read-only survey: web search, `gh search code` for `api.polymarket.us` / `gateway.polymarket.us`,
+then 20 repositories cloned and grepped for API hosts, because READMEs were not trusted. Venue
+rules were read from the venues themselves.
+
+- **All 13 concrete BTC-15-min bots with hosts in their code trade polymarket.com** (global
+  CLOB on Polygon: `clob.polymarket.com`, `gamma-api`, `ws-live-data`; geo-blocked in the US).
+  Examples: [Jonmaa/btc-polymarket-bot](https://github.com/Jonmaa/btc-polymarket-bot),
+  [aulekator/Polymarket-BTC-15-Minute-Trading-Bot](https://github.com/aulekator/Polymarket-BTC-15-Minute-Trading-Bot),
+  [masterputra169/polymarket-btc-15-minutes](https://github.com/masterputra169/polymarket-btc-15-minutes),
+  [CarlosIbCu/polymarket-kalshi-btc-arbitrage-bot](https://github.com/CarlosIbCu/polymarket-kalshi-btc-arbitrage-bot),
+  [defi-ape/polymarket-kalshi-arbitrage-bot](https://github.com/defi-ape/polymarket-kalshi-arbitrage-bot).
+  The global venue settles BTC-15m on a Chainlink 60-s TWAP (since 2026-08-07); the US venue
+  and Kalshi settle on the same BRTI 60-print average (the venue's own market text, and
+  Kalshi's rules). A global-vs-Kalshi "arb" is therefore two different indices and strikes;
+  US-vs-Kalshi is the same contract on two books, which is what this harness reads.
+- **Of ~30 repositories touching the US venue, none is a public BTC-15-min bot trading it
+  live.** The closest is [pisano18/kals](https://github.com/pisano18/kals): a Kalshi
+  KXBTC15M taker bot with a dry-run Polymarket US order path and one manual fill. Its own
+  measurement of the US venue: 269 windows since launch, median 4,423 shares, **126 of 269
+  windows with zero trades**, a book 1/10–1/50 of Kalshi's. Its reconciled Kalshi ledger is
+  **−$469 on KXBTC15M since 09-17**.
+- **No source shows a verifiable Polymarket BTC-15-min P&L.** The viral figures
+  ($313 → $438k; $50 → $280k) trace to dashboard screenshots and a tweet. The most careful
+  dry run (masterputra169, 448 trades) concludes "neither model beats the market price".
+- The Poly-vs-Kalshi "arbitrage" repos are a one-leg directional rule (Kalshi YES at 93–96¢
+  and Poly ≥ 10¢ cheaper → buy Poly), not a hedge, on the global venue, with no ledger.
+
+**Fees, from [docs.polymarket.us/fees](https://docs.polymarket.us/fees) (effective 2026-09-25):**
+taker Θ = 0.0695; **maker rebate Θ = −0.0125**, applied at the trade; both rounded to the
+nearest cent by banker's rounding. `core/fees.py` books the maker at zero (no rebate) and
+`core/btc15/quant.fee` rounds the taker fee **up**, so the harness overstates its own costs by
+up to 1¢ at prices ≤ 7¢ or ≥ 93¢ and by the rebate on every maker fill. Both errors are in the
+conservative direction and are left as they are. The same page announces the table-tennis
+taker coefficient becoming 0.10 at 23:59 ET on 2026-09-30.
