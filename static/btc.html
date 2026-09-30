@@ -448,7 +448,7 @@ const edgeMean = (e) => {
 };
 const edgeTxt = (e) => edgeMean(e) + (e && e.n && e.hi_c != null ? `<span class="sub">±${(e.hi_c - e.mean_c).toFixed(1)}</span>` : "");
 // The checkpoint (docs/math/btc15-v2-arms.md) reads these two, at these counts of post-checkpoint trades.
-const CHECKPOINT = { llm_agent: 40, kalshi_taker_wide: 300 };
+const CHECKPOINT = { llm_agent: 40 };
 function todayStake() {
   const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
   return ((S && S.pnl_curve) || []).filter((x) => Date.parse(x.at) >= midnight.getTime())

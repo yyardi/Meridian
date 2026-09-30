@@ -347,3 +347,13 @@ nearest cent by banker's rounding. `core/fees.py` books the maker at zero (no re
 up to 1¢ at prices ≤ 7¢ or ≥ 93¢ and by the rebate on every maker fill. Both errors are in the
 conservative direction and are left as they are. The same page announces the table-tennis
 taker coefficient becoming 0.10 at 23:59 ET on 2026-09-30.
+
+## The Kalshi takers are retired (2026-09-30 ~17:30Z, the operator's call)
+
+All six (2/3/4/5/6/8¢) are off. On live books they made 3/2/2/1/1/0 trades in 41 windows: the
+same-second gap they need (fee plus margin, 4–10¢) occurred on 2 of 8,703 ticks. The gap they
+traded before the 05:08Z fix was the venue's 30-second REST cache. Their ledgers are kept
+under `retired/`. The checkpoint's `kalshi_taker_wide` target is void with them; the agent's
+40 stands. What runs: `llm_agent`, `kalshi_requote`, and the print-judged `touch_maker` and
+`touch_maker_k` from the sub-second build (docs/math/btc15-microtape.md), whose fills accrue
+on flow rather than on a gap and are scored by 60-second mark-outs as well as settlement.
