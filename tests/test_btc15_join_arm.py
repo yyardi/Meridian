@@ -144,6 +144,9 @@ def test_markouts_come_due_at_each_horizon_after_the_fill_and_never_past_the_clo
     led.upsert_window(_m(0.44, 0.45))
     fid, _ = led.record_fill("paper", T, "YES", 4400, 0, 10 * UNIT)
     filled = dt.datetime.fromisoformat(led._conn.execute("SELECT filled_at FROM fills").fetchone()[0]).timestamp()
+    # the fill is stamped with the real clock while T's close is a fixed instant on 2026-09-30:
+    # anchor the close to the fill, or every horizon falls "past the close" once that day has passed
+    led._conn.execute("UPDATE windows SET close_ts=? WHERE ticker=?", (filled + 900, T))
     close_of = led.window_close_ts
     assert led.markouts_due(filled + 1, close_of) == []
     assert led.markouts_due(filled + 31, close_of) == [(fid, T, 5), (fid, T, 30)]
