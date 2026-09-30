@@ -56,9 +56,9 @@
 
   /* ── Panels ── */
   main{padding:12px;display:grid;gap:12px;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);align-items:start;
-       grid-template-rows:auto auto auto 1fr auto;grid-template-areas:"arms arms" "chart now" "rec now" "learn now" "hist hist"}
-  #p-chart{grid-area:chart} #now{grid-area:now} #p-rec{grid-area:rec} #p-learn{grid-area:learn} #p-arms{grid-area:arms} #p-hist{grid-area:hist}
-  @media (max-width:980px){ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-template-areas:"arms" "now" "chart" "rec" "learn" "hist"} }
+       grid-template-rows:auto auto auto auto 1fr auto;grid-template-areas:"arms arms" "edge edge" "chart now" "rec now" "learn now" "hist hist"}
+  #p-chart{grid-area:chart} #now{grid-area:now} #p-rec{grid-area:rec} #p-learn{grid-area:learn} #p-arms{grid-area:arms} #p-edge{grid-area:edge} #p-hist{grid-area:hist}
+  @media (max-width:980px){ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-template-areas:"arms" "edge" "now" "chart" "rec" "learn" "hist"} }
   .panel{background:var(--panel);border:1px solid var(--line);min-width:0}
   .ph{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .ph h2{margin:0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:700}
@@ -118,6 +118,12 @@
   .ddbar{height:4px;background:var(--line);margin-top:6px}
   .ddbar i{display:block;height:100%;background:var(--acc)}
   #pnlwrap{height:120px;position:relative}
+  #edgewrap{position:relative;height:250px}
+  #edge{display:block;width:100%;height:100%}
+  #etip{position:absolute;pointer-events:none;background:#0c0f15;border:1px solid var(--line);padding:5px 8px;
+        font-size:10.5px;line-height:1.55;white-space:nowrap;display:none}
+  .legend i.band{height:8px;vertical-align:0;background:var(--dim);opacity:.3}
+  .legend i.ddim{background:repeating-linear-gradient(90deg,var(--dim) 0 5px,transparent 5px 8px)}
   #pnl{display:block;width:100%;height:100%}
 
   /* lessons */
@@ -235,10 +241,24 @@
     <div class="ph"><h2>Strategies</h2><span class="note">paper, the same windows and the same book · each its own $10 allocation · a strategy that sees no edge does not trade · click one to show it below</span></div>
     <div class="tablewrap">
       <table>
-        <thead><tr><th class="l">strategy</th><th>settled</th><th>won</th><th>p&amp;l</th><th>return</th><th class="l">this window</th><th>declined</th></tr></thead>
-        <tbody id="arms"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+        <thead><tr><th class="l">strategy</th><th>settled</th><th>won</th>
+          <th title="Realised P&amp;L per settled contract (payout − price − fee), in cents, with the half-width of its 95% interval. Coloured only when the interval excludes zero.">edge / contract</th>
+          <th title="The edge divided by its standard error. About 2 or more is the bar the checkpoint uses.">t</th>
+          <th title="The edge the rule itself claimed when it bought: p(side) − price − fee, p being Kalshi's mid for the Kalshi takers and the model's own p_up for the agent. Realised edge converging to it is the check.">claimed at entry</th>
+          <th title="Contracts filled since the checkpoint was agreed (2026-09-29 20:02Z), their edge and t. The trades that chose the strategies cannot also confirm them; the read counts only these. The two strategies the checkpoint reads show their target.">since checkpoint</th>
+          <th>p&amp;l</th><th>return</th><th class="l">this window</th><th>declined</th></tr></thead>
+        <tbody id="arms"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="panel" id="p-edge">
+    <div class="ph"><h2>Edge per contract, as it accrues</h2><span class="note" id="edgenote">running mean of P&amp;L per settled contract · each line from its 5th contract · click a line to select it</span></div>
+    <div id="edgewrap"><svg id="edge" role="img" aria-label="Running estimate of each strategy's edge per contract over time, with the selected strategy's 95% interval and the edge it claimed at entry"></svg><div id="etip"></div></div>
+    <div class="legend"><span><i style="background:var(--txt)"></i><span id="edgesel">selected</span>: realised edge so far</span>
+      <span><i class="band"></i>its 95% interval (where it narrows, the estimate is settling)</span>
+      <span><i class="ddim"></i>what it claimed at entry</span>
+      <span><i style="background:var(--faint)"></i>the other strategies</span></div>
   </section>
 
   <section class="panel" id="p-hist">
@@ -326,8 +346,8 @@ async function loadTicks() {
 async function loadArms() {
   let A = [];
   try { A = (await fetch(`/api/btc/arms?h=${H}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status))).arms; }
-  catch (e) { $("arms").innerHTML = `<tr><td colspan="7" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
-  if (!A.length) { $("arms").innerHTML = `<tr><td colspan="7" class="empty">No strategies run on this bot.</td></tr>`; ARMS = []; ARM = ""; return; }
+  catch (e) { $("arms").innerHTML = `<tr><td colspan="11" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
+  if (!A.length) { $("arms").innerHTML = `<tr><td colspan="11" class="empty">No strategies run on this bot.</td></tr>`; ARMS = []; ARM = ""; drawEdge(); return; }
   const nowTxt = (n) => {
     if (!n) return '<span class="faint">—</span>';
     const tag = stTag(n.status === "watching" ? "watching" : n.status);
@@ -336,7 +356,7 @@ async function loadArms() {
   };
   ARMS = A;
   const key = (a) => a.name === "favourite" ? "" : a.name;
-  const label = (a) => a.name === "favourite" ? "v1 favourite (old)" : a.name;
+  const label = (a) => a.label || (a.name === "favourite" ? "v1 favourite (old)" : a.name);
   const sel = $("s-arm"), want = A.map((a) => key(a) + ":" + label(a)).join("|");
   if (sel.dataset.want !== want) {
     sel.dataset.want = want;
@@ -349,11 +369,20 @@ async function loadArms() {
     const lost = (a.settled || 0) - (a.wins || 0);
     return `<tr class="${key(a) === ARM ? "sel" : ""}" data-arm="${esc(key(a))}"><td class="l"><b style="color:var(--txt)">${esc(label(a))}</b>${a.halted ? ' <span class="st warn">halted</span>' : ""}` +
       `<br><span class="faint">${esc(rule)}</span></td>` +
-      `<td>${a.settled || 0}</td><td>${a.wins || 0}–${lost}</td><td>${a.pnl == null ? "—" : signed(a.pnl)}</td>` +
+      `<td>${a.settled || 0}</td><td>${a.wins || 0}–${lost}</td>` + edgeCells(a) +
+      `<td>${a.pnl == null ? "—" : signed(a.pnl)}</td>` +
       `<td>${a.staked ? signedPct(a.pnl, a.staked) : '<span class="faint">—</span>'}</td>` +
       `<td class="l">${a.name === "favourite" ? '<span class="faint">see This window</span>' : nowTxt(a.now)}</td>` +
       `<td>${a.declined == null ? "" : a.declined}</td></tr>`;
   }).join("");
+  drawEdge();
+}
+function edgeCells(a) {
+  const e = a.edge || {}, all = e.all || {}, si = e.since || {}, goal = CHECKPOINT[a.name];
+  const since = `${si.n || 0}` + (goal ? `<span class="faint">/${goal}</span>` : "") +
+    (si.mean_c != null ? ` · ${centsSigned(si.mean_c)}` : "") + (si.t != null ? ` <span class="faint">t ${si.t.toFixed(1)}</span>` : "");
+  return `<td>${edgeTxt(all)}</td><td>${all.t == null ? '<span class="faint">—</span>' : all.t.toFixed(2)}</td>` +
+    `<td>${e.entry_c == null ? '<span class="faint">—</span>' : centsSigned(e.entry_c)}</td><td>${since}</td>`;
 }
 function pickArm(a) {
   if (a === ARM) return;
@@ -399,6 +428,15 @@ const signed = (x, d = 2) => `<span class="${x > 0 ? "pos" : x < 0 ? "neg" : ""}
 // P&L as a return on what was staked (contract price + fee), the % a trader reads.
 const pctOf = (pnl, cost) => cost ? (pnl / cost > 0 ? "+" : pnl / cost < 0 ? "−" : "") + Math.abs(pnl / cost * 100).toFixed(1) + "%" : "—";
 const signedPct = (pnl, cost) => `<span class="${pnl > 0 ? "pos" : pnl < 0 ? "neg" : ""}">${pctOf(pnl, cost)}</span>`;
+// Edge is in cents per contract. Colour means the 95% interval excludes zero, not the sign alone.
+const centsSigned = (c, d = 1) => c == null ? "—" : (c > 0 ? "+" : c < 0 ? "−" : "") + Math.abs(c).toFixed(d) + "¢";
+const edgeTxt = (e) => {
+  if (!e || !e.n || e.mean_c == null) return '<span class="faint">—</span>';
+  const cls = e.lo_c != null && e.lo_c > 0 ? "pos" : e.hi_c != null && e.hi_c < 0 ? "neg" : "";
+  return `<span class="${cls}">${centsSigned(e.mean_c)}</span>` + (e.hi_c != null ? ` <span class="faint">±${(e.hi_c - e.mean_c).toFixed(1)}</span>` : "");
+};
+// The checkpoint (docs/math/btc15-v2-arms.md) reads these two, at these counts of post-checkpoint trades.
+const CHECKPOINT = { llm_agent: 40, kalshi_taker_wide: 300 };
 function todayStake() {
   const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
   return ((S && S.pnl_curve) || []).filter((x) => Date.parse(x.at) >= midnight.getTime())
@@ -530,20 +568,23 @@ function renderRecord() {
   const ddp = a.limit ? Math.min(100, (a.drawdown / a.limit) * 100) : 0;
   const bri = (x) => x == null ? "—" : x.toFixed(4);
   const better = r.brier_you != null && r.brier_market_mid != null ? (r.brier_you < r.brier_market_mid) : null;
+  const e = (S.edge || {}).all || {};
   const tiles = [
+    ["edge / contract", e.mean_c == null ? "—" : edgeTxt(e) + (e.lo_c != null ? ` <span class="faint" style="font-size:11px">95% ${centsSigned(e.lo_c)} to ${centsSigned(e.hi_c)}</span>` : ""),
+      e.n ? `t ${e.t == null ? "—" : e.t.toFixed(2)} · ${e.n} contracts · claimed at entry ${centsSigned((S.edge || {}).entry_c)}` : "none settled yet"],
     ["return, this allocation", `${signedPct(a.pnl, a.staked)} <span class="faint" style="font-size:11px">${sgn(a.pnl)} on ${usd(a.staked)} staked</span>`,
       `today ${pctOf(todayPnl(), todayStake())} · ${a.open ? (openTxt(openMark()) || `${a.open} open`) + `, ${usd(a.open_cost)} at risk` : "nothing open"}`],
     ["drawdown", `${usd(a.drawdown)} <span class="faint" style="font-size:11px">of ${usd(a.limit, 0)}</span>`,
       `<div class="ddbar"><i style="width:${ddp.toFixed(1)}%"></i></div>`],
     ["settled", `${a.wins}–${lost}`, a.settled ? `won ${pct(a.wins / a.settled)} of contracts` : "none settled yet"],
-    ["calls scored", `${r.windows_scored || 0}`, r.hit_rate != null ? `right on ${pct(r.hit_rate)}` : "each window, after it settles"],
-    ["Brier, model", bri(r.brier_you), better == null ? "lower is better" :
-      `<span class="${better ? "pos" : "neg"}">${better ? "beats" : "trails"} the market</span>`],
+    ["Brier, model", bri(r.brier_you), (better == null ? "lower is better" :
+      `<span class="${better ? "pos" : "neg"}">${better ? "beats" : "trails"} the market</span>`) +
+      ` · ${r.windows_scored || 0} calls scored` + (r.hit_rate != null ? `, right on ${pct(r.hit_rate)}` : "")],
     ["Brier, market / walk", `${bri(r.brier_market_mid)} <span class="faint" style="font-size:11px">/ ${bri(r.brier_random_walk)}</span>`,
       "the price and a random walk, same windows"],
   ];
   $("tiles").innerHTML = tiles.map(([k, v, s]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
-  $("recname").textContent = (ARM || "v1 favourite") + " · ";
+  $("recname").textContent = (S.arm_label || ARM || "v1 favourite") + " · ";
   $("recnote").textContent = r.windows_scored < 200 && r.windows_scored != null ?
     `${r.windows_scored} of 200 windows before the model is paused if it trails the market` : "";
   drawPnl();
@@ -659,6 +700,118 @@ function drawChart() {
   hit.addEventListener("mouseleave", () => { tip.style.display = "none"; vline.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); });
 }
 
+const EDGE_MIN_N = 5;
+let EDGE_HOVER = null;
+function stepVerts(pts, idx, tEnd, X, Y) {
+  const v = [];
+  pts.forEach((p, i) => {
+    const t1 = i + 1 < pts.length ? pts[i + 1][0] : tEnd;
+    v.push([X(p[0]), Y(p[idx])], [X(t1), Y(p[idx])]);
+  });
+  return v;
+}
+const pathOf = (v) => v.map((q, i) => (i ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1)).join("");
+function drawEdge() {
+  const svg = $("edge"), wrap = $("edgewrap");
+  const W = wrap.clientWidth, Hh = wrap.clientHeight;
+  if (W < 160) return;
+  svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`);
+  svg.replaceChildren();
+  const now = Date.now() / 1000;
+  const lines = (ARMS || []).map((a) => ({ a, key: a.name === "favourite" ? "" : a.name, label: a.label || a.name,
+    pts: (a.edge_curve || []).filter((p) => p[0] != null && p[1] >= EDGE_MIN_N) })).filter((l) => l.pts.length);
+  const selA = (ARMS || []).find((a) => (a.name === "favourite" ? "" : a.name) === ARM);
+  $("edgesel").textContent = selA ? (selA.label || selA.name) : "selected";
+  if (!lines.length) {
+    svg.appendChild(el("text", { x: 12, y: 22, fill: "var(--faint)", "font-size": 11 }, "The running edge appears once a strategy has 5 settled contracts."));
+    return;
+  }
+  const sel = lines.find((l) => l.key === ARM);
+  const t0 = Math.min(...lines.map((l) => l.pts[0][0])), t1 = Math.max(now, t0 + 60);
+  const vals = [0];
+  lines.forEach((l) => l.pts.forEach((p) => vals.push(p[2])));
+  if (sel) sel.pts.forEach((p) => { if (p[3] != null) vals.push(p[3], p[4]); if (p[5] != null) vals.push(p[5]); });
+  let lo = Math.max(-60, Math.min(...vals)), hi = Math.min(60, Math.max(...vals));
+  const padv = Math.max(2, (hi - lo) * 0.08); lo -= padv; hi += padv;
+  const L = 44, R = 168, Tp = 10, B = 22;
+  const X = (t) => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const Y = (v) => Tp + (hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * (Hh - Tp - B);
+  // axes: cents on the left, clock along the bottom, zero dashed
+  for (const v of niceTicks(lo, hi, 5)) {
+    svg.appendChild(el("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "var(--line2)" }));
+    svg.appendChild(el("text", { x: L - 6, y: Y(v) + 3, "text-anchor": "end", "font-size": 9.5, fill: "var(--faint)" }, (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + "¢"));
+  }
+  svg.appendChild(el("line", { x1: L, x2: W - R, y1: Y(0), y2: Y(0), stroke: "var(--dim)", "stroke-dasharray": "2 3" }));
+  const span = t1 - t0, stepH = [1, 2, 3, 6, 12, 24].find((h) => span / (h * 3600) <= 7) || 48;
+  for (let t = Math.ceil(t0 / (stepH * 3600)) * stepH * 3600; t <= t1; t += stepH * 3600) {
+    svg.appendChild(el("line", { x1: X(t), x2: X(t), y1: Hh - B, y2: Hh - B + 4, stroke: "var(--faint)" }));
+    svg.appendChild(el("text", { x: X(t), y: Hh - 6, "text-anchor": "middle", "font-size": 9.5, fill: "var(--faint)" }, hm(t)));
+  }
+  // the checkpoint: fills before it chose the strategies, fills after it are the read
+  const cp = iso2ts((sel && sel.a.edge && sel.a.edge.since_from) || (lines[0].a.edge || {}).since_from);
+  if (cp && cp > t0 && cp < t1) {
+    svg.appendChild(el("line", { x1: X(cp), x2: X(cp), y1: Tp, y2: Hh - B, stroke: "var(--faint)", "stroke-dasharray": "1 3" }));
+    svg.appendChild(el("text", { x: X(cp) + 4, y: Tp + 9, "font-size": 9.5, fill: "var(--faint)" }, "checkpoint"));
+  }
+  // the others first, thin and faint; each one a click target
+  for (const l of lines) {
+    if (l === sel) continue;
+    const d = pathOf(stepVerts(l.pts, 2, t1, X, Y));
+    svg.appendChild(el("path", { d, fill: "none", stroke: "var(--faint)", "stroke-width": 1.25 }));
+    const hit = el("path", { d, fill: "none", stroke: "transparent", "stroke-width": 9, style: "cursor:pointer" });
+    hit.addEventListener("click", () => pickArm(l.key));
+    svg.appendChild(hit);
+  }
+  if (sel) {
+    const band = sel.pts.filter((p) => p[3] != null);
+    if (band.length) {
+      const up = stepVerts(band, 4, t1, X, Y), dn = stepVerts(band, 3, t1, X, Y).reverse();
+      svg.appendChild(el("path", { d: pathOf(up.concat(dn)) + "Z", fill: "var(--dim)", "fill-opacity": 0.16, stroke: "none" }));
+    }
+    const claimed = sel.pts.filter((p) => p[5] != null);
+    if (claimed.length) svg.appendChild(el("path", { d: pathOf(stepVerts(claimed, 5, t1, X, Y)), fill: "none", stroke: "var(--dim)", "stroke-width": 1.25, "stroke-dasharray": "5 3" }));
+    svg.appendChild(el("path", { d: pathOf(stepVerts(sel.pts, 2, t1, X, Y)), fill: "none", stroke: "var(--txt)", "stroke-width": 2 }));
+  }
+  // direct labels at the right edge, pushed apart so none overlap
+  const labs = lines.map((l) => ({ l, y: Y(l.pts[l.pts.length - 1][2]), v: l.pts[l.pts.length - 1][2] })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < labs.length; i++) labs[i].y = Math.max(labs[i].y, labs[i - 1].y + 11);
+  const over = labs.length ? labs[labs.length - 1].y - (Hh - B) : 0;
+  if (over > 0) labs.forEach((x) => { x.y -= over; });
+  for (const x of labs) {
+    const me = x.l === sel;
+    const t = el("text", { x: W - R + 6, y: x.y + 3, "font-size": 10, fill: me ? "var(--txt)" : "var(--faint)", "font-weight": me ? 700 : 400, style: "cursor:pointer" },
+      `${x.l.label} ${centsSigned(x.v)}`);
+    t.addEventListener("click", () => pickArm(x.l.key));
+    svg.appendChild(t);
+  }
+  // hover: every line's estimate at that moment, the selected one first
+  const hit = el("rect", { x: L, y: Tp, width: W - L - R, height: Hh - Tp - B, fill: "transparent" });
+  const vline = el("line", { y1: Tp, y2: Hh - B, stroke: "var(--dim)", "stroke-width": 1, visibility: "hidden" });
+  svg.append(vline, hit);
+  const tip = $("etip");
+  const show = (mx) => {
+    const t = t0 + (mx - L) / (W - L - R) * (t1 - t0);
+    const at = (l) => { let q = null; for (const p of l.pts) { if (p[0] <= t) q = p; else break; } return q; };
+    const rows = lines.map((l) => ({ l, p: at(l) })).filter((r) => r.p).sort((a, b) => (b.l === sel) - (a.l === sel) || b.p[2] - a.p[2]);
+    if (!rows.length) { tip.style.display = "none"; vline.setAttribute("visibility", "hidden"); return; }
+    vline.setAttribute("x1", mx); vline.setAttribute("x2", mx); vline.setAttribute("visibility", "visible");
+    tip.innerHTML = `<span class="faint">${esc(day(t))} ${esc(hm(t))}</span><br>` + rows.map((r) => {
+      const p = r.p, me = r.l === sel;
+      const band = p[3] != null ? ` <span class="faint">(${centsSigned(p[3])} to ${centsSigned(p[4])})</span>` : "";
+      const cl = me && p[5] != null ? ` <span class="faint">· claimed ${centsSigned(p[5])}</span>` : "";
+      return `${me ? "<b>" : '<span class="dimc">'}${esc(r.l.label)} ${centsSigned(p[2])}${me ? "</b>" : "</span>"}${band} <span class="faint">n ${p[1]}</span>${cl}`;
+    }).join("<br>");
+    tip.style.display = "block";
+    const rect = svg.getBoundingClientRect(), px = (mx / W) * rect.width;
+    tip.style.left = (px + 14 + tip.offsetWidth > rect.width ? px - tip.offsetWidth - 14 : px + 14) + "px";
+    tip.style.top = "8px";
+  };
+  hit.addEventListener("mousemove", (ev) => { const rect = svg.getBoundingClientRect(); EDGE_HOVER = (ev.clientX - rect.left) * (W / rect.width); show(EDGE_HOVER); });
+  hit.addEventListener("mouseleave", () => { EDGE_HOVER = null; tip.style.display = "none"; vline.setAttribute("visibility", "hidden"); });
+  if (EDGE_HOVER != null) show(EDGE_HOVER);
+  $("edgenote").textContent = `running mean of P&L per settled contract, cents · each line from its ${EDGE_MIN_N}th contract · click a line or name to select it`;
+}
+
 function drawPnl() {
   const svg = $("pnl"), wrap = $("pnlwrap");
   const W = wrap.clientWidth, Hh = wrap.clientHeight;
@@ -761,7 +914,7 @@ async function refresh(all) {
 refresh(true);
 setInterval(() => refresh(false), 5000);
 setInterval(tickLeft, 1000);
-let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawChart(); drawPnl(); }, 120); });
+let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawChart(); drawPnl(); drawEdge(); }, 120); });
 })();
 </script>
 </body>
