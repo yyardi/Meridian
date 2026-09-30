@@ -766,3 +766,21 @@ def test_a_second_look_pass_is_final_and_a_passed_window_closes_as_no_edge(led, 
     h.run_arms(m["open_ts"] + 403)
     assert arm_led.decision(m["ticker"])["status"] == "no_edge" and not arm_led.unsettled_fills()
     assert model.calls == 2
+
+
+# ------------------------------------------------------------------ fresh quotes only (2026-09-30)
+def test_arms_trade_only_on_the_streamed_book_when_a_stream_is_configured(led, tmp_path):
+    """The venue's REST book is a 30-s Cloudflare cache: with a stream configured, a tick whose
+    book did not come from the stream enters nothing, fills nothing and tapes nothing."""
+    h, m, live, arm_led, _ = _agent_harness(led, tmp_path, [{"action": "buy_up", "limit_price": 0.65}])
+    h.venue.stream = object()
+    h.decide(m)
+    for source in ("stream_down", "rest"):
+        h.venue.quote = lambda slug, s=source: dict(live, book_source=s)
+        h.run_arms(m["open_ts"] + 60)
+        assert not arm_led.unsettled_fills()
+    assert led._conn.execute("SELECT COUNT(*) FROM quotes").fetchone()[0] == 0
+    h.venue.quote = lambda slug: dict(live, book_source="stream")
+    h.run_arms(m["open_ts"] + 63)
+    assert len(arm_led.unsettled_fills()) == 1
+    assert led._conn.execute("SELECT COUNT(*) FROM quotes").fetchone()[0] == 1

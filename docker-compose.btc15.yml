@@ -42,6 +42,11 @@ x-btc-env: &btc_env
   MERIDIAN_BTC15_LESSON_REASONING_EFFORT: ${MERIDIAN_BTC15_LESSON_REASONING_EFFORT:-low}
   MERIDIAN_BTC15_MODE: ${MERIDIAN_BTC15_MODE:-paper}
   MERIDIAN_BTC15_VENUE: polymarket
+  # The arms price off the venue's market-data STREAM (core/btc15/stream_book.py): its REST
+  # book is a 30-s Cloudflare cache. The stream is signed with the venue key; the harness
+  # opens only the public markets socket and has no order path.
+  POLYMARKET_KEY_ID: ${POLYMARKET_KEY_ID:-}
+  POLYMARKET_SECRET_KEY: ${POLYMARKET_SECRET_KEY:-}
   MERIDIAN_BTC15_DRAWDOWN_USD: "10"
   MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY:-10}
   MERIDIAN_BTC15_MAX_TOKENS_PER_DAY: ${MERIDIAN_BTC15_MAX_TOKENS_PER_DAY:-1500000}
