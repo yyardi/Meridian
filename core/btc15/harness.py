@@ -163,6 +163,9 @@ class Harness:
     _spot_ring: object = field(default_factory=lambda: collections.deque(maxlen=400))
     #: the exchange whose socket drives the spot trigger
     SPOT_TRIGGER_EXCHANGE = "coinbase"
+    #: spot-trigger passes: quotes that cleared the threshold, pulls made, and quotes that arrived
+    #: while an arms pass held the lock and were skipped (how often the pull came late)
+    spot_trigger_counts: dict = field(default_factory=lambda: {"over_threshold": 0, "pulled": 0, "lock_missed": 0})
 
     # ------------------------------------------------------------------ the second
     def step(self, now: float, px: float | None, n: int, disp: float) -> None:
@@ -388,6 +391,25 @@ class Harness:
             q = self.kalshi_quote(now, m, fetch=fetch)
             out["kalshi_quote"] = q
             out["kalshi"] = kalshi_mid_of(q)
+        out["spot_move"] = self.spot_moves(now)
+        return out
+
+    def spot_moves(self, now: float, windows_ms=(250, 500, 1000)) -> dict:
+        """coinbase's move over each window ending now, from the socket ring: mid now minus the last
+        mid at or before now - window; None when the ring has no quote that old or its last quote is
+        older than 5 s (a dead socket is no move)."""
+        ring = list(self._spot_ring)
+        out = {w: None for w in windows_ms}
+        if not ring or now - ring[-1][0] > 5.0:
+            return out
+        cur = ring[-1][1]
+        for w in windows_ms:
+            base = None
+            for t0, px in reversed(ring):
+                if t0 <= now - w / 1000:
+                    base = px
+                    break
+            out[w] = None if base is None else cur - base
         return out
 
     #: A Kalshi touch older than this is no price. The main loop reads the book every
@@ -509,7 +531,9 @@ class Harness:
         move = mid - base
         if abs(move) < min(a.spec.spot_pull_usd for a in arms):
             return
+        self.spot_trigger_counts["over_threshold"] += 1
         if not self._arms_lock.acquire(blocking=False):
+            self.spot_trigger_counts["lock_missed"] += 1          # counted: a late pull is data, not silence
             return
         try:
             quote = getattr(self.venue, "quote", None)
@@ -519,7 +543,8 @@ class Harness:
                 book_mid = (live["yes_bid"] + live["yes_ask"]) / 2
             for a in arms:
                 try:
-                    a.spot_pull(at, m["ticker"], "up" if move > 0 else "down", move, book_mid)
+                    if a.spot_pull(at, m["ticker"], "up" if move > 0 else "down", move, book_mid):
+                        self.spot_trigger_counts["pulled"] += 1
                 except Exception:                                # noqa: BLE001 -- one arm never stops the others
                     log.exception("spot pull %s", a.spec.name)
         finally:
@@ -708,6 +733,8 @@ class Harness:
             s["microtape"] = self.microtape.counters()
         if self.brti is not None:
             s["brti"] = self.brti.counters(now)
+        if any(a.spec.kind == "join" and a.spec.spot_pull_usd > 0 for a in self.arms):
+            s["spot_trigger"] = dict(self.spot_trigger_counts)
         try:
             with open(self.settings.status_path, "w") as fh:
                 json.dump(s, fh, indent=1)

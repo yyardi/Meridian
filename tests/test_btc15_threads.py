@@ -161,7 +161,8 @@ def test_build_hangs_the_microtape_off_the_stream_and_the_feed(tmp_path, monkeyp
     stream = h.venue.stream
     assert isinstance(stream, StreamBook) and stream.on_book == h.microtape.book and stream.on_trade == h.microtape.trade
     assert h.feed.on_spot is not None                                        # the fan-out: the tape and the spot trigger
-    assert [a.spec.name for a in h.arms][-2:] == ["touch_maker", "touch_maker_k"] and h.arms[-1].prints == stream.prints
+    names = {a.spec.name for a in h.arms}
+    assert {"touch_maker", "touch_maker_k", "touch_maker_t", "touch_maker_kt"} <= names and all(a.prints == stream.prints for a in h.arms)
     h.microtape.stop()
     assert sqlite3.connect(h.microtape.path).execute("SELECT COUNT(*) FROM spot").fetchone()[0] == 0
     s2 = Settings(db_path=str(tmp_path / "b.sqlite"), status_path="/dev/null", horizon="1h", microtape="none")
@@ -224,12 +225,14 @@ def test_the_spot_socket_drives_the_trigger_from_the_coinbase_move_over_the_wind
     h.on_spot_update("coinbase", 84012.0, 84013.0, 84012.5, now + 2.1)        # +$12 over the prior 250 ms (base: the 1.5 s quote): pull the offer
     r = json.loads(arm_led.decision(m["ticker"])["response"])
     assert r["offer"] is None and r["bid"] == 0.61 and r["pulled"]["offer"]["move"] == 12.0 and r["pulled"]["offer"]["mid"] == 0.615
-    h._arms_lock.acquire()                                                    # a pass holds the lock: the quote is skipped, never blocks
+    assert h.spot_trigger_counts == {"over_threshold": 1, "pulled": 1, "lock_missed": 0}
+    h._arms_lock.acquire()                                                    # a pass holds the lock: the quote is skipped, never blocks, and counted
     try:
         h.on_spot_update("coinbase", 83980.0, 83981.0, 83980.5, now + 2.2)
     finally:
         h._arms_lock.release()
     assert json.loads(arm_led.decision(m["ticker"])["response"])["bid"] == 0.61
+    assert h.spot_trigger_counts == {"over_threshold": 2, "pulled": 1, "lock_missed": 1}
 
 
 def test_build_fans_socket_quotes_out_to_the_tape_and_the_trigger(tmp_path, monkeypatch):
@@ -247,3 +250,14 @@ def test_build_fans_socket_quotes_out_to_the_tape_and_the_trigger(tmp_path, monk
     assert seen == [("coinbase", 1.0, 2.0, 1.5, 5.0)]
     assert sqlite3.connect(h.microtape.path).execute("SELECT COUNT(*) FROM spot").fetchone()[0] == 1
     h.microtape.stop()
+
+
+def test_probabilities_carry_the_spot_move_over_each_window_from_the_ring():
+    now = 1_790_700_000.0
+    h, m, led = _harness(now)
+    assert h.spot_moves(now) == {250: None, 500: None, 1000: None}                       # no socket quote yet
+    for t, px in ((now - 1.2, 84000.0), (now - 0.6, 84003.0), (now - 0.2, 84010.0), (now - 0.05, 84012.0)):
+        h._spot_ring.append((t, px))
+    assert h.spot_moves(now) == {250: 84012.0 - 84003.0, 500: 84012.0 - 84003.0, 1000: 84012.0 - 84000.0}
+    assert h.spot_moves(now + 6)[250] is None                                            # a socket silent 5 s is no move
+    assert h.probabilities(now, dict(m, yes_bid=0.61, yes_ask=0.62))["spot_move"][250] == 9.0

@@ -130,7 +130,9 @@ def test_the_kalshi_gated_arm_quotes_a_side_only_when_kalshi_says_it_is_cheap(tm
 
 def test_the_join_arms_are_in_the_default_set_one_contract_each_and_describe_their_queue_model():
     names = [a.name for a in DEFAULT_ARMS]
-    assert names[-2:] == ["touch_maker", "touch_maker_k"]
+    assert names[-4:] == ["touch_maker", "touch_maker_k", "touch_maker_t", "touch_maker_kt"]
+    assert [a.spot_pull_usd for a in DEFAULT_ARMS[-4:]] == [0.0, 0.0, 10.0, 10.0]          # the controls untouched
+    assert DEFAULT_ARMS[-1].margin == DEFAULT_ARMS[-3].margin and DEFAULT_ARMS[-1].prob == "kalshi"
     control, gated = DEFAULT_ARMS[-2], DEFAULT_ARMS[-1]
     assert "joined to the venue's own touch" in control.describe() and "the control" in control.describe()
     assert "Kalshi's mid is 1¢ better" in gated.describe()
@@ -158,11 +160,27 @@ def _trig(tmp_path, prints=None, usd=10.0):
     return _arm(tmp_path, ArmSpec("touch_maker_p", "mid", "join", 0.0, spot_pull_usd=usd, spot_pull_ms=250, spot_repost_s=2.0), prints=prints)
 
 
-def test_the_trigger_is_off_by_default_and_described_when_on():
-    assert all(a.spot_pull_usd == 0 for a in DEFAULT_ARMS)
+def test_the_trigger_is_off_on_the_controls_and_described_when_on():
+    assert all(a.spot_pull_usd == 0 for a in DEFAULT_ARMS if not a.name.endswith("t"))
     on = ArmSpec("x", "mid", "join", 0.0, spot_pull_usd=10)
-    assert "pulled when coinbase moves $10 in 250 ms" in on.describe()
+    assert "the threatened side pulled when coinbase moves $10 in 250 ms, re-joined after the book re-prices" in on.describe()
+    both = ArmSpec("x", "mid", "join", 0.0, spot_pull_usd=10, spot_pull_sides="both", spot_rejoin="calm")
+    assert "both sides pulled" in both.describe() and "once spot is calm" in both.describe()
     assert "pulled" not in ArmSpec("x", "mid", "join", 0.0).describe()
+
+
+def test_the_both_sides_variant_pulls_both_and_the_calm_variant_rejoins_when_spot_settles(tmp_path):
+    a = _arm(tmp_path, ArmSpec("touch_maker_b", "mid", "join", 0.0, spot_pull_usd=10, spot_pull_ms=500,
+                               spot_repost_s=5.0, spot_pull_sides="both", spot_rejoin="calm"))
+    a.tick(O + 40, _m(0.44, 0.45), {"mid": 0.445, "spot_move": {500: 1.0}}, 0.0695, 90)
+    assert a.spot_pull(O + 41, T, "up", 14.0, 0.445) is True
+    r = _state(a)[1]
+    assert r["bid"] is None and r["offer"] is None and set(r["pulled"]) == {"bid", "offer"}
+    a.tick(O + 41.4, _m(0.45, 0.46), {"mid": 0.455, "spot_move": {500: 13.0}}, 0.0695, 90)   # book re-priced but spot still moving: stay out
+    assert _state(a)[1]["bid"] is None and _state(a)[1]["offer"] is None
+    a.tick(O + 41.9, _m(0.45, 0.46), {"mid": 0.455, "spot_move": {500: 3.0}}, 0.0695, 90)    # spot calm: re-join both
+    r = _state(a)[1]
+    assert (r["bid"], r["offer"], r["bid_since"]) == (0.45, 0.46, O + 41.9) and "pulled" not in r
 
 
 def test_an_up_move_pulls_the_offer_only_and_a_print_there_no_longer_fills(tmp_path):
@@ -221,3 +239,21 @@ def test_a_move_below_the_threshold_or_on_a_control_arm_pulls_nothing(tmp_path):
     c.tick(O + 40, _m(0.44, 0.45), {"mid": 0.445}, 0.0695, 90)
     assert c.spot_pull(O + 41, T, "up", 50.0, 0.445) is False and _state(c)[1]["offer"] == 0.45
     assert a.spot_pull(O + 41, "another-window", "up", 50.0, 0.445) is False
+
+
+def test_a_pulled_side_is_filled_by_neither_prints_nor_a_trade_through_until_it_rejoins(tmp_path):
+    prints = []
+    a = _trig(tmp_path, prints=lambda t, since: [p for p in prints if p[0] > since])
+    a.tick(O + 40, _m(0.44, 0.45, 10.0, 10.0), {"mid": 0.445}, 0.0695, 90)
+    assert a.spot_pull(O + 41, T, "up", 20.0, 0.445) is True                       # the offer at 0.45 is pulled
+    prints += [(O + 41.1, 0.45, 5000.0, "ORDER_INTENT_BUY_LONG", "ORDER_INTENT_UNDEFINED")]   # prints far beyond the 10 ahead
+    a.tick(O + 41.2, _m(0.44, 0.45, 10.0, 10.0), {"mid": 0.445}, 0.0695, 90)
+    assert not a.ledger.unsettled_fills()
+    a.tick(O + 41.3, _m(0.47, 0.48, 10.0, 10.0), {"mid": 0.475}, 0.0695, 90)     # the bid crossed the OLD 0.45 offer: a trade-through, while pulled
+    assert not a.ledger.unsettled_fills()
+    r = _state(a)[1]
+    assert (r["offer"], r["offer_since"]) == (0.48, O + 41.3) and "pulled" not in r  # re-priced up: re-joined at the new touch
+    prints += [(O + 41.5, 0.48, 11.0, "ORDER_INTENT_BUY_LONG", "ORDER_INTENT_UNDEFINED")]     # now a print beyond the 10 ahead fills
+    a.tick(O + 41.6, _m(0.47, 0.48, 10.0, 0.0), {"mid": 0.475}, 0.0695, 90)
+    f = a.ledger.unsettled_fills()
+    assert len(f) == 1 and (f[0]["side"], f[0]["price_u"]) == ("NO", 5200)
