@@ -216,7 +216,7 @@ def test_the_spot_socket_drives_the_trigger_from_the_coinbase_move_over_the_wind
     h.arms = [arm]
     arm.tick(now, dict(m, status="active", fee_coefficient="0.0695"), {"mid": 0.615}, 0.0695, 90)
     h.on_spot_update("kraken", 84000.0, 84001.0, 84000.5, now + 1.0)          # not the trigger exchange
-    h.on_spot_update("coinbase", 84020.0, 84021.0, 84020.5, now + 1.0)        # a fresh socket: nothing before the window, no trigger
+    h.on_spot_update("coinbase", 84000.0, 84001.0, 84000.5, now + 1.0)        # a fresh socket: nothing before the window, no trigger
     h.on_spot_update("coinbase", 84000.0, 84001.0, 84000.5, now + 1.5)
     h.on_spot_update("coinbase", 84004.0, 84005.0, 84004.5, now + 1.9)        # +$4 over the prior 250 ms: under the threshold
     r = json.loads(arm_led.decision(m["ticker"])["response"])
