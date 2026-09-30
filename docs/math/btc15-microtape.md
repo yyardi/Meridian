@@ -178,6 +178,30 @@ smoke test on this tape read corr +0.31 between spot's move over the prior 250 m
 book message's mid move (+0.17 at 2 s; reverse +0.08–0.14) — a schema check on one window
 during a 20c drop, not a result.
 
+## The spot trigger, built before the read and switched on only by it (2026-09-30 evening)
+
+An interim look at three hours of the tape with `maker_fill_toxicity.py` (36 maker fills; the
+registered read is the night's, at 12:05Z): the join arms' 60-s markouts were −8.4c (n=16,
+t −2.7) on fills preceded by a ≥ $10 coinbase move within 500 ms and −2.5c (n=20, t −1.0) on
+the rest; at 250 ms, −10.2c (n=15) against −1.5c (n=21). The lead-lag instrument on the same
+three hours (91,500 book messages): corr(spot's move over the prior 250 ms, the next book
+message's mid move) +0.30, +0.23 at 500 ms, +0.12 at 2 s; reverse +0.15 at 250 ms; a taker
+reacting 300 ms after a ≥ $10 move marks −1.95c at 5 s (n=419, t −10) — the round trip — so
+the lead is worth nothing to a taker and something to a maker whose quote stands stale for
+those milliseconds.
+
+The trigger (`ArmSpec.spot_pull_usd`, `core/btc15/arms.py`): on every coinbase socket quote,
+on the socket's thread, the harness computes spot's move over the prior `spot_pull_ms`
+(250) from a ring of mids and, when it clears `spot_pull_usd`, pulls the threatened side of
+each triggered join arm under the arms lock without blocking (a miss is counted in
+`spot_trigger_counts.lock_missed`) — the offer on an up-move, the bid on a down-move, so the
+other side keeps its queue place. A pulled side is filled by neither prints nor a
+trade-through; it re-joins once the book has re-priced a tick in the move's direction or
+after `spot_repost_s` (2 s). It runs as an A/B: `touch_maker_t` and `touch_maker_kt` beside
+the untouched `touch_maker` and `touch_maker_k`, so the difference on the same windows is the
+trigger's value. `spot_pull_sides="both"` and `spot_rejoin="calm"` exist as options with no
+arm on them. Nothing on prod changes until the 12:05Z read confirms the shape on the night's n.
+
 ## Pending, for the operator
 
 Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
