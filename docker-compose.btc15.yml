@@ -51,6 +51,11 @@ x-btc-env: &btc_env
   MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY:-10}
   MERIDIAN_BTC15_MAX_TOKENS_PER_DAY: ${MERIDIAN_BTC15_MAX_TOKENS_PER_DAY:-1500000}
   MERIDIAN_BTC15_MAX_OUTPUT_TOKENS: ${MERIDIAN_BTC15_MAX_OUTPUT_TOKENS:-4000}
+  # 2026-09-30: the sub-second record (every venue book message and print, spot from the
+  # exchanges' sockets) beside the ledger; "none" disables it. Spot sockets (Coinbase, Kraken)
+  # are on by default; "0" keeps the four REST polls only.
+  MERIDIAN_BTC15_MICROTAPE: ${MERIDIAN_BTC15_MICROTAPE:-}
+  MERIDIAN_BTC15_SPOT_SOCKETS: ${MERIDIAN_BTC15_SPOT_SOCKETS:-1}
   MERIDIAN_NTFY_TOPIC: ${MERIDIAN_NTFY_TOPIC:-}
   MERIDIAN_NTFY_SCOPE: ${MERIDIAN_NTFY_SCOPE:-}
   MERIDIAN_NTFY_SERVER: ${MERIDIAN_NTFY_SERVER:-}

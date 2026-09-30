@@ -27,6 +27,23 @@ An arm is (probability source, execution kind, margin):
                       favours over the mid; filled only when the book later trades
                       THROUGH it (the other side's touch crosses our price by a tick);
                       the venue charges makers nothing; cancelled min_lead_s before close
+               join   BOTH sides at the venue's own touch, re-joined whenever the touch
+                      moves, filled by PRINTS (2026-09-30, needs the stream's trade tape).
+                      Queue model: an order placed at price P at t0 stands behind the size
+                      displayed at P at t0 (``ahead``). It fills when the prints at P or
+                      through it on our side since t0 sum to MORE than ``ahead``, or when
+                      the book trades through P. Size arriving at P after us is behind us
+                      and ignored; size that leaves P without printing is NOT credited
+                      (ahead shrinks only by prints -- the pessimistic reading). When the
+                      touch moves away from P the quote is re-joined at the new touch (new
+                      t0, new ahead): the arm never stands alone at a level the market
+                      maker has left, which is what the retired mid_maker did (-13c). With
+                      prob=kalshi, a side is quoted only when Kalshi's mid is at least
+                      ``margin`` better than our price (a bid at P only if Kalshi >= P +
+                      margin; an offer at P only if Kalshi <= P - margin); with prob=mid
+                      both sides always (the control). The venue pays makers a rebate
+                      (docs.polymarket.us/fees, 2026-09-25) which the ledger does NOT
+                      credit: makers are booked at zero, the conservative reading.
 
 At most one contract per arm per window, held to settlement. A window the arm saw and
 did not trade is recorded (no_edge / expired), so "chose not to trade" is data.
@@ -47,6 +64,18 @@ log = logging.getLogger("btc15.arms")
 
 #: The venue's price increment for these markets (orderPriceMinTickSize 0.01).
 BTC_PRICE_TICK = 0.01
+#: A join arm quotes only into a book at most this wide: a wider book is the maker gone.
+MAX_JOIN_SPREAD = 0.03
+#: The venue's intents on a print (core/ladder/stream.trade_row), read off the recorded WNBA
+#: prints of 2026-09-19 beside the touch before each: a taker BUY_SHORT (buys NO) or SELL_LONG
+#: (sells YES) prints AT THE YES BID, in YES terms, and fills a resting YES bid; a taker BUY_LONG
+#: or SELL_SHORT prints at the ask and fills a resting YES offer. When the taker's intent is
+#: undefined, the MAKER's says which side rested: maker BUY_LONG was the bid, maker BUY_SHORT the
+#: offer. A print with both undefined is counted for neither (the pessimistic reading).
+HITS_BID_TAKER = ("ORDER_INTENT_BUY_SHORT", "ORDER_INTENT_SELL_LONG")
+HITS_BID_MAKER = "ORDER_INTENT_BUY_LONG"
+LIFTS_OFFER_TAKER = ("ORDER_INTENT_BUY_LONG", "ORDER_INTENT_SELL_SHORT")
+LIFTS_OFFER_MAKER = "ORDER_INTENT_BUY_SHORT"
 
 
 @dataclass(frozen=True)
@@ -62,6 +91,11 @@ class ArmSpec:
         if self.kind == "requote":
             return (f"two-sided zero-fee quotes on the venue at Kalshi's live mid −/+ {round(self.margin * 100)}¢, "
                     f"moved on every price message; filled only when traded through")
+        if self.kind == "join":
+            gate = (f"; a side only when Kalshi's mid is {round(self.margin * 100)}¢ better than our price"
+                    if self.prob == "kalshi" else " (both sides always: the control)")
+            return ("zero-fee quotes joined to the venue's own touch on every message, filled by prints beyond "
+                    "the size ahead of us or a trade-through" + gate)
         what = {"walk": "random walk", "quant": "fitted model", "llm": "the LLM", "kalshi": "Kalshi's price",
                 "mid": "the market mid"}[self.prob]
         if self.kind == "agent":
@@ -96,6 +130,12 @@ DEFAULT_ARMS = (
     # trades through one of them. At 3-s staleness it lost 2.6c a fill (adverse
     # selection); message-driven is the version being measured.
     ArmSpec("kalshi_requote", "kalshi", "requote", cents(2)),
+    # 2026-09-30: makers judged by PRINTS, not trade-through, now that the stream's trades are
+    # kept. touch_maker joins both sides of the venue's touch (the control: what joining the
+    # market maker's queue earns); touch_maker_k joins a side only when Kalshi's mid says that
+    # side is 1c or more below fair. One contract per window each, like every arm.
+    ArmSpec("touch_maker", "mid", "join", 0.0),
+    ArmSpec("touch_maker_k", "kalshi", "join", cents(1)),
 )
 
 #: Retired 2026-09-29 21:50Z on the operator's call, every one losing on paper as the
@@ -116,8 +156,11 @@ def _floor_cent(x: float) -> float:
 
 
 class Arm:
-    def __init__(self, spec: ArmSpec, ledger: Ledger, limit_u: int) -> None:
+    def __init__(self, spec: ArmSpec, ledger: Ledger, limit_u: int, prints=None) -> None:
         self.spec, self.ledger, self.limit_u = spec, ledger, limit_u
+        #: prints(ticker, since) -> [(at, price, quantity, taker_intent, maker_intent)] (the stream's);
+        #: none means no print seen, so a join arm can only be filled by a trade-through.
+        self.prints = prints or (lambda ticker, since: [])
         self.ledger.put("arm_spec", json.dumps(asdict(spec)))
 
     # ------------------------------------------------------------------ one second
@@ -143,6 +186,12 @@ class Arm:
                 self.ledger.finish_decision(t, status="expired" if status == "resting" else "no_edge")
                 return
             self._requote(now, m, probs, d)
+            return
+        if self.spec.kind == "join":
+            if closing:
+                self.ledger.finish_decision(t, status="expired" if status == "resting" else "no_edge")
+                return
+            self._join(now, m, probs, d)
             return
         if self.spec.kind == "taker":
             if closing:
@@ -297,12 +346,79 @@ class Arm:
                                         response=json.dumps({"bid": nb, "offer": no, "posted_at": now, "fair": round(p, 4)}),
                                         rationale=f"quoting {nb:.2f} / {no:.2f} around Kalshi {p:.3f}")
 
-    def _maker_fill(self, now: float, m: dict, d, side: str, price: float) -> None:
+    def _join(self, now: float, m: dict, probs: dict, d) -> None:
+        """Both sides at the venue's touch; see the module docstring for the queue model."""
+        t = m["ticker"]
+        st = json.loads(d["response"] or "{}") if d["status"] == "resting" else {}
+        yb, ya = m.get("yes_bid"), m.get("yes_ask")
+        # 1. what was resting: filled by prints beyond the size ahead, or by a trade-through
+        for side in ("bid", "offer"):
+            q = st.get(side)
+            if q is None:
+                continue
+            since, ahead = st.get(f"{side}_since", now), st.get(f"{side}_ahead") or 0.0
+            hit = 0.0
+            for (_at, px, qty, ti, mi) in self.prints(t, since):
+                if px is None or not qty:
+                    continue
+                if side == "bid" and px <= q + 1e-9 and (ti in HITS_BID_TAKER or mi == HITS_BID_MAKER):
+                    hit += qty
+                elif side == "offer" and px >= q - 1e-9 and (ti in LIFTS_OFFER_TAKER or mi == LIFTS_OFFER_MAKER):
+                    hit += qty
+            if side == "bid":
+                through = ya is not None and ya <= q - BTC_PRICE_TICK + 1e-9
+            else:
+                through = yb is not None and yb >= q + BTC_PRICE_TICK - 1e-9
+            if through or hit > ahead:
+                how = "traded through" if through else f"prints {hit:.0f} > {ahead:.0f} ahead"
+                if side == "bid":
+                    self._maker_fill(now, m, d, "YES", q, how)
+                else:
+                    self._maker_fill(now, m, d, "NO", round(1 - q, 2), how)
+                return
+        # 2. re-quote to the touch, or pull
+        k = probs.get("kalshi") if self.spec.prob == "kalshi" else None
+        gated = self.spec.prob == "kalshi"
+        if yb is None or ya is None or ya - yb > MAX_JOIN_SPREAD + 1e-9 or (gated and k is None):
+            if d["status"] == "resting":
+                self.ledger.finish_decision(t, status="watching", response=None,
+                                            rationale="quotes pulled: no two-sided book" if k is None and gated and yb is not None
+                                            else "quotes pulled: no two-sided book within 3c")
+            return
+        want = {"bid": yb, "offer": ya}
+        if gated:
+            if k < yb + self.spec.margin - 1e-9:
+                want["bid"] = None
+            if k > ya - self.spec.margin + 1e-9:
+                want["offer"] = None
+        new = dict(st)
+        changed = False
+        for side, size_key in (("bid", "yes_bid_size"), ("offer", "yes_ask_size")):
+            if want[side] != st.get(side) or side not in st:
+                changed = changed or want[side] != st.get(side)
+                new[side] = want[side]
+                new[f"{side}_since"] = now if want[side] is not None else None
+                new[f"{side}_ahead"] = float(m.get(size_key) or 0.0) if want[side] is not None else None
+        if want["bid"] is None and want["offer"] is None:
+            if d["status"] == "resting":
+                self.ledger.finish_decision(t, status="watching", response=None,
+                                            rationale=f"quotes pulled: Kalshi {k:.3f} inside {yb:.2f}/{ya:.2f} by less than the margin")
+            return
+        if changed or d["status"] != "resting":
+            self.ledger.finish_decision(
+                t, status="resting", answered_at=_iso(now), response=json.dumps(new),
+                p_up=None if k is None else round(k, 4),
+                rationale=(f"joined {'-' if new.get('bid') is None else f'{new['bid']:.2f}'} / "
+                           f"{'-' if new.get('offer') is None else f'{new['offer']:.2f}'} "
+                           f"(ahead {new.get('bid_ahead')}/{new.get('offer_ahead')})"
+                           + ("" if k is None else f", Kalshi {k:.3f}")))
+
+    def _maker_fill(self, now: float, m: dict, d, side: str, price: float, how: str | None = None) -> None:
         price_u = int(round(price * UNIT))
         book = {k: m.get(k) for k in ("yes_bid_u", "yes_ask_u", "no_bid_u", "no_ask_u", "yes_bid_size", "yes_ask_size")}
         fid, why = self.ledger.record_fill("paper", m["ticker"], side, price_u, 0, self.limit_u, book=book)
         self.ledger.finish_decision(m["ticker"], status="filled" if fid else "not_filled", side=side, error=None if fid else why,
-                                    rationale=(d["rationale"] or "") + f"; traded through: {side} at {price:.2f}, no fee, {_iso(now)}")
+                                    rationale=(d["rationale"] or "") + f"; {how or 'traded through'}: {side} at {price:.2f}, no fee, {_iso(now)}")
 
     def _check_fill(self, now: float, m: dict, d) -> None:
         r = json.loads(d["response"] or "{}")

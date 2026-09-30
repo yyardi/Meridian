@@ -11,9 +11,16 @@ has run live on the sports slates -- subscribed to the window in play, and holds
 MARKET_DATA touch it delivered. ``touch`` answers only while the socket is live (a message,
 update or heartbeat, within ``live_s``) and only for the window it is subscribed to; any
 other state is None, and the harness does not trade on None.
+
+It also keeps the window's PRINTS (the socket's TRADE messages: price, quantity, which side
+took) in memory, stamped at receipt on the same clock as the books. A print is the only fill
+evidence short of an order: a maker arm reads ``prints`` to decide whether a resting quote
+would have been filled. Every book message and every print is also handed to the optional
+``on_book`` / ``on_trade`` hooks (the microtape) on the socket's thread, before the arms act.
 """
 from __future__ import annotations
 
+import collections
 import logging
 import threading
 import time
@@ -26,15 +33,22 @@ log = logging.getLogger("btc15.stream")
 class _Sink:
     """What StreamConnection writes to: here, the last touch per slug, in memory."""
 
-    def __init__(self, clock=time.time, on_update=None) -> None:
+    #: Prints kept per window, newest last; a 15-minute window prints far fewer than this.
+    PRINTS_KEPT = 20_000
+
+    def __init__(self, clock=time.time, on_update=None, on_book=None, on_trade=None) -> None:
         self._lock = threading.Lock()
         self._clock = clock
-        self._on_update = on_update
+        self._on_update, self._on_book, self._on_trade = on_update, on_book, on_trade
         self.rows: dict[str, tuple[float, dict]] = {}
+        #: slug -> deque of (at, price, quantity, taker_intent, maker_intent)
+        self.prints: dict[str, collections.deque] = {}
 
     def book(self, game: str, row: dict) -> None:
+        at = self._clock()
         with self._lock:
-            self.rows[row["slug"]] = (self._clock(), row)
+            self.rows[row["slug"]] = (at, row)
+        self._call(self._on_book, row, at)
         if self._on_update is not None:                     # on the socket's thread: the harness acts now
             try:
                 self._on_update(row["slug"])
@@ -42,15 +56,37 @@ class _Sink:
                 log.exception("stream update handler")
 
     def trade(self, game: str, row: dict) -> None:
-        pass
+        at = self._clock()
+        with self._lock:
+            d = self.prints.get(row["slug"])
+            if d is None:
+                d = self.prints[row["slug"]] = collections.deque(maxlen=self.PRINTS_KEPT)
+            d.append((at, row.get("price"), row.get("quantity"), row.get("taker_intent"), row.get("maker_intent")))
+        self._call(self._on_trade, row, at)
+
+    @staticmethod
+    def _call(hook, row: dict, at: float) -> None:
+        if hook is None:
+            return
+        try:
+            hook(row, at)
+        except Exception:                                    # noqa: BLE001 -- a tape error never drops the socket
+            log.exception("stream tape hook")
 
     def get(self, slug: str) -> tuple[float, dict] | None:
         with self._lock:
             return self.rows.get(slug)
 
+    def prints_since(self, slug: str, since: float) -> list[tuple]:
+        """The window's prints received after ``since``, oldest first."""
+        with self._lock:
+            d = self.prints.get(slug)
+            return [p for p in d if p[0] > since] if d else []
+
     def forget_except(self, slug: str) -> None:
         with self._lock:
             self.rows = {k: v for k, v in self.rows.items() if k == slug}
+            self.prints = {k: v for k, v in self.prints.items() if k == slug}
 
 
 class StreamBook:
@@ -59,7 +95,7 @@ class StreamBook:
     RESTART_S = 30.0
 
     def __init__(self, *, open_socket=None, live_s: float = 30.0, clock=time.time, enabled: bool = True,
-                 on_update=None) -> None:
+                 on_update=None, on_book=None, on_trade=None) -> None:
         self._open_socket = open_socket
         self.enabled = enabled          # False: no credentials -- never subscribes, never live
         self.live_s = live_s
@@ -67,7 +103,12 @@ class StreamBook:
         self._clock = clock
         #: Called with the slug on every MARKET_DATA update, on the socket's thread.
         self.on_update = on_update
-        self.sink = _Sink(clock, lambda slug: self.on_update(slug) if self.on_update is not None else None)
+        #: Called with (row, at) for every book message / every print, on the socket's thread, before
+        #: on_update. The microtape hangs here; a hook that raises is logged and never drops the socket.
+        self.on_book, self.on_trade = on_book, on_trade
+        self.sink = _Sink(clock, lambda slug: self.on_update(slug) if self.on_update is not None else None,
+                          lambda row, at: self.on_book(row, at) if self.on_book is not None else None,
+                          lambda row, at: self.on_trade(row, at) if self.on_trade is not None else None)
         self.slug: str | None = None
         self.conn: StreamConnection | None = None
         self._thread: threading.Thread | None = None
@@ -112,8 +153,17 @@ class StreamBook:
         now = self._clock() if now is None else now
         return {**row, "age_s": round(now - at, 3)}
 
+    def prints(self, slug: str, since: float) -> list[tuple]:
+        """The window's prints received after ``since`` -- (at, price, quantity, taker_intent,
+        maker_intent), oldest first -- while the socket is live on it; otherwise none (a dead
+        socket has not seen the prints, and "none seen" must not read as "none happened")."""
+        if slug != self.slug or not self.live():
+            return []
+        return self.sink.prints_since(slug, since)
+
     def status(self, now: float | None = None) -> dict:
         c = self.conn
         return {"slug": self.slug, "live": self.live(now),
-                "books": None if c is None else c.books, "reconnects": None if c is None else c.reconnects,
+                "books": None if c is None else c.books, "trades": None if c is None else c.trades,
+                "reconnects": None if c is None else c.reconnects,
                 "last_error": None if c is None else c.last_error}
