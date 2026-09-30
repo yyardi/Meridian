@@ -60,6 +60,8 @@ def test_prints_at_our_price_fill_only_once_they_exceed_the_size_ahead_and_on_ou
     f = a.ledger.unsettled_fills()
     assert len(f) == 1 and (f[0]["side"], f[0]["price_u"], f[0]["fee_u"]) == ("YES", 4400, 0)
     assert "prints 101 > 100 ahead" in a.ledger.decision(T)["rationale"]
+    r = json.loads(a.ledger.decision(T)["response"])                 # the fill's own instant and evidence, for the tape
+    assert (r["filled_ts"], r["filled_by"], r["filled_side"], r["filled_price"], r["ahead"], r["printed"]) == (O + 46, "prints", "bid", 0.44, 100.0, 101.0)
 
 
 def test_prints_lifting_the_offer_fill_the_no_side_at_one_minus_the_offer(tmp_path):
@@ -80,6 +82,7 @@ def test_a_trade_through_fills_without_any_print(tmp_path):
     f = a.ledger.unsettled_fills()
     assert len(f) == 1 and (f[0]["side"], f[0]["price_u"]) == ("YES", 4400)
     assert "traded through" in a.ledger.decision(T)["rationale"]
+    assert json.loads(a.ledger.decision(T)["response"])["filled_by"] == "through"
 
 
 def test_when_the_touch_moves_the_arm_rejoins_it_and_the_queue_restarts(tmp_path):
