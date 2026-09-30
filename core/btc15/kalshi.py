@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import time
 from decimal import Decimal
 
 import httpx
 
 SERIES = "KXBTC15M"
+#: The /markets list names the window and its strike and changes only at window boundaries;
+#: it is re-read this often, and at once when it names no window for now. The touch is the
+#: order book's, read every call.
+LIST_CACHE_S = 10.0
 BASE = os.environ.get("KALSHI_API_URL", "https://api.elections.kalshi.com/trade-api/v2")
 UNITS_PER_DOLLAR = 10_000
 
@@ -87,6 +92,7 @@ class KalshiBTC:
         self._http = client or httpx.Client(timeout=10.0, headers={"User-Agent": "meridian-btc15/1"})
         self._base = base.rstrip("/")
         self._mult: tuple[float, Decimal] | None = None
+        self._list: tuple[float, list] | None = None
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         r = self._http.get(self._base + path, params=params)
@@ -100,9 +106,9 @@ class KalshiBTC:
         2026-09-30, it held one price for a mean of 32 s (longest 58 s) while the order book
         changed every second, a median 4c apart (analysis/btc15/quote_freshness_probe.py). The
         touch here is the book's; if the book cannot be read, there is no touch, never the list's."""
-        ms = self._get("/markets", {"series_ticker": SERIES, "status": "open", "limit": 10}).get("markets") or []
-        live = [normalize(m) for m in ms]
-        live = [m for m in live if m["open_ts"] and m["close_ts"] and m["open_ts"] <= now < m["close_ts"]]
+        live = self._live_windows(now, fresh=False)
+        if not live:
+            live = self._live_windows(now, fresh=True)       # a window just opened: the cached list predates it
         if not live:
             return None
         m = min(live, key=lambda m: m["close_ts"])
@@ -111,6 +117,13 @@ class KalshiBTC:
         except (httpx.HTTPError, ValueError):
             touch = None
         return {**m, **(touch or NO_TOUCH), "touch_source": "orderbook" if touch else "none"}
+
+    def _live_windows(self, now: float, fresh: bool) -> list[dict]:
+        t = time.time()
+        if fresh or self._list is None or t - self._list[0] > LIST_CACHE_S:
+            self._list = (t, self._get("/markets", {"series_ticker": SERIES, "status": "open", "limit": 10}).get("markets") or [])
+        live = [normalize(m) for m in self._list[1]]
+        return [m for m in live if m["open_ts"] and m["close_ts"] and m["open_ts"] <= now < m["close_ts"]]
 
     def market(self, ticker: str) -> dict:
         return normalize(self._get(f"/markets/{ticker}")["market"])

@@ -169,6 +169,9 @@ def summary(root: str | Path, horizon: str, now: float | None = None, arm: str |
             cur_row = dict(_row(mcur), decision=None, fill=None)
         spec = _j(led.get("arm_spec")) if arm else None
         last = main._conn.execute("SELECT t, px, n FROM ticks ORDER BY t DESC LIMIT 1").fetchone()
+        # the two venues' live books, read in the same second by the bot (the once-a-second tape)
+        q = main._conn.execute("SELECT t, ticker, yes_bid, yes_ask, kalshi_bid, kalshi_ask FROM quotes "
+                               "ORDER BY t DESC LIMIT 1").fetchone()
         curve, cum, staked = [], 0, 0
         for r in led._conn.execute(
                 "SELECT s.settled_at, s.pnl_u, f.ticker, f.price_u, f.fee_u FROM settlements s JOIN fills f ON f.id = s.fill_id "
@@ -201,6 +204,7 @@ def summary(root: str | Path, horizon: str, now: float | None = None, arm: str |
         "edge": {k: v for k, v in e.items() if k != "curve"},
         "status": status, "halted": halted,
         "last_tick": None if last is None else {"t": last["t"], "px": last["px"], "exchanges": last["n"]},
+        "quote": None if q is None else dict(q),
         "current": cur_row,
         "account": {"epoch": a["epoch"], "pnl": _usd(a["realized_u"]), "peak": _usd(a["peak_u"]),
                     "drawdown": _usd(a["drawdown_u"]), "limit": _usd(DEFAULT_LIMIT_U),

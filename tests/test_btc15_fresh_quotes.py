@@ -156,3 +156,42 @@ def test_with_a_stream_the_venue_prices_off_it_and_never_falls_back_to_the_cache
     assert m["book_source"] == "stream_down" and m["yes_bid"] is None and m["yes_ask"] is None
     rest = _venue(None).current(O + 60)
     assert rest["book_source"] == "rest" and rest["yes_bid"] == 0.41
+
+
+# ------------------------------------------------------------------ every message ticks the arms (2026-09-30)
+def test_the_stream_book_reports_every_update_to_its_handler():
+    seen = []
+    ws = FakeWS([_md(SLUG, "0.4100", "0.4300"), _md(SLUG, "0.4200", "0.4400")])
+    sb = StreamBook(open_socket=lambda: ws, on_update=seen.append)
+    sb.ensure(SLUG)
+    try:
+        assert _wait(lambda: len(seen) == 2)
+        assert seen == [SLUG, SLUG] and sb.touch(SLUG)["bid"] == 0.42
+    finally:
+        sb.stop()
+
+
+def test_kalshi_rereads_its_list_every_ten_seconds_and_its_book_every_call(monkeypatch):
+    import core.btc15.kalshi as K
+    calls = {"list": 0, "book": 0}
+    listed = {"ticker": "KXBTC15M-26SEP301200-00", "status": "active", "floor_strike": 1.0,
+              "open_time": "2026-09-30T02:15:00Z", "close_time": "2026-09-30T02:30:00Z",
+              "yes_bid_dollars": "0.4300", "yes_ask_dollars": "0.4400"}
+
+    def handler(req):
+        if req.url.path.endswith("/orderbook"):
+            calls["book"] += 1
+            return httpx.Response(200, json={"orderbook_fp": {"yes_dollars": [["0.3300", "5"]], "no_dollars": [["0.6600", "5"]]}})
+        calls["list"] += 1
+        return httpx.Response(200, json={"markets": [listed]})
+    k = K.KalshiBTC(client=httpx.Client(transport=httpx.MockTransport(handler)), base="https://k.test/v2")
+    clock = [1000.0]
+    monkeypatch.setattr(K.time, "time", lambda: clock[0])
+    for i in range(5):
+        clock[0] += 1
+        assert k.current(O + 60)["yes_bid"] == 0.33
+    assert calls == {"list": 1, "book": 5}
+    clock[0] += 11
+    k.current(O + 60)
+    assert calls["list"] == 2
+    assert k.current(O + 5000) is None and calls["list"] == 3                # no window for that instant: one fresh read

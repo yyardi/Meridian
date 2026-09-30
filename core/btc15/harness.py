@@ -86,7 +86,7 @@ class Settings:
     #: MERIDIAN_BTC15_ARMS = a JSON list of specs, or "none".
     arms: str | None = None
     #: How often the arms re-read the window's book (one request each time).
-    book_every_s: float = 3.0
+    book_every_s: float = 1.0
     #: When the agent passed on its first look, it is asked once more this many seconds
     #: after the open (if at least 3 minutes remain and the day's budget allows).
     second_look_s: float = 360.0
@@ -108,7 +108,7 @@ class Settings:
             max_tokens_per_day=int(e("MERIDIAN_BTC15_MAX_TOKENS_PER_DAY") or 1_500_000),
             pause_if_worse_after=int(e("MERIDIAN_BTC15_PAUSE_IF_WORSE_AFTER") or 200),
             arms=e("MERIDIAN_BTC15_ARMS") or None,
-            book_every_s=float(e("MERIDIAN_BTC15_BOOK_EVERY_S") or 3.0),
+            book_every_s=float(e("MERIDIAN_BTC15_BOOK_EVERY_S") or 1.0),
             second_look_s=float(e("MERIDIAN_BTC15_SECOND_LOOK_S") or 360.0),
         )
 
@@ -142,6 +142,8 @@ class Harness:
     _pushed_pause: bool = False
     arms: list = field(default_factory=list)
     _arm_next: float = 0.0
+    _arms_lock: object = field(default_factory=threading.Lock)
+    _kalshi_cache: tuple | None = None       # (read_ts, open_ts, close_ts, quote or None, id(reference))
 
     # ------------------------------------------------------------------ the second
     def step(self, now: float, px: float | None, n: int, disp: float) -> None:
@@ -336,7 +338,7 @@ class Harness:
             _push("BTC15 halted", f"{self.settings.mode}: $10 drawdown limit reached; trading stopped, predictions continue.")
 
     # ------------------------------------------------------------------ arms
-    def probabilities(self, now: float, m: dict, kalshi: bool = False) -> dict:
+    def probabilities(self, now: float, m: dict, kalshi: bool = False, fetch: bool = True) -> dict:
         """Every arm's probability source at this second, from the same inputs."""
         out: dict = {"walk": None, "quant": None, "llm": None, "llm_at": None, "mid": None, "kalshi": None}
         bid, ask = m.get("yes_bid"), m.get("yes_ask")
@@ -363,29 +365,63 @@ class Harness:
             if r.get("action"):
                 out["llm_action"] = {**r, "p_up": d["p_up"]}
         if kalshi:
-            q = self.kalshi_quote(now, m)
+            q = self.kalshi_quote(now, m, fetch=fetch)
             out["kalshi_quote"] = q
             out["kalshi"] = kalshi_mid_of(q)
         return out
 
-    def kalshi_quote(self, now: float, m: dict) -> dict | None:
-        """Kalshi's touch on the same window, read now (the same tick as the venue's book),
-        or None when its window does not match to the second."""
+    #: A Kalshi touch older than this is no price. The main loop reads the book every
+    #: second; the arms acting on a stream message in between use that read.
+    KALSHI_FRESH_S = 2.5
+
+    def kalshi_quote(self, now: float, m: dict, fetch: bool = True) -> dict | None:
+        """Kalshi's touch on the same window: the read cached within KALSHI_FRESH_S, else a
+        fresh read when ``fetch`` (the main loop), else None (a stream message between reads).
+        None too when Kalshi's window does not match to the second."""
         if self.reference is None:
+            return None
+        c = self._kalshi_cache
+        if (c is not None and (c[1], c[2], c[4]) == (m["open_ts"], m["close_ts"], id(self.reference))
+                and 0 <= now - c[0] <= self.KALSHI_FRESH_S):
+            return c[3]
+        if not fetch:
             return None
         try:
             r = self.reference.current(now)
         except Exception as e:                                   # noqa: BLE001 -- a reference is never a gate
             log.warning("kalshi read: %s", e)
             return None
-        if not r or r.get("open_ts") != m["open_ts"] or r.get("close_ts") != m["close_ts"]:
-            return None
-        return {"yes_bid": r.get("yes_bid"), "yes_ask": r.get("yes_ask")}
+        q = None
+        if r and r.get("open_ts") == m["open_ts"] and r.get("close_ts") == m["close_ts"]:
+            q = {"yes_bid": r.get("yes_bid"), "yes_ask": r.get("yes_ask")}
+        self._kalshi_cache = (now, m["open_ts"], m["close_ts"], q, id(self.reference))
+        return q
 
     def kalshi_mid(self, now: float, m: dict) -> float | None:
         return kalshi_mid_of(self.kalshi_quote(now, m))
 
     def run_arms(self, now: float) -> None:
+        """The main loop's pass, once a second: reads Kalshi's book, writes the tape, ticks the arms."""
+        with self._arms_lock:
+            self._run_arms(now, fetch_kalshi=True)
+
+    def on_stream_update(self, slug: str) -> None:
+        """The venue's stream delivered a book for the window in play: the arms act on it now,
+        on the socket's thread, with the Kalshi read of the last second. Skipped if a pass is
+        already running; the next message comes within seconds."""
+        m = self.market
+        if not self.arms or not m or slug != m["ticker"]:
+            return
+        if not self._arms_lock.acquire(blocking=False):
+            return
+        try:
+            self._run_arms(self.clock(), fetch_kalshi=False)
+        except Exception:                                        # noqa: BLE001
+            log.exception("arms (stream)")
+        finally:
+            self._arms_lock.release()
+
+    def _run_arms(self, now: float, fetch_kalshi: bool) -> None:
         m = self.market
         if not m or m.get("strike") is None or not (m["open_ts"] <= now < m["close_ts"]):
             return
@@ -395,16 +431,18 @@ class Harness:
             return
         if getattr(self.venue, "stream", None) is not None and live.get("book_source") != "stream":
             return                  # the stream is down or has no book for this window yet: no entry, no fill, no tape
-        probs = self.probabilities(now, live, kalshi=any(a.spec.prob == "kalshi" for a in self.arms))
+        probs = self.probabilities(now, live, kalshi=any(a.spec.prob == "kalshi" for a in self.arms), fetch=fetch_kalshi)
         coef = live.get("fee_coefficient")
         coef = float(coef) if coef not in (None, "") else None
-        try:
-            self.ledger.add_quote(now, live, probs.get("kalshi_quote"))
-        except Exception:                                        # noqa: BLE001 -- the tape never stops trading
-            log.exception("quote tape")
+        if fetch_kalshi:                                         # the tape is the once-a-second record
+            try:
+                self.ledger.add_quote(now, live, probs.get("kalshi_quote"))
+            except Exception:                                    # noqa: BLE001 -- the tape never stops trading
+                log.exception("quote tape")
         for arm in self.arms:
             arm.tick(now, live, probs, coef, self.settings.min_lead_s)
-        self.maybe_second_look(now, live)
+        if fetch_kalshi:
+            self.maybe_second_look(now, live)
 
     def maybe_second_look(self, now: float, m: dict) -> None:
         """An agent that passed on its first look is asked once more, later in the window."""
@@ -588,6 +626,7 @@ def build(settings: Settings) -> Harness:
         log.error("MERIDIAN_BTC15_MODE=%s: live execution is not built yet; recording and predicting only, "
                   "nothing will be placed", settings.mode)
         broker = None
+    stream = None
     if settings.venue == "polymarket":
         # Kalshi lists only the 15-minute contract; the hourly one has no reference.
         reference = KalshiBTC() if settings.horizon == "15m" else None
@@ -595,7 +634,6 @@ def build(settings: Settings) -> Harness:
         def kalshi_strike(o: float, c: float) -> float | None:
             r = reference.current(o + 1) if reference else None
             return r["strike"] if r and r.get("open_ts") == o and r.get("close_ts") == c else None
-        stream = None
         if specs_from_env(settings.arms):
             # the arms trade on the venue's stream, never on its 30-s-cached REST book
             from core.btc15.stream_book import StreamBook
@@ -615,6 +653,8 @@ def build(settings: Settings) -> Harness:
     else:
         raise SystemExit(f"MERIDIAN_BTC15_VENUE={settings.venue!r}: polymarket or kalshi")
     h = Harness(settings, ledger, PriceFeed(), venue, model, broker, reference=reference)
+    if stream is not None:
+        stream.on_update = h.on_stream_update                    # every venue book message ticks the arms
     if settings.venue == "polymarket":
         h.arms = [Arm(spec, Ledger(arm_db_path(settings.db_path, spec.name)), settings.limit_u)
                   for spec in specs_from_env(settings.arms)]

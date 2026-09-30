@@ -26,14 +26,20 @@ log = logging.getLogger("btc15.stream")
 class _Sink:
     """What StreamConnection writes to: here, the last touch per slug, in memory."""
 
-    def __init__(self, clock=time.time) -> None:
+    def __init__(self, clock=time.time, on_update=None) -> None:
         self._lock = threading.Lock()
         self._clock = clock
+        self._on_update = on_update
         self.rows: dict[str, tuple[float, dict]] = {}
 
     def book(self, game: str, row: dict) -> None:
         with self._lock:
             self.rows[row["slug"]] = (self._clock(), row)
+        if self._on_update is not None:                     # on the socket's thread: the harness acts now
+            try:
+                self._on_update(row["slug"])
+            except Exception:                                # noqa: BLE001 -- a handler error never drops the socket
+                log.exception("stream update handler")
 
     def trade(self, game: str, row: dict) -> None:
         pass
@@ -52,13 +58,16 @@ class StreamBook:
     #: restarted at most this often, so a persistent failure cannot become a thread a second.
     RESTART_S = 30.0
 
-    def __init__(self, *, open_socket=None, live_s: float = 30.0, clock=time.time, enabled: bool = True) -> None:
+    def __init__(self, *, open_socket=None, live_s: float = 30.0, clock=time.time, enabled: bool = True,
+                 on_update=None) -> None:
         self._open_socket = open_socket
         self.enabled = enabled          # False: no credentials -- never subscribes, never live
         self.live_s = live_s
         self._started_at = float("-inf")
         self._clock = clock
-        self.sink = _Sink(clock)
+        #: Called with the slug on every MARKET_DATA update, on the socket's thread.
+        self.on_update = on_update
+        self.sink = _Sink(clock, lambda slug: self.on_update(slug) if self.on_update is not None else None)
         self.slug: str | None = None
         self.conn: StreamConnection | None = None
         self._thread: threading.Thread | None = None
