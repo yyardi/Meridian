@@ -16,7 +16,19 @@ them and the rest is the spread; if they are everywhere, the spread is too thin 
 
 SIZING INSTRUMENT, NOT A RESULT.
 
+Registered before the first night's run (2026-09-30 17:25Z, with the Manager): the primary
+read is X = $10 over the 500 ms before the fill instant (a ~2-sigma half-second move at
+today's volatility: 1-min sd ~ $58, so 500-ms sd ~ $5) on the 60-s markout; 250 / 1000 ms and
+the 30-s markout are secondary. Population: every fee-0 fill of touch_maker, touch_maker_k
+(15m), touch_maker (1h) and kalshi_requote from 2026-09-30 17:18Z to 2026-10-01 12:00Z, read
+once. The decision the read serves: a spot trigger for the makers (pull or re-centre both
+quotes when coinbase moves >= $X within 250 ms, re-join after the book re-prices) is built
+only if the spot-preceded bucket carries the negative markouts and the rest does not.
+
     python analysis/btc15/maker_fill_toxicity.py <dir with polymarket-15m-microtape.sqlite and the arm ledgers> [--horizon 15m]
+
+The hourly bot tapes no spot (its sockets are off; spot is taped once, by the 15-minute bot),
+so ``--horizon 1h`` reads spot from the 15-minute microtape in the same directory.
 """
 from __future__ import annotations
 
@@ -63,18 +75,21 @@ def main(argv=None) -> int:
     ap.add_argument("--horizon", default="15m")
     ap.add_argument("--exchange", default="coinbase")
     ap.add_argument("--x", type=float, default=10.0, help="spot move in USD that counts as 'spot moved first'")
+    ap.add_argument("--spot-from", default=None, help="microtape to read spot from (default: the 15m one in root)")
     a = ap.parse_args(argv)
     m = sqlite3.connect(f"file:{os.path.join(a.root, f'polymarket-{a.horizon}-microtape.sqlite')}?mode=ro", uri=True)
-    spot = m.execute("SELECT recv, (bid+ask)/2 FROM spot WHERE exchange=? ORDER BY recv", (a.exchange,)).fetchall()
+    sm = sqlite3.connect(f"file:{a.spot_from or os.path.join(a.root, 'polymarket-15m-microtape.sqlite')}?mode=ro", uri=True)
+    spot = sm.execute("SELECT recv, (bid+ask)/2 FROM spot WHERE exchange=? ORDER BY recv", (a.exchange,)).fetchall()
     st = [r[0] for r in spot]; sp = [r[1] for r in spot]
 
     def move_before(t: float, w_ms: int) -> float | None:
+        """spot at t minus spot at t - w: each is the last quote at or before that instant (a quiet
+        exchange has no row inside a short window; its last quote is still its price)."""
         i = bisect.bisect_right(st, t) - 1
-        j = bisect.bisect_left(st, t - w_ms / 1000)
-        if i < 0 or j > i:
+        j = bisect.bisect_right(st, t - w_ms / 1000) - 1
+        if i < 0 or j < 0 or t - st[i] > 5.0:
             return None
-        window = sp[j:i + 1]
-        return sp[i] - window[0] if len(window) > 1 else 0.0
+        return sp[i] - sp[j]
 
     rows = []
     for f in sorted(glob.glob(os.path.join(a.root, f"polymarket-{a.horizon}-arm-*.sqlite"))):
