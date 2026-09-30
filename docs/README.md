@@ -18,6 +18,7 @@ The root [`README.md`](../README.md) is the project overview. These go deeper on
 | [btc15-harness.md](math/btc15-harness.md) | The Bitcoin Up-or-Down harness: the model, the ledger, the $10 limit, the cost caps |
 | [thin-league-speed-preregistration.md](math/thin-league-speed-preregistration.md) | Thin basketball leagues: does the venue reprice late after its own score changes? |
 | [thin-league-live-feeds.md](math/thin-league-live-feeds.md) | Which leagues publish a free live feed with the second of every basket |
+| [niche-cross-venue-scan.md](math/niche-cross-venue-scan.md) | Niche leagues against Kalshi: the BTC arm's rule fired on 0 of 105 tight pregame pairs and matched a coin in play |
 | [intl-basketball-ls-research.md](math/intl-basketball-ls-research.md) | International basketball against Kalshi: the anchor and the pregame read |
 | [cricket-inplay-dip.md](math/cricket-inplay-dip.md) | Cricket in play: buying the dip, registered |
 | [tabletennis-preregistration.md](math/tabletennis-preregistration.md) | Table tennis: a rating model against the venue, registered |
