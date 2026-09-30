@@ -142,6 +142,9 @@
   th.l,td.l{text-align:left}
   tbody tr.row{cursor:pointer}
   #arms tr{cursor:pointer}
+  #arms td:first-child{white-space:normal;min-width:260px}
+  #arms td.l:nth-child(9){white-space:normal;min-width:150px;max-width:240px}
+  #arms .sub{display:block;color:var(--faint);font-size:10px}
   #arms tr:hover{background:#131823}
   #arms tr.sel{background:#16202e}
   #arms tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--blue)}
@@ -246,8 +249,8 @@
           <th title="The edge divided by its standard error. About 2 or more is the bar the checkpoint uses.">t</th>
           <th title="The edge the rule itself claimed when it bought: p(side) − price − fee, p being Kalshi's mid for the Kalshi takers and the model's own p_up for the agent. Realised edge converging to it is the check.">claimed at entry</th>
           <th title="Contracts filled since the checkpoint was agreed (2026-09-29 20:02Z), their edge and t. The trades that chose the strategies cannot also confirm them; the read counts only these. The two strategies the checkpoint reads show their target.">since checkpoint</th>
-          <th>p&amp;l</th><th>return</th><th class="l">this window</th><th>declined</th></tr></thead>
-        <tbody id="arms"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
+          <th title="Dollars on the $10 allocation, and the return on what the settled contracts cost (price + fee).">p&amp;l</th><th class="l">this window</th><th>declined</th></tr></thead>
+        <tbody id="arms"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -346,8 +349,8 @@ async function loadTicks() {
 async function loadArms() {
   let A = [];
   try { A = (await fetch(`/api/btc/arms?h=${H}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status))).arms; }
-  catch (e) { $("arms").innerHTML = `<tr><td colspan="11" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
-  if (!A.length) { $("arms").innerHTML = `<tr><td colspan="11" class="empty">No strategies run on this bot.</td></tr>`; ARMS = []; ARM = ""; drawEdge(); return; }
+  catch (e) { $("arms").innerHTML = `<tr><td colspan="10" class="empty">Strategies unavailable (${esc(e)}).</td></tr>`; return; }
+  if (!A.length) { $("arms").innerHTML = `<tr><td colspan="10" class="empty">No strategies run on this bot.</td></tr>`; ARMS = []; ARM = ""; drawEdge(); return; }
   const nowTxt = (n) => {
     if (!n) return '<span class="faint">—</span>';
     const tag = stTag(n.status === "watching" ? "watching" : n.status);
@@ -370,8 +373,7 @@ async function loadArms() {
     return `<tr class="${key(a) === ARM ? "sel" : ""}" data-arm="${esc(key(a))}"><td class="l"><b style="color:var(--txt)">${esc(label(a))}</b>${a.halted ? ' <span class="st warn">halted</span>' : ""}` +
       `<br><span class="faint">${esc(rule)}</span></td>` +
       `<td>${a.settled || 0}</td><td>${a.wins || 0}–${lost}</td>` + edgeCells(a) +
-      `<td>${a.pnl == null ? "—" : signed(a.pnl)}</td>` +
-      `<td>${a.staked ? signedPct(a.pnl, a.staked) : '<span class="faint">—</span>'}</td>` +
+      `<td>${a.pnl == null ? "—" : signed(a.pnl)}<span class="sub">${a.staked ? pctOf(a.pnl, a.staked) : "—"}</span></td>` +
       `<td class="l">${a.name === "favourite" ? '<span class="faint">see This window</span>' : nowTxt(a.now)}</td>` +
       `<td>${a.declined == null ? "" : a.declined}</td></tr>`;
   }).join("");
@@ -380,7 +382,7 @@ async function loadArms() {
 function edgeCells(a) {
   const e = a.edge || {}, all = e.all || {}, si = e.since || {}, goal = CHECKPOINT[a.name];
   const since = `${si.n || 0}` + (goal ? `<span class="faint">/${goal}</span>` : "") +
-    (si.mean_c != null ? ` · ${centsSigned(si.mean_c)}` : "") + (si.t != null ? ` <span class="faint">t ${si.t.toFixed(1)}</span>` : "");
+    (si.mean_c != null ? `<span class="sub">${centsSigned(si.mean_c)}${si.t != null ? " · t " + si.t.toFixed(1) : ""}</span>` : "");
   return `<td>${edgeTxt(all)}</td><td>${all.t == null ? '<span class="faint">—</span>' : all.t.toFixed(2)}</td>` +
     `<td>${e.entry_c == null ? '<span class="faint">—</span>' : centsSigned(e.entry_c)}</td><td>${since}</td>`;
 }
@@ -433,7 +435,7 @@ const centsSigned = (c, d = 1) => c == null ? "—" : (c > 0 ? "+" : c < 0 ? "�
 const edgeTxt = (e) => {
   if (!e || !e.n || e.mean_c == null) return '<span class="faint">—</span>';
   const cls = e.lo_c != null && e.lo_c > 0 ? "pos" : e.hi_c != null && e.hi_c < 0 ? "neg" : "";
-  return `<span class="${cls}">${centsSigned(e.mean_c)}</span>` + (e.hi_c != null ? ` <span class="faint">±${(e.hi_c - e.mean_c).toFixed(1)}</span>` : "");
+  return `<span class="${cls}">${centsSigned(e.mean_c)}</span>` + (e.hi_c != null ? `<span class="sub">±${(e.hi_c - e.mean_c).toFixed(1)}</span>` : "");
 };
 // The checkpoint (docs/math/btc15-v2-arms.md) reads these two, at these counts of post-checkpoint trades.
 const CHECKPOINT = { llm_agent: 40, kalshi_taker_wide: 300 };
