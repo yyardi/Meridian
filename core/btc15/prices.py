@@ -12,6 +12,17 @@ and the harness stores the proxy's own 60-second average beside it.
 Candles (Coinbase, public) give the history a feature set needs from the first
 second: 1-minute bars for the last ~5.8 hours, 5-minute for ~25 hours, 1-hour
 for ~12 days. OKX's public funding rate is the one derivatives input.
+
+How the quotes arrive (2026-09-30). The REST tickers used to be polled on the
+caller's thread, four at a time with a 2.5-s timeout; the ledger's ``ticks``
+show 13-17 % of the harness's seconds skipped waiting on one of them. Now each
+exchange is polled on its own thread once a second (``start``), Coinbase and
+Kraken also stream over their websockets (``core.btc15.spot_ws``), and
+``tick`` only reads the latest quote per exchange -- it never waits on the
+network. An exchange whose socket delivered within ``SOCKET_FRESH_S`` is not
+overwritten by its slower REST poll. The composite's definition is unchanged:
+the median mid of the exchanges quoted in the last QUOTE_FRESH_S, once a second.
+Every socket quote is also handed to ``on_spot`` (the microtape).
 """
 from __future__ import annotations
 
@@ -26,6 +37,8 @@ import httpx
 
 #: A quote older than this is not part of the composite.
 QUOTE_FRESH_S = 5.0
+#: An exchange whose socket delivered this recently is the socket's price, not its REST poll's.
+SOCKET_FRESH_S = 3.0
 #: Seconds of 1 Hz composite kept in memory (6 hours).
 RING_S = 6 * 3600
 
@@ -89,9 +102,10 @@ class PriceFeed:
     """Polls the four tickers concurrently once a second; keeps the composite
     in a ring buffer; refreshes candles and funding on their own clocks."""
 
-    def __init__(self, client: httpx.Client | None = None, timeout: float = 2.5) -> None:
+    def __init__(self, client: httpx.Client | None = None, timeout: float = 2.5, clock=time.time) -> None:
         self._http = client or httpx.Client(timeout=timeout, headers={"User-Agent": "meridian-btc15/1"})
         self._pool = ThreadPoolExecutor(max_workers=len(EXCHANGES))
+        self._clock = clock
         self.quotes: dict[str, Quote] = {}
         self.ring: collections.deque = collections.deque(maxlen=RING_S)
         self.c1m: list = []
@@ -101,6 +115,11 @@ class PriceFeed:
         self._next = {"c1m": 0.0, "c5m": 0.0, "c1h": 0.0, "funding": 0.0}
         self._lock = threading.Lock()
         self.errors: collections.Counter = collections.Counter()
+        #: Called with (exchange, bid, ask, last, at) for every SOCKET quote (the microtape).
+        self.on_spot = None
+        self.sockets: dict = {}                  # exchange -> core.btc15.spot_ws.SpotSocket
+        self._pollers: list[threading.Thread] = []
+        self._stop = threading.Event()
 
     def _fetch(self, name: str) -> Quote | None:
         url, parse = EXCHANGES[name]
@@ -108,18 +127,79 @@ class PriceFeed:
             r = self._http.get(url)
             r.raise_for_status()
             bid, ask, last = parse(r.json())
-            return Quote(name, bid, ask, last, time.time())
+            return Quote(name, bid, ask, last, self._clock())
         except Exception:                                  # noqa: BLE001 -- one exchange down is not the feed down
             self.errors[name] += 1
             return None
 
+    # ------------------------------------------------------------------ background feeds
+    def start(self, sockets: bool = True, feeds: dict | None = None) -> "PriceFeed":
+        """Poll each exchange on its own thread; open the exchange sockets. After this,
+        ``tick`` never touches the network."""
+        if sockets:
+            from core.btc15 import spot_ws
+            for name, (url, sub, parse) in (feeds or spot_ws.FEEDS).items():
+                if name not in self.sockets:
+                    self.sockets[name] = spot_ws.SpotSocket(name, url, sub, parse, self.socket_quote,
+                                                            clock=self._clock).start()
+        if not self._pollers:
+            for name in EXCHANGES:
+                t = threading.Thread(target=self._poll_forever, args=(name,), name=f"poll-{name}", daemon=True)
+                t.start()
+                self._pollers.append(t)
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+        for s in self.sockets.values():
+            s.request_stop()
+
+    def _poll_forever(self, name: str) -> None:
+        while not self._stop.is_set():
+            t0 = self._clock()
+            self._poll_once(name, t0)
+            self._stop.wait(max(0.0, 1.0 - (self._clock() - t0)))
+
+    def _poll_once(self, name: str, now: float) -> bool:
+        """One REST read of ``name`` unless its socket delivered within SOCKET_FRESH_S. True if read."""
+        s = self.sockets.get(name)
+        if s is not None and s.live(now, SOCKET_FRESH_S):
+            return False
+        q = self._fetch(name)
+        if q is not None:
+            self.store(q, from_socket=False)
+        return True
+
+    def socket_quote(self, name: str, bid: float, ask: float, last: float, at: float) -> None:
+        """A socket's quote: stored, and handed to on_spot."""
+        self.store(Quote(name, bid, ask, last, at), from_socket=True)
+        if self.on_spot is not None:
+            try:
+                self.on_spot(name, bid, ask, last, at)
+            except Exception:                              # noqa: BLE001 -- the tape never stops the feed
+                pass
+
+    def store(self, q: Quote, from_socket: bool) -> None:
+        with self._lock:
+            s = self.sockets.get(q.exchange)
+            if not from_socket and s is not None and s.live(q.t, SOCKET_FRESH_S):
+                return                                     # the socket's price is fresher than this poll
+            self.quotes[q.exchange] = q
+
+    def snapshot(self) -> dict[str, Quote]:
+        with self._lock:
+            return dict(self.quotes)
+
+    # ------------------------------------------------------------------ the second
     def tick(self) -> tuple[float, float | None, int, float]:
-        """Poll every exchange once; append the composite. Returns (t, px, n, dispersion)."""
-        for q in self._pool.map(self._fetch, list(EXCHANGES)):
-            if q is not None:
-                self.quotes[q.exchange] = q
-        now = time.time()
-        px, n, disp = composite(self.quotes, now)
+        """The composite from the latest quote per exchange; appended to the ring. Returns
+        (t, px, n, dispersion). Polls inline only if ``start`` was never called."""
+        if not self._pollers and not self.sockets:
+            for q in self._pool.map(self._fetch, list(EXCHANGES)):
+                if q is not None:
+                    self.store(q, from_socket=False)
+        now = self._clock()
+        px, n, disp = composite(self.snapshot(), now)
         if px is not None:
             with self._lock:
                 self.ring.append((now, px))

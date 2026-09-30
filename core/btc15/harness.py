@@ -90,6 +90,13 @@ class Settings:
     #: When the agent passed on its first look, it is asked once more this many seconds
     #: after the open (if at least 3 minutes remain and the day's budget allows).
     second_look_s: float = 360.0
+    #: The sub-second record (core/btc15/microtape.py): every venue book message and print,
+    #: spot from the exchange sockets. Default: beside the ledger; "none" disables it.
+    microtape: str | None = None
+    #: Coinbase and Kraken over their websockets (core/btc15/spot_ws.py); False keeps REST only.
+    spot_sockets: bool = True
+    #: How often the Kalshi reader thread reads the order book.
+    kalshi_every_s: float = 0.5
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -110,6 +117,9 @@ class Settings:
             arms=e("MERIDIAN_BTC15_ARMS") or None,
             book_every_s=float(e("MERIDIAN_BTC15_BOOK_EVERY_S") or 1.0),
             second_look_s=float(e("MERIDIAN_BTC15_SECOND_LOOK_S") or 360.0),
+            microtape=e("MERIDIAN_BTC15_MICROTAPE") or None,
+            spot_sockets=(e("MERIDIAN_BTC15_SPOT_SOCKETS") or "1") not in ("0", "false", "no"),
+            kalshi_every_s=float(e("MERIDIAN_BTC15_KALSHI_EVERY_S") or 0.5),
         )
 
 
@@ -144,6 +154,9 @@ class Harness:
     _arm_next: float = 0.0
     _arms_lock: object = field(default_factory=threading.Lock)
     _kalshi_cache: tuple | None = None       # (read_ts, open_ts, close_ts, quote or None, id(reference))
+    _kalshi_thread: object = None            # the reader thread (start_kalshi_reader), or None: reads inline
+    _kalshi_stop: object = field(default_factory=threading.Event)
+    microtape: object = None                 # core.btc15.microtape.Microtape, or None
 
     # ------------------------------------------------------------------ the second
     def step(self, now: float, px: float | None, n: int, disp: float) -> None:
@@ -263,7 +276,8 @@ class Harness:
             self.ledger.finish_decision(m["ticker"], status="no_book",
                                         error="the venue's book was not live before the last decision second")
             return
-        fresh = [q for q in self.feed.quotes.values() if now - q.t <= self.settings.max_data_age_s]
+        quotes = self.feed.snapshot() if hasattr(self.feed, "snapshot") else self.feed.quotes
+        fresh = [q for q in quotes.values() if now - q.t <= self.settings.max_data_age_s]
         if not secs or now - secs[-1][0] > self.settings.max_data_age_s or len(fresh) < self.settings.min_exchanges:
             self.ledger.finish_decision(m["ticker"], status="stale_data",
                                         error=f"{len(fresh)} fresh exchanges; last composite "
@@ -376,7 +390,8 @@ class Harness:
 
     def kalshi_quote(self, now: float, m: dict, fetch: bool = True) -> dict | None:
         """Kalshi's touch on the same window: the read cached within KALSHI_FRESH_S, else a
-        fresh read when ``fetch`` (the main loop), else None (a stream message between reads).
+        fresh read when ``fetch`` (the main loop) and no reader thread runs, else None (a
+        stream message between reads, or a reader that has not delivered within KALSHI_FRESH_S).
         None too when Kalshi's window does not match to the second."""
         if self.reference is None:
             return None
@@ -384,18 +399,60 @@ class Harness:
         if (c is not None and (c[1], c[2], c[4]) == (m["open_ts"], m["close_ts"], id(self.reference))
                 and 0 <= now - c[0] <= self.KALSHI_FRESH_S):
             return c[3]
-        if not fetch:
+        if not fetch or self._kalshi_thread is not None:
             return None
+        self._read_kalshi(now, m["open_ts"], m["close_ts"])
+        c = self._kalshi_cache
+        return c[3] if c is not None else None
+
+    def _read_kalshi(self, read_ts: float, open_ts: float, close_ts: float) -> None:
+        """One read of Kalshi's order book into the cache, stamped ``read_ts`` (the read's start:
+        its age counts the request's own latency)."""
         try:
-            r = self.reference.current(now)
+            r = self.reference.current(read_ts)
         except Exception as e:                                   # noqa: BLE001 -- a reference is never a gate
             log.warning("kalshi read: %s", e)
-            return None
+            self._kalshi_cache = None
+            return
         q = None
-        if r and r.get("open_ts") == m["open_ts"] and r.get("close_ts") == m["close_ts"]:
+        if r and r.get("open_ts") == open_ts and r.get("close_ts") == close_ts:
             q = {"yes_bid": r.get("yes_bid"), "yes_ask": r.get("yes_ask")}
-        self._kalshi_cache = (now, m["open_ts"], m["close_ts"], q, id(self.reference))
-        return q
+        self._kalshi_cache = (read_ts, open_ts, close_ts, q, id(self.reference))
+
+    def start_kalshi_reader(self) -> None:
+        """Kalshi's order book on its own thread every ``kalshi_every_s`` (2026-09-30: the read
+        used to sit on the once-a-second path and, with the arms' sqlite work, stretched the tape
+        to 1.85-3.7 s a row). The cache keeps its contract: stamped at the read's start, no price
+        once older than KALSHI_FRESH_S; kalshi_quote never fetches while the reader runs."""
+        if self.reference is None or self._kalshi_thread is not None:
+            return
+        self._kalshi_stop.clear()
+
+        def loop() -> None:
+            while not self._kalshi_stop.is_set():
+                t0 = self.clock()
+                m = self.market
+                if m and m.get("open_ts") is not None:
+                    self._read_kalshi(t0, m["open_ts"], m["close_ts"])
+                self._kalshi_stop.wait(max(0.0, self.settings.kalshi_every_s - (self.clock() - t0)))
+        self._kalshi_thread = threading.Thread(target=loop, name="btc-kalshi", daemon=True)
+        self._kalshi_thread.start()
+
+    def stop_kalshi_reader(self) -> None:
+        self._kalshi_stop.set()
+        self._kalshi_thread = None
+
+    def start_markout_thread(self) -> None:
+        """Markouts on their own thread, once a second: never on the arms lock, never in the pass."""
+        def loop() -> None:
+            while not self._kalshi_stop.is_set():
+                t0 = self.clock()
+                try:
+                    self.record_markouts(t0)
+                except Exception:                                # noqa: BLE001 -- a markout never stops the harness
+                    log.exception("markouts")
+                self._kalshi_stop.wait(max(0.0, 1.0 - (self.clock() - t0)))
+        threading.Thread(target=loop, name="btc-markouts", daemon=True).start()
 
     def kalshi_mid(self, now: float, m: dict) -> float | None:
         return kalshi_mid_of(self.kalshi_quote(now, m))
@@ -506,6 +563,27 @@ class Harness:
                     "windows_passed": passes, "open": a["open"]}
         return ex
 
+    # ------------------------------------------------------------------ markouts
+    def record_markouts(self, now: float) -> None:
+        """For every fill in every ledger, the venue's touch at each MARKOUT horizon after the fill,
+        from the live book of the window in play; a horizon whose window has closed unread (a
+        restart) is recorded empty once, so it is not asked again."""
+        m = self.market
+        quote = getattr(self.venue, "quote", None)
+        live = quote(m["ticker"]) if (m and quote) else None
+        if live and (live.get("status") != "active"
+                     or (getattr(self.venue, "stream", None) is not None and live.get("book_source") != "stream")):
+            live = None
+        for led in [self.ledger] + [a.ledger for a in self.arms]:
+            due = led.markouts_due(now, led.window_close_ts)
+            for fid, ticker, h in due:
+                if live is not None and m is not None and ticker == m["ticker"]:
+                    led.add_markout(fid, h, live.get("yes_bid"), live.get("yes_ask"))
+                else:
+                    close = led.window_close_ts(ticker)
+                    if close is not None and now >= close:
+                        led.add_markout(fid, h, None, None)
+
     # ------------------------------------------------------------------ settle
     def settle_due(self, now: float) -> None:
         finals: dict = {}
@@ -573,6 +651,14 @@ class Harness:
              "openai_today": {**self.ledger.spent(), "cap_usd": self.settings.max_usd_per_day,
                               "cap_tokens": self.settings.max_tokens_per_day},
              "openai_total": self.ledger.spent_total()}
+        stream = getattr(self.venue, "stream", None)
+        if stream is not None:
+            s["stream"] = stream.status(now)
+        sockets = getattr(self.feed, "sockets", None)
+        if sockets:
+            s["spot_sockets"] = {k: v.counters(now) for k, v in sockets.items()}
+        if self.microtape is not None:
+            s["microtape"] = self.microtape.counters()
         try:
             with open(self.settings.status_path, "w") as fh:
                 json.dump(s, fh, indent=1)
@@ -652,14 +738,29 @@ def build(settings: Settings) -> Harness:
         venue, reference = KalshiBTC(), None
     else:
         raise SystemExit(f"MERIDIAN_BTC15_VENUE={settings.venue!r}: polymarket or kalshi")
-    h = Harness(settings, ledger, PriceFeed(), venue, model, broker, reference=reference)
+    feed = PriceFeed()
+    h = Harness(settings, ledger, feed, venue, model, broker, reference=reference)
     if stream is not None:
         stream.on_update = h.on_stream_update                    # every venue book message ticks the arms
+    tape_path = settings.microtape or microtape_path(settings.db_path)
+    if tape_path.lower() != "none" and (stream is not None or settings.spot_sockets):
+        from core.btc15.microtape import Microtape
+        h.microtape = Microtape(tape_path, keep_days=float(os.environ.get("MERIDIAN_BTC15_MICROTAPE_DAYS") or 3)).start()
+        if stream is not None:
+            stream.on_book, stream.on_trade = h.microtape.book, h.microtape.trade
+        feed.on_spot = h.microtape.spot
     if settings.venue == "polymarket":
-        h.arms = [Arm(spec, Ledger(arm_db_path(settings.db_path, spec.name)), settings.limit_u)
+        h.arms = [Arm(spec, Ledger(arm_db_path(settings.db_path, spec.name)), settings.limit_u,
+                      prints=stream.prints if stream is not None else None)
                   for spec in specs_from_env(settings.arms)]
         log.info("arms: %s", ", ".join(f"{a.spec.name} ({a.spec.describe()})" for a in h.arms) or "none")
     return h
+
+
+def microtape_path(db_path: str) -> str:
+    """/data/polymarket-15m.sqlite -> /data/polymarket-15m-microtape.sqlite"""
+    base, ext = os.path.splitext(db_path)
+    return f"{base}-microtape{ext or '.sqlite'}"
 
 
 def arm_db_path(db_path: str, name: str) -> str:
@@ -672,6 +773,9 @@ def run(h: Harness) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)       # four GETs a second is not news
     log.info("btc15 up: venue=%s mode=%s model=%s db=%s", h.venue.venue, h.settings.mode,
              h.model.cfg.model if h.model else None, h.settings.db_path)
+    h.feed.start(sockets=h.settings.spot_sockets)                # exchanges on their own threads: tick never waits
+    h.start_kalshi_reader()
+    h.start_markout_thread()
     while True:
         t0 = time.time()
         try:

@@ -71,7 +71,17 @@ CREATE TABLE IF NOT EXISTS spend(
   day TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0,
   prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0,
   cost_micros INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS markouts(
+  fill_id INTEGER NOT NULL REFERENCES fills(id), horizon_s INTEGER NOT NULL,
+  yes_bid REAL, yes_ask REAL, recorded_at TEXT NOT NULL, PRIMARY KEY (fill_id, horizon_s));
 """
+
+#: Seconds after a fill at which the venue's touch is recorded beside it (``markouts``). A
+#: settlement is one coin flip per contract (sd ~50c); the touch a minute after the fill moves
+#: a few cents, so the mid-at-horizon minus the fill price reads spread capture and adverse
+#: selection with far less noise than the settlement does. A horizon past the close is never
+#: recorded: there is no book to read.
+MARKOUT_HORIZONS_S = (5, 30, 60, 300)
 
 
 def fee_units(price_u: int, qty: int = 1, multiplier: Decimal = Decimal(1)) -> int:
@@ -188,6 +198,37 @@ class Ledger:
                 "VALUES(?,?,?,?,?,?,?,?)",
                 (round(t, 3), m["ticker"], m.get("yes_bid"), m.get("yes_ask"), m.get("yes_bid_size"),
                  m.get("yes_ask_size"), k.get("yes_bid"), k.get("yes_ask")))
+
+    # ------------------------------------------------------------------ markouts
+    def markouts_due(self, now_ts: float, close_ts_of, horizons=MARKOUT_HORIZONS_S) -> list[tuple[int, str, int]]:
+        """(fill_id, ticker, horizon) for every fill whose horizon has passed and is not yet recorded,
+        skipping horizons that fall after the window's close (``close_ts_of(ticker)`` -> ts or None)."""
+        out = []
+        rows = self._conn.execute(
+            "SELECT f.id, f.ticker, f.filled_at FROM fills f WHERE f.filled_at >= ? ORDER BY f.id",
+            (dt.datetime.fromtimestamp(now_ts - max(horizons) - 3600, dt.timezone.utc).isoformat(timespec="seconds"),)
+        ).fetchall()
+        for r in rows:
+            filled = dt.datetime.fromisoformat(r["filled_at"]).timestamp()
+            done = {x["horizon_s"] for x in self._conn.execute("SELECT horizon_s FROM markouts WHERE fill_id=?", (r["id"],))}
+            close = close_ts_of(r["ticker"])
+            for h in horizons:
+                if h in done or now_ts < filled + h:
+                    continue
+                if close is not None and filled + h >= close:
+                    continue
+                out.append((r["id"], r["ticker"], h))
+        return out
+
+    def window_close_ts(self, ticker: str) -> float | None:
+        r = self._conn.execute("SELECT close_ts FROM windows WHERE ticker=?", (ticker,)).fetchone()
+        return r["close_ts"] if r else None
+
+    def add_markout(self, fill_id: int, horizon_s: int, yes_bid: float | None, yes_ask: float | None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO markouts(fill_id,horizon_s,yes_bid,yes_ask,recorded_at) VALUES(?,?,?,?,?)",
+                (fill_id, horizon_s, yes_bid, yes_ask, _now_iso()))
 
     # ------------------------------------------------------------------ data
     def add_ticks(self, rows: list[tuple[float, float, int, float]]) -> None:

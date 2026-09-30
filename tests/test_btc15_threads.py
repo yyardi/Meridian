@@ -1,0 +1,168 @@
+"""The harness's background readers keep their contracts (2026-09-30).
+
+Kalshi's order book moves to its own thread: the cache is stamped at the read's start, a read
+older than KALSHI_FRESH_S is no price, and while the reader runs kalshi_quote never fetches.
+Markouts record the venue's touch at fixed horizons after every fill, from the live book only.
+The microtape hangs off the stream and the feed when the harness is built with a stream.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import sqlite3
+import threading
+
+from core.btc15.arms import Arm, ArmSpec
+from core.btc15.harness import Harness, PaperBroker, Settings, microtape_path
+from core.btc15.kalshi import normalize
+from core.btc15.ledger import UNIT, Ledger
+
+
+def _iso(ts):
+    return dt.datetime.fromtimestamp(ts, dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _market(now):
+    return normalize({"ticker": "KXBTC15M-26SEP302015-15", "status": "active",
+                      "open_time": _iso(now - 30), "close_time": _iso(now + 870), "floor_strike": 84000.0,
+                      "yes_bid_dollars": "0.6100", "yes_ask_dollars": "0.6200", "no_bid_dollars": "0.3800",
+                      "no_ask_dollars": "0.3900", "yes_bid_size_fp": "500", "yes_ask_size_fp": "400"})
+
+
+class Feed:
+    def __init__(self):
+        self.quotes = {}
+        self.c1m = self.c5m = self.c1h = []
+        self.funding = None
+        self.errors = {}
+
+    def seconds(self):
+        return []
+
+    def average(self, a, b):
+        return None
+
+    def snapshot(self):
+        return dict(self.quotes)
+
+
+class Venue:
+    venue = "polymarket"
+    stream = None
+
+    def __init__(self, m):
+        self.m = m
+
+    def current(self, now):
+        return self.m
+
+    def quote(self, slug):
+        return dict(self.m, status="active", fee_coefficient="0.0695", book_source="stream") if slug == self.m["ticker"] else None
+
+    def owns(self, t):
+        return True
+
+
+def _harness(now, reference=None):
+    m = _market(now)
+    led = Ledger(":memory:")
+    h = Harness(Settings(db_path=":memory:", status_path="/dev/null", kalshi_every_s=0.01), led, Feed(), Venue(m), None,
+                PaperBroker(), reference=reference, clock=lambda: now)
+    h.market = m
+    led.upsert_window(m)
+    return h, m, led
+
+
+def test_the_reader_thread_fills_the_cache_stamped_at_the_reads_start_and_kalshi_quote_never_fetches_meanwhile():
+    now = 1_790_700_000.0
+    reads = []
+    gate = threading.Event()
+
+    class K:
+        def current(self, t):
+            reads.append(t)
+            gate.wait(0.5)
+            return {"open_ts": None, "close_ts": None}
+    h, m, _ = _harness(now, reference=K())
+    h.reference.current = lambda t: (reads.append(t), {"open_ts": m["open_ts"], "close_ts": m["close_ts"],
+                                                        "yes_bid": 0.60, "yes_ask": 0.61})[1]
+    h.start_kalshi_reader()
+    for _ in range(200):
+        if h._kalshi_cache is not None:
+            break
+        threading.Event().wait(0.005)
+    c = h._kalshi_cache
+    assert c[0] == now and (c[1], c[2]) == (m["open_ts"], m["close_ts"]) and c[3] == {"yes_bid": 0.60, "yes_ask": 0.61}
+    n = len(reads)
+    assert h.kalshi_quote(now + 1.0, m, fetch=True) == {"yes_bid": 0.60, "yes_ask": 0.61}      # cached, fresh
+    h.stop_kalshi_reader()
+    threading.Event().wait(0.05)
+    n = len(reads)
+    h._kalshi_thread = object()                                                                # a reader "running"
+    assert h.kalshi_quote(now + 3.0, m, fetch=True) is None and len(reads) == n               # stale: no price, NO fetch
+    h._kalshi_thread = None
+    assert h.kalshi_quote(now + 3.0, m, fetch=True) == {"yes_bid": 0.60, "yes_ask": 0.61} and len(reads) == n + 1   # no reader: inline read as before
+    assert h._kalshi_cache[0] == now + 3.0
+
+
+def test_a_failed_read_empties_the_cache_rather_than_keeping_a_stale_price():
+    now = 1_790_700_000.0
+
+    class K:
+        def current(self, t):
+            raise OSError("down")
+    h, m, _ = _harness(now, reference=K())
+    h._kalshi_cache = (now, m["open_ts"], m["close_ts"], {"yes_bid": 0.6, "yes_ask": 0.61}, id(h.reference))
+    h._read_kalshi(now + 1, m["open_ts"], m["close_ts"])
+    assert h._kalshi_cache is None and h.kalshi_quote(now + 1, m) is None
+
+
+def test_markouts_record_the_live_touch_at_each_horizon_for_every_ledgers_fills(tmp_path):
+    import time
+    now = time.time()                       # the ledger stamps fills on the wall clock; the window must contain it
+    h, m, led = _harness(now)
+    arm_led = Ledger(str(tmp_path / "arm.sqlite"))
+    h.arms = [Arm(ArmSpec("touch_maker", "mid", "join", 0.0), arm_led, 10 * UNIT)]
+    arm_led.upsert_window(m)
+    fid, _ = arm_led.record_fill("paper", m["ticker"], "YES", 6100, 0, 10 * UNIT)
+    filled = dt.datetime.fromisoformat(arm_led._conn.execute("SELECT filled_at FROM fills").fetchone()[0]).timestamp()
+    h.record_markouts(filled + 1)
+    assert arm_led._conn.execute("SELECT COUNT(*) FROM markouts").fetchone()[0] == 0
+    h.record_markouts(filled + 6)
+    rows = arm_led._conn.execute("SELECT horizon_s, yes_bid, yes_ask FROM markouts").fetchall()
+    assert [tuple(r) for r in rows] == [(5, 0.61, 0.62)]
+    h.venue.m = dict(m, yes_bid=0.64, yes_ask=0.65)
+    h.record_markouts(filled + 61)
+    rows = arm_led._conn.execute("SELECT horizon_s, yes_bid FROM markouts ORDER BY horizon_s").fetchall()
+    assert [tuple(r) for r in rows] == [(5, 0.61), (30, 0.64), (60, 0.64)]
+    # a fill in a window that has closed unread is recorded empty once, and not asked again
+    h.market = None
+    arm_led._conn.execute("UPDATE windows SET close_ts=? WHERE ticker=?", (filled + 100, m["ticker"]))
+    arm_led.upsert_window(dict(m, ticker="past-window", close_ts=filled + 200))
+    fid2, _ = arm_led.record_fill("paper", "past-window", "NO", 3900, 0, 10 * UNIT)
+    h.record_markouts(filled + 400)
+    rows = arm_led._conn.execute("SELECT fill_id, horizon_s, yes_bid FROM markouts WHERE fill_id=? ORDER BY horizon_s", (fid2,)).fetchall()
+    assert [tuple(r) for r in rows] == [(fid2, 5, None), (fid2, 30, None), (fid2, 60, None)]
+    assert arm_led.markouts_due(filled + 400, arm_led.window_close_ts) == []
+
+
+def test_build_hangs_the_microtape_off_the_stream_and_the_feed(tmp_path, monkeypatch):
+    from core.btc15 import harness as H
+    from core.btc15.stream_book import StreamBook
+    monkeypatch.setenv("POLYMARKET_KEY_ID", "k")
+    monkeypatch.setenv("POLYMARKET_SECRET", "s")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MERIDIAN_BTC15_MODEL", raising=False)
+    monkeypatch.setattr(H, "KalshiBTC", lambda: None)
+    s = Settings(db_path=str(tmp_path / "polymarket-15m.sqlite"), status_path="/dev/null", horizon="1h")
+    h = H.build(s)
+    assert h.microtape is not None and h.microtape.path == str(tmp_path / "polymarket-15m-microtape.sqlite")
+    assert microtape_path("/data/polymarket-15m.sqlite") == "/data/polymarket-15m-microtape.sqlite"
+    stream = h.venue.stream
+    assert isinstance(stream, StreamBook) and stream.on_book == h.microtape.book and stream.on_trade == h.microtape.trade
+    assert h.feed.on_spot == h.microtape.spot
+    assert [a.spec.name for a in h.arms][-2:] == ["touch_maker", "touch_maker_k"] and h.arms[-1].prints == stream.prints
+    h.microtape.stop()
+    assert sqlite3.connect(h.microtape.path).execute("SELECT COUNT(*) FROM spot").fetchone()[0] == 0
+    s2 = Settings(db_path=str(tmp_path / "b.sqlite"), status_path="/dev/null", horizon="1h", microtape="none")
+    assert H.build(s2).microtape is None
