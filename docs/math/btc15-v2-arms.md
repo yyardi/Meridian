@@ -256,8 +256,12 @@ The cause is confirmed in the venue's own headers: `/v1/markets/<slug>/book` is 
 
 Every claim below names how to check it.
 
-**Measured on the live tape (`quotes` in the model's ledger, one row per second since the
-05:08:42Z fix; 8,363 tick pairs over 41 windows):**
+**Measured on the live tape (`quotes` in the model's ledger, one row per main-loop pass since
+the 05:08:42Z fix; 8,363 tick pairs over 41 windows). The pass is scheduled every second but
+measured at a median gap of 3.63 s (p90 4.11 s) from 05:08Z to 16:20Z and 1.79 s (p90 2.04 s)
+since the 16:22Z restart: the loop stalls on REST reads (spot polls, Kalshi's book) and eight
+arms' SQLite writes. Reproduce: gaps of `t` in `quotes`. The message-driven path is the only
+sub-second one; the second session measured this first and it was re-derived here.**
 
 | what | value | check |
 |---|---|---|
@@ -273,7 +277,8 @@ Every claim below names how to check it.
 while both live books were 63–66; 47/48 was the book's price at 15:57:52–55. Browsers
 throttle background tabs, so the tab not in focus freezes and shows a stale number when
 switched to. The dashboard's "This window" panel now prints both venues' live books from the
-same tape row, same second, so this can be checked without a browser tab in the middle.
+same tape row, read within the same pass, so this can be checked without a browser tab in
+the middle.
 
 **What changed:**
 
@@ -286,8 +291,8 @@ same tape row, same second, so this can be checked without a browser tab in the 
   whether that is enough. Expected value is unknown, not positive.
 - The arms act on **every venue book message** (`Harness.on_stream_update`), on the socket's
   thread, using the Kalshi read of the last second (`KALSHI_FRESH_S` = 2.5 s; older is no
-  price). The main loop reads Kalshi's order book once a second (`book_every_s` 3 → 1; the
-  `/markets` list is cached 10 s) and writes the once-a-second tape.
+  price). The main loop reads Kalshi's order book on each pass (`book_every_s` 3 → 1, a
+  pass every ~1.8 s as measured; the `/markets` list is cached 10 s) and writes the tape.
 - The seven earlier arms are unchanged and keep running.
 
 **Not built, and why:** the last-minute snipe (the book empties first); a Kalshi-side taker

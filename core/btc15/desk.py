@@ -169,7 +169,7 @@ def summary(root: str | Path, horizon: str, now: float | None = None, arm: str |
             cur_row = dict(_row(mcur), decision=None, fill=None)
         spec = _j(led.get("arm_spec")) if arm else None
         last = main._conn.execute("SELECT t, px, n FROM ticks ORDER BY t DESC LIMIT 1").fetchone()
-        # the two venues' live books, read in the same second by the bot (the once-a-second tape)
+        # the two venues' live books, read in the same main-loop pass by the bot (the tape; ~1.8 s apart)
         q = main._conn.execute("SELECT t, ticker, yes_bid, yes_ask, kalshi_bid, kalshi_ask FROM quotes "
                                "ORDER BY t DESC LIMIT 1").fetchone()
         curve, cum, staked = [], 0, 0

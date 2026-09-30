@@ -224,7 +224,7 @@
       <div><div class="lab pos">▲ Up · yes</div><div class="px" id="b-up">—</div><div class="faint" id="b-up-s"></div></div>
       <div><div class="lab neg">▼ Down · no</div><div class="px" id="b-dn">—</div><div class="faint" id="b-dn-s"></div></div>
     </div>
-    <div class="faint" id="b-kalshi" style="padding:6px 10px;border-top:1px solid var(--line2);font-size:10.5px" title="The bot reads Polymarket's stream and Kalshi's order book in the same second, once a second, for the same window and price to beat. Web pages lag by seconds and background tabs freeze, so two browser tabs will disagree; this line will not."></div>
+    <div class="faint" id="b-kalshi" style="padding:6px 10px;border-top:1px solid var(--line2);font-size:10.5px" title="The bot reads Polymarket's stream and Kalshi's order book in the same pass (about every 2 seconds) for the same window and price to beat. Web pages lag by seconds and background tabs freeze, so two browser tabs will disagree; this line will not."></div>
     <div class="call" id="call"><div class="waiting">Loading…</div></div>
   </section>
 
@@ -600,7 +600,7 @@ function renderKalshi() {
   const q = S && S.quote, el = $("b-kalshi");
   if (!q || q.yes_bid == null || q.kalshi_bid == null || S.now - q.t > 30) { el.textContent = ""; return; }
   const age = Math.max(0, Math.round(S.now - q.t));
-  el.innerHTML = `same second, ${age}s ago · Poly ${cents(q.yes_bid)} / ${cents(q.yes_ask)} · Kalshi ${cents(q.kalshi_bid)} / ${cents(q.kalshi_ask)}` +
+  el.innerHTML = `same read, ${age}s ago · Poly ${cents(q.yes_bid)} / ${cents(q.yes_ask)} · Kalshi ${cents(q.kalshi_bid)} / ${cents(q.kalshi_ask)}` +
     ` · gap <b style="color:var(--txt)">${((q.yes_bid + q.yes_ask - q.kalshi_bid - q.kalshi_ask) / 2 * 100).toFixed(1)}¢</b>`;
 }
 
