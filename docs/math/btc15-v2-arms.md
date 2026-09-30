@@ -175,7 +175,8 @@ interval of ±1.96·sd/√n. The trades are treated as independent: one contract
 and the windows do not overlap. Beside it is the **edge claimed at entry**: p(side) −
 price − fee, where p is what the arm traded on (Kalshi's mid for the takers, the model's
 own p_up for the agent). The realised edge should converge to the claimed one if the rule
-is right. A third column counts fills since the checkpoint (20:02Z on 09-29). This is the
+is right. A third column counts fills since the checkpoint, which moved to 05:08:42Z on 09-30 (see
+"Fresh quotes" below). This is the
 population the read uses; the agent's target is 40 and the 4¢ arm's is 300. The chart
 plots the running estimate from each arm's fifth contract. Only the selected arm shows
 its band, and a narrowing band means the estimate is settling.
@@ -229,3 +230,24 @@ What this does to the record:
 
 Until the arms read the venue's stream and Kalshi's order book, the table above measures the
 rule against stale prices, and the checkpoint cannot be read on it.
+
+## Fresh quotes, and the checkpoint moves (2026-09-30 05:08:42Z)
+
+The cause is confirmed in the venue's own headers: `/v1/markets/<slug>/book` is served with
+`cache-control: public, max-age=30` and `cf-cache-status: HIT`. From the restart at 05:08:42Z:
+
+- **The venue's book** comes from its market-data stream (`core/btc15/stream_book.py`, the
+  sports recorder's `StreamConnection` subscribed to the window in play). With the stream
+  configured, a tick whose book is not the stream's (socket down, or no book yet for the
+  window) enters nothing, fills nothing and writes no tape row. The cached REST book is never
+  a fallback.
+- **Kalshi's touch** comes from `/markets/<t>/orderbook` (best YES bid; ask = $1 − best NO
+  bid). An unreadable or one-sided book is no touch, never the list's.
+- **First minutes live:** 32 tape rows in 2 minutes. The stream's sizes changed every few
+  seconds, and Kalshi's order-book touch sat within a cent of the venue's, where the stale
+  pair had shown gaps of 4¢ at the median. The Kalshi arms will fire less.
+- **The checkpoint counts fills from 05:08:42Z.** Every earlier fill was entered and priced
+  on a quote up to ~30 s old. Settlements were always the venue's own, so wins and losses
+  are real; only the prices are suspect, and staleness flatters a paper fill. The targets
+  stand (agent 40, `kalshi_taker_4c` 300), counted from here. The earlier record stays in
+  the "all" columns for reference and is not evidence either way.

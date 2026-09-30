@@ -249,7 +249,7 @@
           <th title="Realised P&amp;L per settled contract (payout − price − fee), in cents, with the half-width of its 95% interval. Coloured only when the interval excludes zero.">edge / contract</th>
           <th title="The edge divided by its standard error. About 2 or more is the bar the checkpoint uses.">t</th>
           <th title="The edge the rule itself claimed when it bought: p(side) − price − fee, p being Kalshi's mid for the Kalshi takers and the model's own p_up for the agent. Realised edge converging to it is the check.">claimed at entry</th>
-          <th title="Contracts filled since the checkpoint was agreed (2026-09-29 20:02Z), their edge and t. The trades that chose the strategies cannot also confirm them; the read counts only these. The two strategies the checkpoint reads show their target.">since checkpoint</th>
+          <th title="Contracts filled since the fresh-quote fix (2026-09-30 05:08Z), their edge and t. Before it, entries were priced off quotes up to ~30 s old, so the checkpoint read counts only these. The two strategies the checkpoint reads show their target.">since checkpoint</th>
           <th title="Dollars on the $10 allocation, and the return on what the settled contracts cost (price + fee).">p&amp;l</th><th class="l">this window</th><th>declined</th></tr></thead>
         <tbody id="arms"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
       </table>
