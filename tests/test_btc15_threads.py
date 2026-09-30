@@ -166,3 +166,42 @@ def test_build_hangs_the_microtape_off_the_stream_and_the_feed(tmp_path, monkeyp
     assert sqlite3.connect(h.microtape.path).execute("SELECT COUNT(*) FROM spot").fetchone()[0] == 0
     s2 = Settings(db_path=str(tmp_path / "b.sqlite"), status_path="/dev/null", horizon="1h", microtape="none")
     assert H.build(s2).microtape is None
+
+
+def test_one_ledger_connection_survives_two_threads_reading_and_writing_at_once(tmp_path):
+    """2026-09-30 on prod: the stream thread's ledger.decision() and the main loop's collided on
+    the model's ledger (sqlite3.InterfaceError: bad parameter or other API misuse), three times
+    in forty minutes once the markout thread joined them. Every statement now runs under the
+    ledger's lock; this hammers one Ledger from two threads for a moment and expects no error."""
+    import time
+    led = Ledger(str(tmp_path / "race.sqlite"))
+    m = _market(time.time())
+    led.upsert_window(m)
+    errors = []
+    stop = threading.Event()
+
+    def reader():
+        try:
+            while not stop.is_set():
+                led.decision(m["ticker"]); led.unsettled_fills(); led.account("paper"); led.spent()
+                led.markouts_due(time.time(), led.window_close_ts); led.recent_results(3)
+        except Exception as e:                                       # noqa: BLE001
+            errors.append(repr(e))
+
+    def writer():
+        try:
+            i = 0
+            while not stop.is_set():
+                led.add_quote(time.time() + i * 1e-3, {"ticker": m["ticker"], "yes_bid": 0.4, "yes_ask": 0.41}, None)
+                led.put("k", str(i)); led.add_ticks([(time.time() + i * 1e-3, 1.0, 4, 0.0)])
+                i += 1
+        except Exception as e:                                       # noqa: BLE001
+            errors.append(repr(e))
+    ts = [threading.Thread(target=reader), threading.Thread(target=reader), threading.Thread(target=writer)]
+    for t in ts:
+        t.start()
+    time.sleep(0.6)
+    stop.set()
+    for t in ts:
+        t.join(5)
+    assert errors == []

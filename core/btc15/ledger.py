@@ -11,6 +11,13 @@ What the database itself refuses (CHECK / UNIQUE, not code paths):
 * two fills for the same window in the same mode;
 * two settlements for the same fill.
 
+One connection per ledger, shared by every thread that touches it (the main loop, the
+venue's stream thread, the markout thread), so EVERY statement runs under ``_lock`` -- reads
+too. On 2026-09-30 three unlocked reads collided with another thread's statement inside forty
+minutes (``sqlite3.InterfaceError: bad parameter or other API misuse``, SQLITE_MISUSE) and
+each aborted a whole pass. ``query`` / ``query_one`` are the locked doors for callers outside
+this module; nothing outside it touches ``_conn``.
+
 The drawdown guard (``can_trade``) is recomputed from the ledger rows on every
 call -- there is no running counter to drift. Equity is realized P&L of the
 current epoch (settled fills only); its high-water mark starts at zero; an
@@ -119,13 +126,23 @@ class Ledger:
 
     # ------------------------------------------------------------------ state
     def get(self, key: str, default: str | None = None) -> str | None:
-        r = self._conn.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
+        with self._lock:
+            r = self._conn.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
         return r["value"] if r else default
 
     def put(self, key: str, value: str) -> None:
         with self._lock:
             self._conn.execute("INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                                (key, value))
+
+    def query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+        """Every row of a SELECT, under the lock. The only door for readers outside this module."""
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def query_one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
 
     def epoch(self, mode: str) -> int:
         return int(self.get(f"epoch_{mode}", "1"))
@@ -175,7 +192,8 @@ class Ledger:
 
     def spent(self, day: str | None = None) -> dict:
         day = day or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
-        r = self._conn.execute("SELECT * FROM spend WHERE day=?", (day,)).fetchone()
+        with self._lock:
+            r = self._conn.execute("SELECT * FROM spend WHERE day=?", (day,)).fetchone()
         if r is None:
             return {"day": day, "calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "tokens": 0, "usd": 0.0}
         return {"day": day, "calls": r["calls"], "prompt_tokens": r["prompt_tokens"],
@@ -183,8 +201,9 @@ class Ledger:
                 "usd": round(r["cost_micros"] / 1_000_000, 4)}
 
     def spent_total(self) -> dict:
-        r = self._conn.execute("SELECT COUNT(*) days, COALESCE(SUM(calls),0) calls, "
-                               "COALESCE(SUM(cost_micros),0) micros FROM spend").fetchone()
+        with self._lock:
+            r = self._conn.execute("SELECT COUNT(*) days, COALESCE(SUM(calls),0) calls, "
+                                   "COALESCE(SUM(cost_micros),0) micros FROM spend").fetchone()
         return {"days": r["days"], "calls": r["calls"], "usd": round(r["micros"] / 1_000_000, 4)}
 
     # ------------------------------------------------------------------ the joint quote tape
@@ -204,13 +223,16 @@ class Ledger:
         """(fill_id, ticker, horizon) for every fill whose horizon has passed and is not yet recorded,
         skipping horizons that fall after the window's close (``close_ts_of(ticker)`` -> ts or None)."""
         out = []
-        rows = self._conn.execute(
-            "SELECT f.id, f.ticker, f.filled_at FROM fills f WHERE f.filled_at >= ? ORDER BY f.id",
-            (dt.datetime.fromtimestamp(now_ts - max(horizons) - 3600, dt.timezone.utc).isoformat(timespec="seconds"),)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT f.id, f.ticker, f.filled_at FROM fills f WHERE f.filled_at >= ? ORDER BY f.id",
+                (dt.datetime.fromtimestamp(now_ts - max(horizons) - 3600, dt.timezone.utc).isoformat(timespec="seconds"),)
+            ).fetchall()
+            done_by = {r["id"]: {x["horizon_s"] for x in self._conn.execute(
+                "SELECT horizon_s FROM markouts WHERE fill_id=?", (r["id"],))} for r in rows}
         for r in rows:
             filled = dt.datetime.fromisoformat(r["filled_at"]).timestamp()
-            done = {x["horizon_s"] for x in self._conn.execute("SELECT horizon_s FROM markouts WHERE fill_id=?", (r["id"],))}
+            done = done_by[r["id"]]
             close = close_ts_of(r["ticker"])
             for h in horizons:
                 if h in done or now_ts < filled + h:
@@ -221,7 +243,8 @@ class Ledger:
         return out
 
     def window_close_ts(self, ticker: str) -> float | None:
-        r = self._conn.execute("SELECT close_ts FROM windows WHERE ticker=?", (ticker,)).fetchone()
+        with self._lock:
+            r = self._conn.execute("SELECT close_ts FROM windows WHERE ticker=?", (ticker,)).fetchone()
         return r["close_ts"] if r else None
 
     def add_markout(self, fill_id: int, horizon_s: int, yes_bid: float | None, yes_ask: float | None) -> None:
@@ -248,8 +271,9 @@ class Ledger:
             self._conn.execute("UPDATE windows SET proxy_open=? WHERE ticker=? AND proxy_open IS NULL", (px, ticker))
 
     def unfinalized_windows(self, now_ts: float) -> list[sqlite3.Row]:
-        return self._conn.execute(
-            "SELECT * FROM windows WHERE result IS NULL AND close_ts <= ? ORDER BY close_ts", (now_ts,)).fetchall()
+        with self._lock:
+            return self._conn.execute(
+                "SELECT * FROM windows WHERE result IS NULL AND close_ts <= ? ORDER BY close_ts", (now_ts,)).fetchall()
 
     def finalize_window(self, ticker: str, result: str, expiration_value: float | None, proxy_close: float | None) -> None:
         with self._lock:
@@ -258,8 +282,9 @@ class Ledger:
                 (result, expiration_value, proxy_close, _now_iso(), ticker))
 
     def recent_results(self, n: int = 12) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT result FROM windows WHERE result IN ('yes','no') ORDER BY close_ts DESC LIMIT ?", (n,)).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT result FROM windows WHERE result IN ('yes','no') ORDER BY close_ts DESC LIMIT ?", (n,)).fetchall()
         return [r["result"] for r in reversed(rows)]
 
     # ------------------------------------------------------------------ decisions
@@ -284,16 +309,18 @@ class Ledger:
             self._conn.execute(f"UPDATE decisions SET {cols} WHERE ticker=?", (*fields.values(), ticker))
 
     def decision(self, ticker: str) -> sqlite3.Row | None:
-        return self._conn.execute("SELECT * FROM decisions WHERE ticker=?", (ticker,)).fetchone()
+        with self._lock:
+            return self._conn.execute("SELECT * FROM decisions WHERE ticker=?", (ticker,)).fetchone()
 
     # ------------------------------------------------------------------ money
     def account(self, mode: str, epoch: int | None = None) -> dict:
         """Recomputed from rows every time. Units throughout."""
         epoch = self.epoch(mode) if epoch is None else epoch
-        rows = self._conn.execute(
-            "SELECT f.id, f.price_u, f.fee_u, f.qty, s.pnl_u, s.settled_at FROM fills f "
-            "LEFT JOIN settlements s ON s.fill_id = f.id WHERE f.mode=? AND f.epoch=? "
-            "ORDER BY (s.settled_at IS NULL), s.settled_at, f.id", (mode, epoch)).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT f.id, f.price_u, f.fee_u, f.qty, s.pnl_u, s.settled_at FROM fills f "
+                "LEFT JOIN settlements s ON s.fill_id = f.id WHERE f.mode=? AND f.epoch=? "
+                "ORDER BY (s.settled_at IS NULL), s.settled_at, f.id", (mode, epoch)).fetchall()
         realized = peak = open_cost = 0
         n_open = n_settled = wins = 0
         for r in rows:
@@ -343,8 +370,9 @@ class Ledger:
             return cur.lastrowid, "filled"
 
     def unsettled_fills(self) -> list[sqlite3.Row]:
-        return self._conn.execute(
-            "SELECT f.* FROM fills f LEFT JOIN settlements s ON s.fill_id=f.id WHERE s.fill_id IS NULL").fetchall()
+        with self._lock:
+            return self._conn.execute(
+                "SELECT f.* FROM fills f LEFT JOIN settlements s ON s.fill_id=f.id WHERE s.fill_id IS NULL").fetchall()
 
     def settle(self, fill_id: int, result: str) -> bool:
         """Idempotent: a fill settles once. Returns True if this call settled it."""
@@ -361,11 +389,15 @@ class Ledger:
 
     # ------------------------------------------------------------------ memory for the model
     def experience(self, mode: str, n: int = 20, n_lessons: int = 12) -> dict:
-        rows = self._conn.execute(
-            "SELECT d.ticker, d.p_up, d.side, d.confidence, d.features, w.result, w.close_time, "
-            "f.price_u, s.pnl_u FROM decisions d JOIN windows w ON w.ticker=d.ticker "
-            "LEFT JOIN fills f ON f.ticker=d.ticker AND f.mode=? LEFT JOIN settlements s ON s.fill_id=f.id "
-            "WHERE d.p_up IS NOT NULL AND w.result IN ('yes','no') ORDER BY w.close_ts DESC", (mode,)).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT d.ticker, d.p_up, d.side, d.confidence, d.features, w.result, w.close_time, "
+                "f.price_u, s.pnl_u FROM decisions d JOIN windows w ON w.ticker=d.ticker "
+                "LEFT JOIN fills f ON f.ticker=d.ticker AND f.mode=? LEFT JOIN settlements s ON s.fill_id=f.id "
+                "WHERE d.p_up IS NOT NULL AND w.result IN ('yes','no') ORDER BY w.close_ts DESC", (mode,)).fetchall()
+            lessons = self._conn.execute(
+                "SELECT ticker, lesson FROM decisions WHERE lesson IS NOT NULL ORDER BY requested_at DESC LIMIT ?",
+                (n_lessons,)).fetchall()
         n_all = len(rows)
         bm = bk = bb = 0.0
         nb = hits = 0
@@ -387,9 +419,6 @@ class Ledger:
                                "correct": (p >= 0.5) == (y == 1.0),
                                "entry_price": None if r["price_u"] is None else r["price_u"] / UNIT,
                                "pnl_usd": None if r["pnl_u"] is None else r["pnl_u"] / UNIT})
-        lessons = self._conn.execute(
-            "SELECT ticker, lesson FROM decisions WHERE lesson IS NOT NULL ORDER BY requested_at DESC LIMIT ?",
-            (n_lessons,)).fetchall()
         a = self.account(mode)
         return {
             "your_record": {
