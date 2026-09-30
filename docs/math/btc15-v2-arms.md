@@ -360,3 +360,39 @@ under `retired/`. The checkpoint's `kalshi_taker_wide` target is void with them;
 40 stands. What runs: `llm_agent`, `kalshi_requote`, and the print-judged `touch_maker` and
 `touch_maker_k` from the sub-second build (docs/math/btc15-microtape.md), whose fills accrue
 on flow rather than on a gap and are scored by 60-second mark-outs as well as settlement.
+
+## The spot trigger: interim split, the A/B, and what waits for the read (2026-09-30 ~20:45Z)
+
+The registered toxicity instrument (`analysis/btc15/maker_fill_toxicity.py`, the second
+session's; threshold registered before the night: $10 over 500 ms, 60-s mark-out, read once
+at 2026-10-01 12:00Z), run on a read-only snapshot at 20:21Z. **An interim look at n = 36,
+not the read**, recorded because it was looked at:
+
+| 60-s mark-out, maker fills 17:18–20:21Z | n | mean | t |
+|---|---:|---:|---:|
+| spot moved ≥ $10 against us within 500 ms before the fill | 16 | −8.4¢ | −2.7 |
+| the rest | 20 | −2.5¢ | −1.0 |
+| (250 ms) spot-preceded / the rest | 15 / 21 | −10.2¢ / −1.5¢ | −3.3 / −0.6 |
+
+That is the registered shape: the losses sit in the fills that followed a spot move, the
+rest is around zero. Two things follow, and one caution.
+
+**The build (the second session's, on `btc15/edge-arms`; nothing deploys before the read).**
+A maker arm with a spot trigger: on the Coinbase socket's own thread, the move over the prior
+window is computed on every quote; when it clears the threshold the arm pulls the
+**threatened** side only (an up-move threatens the offer, a down-move the bid), so the other
+side keeps its place in the queue; a pulled side cannot be filled by prints or a trade-through;
+it re-joins once the venue's book has re-priced a tick in the move's direction, or after two
+seconds. Two variants were designed independently (this session's pulled both sides and
+re-joined once spot had been calm for the window); the threatened-side, socket-thread version
+is the better one on latency and on queue position, and is the one built.
+
+**The A/B.** Two new arms, `touch_maker_t` and `touch_maker_kt`, identical to `touch_maker`
+and `touch_maker_k` but for the trigger, run beside them on the same windows and books. The
+controls are untouched. The difference between each pair's record, fill by fill, is the
+trigger's value; nothing else differs.
+
+**Caution.** "The rest" is −2.5¢ (t −1.0), not positive: removing the spot-preceded fills does
+not by itself make the join arm profitable on this sample; it removes the identified loss and
+leaves what a resting order at the touch earns on flow that is not informed, which the night
+measures. And at n = 36 the split is one look; the read at 12:05Z decides.
