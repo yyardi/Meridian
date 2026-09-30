@@ -180,7 +180,9 @@ population the read uses; the agent's target is 40 and the 4¢ arm's is 300. The
 plots the running estimate from each arm's fifth contract. Only the selected arm shows
 its band, and a narrowing band means the estimate is settling.
 
-Standing at 2026-09-30 02:00Z, all contracts:
+Standing at 2026-09-30 02:00Z, all contracts. **Every number in this table was priced off two
+REST quotes that update only every ~25–30 s; see "Both quotes are stale" below. None of it is
+executable evidence until that is fixed.**
 
 | arm | n | realised edge (95 %) | claimed at entry |
 |---|---:|---:|---:|
@@ -191,3 +193,39 @@ Standing at 2026-09-30 02:00Z, all contracts:
 The tab renames two arms. `kalshi_taker` is shown as `kalshi_taker_2c` and
 `kalshi_taker_wide` as `kalshi_taker_4c`, to match the margin sweep. The ledger files, the
 API's `arm=` key and the checkpoint rule above keep the original names.
+
+## Both quotes are stale (2026-09-30 02:16Z)
+
+`analysis/btc15/quote_freshness_probe.py` read three quotes once a second for the 02:15Z window.
+It got 97 samples with a venue book:
+
+| source | used by | distinct states in 97 s | unchanged for |
+|---|---|---:|---|
+| Kalshi `/markets/<t>/orderbook` | nothing yet | 97 | changes every second |
+| Kalshi `/markets` list touch | the Kalshi arms' p, the quote tape | 3 | mean 32 s, longest 58 s |
+| venue `/v1/markets/<slug>/book` | every arm's entry **and paper fill** | 4 | mean 24 s, longest 30 s, sizes identical to the cent |
+
+What this does to the record:
+
+- **The Kalshi arms' anchor is a price up to a minute old.** On the same samples, the list
+  mid and the order-book mid differed by a median of 4¢ (p90 12¢). "Kalshi's mid" in every
+  arm, in the quote tape and in `replay_kalshi_margins.py` is the list touch.
+- **Paper fills are at a price that may not have existed.** A book whose sizes do not change
+  for 30 s while Kalshi's changes every second looks like a cached read, not a quiet market.
+  The venue's stream is the test of that, and it has not been run on BTC. If the book is
+  cached, a fill at the cached ask after Bitcoin has moved is a look-ahead, and it flatters
+  whichever side the move favoured.
+- **Artefacts of the same staleness in `analysis/btc15/kalshi_side.py`** (tape 21:45Z–01:45Z,
+  16 windows):
+  - After a ≥ 3¢ gap, "Kalshi closes 71–78 % of it within 30–60 s, the venue 31–34 %". That
+    is the list catching up.
+  - A locked pair (YES on one venue, NO on the other) priced below $1 after both fees on
+    24 % of ticks. On Kalshi's live order book the positive locks in the probe fell exactly
+    where the venue's REST book was frozen.
+- **What stands:**
+  - The two contracts settle alike: 198 of 198 windows from 09-28 00:30Z to 09-30 01:45Z
+    gave the same result on both venues.
+  - Kalshi's order book is deep: thousands of contracts at the touch.
+
+Until the arms read the venue's stream and Kalshi's order book, the table above measures the
+rule against stale prices, and the checkpoint cannot be read on it.
