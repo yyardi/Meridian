@@ -261,7 +261,7 @@ maker re-prices. `analysis/btc15/priority_race.py` on 31 windows, 700 coinbase m
 | re-price moved both sides in one message | 450 of 578; one side first 128, the other following after a median 104 ms |
 | a post at 50 / 100 / 200 / 300 ms after the coinbase quote precedes the re-price | 69 % / 35 % / 22 % / 19 % (an upper bound on being first) |
 | first in queue at the new level, filled by the first opposite print before the level moved | 242 of 578 levels (level life median 200 ms) |
-| markout of those fills, 30 s / 60 s | +0.01c ± 0.52 / +0.02c ± 0.69; **+0.22c / +0.23c with the rebate** |
+| markout of those fills, 30 s / 60 s | +0.01c ± 0.52 / +0.02c ± 0.69; **+0.22c / +0.23c with the rebate at size** (the rebate is rounded to the cent per trade: at ONE contract it is $0.00 — amended 2026-10-01 18:50Z, see the football section) |
 | the first opposite print at the level | median 12 contracts (p25 3, p75 39); total opposite flow while the level stood median 101, mean 516 |
 
 Two things bound it. With a one-tick spread the new bid level is the old ask, so a bid there
