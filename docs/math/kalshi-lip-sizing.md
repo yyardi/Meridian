@@ -80,3 +80,37 @@ claims about fills, and **fills are the one thing the public data cannot show**.
 
 Operator on 2026-09-30: "i dont rlly care too much bout this LIP". The table is here because
 on 2026-10-01 the ask was for edge, and this is where the venue's own numbers put it.
+
+## The paper scorer, and the read registered before it runs (2026-10-02)
+
+`core/kalshi/lip_scorer.py` (service `lip-scorer`, `docker-compose.lip.yml`, 128 MB, image
+`meridian-api`, `core/` read-only, writes `/opt/meridian/artifacts/lip/lip_scorer.sqlite` and
+`lip_status.json`). It loads the active liquidity programs for the configured series
+(`MERIDIAN_LIP_SERIES`, default the 25 daily gas states), subscribes to those markets'
+`orderbook_delta` on Kalshi's one websocket — the handshake signed with the same `KALSHI_*`
+lines the BRTI relay reads from `.env`; nothing of the key is written anywhere — keeps the books
+from snapshot plus deltas with `seq` tracking (a gap resubscribes for a fresh snapshot), and once a
+second scores a hypothetical quote of ours of 200 and 500 contracts resting AT each side's
+reference by the published rule: the share of each side's score, and whether the snapshot would
+count (two-sided depth ≥ target). Per market: hourly rows (seconds, valid seconds, summed share
+per size, median incumbent score per side) and a once-a-minute sample of the book's touch,
+references, scores and depths; 3-day retention. The status file carries the socket's counters and
+the implied $/day by series. `--once` prints the same scoring from one REST read.
+
+**Registered read, written before the first scored second.** After 48 hours of scoring (first
+look at 24 h only for liveness), per series and in total, over all program markets:
+
+1. the mean share at 200 and at 500 a side over VALID seconds, the valid fraction, and the implied
+   $/day = Σ_markets mean share × valid fraction × the market's $/day — beside the static table
+   above (the paper number equals the static one only if the incumbents' books held);
+2. the incumbents' median score per side by hour — did their resting size move during the 48 h
+   (which it cannot have done in response to a paper quote nobody can see, so a move is their
+   own cadence, and the live quote would face it too);
+3. the valid fraction by hour of day — when the snapshots do not count, no one is paid.
+
+Decision rule: the order engine is worth building only if the 48-h implied $/day at 200 a side
+over the five best states is ≥ $300 (a quarter of the static table) with a valid fraction ≥ 0.8
+and the incumbents' median score within 2× of the 20:40Z read; if it is, the operator decides
+on a Kalshi account and collateral (the live path does not exist and is live money); if it is not,
+this closes in one line. The paper number cannot see fills; the live step's first registered read
+is fills per day per state at the smallest size, before any scaling.
