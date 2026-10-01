@@ -102,7 +102,7 @@ services:
       # the hourly bot (2026-09-29): Kalshi lists no hourly twin and the model is off here to
       # save credits. 2026-09-30: one maker arm, judged by prints, so the hourly book and its
       # prints are taped (the stream subscribes only when an arm runs) -- no Kalshi-priced arm.
-      # 2026-10-01 ~16:25Z: the spot trigger's twin runs beside the control (the registered
+      # 2026-10-01 16:10:27Z: the spot trigger's twin runs beside the control (the registered
       # read is in docs/math/btc15-v2-arms.md, "The hourly A/B"). The twin needs the coinbase
       # socket, so spot sockets are on here too and the hourly tape carries spot as well: a
       # duplicate of the 15-minute bot's, ~33 MB/day under the tape's 3-day retention.
