@@ -45,6 +45,9 @@ CREATE INDEX IF NOT EXISTS spot_recv ON spot(recv);
 CREATE TABLE IF NOT EXISTS brti(
   recv REAL NOT NULL, source_ts_ms INTEGER, value REAL NOT NULL, avg_60s REAL, last_60s_15m REAL, seq INTEGER);
 CREATE INDEX IF NOT EXISTS brti_recv ON brti(recv);
+CREATE TABLE IF NOT EXISTS kalshi_book(
+  recv REAL NOT NULL, ticker TEXT NOT NULL, side TEXT NOT NULL, level INTEGER NOT NULL, price REAL NOT NULL, size REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS kalshi_book_t ON kalshi_book(ticker, recv);
 """
 
 _INSERT = {
@@ -52,6 +55,7 @@ _INSERT = {
     "trade": "INSERT INTO trades(recv,slug,price,quantity,trade_time,taker_intent,maker_intent) VALUES(?,?,?,?,?,?,?)",
     "spot": "INSERT INTO spot(recv,exchange,bid,ask,last) VALUES(?,?,?,?,?)",
     "brti": "INSERT INTO brti(recv,source_ts_ms,value,avg_60s,last_60s_15m,seq) VALUES(?,?,?,?,?,?)",
+    "kalshi_book": "INSERT INTO kalshi_book(recv,ticker,side,level,price,size) VALUES(?,?,?,?,?,?)",
 }
 
 
@@ -91,6 +95,15 @@ class Microtape:
     def brti(self, tick) -> None:
         """Kalshi's relay of the settlement index (core/btc15/brti_relay.py), every tick."""
         self._put("brti", (tick.recv, tick.source_ts_ms, tick.value, tick.avg_60s, tick.last_60s_15m, tick.seq))
+
+    def kalshi_book(self, ticker: str, levels: dict | None, at: float) -> None:
+        """Kalshi's depth at one read (core/btc15/kalshi.book_levels): one row per level per side.
+        Taped so the size resting at the last tenths of a cent near the close can be read."""
+        if not levels:
+            return
+        for side in ("yes", "no"):
+            for i, (price, size) in enumerate(levels.get(side) or []):
+                self._put("kalshi_book", (at, ticker, side, i, price, size))
 
     def _put(self, kind: str, values: tuple) -> None:
         try:
@@ -151,7 +164,7 @@ class Microtape:
         now = self._clock() if now is None else now
         floor = now - self.keep_days * 86400
         c = self._conn()
-        for t in ("book_msgs", "trades", "spot", "brti"):
+        for t in ("book_msgs", "trades", "spot", "brti", "kalshi_book"):
             c.execute(f"DELETE FROM {t} WHERE recv < ?", (floor,))
 
     def _run(self) -> None:

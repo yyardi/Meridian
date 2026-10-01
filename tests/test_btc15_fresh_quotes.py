@@ -195,3 +195,11 @@ def test_kalshi_rereads_its_list_every_ten_seconds_and_its_book_every_call(monke
     k.current(O + 60)
     assert calls["list"] == 2
     assert k.current(O + 5000) is None and calls["list"] == 3                # no window for that instant: one fresh read
+
+
+def test_the_order_books_levels_are_kept_best_first_with_sizes_for_the_depth_tape():
+    from core.btc15.kalshi import book_levels
+    k = _kalshi().current(O + 60)
+    assert k["levels"] == {"yes": [(0.33, 50.0), (0.30, 100.0)], "no": [(0.66, 20.0), (0.65, 10.0)]}   # the 0.00-size level dropped
+    assert book_levels(None) == {"yes": [], "no": []}
+    assert _kalshi(book_status=500).current(O + 60)["levels"] is None

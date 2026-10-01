@@ -68,6 +68,23 @@ NO_TOUCH = {k: None for k in ("yes_bid_u", "yes_ask_u", "no_bid_u", "no_ask_u", 
                               "no_bid", "no_ask", "yes_bid_size", "yes_ask_size")}
 
 
+#: Depth levels kept per side from Kalshi's order book (the microtape's kalshi_book).
+BOOK_LEVELS = 10
+
+
+def book_levels(resp: dict | None, n: int = BOOK_LEVELS) -> dict:
+    """{"yes": [(price, size), ...], "no": [...]} best first, sizes > 0 only, from /orderbook.
+    Kalshi books only BIDS on each side: a YES bid at p is a NO ask at 1 - p and vice versa, so
+    the two lists together are the whole book. Prices in dollars (deci-cent ticks above 0.90)."""
+    ob = (resp or {}).get("orderbook_fp") or (resp or {}).get("orderbook") or {}
+    out = {}
+    for side in ("yes", "no"):
+        live = [(float(p), float(q)) for p, q in (ob.get(f"{side}_dollars") or []) if float(q) > 0]
+        live.sort(reverse=True)
+        out[side] = live[:n]
+    return out
+
+
 def book_touch(resp: dict | None) -> dict | None:
     """The touch from /markets/<t>/orderbook: the best YES bid, and the YES ask as $1 minus the
     best NO bid (Kalshi books only bids on each side). None if either side is empty."""
@@ -112,11 +129,14 @@ class KalshiBTC:
         if not live:
             return None
         m = min(live, key=lambda m: m["close_ts"])
+        levels = None
         try:
-            touch = book_touch(self._get(f"/markets/{m['ticker']}/orderbook"))
+            resp = self._get(f"/markets/{m['ticker']}/orderbook")
+            touch = book_touch(resp)
+            levels = book_levels(resp)
         except (httpx.HTTPError, ValueError):
             touch = None
-        return {**m, **(touch or NO_TOUCH), "touch_source": "orderbook" if touch else "none"}
+        return {**m, **(touch or NO_TOUCH), "touch_source": "orderbook" if touch else "none", "levels": levels}
 
     def _live_windows(self, now: float, fresh: bool) -> list[dict]:
         t = time.time()

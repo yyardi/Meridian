@@ -445,6 +445,11 @@ class Harness:
         q = None
         if r and r.get("open_ts") == open_ts and r.get("close_ts") == close_ts:
             q = {"yes_bid": r.get("yes_bid"), "yes_ask": r.get("yes_ask")}
+            if self.microtape is not None and r.get("levels"):
+                try:
+                    self.microtape.kalshi_book(r["ticker"], r["levels"], read_ts)
+                except Exception:                                # noqa: BLE001 -- the tape never stops the read
+                    log.exception("kalshi book tape")
         self._kalshi_cache = (read_ts, open_ts, close_ts, q, id(self.reference))
 
     def start_kalshi_reader(self) -> None:

@@ -276,3 +276,13 @@ def test_two_threads_seeing_a_new_window_at_once_start_exactly_one_socket():
     threading.Event().wait(0.05)
     assert len(opened) == 2 and sb.slug.endswith("2015z")            # one socket per window, never two
     sb.stop()
+
+
+def test_kalshi_depth_lands_one_row_per_level_per_side(tmp_path):
+    tape = Microtape(str(tmp_path / "micro.sqlite"), clock=lambda: 1_790_700_000.0)
+    tape.kalshi_book("KXBTC15M-26SEP302015-15", {"yes": [(0.44, 500.0), (0.43, 1200.0)], "no": [(0.55, 300.0)]}, at=1_790_700_001.0)
+    tape.kalshi_book("KXBTC15M-26SEP302015-15", None, at=1_790_700_002.0)                 # nothing read: nothing written
+    assert tape.drain() == 3
+    rows = sqlite3.connect(tape.path).execute("SELECT recv, ticker, side, level, price, size FROM kalshi_book ORDER BY side DESC, level").fetchall()
+    assert rows == [(1_790_700_001.0, "KXBTC15M-26SEP302015-15", "yes", 0, 0.44, 500.0), (1_790_700_001.0, "KXBTC15M-26SEP302015-15", "yes", 1, 0.43, 1200.0),
+                    (1_790_700_001.0, "KXBTC15M-26SEP302015-15", "no", 0, 0.55, 300.0)]
