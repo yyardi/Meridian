@@ -162,7 +162,7 @@ def test_build_hangs_the_microtape_off_the_stream_and_the_feed(tmp_path, monkeyp
     assert isinstance(stream, StreamBook) and stream.on_book == h.microtape.book and stream.on_trade == h.microtape.trade
     assert h.feed.on_spot is not None                                        # the fan-out: the tape and the spot trigger
     names = {a.spec.name for a in h.arms}
-    assert {"touch_maker", "touch_maker_k", "touch_maker_t", "touch_maker_kt"} <= names and all(a.prints == stream.prints for a in h.arms)
+    assert {"touch_maker", "touch_maker_k"} <= names and all(a.prints == stream.prints for a in h.arms)
     h.microtape.stop()
     assert sqlite3.connect(h.microtape.path).execute("SELECT COUNT(*) FROM spot").fetchone()[0] == 0
     s2 = Settings(db_path=str(tmp_path / "b.sqlite"), status_path="/dev/null", horizon="1h", microtape="none")

@@ -396,3 +396,38 @@ trigger's value; nothing else differs.
 not by itself make the join arm profitable on this sample; it removes the identified loss and
 leaves what a resting order at the touch earns on flow that is not informed, which the night
 measures. And at n = 36 the split is one look; the read at 12:05Z decides.
+
+## The read (2026-10-01 13:15Z): the trigger does not deploy
+
+The registered read of the night (`analysis/btc15/maker_fill_toxicity.py`, $10 over 500 ms,
+60-s mark-out, fills 17:18Z–12:00Z, read once), run on a fresh read-only snapshot; the second
+session ran it independently at 13:20Z on its own snapshot and got the same numbers within
+noise (−4.9¢ n 51 vs −3.5¢ n 125).
+
+| 60-s mark-out, 15-minute maker fills | n | mean | t |
+|---|---:|---:|---:|
+| spot moved ≥ $10 against us within 500 ms before the fill | 49 | −5.0¢ | −3.0 |
+| the rest | 119 | −3.4¢ | −3.8 |
+| difference | | −1.6¢ | −0.9 (Welch) |
+| by fill type: trade-through / print | 113 / 71 | −5.1¢ / −1.0¢ | |
+
+The gate required the rest to carry no loss. It carries most of it: the interim split at
+n = 36 (−8.4¢ vs −2.5¢) was sampling noise that regressed to a loss everywhere, and the split
+that is real is by **fill type**, not by spot. A resting order at the back of the touch queue
+fills on sweeps (−5.1¢) and rarely on benign flow (−1.0¢), which is the queue-position
+mechanism the continuous-making replay found (docs/math/btc15-microtape.md). The spot
+trigger would remove about three in ten fills and a quarter of the loss and leave a
+3.5¢-a-fill loser. **Not deployed.** `touch_maker_t` / `touch_maker_kt` moved out of
+`DEFAULT_ARMS` into an unrun `SPOT_TRIGGER_AB` tuple; the spec options stay.
+
+With this, every channel on Polymarket US BTC-15m is measured non-positive for this stack:
+directional (the market beats the walk, the logistic and the LLM), cross-venue (the
+same-second gap to Kalshi is 0.4¢), passive making (adverse-only at the back of the queue),
+priority making (first at a new level earns the rebate and nothing else), and the final
+minute (priced within seconds on both venues). The four arms keep accruing at zero cost; the
+instrument stays.
+
+Also from the snapshot: the venue listed **no 15-minute windows from 10:00Z to 11:59Z** on
+2026-10-01 (no `windows` rows for 1000z–1145z, the hourly bot's stream at zero in the same
+hours, zero prints, the 1100z book still 404). The bot logged nothing and resubscribed at
+12:00Z. A fill drought across every arm at once is a venue question before it is an arm one.

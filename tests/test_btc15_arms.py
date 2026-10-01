@@ -132,7 +132,7 @@ def test_arm_specs_from_the_environment():
     assert specs_from_env("none") == ()
     s = specs_from_env('[{"name": "x", "prob": "walk", "kind": "maker", "margin": 0.03}]')
     assert s[0].name == "x" and s[0].margin == 0.03 and "zero-fee bid" in s[0].describe()
-    assert len(specs_from_env(None)) >= 4
+    assert len(specs_from_env(None)) >= 3
 
 
 def test_the_market_mid_control_rests_on_both_sides_by_a_coin_keyed_on_the_window(tmp_path):
