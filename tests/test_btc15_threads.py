@@ -261,3 +261,22 @@ def test_probabilities_carry_the_spot_move_over_each_window_from_the_ring():
     assert h.spot_moves(now) == {250: 84012.0 - 84003.0, 500: 84012.0 - 84003.0, 1000: 84012.0 - 84000.0}
     assert h.spot_moves(now + 6)[250] is None                                            # a socket silent 5 s is no move
     assert h.probabilities(now, dict(m, yes_bid=0.61, yes_ask=0.62))["spot_move"][250] == 9.0
+
+
+def test_the_kalshi_reader_tapes_the_depth_it_read(tmp_path):
+    from core.btc15.microtape import Microtape
+    now = 1_790_700_000.0
+
+    class K:
+        def current(self, t):
+            return {"ticker": "KXBTC15M-X", "open_ts": None, "close_ts": None, "yes_bid": 0.6, "yes_ask": 0.61,
+                    "levels": {"yes": [(0.6, 10.0)], "no": [(0.39, 20.0)]}}
+    h, m, _ = _harness(now, reference=K())
+    h.reference.current = lambda t: {"ticker": "KXBTC15M-X", "open_ts": m["open_ts"], "close_ts": m["close_ts"], "yes_bid": 0.6, "yes_ask": 0.61,
+                                     "levels": {"yes": [(0.6, 10.0)], "no": [(0.39, 20.0)]}}
+    h.microtape = Microtape(str(tmp_path / "micro.sqlite"), clock=lambda: now)
+    h._read_kalshi(now + 1, m["open_ts"], m["close_ts"])
+    h.microtape.drain()
+    rows = sqlite3.connect(h.microtape.path).execute("SELECT recv, ticker, side, price, size FROM kalshi_book ORDER BY side DESC").fetchall()
+    assert rows == [(now + 1, "KXBTC15M-X", "yes", 0.6, 10.0), (now + 1, "KXBTC15M-X", "no", 0.39, 20.0)]
+    assert h._kalshi_cache[3] == {"yes_bid": 0.6, "yes_ask": 0.61}                 # the cache contract is unchanged
