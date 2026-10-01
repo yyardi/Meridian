@@ -1,0 +1,30 @@
+# Kalshi Liquidity Incentive Program, PAPER scorer (2026-10-01): reads the venue's public program list and
+# its order books, scores a hypothetical resting quote of ours by the published rule every second, and
+# writes hourly aggregates to /opt/meridian/artifacts/lip. Places nothing; the key is used only to sign
+# the websocket handshake (the same KALSHI_* lines the BRTI relay reads from .env). docs/math/kalshi-lip-sizing.md.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.lip.yml up -d --no-deps lip-scorer
+services:
+  lip-scorer:
+    image: meridian-api:latest
+    container_name: meridian-lip-scorer
+    restart: unless-stopped
+    command: ["python", "-m", "core.kalshi.lip_scorer"]
+    working_dir: /app
+    mem_limit: 128m
+    volumes:
+      - /opt/meridian/core:/app/core:ro
+      - /opt/meridian/artifacts/lip:/data
+    environment:
+      KALSHI_API_KEY_ID: ${KALSHI_API_KEY_ID:-}
+      KALSHI_PRIVATE_KEY_B64: ${KALSHI_PRIVATE_KEY_B64:-}
+      MERIDIAN_LIP_SERIES: ${MERIDIAN_LIP_SERIES:-}
+      MERIDIAN_LIP_SIZES: ${MERIDIAN_LIP_SIZES:-200,500}
+      MERIDIAN_LIP_DB: /data/lip_scorer.sqlite
+      MERIDIAN_LIP_STATUS: /data/lip_status.json
+      PYTHONUNBUFFERED: "1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
