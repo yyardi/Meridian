@@ -274,6 +274,56 @@ races from AWS: tens of dollars a day on a real order engine with inventory on e
 The latency race is measured, not lost; the prize at this venue's spread and rebate is not an
 arm. Closed as such; the one-contract A/B remains the live read of the join arms.
 
+## The registered read (2026-10-01 13:20Z, the night from 17:18Z: 20 h, 71 windows)
+
+Read once, as registered on 2026-09-30 17:25Z (`analysis/btc15/maker_fill_toxicity.py`: X = $10
+over the 500 ms before the fill instant, 60-s markout primary). Population: every fee-0 fill
+of touch_maker, touch_maker_k and kalshi_requote on the 15m bot (176 fills with a spot read)
+and the hourly touch_maker (18).
+
+| 15m, markout | spot moved ≥ $10 against us within … before the fill | the rest |
+|---|---|---|
+| 60 s, 250 ms | n=49, **−5.5c**, t −3.4 | n=127, **−3.3c**, t −3.8 |
+| 60 s, 500 ms (registered) | n=51, **−4.9c**, t −3.1 | n=125, **−3.5c**, t −4.0 |
+| 60 s, 1000 ms | n=54, −4.9c, t −3.3 | n=122, −3.4c, t −3.9 |
+| 30 s, 500 ms | n=51, −4.4c, t −3.8 | n=125, −2.9c, t −4.4 |
+
+Hourly: 1 fill spot-preceded (−6.5c) against 17 (−0.9c, t −0.7) — nothing to read.
+
+**Decision, per the registration:** the condition was that the spot-preceded bucket carries
+the negative markouts *and the rest does not*. The first half holds (the bucket is 1.5–2c
+worse); the second does not — the rest is −3.5c at t −4. The trigger would remove about three
+in ten fills and a quarter of the loss and leave a maker that loses 3.5c a fill. It is not
+switched on: `touch_maker_t` and `touch_maker_kt` come out of the default arms before they
+ever run (the spec options stay, tested, for a future A/B with a different quote). This
+agrees with the continuous-making replay (−36c a window with the trigger and the rebate) and
+with the priority race (the prize at this spread is the rebate).
+
+**The rest of the night, same tape:**
+
+- **Spot → book lead-lag** (520k book messages): corr +0.25 at 100 ms, **+0.29 at 250 ms**,
+  +0.22 at 500 ms, +0.16 at 1 s, +0.11 at 2 s; reverse +0.13 at 250 ms. A taker 300 ms after a
+  ≥ $10 move: **−2.1c at 5 s (n=1,887, t −22), −2.4c at 30 s (t −12)**; after ≥ $40 moves,
+  −3.2c (n=41). Speed as a taker on this venue is closed, with power.
+- **The relay is the settlement number:** `last_60s_15m` at the close minus `expiration_value`
+  −$0.07 ± 0.24 (n=4); `avg_60s` at the open minus `strike` −$0.06 ± 0.40 (n=69); our
+  composite's `proxy_close` −$3.76 ± 3.07 (n=70) — its bias drifted from −$2.1 to −$3.8 over
+  the day. Receive minus CF calculation time 80 ms; 70,739 ticks, one socket close, zero gaps
+  over 3.3 s.
+- **Prints per window:** 15m median 5,045 prints and 220k contracts (p10 2,865, p90 6,440),
+  **1 window of 71 with zero prints** (the venue's mid-morning UTC board gap, STATUS §0d);
+  quietest hours 09–13Z (1,100–2,600 a window). Hourly median 2,954 prints, 85k contracts,
+  1 of 19 with zero.
+- **Fill audit** (`taker_fill_evidence.py`, maker fills included): 85 fills with a print at
+  the price on our side, 99 where prints had gone through the display before the fill instant,
+  9 with no print, 2 without a book message.
+
+Every channel on this venue's BTC 15-minute market is now measured for this stack and none
+prints: directional and cross-venue (STATUS §0cl, docs/math/btc15-v2-arms.md), the final
+minute, passive making at the back of the queue, first-in-queue making, and the spot
+trigger. The four live arms keep accruing at zero cost as the record; nothing is proposed for
+live money.
+
 ## Pending, for the operator
 
 Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
