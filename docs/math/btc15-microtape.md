@@ -336,6 +336,41 @@ lottery bid. Dollars resting on sure losers within a cent of zero: **$0 in every
 0.002/0.003 touches seen on 09-30 were the exception, not the rule, and carry no size. Nothing
 to sell to; closed. The read is one command and can be repeated on a full day's tape.
 
+## The same fill model on football (2026-10-01 18:30Z; three CFB Saturdays, 149 games; sizing, not a result)
+
+`analysis/btc15/sports_mm_replay.py` streams the ladder recorder's `slate_books_*` /
+`slate_trades_*` files and runs the BTC join arm's fill model on every slug with ≥ 50 prints
+(~1,400 slugs): one contract both sides, |pos| ≤ 1, inventory marked at the last mid, the
+venue's maker rebate credited **as the venue pays it — rounded to the nearest cent at each
+trade, so a one-contract fill at 50c earns $0.003 and rounds to nothing** (docs.polymarket.us/
+fees; exchange-wide, verified). Two policies: `join` at the touch (back of the queue), and
+`improve` one tick inside whenever the spread is ≥ 2 ticks (first in queue). `--strict`
+credits an improved quote only with prints strictly through its price: a print exactly AT our
+improved price means a resting order was already there (an incumbent), and that flow was theirs.
+Per slug-hour, winner markets, game-clustered SE, median slug-hour beside it:
+
+| slate (games) | policy | lenient | strict | median (strict) | capacity $ at print size, strict |
+|---|---|---:|---:|---:|---:|
+| CFB 09-19 a (45) | join | −8.0c ± 1.7 | −8.0 ± 1.7 | −1.2c | $174 |
+| CFB 09-19 a | improve | −6.9c ± 2.1 | **−10.3 ± 2.3** | −2.9c | $279 |
+| CFB 09-19 b (34) | join | +0.7c ± 6.6 | +0.7 ± 6.6 | −1.2c | $719 |
+| CFB 09-19 b | improve | +21.2c ± 18.4 | **+8.0 ± 15.0** | −4.0c | $1,063 |
+| CFB 09-26 (50) | join | −9.2c ± 1.8 | −9.2 ± 1.8 | −8.1c | $659 |
+| CFB 09-26 | improve | −8.8c ± 2.6 | **−12.6 ± 2.2** | −11.9c | $1,008 |
+
+Spreads (the `asc-` rungs, ~1,300 slugs) lose with power under both policies on every slate
+(join −4.8 to −8.4c ± ≤ 1.8; improve −8.4 to −14.2c).
+
+What the tail was: before the rounding, the `improve` cell read +1.6 / +56 / +5.8c, and a
+fill-by-fill trace (NC State–Vanderbilt, 2,022 fills in 1.1 h) showed two regimes — early,
+an inside quote round-tripping for ±0.5c while the trend eats it; late, a decided game's winner
+book 12c wide (0.87/0.99) with 1–7-contract retail prints on both sides, where an inside quote
+captures ~10c a round trip. The first regime's "edge" was the unrounded rebate (40–190 fills an
+hour × 0.3c); the second is real but is four games a Saturday, ~$1,000 at the takers' size
+under the strict rule (85–92 % of it in four games), and rests on being first inside a wide
+spread against an incumbent who re-improves within a message. **Not a programme**: no live
+arm is proposed; the capacity figure is the ceiling for anyone who wins that queue.
+
 ## Pending, for the operator
 
 Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
