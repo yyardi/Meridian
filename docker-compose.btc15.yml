@@ -76,6 +76,11 @@ services:
     environment:
       <<: *btc_env
       MERIDIAN_BTC15_HORIZON: 15m
+      # 2026-09-30 22:20Z, the operator's rule (retire what does not trade): the model is off
+      # here. Its per-window call was the only OpenAI spend (~$10/day) and the agent arm made
+      # two trades, both losers, in five hours of live prices. The makers need no model. To
+      # turn it back on, delete this line; the key and model id stay in .env.
+      MERIDIAN_BTC15_MODEL: ""
       MERIDIAN_BTC15_DECIDE_AT_S: ${MERIDIAN_BTC15_DECIDE_AT_S:-30}
       MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY_15M:-15}
       MERIDIAN_BTC15_SECOND_LOOK_S: "360"
