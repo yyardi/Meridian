@@ -202,6 +202,33 @@ the untouched `touch_maker` and `touch_maker_k`, so the difference on the same w
 trigger's value. `spot_pull_sides="both"` and `spot_rejoin="calm"` exist as options with no
 arm on them. Nothing on prod changes until the 12:05Z read confirms the shape on the night's n.
 
+## The final minute off the relay: closed on both venues (2026-10-01 01:40Z, 30 windows)
+
+With the relay's exact partial closing average in hand, the question was whether either venue
+still offers the loser once the average has decided the window. A first replay said yes
+(+12 to +46c) and was wrong twice over: it chose the side from the result, and it priced the
+remaining variance from the median absolute 1-s change of the smoothed index ($0.89) while the
+relay's realised moves are fat-tailed — sd $3.9 at 1 s, $12 at 10 s, $26.9 at 60 s, $36 at 2 min.
+Redone with the side chosen by p and the realised move curve as the variance (sizing only):
+
+| venue | margin | fired (of 30) | won | mean / contract | median τ, ask |
+|---|---:|---:|---:|---:|---|
+| Poly | 0.5c | 11 | 7 | −6.3c | 83 s, 0.58 |
+| Poly | 2c | 10 | 6 | −6.8c | 84 s, 0.57 |
+| Kalshi | 0.1c | 21 | 16 | −6.3c | 86 s, 0.975 |
+| Kalshi | 0.5c | 13 | 8 | −10.5c | 85 s, 0.72 |
+| Kalshi | 2c | 11 | 6 | −11.8c | 84 s, 0.56 |
+
+Calibration of the relay model over the last 90 s, pooled: where it says 0.6–0.9 the outcome
+rate is 0.61–0.68, where it says 0.9–1.0 it is 0.97. The venue's price is the better model of
+the partial average, and both venues track it within seconds (raw rows in the scratchpad
+`endgame_relay2.py`). Kalshi's book stays two-sided to the last seconds at deci-cent prices
+(0.002/0.003 five seconds out, 1915z) where the venue's is one-sided from ~10 s; the size
+resting there was not taped — `kalshi_book` in the microtape now records ten levels a side at
+every reader pass, so that one number can be read tomorrow. Also checked: the venue serves
+BTC up-or-down only (`cpc-eth-/sol-/xrp-updown-15m-…/book` 404 while BTC's answers), so there
+is no second asset to run the arms on.
+
 ## Pending, for the operator
 
 Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
