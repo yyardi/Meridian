@@ -371,6 +371,28 @@ under the strict rule (85–92 % of it in four games), and rests on being first 
 spread against an incumbent who re-improves within a message. **Not a programme**: no live
 arm is proposed; the capacity figure is the ceiling for anyone who wins that queue.
 
+## Gradient boosting on the 15-minute contract, one pre-stated run (2026-10-01 23:30Z; screen, not a result)
+
+The operator asked for XGBoost on the chart. `analysis/btc15/ml_walkforward.py`, on the same
+research set the 72-configuration logistic read used (4,263 settled Kalshi windows, 2026-08-14 →
+09-28, one row per window-minute with the quote at that minute): the earlier inputs plus RSI 14,
+MACD and its histogram, Bollinger %b, EMA 9/21 ratios, realised vol 15/60, returns at 1/5/15/60
+min, 1 h and 4 h range position, hour, weekday, minute, spread; with and without the market's own
+logit as a feature. Walk-forward by day (train on all prior days, ≥ 14; predict the day), XGBoost
+(depth 3, 300 trees, lr 0.05) and HistGradientBoosting; 37,584 out-of-sample rows over 32 days.
+
+| model | features | Brier | minus the market mid's | taker, best margin |
+|---|---|---:|---:|---:|
+| market mid | — | 0.1702 | — | — |
+| XGBoost | no price | 0.1738 | **+0.0036** | −0.37c (t −0.4) |
+| XGBoost | with the price | 0.1718 | **+0.0016** | −0.32c (t −0.4) |
+| HistGB | no price | 0.1739 | +0.0037 | −0.42c (t −0.5) |
+| HistGB | with the price | 0.1719 | +0.0017 | −0.32c (t −0.3) |
+
+Worse than the price at every minute (1, 4, 7, 10, 13), with or without the price given to the
+model; every taker rule on the models' probabilities negative. Technical features at minute
+resolution carry nothing the venue's price has not already priced. Closed; no paper arm.
+
 ## Pending, for the operator
 
 Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
