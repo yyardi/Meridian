@@ -229,6 +229,25 @@ every reader pass, so that one number can be read tomorrow. Also checked: the ve
 BTC up-or-down only (`cpc-eth-/sol-/xrp-updown-15m-…/book` 404 while BTC's answers), so there
 is no second asset to run the arms on.
 
+## Continuous making at the touch, sized on the tape (2026-10-01 02:00Z, 31 windows; sizing, not a result)
+
+`analysis/btc15/mm_replay.py`: one contract quoted at the venue's touch on both sides, re-joined
+at the back of the queue whenever the touch moves, filled by prints beyond the size ahead or by
+a trade-through (the arms' model), position capped at ±1, inventory settled at the result, the
+venue's maker rebate (0.0125·p(1−p)) credited per fill — the live ledgers book it at zero.
+
+| | fills / window | of which trade-throughs | net / window | with the rebate | adverse selection at 60 s |
+|---|---:|---:|---:|---:|---:|
+| touch maker | 74 | 27 | −74c ± 12 | −55c ± 11 | −29c |
+| with the spot trigger ($10 / 250 ms) | 67 | 22 | −53c ± 11 | −36c ± 10 | −25c |
+
+At ~5,000 prints a window a passive quote at the back of the touch queue fills every ten to
+fifteen seconds, and loses on average: the fills come when the market is moving through the
+level (a third are trade-throughs) and the half-spread earned on the rest does not cover the
+move that follows. The trigger removes about a third of the loss, not the sign. This is the
+tape's answer to "does market making print here"; the A/B arms give the live one, one contract
+a window, from the first restart after the 12:05Z read.
+
 ## Pending, for the operator
 
 Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
