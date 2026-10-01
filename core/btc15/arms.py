@@ -162,10 +162,18 @@ DEFAULT_ARMS = (
     # side is 1c or more below fair. One contract per window each, like every arm.
     ArmSpec("touch_maker", "mid", "join", 0.0),
     ArmSpec("touch_maker_k", "kalshi", "join", cents(1)),
-    # 2026-09-30 evening: the spot trigger as an A/B beside the two controls above. Interim
-    # read on three hours (36 fills): 60-s markouts -8.4c (n=16) on fills preceded by a >= $10
-    # coinbase move within 500 ms, -2.5c (n=20) on the rest. The registered read (12:05Z
-    # 2026-10-01) decides whether these stay; the controls are untouched either way.
+)
+
+#: The spot-trigger A/B (touch_maker_t / touch_maker_kt: the two join arms with
+#: spot_pull_usd=10) was built 2026-09-30 on an interim split of 36 fills (-8.4c on fills
+#: preceded by a >= $10 coinbase move within 500 ms, -2.5c on the rest) and gated on the
+#: registered read of the night (analysis/btc15/maker_fill_toxicity.py). The read, 2026-10-01
+#: 13:15Z, 168 fills scored at 60 s: spot-preceded -5.0c (n=49), the rest -3.4c (n=119),
+#: difference -1.6c (Welch t -0.9); the loss is everywhere, and splits by FILL TYPE instead
+#: (trade-throughs -5.1c, n=113; print fills -1.0c, n=71). The gate required the rest to carry
+#: no loss; it carries most of it. Not deployed. The spec options stay for a future read; no
+#: default arm carries them.
+SPOT_TRIGGER_AB = (
     ArmSpec("touch_maker_t", "mid", "join", 0.0, spot_pull_usd=10.0),
     ArmSpec("touch_maker_kt", "kalshi", "join", cents(1), spot_pull_usd=10.0),
 )

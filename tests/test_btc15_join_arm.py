@@ -130,9 +130,12 @@ def test_the_kalshi_gated_arm_quotes_a_side_only_when_kalshi_says_it_is_cheap(tm
 
 def test_the_join_arms_are_in_the_default_set_one_contract_each_and_describe_their_queue_model():
     names = [a.name for a in DEFAULT_ARMS]
-    assert names[-4:] == ["touch_maker", "touch_maker_k", "touch_maker_t", "touch_maker_kt"]
-    assert [a.spot_pull_usd for a in DEFAULT_ARMS[-4:]] == [0.0, 0.0, 10.0, 10.0]          # the controls untouched
-    assert DEFAULT_ARMS[-1].margin == DEFAULT_ARMS[-3].margin and DEFAULT_ARMS[-1].prob == "kalshi"
+    assert names[-2:] == ["touch_maker", "touch_maker_k"]
+    from core.btc15.arms import SPOT_TRIGGER_AB                       # built, read, not deployed (2026-10-01)
+    assert [a.name for a in SPOT_TRIGGER_AB] == ["touch_maker_t", "touch_maker_kt"]
+    assert all(a.spot_pull_usd == 10.0 for a in SPOT_TRIGGER_AB) and not {a.name for a in SPOT_TRIGGER_AB} & set(names)
+    assert all(a.spot_pull_usd == 0.0 for a in DEFAULT_ARMS)                              # no running arm carries the trigger
+    assert DEFAULT_ARMS[-1].margin == SPOT_TRIGGER_AB[-1].margin and DEFAULT_ARMS[-1].prob == "kalshi"
     control, gated = DEFAULT_ARMS[-2], DEFAULT_ARMS[-1]
     assert "joined to the venue's own touch" in control.describe() and "the control" in control.describe()
     assert "Kalshi's mid is 1¢ better" in gated.describe()
