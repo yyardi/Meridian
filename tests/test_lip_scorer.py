@@ -97,19 +97,26 @@ class FakeWS:
         self.closed.set()
 
 
-def test_subscribe_batches_and_a_gap_makes_the_socket_resubscribe_for_a_fresh_snapshot():
+def test_subscribe_batches_and_a_gap_opens_a_fresh_socket_whose_snapshot_replaces_the_book():
     tickers = [f"M{i}" for i in range(250)]
     msgs = subscribe_msgs(tickers)
     assert [len(m["params"]["market_tickers"]) for m in msgs] == [100, 100, 50]
     assert msgs[0]["params"]["channels"] == ["orderbook_delta"] and msgs[2]["id"] == 3
     books = Books()
-    ws = FakeWS([_snap("M1", [(0.4, 500.0)], [(0.59, 500.0)], seq=1), _delta("M1", "yes", 0.4, 10.0, seq=3)])
-    s = BookSocket(["M1"], books, open_socket=lambda: ws, clock=lambda: 7.0, sleep=lambda x: None)
+    # socket 1: a snapshot, then a delta that skips seq 2 -> the book is wrong from here;
+    # socket 2: the venue's fresh snapshot (a second subscribe on the same socket would be
+    # answered with an error, not a snapshot, so the recovery is a new socket)
+    ws1 = FakeWS([_snap("M1", [(0.4, 500.0)], [(0.59, 500.0)], seq=1), _delta("M1", "yes", 0.4, 10.0, seq=3)])
+    ws2 = FakeWS([_snap("M1", [(0.4, 777.0)], [(0.59, 500.0)], seq=1)])
+    sockets = [ws1, ws2]
+    s = BookSocket(["M1"], books, open_socket=lambda: sockets.pop(0), clock=lambda: 7.0, sleep=lambda x: None)
     s.start()
-    for _ in range(200):
-        if s.resubscribes >= 1:
+    for _ in range(300):
+        if s.resubscribes >= 1 and books.side("M1", "yes") == [(0.4, 777.0)]:
             break
         threading.Event().wait(0.01)
-    assert s.resubscribes == 1 and len(ws.sent) == 2 and ws.sent[1]["cmd"] == "subscribe"      # one initial, one after the gap
+    assert s.resubscribes == 1 and s.reconnects == 0                   # a gap is a fresh socket, not an error
+    assert len(ws1.sent) == 1 and len(ws2.sent) == 1 and ws2.sent[0]["cmd"] == "subscribe"   # one subscribe per socket
+    assert ws1.closed.is_set() and books.side("M1", "yes") == [(0.4, 777.0)]                 # the gapped delta never applied
     assert s.counters()["seq_gaps"] == 1 and s.counters()["books"] == 1
     s.request_stop()

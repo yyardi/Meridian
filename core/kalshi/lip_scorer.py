@@ -270,7 +270,7 @@ def subscribe_msgs(tickers: list[str]) -> list[dict]:
 
 class BookSocket:
     """Kalshi's one websocket, signed like the BRTI relay, subscribed to orderbook_delta for the
-    program markets; a seq gap triggers a fresh snapshot by resubscribing."""
+    program markets; a seq gap triggers a fresh socket (and so fresh snapshots)."""
 
     def __init__(self, tickers: list[str], books: Books, *, open_socket=None, clock=time.time, sleep=time.sleep,
                  max_backoff: float = 30.0) -> None:
@@ -302,8 +302,13 @@ class BookSocket:
             try:
                 self._session()
                 backoff = 1.0
-            except (ConnectionClosed, OSError, ValueError) as e:             # noqa: PERF203
+            except Exception as e:                                           # noqa: BLE001, PERF203
+                # ConnectionClosed/OSError are the expected ones; a malformed message raising
+                # KeyError/TypeError out of handle() must not end this daemon thread silently
+                # and leave the scorer ticking on frozen books.
                 self.last_error = f"{type(e).__name__}: {str(e)[:120]}"; self.reconnects += 1
+                if not isinstance(e, (ConnectionClosed, OSError, ValueError)):
+                    log.exception("book socket")
                 if self.stop.is_set():
                     return
                 self._sleep(backoff); backoff = min(backoff * 2, self.max_backoff)
@@ -317,9 +322,12 @@ class BookSocket:
                 msg = ws.recv_json()
                 self.msgs += 1; self.last_msg_at = self._clock()
                 if isinstance(msg, dict) and self.books.handle(msg, self.last_msg_at) == "gap":
+                    # A skipped seq means the book is wrong from here. A second subscribe on a
+                    # channel this socket already holds is answered by the venue with an error,
+                    # not a snapshot, so the recovery is a fresh socket: return, and run() opens
+                    # one (backoff 1 s) whose subscribes bring new snapshots for every batch.
                     self.resubscribes += 1
-                    for m in subscribe_msgs(self.tickers):               # a fresh snapshot for every batch
-                        ws.send_json(m)
+                    return
         finally:
             self._ws = None
             try:
