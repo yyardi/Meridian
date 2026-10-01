@@ -203,3 +203,32 @@ def test_the_order_books_levels_are_kept_best_first_with_sizes_for_the_depth_tap
     assert k["levels"] == {"yes": [(0.33, 50.0), (0.30, 100.0)], "no": [(0.66, 20.0), (0.65, 10.0)]}   # the 0.00-size level dropped
     assert book_levels(None) == {"yes": [], "no": []}
     assert _kalshi(book_status=500).current(O + 60)["levels"] is None
+
+
+def test_a_429_from_kalshi_starts_a_cool_down_in_which_nothing_is_asked_and_there_is_no_touch():
+    from core.btc15.kalshi import RATE_LIMIT_COOLDOWN_S
+    calls = []
+    clock = [1_790_700_000.0]
+
+    def handler(req):
+        calls.append(req.url.path)
+        if len(calls) == 1:
+            return httpx.Response(429, json={"error": "rate limited"})
+        listed = {"ticker": "KXBTC15M-26SEP302230-30", "status": "active", "floor_strike": 83410.72,
+                  "open_time": "2026-09-30T02:15:00Z", "close_time": "2026-09-30T02:30:00Z"}
+        if req.url.path.endswith("/orderbook"):
+            return httpx.Response(200, json={"orderbook_fp": {"yes_dollars": [["0.3300", "5"]], "no_dollars": [["0.6600", "5"]]}})
+        return httpx.Response(200, json={"markets": [listed]})
+    k = KalshiBTC(client=httpx.Client(transport=httpx.MockTransport(handler)), base="https://k.test/v2", clock=lambda: clock[0])
+    try:
+        k.current(O + 60)                                          # the list answers 429
+        raise AssertionError("a 429 must raise to the caller")
+    except httpx.HTTPStatusError:
+        pass
+    assert k.rate_limited == 1 and k.cooling_down()
+    n = len(calls)
+    assert k.current(O + 61) is None and len(calls) == n           # cooling down: no request at all
+    clock[0] += RATE_LIMIT_COOLDOWN_S + 1
+    assert not k.cooling_down()
+    q = k.current(O + 62)
+    assert q is not None and (q["yes_bid"], q["yes_ask"]) == (0.33, 0.34) and len(calls) == n + 2   # list + book again

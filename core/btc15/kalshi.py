@@ -23,6 +23,10 @@ SERIES = "KXBTC15M"
 #: it is re-read this often, and at once when it names no window for now. The touch is the
 #: order book's, read every call.
 LIST_CACHE_S = 10.0
+#: After a 429 from Kalshi, no request for this long: the reader thread asks the order book twice
+#: a second and the list every 10 s, and one 429 was logged on 2026-10-01 12:14:57Z. During the
+#: cool-down ``current`` returns None (no touch, the arms stand down) rather than retrying into a ban.
+RATE_LIMIT_COOLDOWN_S = 60.0
 BASE = os.environ.get("KALSHI_API_URL", "https://api.elections.kalshi.com/trade-api/v2")
 UNITS_PER_DOLLAR = 10_000
 
@@ -105,16 +109,25 @@ def book_touch(resp: dict | None) -> dict | None:
 class KalshiBTC:
     venue = "kalshi"
 
-    def __init__(self, client: httpx.Client | None = None, base: str = BASE) -> None:
+    def __init__(self, client: httpx.Client | None = None, base: str = BASE, clock=time.time) -> None:
         self._http = client or httpx.Client(timeout=10.0, headers={"User-Agent": "meridian-btc15/1"})
         self._base = base.rstrip("/")
         self._mult: tuple[float, Decimal] | None = None
         self._list: tuple[float, list] | None = None
+        self._clock = clock
+        self.cooldown_until: float = 0.0
+        self.rate_limited = 0                  # 429s seen
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         r = self._http.get(self._base + path, params=params)
+        if r.status_code == 429:
+            self.rate_limited += 1
+            self.cooldown_until = self._clock() + RATE_LIMIT_COOLDOWN_S
         r.raise_for_status()
         return r.json()
+
+    def cooling_down(self, now: float | None = None) -> bool:
+        return (self._clock() if now is None else now) < self.cooldown_until
 
     def current(self, now: float) -> dict | None:
         """The window trading now: active, open_time <= now < close_time, priced off its ORDER BOOK.
@@ -123,6 +136,8 @@ class KalshiBTC:
         2026-09-30, it held one price for a mean of 32 s (longest 58 s) while the order book
         changed every second, a median 4c apart (analysis/btc15/quote_freshness_probe.py). The
         touch here is the book's; if the book cannot be read, there is no touch, never the list's."""
+        if self.cooling_down():
+            return None                                      # a 429 within RATE_LIMIT_COOLDOWN_S: no request, no touch
         live = self._live_windows(now, fresh=False)
         if not live:
             live = self._live_windows(now, fresh=True)       # a window just opened: the cached list predates it
