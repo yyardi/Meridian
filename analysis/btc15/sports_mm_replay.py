@@ -33,6 +33,20 @@ import statistics
 HITS_BID = ("ORDER_INTENT_BUY_SHORT", "ORDER_INTENT_SELL_LONG")
 LIFTS_OFFER = ("ORDER_INTENT_BUY_LONG", "ORDER_INTENT_SELL_SHORT")
 REBATE = 0.0125
+
+
+def rebate_usd(price: float, qty: float) -> float:
+    """The venue's maker rebate on one trade: 0.0125 x qty x p x (1-p), rounded to the nearest cent
+    (banker's) AT THE TRADE (docs.polymarket.us/fees, 2026-09-25). A one-contract fill at 50c is
+    $0.003 and rounds to nothing; the rebate exists only from a few contracts a fill."""
+    x = REBATE * qty * price * (1 - price) * 100
+    n = math.floor(x)
+    frac = x - n
+    if abs(frac - 0.5) < 1e-9:
+        cents = n if n % 2 == 0 else n + 1
+    else:
+        cents = round(x)
+    return cents / 100
 MIN_PRINTS = 50
 
 
@@ -53,12 +67,16 @@ def grid_of(books: list) -> float:
     return fine
 
 
-def replay(books: list, prints: list, policy: str) -> dict:
+STRICT = False      # --strict: a print AT our improved price means a resting order was there (an incumbent); only prints strictly through our price fill us
+
+
+def replay(books: list, prints: list, policy: str, trace: int = 0) -> dict:
     """books: [(t, bid, ask, bs, as)], prints: [(t, price, qty, taker, maker)] for ONE slug."""
     pt = [p[0] for p in prints]
     quote = {"bid": None, "offer": None}
     pos = 0; cash = 0.0; fills = []; mids = []
     tick = grid_of(books)
+    traced = 0
     for i, (t, bid, ask, bs, asz) in enumerate(books):
         if bid is None or ask is None or ask <= bid:
             quote = {"bid": None, "offer": None}
@@ -72,14 +90,17 @@ def replay(books: list, prints: list, policy: str) -> dict:
             if q is None:
                 continue
             price, since, ahead, first = q
-            hit = 0.0
+            hit = 0.0; last_print = None
             for (pr_t, px, qty, ti, mi) in prints[lo:hi]:
                 if pr_t <= since or px is None or not qty:
                     continue
+                at_ours = abs(px - price) < 1e-9
+                if STRICT and first and at_ours:
+                    continue                                  # someone rested at our price: that print was theirs
                 if side == "bid" and px <= price + 1e-9 and (ti in HITS_BID or mi == "ORDER_INTENT_BUY_LONG"):
-                    hit += qty
+                    hit += qty; last_print = (px, qty, ti)
                 elif side == "offer" and px >= price - 1e-9 and (ti in LIFTS_OFFER or mi == "ORDER_INTENT_BUY_SHORT"):
-                    hit += qty
+                    hit += qty; last_print = (px, qty, ti)
             through = (ask <= price - tick + 1e-9) if side == "bid" else (bid >= price + tick - 1e-9)
             filled = through or (hit > 0 if first else hit > ahead)
             if filled and abs(pos + (1 if side == "bid" else -1)) <= 1:
@@ -87,7 +108,11 @@ def replay(books: list, prints: list, policy: str) -> dict:
                     pos += 1; cash -= price
                 else:
                     pos -= 1; cash += price
-                fills.append((t, side, price, mid, through))
+                fills.append((t, side, price, mid, through, (last_print[1] if last_print else 0.0)))
+                if traced < trace:
+                    traced += 1
+                    print(f"      fill {dt.datetime.fromtimestamp(t, dt.timezone.utc):%H:%M:%S.%f} {side:5s} @ {price:.3f}  book now {bid:.3f}/{ask:.3f}  "
+                          f"{'THROUGH' if through else 'print ' + str(last_print)}  pos {pos:+d}  cash {cash:+.3f}")
                 quote[side] = None
         # re-quote
         inside = policy == "improve" and (ask - bid) >= 2 * tick - 1e-9
@@ -106,16 +131,26 @@ def replay(books: list, prints: list, policy: str) -> dict:
     def mid_at(t):
         j = bisect.bisect_right(mt, t) - 1
         return mids[j][1] if j >= 0 else None
-    spread = 0.0; adverse = 0.0; rebate = 0.0
-    for (t, side, price, mid, through) in fills:
-        spread += (mid - price) if side == "bid" else (price - mid)
-        rebate += REBATE * price * (1 - price)
+    spread = 0.0; adverse = 0.0; rebate = 0.0; capacity = 0.0; cap_fills = 0
+    for (t, side, price, mid, through, qty) in fills:
+        edge = (mid - price) if side == "bid" else (price - mid)
+        spread += edge
+        rebate += rebate_usd(price, 1.0)                      # one contract: rounds to zero below ~4 contracts
         m60 = mid_at(t + 60)
+        a60 = ((m60 - mid) if side == "bid" else (mid - m60)) if m60 is not None else 0.0
         if m60 is not None:
-            adverse += (m60 - mid) if side == "bid" else (mid - m60)
+            adverse += a60
+        if not through and qty:
+            # what the fill was worth at the taker's own size (capped at 100 contracts): edge to the mid,
+            # the 60-s move, and the rebate, times the contracts that printed -- the capacity of the flow
+            capacity += (edge + a60) * min(qty, 100.0) + rebate_usd(price, min(qty, 100.0))
+            cap_fills += 1
     hours = max(1e-9, (mids[-1][0] - mids[0][0]) / 3600)
+    widths = sorted(b[2] - b[1] for b in books if b[1] is not None and b[2] is not None and b[2] > b[1])
     return {"fills": len(fills), "through": sum(1 for f in fills if f[4]), "net": net, "net_rebate": net + rebate,
-            "spread": spread, "adverse": adverse, "hours": hours}
+            "spread": spread, "adverse": adverse, "hours": hours, "rebate": rebate,
+            "width_med": widths[len(widths) // 2] if widths else None, "mid_med": statistics.median(m_[1] for m_ in mids),
+            "tick": tick, "capacity_usd": capacity, "cap_fills": cap_fills}
 
 
 def main(argv=None) -> int:
@@ -123,7 +158,15 @@ def main(argv=None) -> int:
     ap.add_argument("slate")
     ap.add_argument("--min-prints", type=int, default=MIN_PRINTS)
     ap.add_argument("--games", type=int, default=0)
+    ap.add_argument("--top", type=int, default=0, help="also print the N best and worst slugs per family/policy")
+    ap.add_argument("--trace", default=None, help="slug substring: print the first --trace-n fills of the improve policy")
+    ap.add_argument("--trace-n", type=int, default=25)
+    ap.add_argument("--dump", default=None, help="write per-slug rows as JSON lines here")
+    ap.add_argument("--strict", action="store_true", help="credit an improved quote only with prints strictly through its price")
     a = ap.parse_args(argv)
+    global STRICT
+    STRICT = a.strict
+    dump = open(a.dump, "w") if a.dump else None
     games = sorted(glob.glob(os.path.join(a.slate, "slate_trades_*.jsonl")))
     if a.games:
         games = games[:a.games]
@@ -161,9 +204,15 @@ def main(argv=None) -> int:
             fam = "winner" if s.startswith("aec-") else "spread" if s.startswith("asc-") else "other"
             ps = sorted(prints[s], key=lambda r: r[0]); bs = sorted(books[s], key=lambda r: r[0])
             for pol in ("join", "improve"):
-                r = replay(bs, ps, pol)
+                tr = a.trace_n if (a.trace and a.trace in s and pol == "improve") else 0
+                if tr:
+                    print(f"   trace {s} ({pol}): grid {grid_of(bs)}, {len(bs)} book msgs, {len(ps)} prints")
+                r = replay(bs, ps, pol, trace=tr)
                 if r:
+                    r["slug"] = s; r["policy"] = pol; r["family"] = fam; r["slate"] = os.path.basename(a.slate.rstrip("/"))
                     agg[(fam, pol)]["rows"].append(r)
+                    if dump:
+                        dump.write(json.dumps(r) + "\n")
             n_slugs += 1
     print(f"slate {a.slate}: {len(games)} games read, {n_slugs} slugs with >= {a.min_prints} prints")
     print("family  policy   slugs  fills/slug-h  through%  net/slug-h   with rebate     spread/slug-h  adverse60/slug-h   (per ONE contract quoted both sides, |pos|<=1)")
@@ -173,7 +222,15 @@ def main(argv=None) -> int:
         per = [r["net_rebate"] / r["hours"] for r in rows]
         se = 100 * statistics.pstdev(per) / math.sqrt(n) if n > 1 else float("nan")
         thr = sum(r["through"] for r in rows) / max(1, sum(r["fills"] for r in rows))
-        print(f"{fam:7s} {pol:8s} {n:5d}  {sum(r['fills'] for r in rows)/H:11.1f}  {100*thr:6.0f}%  {f('net'):+9.1f}c  {f('net_rebate'):+9.1f}c ± {se:.1f}  {f('spread'):+9.1f}c  {f('adverse'):+9.1f}c")
+        med = 100 * statistics.median(per)
+        print(f"{fam:7s} {pol:8s} {n:5d}  {sum(r['fills'] for r in rows)/H:11.1f}  {100*thr:6.0f}%  {f('net'):+9.1f}c  {f('net_rebate'):+9.1f}c ± {se:.1f} (median slug {med:+.1f}c)  {f('spread'):+9.1f}c  {f('adverse'):+9.1f}c")
+        if a.top:
+            ranked = sorted(rows, key=lambda r: r["net_rebate"] / r["hours"])
+            for tag, sel in (("worst", ranked[:a.top]), ("best", ranked[-a.top:])):
+                for r in sel:
+                    print(f"      {tag:5s} {r['slug'][-40:]:40s} {r['hours']:4.1f}h fills {r['fills']:4d} thr {r['through']:3d} "
+                          f"net+reb {100*r['net_rebate']/r['hours']:+7.1f}c/h spread {100*r['spread']/r['hours']:+6.1f} adv {100*r['adverse']/r['hours']:+6.1f} "
+                          f"reb {100*r['rebate']/r['hours']:+5.1f} | width med {r['width_med']} mid med {r['mid_med']:.3f} tick {r['tick']}")
     return 0
 
 
