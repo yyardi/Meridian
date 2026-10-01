@@ -432,7 +432,7 @@ Also from the snapshot: the venue listed **no 15-minute windows from 10:00Z to 1
 hours, zero prints, the 1100z book still 404). The bot logged nothing and resubscribed at
 12:00Z. A fill drought across every arm at once is a venue question before it is an arm one.
 
-## The hourly A/B (2026-10-01 ~16:25Z): the trigger's twin runs beside the control on btc1h
+## The hourly A/B (2026-10-01 16:10:27Z): the trigger's twin runs beside the control on btc1h
 
 The second session replayed one-contract making at the touch (back of the queue, |pos| ≤ 1,
 rebate credited; `analysis/btc15/mm_replay.py`, now with `--spot-from` because the hourly
@@ -453,7 +453,8 @@ carries spot from here. No model, no credits, paper.
 
 **The registered read, written before any of it exists.** Read once, at the earlier of 60
 settled fills on `touch_maker_t` or 2026-10-05 12:00Z, on a read-only snapshot of both
-hourly arm ledgers, fills from this restart onward only:
+hourly arm ledgers (`/data/polymarket-1h-arm-touch_maker.sqlite`, `...-touch_maker_t.sqlite`),
+fills from the restart at 2026-10-01 16:10:27Z onward only:
 
 1. Primary, the twin on its own: mean net per window to settlement at the ledger's zero-fee
    maker convention (the −1.25¢ rebate stated beside it, not added), with se and 95% CI,
@@ -465,6 +466,7 @@ hourly arm ledgers, fills from this restart onward only:
    on it except the operator's standing rule: the arm that loses is retired.
 3. Stated with every number: n fills, n windows, the restart timestamp, the snapshot path.
 
-Deployed by checkout of `docker-compose.btc15.yml` and a recreate of btc1h alone; the
-15-minute bot is untouched.
+Deployed at 16:10:27Z by checkout of `docker-compose.btc15.yml` (cd24250) and a recreate of btc1h
+alone; the 15-minute bot is untouched. One minute in: both arms up, sockets live, the trigger
+had crossed its threshold 4 times and pulled once, zero errors.
 
