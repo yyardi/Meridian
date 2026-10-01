@@ -34,11 +34,12 @@ TICK = 0.01
 REBATE = 0.0125
 
 
-def run(tape: str, ledger: str, x: float, w_ms: int, max_pos: int, trigger: bool) -> dict:
+def run(tape: str, ledger: str, x: float, w_ms: int, max_pos: int, trigger: bool, spot_from: str | None = None) -> dict:
     m = sqlite3.connect(f"file:{tape}?mode=ro", uri=True)
     c = sqlite3.connect(f"file:{ledger}?mode=ro", uri=True)
     c.row_factory = sqlite3.Row
-    spot = m.execute("SELECT recv, (bid+ask)/2 FROM spot WHERE exchange='coinbase' ORDER BY recv").fetchall()
+    sm = sqlite3.connect(f"file:{spot_from}?mode=ro", uri=True) if spot_from else m
+    spot = sm.execute("SELECT recv, (bid+ask)/2 FROM spot WHERE exchange='coinbase' ORDER BY recv").fetchall()
     st = [r[0] for r in spot]; sp = [r[1] for r in spot]
     first = m.execute("SELECT MIN(recv) FROM book_msgs").fetchone()[0]
     windows = [dict(r) for r in c.execute("SELECT * FROM windows WHERE result IN ('yes','no') AND open_ts > ? ORDER BY close_ts", (first,))]
@@ -130,9 +131,10 @@ def main(argv=None) -> int:
     ap.add_argument("tape"); ap.add_argument("ledger")
     ap.add_argument("--x", type=float, default=10.0); ap.add_argument("--w-ms", type=int, default=250)
     ap.add_argument("--max-pos", type=int, default=3)
+    ap.add_argument("--spot-from", default=None, help="microtape to read coinbase spot from (the hourly tape has none)")
     a = ap.parse_args(argv)
     for trig in (False, True):
-        o = run(a.tape, a.ledger, a.x, a.w_ms, a.max_pos, trig)
+        o = run(a.tape, a.ledger, a.x, a.w_ms, a.max_pos, trig, a.spot_from)
         n = len(o["net"])
         if not n:
             print("no windows"); return 0
