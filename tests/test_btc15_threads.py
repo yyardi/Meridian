@@ -280,3 +280,13 @@ def test_the_kalshi_reader_tapes_the_depth_it_read(tmp_path):
     rows = sqlite3.connect(h.microtape.path).execute("SELECT recv, ticker, side, price, size FROM kalshi_book ORDER BY side DESC").fetchall()
     assert rows == [(now + 1, "KXBTC15M-X", "yes", 0.6, 10.0), (now + 1, "KXBTC15M-X", "no", 0.39, 20.0)]
     assert h._kalshi_cache[3] == {"yes_bid": 0.6, "yes_ask": 0.61}                 # the cache contract is unchanged
+    # throttled: once per 10 s early in the window, every read inside the last 120 s
+    for t in (now + 1.5, now + 2.0, now + 9.0):
+        h._read_kalshi(t, m["open_ts"], m["close_ts"])
+    h._read_kalshi(now + 11.5, m["open_ts"], m["close_ts"])
+    close = m["close_ts"]
+    for t in (close - 100, close - 99.5, close - 99.0):
+        h._read_kalshi(t, m["open_ts"], m["close_ts"])
+    h.microtape.drain()
+    stamps = [r[0] for r in sqlite3.connect(h.microtape.path).execute("SELECT DISTINCT recv FROM kalshi_book ORDER BY recv")]
+    assert stamps == [now + 1, now + 11.5, close - 100, close - 99.5, close - 99.0]

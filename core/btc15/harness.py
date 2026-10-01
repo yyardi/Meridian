@@ -445,12 +445,28 @@ class Harness:
         q = None
         if r and r.get("open_ts") == open_ts and r.get("close_ts") == close_ts:
             q = {"yes_bid": r.get("yes_bid"), "yes_ask": r.get("yes_ask")}
-            if self.microtape is not None and r.get("levels"):
+            if self.microtape is not None and r.get("levels") and self._tape_depth_now(read_ts, close_ts):
                 try:
                     self.microtape.kalshi_book(r["ticker"], r["levels"], read_ts)
                 except Exception:                                # noqa: BLE001 -- the tape never stops the read
                     log.exception("kalshi book tape")
         self._kalshi_cache = (read_ts, open_ts, close_ts, q, id(self.reference))
+
+    #: Kalshi depth is taped at every read inside the last DEPTH_FULL_S of a window (where the
+    #: last tenths of a cent are the question) and once per DEPTH_SLOW_S before that: ten levels
+    #: a side at two reads a second would be ~3.5M rows a day; this is ~600k.
+    DEPTH_FULL_S = 120.0
+    DEPTH_SLOW_S = 10.0
+    _depth_taped_at: float = float("-inf")
+
+    def _tape_depth_now(self, now: float, close_ts: float | None) -> bool:
+        if close_ts is not None and close_ts - now <= self.DEPTH_FULL_S:
+            self._depth_taped_at = now
+            return True
+        if now - self._depth_taped_at >= self.DEPTH_SLOW_S:
+            self._depth_taped_at = now
+            return True
+        return False
 
     def start_kalshi_reader(self) -> None:
         """Kalshi's order book on its own thread every ``kalshi_every_s`` (2026-09-30: the read
