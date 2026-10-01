@@ -324,6 +324,18 @@ minute, passive making at the back of the queue, first-in-queue making, and the 
 trigger. The four live arms keep accruing at zero cost as the record; nothing is proposed for
 live money.
 
+## Kalshi's last seconds, read off the depth tape (2026-10-01 14:35Z; 5 windows)
+
+The last unmeasured number: how much rests on the LOSER at the last tenths of a cent on
+Kalshi's book in the final seconds (`analysis/btc15/kalshi_last_seconds.py` on the
+`kalshi_book` tape, running since the 13:21Z restart). In 4 of the 5 settled windows the
+losing side had **no resting bid at all** at 10, 5, 3 and 1 s before the close; in the fifth
+(1345z) the eventual loser's best bid was 0.80 with 3,146 contracts ten seconds out and 0.074
+one second out — a window that flipped in its final seconds, i.e. live uncertainty, not a
+lottery bid. Dollars resting on sure losers within a cent of zero: **$0 in every window.** The
+0.002/0.003 touches seen on 09-30 were the exception, not the rule, and carry no size. Nothing
+to sell to; closed. The read is one command and can be repeated on a full day's tape.
+
 ## Pending, for the operator
 
 Kalshi relays BRTI itself to any API key — websocket `wss://external-api-ws.kalshi.com/cfbenchmarks_value`,
