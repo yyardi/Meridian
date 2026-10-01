@@ -145,7 +145,6 @@ def cents(n: int) -> float:
 #: Kalshi taker runs at six margins side by side (2026-09-29); the joint quote tape
 #: replays any margin (analysis/btc15/replay_kalshi_margins.py).
 DEFAULT_ARMS = (
-    ArmSpec("llm_agent", "llm", "agent", 0.0),
     # The six Kalshi takers (2/3/4/5/6/8c) were retired 2026-09-30 ~17:30Z on the operator's
     # call: on live books the same-second Poly-vs-Kalshi gap is a median 0.4c and clears the
     # fee on 2 of 8,703 ticks, so they made 3/2/2/1/1/0 trades in 41 windows. The gap they had
@@ -177,7 +176,10 @@ DEFAULT_ARMS = (
 #:   llm_maker     78 trades  -5.9c           t -1.15
 #:   llm_taker     82 trades  -2.1c           t -0.43
 #:   mid_maker     72 trades -13.0c           t -2.71  (the control: resting orders get picked off)
-RETIRED_ARMS = ("kalshi_maker", "llm_maker", "llm_taker", "mid_maker",
+#: llm_agent retired 2026-09-30 22:20Z: two trades, both losers, in five hours of live prices,
+#: and the model's per-window call it rode on was the only OpenAI spend (~$10/day). The 15m
+#: bot's model is off in docker-compose.btc15.yml; the arm's ledger goes under retired/.
+RETIRED_ARMS = ("llm_agent", "kalshi_maker", "llm_maker", "llm_taker", "mid_maker",
                 "kalshi_taker", "kalshi_taker_3c", "kalshi_taker_wide", "kalshi_taker_5c", "kalshi_taker_6c",
                 "kalshi_taker_8c")
 

@@ -368,7 +368,7 @@ async function loadArms() {
     sel.dataset.want = want;
     sel.innerHTML = A.map((a) => `<option value="${esc(key(a))}">${esc(label(a))}</option>`).join("");
   }
-  if (!A.some((a) => key(a) === ARM)) { ARM = A.some((a) => a.name === "llm_agent") ? "llm_agent" : ""; }
+  if (!A.some((a) => key(a) === ARM)) { ARM = A.some((a) => a.name === "llm_agent") ? "llm_agent" : key(A[0]); }
   sel.value = ARM;
   $("arms").innerHTML = A.map((a) => {
     const rule = a.rule || (a.spec && a.spec.name ? describeSpec(a.spec) : "");
