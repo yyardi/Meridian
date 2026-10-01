@@ -431,3 +431,40 @@ Also from the snapshot: the venue listed **no 15-minute windows from 10:00Z to 1
 2026-10-01 (no `windows` rows for 1000z–1145z, the hourly bot's stream at zero in the same
 hours, zero prints, the 1100z book still 404). The bot logged nothing and resubscribed at
 12:00Z. A fill drought across every arm at once is a venue question before it is an arm one.
+
+## The hourly A/B (2026-10-01 ~16:25Z): the trigger's twin runs beside the control on btc1h
+
+The second session replayed one-contract making at the touch (back of the queue, |pos| ≤ 1,
+rebate credited; `analysis/btc15/mm_replay.py`, now with `--spot-from` because the hourly
+tape carried no spot) on the night's tapes: 15m, 71 windows, −43.8¢ ± 6.7 a window plain and
+−29.1¢ ± 5.9 with the trigger; **1h, 19 windows, −16.1¢ ± 11.6 plain and −0.5¢ ± 10.3 with
+the trigger** (7.8 trade-throughs a window against 20 on the 15m). A replay over recorded
+tapes is not a result and is not shown as one; it is used here for the one thing it can do,
+choose which configuration to run live. The hourly market is the first maker read that is
+not negative, and zero within ±20¢ a window is not money, so the question goes to the live
+record at zero cost.
+
+**What runs.** On btc1h, `touch_maker` (the control, unchanged, 23 fills since 09-30
+17:18Z) and `touch_maker_t` (identical but for the spot trigger: the threatened side is
+pulled when coinbase moves $10 within 250 ms, re-joined when the book re-prices a tick) on
+the same windows and the same book messages. Spot sockets are on for the hourly bot from
+this restart (the trigger is evaluated on the coinbase socket thread); the hourly tape also
+carries spot from here. No model, no credits, paper.
+
+**The registered read, written before any of it exists.** Read once, at the earlier of 60
+settled fills on `touch_maker_t` or 2026-10-05 12:00Z, on a read-only snapshot of both
+hourly arm ledgers, fills from this restart onward only:
+
+1. Primary, the twin on its own: mean net per window to settlement at the ledger's zero-fee
+   maker convention (the −1.25¢ rebate stated beside it, not added), with se and 95% CI,
+   n = windows with a twin fill. The twin is a candidate for anything beyond paper only if
+   the mean is positive and the CI excludes zero. Zero within the CI closes the hourly
+   maker channel as the 15m one is closed.
+2. Secondary, the trigger's value: twin − control per window, paired on the windows both
+   filled, mean ± se; and per-fill 60-s mark-out, twin vs control, Welch t. No decision rides
+   on it except the operator's standing rule: the arm that loses is retired.
+3. Stated with every number: n fills, n windows, the restart timestamp, the snapshot path.
+
+Deployed by checkout of `docker-compose.btc15.yml` and a recreate of btc1h alone; the
+15-minute bot is untouched.
+
