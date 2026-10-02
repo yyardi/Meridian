@@ -410,11 +410,25 @@ def once(cfg: dict) -> int:
     return 0
 
 
+def idle_status(now: float, series: list[str]) -> dict:
+    """The status written while no program is live (04-12Z for the gas series): markets 0 and the reason,
+    so a reader sees a fresh 'idle' instead of a stale file from the last scored second."""
+    return {"at": dt.datetime.fromtimestamp(now, dt.timezone.utc).isoformat(timespec="seconds"), "markets": 0,
+            "scored_this_second": 0, "idle": "no live liquidity programs for %s (the daily gas programs run 12:00Z-03:59Z); checking every 5 min" % ",".join(series[:3]),
+            "socket": {}, "implied_per_day": {"by_series": {}, "total": {}}}
+
+
+def write_status(path: str, st: dict) -> None:
+    with open(path, "w") as fh:
+        json.dump(st, fh, indent=1)
+
+
 def run(cfg: dict) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     progs = load_programs(cfg["series"])
     while not progs:
         log.warning("no live liquidity programs for %s right now (the daily gas programs run 12:00Z-03:59Z); retrying in 5 min", cfg["series"][:3])
+        write_status(cfg["status"], idle_status(time.time(), cfg["series"]))
         time.sleep(300)
         progs = load_programs(cfg["series"])
     log.info("lip scorer: %d program markets, series %s, sizes %s", len(progs), sorted({p['series'] for p in progs.values()}), cfg["sizes"])
@@ -433,8 +447,7 @@ def run(cfg: dict) -> int:
                 next_status = t0 + 60
                 st = {"at": dt.datetime.fromtimestamp(t0, dt.timezone.utc).isoformat(timespec="seconds"), "markets": len(progs),
                       "scored_this_second": n, "socket": sock.counters(t0), "implied_per_day": scorer.implied_per_day()}
-                with open(cfg["status"], "w") as fh:
-                    json.dump(st, fh, indent=1)
+                write_status(cfg["status"], st)
                 log.info("status %s", json.dumps({k: v for k, v in st.items() if k != "implied_per_day"}) + " implied " + json.dumps(st["implied_per_day"]["total"]))
             if t0 >= next_reload:
                 next_reload = t0 + cfg["reload_s"]
