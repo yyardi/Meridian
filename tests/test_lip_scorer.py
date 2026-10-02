@@ -8,7 +8,7 @@ import queue
 import sqlite3
 import threading
 
-from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, our_share, reference_and_score, subscribe_msgs)
+from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, idle_status, our_share, reference_and_score, subscribe_msgs, write_status)
 from core.polymarket.ws_min import ConnectionClosed
 
 
@@ -129,3 +129,12 @@ def test_an_empty_program_reload_keeps_live_programs_and_idles_only_when_they_al
     assert choose_programs({"M1": live["M1"], "M2": live["M2"]}, live, now=1500.0) == (live, "same")
     new = {"M3": {"series": "S", "end_ts": 9000.0}}
     assert choose_programs(new, live, now=2500.0) == (new, "changed")
+
+
+def test_the_idle_status_is_fresh_and_says_why(tmp_path):
+    # 2026-10-02 04:08-12:00Z on prod: the scorer waited for programs without writing status, so the health
+    # read saw a 5,269-s-old file from the last scored second and could not tell idle from dead
+    p = str(tmp_path / "lip_status.json"); write_status(p, idle_status(1_700_000_000.0, ["KXAAAGASDGA", "KXAAAGASDFL"]))
+    st = json.load(open(p))
+    assert st["markets"] == 0 and st["scored_this_second"] == 0 and st["at"] == "2023-11-14T22:13:20+00:00"
+    assert "no live liquidity programs" in st["idle"] and st["implied_per_day"]["total"] == {}
