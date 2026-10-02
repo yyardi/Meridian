@@ -112,11 +112,16 @@ def load_programs(series: list[str], http: httpx.Client | None = None, now: floa
     return out
 
 
-def choose_programs(new: dict[str, dict], old: dict[str, dict]) -> tuple[dict[str, dict], str]:
-    """Which program set the scorer keeps after a reload: the new one, unless it is empty -- the daily
-    programs roll over on the hour and the next day's are not live yet, or the endpoint answered
-    empty -- in which case the old one stands and the caller retries sooner. Returns (set, why)."""
+def choose_programs(new: dict[str, dict], old: dict[str, dict], now: float | None = None) -> tuple[dict[str, dict], str]:
+    """Which program set the scorer keeps after a reload. The new one when it differs; when it is
+    EMPTY: if every old program has ended (the daily gas programs run 12:00Z-03:59Z and the next
+    day's are created around 12:00Z, so 04-12Z has none and no one is paid) the set is genuinely
+    empty -> ({}, "ended"); if old programs are still inside their period the endpoint answered
+    empty -> keep them ("empty"). The caller retries sooner in both cases. Returns (set, why)."""
+    now = time.time() if now is None else now
     if not new:
+        if old and all(p.get("end_ts", 0) < now for p in old.values()):
+            return {}, "ended"
         return old, "empty"
     if set(new) != set(old):
         return new, "changed"
@@ -409,13 +414,16 @@ def run(cfg: dict) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     progs = load_programs(cfg["series"])
     while not progs:
-        log.warning("no live liquidity programs for %s right now (a rollover hour, or the endpoint); retrying in 5 min", cfg["series"][:3])
+        log.warning("no live liquidity programs for %s right now (the daily gas programs run 12:00Z-03:59Z); retrying in 5 min", cfg["series"][:3])
         time.sleep(300)
         progs = load_programs(cfg["series"])
     log.info("lip scorer: %d program markets, series %s, sizes %s", len(progs), sorted({p['series'] for p in progs.values()}), cfg["sizes"])
     books = Books()
     scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
     sock = BookSocket(sorted(progs), books).start()
+    # The implied figure in the status is a 24-h RATE (share x period reward / period days). The gas
+    # programs pay $100 a market over a 16-h period, so the money per calendar day is share x $100 a
+    # market, i.e. the rate x 16/24; the 48-h read integrates over live hours (docs/math/kalshi-lip-sizing.md).
     next_reload = time.time() + cfg["reload_s"]; next_status = 0.0
     while True:
         t0 = time.time()
@@ -431,12 +439,17 @@ def run(cfg: dict) -> int:
             if t0 >= next_reload:
                 next_reload = t0 + cfg["reload_s"]
                 try:
-                    chosen, why = choose_programs(load_programs(cfg["series"]), progs)
+                    chosen, why = choose_programs(load_programs(cfg["series"]), progs, t0)
                     if why == "empty":
-                        # 2026-10-02 04:01Z on prod: the reload returned none (the daily programs had rolled over on
-                        # the hour) and the scorer replaced 475 markets with 0 and scored nothing. An empty set never
-                        # replaces the scorer's now; the old one stands and the next look is in five minutes.
-                        log.warning("program reload returned none for %s; keeping %d, retrying in 5 min", cfg["series"][:3], len(progs))
+                        log.warning("program reload returned none while %d programs are still live; keeping them, retrying in 5 min", len(progs))
+                        next_reload = t0 + 300
+                    elif why == "ended":
+                        # the daily programs ended (gas: 03:59Z) and the next day's are not listed yet (~12:00Z):
+                        # nothing is paid in between, so nothing is scored; look every five minutes for the new ones
+                        if progs:
+                            log.info("all %d programs ended; idle until the next ones are listed (checking every 5 min)", len(progs))
+                            scorer.flush_all(); sock.request_stop()
+                            progs = {}; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
                         next_reload = t0 + 300
                     elif why == "changed":
                         log.info("programs changed: %d -> %d; restarting the socket", len(progs), len(chosen))

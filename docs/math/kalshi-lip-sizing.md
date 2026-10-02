@@ -15,7 +15,18 @@ open and two-sided depth ≥ Target Size exists; **fills do not matter**.
 On 2026-10-01 20:30Z: 8,140 active liquidity programs across 687 series, **$344,598 a day**;
 the slow families (daily state gas averages, rain, temperatures) $78,682 a day.
 
-## Share after the incumbent, per series (books read 20:40Z)
+**Correction, 2026-10-02 04:10Z, at the table it corrects.** The "pool $/day" and "$/day" columns
+below are 24-hour RATES (`period_reward ÷ period length`). The daily gas programs pay **$100 per
+market over a 16-hour period, 12:00Z → 03:59Z**, and the next day's programs are listed around
+12:00Z, so no one is paid 04–12Z: the money per calendar day is the rate × 16/24. Read every gas
+figure below at two thirds: GA $91 a day at 200 a side (not $136), FL $227, MD $236; the slow-series
+total ~$2,540 a day on $50.7k (not $3,807), the five best states ~$790 a day on ~$8.7k. The scorer's
+"implied $/day" in its status is the same rate; the 48-hour read integrates over live hours. Found
+when the scorer idled at 04:01Z: its reload returned no programs and, as first written, it replaced
+475 markets with none; it now keeps a live set through an empty answer and idles only when every
+program has ended (e238e50 and the commit after it).
+
+## Share after the incumbent, per series (books read 20:40Z; rates — see the correction above)
 
 A 200-contract (or 500) quote per side resting AT each side's reference price, scored against
 the incumbents' score at that instant (one or two makers resting 3k–26k a side), every snapshot

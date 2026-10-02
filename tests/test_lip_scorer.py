@@ -122,9 +122,10 @@ def test_subscribe_batches_and_a_gap_opens_a_fresh_socket_whose_snapshot_replace
     s.request_stop()
 
 
-def test_an_empty_program_reload_never_replaces_the_set():
-    old = {"M1": {"series": "S"}, "M2": {"series": "S"}}
-    assert choose_programs({}, old) == (old, "empty")                                  # 04:01Z 2026-10-02: 475 -> 0 must not happen
-    assert choose_programs({"M1": {"series": "S"}, "M2": {"series": "S"}}, old) == (old, "same")
-    new = {"M3": {"series": "S"}}
-    assert choose_programs(new, old) == (new, "changed")
+def test_an_empty_program_reload_keeps_live_programs_and_idles_only_when_they_all_ended():
+    live = {"M1": {"series": "S", "end_ts": 2000.0}, "M2": {"series": "S", "end_ts": 2000.0}}
+    assert choose_programs({}, live, now=1500.0) == (live, "empty")                   # the endpoint answered empty mid-period: keep
+    assert choose_programs({}, live, now=2500.0) == ({}, "ended")                     # 03:59Z passed, nothing listed yet: idle
+    assert choose_programs({"M1": live["M1"], "M2": live["M2"]}, live, now=1500.0) == (live, "same")
+    new = {"M3": {"series": "S", "end_ts": 9000.0}}
+    assert choose_programs(new, live, now=2500.0) == (new, "changed")
