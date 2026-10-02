@@ -12,8 +12,11 @@ score separately and your snapshot score is your share of each; your period rewa
 of all participants' snapshot scores × the period reward; a snapshot counts only if the market is
 open and two-sided depth ≥ Target Size exists; **fills do not matter**.
 
-On 2026-10-01 20:30Z: 8,140 active liquidity programs across 687 series, **$344,598 a day**;
-the slow families (daily state gas averages, rain, temperatures) $78,682 a day.
+On 2026-10-01 20:30Z: 8,140 active liquidity programs across 687 series, **$344,598 a day as a
+24-hour rate; $251,256 per calendar day** once each sub-day program's reward is counted once
+(a 15-minute program's $20 is a $1,920 "rate"; KXTEMPMIAH's ten programs are $1,000 a day, not
+$25,656). The slow families (daily state gas averages, rain, temperatures) $78,682 a day as a
+rate, about two thirds of that per calendar day.
 
 **Correction, 2026-10-02 04:10Z, at the table it corrects.** The "pool $/day" and "$/day" columns
 below are 24-hour RATES (`period_reward ÷ period length`). The daily gas programs pay **$100 per
