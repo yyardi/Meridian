@@ -112,6 +112,17 @@ def load_programs(series: list[str], http: httpx.Client | None = None, now: floa
     return out
 
 
+def choose_programs(new: dict[str, dict], old: dict[str, dict]) -> tuple[dict[str, dict], str]:
+    """Which program set the scorer keeps after a reload: the new one, unless it is empty -- the daily
+    programs roll over on the hour and the next day's are not live yet, or the endpoint answered
+    empty -- in which case the old one stands and the caller retries sooner. Returns (set, why)."""
+    if not new:
+        return old, "empty"
+    if set(new) != set(old):
+        return new, "changed"
+    return old, "same"
+
+
 # ------------------------------------------------------------------ books
 class Books:
     """Per-market yes/no bid levels from orderbook_snapshot + orderbook_delta, seq-tracked per sid."""
@@ -397,6 +408,10 @@ def once(cfg: dict) -> int:
 def run(cfg: dict) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     progs = load_programs(cfg["series"])
+    while not progs:
+        log.warning("no live liquidity programs for %s right now (a rollover hour, or the endpoint); retrying in 5 min", cfg["series"][:3])
+        time.sleep(300)
+        progs = load_programs(cfg["series"])
     log.info("lip scorer: %d program markets, series %s, sizes %s", len(progs), sorted({p['series'] for p in progs.values()}), cfg["sizes"])
     books = Books()
     scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
@@ -416,14 +431,21 @@ def run(cfg: dict) -> int:
             if t0 >= next_reload:
                 next_reload = t0 + cfg["reload_s"]
                 try:
-                    new = load_programs(cfg["series"])
-                    if set(new) != set(progs):
-                        log.info("programs changed: %d -> %d; restarting the socket", len(progs), len(new))
+                    chosen, why = choose_programs(load_programs(cfg["series"]), progs)
+                    if why == "empty":
+                        # 2026-10-02 04:01Z on prod: the reload returned none (the daily programs had rolled over on
+                        # the hour) and the scorer replaced 475 markets with 0 and scored nothing. An empty set never
+                        # replaces the scorer's now; the old one stands and the next look is in five minutes.
+                        log.warning("program reload returned none for %s; keeping %d, retrying in 5 min", cfg["series"][:3], len(progs))
+                        next_reload = t0 + 300
+                    elif why == "changed":
+                        log.info("programs changed: %d -> %d; restarting the socket", len(progs), len(chosen))
                         scorer.flush_all()
-                        progs = new; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
+                        progs = chosen; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
                         sock.request_stop(); sock = BookSocket(sorted(progs), books).start()
                 except Exception:                                        # noqa: BLE001
                     log.exception("program reload")
+                    next_reload = t0 + 300
         except Exception:                                                # noqa: BLE001 -- a bad second never takes the service down
             log.exception("tick")
         time.sleep(max(0.0, 1.0 - (time.time() - t0)))
