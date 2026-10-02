@@ -8,7 +8,7 @@ import queue
 import sqlite3
 import threading
 
-from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, our_share, reference_and_score, subscribe_msgs)
+from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, our_share, reference_and_score, subscribe_msgs)
 from core.polymarket.ws_min import ConnectionClosed
 
 
@@ -120,3 +120,11 @@ def test_subscribe_batches_and_a_gap_opens_a_fresh_socket_whose_snapshot_replace
     assert ws1.closed.is_set() and books.side("M1", "yes") == [(0.4, 777.0)]                 # the gapped delta never applied
     assert s.counters()["seq_gaps"] == 1 and s.counters()["books"] == 1
     s.request_stop()
+
+
+def test_an_empty_program_reload_never_replaces_the_set():
+    old = {"M1": {"series": "S"}, "M2": {"series": "S"}}
+    assert choose_programs({}, old) == (old, "empty")                                  # 04:01Z 2026-10-02: 475 -> 0 must not happen
+    assert choose_programs({"M1": {"series": "S"}, "M2": {"series": "S"}}, old) == (old, "same")
+    new = {"M3": {"series": "S"}}
+    assert choose_programs(new, old) == (new, "changed")
