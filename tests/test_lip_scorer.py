@@ -8,7 +8,7 @@ import queue
 import sqlite3
 import threading
 
-from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, idle_status, our_share, reference_and_score, subscribe_msgs, write_status)
+from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, idle_status, our_share, reference_and_score, subscribe_msgs, write_status, wait_for_programs)
 from core.polymarket.ws_min import ConnectionClosed
 
 
@@ -138,3 +138,20 @@ def test_the_idle_status_is_fresh_and_says_why(tmp_path):
     st = json.load(open(p))
     assert st["markets"] == 0 and st["scored_this_second"] == 0 and st["at"] == "2023-11-14T22:13:20+00:00"
     assert "no live liquidity programs" in st["idle"] and st["implied_per_day"]["total"] == {}
+
+
+def test_the_startup_wait_survives_a_failed_fetch_and_an_empty_answer_and_writes_idle_status():
+    answers = [RuntimeError("429 Too Many Requests"), {}, {"M1": {"series": "S"}}]
+    slept, written = [], []
+
+    def load(series):
+        a = answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    cfg = {"series": ["S"], "status": "unused"}
+    out = wait_for_programs(cfg, load=load, sleep=slept.append, clock=lambda: 1.0, status=lambda path, st: written.append(st))
+    assert out == {"M1": {"series": "S"}}
+    assert slept == [600, 300]                                           # a failure waits longer than an empty answer
+    assert len(written) == 2 and all(w["markets"] == 0 and w["idle"] for w in written)
+

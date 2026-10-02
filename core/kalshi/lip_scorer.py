@@ -423,14 +423,32 @@ def write_status(path: str, st: dict) -> None:
         json.dump(st, fh, indent=1)
 
 
+def wait_for_programs(cfg: dict, load=None, sleep=time.sleep, clock=time.time, status=None) -> dict[str, dict]:
+    """The live program set, waiting while there is none (04-12Z for the gas series) and
+    surviving a failed fetch. Overnight 2026-10-02 three fetches failed (a 429 at 06:08Z, two
+    more at 10:49Z/11:14Z) and each one ended the process -- docker restarted it, nothing was
+    paid in those hours, but the hourly reload during paid hours is guarded and this was not.
+    A failure logs one warning and waits 10 min; an empty answer waits 5 min; both write the
+    idle status so a reader sees idle, not dead."""
+    load = load or load_programs
+    while True:
+        try:
+            progs = load(cfg["series"])
+        except Exception as e:                                           # noqa: BLE001
+            log.warning("program list fetch failed (%s: %s); retrying in 10 min", type(e).__name__, str(e)[:120])
+            (status or write_status)(cfg["status"], idle_status(clock(), cfg["series"]))
+            sleep(600)
+            continue
+        if progs:
+            return progs
+        log.warning("no live liquidity programs for %s right now (the daily gas programs run 12:00Z-03:59Z); retrying in 5 min", cfg["series"][:3])
+        (status or write_status)(cfg["status"], idle_status(clock(), cfg["series"]))
+        sleep(300)
+
+
 def run(cfg: dict) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
-    progs = load_programs(cfg["series"])
-    while not progs:
-        log.warning("no live liquidity programs for %s right now (the daily gas programs run 12:00Z-03:59Z); retrying in 5 min", cfg["series"][:3])
-        write_status(cfg["status"], idle_status(time.time(), cfg["series"]))
-        time.sleep(300)
-        progs = load_programs(cfg["series"])
+    progs = wait_for_programs(cfg)
     log.info("lip scorer: %d program markets, series %s, sizes %s", len(progs), sorted({p['series'] for p in progs.values()}), cfg["sizes"])
     books = Books()
     scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
