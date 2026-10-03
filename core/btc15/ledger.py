@@ -135,6 +135,10 @@ class Ledger:
             self._conn.execute("INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                                (key, value))
 
+    def delete(self, key: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM state WHERE key = ?", (key,))
+
     def query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         """Every row of a SELECT, under the lock. The only door for readers outside this module."""
         with self._lock:
@@ -338,7 +342,15 @@ class Ledger:
 
     def can_trade(self, mode: str, next_cost_u: int, limit_u: int = DEFAULT_LIMIT_U) -> tuple[bool, str]:
         with self._lock:
-            if self.halted(mode):
+            h = self.halted(mode)
+            if h is not None and int(h.get("limit_u") or 0) < limit_u:
+                # The latch was set under a lower limit than the one now in force (2026-10-03:
+                # the $10 paper guard had latched every 15-minute arm and the hourly control,
+                # stopping the research record at the moment it was answering). A raised limit
+                # voids it; the ledger rows it was computed from are untouched.
+                self.delete(f"halted_{mode}_{self.epoch(mode)}")
+                h = None
+            if h is not None:
                 return False, "halted"
             a = self.account(mode)
             if a["peak_u"] - (a["realized_u"] - next_cost_u) > limit_u:

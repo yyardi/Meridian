@@ -348,7 +348,7 @@ class BookSocket:
             self._ws = None
             try:
                 ws.close()
-            except OSError:
+            except Exception:                                            # noqa: BLE001 -- closing a dead socket
                 pass
 
     def request_stop(self) -> None:

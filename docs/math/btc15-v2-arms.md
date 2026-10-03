@@ -470,3 +470,21 @@ Deployed at 16:10:27Z by checkout of `docker-compose.btc15.yml` (cd24250) and a 
 alone; the 15-minute bot is untouched. One minute in: both arms up, sockets live, the trigger
 had crossed its threshold 4 times and pulled once, zero errors.
 
+## The paper guard halted the record (found 2026-10-03 16:40Z)
+
+The $10 drawdown guard, the operator's live-money rule, also governed the paper arms, and it
+latched them one by one as their paper losses reached $10 below peak: `touch_maker_k`
+2026-10-02 15:30Z, `kalshi_requote` 17:31Z, `touch_maker` 23:00Z, and the hourly control
+`touch_maker` 2026-10-03 13:00Z. Each kept deciding and computing fills that the ledger then
+refused (status `not_filled` with a fill-shaped response), so the standings showed a day of
+"no new trades" that was the guard, not the market: the venue's touch size, spread and print
+flow were unchanged. The feeds were fine.
+
+Fixed: paper defaults to a $10,000 allocation (live stays $10; `MERIDIAN_BTC15_DRAWDOWN_USD`
+in `.env` still overrides both), and a latch recorded under a lower limit is void once a higher
+one is in force, so the ledgers resume without a new epoch and nothing recorded changes.
+Consequences for the reads: the 15-minute arms have a hole from their latch times to the
+restart; **the hourly A/B's control was latched 2026-10-03 13:00:31Z to the restart while the
+twin kept filling, so the paired secondary excludes windows in that span** and the primary (the
+twin on its own) is unaffected. The fills refused in the hole are not reconstructed.
+
