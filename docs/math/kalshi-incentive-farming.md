@@ -103,9 +103,14 @@ Deployed 2026-10-03 19:24:25Z as kalshi-farm-scorer; first minute, 45 Coin Race 
 registered 1000 → $4,836/day, f1000 → $8,577, f1000c → $3,603, f300c → $519, before anyone
 responds. Reads: 12:05Z (this session) and 12:20Z (Manager), same terms, once each:
 
-1. Coin Race, `f1000c`: implied $/day = Σ over market-hours of (summed share ÷ seconds) × $1,920,
-   the valid fraction, and the fraction of seconds a side was disqualified. **Go to the live step if
-   ≥ $2,000/day** (a fifth of the pool after the leading-coin sides are skipped) **with valid ≥ 0.8**.
+1. Coin Race, `f1000c`: paper reward per market-window = (summed share ÷ seconds scored) × $20 ×
+   (seconds scored ÷ 900), summed over every market-window in the run and **divided by the run's
+   elapsed days** — never Σ(share × per_day_usd) across windows of different quarter hours, which
+   counts each window as if it were live all day (the gas read's first pass summed 2.3 days of
+   markets and read 3× high). Also the valid fraction and the fraction of seconds a side was
+   disqualified. **Go to the live step if ≥ $2,000/day** (a fifth of the pool after the
+   leading-coin sides are skipped) **with valid ≥ 0.8**. The scorer's own `implied_per_day` is a
+   rate from the current hour's accumulators and is NOT the read.
 2. FX/metals, same key per series; list those ≥ $400/day.
 3. Fill tail re-read on the same windows from public trades (the table above, extended): the
    p90 and max per-window loss at a 1000-lot in front must stay under $15 and $50.
