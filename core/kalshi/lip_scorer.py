@@ -279,8 +279,8 @@ class Scorer:
 SUB_BATCH = int(os.environ.get("MERIDIAN_LIP_SUB_BATCH") or 100)
 
 
-def subscribe_msgs(tickers: list[str]) -> list[dict]:
-    return [{"id": i + 1, "cmd": "subscribe", "params": {"channels": ["orderbook_delta"], "market_tickers": tickers[j:j + SUB_BATCH]}}
+def subscribe_msgs(tickers: list[str], channels: tuple[str, ...] = ("orderbook_delta",)) -> list[dict]:
+    return [{"id": i + 1, "cmd": "subscribe", "params": {"channels": list(channels), "market_tickers": tickers[j:j + SUB_BATCH]}}
             for i, j in enumerate(range(0, len(tickers), SUB_BATCH))]
 
 
@@ -289,8 +289,8 @@ class BookSocket:
     program markets; a seq gap triggers a fresh socket (and so fresh snapshots)."""
 
     def __init__(self, tickers: list[str], books: Books, *, open_socket=None, clock=time.time, sleep=time.sleep,
-                 max_backoff: float = 30.0) -> None:
-        self.tickers, self.books = tickers, books
+                 max_backoff: float = 30.0, channels: tuple[str, ...] = ("orderbook_delta",)) -> None:
+        self.tickers, self.books, self.channels = tickers, books, channels
         self._open_socket = open_socket or self._default_socket
         self._clock, self._sleep, self.max_backoff = clock, sleep, max_backoff
         self.stop = threading.Event()
@@ -332,7 +332,7 @@ class BookSocket:
     def _session(self) -> None:
         ws = self._open_socket(); self._ws = ws
         try:
-            for m in subscribe_msgs(self.tickers):
+            for m in subscribe_msgs(self.tickers, self.channels):
                 ws.send_json(m)
             while not self.stop.is_set():
                 msg = ws.recv_json()
