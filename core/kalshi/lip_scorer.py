@@ -80,8 +80,51 @@ def reference_and_score(levels: list[tuple[float, float]], target: float, discou
 
 
 def our_share(q: float, incumbent_score: float) -> float:
-    """A quote of q contracts resting AT the reference: full credit, share of that side's score."""
+    """A quote of q contracts resting AT the reference: full credit, share of that side's score.
+    This is the REGISTERED estimator of the 2026-10-01 sizing and the 48-h read: it divides by the
+    whole ladder's discounted size. The venue scores only the orders needed to reach the Target
+    Size (help article 13823851, read 2026-10-03): see share_qualifying for that rule."""
     return q / (q + incumbent_score) if q > 0 else 0.0
+
+
+def share_qualifying(levels: list[tuple[float, float]], q: float, target: float, discount: float, improve: bool = False) -> tuple[float, float, float]:
+    """Our share of one side under the rule as the venue states it (help article 13823851):
+    "Kalshi scores every resting order that helps reach the Target Size on its side"; "if a side
+    never reaches the Target Size, no orders on that side qualify"; orders at or better than the
+    reference get 1.0, k ticks below get discount^k; the reference is the first level, walking down
+    from the best bid, whose cumulative size reaches target/5 -- computed WITH our order resting.
+    Our q rests at the current reference (improve=False) or one tick better (improve=True). A book
+    level is treated as one order: if any of it is needed to reach the target the whole level
+    qualifies (conservative for us; the feed shows levels, not orders). Returns
+    (share, reference price, incumbents' qualifying discounted size)."""
+    if q <= 0:
+        return 0.0, None, 0.0
+    base_ref, _, _ = reference_and_score(levels, target, discount)
+    if base_ref is None:
+        ours = 0.50 if not improve else 0.50                 # an empty side: we are the book; price is nominal
+    else:
+        ours = round(base_ref + (0.01 if improve else 0.0), 2)
+    book = sorted(levels + [(ours, q)], key=lambda pq: -pq[0])    # stable: at an equal price the incumbents are ahead of us
+    if sum(sz for _, sz in book) < target:                        # the side never reaches the target: nothing qualifies
+        return 0.0, None, 0.0
+    cum = 0.0; ref = None                                         # the reference with us in the book
+    for p, sz in book:
+        cum += sz
+        if cum >= target / 5:
+            ref = p; break
+    # qualifying orders: walking down, every level until the cumulative reaches the target
+    cum = 0.0; inc = 0.0; mine = 0.0
+    for p, sz in book:
+        k = round((ref - p) * 100); w = 1.0 if k <= 0 else discount ** k
+        if p == ours and sz == q and mine == 0.0:
+            mine = q * w
+        else:
+            inc += sz * w
+        cum += sz
+        if cum >= target:
+            break
+    tot = mine + inc
+    return (mine / tot if tot > 0 else 0.0), ref, inc
 
 
 # ------------------------------------------------------------------ programs
