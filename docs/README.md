@@ -116,3 +116,4 @@ One doc per tool: what it does, why it was chosen, what it replaced.
 New to the project? The root **[README](../README.md)**, then **[STATUS.md](../STATUS.md)** from §0cd on, then **[findings.md](findings.md)** and the "Now" table above.
 
 Want the history? **[how-it-all-works.md](how-it-all-works.md)** → **[math/market-shrinkage.md](math/market-shrinkage.md)** → **[math/calibration-problem.md](math/calibration-problem.md)**: how the first phase worked, and why forecasting the WNBA better than the market was not where the edge was.
+- [cross-venue-inplay-football.md](math/cross-venue-inplay-football.md) — Polymarket vs Kalshi in play at message cadence, registered 10-02; read Monday 10-05
