@@ -107,6 +107,29 @@ def test_the_guard_latches_when_the_next_trade_alone_could_breach_and_stays_latc
     assert fid is None and why == "halted"
 
 
+def test_a_latch_recorded_under_a_lower_limit_is_void_once_the_limit_is_raised(led):
+    for i in range(19):
+        fid, _ = led.record_fill("paper", f"L{i}", "YES", 5000, 200)
+        led.settle(fid, "no")
+    fid, why = led.record_fill("paper", "L19", "YES", 6000, 200)
+    assert fid is None and why.startswith("latched") and led.halted("paper")["limit_u"] == DEFAULT_LIMIT_U
+    fid, why = led.record_fill("paper", "L20", "YES", 6000, 200)          # still $10: stays latched
+    assert fid is None and why == "halted"
+    fid, why = led.record_fill("paper", "L21", "YES", 6000, 200, limit_u=10000 * UNIT)   # the paper default now
+    assert fid and why == "filled" and led.halted("paper") is None        # voided, the record continues
+    assert led.account("paper")["settled"] == 19                          # nothing that was recorded changed
+
+
+def test_the_guard_defaults_to_ten_dollars_live_and_ten_thousand_on_paper(monkeypatch):
+    for k in ("MERIDIAN_BTC15_DRAWDOWN_USD", "MERIDIAN_BTC15_MODE"):
+        monkeypatch.delenv(k, raising=False)
+    assert Settings.from_env().limit_u == 10000 * UNIT
+    monkeypatch.setenv("MERIDIAN_BTC15_MODE", "live")
+    assert Settings.from_env().limit_u == 10 * UNIT
+    monkeypatch.setenv("MERIDIAN_BTC15_DRAWDOWN_USD", "25")
+    assert Settings.from_env().limit_u == 25 * UNIT
+
+
 def test_the_drawdown_is_from_the_peak_not_from_the_start(led):
     for i in range(10):                                     # win ten at 50c: +$4.80
         fid, _ = led.record_fill("paper", f"W{i}", "YES", 5000, 200)

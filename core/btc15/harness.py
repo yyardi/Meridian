@@ -107,7 +107,11 @@ class Settings:
             mode=(e("MERIDIAN_BTC15_MODE") or "paper").lower(),
             decide_at_s=float(e("MERIDIAN_BTC15_DECIDE_AT_S") or 30),
             min_lead_s=float(e("MERIDIAN_BTC15_MIN_LEAD_S") or 90),
-            limit_u=int(Decimal(e("MERIDIAN_BTC15_DRAWDOWN_USD") or "10") * UNIT),
+            # The $10 drawdown guard is the operator's live-money rule. The paper arms are the
+            # research record, and at $10 the guard latched every one of them on 2026-10-02/03
+            # with the record half-written; paper defaults to $10,000 unless the env says otherwise.
+            limit_u=int(Decimal(e("MERIDIAN_BTC15_DRAWDOWN_USD")
+                                or ("10" if (e("MERIDIAN_BTC15_MODE") or "paper").lower() == "live" else "10000")) * UNIT),
             reflect=(e("MERIDIAN_BTC15_REFLECT") or "1") != "0",
             status_path=e("MERIDIAN_BTC15_STATUS") or "/data/status.json",
             venue=(e("MERIDIAN_BTC15_VENUE") or "polymarket").lower(),

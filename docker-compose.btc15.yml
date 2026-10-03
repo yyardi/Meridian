@@ -47,7 +47,10 @@ x-btc-env: &btc_env
   # opens only the public markets socket and has no order path.
   POLYMARKET_KEY_ID: ${POLYMARKET_KEY_ID:-}
   POLYMARKET_SECRET_KEY: ${POLYMARKET_SECRET_KEY:-}
-  MERIDIAN_BTC15_DRAWDOWN_USD: "10"
+  # 2026-10-03: unset here so the code's default applies -- $10 for live money, $10,000 for the
+  # paper record (the $10 guard had latched every paper arm with the record half-written); a
+  # number in .env still overrides both.
+  MERIDIAN_BTC15_DRAWDOWN_USD: ${MERIDIAN_BTC15_DRAWDOWN_USD:-}
   MERIDIAN_BTC15_MAX_USD_PER_DAY: ${MERIDIAN_BTC15_MAX_USD_PER_DAY:-10}
   MERIDIAN_BTC15_MAX_TOKENS_PER_DAY: ${MERIDIAN_BTC15_MAX_TOKENS_PER_DAY:-1500000}
   MERIDIAN_BTC15_MAX_OUTPUT_TOKENS: ${MERIDIAN_BTC15_MAX_OUTPUT_TOKENS:-4000}
