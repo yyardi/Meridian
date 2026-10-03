@@ -128,3 +128,57 @@ and the incumbents' median score within 2× of the 20:40Z read; if it is, the op
 on a Kalshi account and collateral (the live path does not exist and is live money); if it is not,
 this closes in one line. The paper number cannot see fills; the live step's first registered read
 is fills per day per state at the smallest size, before any scaling.
+
+## The 48-hour read (2026-10-03 23:10Z, run once as registered)
+
+Snapshot of `lip_scorer.sqlite` at 23:10:43Z (copied to a mktemp dir, read from the copy); 1,375
+program markets, 15,040 hourly rows, 34 paid hours scored: 2026-10-01 23:01–04:00Z (the first
+window, joined 5 h before its end), 10-02 12:00–04:00Z (a full 16-hour window) and 10-03
+12:00–22:00Z (11 of 16 hours, the window still running at read time). The scorer ran every paid
+hour it was up for (0 reconnects, 0 sequence gaps over the 48 h; the 04–12Z idle hours are the
+venue's, not ours). Markets of different program days are summed per day and never across days;
+the first look at `lip_status.json` at the same minute agreed with the hourly rows.
+
+**(1) Implied $/day at the registered estimator (q at the reference, share of the whole discounted
+ladder, a lower bound on the term sheet's share).** Figures are the program's 24-h RATE; the gas
+money per calendar day is × 16/24.
+
+| program day | hours | all 25 states @200 | @500 | five best @200 (rate / calendar) | five best, valid |
+|---|--:|--:|--:|---|---|
+| 10-01 (partial) | 5 | $1,923 | $4,279 | GA, NY, TX, FL, OH: $495 / $330 | 0.66–0.95 |
+| 10-02 (full) | 16 | $2,510 | $5,659 | OH 225, MI 183, OR 145, FL 139, CA 128: **$819 / $546** | 0.85–0.95 |
+| 10-03 (11 of 16 h) | 11 | $2,578 | $5,701 | GA 260, OH 181, FL 120, MD 113, NV 108: **$782 / $522** | 0.82–0.87 |
+
+All 25 states at 200 a side are worth about $1,700 a calendar day on the paper rule; at 500 a
+side about $3,800 (collateral roughly 2.5× the 200 figure). The five best states move from day to
+day (GA and OH are in both full days; MI, OR, CA on 10-02; FL, MD, NV on 10-03), so "the five
+best" is a per-day pick of about $520–550 a calendar day, not a fixed list.
+
+**(2) Incumbents.** Median score of the heavier side per state against the 20:40Z static read:
+GA 13.8–14.1k vs 9,365 (1.5×), FL 13.7–15.2k vs 10,792 (1.3×), OH 13.6–22.0k vs 9,201 (1.5–2.4×),
+CA 7.2k vs 3,705 (1.9×), MD 12.0k vs 4,552 (2.6×), AZ 16.7k vs 3,779 on 10-01 (4.4×). Within the
+day their size is highest early and falls late: on 10-03 the first six paid hours showed MI
+12.6k/13.2k and FL 12.2k/10.5k a side, the last six 3.4k/5.3k and 3.3k/3.7k. They are heavier
+than the static read in most states, which is why the paper figure is below the static table,
+and that is already inside every dollar above.
+
+**(3) Valid fraction by UTC hour** (two-sided depth ≥ target, all gas markets): 12–17Z 0.94–0.98,
+18Z 0.89, 19–22Z 0.75–0.80, 23–02Z 0.80–0.83, 03Z 0.63. Snapshots count most in the first six
+hours of the window, when the incumbents are also heaviest.
+
+**Decision, by the rule written on 10-02.** Five best states at 200 a side: $819 and $782 a day
+as a rate ($546 and $522 per calendar day) on the two days with a full or near-full window,
+against the $300 threshold; valid fraction 0.82–0.95 against 0.8; incumbents within 2× in GA, FL,
+CA and (one day of two) OH, above it in MD and AZ. The first two criteria pass on both days; the
+third passes in the two largest states and fails in two smaller ones, in the direction of less
+share for us, which the dollar figures already carry. **Under the registered rule the read passes:
+the operator decides on a Kalshi account and collateral.** The scorer keeps running (the term-sheet
+column `share_qualifying` now sits beside the registered one for the days after this read).
+
+What the paper number cannot see: fills. A 200-a-side quote at the reference on a daily gas
+strike is a position held to settlement whenever it is hit; the money at risk per state at the
+95th-percentile settlement move is in the section above, and the live step's first registered
+read is fills per day per state at the smallest size, before any scaling. Sizing for the
+operator: the five best states at 200 a side are about $520–550 a calendar day on roughly $8–10k
+of collateral by the table above, before fills.
+
