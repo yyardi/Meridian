@@ -97,7 +97,11 @@ seconds, the summed shares under keys `200/500/1000` (registered estimator), `f1
 99c).
 
 Read at **2026-10-05 12:05Z** (Coin Race: ≥ 40 h, ≥ 160 windows; FX/metals: Sunday 21:15Z to
-Monday 12:00Z, ≥ 55 windows each), once, by whoever is up:
+Monday 12:00Z only, ≈ 55 windows each and all of them Asian/European hours, so their figure is
+a thin weekend-edge sample and is reported as such, not decided on), once, by whoever is up.
+Deployed 2026-10-03 19:24:25Z as kalshi-farm-scorer; first minute, 45 Coin Race markets, 0 gaps:
+registered 1000 → $4,836/day, f1000 → $8,577, f1000c → $3,603, f300c → $519, before anyone
+responds. Reads: 12:05Z (this session) and 12:20Z (Manager), same terms, once each:
 
 1. Coin Race, `f1000c`: implied $/day = Σ over market-hours of (summed share ÷ seconds) × $1,920,
    the valid fraction, and the fraction of seconds a side was disqualified. **Go to the live step if
