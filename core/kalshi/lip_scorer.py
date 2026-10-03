@@ -87,42 +87,46 @@ def our_share(q: float, incumbent_score: float) -> float:
     return q / (q + incumbent_score) if q > 0 else 0.0
 
 
-def share_qualifying(levels: list[tuple[float, float]], q: float, target: float, discount: float, improve: bool = False) -> tuple[float, float, float]:
-    """Our share of one side under the rule as the venue states it (help article 13823851):
-    "Kalshi scores every resting order that helps reach the Target Size on its side"; "if a side
-    never reaches the Target Size, no orders on that side qualify"; orders at or better than the
-    reference get 1.0, k ticks below get discount^k; the reference is the first level, walking down
-    from the best bid, whose cumulative size reaches target/5 -- computed WITH our order resting.
-    Our q rests at the current reference (improve=False) or one tick better (improve=True). A book
-    level is treated as one order: if any of it is needed to reach the target the whole level
-    qualifies (conservative for us; the feed shows levels, not orders). Returns
+def share_qualifying(levels: list[tuple[float, float]], q: float, target: float, discount: float, improve: bool = False) -> tuple[float, float | None, float]:
+    """Our share of one side under the Program's Terms and Conditions (Appendix A of the July 15,
+    2026 CFTC filing as modified July 30, 2026; kalshi.com/regulatory/notices): walking down from
+    the highest bid, each price LEVEL's whole size is added to the Qualifying Total Size and ALL
+    bids at that price become Qualifying Bids; the Reference Price is the first level at which the
+    cumulative reaches one fifth of the Target Size; the walk stops after the level that reaches
+    the Target Size; if the bids run out first nothing on that side qualifies; if the highest bid
+    is at the highest possible price (99c) nothing on that side qualifies. A qualifying bid scores
+    discount^(ticks below the reference) x size, normalised over the side. Our q rests at the
+    current reference (improve=False) or one tick above it (improve=True), merged into that price
+    level, so a quote joining a wall at the same price qualifies with it. Returns
     (share, reference price, incumbents' qualifying discounted size)."""
     if q <= 0:
         return 0.0, None, 0.0
     base_ref, _, _ = reference_and_score(levels, target, discount)
-    if base_ref is None:
-        ours = 0.50 if not improve else 0.50                 # an empty side: we are the book; price is nominal
-    else:
-        ours = round(base_ref + (0.01 if improve else 0.0), 2)
-    book = sorted(levels + [(ours, q)], key=lambda pq: -pq[0])    # stable: at an equal price the incumbents are ahead of us
-    if sum(sz for _, sz in book) < target:                        # the side never reaches the target: nothing qualifies
+    ours = 0.50 if base_ref is None else round(base_ref + (0.01 if improve else 0.0), 2)
+    ours = min(ours, 0.98)                                        # a bid at 99c would disqualify the side
+    merged: dict[float, float] = {}
+    for p, sz in levels:
+        merged[round(p, 2)] = merged.get(round(p, 2), 0.0) + sz
+    merged[ours] = merged.get(ours, 0.0) + q
+    book = sorted(merged.items(), key=lambda pq: -pq[0])
+    if book[0][0] >= 0.99 or sum(sz for _, sz in book) < target:
         return 0.0, None, 0.0
-    cum = 0.0; ref = None                                         # the reference with us in the book
+    cum = 0.0; ref = None; qual: list[tuple[float, float]] = []
     for p, sz in book:
-        cum += sz
-        if cum >= target / 5:
-            ref = p; break
-    # qualifying orders: walking down, every level until the cumulative reaches the target
-    cum = 0.0; inc = 0.0; mine = 0.0
-    for p, sz in book:
-        k = round((ref - p) * 100); w = 1.0 if k <= 0 else discount ** k
-        if p == ours and sz == q and mine == 0.0:
-            mine = q * w
-        else:
-            inc += sz * w
-        cum += sz
+        cum += sz; qual.append((p, sz))
+        if ref is None and cum >= target / 5:
+            ref = p
         if cum >= target:
             break
+    if ref is None:
+        return 0.0, None, 0.0
+    mine = 0.0; inc = 0.0
+    for p, sz in qual:
+        k = round((ref - p) * 100); w = 1.0 if k <= 0 else discount ** k
+        if p == ours:
+            mine += q * w; inc += (sz - q) * w
+        else:
+            inc += sz * w
     tot = mine + inc
     return (mine / tot if tot > 0 else 0.0), ref, inc
 
