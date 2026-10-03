@@ -11,9 +11,15 @@ can be matched instant to instant (docs/math/cross-venue-inplay-football.md).
 Discovers the open markets of those series whose ticker carries one of the date tags, writes
 `tickers.json`, subscribes to `orderbook_delta` and `trade` for all of them on the one signed
 socket (core/kalshi/lip_scorer.BookSocket: seq-tracked, a gap opens a fresh socket), and
-appends every message RAW, with the receive stamp, to `books_<ticker>.jsonl` / `trades_<ticker>.jsonl`
-under --out. `_status.json` every minute. Nothing parsed beyond what the gap check needs, so a
-venue field change cannot lose data; the parsing happens in the read. Places nothing.
+writes, per ticker under --out: `books_<ticker>.jsonl` -- every snapshot RAW, then the TOUCH
+(best yes bid and best no bid with their sizes) whenever it changed, coalesced to one line per
+ticker per 250 ms carrying the receive stamp of the last change and how many changes it
+stands for -- and `trades_<ticker>.jsonl`, every print raw. `--raw` keeps every delta as well.
+Why: the first live minute (4 CFB games, 118 markets, 2026-10-03 01:25Z) carried 80,000
+messages and 24 MB, deep-book churn at every cent level that no read of ours uses, and the
+best level alone still flickered 5-15 times a second on the active markets. The read matches
+instants at <= 1 s lag, so 250 ms loses nothing it measures. `_status.json` every minute.
+Places nothing.
 """
 from __future__ import annotations
 
@@ -100,36 +106,64 @@ class Tape:
 
 
 class RecordingBooks(Books):
-    """Writes every message raw to the tape before the gap check sees it."""
+    """Snapshots and prints raw; the best level on change, coalesced by ``drain``; deltas only under ``raw``."""
 
-    def __init__(self, tape: Tape) -> None:
+    def __init__(self, tape: Tape, raw: bool = False) -> None:
         super().__init__()
-        self.tape = tape
-        self.trades = 0
-        self.other = 0
+        self.tape, self.raw = tape, raw
+        self.trades = self.other = self.touch_lines = self.touch_changes = 0
+        self._last_touch: dict[str, tuple] = {}
+        self._dirty: dict[str, dict] = {}
+        self._dlock = threading.Lock()
+
+    def touch(self, tk: str) -> tuple:
+        yes = self.side(tk, "yes"); no = self.side(tk, "no")
+        return (yes[0][0] if yes else None, yes[0][1] if yes else None, no[0][0] if no else None, no[0][1] if no else None)
 
     def handle(self, msg: dict, now: float) -> str | None:
         t = msg.get("type")
         m = msg.get("msg") or {}
         tk = m.get("market_ticker")
-        row = {"recv": _iso(now), "type": t, "sid": msg.get("sid"), "seq": msg.get("seq"), "msg": m}
+        row = {"recv": _iso(now), "type": t, "sid": msg.get("sid"), "seq": msg.get("seq")}
         if t in ("orderbook_snapshot", "orderbook_delta") and tk:
-            self.tape.write("book", tk, row)
-            return super().handle(msg, now)
+            if t == "orderbook_snapshot" or self.raw:
+                self.tape.write("book", tk, {**row, "msg": m})
+            out = super().handle(msg, now)
+            if out == "gap":
+                return out                                   # the gapped delta is not applied; a fresh socket follows
+            tc = self.touch(tk)
+            if tc != self._last_touch.get(tk):
+                self._last_touch[tk] = tc
+                self.touch_changes += 1
+                with self._dlock:
+                    d = self._dirty.get(tk)
+                    self._dirty[tk] = {"recv": row["recv"], "type": "touch", "yes_bid": tc[0], "yes_bid_size": tc[1],
+                                       "no_bid": tc[2], "no_bid_size": tc[3], "changes": (d["changes"] + 1) if d else 1}
+            return out
         if t == "trade" and tk:
             self.trades += 1
-            self.tape.write("trade", tk, row)
+            self.tape.write("trade", tk, {**row, "msg": m})
             return None
         if t not in ("subscribed", "ok", "unsubscribed"):
             self.other += 1
-            self.tape.write("other", "_unrouted", {**row, "raw": msg} if not tk else row)
+            self.tape.write("other", "_unrouted", {**row, "raw": msg})
         return None
+
+    def drain(self) -> int:
+        """Write every ticker whose touch changed since the last drain: one line each, the last
+        state, stamped with its last change. Called from the main loop every 250 ms."""
+        with self._dlock:
+            dirty, self._dirty = self._dirty, {}
+        for tk, line in dirty.items():
+            self.tape.write("book", tk, line)
+        self.touch_lines += len(dirty)
+        return len(dirty)
 
 
 def status(now: float, tickers: list[dict], sock: BookSocket, books: RecordingBooks, tape: Tape, started: float, minutes: float) -> dict:
     return {"at": _iso(now), "tickers": len(tickers), "series": sorted({t["series"] for t in tickers}),
             "elapsed_min": round((now - started) / 60, 1), "minutes": minutes,
-            "socket": sock.counters(now), "trades": books.trades, "unrouted": books.other,
+            "socket": sock.counters(now), "trades": books.trades, "touch_lines": books.touch_lines, "touch_changes": books.touch_changes, "unrouted": books.other,
             "tape": {"lines": tape.lines, "bytes": tape.bytes, **tape.per_channel}}
 
 
@@ -147,23 +181,27 @@ def run(a) -> int:
         log.warning("nothing to record")
         return 0
     tape = Tape(a.out)
-    books = RecordingBooks(tape)
+    books = RecordingBooks(tape, raw=a.raw)
     sock = BookSocket(sorted(t["ticker"] for t in tickers), books, channels=CHANNELS).start()
     started = time.time(); next_status = 0.0; status_path = os.path.join(a.out, "_status.json")
+    next_flush = 0.0
     try:
         while time.time() - started < a.minutes * 60:
             now = time.time()
-            tape.flush()
+            books.drain()
+            if now >= next_flush:
+                next_flush = now + 1.0
+                tape.flush()
             if now >= next_status:
                 next_status = now + 60
                 st = status(now, tickers, sock, books, tape, started, a.minutes)
                 with open(status_path, "w", encoding="utf-8") as fh:
                     json.dump(st, fh, indent=1)
                 log.info("status %s", json.dumps({k: v for k, v in st.items() if k != "series"}))
-            time.sleep(1.0)
+            time.sleep(0.25)
     finally:
         sock.request_stop()
-        tape.flush(); tape.close()
+        books.drain(); tape.flush(); tape.close()
         log.info("done: %d lines, %d bytes, %d trades, gaps %d, reconnects %d", tape.lines, tape.bytes, books.trades, len(books.gaps), sock.reconnects)
     return 0
 
@@ -174,6 +212,7 @@ def main(argv=None) -> int:
     ap.add_argument("--date", required=True, help="comma-separated ticker date tags, e.g. 26OCT04,26OCT05")
     ap.add_argument("--minutes", type=float, default=600.0)
     ap.add_argument("--out", default="/out")
+    ap.add_argument("--raw", action="store_true", help="also write every orderbook_delta raw (24 MB a minute for four CFB games)")
     return run(ap.parse_args(argv))
 
 
