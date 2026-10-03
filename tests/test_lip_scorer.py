@@ -8,7 +8,7 @@ import queue
 import sqlite3
 import threading
 
-from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, idle_status, our_share, reference_and_score, subscribe_msgs, write_status, wait_for_programs, share_qualifying)
+from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, idle_status, our_share, reference_and_score, share_qualifying, subscribe_msgs, write_status)
 from core.polymarket.ws_min import ConnectionClosed
 
 
@@ -140,47 +140,28 @@ def test_the_idle_status_is_fresh_and_says_why(tmp_path):
     assert "no live liquidity programs" in st["idle"] and st["implied_per_day"]["total"] == {}
 
 
-def test_the_startup_wait_survives_a_failed_fetch_and_an_empty_answer_and_writes_idle_status():
-    answers = [RuntimeError("429 Too Many Requests"), {}, {"M1": {"series": "S"}}]
-    slept, written = [], []
-
-    def load(series):
-        a = answers.pop(0)
-        if isinstance(a, Exception):
-            raise a
-        return a
-    cfg = {"series": ["S"], "status": "unused"}
-    out = wait_for_programs(cfg, load=load, sleep=slept.append, clock=lambda: 1.0, status=lambda path, st: written.append(st))
-    assert out == {"M1": {"series": "S"}}
-    assert slept == [600, 300]                                           # a failure waits longer than an empty answer
-    assert len(written) == 2 and all(w["markets"] == 0 and w["idle"] for w in written)
-
-
-def test_share_qualifying_counts_only_the_orders_needed_to_reach_the_target():
-    # the Coin Race XRP yes ladder 2026-10-03 19:04Z: 301 @ 4c, 1100 @ 3c, 1000 @ 1c; target 1000, discount 0.5
+def test_share_qualifying_follows_the_term_sheet_level_by_level():
+    # Terms and Conditions (July 30, 2026): each price level's whole size is added and ALL bids at that
+    # price qualify; the walk stops after the level that reaches the Target Size; reference = first level
+    # whose cumulative reaches target/5. Coin Race XRP yes ladder 2026-10-03 19:04Z, target 1000, discount 0.5.
     yes = [(0.04, 301.0), (0.03, 1100.0), (0.01, 1000.0)]
-    # the 1c thousand is behind the target cumulative (301 + 1100 >= 1000) and never qualifies;
-    # our 1000 at the reference (4c) reaches the target with the 301 alone: 1000 / (1000 + 301)
-    share, ref, inc = share_qualifying(yes, 1000.0, 1000.0, 0.5)
-    assert ref == 0.04 and inc == 301.0 and abs(share - 1000 / 1301) < 1e-9
-    # one tick better, 1000 alone reaches target/5 AND the target: no incumbent qualifies
-    share, ref, inc = share_qualifying(yes, 1000.0, 1000.0, 0.5, improve=True)
+    share, ref, inc = share_qualifying(yes, 1000.0, 1000.0, 0.5)              # we join the 4c level: 1301 >= 1000, stop
+    assert ref == 0.04 and inc == 301.0 and abs(share - 1000 / 1301) < 1e-9  # the 3c and 1c thousands never qualify
+    share, ref, inc = share_qualifying(yes, 1000.0, 1000.0, 0.5, improve=True)  # 5c alone reaches target/5 and the target
     assert ref == 0.05 and inc == 0.0 and share == 1.0
-    # a small quote joining a wall at the SAME price is behind it in time: the wall alone reaches the target,
-    # so under the venue's text our order does not "help reach the Target Size" and earns nothing (the gas
-    # states' incumbents rest 12-23k at the reference). The registered estimator gave this quote 1.4%.
+    # a 200 joining a 12k wall at the same price qualifies WITH it (all bids at the level), and the 5k below does not
     wall = [(0.40, 12000.0), (0.39, 5000.0)]
     share, ref, inc = share_qualifying(wall, 200.0, 1000.0, 0.5)
-    assert ref == 0.40 and inc == 12000.0 and share == 0.0
-    assert abs(our_share(200.0, reference_and_score(wall, 1000.0, 0.5)[1]) - 200 / (200 + 12000 + 2500)) < 1e-9
-    # one tick in front of the wall our 200 sets the reference (200 >= target/5); the wall is one tick worse (x0.5)
+    assert ref == 0.40 and inc == 12000.0 and abs(share - 200 / 12200) < 1e-9
+    # the registered estimator divides by the whole discounted ladder, so it is a lower bound on the venue's share
+    assert our_share(200.0, reference_and_score(wall, 1000.0, 0.5)[1]) < share
+    # one tick in front: our 200 sets the reference; the wall qualifies one tick worse (x0.5)
     share, ref, inc = share_qualifying(wall, 200.0, 1000.0, 0.5, improve=True)
     assert ref == 0.41 and inc == 6000.0 and abs(share - 200 / 6200) < 1e-9
 
 
-def test_share_qualifying_is_zero_when_the_side_cannot_reach_the_target_even_with_us():
-    thin = [(0.30, 50.0), (0.20, 40.0)]
-    share, ref, inc = share_qualifying(thin, 100.0, 1000.0, 0.5)
-    assert share == 0.0
-    share, ref, inc = share_qualifying([], 1000.0, 1000.0, 0.5)          # an empty side: we are the whole book
+def test_share_qualifying_is_zero_when_the_side_cannot_qualify():
+    assert share_qualifying([(0.30, 50.0), (0.20, 40.0)], 100.0, 1000.0, 0.5)[0] == 0.0   # never reaches the target
+    assert share_qualifying([(0.99, 5000.0), (0.98, 5000.0)], 1000.0, 1000.0, 0.5)[0] == 0.0  # highest bid at 99c: no qualifying bids
+    share, ref, inc = share_qualifying([], 1000.0, 1000.0, 0.5)                          # an empty side: we are the whole book
     assert share == 1.0 and inc == 0.0
