@@ -118,7 +118,8 @@ class RecordingBooks(Books):
 
     def touch(self, tk: str) -> tuple:
         yes = self.side(tk, "yes"); no = self.side(tk, "no")
-        return (yes[0][0] if yes else None, yes[0][1] if yes else None, no[0][0] if no else None, no[0][1] if no else None)
+        # sizes are sums of fixed-point deltas; two decimals is the venue's own resolution
+        return (yes[0][0] if yes else None, round(yes[0][1], 2) if yes else None, no[0][0] if no else None, round(no[0][1], 2) if no else None)
 
     def handle(self, msg: dict, now: float) -> str | None:
         t = msg.get("type")
