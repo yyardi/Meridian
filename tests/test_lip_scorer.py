@@ -8,7 +8,7 @@ import queue
 import sqlite3
 import threading
 
-from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, idle_status, our_share, reference_and_score, share_qualifying, subscribe_msgs, write_status)
+from core.kalshi.lip_scorer import (Books, BookSocket, Scorer, choose_programs, idle_status, our_share, reference_and_score, share_qualifying, subscribe_msgs, write_status, wait_for_programs)
 from core.polymarket.ws_min import ConnectionClosed
 
 
@@ -165,3 +165,86 @@ def test_share_qualifying_is_zero_when_the_side_cannot_qualify():
     assert share_qualifying([(0.99, 5000.0), (0.98, 5000.0)], 1000.0, 1000.0, 0.5)[0] == 0.0  # highest bid at 99c: no qualifying bids
     share, ref, inc = share_qualifying([], 1000.0, 1000.0, 0.5)                          # an empty side: we are the whole book
     assert share == 1.0 and inc == 0.0
+
+
+class _FakeHTTP:
+    """incentive_programs pages by status, paginated with next_cursor like the venue."""
+
+    def __init__(self, pages: dict[str, list[list[dict]]]) -> None:
+        self.pages, self.calls = pages, []
+
+    def get(self, url, params=None):
+        self.calls.append(dict(params))
+        st = params["status"]; cur = params.get("cursor"); pages = self.pages.get(st, [[]])
+        i = int(cur[1:]) if cur else 0
+        body = {"incentive_programs": pages[i]}
+        if i + 1 < len(pages):
+            body["next_cursor"] = f"c{i + 1}"
+        class R:
+            def raise_for_status(self): pass
+            def json(self, b=body): return b
+        return R()
+
+
+def _prog(ticker, start, end, reward=200000, target=1000):
+    iso = lambda t: __import__("datetime").datetime.fromtimestamp(t, __import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
+    return {"market_ticker": ticker, "start_date": iso(start), "end_date": iso(end), "period_reward": reward,
+            "target_size_fp": str(target), "discount_factor_bps": 5000}
+
+
+def test_load_programs_takes_live_windows_and_upcoming_ones_inside_the_horizon_across_pages():
+    from core.kalshi.lip_scorer import load_programs
+    now = 1_000_000.0
+    http = _FakeHTTP({"active": [[_prog("KXA-1", now - 600, now + 300), _prog("KXZ-1", now - 600, now + 300)],      # page 1: a live window and an ignored series
+                                 [_prog("KXA-0", now - 1800, now - 900)]],                                           # page 2: already ended (listed as active by the venue)
+                      "upcoming": [[_prog("KXA-2", now + 300, now + 1200), _prog("KXA-9", now + 7200 + 1, now + 8100)]]})
+    got = load_programs(["KXA"], http, now=now, horizon_s=7200)
+    assert sorted(got) == ["KXA-1", "KXA-2"]                                 # live + upcoming within 2 h; not the ended, not the far, not the other series
+    assert got["KXA-1"]["per_day_usd"] == 20.0 / (900 / 86400) and got["KXA-2"]["start_ts"] == now + 300
+    assert [c["status"] for c in http.calls] == ["active", "active", "upcoming"] and http.calls[1]["cursor"] == "c1"
+    assert sorted(load_programs(["KXA"], http, now=now)) == ["KXA-1"]       # no horizon: the live window only, one status
+
+
+def test_the_scorer_scores_a_market_only_inside_its_period_and_reports_the_front_policy(tmp_path):
+    now = 3600.0 * 2000 + 10
+    progs = {"W1": {"series": "S", "per_day_usd": 1920.0, "target": 1000.0, "discount": 0.5, "start_ts": now - 100, "end_ts": now + 800},
+             "W2": {"series": "S", "per_day_usd": 1920.0, "target": 1000.0, "discount": 0.5, "start_ts": now + 800, "end_ts": now + 1700}}
+    books = Books()
+    for t in ("W1", "W2"):                                                  # Coin Race XRP late in a window: yes 1c-4c ladder, no best 93c
+        books.handle(_snap(t, [(0.04, 301.0), (0.03, 1100.0), (0.01, 1000.0)], [(0.93, 340.0), (0.89, 120.0), (0.86, 1000.0)]), now)
+    sc = Scorer(str(tmp_path / "farm.sqlite"), progs, [200.0], books, clock=lambda: now, front_sizes=[1000.0, 300.0], front_cap=0.10)
+    assert sc.tick(now) == 1 and "W2" not in sc.acc                           # the future window is not a second, scored or not
+    r = sc.score_market("W1", now)
+    assert set(r["shares"]) == {"200", "f1000", "f1000c", "f300", "f300c"}
+    # a full-target lot one tick in front reaches the target alone on either side: by construction 100% before anyone responds
+    assert r["shares"]["f1000"] == 1.0
+    assert r["shares"]["f1000c"] == 0.5                                       # the capped policy skips the 93c side
+    # 300 in front: yes 5c -> 300 (x1) + 301 @ 4c (x0.5) + 1100 @ 3c (x0.25) reaches 1000; no 94c -> 300 + 340 (x0.5) + 120 (x0.5^5) + 1000 (x0.5^8)
+    assert abs(r["shares"]["f300"] - 0.5 * (300 / (300 + 150.5 + 275) + 300 / (300 + 170 + 3.75 + 3.90625))) < 1e-9
+    assert abs(r["shares"]["f300c"] - 0.5 * (300 / 725.5)) < 1e-9
+    assert r["disq_yes"] == 0 and r["disq_no"] == 0
+    imp = sc.implied_per_day()
+    assert set(imp["total"]) == {"200", "f1000", "f1000c", "f300", "f300c"} and abs(imp["total"]["f1000c"] - 0.5 * 1920.0) < 1e-9
+    # a 99c best bid is a disqualified side and is counted per hour
+    books.handle(_snap("W1", [(0.99, 2000.0)], [(0.01, 2000.0)], seq=1), now)
+    sc.tick(now + 1)
+    assert sc.acc["W1"]["disq_yes"] == 1 and sc.acc["W1"]["disq_no"] == 0
+    sc.flush_all()
+    assert sqlite3.connect(sc.db_path).execute("SELECT disq_yes, disq_no FROM lip_disq WHERE ticker='W1'").fetchone() == (1, 0)
+
+
+def test_the_startup_wait_survives_a_failed_fetch_and_an_empty_answer_and_writes_idle_status():
+    answers = [RuntimeError("429 Too Many Requests"), {}, {"M1": {"series": "S"}}]
+    slept, written = [], []
+
+    def load(series, horizon_s=0.0):
+        a = answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    cfg = {"series": ["S"], "status": "unused", "horizon_s": 0.0}
+    out = wait_for_programs(cfg, load=load, sleep=slept.append, clock=lambda: 1.0, status=lambda path, st: written.append(st))
+    assert out == {"M1": {"series": "S"}}
+    assert slept == [600, 300]                                           # a failure waits longer than an empty answer
+    assert len(written) == 2 and all(w["markets"] == 0 and w["idle"] for w in written)
+
