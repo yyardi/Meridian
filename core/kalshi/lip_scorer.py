@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS lip_hourly(hour_ts REAL NOT NULL, ticker TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS lip_sample(t REAL NOT NULL, ticker TEXT NOT NULL, yes_best REAL, no_best REAL, ref_yes REAL, ref_no REAL,
   inc_yes REAL, inc_no REAL, depth_yes REAL, depth_no REAL, valid INTEGER, shares TEXT, PRIMARY KEY(t, ticker));
 CREATE TABLE IF NOT EXISTS seq_gaps(t REAL, sid INTEGER, expected INTEGER, got INTEGER);
+CREATE TABLE IF NOT EXISTS lip_disq(hour_ts REAL NOT NULL, ticker TEXT NOT NULL, disq_yes INTEGER, disq_no INTEGER, PRIMARY KEY(hour_ts, ticker));
 """
 
 
@@ -132,30 +133,34 @@ def share_qualifying(levels: list[tuple[float, float]], q: float, target: float,
 
 
 # ------------------------------------------------------------------ programs
-def load_programs(series: list[str], http: httpx.Client | None = None, now: float | None = None) -> dict[str, dict]:
+def load_programs(series: list[str], http: httpx.Client | None = None, now: float | None = None, horizon_s: float = 0.0) -> dict[str, dict]:
+    """Programs live now, plus -- when horizon_s > 0 -- those listed as upcoming that start within the
+    horizon (the 15-minute series list ~9 h of windows ahead; a scorer that only knew the live window
+    would go blind at every quarter hour). The Scorer scores a market only inside its own period."""
     http = http or httpx.Client(timeout=20, headers={"User-Agent": "meridian-lip/1"})
     now = time.time() if now is None else now
     out: dict[str, dict] = {}
-    cursor = None
-    while True:
-        r = http.get(REST + "/incentive_programs", params={"status": "active", "type": "liquidity", "limit": 1000,
-                                                             **({"cursor": cursor} if cursor else {})})
-        r.raise_for_status()
-        d = r.json()
-        for p in d.get("incentive_programs") or []:
-            t = p["market_ticker"]; s = t.split("-")[0]
-            if s not in series:
-                continue
-            a = dt.datetime.fromisoformat(p["start_date"].replace("Z", "+00:00")).timestamp()
-            b = dt.datetime.fromisoformat(p["end_date"].replace("Z", "+00:00")).timestamp()
-            if not (a <= now <= b):
-                continue
-            out[t] = {"series": s, "per_day_usd": p["period_reward"] / 10000 / max(1e-9, (b - a) / 86400),
-                      "target": float(p.get("target_size_fp") or 0), "discount": (p.get("discount_factor_bps") or 0) / 10000,
-                      "start_ts": a, "end_ts": b}
-        cursor = d.get("cursor") or d.get("next_cursor")
-        if not cursor or not d.get("incentive_programs"):
-            break
+    for status in ("active",) + (("upcoming",) if horizon_s > 0 else ()):
+        cursor = None
+        while True:
+            r = http.get(REST + "/incentive_programs", params={"status": status, "type": "liquidity", "limit": 1000,
+                                                                 **({"cursor": cursor} if cursor else {})})
+            r.raise_for_status()
+            d = r.json()
+            for p in d.get("incentive_programs") or []:
+                t = p["market_ticker"]; s = t.split("-")[0]
+                if s not in series:
+                    continue
+                a = dt.datetime.fromisoformat(p["start_date"].replace("Z", "+00:00")).timestamp()
+                b = dt.datetime.fromisoformat(p["end_date"].replace("Z", "+00:00")).timestamp()
+                if not (a <= now <= b or now < a <= now + horizon_s):
+                    continue
+                out[t] = {"series": s, "per_day_usd": p["period_reward"] / 10000 / max(1e-9, (b - a) / 86400),
+                          "target": float(p.get("target_size_fp") or 0), "discount": (p.get("discount_factor_bps") or 0) / 10000,
+                          "start_ts": a, "end_ts": b}
+            cursor = d.get("cursor") or d.get("next_cursor")
+            if not cursor or not d.get("incentive_programs"):
+                break
     return out
 
 
@@ -235,8 +240,13 @@ class Books:
 # ------------------------------------------------------------------ scoring and storage
 class Scorer:
     def __init__(self, db_path: str, programs: dict[str, dict], sizes: list[float], books: Books, clock=time.time,
-                 keep_days: float = 3.0) -> None:
+                 keep_days: float = 3.0, front_sizes: list[float] = (), front_cap: float = 0.10) -> None:
+        """sizes: the registered estimator (q AT the reference, whole-ladder denominator). front_sizes: the
+        term-sheet rule with q one tick IN FRONT of the reference on each side ('f<q>'), and the same counting
+        a side only while its reference is at or below front_cap ('f<q>c') -- the cheap-side policy. Every
+        paper share is BEFORE ANYONE RESPONDS to the quote; only a live quote measures the response."""
         self.db_path, self.programs, self.sizes, self.books, self._clock, self.keep_days = db_path, programs, sizes, books, clock, keep_days
+        self.front_sizes, self.front_cap = list(front_sizes), front_cap
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
         self.conn.executescript(SCHEMA)
@@ -247,9 +257,9 @@ class Scorer:
         self.last_sample = 0.0
         self.ticks = 0
 
-    def score_market(self, ticker: str) -> dict | None:
+    def score_market(self, ticker: str, now: float | None = None) -> dict | None:
         p = self.programs.get(ticker)
-        if p is None:
+        if p is None or (now is not None and not (p["start_ts"] <= now <= p["end_ts"])):
             return None
         yes = self.books.side(ticker, "yes"); no = self.books.side(ticker, "no")
         if not yes or not no:
@@ -257,9 +267,17 @@ class Scorer:
         ry, sy, dy = reference_and_score(yes, p["target"], p["discount"])
         rn, sn, dn = reference_and_score(no, p["target"], p["discount"])
         valid = int(dy >= p["target"] and dn >= p["target"])
+        # term sheet: a side whose highest bid is at the highest possible price has no qualifying bids
+        disq_yes, disq_no = int(yes[0][0] >= 0.99), int(no[0][0] >= 0.99)
         shares = {str(int(q)): 0.5 * (our_share(q, sy) + our_share(q, sn)) for q in self.sizes}
+        for q in self.front_sizes:
+            fy = share_qualifying(yes, q, p["target"], p["discount"], True)[0]
+            fn = share_qualifying(no, q, p["target"], p["discount"], True)[0]
+            shares[f"f{int(q)}"] = 0.5 * (fy + fn)
+            shares[f"f{int(q)}c"] = 0.5 * ((fy if ry is not None and ry <= self.front_cap else 0.0)
+                                           + (fn if rn is not None and rn <= self.front_cap else 0.0))
         return {"ticker": ticker, "valid": valid, "yes_best": yes[0][0], "no_best": no[0][0], "ref_yes": ry, "ref_no": rn,
-                "inc_yes": sy, "inc_no": sn, "depth_yes": dy, "depth_no": dn, "shares": shares}
+                "inc_yes": sy, "inc_no": sn, "depth_yes": dy, "depth_no": dn, "shares": shares, "disq_yes": disq_yes, "disq_no": disq_no}
 
     def tick(self, now: float | None = None) -> int:
         """One scoring second over every program market with a book; returns markets scored."""
@@ -268,19 +286,20 @@ class Scorer:
         n = 0
         sample = now - self.last_sample >= 60
         for t in self.programs:
-            r = self.score_market(t)
+            r = self.score_market(t, now)
             if r is None:
                 continue
             a = self.acc.get(t)
             if a is None or a["hour"] != hour:
                 if a is not None:
                     self._flush(t, a)
-                a = self.acc[t] = {"hour": hour, "seconds": 0, "valid": 0, "sum": {str(int(q)): 0.0 for q in self.sizes}, "inc_yes": [], "inc_no": []}
+                a = self.acc[t] = {"hour": hour, "seconds": 0, "valid": 0, "sum": {}, "inc_yes": [], "inc_no": [], "disq_yes": 0, "disq_no": 0}
             a["seconds"] += 1
+            a["disq_yes"] += r.get("disq_yes", 0); a["disq_no"] += r.get("disq_no", 0)
             if r["valid"]:
                 a["valid"] += 1
                 for k, v in r["shares"].items():
-                    a["sum"][k] += v
+                    a["sum"][k] = a["sum"].get(k, 0.0) + v
                 a["inc_yes"].append(r["inc_yes"]); a["inc_no"].append(r["inc_no"])
                 n += 1
             if sample and r.get("shares") is not None:
@@ -298,6 +317,7 @@ class Scorer:
         med = lambda xs: sorted(xs)[len(xs) // 2] if xs else None
         self.conn.execute("INSERT OR REPLACE INTO lip_hourly VALUES(?,?,?,?,?,?,?)",
                           (a["hour"], t, a["seconds"], a["valid"], json.dumps(a["sum"]), med(a["inc_yes"]), med(a["inc_no"])))
+        self.conn.execute("INSERT OR REPLACE INTO lip_disq VALUES(?,?,?,?)", (a["hour"], t, a.get("disq_yes", 0), a.get("disq_no", 0)))
 
     def flush_all(self) -> None:
         for t, a in list(self.acc.items()):
@@ -311,15 +331,16 @@ class Scorer:
     def implied_per_day(self) -> dict:
         """From the current hour's accumulators: per series and total, implied $/day at each Q =
         sum over markets of (mean share while valid x valid fraction x per_day)."""
-        by: dict[str, dict] = collections.defaultdict(lambda: {str(int(q)): 0.0 for q in self.sizes})
+        by: dict[str, dict] = collections.defaultdict(lambda: collections.defaultdict(float))
         for t, a in self.acc.items():
             if not a["seconds"]:
                 continue
             p = self.programs[t]
             for k, s in a["sum"].items():
                 by[p["series"]][k] += (s / a["seconds"]) * p["per_day_usd"]
-        total = {str(int(q)): sum(v[str(int(q))] for v in by.values()) for q in self.sizes}
-        return {"by_series": dict(by), "total": total}
+        keys = sorted({k for v in by.values() for k in v})
+        total = {k: sum(v.get(k, 0.0) for v in by.values()) for k in keys}
+        return {"by_series": {s: dict(v) for s, v in by.items()}, "total": total}
 
 
 # ------------------------------------------------------------------ the socket
@@ -422,15 +443,19 @@ def settings() -> dict:
             "sizes": [float(x) for x in (e("MERIDIAN_LIP_SIZES") or "200,500").split(",")],
             "db": e("MERIDIAN_LIP_DB") or "/data/lip_scorer.sqlite",
             "status": e("MERIDIAN_LIP_STATUS") or "/data/lip_status.json",
-            "reload_s": float(e("MERIDIAN_LIP_RELOAD_S") or 3600)}
+            "reload_s": float(e("MERIDIAN_LIP_RELOAD_S") or 3600),
+            "horizon_s": float(e("MERIDIAN_LIP_HORIZON_S") or 0),
+            "front_sizes": [float(x) for x in (e("MERIDIAN_LIP_FRONT_SIZES") or "").split(",") if x],
+            "front_cap": float(e("MERIDIAN_LIP_FRONT_CAP") or 0.10)}
 
 
 def once(cfg: dict) -> int:
     """Programs + one REST read of every market's book, scored and printed by series."""
     http = httpx.Client(timeout=20, headers={"User-Agent": "meridian-lip/1"})
-    progs = load_programs(cfg["series"], http)
+    progs = {t: p for t, p in load_programs(cfg["series"], http).items()}
     print(f"{len(progs)} program markets in {len({p['series'] for p in progs.values()})} series")
-    by = collections.defaultdict(lambda: {"n": 0, "valid": 0, "usd": {str(int(q)): 0.0 for q in cfg['sizes']}, "pool": 0.0})
+    keys = [str(int(q)) for q in cfg["sizes"]] + [f"f{int(q)}c" for q in cfg["front_sizes"]]
+    by = collections.defaultdict(lambda: {"n": 0, "valid": 0, "usd": {k: 0.0 for k in keys}, "pool": 0.0})
     for t, p in progs.items():
         try:
             ob = http.get(REST + f"/markets/{t}/orderbook", params={"depth": 10}).json().get("orderbook_fp") or {}
@@ -447,13 +472,17 @@ def once(cfg: dict) -> int:
             g["valid"] += 1
         for q in cfg["sizes"]:
             g["usd"][str(int(q))] += 0.5 * (our_share(q, sy) + our_share(q, sn)) * p["per_day_usd"]
-    print("series          markets  valid-now  pool $/day   " + "   ".join(f"$/day@{int(q)}" for q in cfg["sizes"]))
+        for q in cfg["front_sizes"]:                                 # the cheap-side front policy, term-sheet rule
+            fy = share_qualifying(yes, q, p["target"], p["discount"], True)[0] if ry is not None and ry <= cfg["front_cap"] else 0.0
+            fn = share_qualifying(no, q, p["target"], p["discount"], True)[0] if rn is not None and rn <= cfg["front_cap"] else 0.0
+            g["usd"][f"f{int(q)}c"] += 0.5 * (fy + fn) * p["per_day_usd"]
+    print("series          markets  valid-now  pool $/day   " + "   ".join(f"$/day@{k}" for k in keys) + "   (rates; f<q>c = one tick in front on sides at/below the cap, before anyone responds)")
     tot = collections.Counter()
     for s, g in sorted(by.items(), key=lambda kv: -kv[1]["pool"]):
-        print(f"{s:15s} {g['n']:7d}  {g['valid']:9d}   ${g['pool']:8.0f}   " + "   ".join(f"${g['usd'][str(int(q))]:8.0f}" for q in cfg["sizes"]))
-        for q in cfg["sizes"]:
-            tot[str(int(q))] += g["usd"][str(int(q))]
-    print("total: " + ", ".join(f"${v:,.0f}/day at {k}/side" for k, v in tot.items()))
+        print(f"{s:15s} {g['n']:7d}  {g['valid']:9d}   ${g['pool']:8.0f}   " + "   ".join(f"${g['usd'][k]:8.0f}" for k in keys))
+        for k in keys:
+            tot[k] += g["usd"][k]
+    print("total: " + ", ".join(f"${v:,.0f}/day at {k}" for k, v in tot.items()))
     return 0
 
 
@@ -480,7 +509,7 @@ def wait_for_programs(cfg: dict, load=None, sleep=time.sleep, clock=time.time, s
     load = load or load_programs
     while True:
         try:
-            progs = load(cfg["series"])
+            progs = load(cfg["series"], horizon_s=cfg.get("horizon_s") or 0.0)
         except Exception as e:                                           # noqa: BLE001
             log.warning("program list fetch failed (%s: %s); retrying in 10 min", type(e).__name__, str(e)[:120])
             (status or write_status)(cfg["status"], idle_status(clock(), cfg["series"]))
@@ -498,7 +527,7 @@ def run(cfg: dict) -> int:
     progs = wait_for_programs(cfg)
     log.info("lip scorer: %d program markets, series %s, sizes %s", len(progs), sorted({p['series'] for p in progs.values()}), cfg["sizes"])
     books = Books()
-    scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
+    scorer = Scorer(cfg["db"], progs, cfg["sizes"], books, front_sizes=cfg["front_sizes"], front_cap=cfg["front_cap"])
     sock = BookSocket(sorted(progs), books).start()
     # The implied figure in the status is a 24-h RATE (share x period reward / period days). The gas
     # programs pay $100 a market over a 16-h period, so the money per calendar day is share x $100 a
@@ -517,7 +546,7 @@ def run(cfg: dict) -> int:
             if t0 >= next_reload:
                 next_reload = t0 + cfg["reload_s"]
                 try:
-                    chosen, why = choose_programs(load_programs(cfg["series"]), progs, t0)
+                    chosen, why = choose_programs(load_programs(cfg["series"], horizon_s=cfg["horizon_s"]), progs, t0)
                     if why == "empty":
                         log.warning("program reload returned none while %d programs are still live; keeping them, retrying in 5 min", len(progs))
                         next_reload = t0 + 300
@@ -527,12 +556,12 @@ def run(cfg: dict) -> int:
                         if progs:
                             log.info("all %d programs ended; idle until the next ones are listed (checking every 5 min)", len(progs))
                             scorer.flush_all(); sock.request_stop()
-                            progs = {}; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
+                            progs = {}; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books, front_sizes=cfg["front_sizes"], front_cap=cfg["front_cap"])
                         next_reload = t0 + 300
                     elif why == "changed":
                         log.info("programs changed: %d -> %d; restarting the socket", len(progs), len(chosen))
                         scorer.flush_all()
-                        progs = chosen; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books)
+                        progs = chosen; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books, front_sizes=cfg["front_sizes"], front_cap=cfg["front_cap"])
                         sock.request_stop(); sock = BookSocket(sorted(progs), books).start()
                 except Exception:                                        # noqa: BLE001
                     log.exception("program reload")

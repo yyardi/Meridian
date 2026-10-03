@@ -28,3 +28,38 @@ services:
       options:
         max-size: "20m"
         max-file: "3"
+
+  # Incentive-farming paper scorer (2026-10-03): the same code on the renewing 15-minute series (Coin Race
+  # 24/7; FX and metals on weekdays), tracking upcoming windows two hours ahead so no quarter hour is
+  # missed, scoring the registered estimator AND the term-sheet rule for a 1000-lot one tick in front of
+  # the reference (f1000; f1000c counts a side only while its reference is at or below 10c). Its own
+  # sqlite and status file, so the LIP record (lip_scorer.sqlite) is untouched. docs/math/kalshi-incentive-farming.md.
+  #
+  #   docker compose -f docker-compose.yml -f docker-compose.lip.yml up -d --no-deps farm-scorer
+  farm-scorer:
+    image: meridian-api:latest
+    container_name: kalshi-farm-scorer
+    restart: unless-stopped
+    command: ["python", "-m", "core.kalshi.lip_scorer"]
+    working_dir: /app
+    mem_limit: 128m
+    volumes:
+      - /opt/meridian/core:/app/core:ro
+      - /opt/meridian/artifacts/lip:/data
+    environment:
+      KALSHI_API_KEY_ID: ${KALSHI_API_KEY_ID:-}
+      KALSHI_PRIVATE_KEY_B64: ${KALSHI_PRIVATE_KEY_B64:-}
+      MERIDIAN_LIP_SERIES: ${MERIDIAN_FARM_SERIES:-KXCRYPTOLEAD15M,KXEURUSD15M,KXUSDJPY15M,KXGBPUSD15M,KXNATGAS15M,KXCOPPER15M,KXPLATINUM15M,KXPALLADIUM15M}
+      MERIDIAN_LIP_SIZES: ${MERIDIAN_FARM_SIZES:-200,500,1000}
+      MERIDIAN_LIP_FRONT_SIZES: ${MERIDIAN_FARM_FRONT_SIZES:-1000,300}
+      MERIDIAN_LIP_FRONT_CAP: ${MERIDIAN_FARM_FRONT_CAP:-0.10}
+      MERIDIAN_LIP_HORIZON_S: ${MERIDIAN_FARM_HORIZON_S:-7200}
+      MERIDIAN_LIP_RELOAD_S: ${MERIDIAN_FARM_RELOAD_S:-900}
+      MERIDIAN_LIP_DB: /data/farm_scorer.sqlite
+      MERIDIAN_LIP_STATUS: /data/farm_status.json
+      PYTHONUNBUFFERED: "1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
