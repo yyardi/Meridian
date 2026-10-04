@@ -276,3 +276,14 @@ def test_ws_close_is_idempotent_and_safe_from_a_second_thread():
     ts = [threading.Thread(target=closer) for _ in range(8)]
     [th.start() for th in ts]; [th.join() for th in ts]
     assert errs == [] and s3.closed == 1 and len(s3.sent) == 1
+
+
+def test_a_reader_on_a_closed_client_gets_connection_closed_not_attribute_error():
+    from core.polymarket.ws_min import WSClient
+    import pytest
+    c = WSClient("wss://example.invalid/x", {}, timeout=1.0)
+    c._sock = None
+    with pytest.raises(ConnectionClosed):
+        c.recv_json()
+    c.close(); c.close()                                                  # idempotent on a client never opened
+
