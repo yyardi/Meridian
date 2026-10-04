@@ -425,8 +425,8 @@ class BookSocket:
         if ws is not None:
             try:
                 ws.close()
-            except OSError:
-                pass
+            except Exception:                                            # noqa: BLE001 -- a close racing the session's own cleanup
+                pass                                                     # must never escape into the reload loop (the new socket would not start)
 
     def counters(self, now: float | None = None) -> dict:
         now = self._clock() if now is None else now

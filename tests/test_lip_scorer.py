@@ -248,3 +248,31 @@ def test_the_startup_wait_survives_a_failed_fetch_and_an_empty_answer_and_writes
     assert slept == [600, 300]                                           # a failure waits longer than an empty answer
     assert len(written) == 2 and all(w["markets"] == 0 and w["idle"] for w in written)
 
+
+
+def test_ws_close_is_idempotent_and_safe_from_a_second_thread():
+    # prod 2026-10-04 14:03Z: request_stop() and the session's finally both closed the same WSClient;
+    # the second saw _sock become None between its check and its call and raised AttributeError
+    from core.polymarket.ws_min import WSClient
+
+    class Sock:
+        def __init__(self): self.closed = 0; self.sent = []
+        def sendall(self, b): self.sent.append(b)
+        def close(self): self.closed += 1
+
+    ws = WSClient.__new__(WSClient); ws._sock = Sock(); ws._buf = b""
+    first = ws._sock
+    ws.close(); ws.close()                                               # twice, sequentially
+    assert first.closed == 1 and len(first.sent) == 1 and ws._sock is None
+    ws._sock = s2 = Sock()
+    s2.close = lambda: (_ for _ in ()).throw(OSError("already"))            # the OS refusing the close is swallowed too
+    ws.close()
+    assert ws._sock is None
+    # two threads closing at once: exactly one close frame, no exception from either
+    ws._sock = s3 = Sock(); errs = []
+    def closer():
+        try: ws.close()
+        except Exception as e: errs.append(e)                             # noqa: BLE001
+    ts = [threading.Thread(target=closer) for _ in range(8)]
+    [th.start() for th in ts]; [th.join() for th in ts]
+    assert errs == [] and s3.closed == 1 and len(s3.sent) == 1

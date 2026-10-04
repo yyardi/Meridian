@@ -114,15 +114,20 @@ class WSClient:
             raise ConnectionClosed("handshake: bad Sec-WebSocket-Accept")
 
     def close(self) -> None:
-        if self._sock is not None:
-            try:
-                self._sock.sendall(encode_frame(OP_CLOSE, struct.pack("!H", 1000)))
-            except OSError:
-                pass
-            try:
-                self._sock.close()
-            finally:
-                self._sock = None
+        """Idempotent and safe from two threads: the socket is detached first, so a second closer
+        (a stop request racing a session's own cleanup) finds None and returns instead of raising
+        AttributeError half-way through the first close (meridian-lip-scorer, 2026-10-04 14:03Z)."""
+        sock, self._sock = self._sock, None
+        if sock is None:
+            return
+        try:
+            sock.sendall(encode_frame(OP_CLOSE, struct.pack("!H", 1000)))
+        except OSError:
+            pass
+        try:
+            sock.close()
+        except OSError:
+            pass
 
     # -- io -----------------------------------------------------------------
     def _read_exact(self, n: int) -> bytes:
