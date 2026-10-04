@@ -488,3 +488,28 @@ restart; **the hourly A/B's control was latched 2026-10-03 13:00:31Z to the rest
 twin kept filling, so the paired secondary excludes windows in that span** and the primary (the
 twin on its own) is unaffected. The fills refused in the hole are not reconstructed.
 
+## The hourly A/B read (2026-10-04 14:23Z): zero inside the CI, the hourly maker channel closes
+
+Run once, when the twin passed 60 settled fills (69 at 13:07Z), on a read-only snapshot of both
+hourly arm ledgers (`/tmp/abread.mF88MJ` on prod, copied 14:23:38Z), fills from the restart at
+2026-10-01 16:10:27Z only. Ledger convention: makers at zero fee; the −1.25¢ rebate is not added
+(at one contract it rounds to $0.00 per trade anyway).
+
+| | n fills (= windows) | mean net per window | 95% CI | t | total | by side |
+|---|--:|--:|---|--:|--:|---|
+| **twin** `touch_maker_t` (primary) | 70 | **−5.9¢** | [−17.7, +6.0] | −0.97 | −$4.11 | NO −13.8¢ (n 34), YES +1.6¢ (n 36) |
+| control `touch_maker` | 64 | −10.1¢ | [−22.3, +2.1] | −1.63 | −$6.48 | NO −17.1¢ (n 32), YES −3.2¢ (n 32) |
+
+Secondary, paired on the 64 windows both filled (none fell in the control's latched span,
+2026-10-03 13:00:31Z–16:48:28Z; 6 twin-only windows): twin − control **+2.8¢ ± 3.2**, 95% CI
+[−3.5, +9.2], t +0.87. Mark-out per fill, mid of the venue's book after the fill against the
+fill price: 30 s twin +0.35¢ (n 71) vs control +0.02¢ (n 65), Welch t +0.42; 60 s +0.01¢ vs
++0.06¢, Welch t −0.04.
+
+**Decision, by the rule written on 10-01.** The primary's interval contains zero, so the hourly
+maker channel closes as the 15-minute one did: the spot trigger does not make joining the
+hourly touch pay, and the replay's −0.5¢ a window was the replay. The secondary says the trigger
+adds nothing distinguishable from zero here either. The standing rule retires the losing arm:
+the control (−10.1¢) is removed from btc1h; the twin stays as the hourly record at zero cost.
+Both arms' losses sit on the NO fills, which is where a join on a rising market gets picked off.
+

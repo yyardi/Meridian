@@ -109,7 +109,10 @@ services:
       # read is in docs/math/btc15-v2-arms.md, "The hourly A/B"). The twin needs the coinbase
       # socket, so spot sockets are on here too and the hourly tape carries spot as well: a
       # duplicate of the 15-minute bot's, ~33 MB/day under the tape's 3-day retention.
-      MERIDIAN_BTC15_ARMS: '[{"name": "touch_maker", "prob": "mid", "kind": "join", "margin": 0.0}, {"name": "touch_maker_t", "prob": "mid", "kind": "join", "margin": 0.0, "spot_pull_usd": 10.0}]'
+      # 2026-10-04: the hourly A/B read (docs/math/btc15-v2-arms.md) closed the channel -- the twin's
+      # CI includes zero -- and retired the control, the worse of the two; the twin stays as the
+      # hourly record at zero cost.
+      MERIDIAN_BTC15_ARMS: '[{"name": "touch_maker_t", "prob": "mid", "kind": "join", "margin": 0.0, "spot_pull_usd": 10.0}]'
       MERIDIAN_BTC15_SPOT_SOCKETS: "1"
       MERIDIAN_BTC15_DECIDE_AT_S: "60"
       MERIDIAN_BTC15_MIN_LEAD_S: "180"
