@@ -131,9 +131,19 @@ class WSClient:
 
     # -- io -----------------------------------------------------------------
     def _read_exact(self, n: int) -> bytes:
-        assert self._sock is not None
+        # the reader holds its own reference: close() from another thread detaches self._sock, and
+        # the reader then sees a closed socket (OSError / empty read) or None here, never an
+        # AttributeError half-way through a recv
+        sock = self._sock
+        if sock is None:
+            raise ConnectionClosed("socket closed")
         while len(self._buf) < n:
-            chunk = self._sock.recv(max(4096, n - len(self._buf)))
+            try:
+                chunk = sock.recv(max(4096, n - len(self._buf)))
+            except OSError as e:
+                if self._sock is None:
+                    raise ConnectionClosed("socket closed") from e
+                raise
             if not chunk:
                 raise ConnectionClosed("socket closed")
             self._buf += chunk
