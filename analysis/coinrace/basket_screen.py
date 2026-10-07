@@ -251,6 +251,45 @@ def basket_detail(bk, candles, opens: dict[str, float], samples=None) -> list[di
     return rows
 
 
+def summarise_detail(rows: list[dict], span_days: float, min_n: float = 10.0) -> dict:
+    """The executed baskets of one side, split at min_n contracts a leg (below it: probes). Order statistics
+    are nearest-rank, never extrapolated."""
+    def qs(xs, fs=(0.1, 0.5, 0.9)):
+        xs = sorted(xs)
+        return [xs[min(len(xs) - 1, int(f * len(xs)))] for f in fs] if xs else None
+    out = {}
+    for side in ("yes", "no"):
+        for tag, sel in (("probe", lambda r: r["n"] < min_n), ("sized", lambda r: r["n"] >= min_n)):
+            b = sorted((r for r in rows if r["side"] == side and sel(r)), key=lambda r: r["t0"])
+            if not b:
+                out[f"{side}_{tag}"] = {"baskets": 0}
+                continue
+            nxt = []
+            for k, r in enumerate(b):                                     # the same side again in the same window
+                later = [x["t0"] - r["t1"] for x in b[k + 1:] if x["ev"] == r["ev"]]
+                if later:
+                    nxt.append(min(later))
+            aft = [r for r in b if "after_net_c200" in r]
+            out[f"{side}_{tag}"] = {
+                "baskets": len(b), "per_day": len(b) / span_days, "windows": len({r["ev"] for r in b}),
+                "size_p10_p50_p90": qs([r["n"] for r in b]), "contracts_per_leg": sum(r["n"] for r in b),
+                "sum_paid_c_p10_p50_p90": qs([r["vwap_sum"] for r in b]),
+                "fee_c_per_basket_p10_p50_p90": qs([r["fee_c_per_basket"] for r in b]),
+                "net_c_per_basket_p10_p50_p90": qs([r["net_c"] for r in b]),
+                "net_positive": sum(r["net_c"] > 0 for r in b),
+                "net_usd": sum(r["net_usd"] for r in b), "net_usd_per_day": sum(r["net_usd"] for r in b) / span_days,
+                "minute_of_window_p10_p50_p90": qs([r["minute_of_window"] for r in b]),
+                "legs_span_ms_p50_max": [1000 * x for x in qs([r["t1"] - r["t0"] for r in b], (0.5, 1.0))],
+                "baskets_touching_more_than_one_level_per_leg": sum(r["levels"] > 5 for r in b),
+                "repeat_same_window_s_p50": qs(nxt, (0.5,)), "repeats": len(nxt),
+                "residue_next_minute_close": {"n": len(aft), "still_clears_c1": sum(r["after_net_c1"] > 0 for r in aft),
+                                              "still_clears_c200": sum(r["after_net_c200"] > 0 for r in aft),
+                                              "net_c200_p10_p50_p90": qs([r["after_net_c200"] for r in aft]),
+                                              "lag_s_p50": qs([r["after_lag_s"] for r in aft], (0.5,))},
+            }
+    return out
+
+
 def summarise_rows(rows, span_days: float) -> dict:
     out = {"n_minutes": len(rows), "n_windows": len({r["ev"] for r in rows}), "span_days": span_days}
     for key in ("yes_net", "no_net"):
@@ -348,6 +387,10 @@ def main() -> None:
         rows = basket_detail(bk, cand, opens, samp)
         with open(a.detail, "w") as f:
             json.dump(rows, f)
+        ends = duckdb.sql(f"""SELECT min(epoch(window_end_utc)), max(epoch(window_end_utc)) FROM read_parquet('{a.trades}')
+                              WHERE epoch(window_end_utc) > {ts0 if ts0 > -math.inf else 0}
+                                AND epoch(window_end_utc) <= {ts1 if ts1 < math.inf else 4e9}""").fetchone()
+        rep["executed"] = summarise_detail(rows, (ends[1] - ends[0]) / 86400 + 15 / 1440)
     if a.trades:
         pr = duckdb.sql(f"""SELECT split_part(ticker, '-', 2), coin, epoch(created_time), taker_side, count,
                                    CAST(round(yes_price * 100) AS INTEGER) FROM read_parquet('{a.trades}')

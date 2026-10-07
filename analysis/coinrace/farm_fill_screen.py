@@ -253,6 +253,10 @@ def main() -> None:
     if a.until:
         mk = mk[mk.close_ts <= pd.Timestamp(a.until).timestamp()]
     tr = load_trades(a.trades)
+    # the universe is every market-window the trades file COVERS (a newest-first file covers a suffix of the
+    # history; market-windows before it would enter the denominator with zero fills)
+    covered_from = float(q(f"SELECT min(epoch(window_end_utc)) AS m FROM read_parquet('{a.trades}')").m.iloc[0])
+    mk = mk[mk.close_ts >= covered_from]
     tr = tr[tr.ticker.isin(mk.ticker)]
     book = load_book_sample(a.book) if a.book else load_book_candles(a.candles)
     book = book[book.ticker.isin(mk.ticker)]
@@ -260,6 +264,7 @@ def main() -> None:
     res = run(tr, mk, book, a.pull_last_s)
     s = summarise(res, mk, lo, hi)
     s["reward_per_mw_usd"] = [lo, hi]
+    s["trades_file_covers_windows_from_ts"] = covered_from
     s["book_source"] = "farm scorer sample" if a.book else "venue 1-min candles"
     print(json.dumps(s, indent=1))
 
