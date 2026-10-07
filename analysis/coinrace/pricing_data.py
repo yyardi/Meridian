@@ -89,6 +89,7 @@ def write_parquet(df: pd.DataFrame, path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     con = duckdb.connect()
+    con.execute("SET threads=2")  # the operator's laptop: keep DuckDB to two threads
     con.register("df", df)
     con.execute(f"COPY (SELECT * FROM df) TO '{tmp}' (FORMAT parquet, COMPRESSION zstd)")
     con.close()
@@ -97,6 +98,7 @@ def write_parquet(df: pd.DataFrame, path: str) -> None:
 
 def read_parquet(path: str) -> pd.DataFrame:
     con = duckdb.connect()
+    con.execute("SET threads=2")
     con.execute("SET TimeZone='UTC'")  # else timestamps come back in the Mac's local zone
     df = con.execute(f"SELECT * FROM read_parquet('{path}')").df()
     con.close()
