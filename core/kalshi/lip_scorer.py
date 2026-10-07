@@ -211,8 +211,8 @@ class Books:
                 self.seq[sid] = seq
             if t == "orderbook_snapshot":
                 self.snapshots += 1
-                self.levels[tk] = {"yes": {float(p): float(q) for p, q in (m.get("yes_dollars_fp") or m.get("yes_dollars") or [])},
-                                   "no": {float(p): float(q) for p, q in (m.get("no_dollars_fp") or m.get("no_dollars") or [])}}
+                self.levels[tk] = {"yes": {float(p): round(float(q), 2) for p, q in (m.get("yes_dollars_fp") or m.get("yes_dollars") or []) if float(q) > 0},
+                                   "no": {float(p): round(float(q), 2) for p, q in (m.get("no_dollars_fp") or m.get("no_dollars") or []) if float(q) > 0}}
             else:
                 self.deltas += 1
                 side = m.get("side")
@@ -220,8 +220,12 @@ class Books:
                 if book is None:
                     return None
                 p = float(m.get("price_dollars")); d = float(m.get("delta_fp") or m.get("delta") or 0)
-                q = book.get(p, 0.0) + d
-                if q <= 1e-9:
+                # sizes are fixed-point with two decimals; summing float deltas left residue (~1e-6 on
+                # six-figure levels) above the old 1e-9 floor, so a fully cancelled level stayed as a
+                # phantom best price with "0.00" contracts -- 40% of the NFL tape's best-price lines on
+                # 2026-10-04 were crossed by it. Round to the venue's resolution; zero removes the level.
+                q = round(book.get(p, 0.0) + d, 2)
+                if q <= 0:
                     book.pop(p, None)
                 else:
                     book[p] = q
