@@ -313,3 +313,17 @@ def test_a_program_reload_carries_each_markets_hour_instead_of_overwriting_it(tm
     gone = Scorer(str(tmp_path / "lip2.sqlite"), {}, [200.0], books)
     gone.adopt(old2)
     assert sqlite3.connect(str(tmp_path / "lip2.sqlite")).execute("SELECT seconds FROM lip_hourly WHERE ticker='M1'").fetchone() == (7,)
+
+
+def test_a_fully_cancelled_large_level_leaves_the_book_instead_of_staying_as_a_phantom_best():
+    # the 2026-10-04 NFL tape: seven-figure levels built from float deltas and then cancelled to zero
+    # stayed as the best price with ~2e-9 contracts and crossed the book; this exact sequence leaves
+    # 1.86e-9 under plain float addition, above the old 1e-9 floor
+    b = Books()
+    b.handle(_snap("M1", [(0.46, 4895.33)], [(0.53, 100.0)], seq=1), 1.0)
+    seq = 2
+    for d in (898829.49, 1451235.58, 1498197.28, 474083.27, 1831599.06, -6153944.68):
+        b.handle(_delta("M1", "no", 0.55, d, seq=seq), 1.0); seq += 1
+    assert b.side("M1", "no") == [(0.53, 100.0)]                         # the 0.55 level is gone
+    yes, no = b.side("M1", "yes"), b.side("M1", "no")
+    assert yes[0][0] + no[0][0] <= 1.0                                   # not crossed
