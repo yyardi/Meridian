@@ -129,6 +129,7 @@ def cluster_ci(values: pd.Series, clusters: pd.Series, reps: int = 2000, seed: i
 
 def q(sql: str) -> pd.DataFrame:
     import duckdb
+    duckdb.sql("SET threads=2")                      # the operator's laptop: keep it quiet
     return duckdb.sql(sql).df()
 
 

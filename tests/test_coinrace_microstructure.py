@@ -58,10 +58,10 @@ def test_yes_basket_reads_only_no_bids_and_no_basket_only_yes_bids():
 
 
 def test_control_a_two_cent_shift_on_one_leg_flips_the_sign():
-    # the 2026-10-04 17:22:06Z tick of window 26OCT041330 (NO basket -0.03c at 200 a leg): YES bids
-    # BTC 15, ETH 17, HYPE 7, SOL 64, XRP 1 with the NO bids that tick (only the YES bids enter the NO basket)
+    # the farm scorer's 2026-10-04 17:22:06.6Z sample of window 26OCT041330, the closest any NO basket came to
+    # clearing (-0.03c at 200 a leg): YES bids BTC 15, ETH 17, HYPE 7, SOL 64, XRP 1; NO bids 84, 82, 88, 23, 97
     yb = [15, 17, 7, 64, 1]
-    nb = [83, 81, 91, 34, 97]
+    nb = [84, 82, 88, 23, 97]
     _, n = bs.basket_net(yb, nb, c=200)
     assert -1 < n < 0
     shifted = yb.copy(); shifted[3] += 2                      # SOL's NO ask 2c cheaper
@@ -171,3 +171,50 @@ def test_front_live_pays_one_tick_over_the_sweep_top():
     f, p = ff.fills_front_live(pr, cap_c=10)
     assert p.tolist() == [4, 4, 10, -1]
     assert f.tolist() == [5, 7, 4, 0]
+
+
+# ---------------------------------------------------------------- baskets executed on the tape
+def _basket_prints(ev, t, side, n, prices, extra=()):
+    coins = ["BTC", "ETH", "HYPE", "SOL", "XRP"]
+    return [(ev, c, t + 0.001 * i, side, n, p) for i, (c, p) in enumerate(zip(coins, prices))] + list(extra)
+
+
+def test_tape_basket_by_hand():
+    # all five YES bought at 13/8/9/31/31 (sum 92c), 119 a leg -- the 2026-10-06 03:22:58Z basket
+    pr = _basket_prints("26OCT052330", 1000.0, "yes", 119, [13, 8, 9, 31, 31])
+    (b,) = bs.tape_baskets(pr)
+    assert b["side"] == "yes" and b["n"] == 119 and b["vwap_sum"] == 92
+    # fees at 119: ceil(.07*119*p(1-p)) per leg = 95 + 62 + 69 + 179 + 179 = 584c
+    assert b["net_usd"] == pytest.approx((100 * 119 - 92 * 119 - 584) / 100)
+
+
+def test_tape_basket_needs_five_equal_legs_and_one_side():
+    four = _basket_prints("W", 0.0, "yes", 10, [20, 20, 20, 20, 20])[:4]
+    assert bs.tape_baskets(four) == []
+    unequal = _basket_prints("W", 0.0, "yes", 10, [20, 20, 20, 20, 20])
+    unequal[-1] = ("W", "XRP", 0.004, "yes", 30, 20)
+    assert bs.tape_baskets(unequal) == []
+    mixed = _basket_prints("W", 0.0, "yes", 10, [20, 20, 20, 20, 20])
+    mixed[-1] = ("W", "XRP", 0.004, "no", 10, 20)
+    assert bs.tape_baskets(mixed) == []
+    apart = _basket_prints("W", 0.0, "yes", 10, [20, 20, 20, 20, 20])
+    apart[-1] = ("W", "XRP", 5.0, "yes", 10, 20)                # a leg 5 s later is not the same basket
+    assert bs.tape_baskets(apart) == []
+
+
+def test_no_basket_prices_the_no_legs():
+    # buying NO on all five where YES printed 1/2/3/4/90: NO paid 99+98+97+96+10 = 400 -> gross 0
+    (b,) = bs.tape_baskets(_basket_prints("W", 0.0, "no", 100, [1, 2, 3, 4, 90]))
+    assert b["side"] == "no" and b["vwap_sum"] == 400 and b["gross_c"] == 0 and b["net_c"] < 0
+
+
+def test_residue_reads_the_first_book_after_the_basket():
+    (b,) = bs.tape_baskets(_basket_prints("E", 100.0, "yes", 50, [13, 8, 9, 31, 31]))
+    coins = ["BTC", "ETH", "HYPE", "SOL", "XRP"]
+    # candles (end, yes_bid, yes_ask): one before the basket that clears (asks sum 80) must be ignored; the
+    # one after has asks 14/9/10/33/40 = 106 -> nothing left
+    cand = {f"KXCRYPTOLEAD15M-E-{c}": [(90.0, 1, a0), (120.0, 1, a1)]
+            for c, a0, a1 in zip(coins, [10, 8, 8, 27, 27], [14, 9, 10, 33, 40])}
+    (d,) = bs.basket_detail([b], cand, {"E": 40.0})
+    assert d["minute_of_window"] == pytest.approx(1.0)
+    assert d["after_net_c1"] < 0 and d["after_lag_s"] == pytest.approx(120.0 - b["t1"])

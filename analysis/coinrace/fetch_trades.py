@@ -164,6 +164,7 @@ def cmd_trades(out: str, lim: Limiter, workers: int) -> None:
 def cmd_assemble(out: str, since: str | None, dest: str | None = None) -> None:
     import duckdb
     con = duckdb.connect()
+    con.execute("SET threads=2")                     # the operator's laptop: keep it quiet
     parts = glob.glob(os.path.join(out, "parts", "*.jsonl"))
     where = f"WHERE m.close_time >= TIMESTAMPTZ '{since}'" if since else ""
     con.execute(f"""
@@ -232,18 +233,25 @@ def cmd_publish(out: str, dest_dir: str, min_days: float) -> None:
     full = k == total
     # 'since' is the oldest close INCLUDED: assemble filters close_time >= since
     cmd_assemble(out, since, dest)
+    k = sum(1 for m in load_markets(out) if m["close_time"] >= since)         # markets in the published scope
     import duckdb
+    duckdb.sql("SET TimeZone='UTC'")
+    duckdb.sql("SET threads=2")
     s = duckdb.sql(f"""SELECT count(*), sum(count), count(DISTINCT ticker), count(DISTINCT window_end_utc),
                          CAST(min(window_end_utc) AS VARCHAR), CAST(max(window_end_utc) AS VARCHAR), CAST(min(created_time) AS VARCHAR),
                          CAST(max(created_time) AS VARCHAR) FROM read_parquet('{dest}')""").fetchone()
+    chk = duckdb.sql(f"""WITH t AS (SELECT ticker, sum(count) c FROM read_parquet('{dest}') GROUP BY 1),
+                              m AS (SELECT ticker, CAST(volume_fp AS DOUBLE) v FROM read_json('{os.path.join(out, "markets.jsonl")}'))
+                         SELECT count(*), sum((abs(c - v) < 0.005)::INT) FROM t JOIN m USING (ticker)""").fetchone()
     with open(os.path.join(dest_dir, "trades.COVERAGE.txt"), "w") as f:
         f.write(f"written {dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')} by analysis/coinrace/fetch_trades.py publish\n"
                 f"source: GET /trade-api/v2/markets/trades?ticker=<each settled KXCRYPTOLEAD15M market> (public, no key), every page\n"
                 f"coverage: {'FULL HISTORY' if full else 'NEWEST WINDOWS ONLY (fetch continues; this file is replaced by a larger one when it ends)'}\n"
-                f"windows closing {since} .. {newest} ({span:.2f} days); markets fetched {k} of {total} settled\n"
+                f"windows closing {since} .. {newest} ({span:.2f} days); settled markets in scope {k} of {total}\n"
                 f"rows (trades) {s[0]}, contracts {s[1]:.2f}, markets with >=1 trade {s[2]}, windows with >=1 trade {s[3]}\n"
                 f"window_end_utc {s[4]} .. {s[5]}; created_time {s[6]} .. {s[7]}\n"
                 f"markets with zero volume in the listing were not requested and have no rows\n"
+                f"completeness: summed contracts equal the market's listed volume_fp on {chk[1]} of {chk[0]} markets with trades\n"
                 f"columns: ticker, coin, window_end_utc (= market close_time), created_time, yes_price, no_price, count (fractional\n"
                 f"  contracts exist), taker_side (the side the taker BOUGHT: 'no' fills a resting YES bid at yes_price), result\n"
                 f"  (yes/no/scalar; scalar = a two-coin tie, settlement 0.5), winner_coin, taker_outcome_side, taker_book_side,\n"
