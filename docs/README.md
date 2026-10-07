@@ -117,3 +117,4 @@ New to the project? The root **[README](../README.md)**, then **[STATUS.md](../S
 
 Want the history? **[how-it-all-works.md](how-it-all-works.md)** → **[math/market-shrinkage.md](math/market-shrinkage.md)** → **[math/calibration-problem.md](math/calibration-problem.md)**: how the first phase worked, and why forecasting the WNBA better than the market was not where the edge was.
 - [cross-venue-inplay-football.md](math/cross-venue-inplay-football.md) — Polymarket vs Kalshi in play at message cadence, registered 10-02; read Monday 10-05
+- [coinrace-research.md](math/coinrace-research.md) — Kalshi Coin Race: the contract, 4,000 windows of history, four screens registered 10-07
