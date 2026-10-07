@@ -56,7 +56,7 @@ Live money (a Kalshi trading key and collateral) is the operator's switch.
 and holding to settlement lost **−2.70¢ per contract [−3.63, −1.76]** (mean per contract,
 window-clustered 95% CI; 8,834 contracts, 3,483 windows, 42 UTC days, 2026-08-27 → 10-07), and
 lost at every one of the four minutes. The log-loss leg passes only against the registered
-"market" (the last print, normalised), at minutes 5, 10 and 13. That print is often stale.
+"market" (the last print, normalised), at minutes 5, 10 and 13, on the full 47-day print tape. That print is often stale.
 Against the book mid at the same instants the model loses at minute 1, ties at 5 and 10, and
 wins only at minute 13 on log loss, while losing on Brier at every minute. Under the bar,
 **directional trading on this market closes.** This is a screen on recorded data. Nothing
@@ -87,10 +87,11 @@ on the operator's laptop.
   89% of the asks come from that exact candle. The rest come from the latest earlier candle in
   the same window, on the assumption that a missing candle means an unchanged book.
   Cross-check against the trade tape: the candle's last price matches the tape's last print
-  within 0.5¢ on 95.1% of 12,259 market-minutes that have both, and within 1¢ on 97.1%.
-- **Prints.** `trades.parquet` from the coinrace-microstructure agent covers windows closing
-  2026-09-15 18:15Z → 10-07 03:30Z (21.4 days): 155,264 prints on 9,757 markets. Its summed
-  contracts equal each market's listed volume on all 9,757.
+  within 0.5¢ on 94.9% of 28,101 market-minutes that have both, and within 1¢ on 96.7%.
+- **Prints.** `trades.parquet` from the coinrace-microstructure agent, full history: windows
+  closing 2026-08-20 16:15Z → 10-07 03:30Z (47.5 days), 368,476 prints on 19,876 markets.
+  Its summed contracts equal each market's listed volume on all 19,876. (A first pass on its
+  21.4-day partial file gave the same signs and significance at every minute.)
 
 ### The proxy, and the bound it puts on everything else
 
@@ -161,15 +162,15 @@ window is 0.0013. Fitting uses 256 draws.
 ### Model vs market (registered: the last print at or before open + 60·m, five normalised to sum to 1)
 
 Windows count only when all five markets have printed by the minute. That selects windows with
-active books in every coin: 30 at minute 1, 660 at 5, 1,422 at 10 and 1,670 at 13, out of the
-tape's 2,030 windows.
+active books in every coin: 109 at minute 1, 1,550 at 5, 2,872 at 10 and 3,321 at 13, out of
+the 3,882 windows the model priced.
 
 | minute | windows / days | log loss model | market | climatology | model − market [95% CI, day-clustered] | Brier model | market | model − market [95% CI] |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 30 / 12 | 1.2891 | 1.3521 | 1.5549 | −0.0630 [−0.3065, +0.1805] | 0.6651 | 0.6956 | −0.0305 [−0.1599, +0.0989] |
-| 5 | 660 / 23 | 1.1121 | 1.2192 | 1.5411 | −0.1071 [−0.1516, −0.0626] | 0.5792 | 0.6132 | −0.0340 [−0.0548, −0.0131] |
-| 10 | 1,422 / 23 | 0.8064 | 0.9015 | 1.5472 | −0.0951 [−0.1187, −0.0714] | 0.4263 | 0.4614 | −0.0352 [−0.0459, −0.0245] |
-| 13 | 1,670 / 23 | 0.4782 | 0.6093 | 1.5501 | −0.1312 [−0.1677, −0.0946] | 0.2648 | 0.3110 | −0.0461 [−0.0629, −0.0294] |
+| 1 | 109 / 30 | 1.4115 | 1.4585 | 1.5478 | −0.0470 [−0.1334, +0.0393] | 0.7078 | 0.7239 | −0.0161 [−0.0576, +0.0253] |
+| 5 | 1,550 / 42 | 1.1744 | 1.2500 | 1.5579 | −0.0756 [−0.1047, −0.0465] | 0.6066 | 0.6317 | −0.0251 [−0.0378, −0.0124] |
+| 10 | 2,872 / 42 | 0.8287 | 0.9226 | 1.5561 | −0.0939 [−0.1088, −0.0791] | 0.4384 | 0.4705 | −0.0321 [−0.0390, −0.0252] |
+| 13 | 3,321 / 42 | 0.4897 | 0.6094 | 1.5575 | −0.1197 [−0.1433, −0.0961] | 0.2692 | 0.3067 | −0.0375 [−0.0476, −0.0274] |
 
 **Read this table as a statement about stale prints, not about pricing.** A last print can be
 minutes old: in the hand check below, XRP's last print, 24 s before the minute, is 0.32, above
@@ -208,8 +209,9 @@ Size at the ask is not checked; one contract is assumed fillable. P&L = settleme
 | 13 | 2,181 | 1,939 | 42 | 0.344 | +7.65¢ | −3.03¢ [−4.43, −1.63] | 32.9% |
 | **all** | **8,834** | **3,483** | **42** | 0.290 | +4.97¢ | **−2.70¢ [−3.63, −1.76]** | 27.9% |
 
-On the 23 days the print tape covers, the result is the same: −2.95¢ [−4.33, −1.56] on 4,191
-contracts in 1,788 windows. The model claimed +4.97¢ a contract and realised −2.70¢. Where the
+On the 23 days of the first, partial print tape (09-15 → 10-07), it is the same: −2.95¢
+[−4.33, −1.56] on 4,191 contracts in 1,788 windows. The taker rule uses candle asks, not prints,
+so the tape's length does not change it. The model claimed +4.97¢ a contract and realised −2.70¢. Where the
 model and the book disagree, the book is usually right.
 
 By claimed edge (shape only; a threshold picked from this table would be a new hypothesis, not
@@ -231,9 +233,9 @@ destroys the link to the path.
 
 - **No seed passes the bar** (0 of 20). No seed passes the log-loss leg alone. In no seed and
   at no minute does the model beat climatology with a CI excluding zero.
-- Model minus climatology, mean over seeds (min..max): +0.234 (−0.085..+0.410) at minute 1,
-  +0.594 at 5, +1.388 at 10, +2.741 at 13. With real outcomes the same difference is −0.06,
-  −0.34, −0.72 and −1.07. The model's skill is in the outcomes, not in the scoring.
+- Model minus climatology on the registered windows, mean over seeds (min..max): +0.191
+  (+0.123..+0.288) at minute 1, +0.540 at 5, +1.410 at 10, +3.022 at 13. With real outcomes
+  the same difference is −0.14, −0.38, −0.73 and −1.07. The model's skill is in the outcomes, not in the scoring.
 - Taker rule under shuffle: −8.74¢ per contract mean. The highest CI upper bound across seeds
   is −6.39¢ (n 8,834).
 
