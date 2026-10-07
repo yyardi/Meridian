@@ -543,3 +543,92 @@ What the pass does not cover:
 As a screen this clears the farming live step to the operator's switch, unchanged: one window's
 five markets, 1,000 a side one tick in front on sides ≤ 10¢, pulled at T − 60 s, N = 48. The
 step's own pass (realised reward ≥ 60% of paper, net of fills ≥ $0) is the result.
+
+## 2026-10-07 — Registered read: the live paper farming arm (written before it runs)
+
+The step between the Q3 screen and the live step: the registered live-step policy run against the
+live book and the live prints, placing nothing. It answers what we would have been paid and what we
+would have lost, on days nobody has seen yet. **Paper cannot see incumbents responding to our quote,
+and fills at our price are inferred from prints.** Every figure it produces is before anyone responds.
+
+Instrument: `core/kalshi/farm_paper.py`, compose service `farm-paper` (container `kalshi-farm-paper`,
+`docker-compose.lip.yml`), ledger `/opt/meridian/artifacts/lip/farm_paper.sqlite`, status
+`farm_paper_status.json` every minute. Tests: `tests/test_farm_paper.py`.
+
+**Policy** (the live step in docs/math/kalshi-incentive-farming.md, unchanged). KXCRYPTOLEAD15M
+only. On each market, each side (YES bid, NO bid) rests 1,000 one tick in front of that side's best
+bid, re-priced on every book change. A side is quoted only while that price is ≤ 10¢. With our 1,000
+at the top, the side's term-sheet reference is our own price, so this is "reference ≤ 10¢". It is
+also the Q3 screen's "front, live, ≤ 10¢". The quote never crosses: our YES bid + the best NO bid
+< $1, and likewise for NO. A side that cannot sit one tick in front without crossing rests nothing.
+Joining the best would put us behind its queue, and the fill rule does not model a queue. Both sides
+are pulled at T − 60 s. A filled side is not refilled, so at most 1,000 fill per side per window.
+
+**What it records, each second of a market's program period:**
+
+- **Reward.** Our share under the term sheet at our price, using the size still resting
+  (`share_qualifying(price=)`, improve=True's walk). Half of the YES share plus half of the NO share,
+  times $20 / 900 s. A second pays only when both sides' incumbent depth reaches the Target Size,
+  as the farm scorer counts it.
+- **Fills, from the trade channel.** A taker who sells into a side's bids at or below our bid fills
+  us first, at our price, up to the remaining size. `taker_side='no'` hits the YES bids at
+  `yes_price`; `'yes'` hits the NO bids at `no_price`. A print's own book delta can arrive first and
+  move our quote down. So a print is tested against the highest price our quote held in the last
+  1 s, and fills that needed this carry `via_lookback`.
+- **Settlement.** Once `/markets/{ticker}` shows settled or finalized, each fill settles at value − p
+  for YES or (1 − value) − p for NO. A tie settles at 0.5. Makers pay no fee.
+- **Print audit.** At settlement the market's full public tape is compared with what the socket
+  delivered: `prints_rest`, `prints_missed`, and `missed_fillable`, the contracts that would have
+  hit our quote (an upper bound). Socket restarts are deferred to the dead zone after T − 60 s and
+  before the next window opens.
+- **Retention.** Quote samples keep 3 days. The ledger keeps 7 days, so the read cannot be pruned
+  out from under itself.
+
+**When and by whom.** One read, once, after 3 full days: the 288 windows (1,440 market-windows) that
+start at the first window the arm saw open. Run it at that start + 3 days + 1 hour, so the last
+window has settled:
+`docker exec kalshi-farm-paper python -m core.kalshi.farm_paper --read`. That prints every line
+below, with the caveats. Whoever deploys the arm runs it.
+
+**Estimators** (code: `registered_read`):
+
+1. **Net per market-window** = paper reward + settled fill P&L, i.e. reward − fill losses. Report
+   the mean, a 95% CI clustered on the window (linearised ratio; cluster = the 15-minute window of
+   five markets), n market-windows and n windows.
+2. **Reward and fill P&L separately**, each with the same kind of CI.
+3. **Loss tail per window.** Loss = −(the five markets' summed settled fill P&L), fills only, not
+   offset by reward. Report p90 (nearest rank) and the max.
+4. **Fraction of program seconds** that were valid, that the arm ticked, and that each side was
+   quoted.
+5. **Stepped in front of.** Paper cannot measure this: the quote is invisible, so nobody can step in
+   front of it or respond to it. This is the measurement the live step exists for. The read prints
+   how often an incumbent's bid reached our price. Those bids were placed without seeing us, so the
+   count is not a response.
+6. **Instrument lines.** Market-windows present vs 1,440 expected; unsettled count; socket prints
+   missed vs the tape and their fillable contracts; contracts filled via the lookback, and fill P&L
+   without them; market-windows whose audit was partial because of a restart.
+
+**Instrument validity, fixed now and independent of the outcome.** The read is valid only if
+≥ 90% of the 1,440 market-windows are settled in the ledger and the socket delivered ≥ 95% of the
+public tape's in-period prints. Otherwise the read is reported as an invalid instrument and the rule
+is applied in neither direction. The arm is fixed and run for 3 fresh days.
+
+**Decision rule.** If net per market-window is positive with its CI excluding zero AND the p90
+per-window loss is ≤ $50, the live step is the operator's call: their Kalshi trading key, ~$300–500
+collateral, N = 48 windows. Otherwise farming closes.
+
+What the paper figure cannot contain, by direction:
+
+- **The response (unknown sign, and the reason the live step exists).** An incumbent who steps one
+  tick in front of us takes the side's reward. That cuts the reward toward zero, and it also
+  diverts the fills.
+- **Flow attracted by our price (fills undercounted).** A taker who would sell at our better bid
+  but not at the incumbent's never prints, so paper cannot see them.
+- **The 1-s lookback (fills overcounted).** It can credit a print to a price we had just left. The
+  read reports the P&L without those fills.
+- **Pulled crossing sides, and depth counted without our size (reward undercounted).** Validity
+  uses incumbent depth only; the venue would count our 1,000.
+
+The Q3 screen's figures for this placement were a fill cost of $0.31 per market-window when pulled
+at T − 60 s, and a reward of $5.35–6.43 per market-window, both before anyone responds. They are the
+expectation this read tests, not its bar.
