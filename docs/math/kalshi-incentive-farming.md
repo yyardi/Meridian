@@ -145,3 +145,54 @@ more size per market (the Target Size caps what one lot can earn).
 - **Tail.** The worst of 80 windows was −$25.75 at a 1000-lot; a coin that is dumped at 5c for
   1,000 contracts and then wins is +$950, which happened once (+$129.98 window). The realised
   distribution is from one day of a one-day-old series.
+
+## The paper read (run 2026-10-07 03:20Z, 39 h late): the registered estimator was fed a defective instrument
+
+Late because the session that held its scheduled job was closed on 10-05; nothing was read
+before this run. Snapshot of `farm_scorer.sqlite` at 03:17Z (`/tmp/farmread.7aqWxn` on prod).
+Retention never pruned (the defect below also reset its counter), so every hour since the
+19:24Z 10-03 deploy is present. Registered cut: hours before 2026-10-05 12:20Z — Coin Race
+10-03 19:00Z → 10-05 12:00Z, 42 hours, 1.75 days, 805 of 835 listed market-windows scored.
+
+**The registered estimator, as pinned** (reward per market-window = summed share over valid
+seconds × the period's reward ÷ the period, summed and divided by elapsed days), **before anyone
+responds**:
+
+| Coin Race | f1000c | f1000 | f300c | registered 1000 | valid | 99c-disqualified |
+|---|--:|--:|--:|--:|--:|--:|
+| per calendar day | **$1,375** | $3,847 | $280 | $2,296 | **0.769** | 0.000 |
+
+Taken at face value that fails both thresholds ($2,000/day, valid ≥ 0.8).
+
+**It is not the registered measurement.** The scorer reloads its program list every 15 minutes
+and, until today, each reload started a fresh accumulator and overwrote the market's hourly row
+with `INSERT OR REPLACE`, so each row kept only the seconds after the last reload. Seconds scored
+per Coin Race market-window: p10 5, **p50 572**, p90 898 of 900; only 265 of 805 windows were
+scored whole. The surviving seconds are the END of each window, not a random part. Fixed in
+`Scorer.adopt` (the reload carries each market's hour; a test fails without it) and deployed with
+this section.
+
+Two estimators the defect does not touch:
+
+| estimator | n market-windows | f1000c / day | valid |
+|---|--:|--:|--:|
+| registered formula on the windows scored whole (10-04 08Z–22Z only) | 265 | **$2,566** | 0.836 |
+| the once-a-minute sample (`lip_sample`, ~13 samples a window across all three thirds), mean share × reward × 480 windows a day | 795 | **$3,087** | 0.959 |
+
+Both clear $2,000 with valid above 0.8. The first is the exact registered formula on a
+non-random day-time subset; the second samples every window but at one-minute resolution. The
+same sample gives f1000 $8,627, f300c $657, registered 1000 $4,986 a day.
+
+FX and metals (weekday-edge hours, Sunday 21Z–Monday 12Z, reported not decided, defective
+estimator): f1000c $165–237 a day per series, valid 0.76–0.90.
+
+Post-registration, all hours to date (10-03 19Z → 10-07 03Z, 3.38 days, same defect): f1000c
+$1,208/day, valid 0.689.
+
+**Decision.** Under the rule as registered, the input was broken, so the rule cannot be applied
+in either direction. On the two clean estimators the paper share passes, before anyone responds.
+That is a corrected read, and it says so: the confirmation is the registered estimator on the
+fixed scorer over 48 clean hours (2026-10-07 03:40Z → 10-09 03:40Z), run once. The live step
+(one window's five markets, 1000 a side one tick in front on sides at or below 10c, N = 48
+windows, ~$300–500 collateral) needs the operator's Kalshi trading key and stays theirs.
+

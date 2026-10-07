@@ -287,3 +287,29 @@ def test_a_reader_on_a_closed_client_gets_connection_closed_not_attribute_error(
         c.recv_json()
     c.close(); c.close()                                                  # idempotent on a client never opened
 
+
+
+def test_a_program_reload_carries_each_markets_hour_instead_of_overwriting_it(tmp_path):
+    # the farm scorer reloads every 15 min; before adopt() the new Scorer rewrote each (hour, ticker) row
+    # from zero, so a 900-s market-window kept only the seconds after the last reload
+    progs = {"M1": {"series": "S", "per_day_usd": 1920.0, "target": 1000.0, "discount": 0.5, "start_ts": 0.0, "end_ts": 9e9}}
+    books = Books()
+    books.handle(_snap("M1", [(0.40, 800.0), (0.39, 400.0)], [(0.59, 800.0), (0.58, 400.0)]), 0.0)
+    t0 = 3600.0 * 1000 + 5
+    old = Scorer(str(tmp_path / "lip.sqlite"), progs, [200.0], books)
+    for i in range(10):
+        old.tick(t0 + i)
+    new = Scorer(str(tmp_path / "lip.sqlite"), dict(progs), [200.0], books)
+    new.adopt(old)
+    for i in range(10, 25):
+        new.tick(t0 + i)
+    new.tick(t0 + 3600)                                                  # the next hour flushes the row
+    row = sqlite3.connect(str(tmp_path / "lip.sqlite")).execute("SELECT seconds, valid FROM lip_hourly WHERE ticker='M1'").fetchone()
+    assert row == (25, 25)                                               # all 25 seconds, not the last 15
+    # a market that left the program set at the reload is flushed, not dropped
+    old2 = Scorer(str(tmp_path / "lip2.sqlite"), progs, [200.0], books)
+    for i in range(7):
+        old2.tick(t0 + i)
+    gone = Scorer(str(tmp_path / "lip2.sqlite"), {}, [200.0], books)
+    gone.adopt(old2)
+    assert sqlite3.connect(str(tmp_path / "lip2.sqlite")).execute("SELECT seconds FROM lip_hourly WHERE ticker='M1'").fetchone() == (7,)

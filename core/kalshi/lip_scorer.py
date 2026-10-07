@@ -319,6 +319,24 @@ class Scorer:
                           (a["hour"], t, a["seconds"], a["valid"], json.dumps(a["sum"]), med(a["inc_yes"]), med(a["inc_no"])))
         self.conn.execute("INSERT OR REPLACE INTO lip_disq VALUES(?,?,?,?)", (a["hour"], t, a.get("disq_yes", 0), a.get("disq_no", 0)))
 
+    def adopt(self, old: "Scorer") -> None:
+        """Take over a previous Scorer's open accumulators at a program reload. Until 2026-10-07 a reload
+        flushed every market's partial hour and the new Scorer then wrote the same (hour, ticker) row from
+        zero with INSERT OR REPLACE, so each row kept only the seconds after the last reload: the farm
+        scorer reloads every 15 min and 540 of 805 Coin Race market-windows lost most of their seconds
+        (p50 572 of 900). Markets still in the program set keep accumulating; markets that left are
+        flushed; the tick and sample counters carry over so retention still runs."""
+        for t, a in old.acc.items():
+            if t in self.programs:
+                self.acc[t] = a
+            else:
+                old._flush(t, a)
+        self.ticks, self.last_sample = old.ticks, old.last_sample
+        try:
+            old.conn.close()
+        except Exception:                                                # noqa: BLE001
+            pass
+
     def flush_all(self) -> None:
         for t, a in list(self.acc.items()):
             self._flush(t, a)
@@ -560,8 +578,9 @@ def run(cfg: dict) -> int:
                         next_reload = t0 + 300
                     elif why == "changed":
                         log.info("programs changed: %d -> %d; restarting the socket", len(progs), len(chosen))
-                        scorer.flush_all()
-                        progs = chosen; scorer = Scorer(cfg["db"], progs, cfg["sizes"], books, front_sizes=cfg["front_sizes"], front_cap=cfg["front_cap"])
+                        progs = chosen
+                        new = Scorer(cfg["db"], progs, cfg["sizes"], books, front_sizes=cfg["front_sizes"], front_cap=cfg["front_cap"])
+                        new.adopt(scorer); scorer = new
                         sock.request_stop(); sock = BookSocket(sorted(progs), books).start()
                 except Exception:                                        # noqa: BLE001
                     log.exception("program reload")
