@@ -192,7 +192,7 @@ $1,208/day, valid 0.689.
 **Decision.** Under the rule as registered, the input was broken, so the rule cannot be applied
 in either direction. On the two clean estimators the paper share passes, before anyone responds.
 That is a corrected read, and it says so: the confirmation is the registered estimator on the
-fixed scorer over 48 clean hours (2026-10-07 03:40Z → 10-09 03:40Z), run once. The live step
+fixed scorer over 48 clean hours (2026-10-07 04:00Z → 10-09 04:00Z; fix deployed 03:20Z), run once by prod's own crontab at 10-09 04:10Z (`artifacts/reads/farm_confirm.sh`, report to `artifacts/reads/farm_confirm_2026-10-09.txt`), so it does not depend on a session being open. The live step
 (one window's five markets, 1000 a side one tick in front on sides at or below 10c, N = 48
 windows, ~$300–500 collateral) needs the operator's Kalshi trading key and stays theirs.
 
