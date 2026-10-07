@@ -88,7 +88,8 @@ def our_share(q: float, incumbent_score: float) -> float:
     return q / (q + incumbent_score) if q > 0 else 0.0
 
 
-def share_qualifying(levels: list[tuple[float, float]], q: float, target: float, discount: float, improve: bool = False) -> tuple[float, float | None, float]:
+def share_qualifying(levels: list[tuple[float, float]], q: float, target: float, discount: float, improve: bool = False,
+                     price: float | None = None) -> tuple[float, float | None, float]:
     """Our share of one side under the Program's Terms and Conditions (Appendix A of the July 15,
     2026 CFTC filing as modified July 30, 2026; kalshi.com/regulatory/notices): walking down from
     the highest bid, each price LEVEL's whole size is added to the Qualifying Total Size and ALL
@@ -98,13 +99,18 @@ def share_qualifying(levels: list[tuple[float, float]], q: float, target: float,
     is at the highest possible price (99c) nothing on that side qualifies. A qualifying bid scores
     discount^(ticks below the reference) x size, normalised over the side. Our q rests at the
     current reference (improve=False) or one tick above it (improve=True), merged into that price
-    level, so a quote joining a wall at the same price qualifies with it. Returns
+    level, so a quote joining a wall at the same price qualifies with it. ``price`` puts q at that
+    price instead (core/kalshi/farm_paper.py rests one tick in front of the BEST bid, which is
+    improve=True's price whenever the best level alone holds a fifth of the target). Returns
     (share, reference price, incumbents' qualifying discounted size)."""
     if q <= 0:
         return 0.0, None, 0.0
-    base_ref, _, _ = reference_and_score(levels, target, discount)
-    ours = 0.50 if base_ref is None else round(base_ref + (0.01 if improve else 0.0), 2)
-    ours = min(ours, 0.98)                                        # a bid at 99c would disqualify the side
+    if price is not None:
+        ours = round(price, 2)                                    # a bid at 99c disqualifies the side below
+    else:
+        base_ref, _, _ = reference_and_score(levels, target, discount)
+        ours = 0.50 if base_ref is None else round(base_ref + (0.01 if improve else 0.0), 2)
+        ours = min(ours, 0.98)                                    # a bid at 99c would disqualify the side
     merged: dict[float, float] = {}
     for p, sz in levels:
         merged[round(p, 2)] = merged.get(round(p, 2), 0.0) + sz
