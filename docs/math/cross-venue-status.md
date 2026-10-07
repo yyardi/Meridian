@@ -1,5 +1,7 @@
 # Cross-venue: UNMEASURED, not dead — 2026-09-04
 
+> **2026-10-07 — in-play football: MEASURED and CLOSED** (registered read, `cross-venue-inplay-football.md`, 13 NFL games, 356 contracts, message cadence on both venues): Kalshi leads Polymarket by 1–2 s, but taking the lagging Polymarket touch when Kalshi moves past the round-trip fees, held 60 s, measured −0.94¢ per fill [−1.07, −0.80], n = 18,974 fills — no paper arm.
+
 **Three analyses, two of them wrong, and the honest state is that our recording
 cannot yet answer the question. This documents the method so nobody repeats it.**
 
