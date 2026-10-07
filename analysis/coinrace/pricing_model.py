@@ -67,23 +67,35 @@ def taker_fee(price, rate: float = 0.07):
     return np.ceil(np.round(raw, 9)) / 100.0
 
 
-def standard_normals(n: int, d: int = 5, seed: int = 20261007) -> np.ndarray:
+SOBOL_SEED = 20261007
+
+
+def _sobol(n: int, d: int, seed: int) -> np.ndarray:
+    """One scrambled-Sobol sequence of dimension d + 1: the first d columns feed the normals,
+    the last feeds the scale of a scale mixture. Taking both from ONE sequence matters: two
+    separately scrambled Sobol sequences paired index by index share their base digits, and
+    the pairing tied the t scale to BTC's draw (caught by the hand check's brute-force route)."""
+    return qmc.Sobol(d + 1, scramble=True, seed=seed).random(n)
+
+
+def standard_normals(n: int, d: int = 5, seed: int = SOBOL_SEED) -> np.ndarray:
     """Scrambled-Sobol standard normal draws, shape (n, d); n a power of two.
 
     Quasi-random draws cut the Monte Carlo error of `win_probs` about tenfold against
     pseudo-random ones at the same n (max abs error ~0.0004 vs ~0.004 at n = 4096 on a
     deliberately ill-conditioned 5-coin case; tests/test_coinrace_pricing.py pins the bound).
     """
-    u = qmc.Sobol(d, scramble=True, seed=seed).random(n)
+    u = _sobol(n, d, seed)[:, :d]
     return ndtri(np.clip(u, 1e-12, 1 - 1e-12))
 
 
-def t_scales(n: int, nu: float, seed: int = 20261008) -> np.ndarray | None:
-    """Variance scales s = (nu - 2) / chi2_nu (mean 1) for a Student-t scale mixture; None = Gaussian."""
+def t_scales(n: int, nu: float, d: int = 5, seed: int = SOBOL_SEED) -> np.ndarray | None:
+    """Variance scales s = (nu - 2) / chi2_nu (mean 1) for a Student-t scale mixture, paired
+    with `standard_normals(n, d, seed)` row by row; None = Gaussian."""
     if not np.isfinite(nu):
         return None
     from scipy.stats import chi2
-    u = qmc.Sobol(1, scramble=True, seed=seed).random(n)[:, 0]
+    u = _sobol(n, d, seed)[:, d]
     return (nu - 2.0) / chi2.ppf(np.clip(u, 1e-12, 1 - 1e-12), nu)
 
 
