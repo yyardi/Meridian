@@ -596,7 +596,7 @@ class Http:
     slow answer never stalls the per-second scoring; results come back on a queue the main loop drains."""
 
     def __init__(self, series: list[str], horizon_s: float, http: httpx.Client | None = None, load=load_programs,
-                 min_gap_s: float = 0.25, sleep=time.sleep) -> None:
+                 min_gap_s: float = 1.0, sleep=time.sleep) -> None:   # 1 req/s: the BTC bot shares this address and cools down 60 s on a 429
         self.series, self.horizon_s, self.load, self.min_gap_s, self._sleep = series, horizon_s, load, min_gap_s, sleep
         self.http = http or httpx.Client(timeout=20, headers={"User-Agent": "meridian-farm-paper/1"})
         self.jobs: queue.Queue = queue.Queue()
