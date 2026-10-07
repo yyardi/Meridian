@@ -161,3 +161,21 @@ def test_window_state_uses_the_candle_that_closes_at_the_minute():
     assert np.exp(st["x5"][0, k] + st["logA"][0, k]) == pytest.approx(close_at[open_ts + 240])
     # the start average is the minute BEFORE the window
     assert np.exp(st["logA"][0, k]) == pytest.approx(close_at[open_ts - 60])
+
+
+def test_student_t_mixture_matches_brute_force():
+    # The scale must be drawn jointly with the normals: a separately scrambled 1-D Sobol
+    # sequence paired with the 5-D one tied the scale to the first coin's draw (BTC off by
+    # 0.010 in the 2026-10-07 hand check).
+    rng = np.random.default_rng(4)
+    A = rng.standard_normal((5, 5))
+    C = (A @ A.T + 0.5 * np.eye(5)) * 1e-6
+    x = rng.standard_normal(5) * 1e-3
+    nu = 4.0
+    n = 4096
+    p = pm.win_probs(x[None], C, pm.standard_normals(n), scales=pm.t_scales(n, nu))[0]
+    nb = 2_000_000
+    z = rng.standard_normal((nb, 5)) @ np.linalg.cholesky(C).T
+    z *= np.sqrt((nu - 2.0) / rng.chisquare(nu, nb))[:, None]
+    brute = np.bincount((x + z).argmax(axis=1), minlength=5) / nb
+    assert np.abs(p - brute).max() < 0.003

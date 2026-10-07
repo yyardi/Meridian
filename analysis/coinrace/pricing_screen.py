@@ -18,11 +18,15 @@ Usage:
 """
 from __future__ import annotations
 
-import concurrent.futures as cf
 import datetime as dt
 import json
 import os
 import sys
+
+# This runs on the operator's laptop: one process, single-threaded numerical libraries
+# (set before numpy loads), and run it under `nice -n 19`.
+for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 
 import numpy as np
 import pandas as pd
@@ -40,13 +44,14 @@ LOOKBACK_DAYS = 7          # covariance window
 PROFILE_DAYS = 14          # hour-of-day vol profile window
 FIT_DAYS = 7               # windows used to fit outcome-fitted scalars
 RV_MINUTES = 60            # trailing realised-variance window for M3
-N_DRAWS_FIT = 1024
-N_DRAWS_SCORE = 8192
+FIT_EVERY_DAYS = 7         # the fitted scalars are refit weekly (on the 7 days before the refit)
+N_DRAWS_FIT = 256          # scrambled-Sobol draws; `draws_check` measures the error this costs
+N_DRAWS_SCORE = 2048
 
 # The ladder: each model adds one thing to the last one KEPT (see `ladder`).
-BETA_GRID = (0.0, 0.25, 0.5, 0.75, 1.0)
-K_GRID = (0.7, 0.85, 1.0, 1.2, 1.45, 1.75)
-SIGP_GRID = (0.0, 1e-4, 2e-4, 4e-4)      # proxy noise sd, log-return units (1e-4 = 1 bp)
+BETA_GRID = (0.0, 0.5, 0.75, 1.0)
+K_GRID = (0.7, 0.85, 1.0, 1.2, 1.45)
+SIGP_GRID = (0.0, 1e-4, 2e-4)            # proxy noise sd, log-return units (1e-4 = 1 bp)
 
 
 # ----------------------------------------------------------------------------------- data
@@ -242,9 +247,36 @@ def _init():
     _G["st"] = window_states(_G["ev"], _G["cd"])
 
 
-def score_day(day: str, cfg: dict) -> dict | None:
+def _day0(day: str) -> int:
+    return int(dt.datetime.fromisoformat(day).replace(tzinfo=dt.timezone.utc).timestamp())
+
+
+def fit_anchor(D0: int, first_day0: int) -> int:
+    """The refit date for day D0: the start of its FIT_EVERY_DAYS block. <= D0 always."""
+    return first_day0 + ((D0 - first_day0) // (FIT_EVERY_DAYS * DAY)) * FIT_EVERY_DAYS * DAY
+
+
+def fitted_for(anchor: int, cfg: dict) -> dict | None:
+    """Scalars fitted on settled windows in [anchor - FIT_DAYS, anchor), with the covariance
+    estimated from candles before `anchor` — nothing at or after the anchor is read."""
+    key = (anchor, json.dumps(cfg, sort_keys=True))
+    if key in _G.setdefault("fits", {}):
+        return _G["fits"][key]
     ev, cd, st = _G["ev"], _G["cd"], _G["st"]
-    D0 = int(dt.datetime.fromisoformat(day).replace(tzinfo=dt.timezone.utc).timestamp())
+    o = ev["open_ts"].to_numpy()
+    P = day_params(cd, anchor, cfg["horizon"])
+    prior = (o + pm.WINDOW_S <= anchor) & (o >= anchor - FIT_DAYS * DAY) & st["ok"]
+    f = None
+    if P is not None and prior.sum() >= 200:
+        Yp = ev[list(COINS)].to_numpy()[prior]
+        f = fit_scalars(o[prior], _subset(st, prior), Yp, P, cfg, pm.standard_normals(N_DRAWS_FIT))
+    _G["fits"][key] = f
+    return f
+
+
+def score_day(day: str, cfg: dict, first_day: str, n_draws: int = N_DRAWS_SCORE) -> dict | None:
+    ev, cd, st = _G["ev"], _G["cd"], _G["st"]
+    D0 = _day0(day)
     P = day_params(cd, D0, cfg["horizon"])
     if P is None:
         return None
@@ -254,12 +286,10 @@ def score_day(day: str, cfg: dict) -> dict | None:
         return None
     fitted = {"beta": 0.0, "k": 1.0, "sigp": 0.0, "nu": np.inf}
     if cfg.get("rv") or cfg.get("ksig") or cfg.get("tails"):
-        prior = (o + pm.WINDOW_S <= D0) & (o >= D0 - FIT_DAYS * DAY) & st["ok"]
-        if prior.sum() < 200:
+        fitted = fitted_for(fit_anchor(D0, _day0(first_day)), cfg)
+        if fitted is None:
             return None
-        Yp = ev[list(COINS)].to_numpy()[prior]
-        fitted = fit_scalars(o[prior], _subset(st, prior), Yp, P, cfg, pm.standard_normals(N_DRAWS_FIT))
-    pr = probs_for(o[today], _subset(st, today), P, cfg, pm.standard_normals(N_DRAWS_SCORE), **fitted)
+    pr = probs_for(o[today], _subset(st, today), P, cfg, pm.standard_normals(n_draws), **fitted)
     return {"day": day, "events": ev.index[today].tolist(), "probs": pr, "fitted": fitted}
 
 
@@ -273,20 +303,42 @@ ADDITIONS = [
     ("variance scale k + proxy noise sigp (fitted)", {"ksig": True}),
     ("fat tails: Student-t scale mixture (nu fitted)", {"tails": True}),
 ]
-NU_GRID = (np.inf, 12.0, 6.0, 4.0, 3.0)
+NU_GRID = (np.inf, 8.0, 4.0)
 
 
-def run_model(name: str, cfg: dict, days: list[str], workers: int = 8) -> pd.DataFrame:
+def run_model(name: str, cfg: dict, days: list[str]) -> pd.DataFrame:
+    """Walk forward day by day in THIS process (no worker pool)."""
+    if "ev" not in _G:
+        _init()
     rows = []
-    with cf.ProcessPoolExecutor(max_workers=workers, initializer=_init) as ex:
-        for res in ex.map(score_day, days, [cfg] * len(days)):
-            if res is None:
-                continue
-            for m in MINUTES:
-                for e, p in zip(res["events"], res["probs"][m]):
-                    rows.append((name, e, res["day"], m, *p, json.dumps(res["fitted"])))
+    for d in days:
+        res = score_day(d, cfg, days[0])
+        if res is None:
+            continue
+        for m in MINUTES:
+            for e, p in zip(res["events"], res["probs"][m]):
+                rows.append((name, e, res["day"], m, *p, json.dumps(res["fitted"])))
     return pd.DataFrame(rows, columns=["model", "event_ticker", "day", "minute",
                                        *[f"p_{c}" for c in COINS], "fitted"])
+
+
+def draws_check(cfg: dict, days: list[str], n_days: int = 4, seed: int = 0) -> dict:
+    """Monte Carlo error of the scoring draws: the same days priced at N_DRAWS_SCORE and at
+    4x that many; max |dp| and mean |d log loss| over all their windows and minutes."""
+    rng = np.random.default_rng(seed)
+    pick = sorted(rng.choice(days[FIT_EVERY_DAYS + 1:], size=n_days, replace=False))
+    dps, dll = [], []
+    for d in pick:
+        a = score_day(d, cfg, days[0], N_DRAWS_SCORE)
+        b = score_day(d, cfg, days[0], 4 * N_DRAWS_SCORE)
+        if a is None or b is None:
+            continue
+        Y = _G["ev"].loc[a["events"], list(COINS)].to_numpy()
+        for m in MINUTES:
+            dps.append(np.abs(a["probs"][m] - b["probs"][m]).max())
+            dll.append(np.abs(pm.log_loss(a["probs"][m], Y) - pm.log_loss(b["probs"][m], Y)).mean())
+    return {"days": pick, "draws": N_DRAWS_SCORE, "vs_draws": 4 * N_DRAWS_SCORE,
+            "max_abs_dp": float(np.max(dps)), "mean_abs_dll": float(np.mean(dll))}
 
 
 def scored_days(ev: pd.DataFrame, cd: Candles) -> list[str]:
@@ -353,12 +405,16 @@ def main_models() -> None:
     lg = pd.DataFrame(log)
     write_parquet(lg.astype({c: str for c in lg.columns if lg[c].dtype == object}),
                   os.path.join(DATA_DIR, "pricing_ladder.parquet"))
+    chk = draws_check(kept_cfg, days)
+    print("draws check:", json.dumps(chk))
+    with open(os.path.join(DATA_DIR, "pricing_draws_check.json"), "w") as fh:
+        json.dump(chk, fh)
     print(f"final model: {kept_name}")
     print(lg.to_string(index=False, float_format=lambda v: f"{v:+.4f}"))
 
 
 # ---------------------------------------------------------------------- market and taker
-TRADES = os.path.join(DATA_DIR, "trades.parquet")
+TRADES = os.environ.get("COINRACE_TRADES") or os.path.join(DATA_DIR, "trades.parquet")
 TRADES_READY = os.path.join(DATA_DIR, "trades.READY")
 
 
@@ -458,8 +514,13 @@ def score_vs_market(ev, P: pd.DataFrame, Q: pd.DataFrame, Y: pd.DataFrame | None
         d = pm.clustered_mean_ci(llm - llq, days)
         db = pm.clustered_mean_ci(brm - brq, days)
         uni = np.log(5.0)
+        clim = ev.loc[P.index.get_level_values(0).unique(), list(COINS)].mean().to_numpy()
+        llc = pm.log_loss(np.broadcast_to(clim, y.shape), y)
+        dc = pm.clustered_mean_ci(llm - llc, days)
         rows.append({"minute": m, "n_windows": len(idx), "n_days": len(set(days)),
                      "ll_model": llm.mean(), "ll_market": llq.mean(), "ll_uniform": uni,
+                     "ll_climatology": llc.mean(), "d_ll_model_vs_clim": dc["mean"],
+                     "d_ll_model_vs_clim_lo": dc["lo"], "d_ll_model_vs_clim_hi": dc["hi"],
                      "d_ll": d["mean"], "d_ll_lo": d["lo"], "d_ll_hi": d["hi"],
                      "brier_model": brm.mean(), "brier_market": brq.mean(),
                      "d_brier": db["mean"], "d_brier_lo": db["lo"], "d_brier_hi": db["hi"]})
@@ -549,8 +610,17 @@ def hand_check(event: str, minute: int = 10) -> dict:
                      fitted["beta"], fitted["k"], fitted["sigp"])
     sc = pm.t_scales(N_DRAWS_SCORE, fitted.get("nu", np.inf)) if cfg.get("tails") else None
     p2 = pm.win_probs(st[f"x{minute}"][i:i + 1], cov, pm.standard_normals(N_DRAWS_SCORE), scales=sc)[0]
+    # independent route for the probability step: plain pseudo-random paths, count the argmax
+    rng = np.random.default_rng(7)
+    nb = 1_000_000
+    zz = rng.standard_normal((nb, 5)) @ np.linalg.cholesky(cov[0]).T
+    nu = fitted.get("nu", np.inf)
+    if cfg.get("tails") and np.isfinite(nu):
+        zz *= np.sqrt((nu - 2.0) / rng.chisquare(nu, nb))[:, None]
+    brute = np.bincount((st[f"x{minute}"][i] + zz).argmax(axis=1), minlength=5) / nb
     sd = np.sqrt(np.diag(cov[0]))
     out.update({"coins": lines, "remaining_sd_bp": (sd * 1e4).round(2).tolist(),
+                "p_bruteforce_1e6_paths": brute.round(4).tolist(),
                 "remaining_corr": (cov[0] / np.outer(sd, sd)).round(3).tolist(),
                 "p_recomputed": p2.round(4).tolist(),
                 "p_stored": [float(row[f"p_{c}"]) for c in COINS]})
@@ -568,6 +638,23 @@ def final_cfg() -> dict:
     return cfg
 
 
+def calibration(ev: pd.DataFrame, P: pd.DataFrame) -> pd.DataFrame:
+    """Reliability of the model's per-coin probabilities, pooled over coins, by minute."""
+    rows = []
+    edges = np.array([0, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0001])
+    for m in MINUTES:
+        pmm = P.xs(m, level="minute")
+        p = pmm[[f"p_{c}" for c in COINS]].to_numpy().ravel()
+        y = ev.loc[pmm.index, list(COINS)].to_numpy().ravel()
+        b = np.digitize(p, edges) - 1
+        for k in range(len(edges) - 1):
+            sel = b == k
+            if sel.sum():
+                rows.append({"minute": m, "bin": f"{edges[k]:.2f}-{min(edges[k + 1], 1):.2f}",
+                             "n": int(sel.sum()), "mean_p": p[sel].mean(), "freq": y[sel].mean()})
+    return pd.DataFrame(rows)
+
+
 def main_report(n_shuffles: int = 20) -> None:
     ev = load_events()
     P = final_probs()
@@ -583,6 +670,9 @@ def main_report(n_shuffles: int = 20) -> None:
     print(f"windows with all five markets printed by the minute: {cov}")
     print(f"ask from the exact-minute candle (else carried within the window): {exact.mean():.3f}")
     print(f"model: {P['model'].iloc[0]}")
+    cal = calibration(ev, P)
+    write_parquet(cal, os.path.join(DATA_DIR, "pricing_calibration.parquet"))
+    print(cal.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     sc = score_vs_market(ev, P, Q)
     print(sc.to_string(index=False, float_format=lambda v: f"{v:.4f}"))
     M = book_mids(ev, book)
@@ -592,9 +682,20 @@ def main_report(n_shuffles: int = 20) -> None:
     write_parquet(sc, os.path.join(DATA_DIR, "pricing_score_vs_market.parquet"))
     write_parquet(scm, os.path.join(DATA_DIR, "pricing_score_vs_mid.parquet"))
     tk, T = taker_rule(ev, P, A)
-    write_parquet(T, os.path.join(DATA_DIR, "pricing_taker_trades.parquet"))
+    write_parquet(T.drop(columns=["edge_bucket"], errors="ignore"), os.path.join(DATA_DIR, "pricing_taker_trades.parquet"))
     print(tk.to_string(index=False, float_format=lambda v: f"{v:+.4f}"))
     print(f"PASS (registered bar): {passes(sc, tk)}")
+    # Shape only (not registered): realised P&L against the edge the model claimed.
+    T["edge_bucket"] = pd.cut(T["edge"], [0, 0.02, 0.05, 0.10, 0.20, 1.0])
+    rows = []
+    for b, g in T.groupby("edge_bucket", observed=True):
+        c = pm.clustered_mean_ci(g["pnl"], g["event_ticker"])
+        rows.append({"claimed_edge": str(b), "n_contracts": len(g), "mean_claimed": g["edge"].mean(),
+                     "mean_pnl": c["mean"], "lo": c["lo"], "hi": c["hi"]})
+    by_edge = pd.DataFrame(rows)
+    write_parquet(by_edge, os.path.join(DATA_DIR, "pricing_taker_by_edge.parquet"))
+    print(by_edge.to_string(index=False, float_format=lambda v: f"{v:+.4f}"))
+    write_parquet(tk.astype({"minute": str}), os.path.join(DATA_DIR, "pricing_taker_summary.parquet"))
     # The control that must fail: outcomes shuffled across windows within day.
     ctl = []
     for seed in range(n_shuffles):
@@ -607,6 +708,8 @@ def main_report(n_shuffles: int = 20) -> None:
             row[f"m{int(r['minute'])}_ll_model_minus_uniform"] = r["ll_model"] - r["ll_uniform"]
             row[f"m{int(r['minute'])}_ll_market_minus_uniform"] = r["ll_market"] - r["ll_uniform"]
             row[f"m{int(r['minute'])}_excl0_model_better"] = bool(r["d_ll_hi"] < 0)
+            row[f"m{int(r['minute'])}_model_vs_clim"] = r["d_ll_model_vs_clim"]
+            row[f"m{int(r['minute'])}_model_beats_clim_excl0"] = bool(r["d_ll_model_vs_clim_hi"] < 0)
         a = tks[tks["minute"] == "all"].iloc[0]
         row.update({"taker_mean": a["mean_pnl"], "taker_lo": a["lo"], "taker_hi": a["hi"], "taker_n": a["n_contracts"]})
         ctl.append(row)
@@ -616,5 +719,72 @@ def main_report(n_shuffles: int = 20) -> None:
     print(f"control seeds passing the bar: {int(ctl['pass'].sum())} of {len(ctl)}")
 
 
+def main_tables() -> None:
+    """Markdown tables for the write-up, from the files `models` and `report` saved."""
+    def rd(name):
+        return read_parquet(os.path.join(DATA_DIR, name))
+    ev, cd = load_events(), load_candles()
+    pa = proxy_agreement(ev, window_states(ev, cd))
+    print("| TWA proxy (Coinbase 1-min candle) | windows | agrees with settled winner | all candles present: windows | agrees |")
+    print("|---|---:|---:|---:|---:|")
+    for _, r in pa.iterrows():
+        print(f"| {r['proxy']} | {r['windows']:,} | {100 * r['agree']:.2f}% | "
+              f"{r['windows_all_candles_present']:,} | {100 * r['agree_all_candles_present']:.2f}% |")
+    print()
+    lg = rd("pricing_ladder.parquet")
+    print("| model | vs | pooled d log loss [95% CI] | min 1 | min 5 | min 10 | min 13 | windows / days | kept |")
+    print("|---|---|---:|---:|---:|---:|---:|---:|---|")
+    for _, r in lg.iterrows():
+        if not r["parent"]:
+            continue
+        print(f"| {r['model']} | {r['parent'].split(' ')[0]} | {r['pooled_d']:+.4f} [{r['pooled_lo']:+.4f}, {r['pooled_hi']:+.4f}] | "
+              + " | ".join(f"{r[f'm{m}_d']:+.4f} {r[f'm{m}_ci']}" for m in MINUTES)
+              + f" | {int(r['n_windows']):,} / {int(r['G'])} | {'yes' if str(r['kept']) == 'True' else 'no'} |")
+    print()
+    for name, label in (("pricing_score_vs_market.parquet", "REGISTERED: market = last print, normalised"),
+                        ("pricing_score_vs_mid.parquet", "SUPPLEMENTARY: market = book mid, normalised")):
+        sc = rd(name)
+        print(f"{label}")
+        print("| minute | windows / days | log loss model | market | climatology | model - market [95% CI, day-clustered] | Brier model | market | model - market [95% CI] |")
+        print("|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for _, r in sc.iterrows():
+            print(f"| {int(r['minute'])} | {int(r['n_windows']):,} / {int(r['n_days'])} | {r['ll_model']:.4f} | {r['ll_market']:.4f} | "
+                  f"{r['ll_climatology']:.4f} | {r['d_ll']:+.4f} [{r['d_ll_lo']:+.4f}, {r['d_ll_hi']:+.4f}] | "
+                  f"{r['brier_model']:.4f} | {r['brier_market']:.4f} | {r['d_brier']:+.4f} [{r['d_brier_lo']:+.4f}, {r['d_brier_hi']:+.4f}] |")
+        print()
+    tk = rd("pricing_taker_summary.parquet")
+    print("| minute | contracts | windows | days | mean ask | mean claimed edge | mean P&L / contract [95% CI, window-clustered] | win rate |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|")
+    for _, r in tk.iterrows():
+        print(f"| {r['minute']} | {int(r['n_contracts']):,} | {int(r['n_windows']):,} | {int(r['n_days'])} | {r['mean_ask']:.3f} | "
+              f"{100 * r['mean_edge_claimed']:+.2f}c | {100 * r['mean_pnl']:+.2f}c [{100 * r['lo']:+.2f}, {100 * r['hi']:+.2f}] | {100 * r['win_rate']:.1f}% |")
+    print()
+    be = rd("pricing_taker_by_edge.parquet")
+    print("| claimed edge (model - ask - fee) | contracts | mean claimed | mean P&L [95% CI] |")
+    print("|---|---:|---:|---:|")
+    for _, r in be.iterrows():
+        print(f"| {r['claimed_edge']} | {int(r['n_contracts']):,} | {100 * r['mean_claimed']:+.2f}c | "
+              f"{100 * r['mean_pnl']:+.2f}c [{100 * r['lo']:+.2f}, {100 * r['hi']:+.2f}] |")
+    print()
+    ctl = rd("pricing_control.parquet")
+    print(f"control: {len(ctl)} within-day shuffles; seeds passing the full bar {int(ctl['pass'].sum())}; "
+          f"LL leg alone {int(ctl[[f'm{m}_excl0_model_better' for m in MINUTES]].any(axis=1).sum())}; "
+          f"model beats climatology (CI excl. 0) at any minute {int(ctl[[f'm{m}_model_beats_clim_excl0' for m in MINUTES]].any(axis=1).sum())}")
+    print("| minute | model - market log loss (mean over seeds, min..max) | model - climatology (mean, min..max) |")
+    print("|---:|---:|---:|")
+    for m in MINUTES:
+        a, b = ctl[f"m{m}_d_ll"], ctl[f"m{m}_model_vs_clim"]
+        print(f"| {m} | {a.mean():+.3f} ({a.min():+.3f} .. {a.max():+.3f}) | {b.mean():+.3f} ({b.min():+.3f} .. {b.max():+.3f}) |")
+    print(f"taker under shuffle: mean {100 * ctl['taker_mean'].mean():+.2f}c, CI upper bound max over seeds "
+          f"{100 * ctl['taker_hi'].max():+.2f}c, n {int(ctl['taker_n'].iloc[0]):,}")
+    with open(os.path.join(DATA_DIR, "pricing_draws_check.json")) as fh:
+        print("draws check:", fh.read())
+
+
 if __name__ == "__main__":
-    {"models": main_models, "report": main_report}[sys.argv[1] if len(sys.argv) > 1 else "models"]()
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "models"
+    if cmd == "hand":
+        print(json.dumps(hand_check(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 10),
+                         indent=1, default=float))
+    else:
+        {"models": main_models, "report": main_report, "tables": main_tables}[cmd]()
