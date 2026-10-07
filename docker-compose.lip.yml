@@ -63,3 +63,41 @@ services:
       options:
         max-size: "20m"
         max-file: "3"
+
+  # Coin Race farming, LIVE PAPER (2026-10-07): the registered live-step policy (1,000 a side one tick in front
+  # of the best bid on sides at or below 10c, never crossing, pulled at T-60 s) run against the live book AND the
+  # live prints (orderbook_delta + trade on the one signed socket); records the paper reward each second and the
+  # fills the prints imply, settled at the venue's result. Places nothing. Own farm_paper.sqlite /
+  # farm_paper_status.json beside the scorers' files. Registered read: docs/math/coinrace-research.md
+  # ("Registered read: the live paper farming arm"), run with
+  #   docker exec kalshi-farm-paper python -m core.kalshi.farm_paper --read
+  #
+  #   docker compose -f docker-compose.yml -f docker-compose.lip.yml up -d --no-deps farm-paper
+  farm-paper:
+    image: meridian-api:latest
+    container_name: kalshi-farm-paper
+    restart: unless-stopped
+    command: ["python", "-m", "core.kalshi.farm_paper"]
+    working_dir: /app
+    mem_limit: 128m
+    volumes:
+      - /opt/meridian/core:/app/core:ro
+      - /opt/meridian/artifacts/lip:/data
+    environment:
+      KALSHI_API_KEY_ID: ${KALSHI_API_KEY_ID:-}
+      KALSHI_PRIVATE_KEY_B64: ${KALSHI_PRIVATE_KEY_B64:-}
+      MERIDIAN_FARM_PAPER_SERIES: KXCRYPTOLEAD15M
+      MERIDIAN_FARM_PAPER_SIZE: "1000"
+      MERIDIAN_FARM_PAPER_CAP: "0.10"
+      MERIDIAN_FARM_PAPER_PULL_S: "60"
+      MERIDIAN_FARM_PAPER_LOOKBACK_S: "1.0"
+      MERIDIAN_FARM_PAPER_HORIZON_S: "3600"
+      MERIDIAN_FARM_PAPER_RELOAD_S: "900"
+      MERIDIAN_FARM_PAPER_DB: /data/farm_paper.sqlite
+      MERIDIAN_FARM_PAPER_STATUS: /data/farm_paper_status.json
+      PYTHONUNBUFFERED: "1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
