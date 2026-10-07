@@ -196,3 +196,13 @@ fixed scorer over 48 clean hours (2026-10-07 04:00Z → 10-09 04:00Z; fix deploy
 (one window's five markets, 1000 a side one tick in front on sides at or below 10c, N = 48
 windows, ~$300–500 collateral) needs the operator's Kalshi trading key and stays theirs.
 
+**Second defect, same read (found 2026-10-07 03:45Z by the cross-venue football read, fixed cad12b5).**
+The Kalshi book tracker summed size deltas as floats, so a fully cancelled large level could stay
+as a phantom best price with ~1e-9 contracts. It did not change qualifying depth (a phantom adds no
+size), but it moved the "best bid" that the one-tick-in-front policy prices from and the
+reference the 10c cap tests, and it raised `yes_best`/`no_best` in `lip_sample` (10.7% of Coin
+Race YES-side samples sat above both neighbouring venue candle closes). The $2,566 and $3,087
+figures above carry it in an unknown direction. The confirmation read (10-07 04:00Z → 10-09
+04:00Z) runs on a scorer carrying both fixes (redeployed 03:48:12Z), so it is the first clean
+number.
+
