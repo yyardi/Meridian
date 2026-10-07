@@ -204,11 +204,51 @@ def tape_baskets(prints, gap_s: float = 1.0, tol: float = 0.005):
             cost_c = sum(c * p for v in legs.values() for c, p in v)
             fee_c = sum(leg_fee_cents(v) for v in legs.values())
             pay = 100 if side == "yes" else 400
+            marg = {k: max(p for _, p in v) for k, v in legs.items()}          # the worst level each leg reached
             out.append({"ev": ev, "side": side, "t0": r[0][0], "t1": r[-1][0], "n": n, "vwap_sum": sum(vw.values()),
+                        "marginal_sum": sum(marg.values()), "levels": sum(len({p for _, p in v}) for v in legs.values()),
+                        "fee_c_per_basket": fee_c / n,
                         "gross_c": pay - sum(vw.values()), "net_c": (pay * n - cost_c - fee_c) / n,
                         "net_usd": (pay * n - cost_c - fee_c) / 100, "legs": {k: round(v, 2) for k, v in vw.items()}})
     out.sort(key=lambda b: b["t0"])
     return out
+
+
+def basket_detail(bk, candles, opens: dict[str, float], samples=None) -> list[dict]:
+    """Per executed basket: when in the window, what was paid against $1 (or $4) after the five fees, the
+    worst level each leg reached, and the RESIDUE -- the same basket priced on the venue's book at the first
+    minute close after the basket (and, if given, the farm scorer's first sample after it, a bound biased
+    toward clearing). candles: {ticker: sorted [(end_ts, yes_bid_c, yes_ask_c)]}; samples likewise with
+    (t, yes_bid_c, no_bid_c)."""
+    import bisect
+    rows = []
+    for b in bk:
+        ev = b["ev"]
+        coins = sorted(b["legs"])
+        d = {k: v for k, v in b.items() if k != "legs"}
+        d["minute_of_window"] = (b["t0"] - opens.get(ev, float("nan"))) / 60
+        for tag, src in (("after", candles), ("sample_after", samples)):
+            if src is None:
+                continue
+            yb, nb, lag = [], [], []
+            for c in coins:
+                xs = src.get(f"KXCRYPTOLEAD15M-{ev}-{c}", [])
+                i = bisect.bisect_left([x[0] for x in xs], b["t1"] + 1e-6)
+                if i >= len(xs) or xs[i][0] - b["t1"] > 60:
+                    break
+                lag.append(xs[i][0] - b["t1"])
+                if tag == "after":                          # candle: (end, yes_bid, yes_ask) -> NO bid = 100 - ask
+                    yb.append(xs[i][1]); nb.append(100 - xs[i][2])
+                else:                                       # sample: (t, yes_bid, no_bid)
+                    yb.append(xs[i][1]); nb.append(xs[i][2])
+            if len(yb) == 5 and all(0 < x < 100 for x in yb + nb):
+                ny, nn = basket_net(yb, nb, 1)
+                ny200, nn200 = basket_net(yb, nb, 200)
+                d[f"{tag}_net_c1"] = ny if b["side"] == "yes" else nn
+                d[f"{tag}_net_c200"] = ny200 if b["side"] == "yes" else nn200
+                d[f"{tag}_lag_s"] = max(lag)
+        rows.append(d)
+    return rows
 
 
 def summarise_rows(rows, span_days: float) -> dict:
@@ -254,6 +294,7 @@ def main() -> None:
     ap.add_argument("--since", default=None)
     ap.add_argument("--until", default=None)
     ap.add_argument("--size", type=int, default=1)
+    ap.add_argument("--detail", default=None, help="write one JSON row per executed tape basket here")
     a = ap.parse_args()
     ts0 = dt.datetime.fromisoformat(a.since.replace("Z", "+00:00")).timestamp() if a.since else -math.inf
     ts1 = dt.datetime.fromisoformat(a.until.replace("Z", "+00:00")).timestamp() if a.until else math.inf
@@ -272,12 +313,41 @@ def main() -> None:
                 rep["sample"][k].pop(drop, None)
     if a.candles or a.trades:
         import duckdb
+        duckdb.sql("SET threads=2")                  # the operator's laptop: keep it quiet
     if a.candles:
         cand = duckdb.sql(f"SELECT ticker, end_period_ts, yes_bid_close, yes_ask_close FROM read_parquet('{a.candles}') "
                           f"WHERE end_period_ts > {ts0 if ts0 > -math.inf else 0} AND end_period_ts <= {ts1 if ts1 < math.inf else 4e9}").fetchall()
         rows = screen_candles(cand, a.size)
         span = (max(r["t"] for r in rows) - min(r["t"] for r in rows)) / 86400
         rep["candles"] = summarise_rows(rows, span)
+    if a.trades and a.detail:
+        pr = duckdb.sql(f"""SELECT split_part(ticker, '-', 2), coin, epoch(created_time), taker_side, count,
+                                   CAST(round(yes_price * 100) AS INTEGER) FROM read_parquet('{a.trades}')
+                            WHERE epoch(window_end_utc) > {ts0 if ts0 > -math.inf else 0}
+                              AND epoch(window_end_utc) <= {ts1 if ts1 < math.inf else 4e9}""").fetchall()
+        bk = tape_baskets(pr)
+        opens = {}
+        with open(a.markets) as f:
+            for line in f:
+                m = json.loads(line)
+                opens[m["event_ticker"].split("-", 1)[1]] = dt.datetime.fromisoformat(m["open_time"].replace("Z", "+00:00")).timestamp()
+        cand = collections.defaultdict(list)
+        if a.candles:
+            for tk, e, yb, ya in duckdb.sql(f"SELECT ticker, end_period_ts, yes_bid_close, yes_ask_close FROM read_parquet('{a.candles}') "
+                                            f"WHERE yes_bid_close > 0 AND yes_ask_close < 1 ORDER BY 1, 2").fetchall():
+                cand[tk].append((float(e), round(yb * 100), round(ya * 100)))
+        samp = None
+        if a.book:
+            import csv
+            samp = collections.defaultdict(list)
+            with open(a.book) as f:
+                for r in csv.DictReader(f):
+                    samp[r["ticker"]].append((float(r["t"]), round(float(r["yes_best"]) * 100), round(float(r["no_best"]) * 100)))
+            for v in samp.values():
+                v.sort()
+        rows = basket_detail(bk, cand, opens, samp)
+        with open(a.detail, "w") as f:
+            json.dump(rows, f)
     if a.trades:
         pr = duckdb.sql(f"""SELECT split_part(ticker, '-', 2), coin, epoch(created_time), taker_side, count,
                                    CAST(round(yes_price * 100) AS INTEGER) FROM read_parquet('{a.trades}')
