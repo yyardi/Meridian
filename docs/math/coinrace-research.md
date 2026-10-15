@@ -632,3 +632,29 @@ What the paper figure cannot contain, by direction:
 The Q3 screen's figures for this placement were a fill cost of $0.31 per market-window when pulled
 at T − 60 s, and a reward of $5.35–6.43 per market-window, both before anyone responds. They are the
 expectation this read tests, not its bar.
+
+## 2026-10-15 — the two farming reads, and the decision: farming closes
+
+**Reward confirmation** (registered estimator, scorer with both fixes, 2026-10-07 04:00Z →
+10-09 04:00Z, run by prod's crontab at 10-09 04:10Z; report in `artifacts/reads/farm_confirm_2026-10-09.txt`):
+Coin Race f1000c **$2,254 a calendar day**, valid 0.809, 920 of 920 market-windows scored whole —
+the reward bar ($2,000, valid ≥ 0.8) passes, before anyone responds.
+
+**Live paper farming arm** (`kalshi-farm-paper`, 2026-10-08 16:30Z → 10-11 16:30Z, 1,440 of 1,440
+market-windows settled, socket caught all but 24 of 29,208 public prints, instrument valid), per
+market-window, window-clustered 95% CI:
+
+| | mean | 95% CI |
+|---|--:|---|
+| paper reward | +$2.83 | [+2.73, +2.93] |
+| settled fill P&L | −$1.94 | [−4.46, +0.58] |
+| **net** | **+$0.89** | **[−1.64, +3.41]** |
+
+Fill loss per window (five markets): p90 **$61.49**, max $192.54. 203,119 contracts filled, 54,131
+of them via the 1-s lookback (net fill P&L without them −$2.29 per market-window).
+
+**Decision, by the rule registered before the arm ran** (net CI above zero AND p90 loss ≤ $50):
+**FAIL — farming closes.** The reward is real on paper; the fills the prints imply take most of it,
+the interval on the net includes zero, and the loss tail is past the bar. With pricing (Q1) and the
+basket (Q2) already closed, every registered Coin Race channel is closed for this stack.
+
