@@ -291,3 +291,19 @@ def test_the_recorder_only_set_and_the_stream_runner_agree():
     assert "CRICKET_STREAM_LEAGUES" in src, "the runner must accept every league the scheduler launches it for"
     for lg in SS.RECORDER_ONLY:
         assert lg in SS.GAME_MINUTES, f"{lg} has no game length"
+
+
+def test_nba_is_record_only_so_a_one_market_game_is_still_taped():
+    # opening night 2026-10-20: the venue listed one market a game the day before; a record-only
+    # league gets the stream recorder window regardless of its rung count, and no sampler or executor
+    import datetime as dt
+    from core.ladder.live import RECORDER_ONLY_LEAGUES
+    import scripts.schedule_slate as S
+    assert "nba" in RECORDER_ONLY_LEAGUES
+    now = dt.datetime(2026, 10, 20, 12, 10, tzinfo=dt.timezone.utc)
+    g = [{"game": "nba-phi-ny", "key": "nba-phi-ny-2026-10-20", "league": "nba",
+          "tip": dt.datetime(2026, 10, 20, 23, 30, tzinfo=dt.timezone.utc), "rungs": 1}]
+    p = S.plan(g, now)
+    scripts = [l.script for l in p.launches]
+    assert "launch_stream_slate.sh" in scripts
+    assert "launch_stream_exec.sh" not in scripts and "launch_sampler.sh" not in scripts
