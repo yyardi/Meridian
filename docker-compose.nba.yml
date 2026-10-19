@@ -1,0 +1,34 @@
+# NBA RECORDING overlay (2026-10-19, the day before opening night).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.nba.yml up -d --no-deps nba-recorder
+#
+# RECORDING ONLY: pregame board sweeps of the venue's NBA games (core/leagues.py `nba`, venue
+# league slug `nba`, events like nba-bos-det-2026-10-20) into market_snapshots / book_levels.
+# The daily slate scheduler (scripts/schedule_slate.py, 12:10Z) builds its game list from
+# these rows, so this recorder is also what puts NBA games on the in-play stream tapes.
+# It reuses the international-basketball recorder's image (same code, already carries the
+# database's migrations), so starting it needs no build. Nothing here places orders.
+services:
+  nba-recorder:
+    image: meridian-basketball-recorder:latest
+    container_name: meridian-nba-recorder
+    restart: unless-stopped
+    command: ["sh", "-c", "alembic upgrade head && python -m core --json-logs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgresql+psycopg://meridian:meridian@postgres:5432/meridian}
+      MERIDIAN_LEAGUE: nba
+      MERIDIAN_RPS: "2"
+      # An NBA game is ~2.5 h and the board is listed days ahead; the near window tightens
+      # three hours before tip (one sweep a minute), the idle sweep is every 15 min.
+      MERIDIAN_NEAR_TIPOFF_HOURS: "3"
+      MERIDIAN_INTERVAL_NEAR: "60"
+      MERIDIAN_INTERVAL_IDLE: "900"
+      MERIDIAN_EVENT_LIMIT: "500"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
