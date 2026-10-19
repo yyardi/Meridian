@@ -129,10 +129,7 @@ BASKETBALL_INTL_LEAGUES = ("eurolg", "lnbp", "bbl", "vtb", "bsl", "denbl", "slnb
 #: 2026-09-27: run lines are the only spread, so the ladder has one rung and
 #: a week of samplers and executors produced zero episodes while costing
 #: ~1.6 GB of a 7.6 GB box on a Sunday the kernel killed postgres.
-#: NBA joined 2026-10-19, the day before opening night: the operator trades NBA by hand, so the
-#: stream tapes every game and nothing automated acts on it; record-only also tapes a game whose
-#: spread and total ladders the venue has not listed yet (opening night showed one market a game).
-RECORDER_ONLY_LEAGUES = CRICKET_STREAM_LEAGUES + BASKETBALL_INTL_LEAGUES + ("mlb", "nba")
+RECORDER_ONLY_LEAGUES = CRICKET_STREAM_LEAGUES + BASKETBALL_INTL_LEAGUES + ("mlb",)
 EXCLUDED_LEAGUES: dict[str, str] = {}
 
 _ANY_GAME = re.compile(r"^[a-z]{3}-(?P<game>[a-z0-9]+-.+?-\d{4}-\d{2}-\d{2})(?:-|$)")

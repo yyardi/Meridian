@@ -98,6 +98,7 @@ def check_containers() -> list[Check]:
         # heartbeat rows (pregame_recorder_nfl / live_recorder_nfl).
         "meridian-cricket-recorder": "cricket pregame board (5 competitions)",
         "meridian-basketball-recorder": "international basketball pregame board (8 competitions)",
+        "meridian-nba-recorder": "NBA pregame board (docker-compose.nba.yml, from 2026-10-19)",
         "meridian-btc15": "BTC Up or Down 15 min: LLM decision harness, Polymarket US (own SQLite ledger)",
         "meridian-btc1h": "BTC Up or Down 60 min: LLM decision harness, Polymarket US, paper (own SQLite ledger)",
         "meridian-tt-recorder": "table tennis pregame board (4 competitions)",

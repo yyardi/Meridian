@@ -117,6 +117,11 @@ FOOTBALL = ("nfl", "cfb")
 #: 2026-09-27 for RECORDER_ONLY: one-rung run lines, zero episodes in a week,
 #: thirty containers on the Sunday the kernel killed postgres.
 MEASURED_ONLY = ("wnba", "nba")
+#: Measured leagues whose games are taped even with fewer than MIN_RUNGS rungs: the
+#: stream recorder window only, no sampler or executor, as for a record-only league.
+#: NBA, 2026-10-19: the operator trades it by hand and wants every game on tape, and
+#: the venue lists some games' ladders late (one market a game the day before opening night).
+TAPED_BELOW_MIN_RUNGS = ("nba",)
 
 
 @dataclass(frozen=True)
@@ -166,7 +171,7 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
             out.skipped.append(f"{g['game']} excluded: {EXCLUDED_LEAGUES[g['league']]}")
     live = [dict(g, tip=_utc(g["tip"])) for g in games
             if g["league"] not in EXCLUDED_LEAGUES
-            and (int(g.get("rungs") or 0) >= MIN_RUNGS or g["league"] in RECORDER_ONLY)]
+            and (int(g.get("rungs") or 0) >= MIN_RUNGS or g["league"] in RECORDER_ONLY + TAPED_BELOW_MIN_RUNGS)]
     live.sort(key=lambda g: (g["tip"], g["game"]))
     last_over: dt.datetime | None = None
 
@@ -185,9 +190,10 @@ def plan(games: list[dict], now: dt.datetime) -> Plan:
         # county match runs four days. Recorder-only leagues never set the
         # verdict time -- on 2026-09-24 an ODI did, the verdict rolled a day,
         # and the previous night's slate went unread until the marker fix.
-        if league not in RECORDER_ONLY:
+        taped_only = league in RECORDER_ONLY or rungs < MIN_RUNGS
+        if not taped_only:
             last_over = over if last_over is None or over > last_over else last_over
-        if league in RECORDER_ONLY:
+        if taped_only:
             continue                      # the recorder window below is all it gets
         if at <= now + dt.timedelta(minutes=1):
             out.skipped.append(f"{g['game']} tips {tip:%H:%M}Z, launch time already past")
