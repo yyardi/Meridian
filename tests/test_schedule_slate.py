@@ -295,17 +295,17 @@ def test_the_recorder_only_set_and_the_stream_runner_agree():
 
 def test_nba_is_measured_and_a_game_without_its_ladder_is_still_taped():
     # 2026-10-19: NBA left record-only on the operator's ask. A game with its ladder gets the
-    # shadow stream executor and the sampler, like WNBA; a game the venue lists with one market
-    # (opening night, the day before) still gets the stream recorder window and nothing else.
+    # shadow stream executor and the tape (no REST sampler: the box's memory); a game the venue
+    # lists with one market (opening night, the day before) still gets the stream recorder window.
     import datetime as dt
     from core.ladder.live import RECORDER_ONLY_LEAGUES
     import scripts.schedule_slate as S
-    assert "nba" not in RECORDER_ONLY_LEAGUES and "nba" in S.MEASURED_ONLY
+    assert "nba" not in RECORDER_ONLY_LEAGUES and "nba" not in S.MEASURED_ONLY
     now = dt.datetime(2026, 10, 20, 12, 10, tzinfo=dt.timezone.utc)
     tip = dt.datetime(2026, 10, 20, 23, 30, tzinfo=dt.timezone.utc)
     bare = S.plan([{"game": "nba-phi-ny", "key": "nba-phi-ny-2026-10-20", "league": "nba", "tip": tip, "rungs": 1}], now)
     assert [l.script for l in bare.launches] == ["launch_stream_slate.sh"] and bare.verdict_at is None
     full = S.plan([{"game": "nba-phi-ny", "key": "nba-phi-ny-2026-10-20", "league": "nba", "tip": tip, "rungs": 25}], now)
     scripts = sorted(l.script for l in full.launches if l.script.startswith("launch_"))
-    assert scripts == ["launch_sampler.sh", "launch_stream_exec.sh", "launch_stream_slate.sh"]
+    assert scripts == ["launch_stream_exec.sh", "launch_stream_slate.sh"]
     assert full.verdict_at is not None and "slate_verdict.sh" in [l.script for l in full.launches]

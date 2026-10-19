@@ -116,11 +116,14 @@ FOOTBALL = ("nfl", "cfb")
 #: Sampler + stream executor, no REST ladder. MLB left this set on
 #: 2026-09-27 for RECORDER_ONLY: one-rung run lines, zero episodes in a week,
 #: thirty containers on the Sunday the kernel killed postgres.
-MEASURED_ONLY = ("wnba", "nba")
-#: Measured leagues whose games are taped even with fewer than MIN_RUNGS rungs: the
-#: stream recorder window only, no sampler or executor, as for a record-only league.
-#: NBA, 2026-10-19: the operator trades it by hand and wants every game on tape, and
-#: the venue lists some games' ladders late (one market a game the day before opening night).
+MEASURED_ONLY = ("wnba",)
+#: Leagues whose games are taped even with fewer than MIN_RUNGS rungs: the stream
+#: recorder window only, no executor, as for a record-only league. NBA, 2026-10-19:
+#: the operator trades it by hand and wants every game on tape, and the venue lists
+#: some games' ladders late (one market a game the day before opening night). An NBA
+#: game WITH its ladder gets the stream executor and tape but no REST sampler: the
+#: stream sees what the sampler would a minute sooner, and the box now shares its
+#: 7.6 GB with another project -- a twelve-game night would add twelve containers.
 TAPED_BELOW_MIN_RUNGS = ("nba",)
 
 
