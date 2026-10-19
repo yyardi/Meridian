@@ -57,6 +57,17 @@ log = structlog.get_logger(__name__)
 VENUE_SLOW_REQUEST_MS = 1500.0
 
 
+#: The market families /v2/leagues/{league}/events embedded before 2026-10-16, read off
+#: market_snapshots (2026-10-11 16:00-16:20Z, every league): every spread and total --
+#: full game, halves, quarters, innings, team points, table-tennis sets -- and the
+#: full-game or match winner. Nothing else was on the board, so nothing else was recorded.
+EMBEDDED_MARKET_SUFFIXES = ("_spread", "_total", "_total_sets", "_full_game_winner", "_match_winner")
+
+
+def _was_embedded(sports_market_type: str) -> bool:
+    return "_player_" not in sports_market_type and sports_market_type.endswith(EMBEDDED_MARKET_SUFFIXES)
+
+
 class RateLimitedError(Exception):
     """HTTP 429 — a genuine rate limit, worth backing off for."""
 
@@ -127,18 +138,62 @@ class PolymarketGatewayClient:
 
         return _do()
 
-    def get_league_events(self, league: str | None = None, limit: int | None = None) -> tuple[
-        EventsResponse, dict[str, Any]
-    ]:
-        """Fetch the whole league board in one request.
+    def get_league_events(self, league: str | None = None, limit: int | None = None, *,
+                          full_markets: bool = True) -> tuple[EventsResponse, dict[str, Any]]:
+        """Fetch the whole league board: one request, plus one per event whose markets were cut.
 
         Returns (parsed, raw_json) so the raw payload can be persisted verbatim —
         reparsing stored JSON later beats re-fetching data that no longer exists.
+        ``full_markets=False`` skips the per-event fetches for callers that read only
+        the schedule (start times, live flags).
         """
         league = league or self.config.league_slug
         limit = limit or self.config.event_limit
         raw = self._get(f"/v2/leagues/{league}/events", params={"limit": limit})
+        if full_markets:
+            self._complete_event_markets(raw)
         return EventsResponse.model_validate(raw), raw
+
+    def _complete_event_markets(self, raw: dict[str, Any]) -> None:
+        """Put each event's full market list back into the league payload, in place.
+
+        Around 2026-10-16 the venue's ``/v2/leagues/{league}/events`` stopped embedding
+        an event's spread and total markets: it returns the winner alone, while the
+        event's own ``marketCounts`` still says e.g. 727 markets, 300 of them spreads
+        and totals, and ``/v1/events/{id}`` returns all of them. Every football and
+        NBA ladder vanished from market_snapshots that day (thousands of spread/total
+        slugs a day through 10-15, zero from 10-16), and with them the scheduler's
+        in-play tapes, which key on rung counts.
+
+        For an event whose count exceeds what was embedded, fetch the full event and
+        keep the families the board embedded before the change (EMBEDDED_MARKET_SUFFIXES).
+        The full event also carries props, race-to-points, half and quarter winners and
+        the like -- 727 markets on one NFL game -- none of which was ever recorded, and
+        each would cost the recorder a book request. A failed fetch keeps the embedded
+        markets, so the winner is never lost to it.
+        """
+        for e in raw.get("events") or []:
+            if not isinstance(e, dict) or e.get("id") is None:
+                continue
+            counts = e.get("marketCounts") or {}
+            try:
+                total = int(counts.get("numMarkets") or 0)
+            except (TypeError, ValueError):
+                total = 0
+            embedded = e.get("markets") or []
+            if total <= len(embedded):
+                continue
+            try:
+                full = self._get(f"/v1/events/{e['id']}")
+            except Exception as exc:                                    # noqa: BLE001 -- one event never costs the board
+                log.warning("event_markets_fetch_failed", event_slug=e.get("slug"), error=str(exc)[:160])
+                continue
+            fe = full.get("event", full) if isinstance(full, dict) else {}
+            have = {m.get("slug") for m in embedded if isinstance(m, dict)}
+            added = [m for m in (fe.get("markets") or [])
+                     if isinstance(m, dict) and m.get("slug") not in have
+                     and _was_embedded(str(m.get("sportsMarketType") or ""))]
+            e["markets"] = list(embedded) + added                       # what the board still embeds is never dropped
 
     def get_sports_listing(self) -> dict[str, int]:
         """`{venue league slug: activeEventCount}` from /v2/sports.

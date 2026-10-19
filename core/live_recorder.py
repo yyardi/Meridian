@@ -788,7 +788,7 @@ class LiveRecorder:
         stats = LiveCycleStats()
 
         try:
-            parsed, raw = self._client.get_league_events()
+            parsed, raw = self._client.get_league_events(full_markets=False)
         except Exception as exc:
             # The board call is the only failure we cannot work around: it is
             # both the schedule and the price source. Log and let the loop
@@ -922,7 +922,7 @@ class LiveRecorder:
         """
         now = now or dt.datetime.now(UTC)
         try:
-            parsed, _ = self._client.get_league_events()
+            parsed, _ = self._client.get_league_events(full_markets=False)
         except Exception as exc:
             log.warning("live_check_failed", error=str(exc))
             return True

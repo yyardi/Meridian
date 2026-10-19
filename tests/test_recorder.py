@@ -70,7 +70,7 @@ class FakeClient:
         self.fail_on_book = fail_on_book or set()
         self.book_calls = 0
 
-    def get_league_events(self, league=None, limit=None):
+    def get_league_events(self, league=None, limit=None, full_markets=True):
         return EventsResponse.model_validate(BOARD), BOARD
 
     def get_book(self, market_slug: str):
@@ -182,7 +182,7 @@ def test_board_failure_returns_cleanly_without_raising(clean_db):
     Session = clean_db
 
     class DeadClient(FakeClient):
-        def get_league_events(self, league=None, limit=None):
+        def get_league_events(self, league=None, limit=None, full_markets=True):
             raise RuntimeError("network down")
 
     stats = _recorder(DeadClient(), Session).run_once()
@@ -211,7 +211,7 @@ def test_cadence_falls_back_to_fast_poll_when_board_unavailable(clean_db):
     """If we can't tell, over-sample: under-sampling loses data permanently."""
 
     class DeadClient(FakeClient):
-        def get_league_events(self, league=None, limit=None):
+        def get_league_events(self, league=None, limit=None, full_markets=True):
             raise RuntimeError("network down")
 
     rec = _recorder(DeadClient(), clean_db)

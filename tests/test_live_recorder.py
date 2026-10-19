@@ -124,7 +124,7 @@ class FakeClient:
         self.board_calls = 0
         self.book_calls: list[str] = []
 
-    def get_league_events(self, league=None, limit=None):
+    def get_league_events(self, league=None, limit=None, full_markets=True):
         self.board_calls += 1
         return EventsResponse.model_validate(self.board), self.board
 
@@ -386,7 +386,7 @@ def test_board_failure_returns_cleanly_without_raising(clean_db):
     """The loop must never die — a board fetch failure returns empty stats."""
 
     class DeadClient(FakeClient):
-        def get_league_events(self, league=None, limit=None):
+        def get_league_events(self, league=None, limit=None, full_markets=True):
             raise RuntimeError("network down")
 
     stats = _recorder(DeadClient(), clean_db, capture_depth=False).run_cycle()

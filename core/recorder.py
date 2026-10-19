@@ -418,7 +418,7 @@ class Recorder:
         """
         now = now or dt.datetime.now(UTC)
         try:
-            parsed, _ = self._client.get_league_events()
+            parsed, _ = self._client.get_league_events(full_markets=False)
         except Exception:
             # If we cannot tell, poll at the faster rate. Over-sampling costs a
             # few requests; under-sampling loses data permanently.
