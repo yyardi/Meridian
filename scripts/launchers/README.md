@@ -14,6 +14,8 @@ are versioned here so a test can pin what they pass.
 | `launch_stream_slate.sh <league> <min> <tag>` | the stream recorder for a kickoff window, into `reads/stream/<tag>/` | no |
 | `launch_ladder.sh <slug> <min> [ws]` | the REST executor for the desk; `ws` adds the REST-vs-stream comparator | yes (two with `ws`) |
 | `launch_sampler.sh <slug> <min>` | read-only REST sampler, no tickets (basketball, baseball) | yes |
+| `launch_kalshi_slate.sh <series> <date-tags> <min> <tag>` | Kalshi's in-play books and prints off its socket, into `reads/kalshi/<tag>/` | no |
+| `kalshi_daily.sh` | daily 15:30Z: `launch_kalshi_slate.sh` for that ET day's NBA, NFL and CFB (game, spread, total) | no |
 | `slate_verdict.sh` | nightly: instants table, settlement P&L, edge ledger; pushes the headline | no |
 | `schedule_ping.sh --hours 24` / `--starting-within 15` | the day's slate to the phone; tipoff pings | no |
 | `slate_fast.py`, `slate_pnl.py` | run inside the api image by `slate_verdict.sh` | no |
