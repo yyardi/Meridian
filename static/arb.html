@@ -1459,5 +1459,15 @@ function applyBooks(){
 new MutationObserver(applyBooks).observe(
   document.getElementById("lgtabs") || document.body, {childList:true, subtree:true, attributes:true, attributeFilter:["class"]});
 </script>
+<!-- Account figures are blurred until clicked, so the desk can be shown to a visitor (2026-10-21). -->
+<style>.priv{filter:blur(7px);cursor:pointer;user-select:none}</style>
+<script>
+for (const id of ["s-bankroll", "bankroll"]) {
+  const e = document.getElementById(id);
+  if (!e) continue;
+  e.classList.add("priv");
+  e.addEventListener("click", () => e.classList.toggle("priv"));
+}
+</script>
 </body>
 </html>
