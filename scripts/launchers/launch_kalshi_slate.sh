@@ -13,6 +13,8 @@ S=$1; D=$2; M=${3:-600}; TAG=${4:-kalshi}
 OUT=/opt/meridian/artifacts/reads/kalshi/$TAG
 mkdir -p "$OUT"
 API=$(docker inspect meridian-api --format "{{.Config.Image}}")
-docker run -d --rm --name "kalshi-$TAG" --memory 256m --env-file /opt/meridian/.env \
+# Two open files per contract: an NBA night is ~700 contracts, and the default limit of
+# 1,024 killed the 2026-10-21 tape at 17:11Z with "Too many open files".
+docker run -d --rm --name "kalshi-$TAG" --memory 256m --ulimit nofile=65536:65536 --env-file /opt/meridian/.env \
   -v /opt/meridian/core:/app/core:ro -v "$OUT":/out -w /app \
   "$API" sh -c "python -m core.kalshi.book_recorder --series $S --date $D --minutes $M --out /out > /out/_recorder.log 2>&1"
