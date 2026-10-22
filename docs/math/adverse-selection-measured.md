@@ -314,3 +314,274 @@ and waiting loses 3.4¢ a fill on this tape**, that no selection within that
 family rescues it, and that the mechanism is adverse selection rather than
 mis-tuning. **No in-sample result justifies capital. The forward test is the
 evidence.**
+
+## ★ THE SEPARATION IS NOW CODE, AND IT READS 24 GAMES — 2026-09-04 ★
+
+Everything above was ad-hoc queries against prod. `core/quote/report.py` — the
+scoring path the QUOTE dashboard and `python -m core.quote.report` both read —
+**had no phantom classifier at all**, was already past its floors on the blend
+(38,465 settled fills / 24 games against floors of 500 / 10), and still printed
+capture. It would have scored tomorrow's slate on the blend. It no longer can:
+the floors and the verdict bind on `population='real'`, and the blend is never
+scored.
+
+### The substrate trap, which cost the first run and is reusable
+
+The obvious table for "the book at the fill instant" is `book_levels`. **It is
+the wrong one, and it fails quietly in the flattering direction.** `book_levels`
+is a **slow depth loop** sampled independently of the price loop. Measured
+against these fills it sits a **median 6.8 s and mean 13.3 s behind** the fill
+instant (max 128.6 s). Against the registered ≤5 s lookback that drops **73.6%
+of all fills and 93.6% of the September ones**, and the survivors are biased:
+
+| substrate | matched | phantom share | WNBA real fills |
+|---|---:|---:|---:|
+| `book_levels` (depth loop) | 26.4% | **84.9%** | 1,531 → wrong |
+| `market_snapshots.best_bid/ask` (price loop) | **100.0%** | **63.9%** | **6,255 → exact** |
+
+`market_snapshots` is the loop the fill was generated from, so the touch is at
+**age 0.0 s on 38,465/38,465 fills, in both eras**. The report now prints that
+max age beside the counts, so a future run on the wrong table says so out loud
+instead of returning a clean, wrong number.
+
+**The tell, reusable:** a coverage-dependent instrument that returns a *plausible*
+number. 84.9% is not absurd on its face; nothing in the output complained. It
+was caught only by refusing to compare it to anything until coverage was
+measured. Counts and composition before ratios — the third time on this feed.
+
+### Validation before any new claim
+
+The classifier is written independently of the manager's original query and
+reproduces it **to the digit** on WNBA: 17,339 fills, **6,255 real**, phantom
+share **63.9%**, real settlement **−3.376¢/fill**, clustered **−3.419¢
+[−5.062, −1.777]** on 13 games, phantom **+0.951¢**, **12 of 13 games lose**.
+Every one of those matches the recorded values above.
+
+### The 24-game read — the effect replicates and tightens
+
+Settlement P&L per fill, real population, mean of game means, game-clustered:
+
+| cohort | fills | G | mean | 95% CI |
+|---|---:|---:|---:|---|
+| WNBA (the recorded 13) | 6,255 | 13 | −3.419¢ | [−5.062, −1.777] |
+| **CFB (11 NEW games)** | **7,396** | **11** | **−2.683¢** | **[−5.439, +0.073]** |
+| **pooled** | **13,651** | **24** | **−3.082¢** | **[−4.502, −1.661]** |
+
+**20 of 24 games lose money on real fills.** The interval narrowed from 3.29¢
+wide to 2.84¢ wide and stayed entirely negative.
+
+### ★ THE PRE-REGISTERED SURPRISE IS TESTED, AND IT DOES NOT APPEAR ★
+
+*"BASE near zero on football"* was recorded above as **UNTESTED, not refuted** —
+settlement was unreadable at 6/11 games with a clustered CI of **[−41.9, +16.8]**.
+All 11 CFB games now carry settled real fills. The CI is **[−5.44, +0.07]**, a
+band **80× narrower**, and it sits on the losing side.
+
+**CFB − WNBA = +0.736¢, se 1.448, Welch t = +0.51, band [−2.29, +3.76].** There
+is **no evidence football is different**, and the surprise's own direction —
+football better — is not supported. Stated precisely: this does not prove the
+two leagues are identical; the band still admits a ±3¢ difference. It says the
+football escape hatch the registration hoped for **is not visible at 11 games**,
+and touch-joining loses on football at the same order as on basketball.
+
+The phantom share replicates across sports as the mechanism predicts, because it
+is a property of the SIMULATOR: **WNBA 63.9%, CFB 65.0%.**
+
+### The width gradient, checked from the other side
+
+The ruling above says capture's monotone width gradient was the instrument
+reproducing its own algebra, and predicts settlement will not be monotonic.
+Independently recomputed on 24 games of real fills:
+
+| quoted spread | n | settlement, clustered |
+|---|---:|---|
+| ≤1.5¢ | 6,660 | −1.974¢ [−4.089, +0.142] |
+| 1.5–2.5¢ | 2,741 | −1.609¢ [−4.106, +0.888] |
+| 2.5–3.5¢ | 1,486 | −6.716¢ [−9.424, −4.008] |
+| 3.5–5.5¢ | 1,445 | −3.411¢ [−6.975, +0.153] |
+| >5.5¢ | 1,319 | −5.609¢ [−9.106, −2.112] |
+
+**Not monotonic, CIs ~3¢ wide.** The prediction holds. *Note this cuts against
+the earlier reading that "a spread widens because informed flow is expected" —
+on settlement, the widest band is not the worst and the ordering is noise. That
+mechanism was argued from capture and does not survive the metric it was
+retired for.*
+
+### A unit trap in the record above
+
+The table at the top gives the ledgered blend as **−1.60¢**, and that is a
+**capture** number. On **settlement** — the primary metric — the WNBA blend is
+**−0.610¢** against −3.376¢ real: the blend understates the real loss by
+**5.5×**, not the ~2.1× the capture figures imply. Pinned as a test
+(`tests/test_quote_report.py`), because the two numbers look comparable and are
+not.
+
+### What is now enforced rather than written
+
+`scripts/guard_coverage.py`: rules **22, 23 and 25 are WIRED** (they were all
+UNWIRED at 22:46 yesterday), all three from `core/quote/report.py`.
+
+* **22** — no count in the report can print bare. A population that returns zero
+  prints `UNPROVEN INSTRUMENT`, because this run has no evidence that branch can
+  fire. Provenance is attached only to the quantity it belongs to: the first
+  wiring printed the regime's fill history beside a *population's* zero, which
+  makes the zero mis-readable and is worse than a bare zero.
+* **23** — the touch join is BACKWARD and its age is **asserted non-negative**,
+  not merely capped. D shipped a forward join today whose `age <= 5` admitted a
+  book from 25 hours *after* the fill; a one-sided cap on an age whose join
+  points the other way is vacuous and reads exactly like a freshness gate.
+* **25** — the staked-ROI prints its numerator, denominator and per-event mean,
+  and warns that its argmax ranks inactivity. It fires on the live prod read.
+
+**No in-sample result justifies capital. The forward test is the evidence.**
+
+### Correction, same day — the estimator and the regime were unlabelled
+
+**Nothing above is retracted; the labels were missing and one of them was
+actively misleading.** D found all three within the hour, from the pinned export.
+
+**1. TWO ESTIMATORS ARE IN CIRCULATION AND THIS DOCUMENT NEVER SAID WHICH.**
+On identical rows (WNBA real fills, G=13, n=6,255):
+
+| estimator | reads |
+|---|---|
+| unweighted mean of game means + t(df=12) — *what a typical game looks like* | −3.419¢ [−5.062, −1.777] |
+| `core.quote.adverse_selection.clustered_mean` — POOLED mean, cluster-robust SE — *what a dollar deployed earns* | −3.376¢ [−4.746, −2.007] |
+
+**Every figure recorded in this document is the unweighted per-game one.** The
+blessed function the program has been citing all week is the other one. Both are
+defensible and they answer different questions; a comparison that mixes them is
+not. `core/quote/report.py` prints `clustered_mean` and now names it in its
+header. The pinned export's README carried the sentence *"if your read differs
+on WNBA, the difference is in your code, not in the tape"* — **that was wrong,
+it blamed the reader for an unlabelled choice of mine, and it is corrected.**
+
+Restating the day's numbers under BOTH, so nothing depends on the choice:
+
+| cohort | per-game | `clustered_mean` |
+|---|---|---|
+| WNBA real | −3.419¢ [−5.062, −1.777] | −3.376¢ [−4.746, −2.007] |
+| CFB real | −2.683¢ [−5.439, +0.073] | −2.435¢ [−5.045, +0.175] |
+| pooled 24 | −3.082¢ [−4.502, −1.661] | −2.866¢ [−4.269, −1.463] |
+
+**Every conclusion survives both.** CFB spans zero either way, pooled is negative
+either way, and the CFB−WNBA gap is inside noise either way.
+
+**2. THE SIGN COUNT IS REGIME-DEPENDENT, AND MECHANICALLY SO.** Six pregame real
+fills flip game 13002489. The recorded **12 of 13** is a *mixed-regime* count;
+the *in-game* count is **13 of 13**. Neither is wrong — they answer different
+questions, and the strategy is in-game market making, so the in-game count is
+the one that belongs beside an in-game P&L.
+
+| cohort | in-game only | all regimes |
+|---|---|---|
+| WNBA | **13/13 lose** | 12/13 lose |
+| CFB | 8/11 lose | 8/11 lose |
+| pooled | **21/24 lose** | 20/24 lose |
+
+The "20 of 24" stated above is the all-regime count; **in-game it is 21 of 24.**
+This also resolves a disagreement between two agents that looked like a
+substantive difference about a marginal game and was a filter difference.
+
+**3. CFB's SIGN COUNT WAS OMITTED and is weaker than WNBA's: 8 of 11**, against
+13 of 13. Directionally consistent with CFB's wider interval, and it belongs
+next to the mean precisely because the sign count is a separate statistic.
+
+**4. What the 100% row agreement does and does not establish.** D's independent
+tick substrate reproduces this classification on **17,339/17,339 = 100.000%** of
+WNBA rows. That validates the **implementation** and **cannot validate the
+phantom DEFINITION** — both constructions share the `ask ≤ B` criterion. Only a
+resting-order probe tests the definition, and that has not been run.
+
+**5. The CFB read has NOT been checked by a second construction.** D's
+whole-book replay needs a tick series and no CFB tick export exists. The
+classification agreement above is WNBA-only. Stated because the alternative is
+letting the WNBA agreement read as if it covered football.
+
+**And the caveat that outranks the arithmetic:** *"the escape hatch is not
+visible at 11 games"* has "not visible" doing real work — an interval ~5.5¢ wide
+could not have shown a 1–2¢ league difference even if one exists.
+
+## ★ THE FOOTBALL PORT'S STATED REASON IS WRONG, AND THE BOARD/FILL GAP IS THE FINDING — 2026-09-04 ★
+
+The PORTING TO GRIDIRON paragraph above says, as the reason a fixed 1¢ ports:
+
+> *"NFL's traded cells at 5–6¢ leave room for a 1¢ lean to be a genuine 1¢,
+> unlike WNBA's tight band where it was forced."*
+
+**Measured on the fills we actually got, that is inverted** (B, `analysis/cfb_k_clamp.py`,
+real fills only, settlement only, WNBA known-answer check exact at −3.376¢):
+
+| league | real fills | G | median s at quote | lean impossible at ANY k (s ≤ tick) | k=1¢ ≡ k=5¢ |
+|---|---:|---:|---:|---:|---:|
+| CFB | 7,396 | 11 | **1¢** | **53.8%** | **73.6%** |
+| WNBA | 6,255 | 13 | 2¢ | 42.8% | 63.2% |
+
+On **53.8% of CFB real fills `min(k, s − tick)` permits no lean at all**, and on
+73.6% k=1¢ and k=5¢ are the same quote — nominal k=5¢ delivers a mean effective
+lean of 1.16¢. A CFB k-curve would be the WNBA tight-band defect at larger
+scale: **one policy counted five times.** The fixed-1¢ default may still be
+right; **the stated reason for it is factually wrong about the board we traded,
+and the sentence is corrected regardless of what a future curve shows.**
+
+### But the board is the opposite of the fills, and that is the real result
+
+Checked at the level the claim is about — every live CFB and WNBA snapshot since
+2026-08-18, board-quoted spread, **not** our fills (13.0M rows):
+
+| league | rows | p25 | **median** | p75 | ≤1¢ | ≥5¢ |
+|---|---:|---:|---:|---:|---:|---:|
+| WNBA | 11,856k | 2¢ | **4¢** | 9¢ | 18.0% | 44.0% |
+| CFB | 1,180k | 2¢ | **11¢** | 30¢ | 21.5% | **64.7%** |
+
+**The CFB board is nearly 3× WIDER than WNBA at the median and its p75 is 30¢.
+Our real CFB fills sit at a 1¢ median. Those two facts are about the same
+board.** So:
+
+> **We do not sample the football board. We sample its tightest ~20% corner, and
+> we sample it almost exclusively.**
+
+That is a selection effect an order of magnitude larger than anything the width
+cuts were designed to detect, and it reframes both prior readings. B's "football
+is the more clamped board" is true **of our fills** and false **of the board**;
+the registration's "5–6¢ traded cells" is true **of the board** and false **of
+what we trade**. Neither sentence was wrong about its own denominator, and both
+were stated without one.
+
+**Mechanism, consistent with the central result and not new:** a resting quote
+at the touch in a 30¢-wide market is either never hit, or hit by someone
+crossing 30¢ to reach it — and that second population is the informed flow the
+whole document is about. Tight cells are where we get crossed cheaply. B's fill
+data shows the same shape from the other side: CFB *phantom* fills sit at 3¢
+median against *real* fills at 1¢.
+
+### Consequences, stated separately because they point different ways
+
+1. **FLATTEN's reach on football is limited by the clamp**, on more than half of
+   the real fills we actually get. It does not kill the arm — FLATTEN remains
+   the only registered arm that leaves the losing family rather than
+   partitioning it — but its football effect size should be expected small, and
+   an A/B powered on the assumption of a genuine 1¢ lean is powered wrong.
+2. **A k-curve cannot be built from a static fill table**, and B correctly
+   refused to. Changing k changes which quotes are placed and therefore which
+   fills exist; the doc's own retraction says filtering does not remove phantoms
+   from the POLICY. The instrument is the whole-book replay with the order
+   inserted, and no CFB tick export exists.
+3. **Power, before anyone asks for that export:** CFB real settlement is −2.44¢
+   [−5.05, +0.17], per-game sd 4.10¢, 11 games. Unpaired, ~132 games to resolve
+   1¢; ~15 for 3¢. Pessimistic (a real curve is paired within game), but the
+   anchor is that **the WNBA curve itself returned +1.95¢ [−2.80, +6.70] at its
+   own optimum — the quantity being ported to football was never resolved in
+   basketball either.** And the clamp means a CFB curve could distinguish k on
+   only ~14% of fills. A perfect replay would be testing a policy difference
+   that mostly does not exist on this board.
+4. **The open question this opens is bigger than the one it closes.** Nothing
+   here says the wide 65% of the CFB board is unprofitable — it says we have
+   almost no fills there and therefore no read on it. WAVE_STANDARD's priority
+   hint (the 35–65¢ band where size exists) points at the same unexplored
+   region from the price axis. **Candidate, not a result:** the board we have
+   been measuring and the board that exists are different objects, and every
+   "touch-joining is dead as a family" statement is scoped to the corner we
+   sample. *This is hypothesis-generating and carries no forward evidence.*
+
+**No in-sample result justifies capital. The forward test is the evidence.**
